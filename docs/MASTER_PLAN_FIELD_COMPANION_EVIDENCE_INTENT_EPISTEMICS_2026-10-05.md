@@ -2822,3 +2822,44 @@ NEXT CANDIDATE: SONNET 5.5
 ```
 
 Sonnet was not executed. The scorer was not edited. The sealed holdout was not opened. F2 was not started. Production `BEDROCK_MODEL_ID` was not switched. No push. No deploy.
+
+## Sonnet 5.5 benchmark — stopped at preflight
+
+Starting SHA `3186bbaa1eeaedad38029e8f04c7237fb03a2c3d`. Production query model remains `global.anthropic.claude-haiku-4-5-20251001-v1:0`. Grok quality was not measured. Prompt `f1cal.r2.a1`, scorer v2, the guard, the corpus, the thresholds, retrieval, and structured composition stayed frozen. Haiku A′ was not rerun.
+
+The Field Companion answer path is still `AiProvider#query` → `BedrockClient#generate_text`: Bedrock `invoke_model`, body `anthropic_version: bedrock-2023-05-31`, `max_tokens`, `temperature`, one user message. Haiku reads `content[0].text`.
+
+Account catalog, region `us-east-1`, IAM user `bedrock-integration-user`. `ListInferenceProfiles` is denied. `GetInferenceProfile` for `global.anthropic.claude-sonnet-5-5` succeeded: status `ACTIVE`, type `SYSTEM_DEFINED`, name `Global Anthropic Claude Sonnet 5.5`, foundation model `anthropic.claude-sonnet-5-5`. The bare id `anthropic.claude-sonnet-5-5` is not an inference profile. The geo id `us.anthropic.claude-sonnet-5-5` exists and was not used.
+
+Integration class: S1. A model-id swap is a valid Anthropic invoke, so this is not S2. It is not S0 either. Sonnet 5.5 runs adaptive thinking by default, and Haiku 4.5 does not. `thinking.type: disabled` is rejected. The benchmark body adds `thinking: { type: "between_tools" }`, which is the documented setting that turns up-front thinking off when the request has no tools. Temperature and `max_tokens` stay the caller's values. The sample path would have used the Haiku generation settings, 3000 and 0.1. No tools, no web, no service tier, no effort override.
+
+Support commit: `c967fa5c416a9dbc495301dcc7f64ec1cd1688a6`.
+
+Pricing row `global.anthropic.claude-sonnet-5-5`, per 1k tokens: input `0.002`, output `0.01`, cache read `0.0002`, cache creation `0.0025`. That is Global Standard $2 / $10 / $0.20 / $2.50 per 1M, the Sonnet 5.5 list price. It is not the Haiku row and not `default`. A zero input price aborts. The geo profile would be about 10% higher and was not selected. These calibration prompts are a few thousand tokens, under any long-context tier. The runner installs the adapter only when `F1CAL_SONNET=1` and the model id is exactly that global profile.
+
+Preflight, one call, no retrieval, region `us-east-1`, prompt `Return exactly: PREFLIGHT_OK`, `max_tokens` 64, temperature 0, `thinking.type` `between_tools`:
+
+```
+Aws::BedrockRuntime::Errors::AccessDeniedException
+anthropic.claude-sonnet-5-5 is not available for this account.
+```
+
+The response was empty. There is no returned model id, token count, latency, or non-zero price from a completed call. A second call was not sent. Direct Anthropic was not used. Sample 1 did not start. Sample 2 did not run. Known controls c18–c20 were not run on Sonnet. There is no Sonnet quality, safety, S2, structured-lane, managed, latency, or spend result to compare with Haiku A′.
+
+Haiku A′ remains the only measured baseline: useful 45/68, guard 12/68, S1 11/12, S2 4/12, S3 30/44, managed useful 26/34 guard 4/34, structured useful 19/34 guard 8/34, qualified references 10, foreign step lists 4, formulaic 34/68, automated unsafe 2, human unsafe 0, p50 3688 ms, p95 5385 ms, input 185100, output 14635, 0.258275 USD for the 68 unknown executions.
+
+```
+SONNET_FAIL
+reason: Bedrock invoke denied before any scored generation
+Sonnet quality: NOT MEASURED
+Sample 1: not run
+Sample 2: NO
+F1 deterministic safety: PASS / FROZEN
+F1 product quality: FAIL A′; Sonnet not measured
+Sealed holdout readiness: NO-GO
+F1 final status: OPEN
+F2 readiness: NO-GO
+MODEL BAKE-OFF EXHAUSTED FOR F1
+```
+
+The scorer was not edited. The sealed holdout was not opened. F2 was not started. Production `BEDROCK_MODEL_ID` was not switched. No further model was called. No push. No deploy.

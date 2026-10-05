@@ -46,7 +46,7 @@ not mean `false`.
 | `identity_promotion` | After the episode lock, and only when a promotion payload exists | `result`: `blocked`, `unchanged`, `conflict`, `promoted`. See reasons below |
 | `stale_case_write_dropped` | A writer lost the episode-owner check | `writer`, `expected_episode_id`, `current_episode_id`, `episode_id`, `dropped: true` |
 | `document_identity_scope` | A scope decision already computed from the identity and the Result in hand | `result` is the status, or the reason when status is absent. `scope_needles`, `identity_after`, `identity_conflict` |
-| `open_retrieval` | Already emitted at the end of the Bedrock open path, and on pin deny | Open-path fallthrough adds `outcome_reason=identity_unknown`. Pin deny does not |
+| `open_retrieval` | Already emitted at the end of the Bedrock open path, and on pin deny | Open-path fallthrough adds `outcome_reason=identity_unknown` and `evidence_applicability=identity_unknown_reference`. Pin deny does not |
 | `turn_interpreter` | Already emitted outside the lock | Adds `goal_text` (120 chars) and `goal_source_correlation_id` from the durable episode goal |
 
 `identity_promotion` reasons:
@@ -62,9 +62,12 @@ not mean `false`.
 Result reason stays `result=no_compatible` and omits `outcome_reason`.
 Malformed identity uses `malformed_identity`. Scope disabled uses
 `scope_disabled`. The structured route, which has no `open_retrieval` event,
-records `not_required` when identity is unknown. The Bedrock open path does
+records `not_required` when identity is unknown and adds
+`evidence_applicability=identity_unknown_reference`. The Bedrock open path does
 not also emit `not_required`; it emits `open_retrieval` with
-`identity_unknown`.
+`identity_unknown` and the same applicability value. Known identity does not
+emit `evidence_applicability`. A pin does not change either fact.
+`generation_context` does not grow an applicability token.
 
 `[DOCUMENT_IDENTITY]` remains a mirror log. The durable event is not parsed
 from that line.
@@ -125,12 +128,13 @@ One correlation can also carry the causal chain when those events emitted it:
 | `results_count`, `contexts_delivered` | `document_identity_scope` | Chunks retrieved before scope, and chunks placed in the generation prompt. `0` is kept |
 | `generation_mode`, `generation_context`, `generation_prompt_chars`, `context_truncated` | `interaction_completed` | Mode of the route that ran, and a token manifest of the prompt actually sent |
 | `user_id`, `conversation_session_id` | `kb_retrieve` | Passed by the caller. A user-scoped cohort still drops an event that has no `user_id` |
+| `evidence_applicability` | `open_retrieval`; `document_identity_scope` only when that event already fires | `identity_unknown_reference` when equipment identity is not confirmed. The reason stays on `outcome_reason` |
 
 `field_companion_turn` with `result=assistant` does not store `original_sha256` or `effective_sha256`. The reply stays `TURN_EVIDENCE.answer_sha256`.
 
 `TURN_EVIDENCE.original_query` is what the technician said on the web, worker, and photo-question lanes. The composed retrieval string stays `effective_query`. With `PILOT_AUDIT_CAPTURE` off, the raw text keys stay absent and the original hash is still the raw turn. The cohort question is not backfilled from the composed query in that case.
 
-`generation_mode` on `interaction_completed` is the route that ran: `generative` for managed RetrieveAndGenerate, `document_identity_scope`, `meta`, `clarify_first`, `structured_evidence_route`, or the mode the photo service returned. Scope status and route distinguish shared strings. `meta_kind` and `evidence_applicability` are allowlisted and not emitted.
+`generation_mode` on `interaction_completed` is the route that ran: `generative` for managed RetrieveAndGenerate, `document_identity_scope`, `meta`, `clarify_first`, `structured_evidence_route`, or the mode the photo service returned. Scope status and route distinguish shared strings. `meta_kind` is allowlisted and not emitted. `evidence_applicability` is emitted on the events in the table above. The TURN card still copies `open_retrieval` as `result` and `outcome_reason` only.
 
 `llm_calls` on the same correlation still carry model, tokens, latency, and `token_source`. The card prints them only when the row has them.
 
@@ -194,7 +198,7 @@ Read one `correlation_id` in this order:
 2. `visual_identity` — what the photo reading said, still only an observation
 3. `identity_promotions` in order — whether that reading became an episode fact, stayed blocked, or conflicted
 4. `retrieval_identity` and `document_identity_scope` — which identity constrained the manual, and whether the status was `scoped` or `no_compatible`
-5. `open_retrieval` — present only when retrieval was not identity-scoped. `identity_unknown` means the Bedrock path had no known identity. A pin deny keeps `retrieval_denied_reason` and does not use `identity_unknown`
+5. `open_retrieval` — present only when retrieval was not identity-scoped. `identity_unknown` means the Bedrock path had no known identity, and that row also carries `evidence_applicability=identity_unknown_reference`. A pin deny keeps `retrieval_denied_reason` and does not use `identity_unknown` or `evidence_applicability`
 6. `execution_path` — what actually ran
 
 A foreign manual on a `no_compatible` scope is reference context. It is not

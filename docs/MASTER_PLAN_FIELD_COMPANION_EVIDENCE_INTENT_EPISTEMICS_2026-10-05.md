@@ -821,7 +821,17 @@ One commit for the unknown-identity mode on `DocumentIdentityScope`, prompt inje
 
 **Prompt template for the next phase**
 
+> F1 code is `89257129fbf083d58d08ed24657d22da61565ed6`. Verdict: unknown-identity applicability is explicit on the prompt that is sent and on the events that already existed. Retrieval, ranking, pins, `.apply`, and known-identity generation are unchanged. Do not execute this block until a human says `GO F2`.
+>
 > Implement explicit free-standing fault-code absence, unmatched-negation preservation, and current-turn precedence. Do not change applicability, `.apply`, route enums, or recall behavior. Do not start F1b from F2.
+>
+> Confirmed by F1: the block is `DocumentIdentityScope::APPLICABILITY_BLOCK`, 1052 characters. `BedrockRagService#load_generation_prompt_with_locale` appends it only when `@evidence_applicability` is `identity_unknown_reference`, immediately before the re-emitted `$output_format_instructions$`. Session context is appended earlier in that same method. The verbatim turn belongs in that session context. Do not place it after the applicability block or after the placeholder. `generation.txt` stays shared with known-identity generation. F1 did not add a static unknown-identity section there.
+>
+> The managed template still contains unsubstituted `$query$` when `generation_context` is recorded. `technician_current_turn` is `present` only when the sent question equals the raw turn or the raw string is already in the sent template. T4 remains `current_turn:dropped` and `ignored(no_slot)`. That is still F2.
+>
+> Structured unknown identity keeps `document_identity_scope.outcome_reason=not_required` and adds `evidence_applicability=identity_unknown_reference`. The managed unknown lane still has no `document_identity_scope` event and no `results_count` or `contexts_delivered`. Do not rename those reasons and do not invent those counts.
+>
+> Do not call `ActiveEpisode#to_h` a second time on the live episode that owns the persisted payload. Keep the `raw_question` forward into `StructuredEvidenceRoute`. The TURN card still copies `open_retrieval` as `result` and `outcome_reason` only. Do not expand that card in F2.
 
 ### F2 — Preserve the current turn and explicit negative facts
 
@@ -1640,3 +1650,97 @@ After this correction, the pre-F0 structured rescue contract is preserved. F1 is
 ```
 
 F1 above is reconciled to these findings only: the allowlist edit is unnecessary, the injection point is the sent template, managed `generation_mode` stays `generative`, and unknown identity does not invent scope counts. F1 is not authorized.
+
+## Execution findings — F1
+
+```text
+F1 code SHA:
+89257129fbf083d58d08ed24657d22da61565ed6
+
+Actual files changed in the code commit:
+app/services/rag/document_identity_scope.rb
+app/services/rag/document_identity_scope_event.rb
+app/services/bedrock_rag_service.rb
+app/services/rag/structured_evidence_route.rb
+test/services/rag/document_identity_scope_test.rb
+test/services/rag/structured_evidence_route_test.rb
+
+Docs updated with these findings:
+docs/PILOT_TRACEABILITY.md
+docs/MASTER_PLAN_FIELD_COMPANION_EVIDENCE_INTENT_EPISTEMICS_2026-10-05.md
+
+Not changed, and why:
+app/prompts/bedrock/generation.txt — the template is shared with known-identity generation. A static block would contaminate that lane. The section 5.1 text lives on DocumentIdentityScope::APPLICABILITY_BLOCK and is spliced into the sent prompt only for identity_unknown_reference.
+app/services/pilot_usage_log.rb — evidence_applicability was already allowlisted.
+DocumentIdentityScope.apply — decisions for known and unknown identity stayed as they were.
+
+Actual code paths discovered:
+Unknown identity is the existing fallthrough of BedrockRagService#document_identity_scope_result: not malformed and not EquipmentIdentity#known?. That path sets @evidence_applicability and open_retrieval outcome_reason=identity_unknown before build_complete_optimized_config. The same instance variable is what load_generation_prompt_with_locale reads, including the pin-retry config and the existing token estimate. There is no second template built for the trace. The trace still reads generation_configuration.prompt_template.text_prompt_template.
+Known identity returns inside document_identity_scope_result. That method clears @evidence_applicability before it renders, so the document-identity and companion prompts do not receive the block.
+StructuredEvidenceRoute#scope_identity already returned the retrieved chunks unchanged when identity was not known, with document_identity_scope reason not_required. That branch now sets the same mode. generation_prompt inserts the block before its citation contract. It does not call .apply and does not retrieve again.
+A pin is still entity_s3_uris. It does not make identity known, and it does not suppress the block.
+
+Tests/evals:
+targeted scope, structured, bedrock, readiness, orchestrator, goal, photo job, tenant catalog, prompt, grounded synthesis, causal trace: 444 runs, 3796 assertions, 0 failures, 11 skips, exit 0
+full Minitest: 4190 runs, 23163 assertions, 0 failures, 0 errors, 192 skips, exit 0
+RuboCop on the six Ruby files: 0 offenses
+git diff --check: exit 0
+interpreter eval, holdout, real-model rubric, and canary export: not run. This phase does not authorize deploy and does not activate F1b.
+
+Trace signals now available:
+open_retrieval.evidence_applicability=identity_unknown_reference together with the existing outcome_reason=identity_unknown
+document_identity_scope.evidence_applicability on the structured unknown path only. outcome_reason stays not_required. results_count and contexts_delivered stay the real retrieve counts.
+Managed unknown path still emits no document_identity_scope event and no results_count or contexts_delivered.
+generation_mode for a successful managed turn is still resolved as generative. The query result does not grow a parallel mode.
+generation_context does not grow an applicability token.
+kb_retrieve is still absent on managed RetrieveAndGenerate. Structured retrieve_chunks still receives user_id and conversation_session_id.
+The TURN card still projects open_retrieval as result and outcome_reason only. The field is on the raw event.
+
+Behavior findings:
+Unknown identity, managed: one RetrieveAndGenerate, prompt contains identity_unknown_reference before $output_format_instructions$, native citation metadata still publishes, and the stubbed reference answer keeps the not-confirmed disclaimer.
+Unknown identity, structured: one retrieve, one generation, foreign body stays visible, it is not labeled THIS JOB'S EQUIPMENT, page stays in the evidence block, generation_mode stays structured_evidence_route.
+Known identity: the sent prompt does not contain the unknown block. .apply for a compatible Orona body stays scoped and compatible.
+Pin without confirmed identity: the URI filter remains, the applicability block remains, and no document_identity_scope event is created on the managed lane.
+A report turn still composes with current_turn:full. The T4 negate path was not changed.
+
+Regression findings:
+Goal, photo job, tenant catalog, pilot readiness, orchestrator raw_question rescue, and the previous document-identity decisions stayed green.
+No production behavior assertion was rewritten to accept a new answer.
+
+Unexpected constraints:
+generation.txt cannot carry the turn-specific block without also sending it on the known-identity lane.
+The managed generation_context current-turn band cannot see the technician's words unless they are already in the sent template or the sent question equals the raw turn. $query$ is still unsubstituted at trace time.
+The TURN card does not yet copy evidence_applicability. F2 does not own that card.
+
+Assumptions confirmed:
+F0's injection point, allowlist, generative mode, and the ban on invented scope counts.
+A pin is not equipment identity.
+Unknown identity on the structured route already fired document_identity_scope with not_required, so the applicability field belongs on that existing event.
+
+Assumptions invalidated:
+The expected edit to generation.txt. The shared template made a static block the wrong place. The block is owned by DocumentIdentityScope and injected at render time.
+
+Actual call-count impact:
+new production LLM calls: 0
+new production retrieval calls: 0
+
+Actual latency/cost impact:
+prompt tokens only, and only on unknown-identity generated turns
+applicability block: 1052 chars
+separator before the block: 2 chars
+delta on the sent prompt: 1054 chars
+no production flag change
+
+Deferred items:
+F1b
+F2 act=absent and preserving the dropped T4 turn
+F3 meta_kind
+F4 truncation policy and separated photo bands
+managed top_k telemetry
+per-event app_revision
+MaintenanceCase and historical memory
+interpreter eval, holdout, real-model rubric, canary export
+TURN card projection of evidence_applicability
+```
+
+F2 above is reconciled to these findings only: the verbatim turn goes in session context, ahead of the applicability block, and `$output_format_instructions$` stays last. F2 is not authorized.

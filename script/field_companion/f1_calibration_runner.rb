@@ -12,7 +12,9 @@
 # F1CAL_GROK=1 with BEDROCK_MODEL_ID=global.xai.grok-4.7 installs the
 # benchmark Converse adapter. F1CAL_SONNET=1 with
 # BEDROCK_MODEL_ID=global.anthropic.claude-sonnet-5-5 installs the Sonnet
-# invoke adapter. A block-file override is refused.
+# invoke adapter. F1CAL_SONNET_DIRECT=1 keeps the Haiku query model and sends
+# only the composed generation call to the direct Anthropic API.
+# A block-file override is refused.
 
 STDOUT.sync = true
 
@@ -25,7 +27,8 @@ abort "refusing F1CAL_BLOCK_FILE: the applicability block is frozen" if ENV["F1C
 
 grok_requested = ENV["F1CAL_GROK"] == "1"
 sonnet_requested = ENV["F1CAL_SONNET"] == "1"
-abort "set only one of F1CAL_GROK or F1CAL_SONNET" if grok_requested && sonnet_requested
+sonnet_direct_requested = ENV["F1CAL_SONNET_DIRECT"] == "1"
+abort "set only one benchmark model flag" if [ grok_requested, sonnet_requested, sonnet_direct_requested ].count(true) > 1
 model_id = BedrockClient::QUERY_MODEL_ID.to_s
 if grok_requested
   require_relative "f1_grok_generation"
@@ -35,6 +38,13 @@ elsif sonnet_requested
   require_relative "f1_sonnet_generation"
   abort "BEDROCK_MODEL_ID must be #{FieldCompanion::F1SonnetGeneration::MODEL_ID}" unless model_id == FieldCompanion::F1SonnetGeneration::MODEL_ID
   FieldCompanion::F1SonnetGeneration.install!
+elsif sonnet_direct_requested
+  require_relative "f1_sonnet_direct_generation"
+  abort "refusing non-Haiku query model #{model_id}" unless model_id.include?("claude-haiku-4-5")
+  if ENV["BEDROCK_MODEL_ID"].present? && ENV["BEDROCK_MODEL_ID"].exclude?("claude-haiku-4-5")
+    abort "refusing to change BEDROCK_MODEL_ID for the direct Sonnet diagnostic"
+  end
+  FieldCompanion::F1SonnetDirectGeneration.install!
 else
   abort "refusing non-Haiku model #{model_id}" unless model_id.include?("claude-haiku-4-5")
 end
@@ -44,7 +54,8 @@ ENV["DOCUMENT_IDENTITY_SCOPE_ENABLED"] = "true"
 prompt_version = ENV["F1CAL_VERSION"].presence || "f1cal.r2.a1"
 block_text = Rag::DocumentIdentityScope::APPLICABILITY_BLOCK
 block_sha = Digest::SHA256.hexdigest(block_text)
-puts "account=#{account.id} #{account.slug} model=#{BedrockClient::QUERY_MODEL_ID} prompt_version=#{prompt_version} score=#{Score::SCORE_REVISION} block_chars=#{block_text.length} block_sha=#{block_sha}"
+generation_model = sonnet_direct_requested ? FieldCompanion::F1SonnetDirectGeneration::MODEL_ID : model_id
+puts "account=#{account.id} #{account.slug} query_model=#{model_id} generation_model=#{generation_model} prompt_version=#{prompt_version} score=#{Score::SCORE_REVISION} block_chars=#{block_text.length} block_sha=#{block_sha}"
 
 def fixture_result(account_id:, manual:)
   metadata = {
@@ -151,17 +162,19 @@ rates = if grok_requested
   FieldCompanion::F1GrokGeneration::PRICING
 elsif sonnet_requested
   FieldCompanion::F1SonnetGeneration::PRICING
+elsif sonnet_direct_requested
+  FieldCompanion::F1SonnetDirectGeneration::PRICING
 else
   BedrockQuery::BEDROCK_PRICING[model_id] || { input: 0.0, output: 0.0 }
 end
 abort "refusing zero input price for #{model_id}" if rates[:input].to_f <= 0
-if sonnet_requested
+if sonnet_requested || sonnet_direct_requested
   haiku_rates = BedrockQuery::BEDROCK_PRICING.fetch("global.anthropic.claude-haiku-4-5-20251001-v1:0")
   abort "refusing to price Sonnet at the Haiku rate" if rates[:input] == haiku_rates[:input] && rates[:output] == haiku_rates[:output]
 end
 per_case = if grok_requested
   0.05
-elsif sonnet_requested
+elsif sonnet_requested || sonnet_direct_requested
   0.04
 else
   0.006
@@ -286,9 +299,15 @@ summary = {
   block_sha: block_sha,
   block_chars: block_text.length,
   head: `git rev-parse HEAD`.strip,
-  model: BedrockClient::QUERY_MODEL_ID,
+  model: generation_model,
+  production_query_model: BedrockClient::QUERY_MODEL_ID,
+  transport: sonnet_direct_requested ? "anthropic_messages" : "bedrock",
   reasoning_effort: grok_requested ? FieldCompanion::F1GrokGeneration::REASONING_EFFORT : nil,
-  thinking_type: sonnet_requested ? FieldCompanion::F1SonnetGeneration::THINKING_TYPE : nil,
+  thinking_type: if sonnet_requested
+                   FieldCompanion::F1SonnetGeneration::THINKING_TYPE
+                 elsif sonnet_direct_requested
+                   FieldCompanion::F1SonnetDirectGeneration::THINKING_TYPE
+                 end,
   returned_models: rows.filter_map { |row| row[:returned_model] }.uniq,
   input_usd_per_1k: rates[:input],
   output_usd_per_1k: rates[:output],

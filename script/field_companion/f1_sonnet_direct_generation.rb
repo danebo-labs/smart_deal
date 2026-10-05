@@ -23,14 +23,16 @@ module FieldCompanion
     class Error < StandardError; end
 
     module Adapter
-      def generate_text(prompt, model_id: DEFAULT_MODEL_ID, max_tokens: 2000, temperature: 0.7, tracking: nil)
+      def generate_text(prompt, **kwargs)
+        max_tokens = kwargs.fetch(:max_tokens, 2000)
+        temperature = kwargs.fetch(:temperature, 0.7)
         return super unless F1SonnetDirectGeneration.generation_call?(max_tokens: max_tokens, temperature: temperature)
 
         F1SonnetDirectGeneration.complete(
           prompt: prompt,
           max_tokens: max_tokens,
           temperature: temperature,
-          tracking: tracking
+          tracking: kwargs[:tracking]
         ).fetch(:text)
       end
     end

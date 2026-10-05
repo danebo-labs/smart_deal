@@ -23,6 +23,7 @@ class FieldCompanionF1SonnetDirectGenerationTest < ActiveSupport::TestCase
     )
     assert Gen.generation_call?(max_tokens: 3000, temperature: 0.1)
     assert_not Gen.generation_call?(max_tokens: 300, temperature: 0)
+    assert_not_includes Rails.root.join("script/field_companion/f1_sonnet_direct_generation.rb").read, "DEFAULT_MODEL_ID"
   end
 
   test "answer text skips a leading thinking block" do

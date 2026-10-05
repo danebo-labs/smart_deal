@@ -1301,6 +1301,92 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     [ yida_body, paso_body, spt_body, "2,5 mm", "Paso 11" ].each do |foreign|
       assert_not_includes prompt, foreign
     end
+    assert_not_includes prompt, "identity_unknown_reference"
+    assert_not_includes prompt, "UNKNOWN EQUIPMENT IDENTITY"
+  end
+
+  test "unknown identity marks retrieved evidence as reference without a second call" do
+    body = "Manual Código de Avería BLT Ascensor. Página 4. E18 fallo de nivelación."
+    chunk = identity_chunk("Código de Avería BLT Ascensor", body, page: 4)
+    answer = "El manual Código de Avería BLT Ascensor, página 4, documenta: E18 fallo de nivelación. No está confirmado que aplique a este equipo. [1]"
+    rag_service = FakeRagService.new([ chunk ])
+    generator = FakeGenerator.new(answer)
+    route = Rag::StructuredEvidenceRoute.new(
+      question: "la cabina queda desnivelada",
+      account: @account,
+      entity_s3_uris: [ @source_uri ],
+      entity_sources: [ "document" ],
+      force_entity_filter: true,
+      response_locale: :es,
+      rag_service: rag_service,
+      generator: generator,
+      expander: FakeExpander.new(nil),
+      equipment_identity: nil,
+      user_id: 9,
+      conversation_session_id: 11,
+      correlation_id: "query:structured-unknown"
+    )
+
+    outcome = nil
+    events = capture_structured_events do
+      with_identity_scope("true") { outcome = route.execute }
+    end
+
+    prompt = generator.calls.first[:prompt]
+    scope = events.find { |event| event["event"] == "document_identity_scope" }
+
+    assert_equal 1, rag_service.calls.size
+    assert_equal 1, generator.calls.size
+    assert_equal 9, rag_service.calls.first[:user_id]
+    assert_equal 11, rag_service.calls.first[:conversation_session_id]
+    assert_equal "structured_evidence_route", outcome.result[:generation_mode]
+    assert_applicability_contract(prompt)
+    assert_includes prompt, "Código de Avería BLT Ascensor"
+    assert_includes prompt, "Page: 4"
+    assert_includes prompt, body
+    assert_not_includes prompt, "THIS JOB'S EQUIPMENT:"
+    assert_equal "not_required", scope["outcome_reason"]
+    assert_equal "identity_unknown_reference", scope["evidence_applicability"]
+    assert_equal 1, scope["results_count"]
+    assert_equal 1, scope["contexts_delivered"]
+    assert_equal :answered, outcome.status
+    assert_includes outcome.result[:answer], "No está confirmado"
+    assert_includes outcome.result[:answer], "[1]"
+    assert_not_includes outcome.result[:answer], "Ajusta"
+    assert outcome.result[:citations].any?
+    assert outcome.result[:generation_context].none? { |token| token.include?("applicability") }
+  end
+
+  test "a pinned manual does not confirm identity on the structured route" do
+    body = "Paso 11. Ajusta el interruptor Yida a 2,5 mm."
+    chunk = identity_chunk("Fuji Yida", body, page: 11)
+    rag_service = FakeRagService.new([ chunk ])
+    generator = FakeGenerator.new("Referencia del manual Fuji Yida, página 11. No está confirmado para este equipo. [1]")
+    route = Rag::StructuredEvidenceRoute.new(
+      question: "la cabina queda desnivelada",
+      account: @account,
+      entity_s3_uris: [ @source_uri ],
+      entity_sources: [ "document" ],
+      force_entity_filter: true,
+      response_locale: :es,
+      rag_service: rag_service,
+      generator: generator,
+      expander: FakeExpander.new(nil),
+      equipment_identity: nil
+    )
+
+    outcome = nil
+    with_identity_scope("true") { outcome = route.execute }
+    prompt = generator.calls.first[:prompt]
+
+    assert_equal 1, rag_service.calls.size
+    assert_equal 1, generator.calls.size
+    assert_applicability_contract(prompt)
+    assert_includes prompt, "Page: 11"
+    assert_includes prompt, "Fuji Yida"
+    assert_not_includes prompt, "THIS JOB'S EQUIPMENT:"
+    assert_equal "structured_evidence_route", outcome.result[:generation_mode]
+    assert_not_equal "identity_unknown_reference", outcome.result[:generation_mode]
   end
 
   test "an inherited CEA15 identifier cannot put a foreign body in the prompt" do
@@ -2312,6 +2398,29 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_equal [ @source_uri ], call[:entity_s3_uris]
     assert_equal true, call[:force_entity_filter]
     assert_equal [ "document" ], call[:entity_sources]
+  end
+
+  def assert_applicability_contract(prompt)
+    assert_includes prompt, "identity_unknown_reference"
+    assert_includes prompt, "UNKNOWN EQUIPMENT IDENTITY"
+    assert_includes prompt, "does not prove that a procedure applies"
+    assert_includes prompt, "terminal assignment"
+    assert_includes prompt, "applicability to the current job is not confirmed"
+    assert_includes prompt, "observational check"
+    assert_includes prompt, "does not confirm equipment identity"
+    assert prompt.index("identity_unknown_reference") < prompt.index("Cite every supported technical claim")
+  end
+
+  def capture_structured_events
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+    yield
+    output.string.lines.filter_map do |line|
+      JSON.parse(line.split("[PILOT_USAGE] ", 2).last) if line.include?("[PILOT_USAGE]")
+    end
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
   end
 
   def build_route(question: "¿Qué indica el LED ABC12?", entity_s3_uris: [ @source_uri ],

@@ -6,7 +6,7 @@ module Rag
   class DocumentIdentityScopeEvent
     def self.record(identity:, correlation_id:, applied: nil, status: nil, reason: nil,
                     account_id: nil, user_id: nil, conversation_session_id: nil, episode: nil,
-                    results_count: nil, contexts_delivered: nil)
+                    results_count: nil, contexts_delivered: nil, evidence_applicability: nil)
       status = applied.status if applied && status.nil?
       reason = applied.reason if applied && reason.nil?
       result = status&.to_s.presence || reason&.to_s.presence
@@ -25,7 +25,8 @@ module Rag
         result: result,
         outcome_reason: reason&.to_s.presence,
         results_count: results_count,
-        contexts_delivered: contexts_delivered
+        contexts_delivered: contexts_delivered,
+        evidence_applicability: evidence_applicability
       )
     rescue StandardError => error
       Rails.logger.warn("document_identity_scope telemetry failed #{error.class}")

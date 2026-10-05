@@ -176,6 +176,7 @@ module Rag
       @equipment_identity_supplied = !equipment_identity.equal?(:omit)
       @route_taken = route_taken
       @preserve_rescue_window = false
+      @evidence_applicability = nil
       @retrieval_report = { queries: [], rescued: false, retrieve_count: 0 }
       @citation_processor = Bedrock::CitationProcessor.new
       @ambiguity = nil
@@ -470,6 +471,7 @@ module Rag
     def scope_identity(chunks)
       @identity_scoped = false
       @identity_closure = nil
+      @evidence_applicability = nil
       identity = policy_identity
       if identity == :malformed || (identity&.known? && !DocumentIdentityScopeFlag.enabled?)
         reason = identity == :malformed ? :malformed_identity : :scope_disabled
@@ -484,9 +486,11 @@ module Rag
         return []
       end
       unless identity&.known? && DocumentIdentityScopeFlag.enabled?
+        @evidence_applicability = DocumentIdentityScope.applicability_mode(identity)
         log_document_identity_scope(
           identity, reason: :not_required,
-          results_count: Array(chunks).size, contexts_delivered: Array(chunks).size
+          results_count: Array(chunks).size, contexts_delivered: Array(chunks).size,
+          evidence_applicability: @evidence_applicability
         )
         return Array(chunks)
       end
@@ -521,7 +525,8 @@ module Rag
     end
 
     def log_document_identity_scope(identity, applied: nil, status: nil, reason: nil,
-                                    results_count: nil, contexts_delivered: nil)
+                                    results_count: nil, contexts_delivered: nil,
+                                    evidence_applicability: nil)
       DocumentIdentityScopeEvent.record(
         identity: identity.is_a?(EquipmentIdentity) ? identity : nil,
         applied: applied,
@@ -533,7 +538,8 @@ module Rag
         conversation_session_id: @conversation_session_id,
         episode: @episode,
         results_count: results_count,
-        contexts_delivered: contexts_delivered
+        contexts_delivered: contexts_delivered,
+        evidence_applicability: evidence_applicability
       )
     end
 
@@ -1204,6 +1210,7 @@ module Rag
         .sub("$search_results$") { evidence_context(chunks) }
         .sub(BedrockRagService::OUTPUT_FORMAT_PLACEHOLDER) do
           [
+            DocumentIdentityScope.applicability_block_for(@evidence_applicability),
             citation_instructions(chunks.size),
             verbatim_directive,
             (exact_lookup_directive if @exact_lookup),

@@ -1271,9 +1271,13 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
 
     open = events.find { |event| event["event"] == "open_retrieval" }
     assert_equal "identity_unknown", open["outcome_reason"]
+    assert_equal "identity_unknown_reference", open["evidence_applicability"]
+    assert_not open.key?("results_count")
+    assert_not open.key?("contexts_delivered")
     assert_equal "query:open", open["correlation_id"]
     assert_equal "ok", open["result"]
     assert events.none? { |event| event["event"] == "document_identity_scope" }
+    assert events.none? { |event| event["event"] == "kb_retrieve" }
   end
 
   test "document identity scope telemetry failure stays inside the recorder" do
@@ -1318,9 +1322,254 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_equal "deny", open["result"]
     assert_equal "caller_uri_denied", open["retrieval_denied_reason"]
     assert_nil open["outcome_reason"]
+    assert_nil open["evidence_applicability"]
+  end
+
+  test "identity_unknown_reference does not change apply" do
+    body = "Procedimiento genérico de nivelación."
+    manual = chunk("manual", body, canonical_name: "Manual seleccionado")
+    unknown = Rag::DocumentIdentityScope.apply([ manual ], nil)
+    known_body = "En PBCM-V3 revisar el sensor de nivelación de la placa Orona."
+    known_manual = chunk("orona", known_body, canonical_name: "Manual Orona PBCM-V3")
+    known = Rag::DocumentIdentityScope.apply([ known_manual ], orona_identity)
+
+    assert_nil Rag::DocumentIdentityScope.applicability_mode(:malformed)
+    assert_nil Rag::DocumentIdentityScope.applicability_mode(orona_identity)
+    assert_equal "identity_unknown_reference", Rag::DocumentIdentityScope.applicability_mode(nil)
+    assert_nil unknown.status
+    assert_equal :not_required, unknown.reason
+    assert_equal body, unknown.chunks.sole[:content]
+    assert_equal :scoped, known.status
+    assert_equal "compatible", known.applicability.sole
+    assert_equal known_body, known.chunks.sole[:content]
+    assert_equal "THIS JOB'S EQUIPMENT: Manual Orona PBCM-V3", known.labels.sole
+  end
+
+  test "managed unknown identity keeps generative mode and the sent applicability block" do
+    raw = "No nivela en planta 3. Todavía no sé fabricante ni modelo."
+    episode = Rag::ActiveEpisode.open(correlation_id: "query:trace", now: Time.current)
+    before = episode.fork
+    perception = Rag::TurnPerception.build(
+      {
+        "move" => "report",
+        "assertions" => [],
+        "observations" => [ "No nivela en planta 3" ],
+        "pending_resolution" => nil,
+        "clarification_target" => nil
+      },
+      turn: raw,
+      episode: Rag::ActiveEpisode.new,
+      catalog: nil,
+      viewer_account: nil
+    )
+    decision = Rag::RoutePolicy.call(previous: episode, perception: perception, focus_count: 0, locale: :es)
+    Rag::WorkContextReducer.apply!(
+      episode: episode, perception: perception, decision: decision,
+      turn: raw, correlation_id: "query:trace", now: Time.current
+    )
+    delta = Rag::ActiveEpisodeTurn.changed_fields(before, episode.fork)
+    explained = Rag::QueryComposer.explain(
+      state: episode, turn: raw, perception: perception, decision: decision
+    )
+    answer = "Referencia del manual Código de Avería BLT Ascensor, página 4. No está confirmado que aplique al equipo actual."
+    citation = native_citation(answer, canonical_name: "Código de Avería BLT Ascensor", page: 4)
+    service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
+    rag_calls = 0
+    sent = nil
+    service.define_singleton_method(:retrieve_and_generate_with_retry) do |params|
+      rag_calls += 1
+      sent = params
+      Struct.new(:output, :citations, :session_id).new(Struct.new(:text).new(answer), [ citation ], "sid")
+    end
+    service.define_singleton_method(:retrieve_chunks) { |*, **| flunk "unknown identity must not retrieve before generation" }
+    service.define_singleton_method(:fallback_retrieve) { |*, **| flunk "native citations must not open a fallback retrieve" }
+
+    events = []
+    result = nil
+    events = capture_pilot_events do
+      result = service.query(
+        explained[:query],
+        raw_question: raw,
+        equipment_identity: nil,
+        user_id: 9,
+        conversation_session_id: 11,
+        correlation_id: "query:trace",
+        output_channel: :web,
+        response_locale: :es
+      )
+    end
+
+    prompt = sent.dig(
+      :retrieve_and_generate_configuration, :knowledge_base_configuration,
+      :generation_configuration, :prompt_template, :text_prompt_template
+    )
+    open = events.find { |event| event["event"] == "open_retrieval" }
+
+    original_sha = Digest::SHA256.hexdigest(raw)
+    effective_sha = Digest::SHA256.hexdigest(explained[:query].to_s)
+
+    assert perception.valid
+    assert_equal "report", perception.move
+    assert_includes delta, "observations"
+    assert_includes explained[:query], "No nivela en planta 3"
+    assert_includes explained[:components], "current_turn:full"
+    assert_equal 64, original_sha.length
+    assert_equal 64, effective_sha.length
+    assert_not_equal original_sha, effective_sha
+    assert_equal explained[:query], sent.dig(:input, :text)
+    assert_equal effective_sha, Digest::SHA256.hexdigest(sent.dig(:input, :text).to_s)
+    assert_equal explained[:query], Rag::QueryComposer.call(
+      state: episode, turn: raw, perception: perception, decision: decision
+    )
+    assert_equal 1, rag_calls
+    assert_equal "identity_unknown_reference", open["evidence_applicability"]
+    assert_equal "identity_unknown", open["outcome_reason"]
+    assert_not open.key?("results_count")
+    assert_not open.key?("contexts_delivered")
+    assert events.none? { |event| event["event"] == "document_identity_scope" }
+    assert events.none? { |event| event["event"] == "kb_retrieve" }
+    assert_applicability_contract(prompt)
+    assert_nil result[:generation_mode]
+    assert_equal "generative", Rag::CausalTrace.resolved_generation_mode(nil, success: true)
+    assert result[:generation_context].none? { |token| token.include?("applicability") || token.include?("identity_unknown") }
+    assert_equal "Código de Avería BLT Ascensor", result[:doc_refs].sole["canonical_name"]
+    assert_includes result[:answer], "No está confirmado"
+    assert_not_includes result[:answer], "Ajusta"
+    assert_not_includes result[:answer], "terminal"
+  end
+
+  test "known identity generation does not receive the unknown applicability block" do
+    body = "En PBCM-V3 revisar el sensor de nivelación de la placa Orona."
+    chunks = [ chunk("orona", body, canonical_name: "Manual Orona PBCM-V3") ]
+    service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
+    prompts = []
+    rag_calls = 0
+    retrieve_calls = 0
+    service.define_singleton_method(:retrieve_chunks) do |*, **|
+      retrieve_calls += 1
+      { chunks: chunks, retrieval_trace: {} }
+    end
+    generator = Object.new
+    generator.define_singleton_method(:query) do |prompt, **|
+      prompts << prompt
+      "Revisar el sensor de nivelación. [1]"
+    end
+    service.define_singleton_method(:document_identity_generator) { generator }
+    service.define_singleton_method(:retrieve_and_generate_with_retry) { |_params| rag_calls += 1 }
+
+    events = []
+    result = nil
+    with_flag("true") do
+      events = capture_pilot_events do
+        result = service.query(
+          "no nivela",
+          equipment_identity: orona_identity,
+          correlation_id: "query:known",
+          output_channel: :web
+        )
+      end
+    end
+
+    scope = events.find { |event| event["event"] == "document_identity_scope" }
+    assert_equal 1, retrieve_calls
+    assert_equal 1, prompts.size
+    assert_equal 0, rag_calls
+    assert_equal "document_identity_scope", result[:generation_mode]
+    assert_not_includes prompts.first, "identity_unknown_reference"
+    assert_not_includes prompts.first, "UNKNOWN EQUIPMENT IDENTITY"
+    assert_nil scope["evidence_applicability"]
+    assert events.none? { |event| event["event"] == "open_retrieval" }
+    assert_includes prompts.first, body
+  end
+
+  test "a pin without confirmed identity does not suppress the applicability contract" do
+    uri = "s3://bucket/blt-nivelacion.pdf"
+    KbDocument.create!(account: accounts(:legacy), s3_key: uri, display_name: "BLT", aliases: [])
+    answer = "Mirar la cabina al llegar a la planta."
+    citation = native_citation(answer, canonical_name: "BLT", page: 4)
+    service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
+    sent = nil
+    calls = 0
+    service.define_singleton_method(:retrieve_and_generate_with_retry) do |params|
+      calls += 1
+      sent = params
+      Struct.new(:output, :citations, :session_id).new(
+        Struct.new(:text).new(answer),
+        [ citation ],
+        "sid"
+      )
+    end
+    service.define_singleton_method(:fallback_retrieve) { |*, **| flunk "a pin does not add a retrieve" }
+    service.define_singleton_method(:retrieve_chunks) { |*, **| flunk "pin is not a document-identity retrieve" }
+
+    events = capture_pilot_events do
+      service.query(
+        "no nivela",
+        equipment_identity: nil,
+        entity_s3_uris: [ uri ],
+        entity_sources: [ "document" ],
+        force_entity_filter: true,
+        correlation_id: "query:pin-unknown",
+        output_channel: :web
+      )
+    end
+
+    prompt = sent.dig(
+      :retrieve_and_generate_configuration, :knowledge_base_configuration,
+      :generation_configuration, :prompt_template, :text_prompt_template
+    )
+    filter = sent.dig(
+      :retrieve_and_generate_configuration, :knowledge_base_configuration,
+      :retrieval_configuration, :vector_search_configuration, :filter
+    )
+    open = events.find { |event| event["event"] == "open_retrieval" }
+
+    assert_equal 1, calls
+    assert_applicability_contract(prompt)
+    assert_includes filter.to_json, uri
+    assert_equal "identity_unknown_reference", open["evidence_applicability"]
+    assert_equal "identity_unknown", open["outcome_reason"]
+    assert events.none? { |event| event["event"] == "document_identity_scope" }
+    assert_nil Rag::DocumentIdentityScope.applicability_mode(orona_identity)
   end
 
   private
+
+  def assert_applicability_contract(prompt)
+    assert_includes prompt, "identity_unknown_reference"
+    assert_includes prompt, "UNKNOWN EQUIPMENT IDENTITY"
+    assert_includes prompt, "does not prove that a procedure applies"
+    assert_includes prompt, "terminal assignment"
+    assert_includes prompt, "applicability to the current job is not confirmed"
+    assert_includes prompt, "observational check"
+    assert_includes prompt, "does not confirm equipment identity"
+    assert_equal 1, prompt.scan("$output_format_instructions$").size
+    assert prompt.rstrip.end_with?("$output_format_instructions$")
+    assert prompt.index("identity_unknown_reference") < prompt.index("$output_format_instructions$")
+    assert_not_includes prompt, "THIS JOB'S EQUIPMENT:"
+    assert_not_includes prompt, "REFERENCE ONLY — OTHER EQUIPMENT:"
+  end
+
+  def native_citation(text, canonical_name:, page:)
+    OpenStruct.new(
+      generated_response_part: OpenStruct.new(
+        text_response_part: OpenStruct.new(span: OpenStruct.new(start: 0, end: text.length))
+      ),
+      retrieved_references: [
+        OpenStruct.new(
+          content: OpenStruct.new(text: text),
+          location: OpenStruct.new(s3_location: OpenStruct.new(uri: "s3://bucket/chunks/blt.txt")),
+          metadata: {
+            "canonical_name" => canonical_name,
+            "original_source_uri" => "s3://bucket/blt.pdf",
+            "page_number" => page,
+            "doc_type" => "manual",
+            "account_id" => accounts(:legacy).id.to_s
+          }
+        )
+      ]
+    )
+  end
 
   def closed_identity_service(chunks:)
     service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")

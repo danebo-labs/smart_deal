@@ -27,6 +27,25 @@ module Rag
                "Evidence marked REFERENCE ONLY — OTHER EQUIPMENT contains source identity only; its procedural body " \
                "was removed and cannot support an instruction for this job."
     OTHER_EQUIPMENT_PREFIX = "REFERENCE ONLY — OTHER EQUIPMENT:"
+    # Generation constraint for a turn whose equipment is not confirmed.
+    # It does not enter .apply. A pin is retrieval focus, not identity.
+    IDENTITY_UNKNOWN_REFERENCE = "identity_unknown_reference"
+    APPLICABILITY_BLOCK = <<~TEXT.strip.freeze
+      # UNKNOWN EQUIPMENT IDENTITY / APPLICABILITY
+      identity_unknown_reference
+
+      The current equipment identity is not confirmed. Retrieved material may belong to equipment other than the unit being serviced.
+
+      Treat it as indicative reference evidence only. It does not prove that a procedure applies to the current equipment.
+
+      Do not present a procedure, terminal assignment, adjustment, wiring instruction, parameter or menu value, component mapping, part name, code, setting, reset sequence, learning sequence, or manufacturer-specific safety requirement from another manual as confirmed for the current equipment.
+
+      When using such evidence, name the referenced manual and equipment, keep the citation and page, and state that applicability to the current job is not confirmed. Keep that reference separate from generic observational checks.
+
+      Offer at least one observational check that only looks, reads, or listens. Do not bridge, short, disconnect, adjust, or invent a value.
+
+      A pinned document is retrieval focus. It does not confirm equipment identity.
+    TEXT
     IDENTITY_FIELDS = %w[canonical_name original_filename section_identity].freeze
     # A catalog fact is a query signal. It is not a needle. Controller is the
     # same: F8 may store it, and this list stays user and photo.
@@ -38,6 +57,26 @@ module Rag
 
       identity = coerce_identity(identity_or_episode)
       identity.is_a?(EquipmentIdentity) && identity.known?
+    end
+
+    # Nil when identity is confirmed, malformed, or not an equipment identity.
+    # Unknown and absent identity select the reference mode. A pin is not an input.
+    def self.applicability_mode(identity)
+      identity_unknown_reference?(identity) ? IDENTITY_UNKNOWN_REFERENCE : nil
+    end
+
+    def self.applicability_block_for(mode)
+      return APPLICABILITY_BLOCK if mode.to_s == IDENTITY_UNKNOWN_REFERENCE
+
+      nil
+    end
+
+    def self.identity_unknown_reference?(identity)
+      return false if identity == :malformed
+      return true if identity.nil?
+      return !identity.known? if identity.is_a?(EquipmentIdentity)
+
+      false
     end
 
     def self.needles(identity_or_episode)

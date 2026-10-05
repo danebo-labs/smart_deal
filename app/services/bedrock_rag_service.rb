@@ -207,6 +207,7 @@ class BedrockRagService
     begin
       @retrieval_denied = false
       @open_retrieval_outcome_reason = nil
+      @evidence_applicability = nil
       explicit_uris = Array(entity_s3_uris).map(&:to_s).compact_blank.uniq
       if explicit_uris.any?
         decision = Rag::KnowledgeScopePolicy.authorize_retrieval_set(explicit_uris, viewer_account: @account)
@@ -240,6 +241,7 @@ class BedrockRagService
       ))
         return scoped
       end
+      @evidence_applicability = Rag::DocumentIdentityScope::IDENTITY_UNKNOWN_REFERENCE
       @open_retrieval_outcome_reason = "identity_unknown"
 
       # Apply the technician pin when the caller forced it, or when the query
@@ -692,6 +694,7 @@ class BedrockRagService
                                      correlation_id:, session_context: nil, output_channel: nil,
                                      equipment_identity: :omit, raw_question: nil, context_truncated: nil)
     Thread.current[:document_identity_scope] = nil
+    @evidence_applicability = nil
     identity = resolved_equipment_identity(episode, equipment_identity)
     return nil unless identity == :malformed || (identity.respond_to?(:known?) && identity.known?)
     if identity == :malformed || !Rag::DocumentIdentityScopeFlag.enabled?
@@ -1496,6 +1499,8 @@ class BedrockRagService
     base = "#{base}\n\n#{safety_directive}" if safety_directive.present?
     base = "#{base}\n\n#{prompt_completeness}" if prompt_completeness.present?
     base = "#{base}\n\n#{visual_directive}" if visual_directive.present?
+    applicability = Rag::DocumentIdentityScope.applicability_block_for(@evidence_applicability)
+    base = "#{base}\n\n#{applicability}" if applicability
     base = "#{base}\n\n#{OUTPUT_FORMAT_PLACEHOLDER}\n" if output_contract
     base
   end
@@ -2393,6 +2398,12 @@ class BedrockRagService
     }
   end
 
+  def open_retrieval_applicability(outcome_reason)
+    return nil unless outcome_reason.to_s == "identity_unknown"
+
+    Rag::DocumentIdentityScope::IDENTITY_UNKNOWN_REFERENCE
+  end
+
   def log_open_retrieval(correlation_id, outcome_reason: nil)
     Rails.logger.info(
       "[OPEN_RETRIEVAL] account_id=#{@account&.id} " \
@@ -2405,7 +2416,8 @@ class BedrockRagService
       rejected_result_count: @rejected_result_count.to_i,
       retrieval_denied_reason: @retrieval_denied_reason,
       result: @retrieval_denied ? "deny" : "ok",
-      outcome_reason: outcome_reason
+      outcome_reason: outcome_reason,
+      evidence_applicability: open_retrieval_applicability(outcome_reason)
     )
   rescue StandardError => e
     Rails.logger.warn("BedrockRagService: open retrieval log failed — #{e.class}")

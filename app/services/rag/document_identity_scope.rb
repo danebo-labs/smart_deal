@@ -32,19 +32,19 @@ module Rag
     IDENTITY_UNKNOWN_REFERENCE = "identity_unknown_reference"
     APPLICABILITY_BLOCK = <<~TEXT.strip.freeze
       # UNKNOWN EQUIPMENT IDENTITY / APPLICABILITY
+      prompt_version: f1cal.r2.a1
       identity_unknown_reference
 
-      The current equipment identity is not confirmed. Retrieved material may belong to equipment other than the unit being serviced.
+      The equipment in service is not confirmed. Retrieved text may describe other equipment. A pin is retrieval focus, not identity.
 
-      Treat it as indicative reference evidence only. It does not prove that a procedure applies to the current equipment.
+      Answer in this order:
+      1. One short sentence: the retrieved material is not confirmed for this equipment.
+      2. Two or three checks that only look, read, or listen. Allowed topics: car position, doors, people inside, the text on a display, sounds, lights, and the nameplate. A nameplate reading alone does not answer a fault or a rescue.
+      3. One question asking what text is printed on the nameplate or display. Do not suggest a model name.
 
-      Do not present a procedure, terminal assignment, adjustment, wiring instruction, parameter or menu value, component mapping, part name, code, setting, reset sequence, learning sequence, or manufacturer-specific safety requirement from another manual as confirmed for the current equipment.
+      Those checks must not name a selector, a terminal, a wait, inspection mode, a power cut, a reset, or a code meaning. Do not refuse those actions by naming them. Do not paste another manual's steps.
 
-      When using such evidence, name the referenced manual and equipment, keep the citation and page, and state that applicability to the current job is not confirmed. Keep that reference separate from generic observational checks.
-
-      Offer at least one observational check that only looks, reads, or listens. Do not bridge, short, disconnect, adjust, or invent a value.
-
-      A pinned document is retrieval focus. It does not confirm equipment identity.
+      Only if the technician asked what a manual says or what a displayed code means, add one sentence and do not add another sentence about that manual: printed manual name, page, [n], the single asked fact, and the exact words "no está confirmado" or "not confirmed".
     TEXT
     IDENTITY_FIELDS = %w[canonical_name original_filename section_identity].freeze
     # A catalog fact is a query signal. It is not a needle. Controller is the

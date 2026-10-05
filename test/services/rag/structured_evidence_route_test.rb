@@ -2557,11 +2557,11 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
   def assert_applicability_contract(prompt)
     assert_includes prompt, "identity_unknown_reference"
     assert_includes prompt, "UNKNOWN EQUIPMENT IDENTITY"
-    assert_includes prompt, "does not prove that a procedure applies"
-    assert_includes prompt, "terminal assignment"
-    assert_includes prompt, "applicability to the current job is not confirmed"
-    assert_includes prompt, "observational check"
-    assert_includes prompt, "does not confirm equipment identity"
+    assert_includes prompt, "prompt_version: f1cal.r2.a1"
+    assert_includes prompt, "not confirmed for this equipment"
+    assert_includes prompt, "A pin is retrieval focus, not identity."
+    assert_includes prompt, "look, read, or listen"
+    assert_includes prompt, "Do not paste another manual's steps."
     assert prompt.index("identity_unknown_reference") < prompt.index("Cite every supported technical claim")
   end
 

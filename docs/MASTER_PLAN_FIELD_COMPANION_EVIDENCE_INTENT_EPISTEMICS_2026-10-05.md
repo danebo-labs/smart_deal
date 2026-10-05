@@ -2,7 +2,7 @@
 
 Date: 2026-10-05
 
-Status: execution plan, reconciled with the Opus review (`APPROVE WITH CHANGES`). No implementation has been performed. F0 is not authorized.
+Status: execution plan, reconciled with the Opus review (`APPROVE WITH CHANGES`). Phase contracts are frozen. Later implementation detail is refined only from verified findings of the previous phase. No implementation has been performed. F0 is not authorized.
 
 Baseline investigated: `104bb55d0f1a6c42c6a1745eae0331ecce83dff0`
 
@@ -400,6 +400,85 @@ The executor must keep all of these green:
 
 ## 7. Execution phases
 
+### Adaptive phase execution protocol
+
+The target architecture and the phase boundaries F0–F5 are frozen. The implementation detail of a later phase is not static.
+
+Each completed phase feeds its verified findings into the next phase before that next phase is executed.
+
+For every phase `Fn`:
+
+1. Execute only the phase a human has authorized. This document does not authorize F0.
+2. Produce the section 9 evidence bundle and record the exact commit SHA.
+3. Record actual files and code paths, tests and eval results, observed behavior, telemetry, unexpected constraints, regressions, assumptions confirmed or invalidated, cost / latency / call counts, and deferred issues.
+4. Append a concise `Execution findings — Fn` section to this same file, after section 15, in phase order. Do not open a second plan.
+5. Reconcile `Fn+1` against those findings and against repository HEAD.
+6. Update the existing `Fn+1` section only where implementation detail became more precise.
+7. Replace the `Fn+1` prompt template with an execution prompt built from the findings.
+8. Stop. `Fn+1` may be presented for authorization. It may not be started.
+
+F5 has no next phase. Its findings appendix is the release handoff. The block under F5 is that handoff template, not a prompt for F6. It does not create F6.
+
+There are no execution findings yet.
+
+The blocks titled **Prompt template for the next phase** are templates. They are not frozen execution prompts. F0 has no completed predecessor. Its execution prompt is written only after an explicit `GO F0`, from this plan, the investigation baseline, and repository HEAD at authorization time. The template under F0 is the seed for F1, not the order to execute F0.
+
+After any phase has completed, do not execute the next phase from its original template. Regenerate that prompt from:
+
+```text
+Master Plan target contract
++
+all verified findings from completed phases
++
+current repository HEAD
+```
+
+The execution prompt includes, when applicable:
+
+```text
+Previous phase SHA:
+Previous phase verdict:
+Confirmed architecture/contracts:
+Actual code paths discovered:
+New trace signals available:
+Behavioral findings:
+Regression findings:
+Cost/call-count findings:
+Assumptions invalidated:
+Deferred items:
+Constraints for this phase:
+```
+
+The code commit boundary of each phase stays the boundary already written in that phase. The findings appendix and the `Fn+1` reconciliation are a docs-only update to this file after that SHA exists. That update does not authorize the next phase.
+
+A completed phase may refine the next phase without a new architecture cycle only to:
+
+- correct file or method ownership;
+- replace an assumption with an observed code fact;
+- add or remove a test justified by the previous phase;
+- use a trace field the previous phase introduced;
+- remove work the previous phase proved unnecessary;
+- clarify an invariant without changing it;
+- make an existing implementation step more precise.
+
+The purpose is progressive precision, not progressive scope expansion.
+
+STOP before the next phase, and do not absorb the change into that phase, if findings would require:
+
+- a new phase;
+- a new database or table;
+- a new session architecture;
+- a new top-level move;
+- a new LLM call;
+- a new retrieval call;
+- changing a frozen invariant;
+- changing known-identity `DocumentIdentityScope` semantics;
+- activating F1b;
+- broadening product scope;
+- redesigning an already approved contract.
+
+F1b remains the pre-specified stop in F1. Findings that the unknown-identity eval failed do not authorize F1b. They wait for a separate human yes or no.
+
 ### F0 — Causal trace, truthful, bounded, fail-open
 
 **Goal**
@@ -623,7 +702,7 @@ Bounded fields on the existing events listed above. No new event family. No per-
 
 One commit limited to truthful trace fields, the cohort read of those fields, and the canonical trace doc.
 
-**Prompt for next phase considerations**
+**Prompt template for the next phase**
 
 > Implement only unknown-identity applicability on `DocumentIdentityScope`, without changing `.apply` and without a new policy class. Use the new trace fields to prove the mode and the query. Do not touch known-identity scope, pins, ranking, goal, or photo promotion.
 
@@ -724,7 +803,7 @@ Zero new LLM calls. Zero added retrieval calls. Native citations on that lane ar
 
 One commit for the unknown-identity mode on `DocumentIdentityScope`, prompt injection, the trace field, and tests. F1b is not part of that commit unless the gate has failed and the human has said yes, in which case F1b is its own later commit.
 
-**Prompt for next phase considerations**
+**Prompt template for the next phase**
 
 > Implement explicit free-standing fault-code absence, unmatched-negation preservation, and current-turn precedence. Do not change applicability, `.apply`, route enums, or recall behavior. Do not start F1b from F2.
 
@@ -818,7 +897,7 @@ The accepted span logs as `absent` or as `negate` with `ignored(no_slot)` when t
 
 One commit for absence semantics, composition defense, current-turn precedence, and tests.
 
-**Prompt for next phase considerations**
+**Prompt template for the next phase**
 
 > Add a meta subtype, a deterministic photo-offer response, and deterministic active-case recall. Reuse episode and photo state. Add no retrieval or response generation. Do not undo current-turn precedence.
 
@@ -904,7 +983,7 @@ Emit `meta_kind` on `turn_interpreter`. `generation_mode=meta` plus that subtype
 
 One commit for the meta subtype, the local presenter, locales, and tests.
 
-**Prompt for next phase considerations**
+**Prompt template for the next phase**
 
 > Tighten the epistemic contract and unify active and same-turn photo field classification in one commit. Preserve current-turn precedence. Do not change identity promotion, photo relevance, or `DocumentIdentityScope`.
 
@@ -1008,7 +1087,7 @@ Keep current photo, identity, and scope events. Emit `prompt_version` for the co
 
 One commit for photo field classification, the prompt budget, the epistemic rules, and tests. Not a headings-only commit.
 
-**Prompt for next phase considerations**
+**Prompt template for the next phase**
 
 > Run orthogonal hidden-state journeys and update only canonical docs. Deterministic tests check generation input. The real-model eval checks semantic output. Any failing behavior returns to its owning phase. Do not patch examples in the certification phase.
 
@@ -1059,7 +1138,7 @@ This planning document still does not deploy. Executing F5 later still does not 
 - `docs/ACTIVE_ARCHITECTURE.md`
 - `docs/SESSION_AND_RETRIEVAL.md`
 - `docs/PILOT_TRACEABILITY.md`
-- this master plan only for execution-result appendices, not to change the target design silently
+- this master plan, to append `Execution findings — F5` only. F5 does not create a next phase and does not change target contracts. Earlier phases append their own findings and may precise the next phase under the adaptive protocol.
 
 **Exact behavior**
 
@@ -1110,9 +1189,9 @@ The export must reconstruct the F0 chain, including `meta_kind`, applicability m
 
 One commit for certification fixtures, the harness, and canonical docs. No production behavior patch belongs here.
 
-**Prompt for next phase considerations**
+**Prompt template for the release handoff**
 
-> Stop. Present the phase evidence, costs, latency, remaining risks, and exact SHAs for architectural review. Do not deploy and do not start a new feature without the human release decision.
+> Stop. Append `Execution findings — F5`. Present the phase evidence, costs, latency, remaining risks, and exact SHAs for architectural review. Do not deploy, do not open F6, and do not start a new feature without the human release decision.
 
 ## 8. Orthogonal hidden-state journeys
 
@@ -1258,8 +1337,13 @@ For every phase, Grok produces a machine-readable evidence bundle under `tmp/` (
 
 8. **Stop conditions**
    - Any tenant leak, stale write, goal contamination, false identity promotion, known-scope reopening, foreign procedure applicability, unexplained call increase, unattributed `kb_retrieve`, or trace-dependent behavior stops execution.
-   - A failed unknown-identity semantic eval stops for the F1b human yes/no. It does not open a new design.
+   - A failed unknown-identity semantic eval stops for the F1b human yes/no. It does not open a new design and it does not authorize F1b.
    - Fix other failures in the owning phase and rerun from that phase. Do not add a phrase-specific patch in F5.
+
+9. **Close the phase**
+   - Append `Execution findings — Fn` to this file from the evidence bundle and the commit SHA.
+   - Reconcile the next phase under the adaptive protocol in section 7.
+   - Stop before executing it. The prewritten prompt template is not the execution prompt once a previous phase has completed.
 
 ## 10. Traceability decision: small extension
 
@@ -1385,7 +1469,7 @@ The work is complete only when Danebo can begin with unknown equipment, retrieve
 
 That is the smallest common correction for the observed class of failures.
 
-This reconciliation does not authorize F0. The next step is a human review and an explicit `GO F0`.
+This reconciliation does not authorize F0. The next step is a human review and an explicit `GO F0`. Each later phase needs its own authorization after the previous phase's findings have been written into this file.
 
 ## 15. Opus reconciliation
 

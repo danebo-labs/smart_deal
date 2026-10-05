@@ -1233,7 +1233,7 @@ module Rag
           [
             DocumentIdentityScope.applicability_block_for(@evidence_applicability),
             citation_instructions(chunks.size),
-            verbatim_directive,
+            verbatim_directive_for_applicability,
             (exact_lookup_directive if @exact_lookup),
             (multi_family_directive if ambiguity&.ambiguous?)
           ].compact.join("\n\n")
@@ -1365,6 +1365,19 @@ module Rag
       DIRECTIVE
     end
 
+    # Unknown identity already forbids pasting another manual's procedure.
+    # The label-verbatim contract would tell the model to copy that procedure
+    # anyway. Known identity keeps the contract.
+    def verbatim_directive_for_applicability
+      return nil if unknown_reference?
+
+      verbatim_directive
+    end
+
+    def unknown_reference?
+      @evidence_applicability == DocumentIdentityScope::IDENTITY_UNKNOWN_REFERENCE
+    end
+
     def citation_instructions(chunk_count)
       <<~INSTRUCTIONS.strip
         Cite every supported technical claim with one or more evidence markers in
@@ -1409,8 +1422,10 @@ module Rag
       language = { es: "Spanish", en: "English" }[locale]
       return nil unless language
 
-      "Write the explanatory prose in #{language}, regardless of the evidence " \
-        "language. Never translate or rewrite a value reproduced verbatim from the evidence."
+      prose = "Write the explanatory prose in #{language}, regardless of the evidence language."
+      return prose if unknown_reference?
+
+      "#{prose} Never translate or rewrite a value reproduced verbatim from the evidence."
     end
 
     def citation_shaped(chunks)

@@ -712,7 +712,7 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_equal off_service.calls.size, on_service.calls.size
   end
 
-  test "the generated prompt scopes language and requires verbatim documented values" do
+  test "unknown identity keeps citations and does not require verbatim foreign text" do
     rag_service = FakeRagService.new([ neighbor_chunk ])
     generator = FakeGenerator.new("\"SERIE CAB. EXT. CERRADA\" [1]")
 
@@ -725,9 +725,13 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
 
     assert_equal :answered, outcome.status
     assert_includes prompt, "Write the explanatory prose in Spanish"
-    assert_includes prompt, "Never translate or rewrite a value reproduced verbatim"
-    assert_match(/reproduce that\s+string exactly as printed/, prompt)
-    assert_includes prompt, "same characters, casing, abbreviations, internal"
+    assert_includes prompt, "identity_unknown_reference"
+    assert_includes prompt, "Only if the technician asked"
+    assert_includes prompt, "Cite every supported technical claim"
+    assert_not_includes prompt, "Never translate or rewrite a value reproduced verbatim"
+    assert_no_match(/reproduce that\s+string exactly as printed/, prompt)
+    assert_equal 1, prompt.scan("UNKNOWN EQUIPMENT IDENTITY").size
+    assert_equal 1, prompt.scan("Cite every supported technical claim").size
     assert_no_match MANUFACTURER_PATTERN, prompt
     assert_no_match(/reproduce that\s+string exactly as printed/,
       BedrockRagService.load_generation_prompt_template)
@@ -1315,6 +1319,10 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     end
     assert_not_includes prompt, "identity_unknown_reference"
     assert_not_includes prompt, "UNKNOWN EQUIPMENT IDENTITY"
+    assert_match(/reproduce that\s+string exactly as printed/, prompt)
+    assert_includes prompt, "Never translate or rewrite a value reproduced verbatim"
+    assert_equal 1, prompt.scan(/reproduce that\s+string exactly as printed/).size
+    assert_equal 1, prompt.scan("Cite every supported technical claim").size
   end
 
   test "unknown identity marks retrieved evidence as reference without a second call" do
@@ -2562,7 +2570,12 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_includes prompt, "A pin is retrieval focus, not identity."
     assert_includes prompt, "look, read, or listen"
     assert_includes prompt, "Do not paste another manual's steps."
+    assert_includes prompt, "Only if the technician asked"
     assert prompt.index("identity_unknown_reference") < prompt.index("Cite every supported technical claim")
+    assert_no_match(/reproduce that\s+string exactly as printed/, prompt)
+    assert_not_includes prompt, "reproduced verbatim"
+    assert_equal 1, prompt.scan("UNKNOWN EQUIPMENT IDENTITY").size
+    assert_equal 1, prompt.scan("Cite every supported technical claim").size
   end
 
   def capture_structured_events

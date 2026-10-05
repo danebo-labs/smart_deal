@@ -734,7 +734,118 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     end
   end
 
+  test "an unmatched negate is traced as ignored and the composed query drops the turn" do
+    session = web_session
+    sentence = "No veo ningún código de falla"
+    seed_episode(
+      session,
+      goal: "queda pasado de nivel",
+      observations: [ { "text" => "pasa solo en planta 3", "correlation_id" => "seed" } ]
+    )
+    events = []
+    result = nil
+    with_owner do
+      events = pilot_events_from do
+        result = ask(session, sentence, client(perception("report", assertions: [ assertion(sentence, "negate") ])), now: @now + 2.minutes)
+      end
+    end
+
+    interpreter = events.find { |event| event["event"] == "turn_interpreter" }
+    turn = events.find { |event| event["event"] == "field_companion_turn" }
+    entry = interpreter["interpreter_assertions"].sole
+    assert_equal "report", interpreter["interpreter_move"]
+    assert_includes entry, "negate:negate::ignored(no_slot):"
+    assert_includes entry, sentence
+    assert_not_includes entry, "absent"
+    assert_equal Digest::SHA256.hexdigest(sentence), turn["original_sha256"]
+    assert_equal Digest::SHA256.hexdigest(result.composed.to_s), turn["effective_sha256"]
+    assert_not_equal turn["original_sha256"], turn["effective_sha256"]
+    assert_includes turn["query_components"], "current_turn:dropped"
+    assert_not_includes Array(turn["episode_fields_changed"]), "fault_code"
+    assert turn["state_before_sha256"].present?
+    assert turn["state_after_sha256"].present?
+    assert_not_equal turn["state_before_sha256"], turn["state_after_sha256"]
+    assert_nil session.reload.active_episode.dig("facts", "fault_code")
+    assert_not_includes result.composed.to_s, "código"
+    assert_not turn.key?("meta_kind")
+    assert_not interpreter.key?("meta_kind")
+  end
+
+  test "a photo offer stays meta and the trace does not invent meta_kind" do
+    session = web_session
+    text = "Tengo una foto, ¿te sirve?"
+    seed_episode(session, goal: "ajustar frenos")
+    events = []
+    result = nil
+    with_owner do
+      events = pilot_events_from do
+        result = ask(session, text, client(perception("meta")))
+      end
+    end
+
+    interpreter = events.find { |event| event["event"] == "turn_interpreter" }
+    turn = events.find { |event| event["event"] == "field_companion_turn" }
+    assert_equal "meta", result.understanding.decision
+    assert_nil result.composed
+    assert_equal "meta", interpreter["interpreter_move"]
+    assert_equal [], turn["episode_fields_changed"]
+    assert_equal turn["state_before_sha256"], turn["state_after_sha256"]
+    assert_includes turn["query_components"], "current_turn:dropped"
+    assert_equal "ep_seed", session.reload.active_episode["episode_id"]
+    assert_equal "ajustar frenos", session.active_episode.dig("goal", "text")
+    assert_not turn.key?("meta_kind")
+    assert_not interpreter.key?("meta_kind")
+    assert_not events.any? { |event| event["event"] == "kb_retrieve" }
+  end
+
+  test "an assistant turn does not store the reply under the query digests" do
+    session = web_session
+    events = []
+    with_owner do
+      seed_episode(session, goal: "ajustar frenos")
+      events = pilot_events_from do
+        session.record_assistant_turn!(
+          "Revisé el freno.",
+          user_id: @user.id,
+          correlation_id: "asst-1",
+          expected_episode_id: session.live_episode_id
+        )
+      end
+    end
+
+    turn = events.find { |event| event["event"] == "field_companion_turn" }
+    assert_equal "assistant", turn["result"]
+    assert_not turn.key?("original_sha256")
+    assert_not turn.key?("effective_sha256")
+    assert_not turn.key?("query_components")
+    assert turn.key?("state_before_sha256")
+    assert turn.key?("state_after_sha256")
+  end
+
+  test "a trace failure does not roll back the technician turn" do
+    session = web_session
+    sentence = "la puerta no cierra"
+    original = Rag::CausalTrace.method(:assertion_tokens)
+    Rag::CausalTrace.define_singleton_method(:assertion_tokens) { |*| raise "trace down" }
+    with_owner do
+      ask(session, sentence, client(perception("report", observations: [ sentence ])))
+    end
+    assert_equal sentence, session.reload.conversation_history.last["content"]
+    assert_equal sentence, session.active_episode.dig("goal", "text")
+  ensure
+    Rag::CausalTrace.define_singleton_method(:assertion_tokens) { |*args, **kwargs| original.call(*args, **kwargs) } if original
+  end
+
   private
+
+  def pilot_events_from
+    log = capture_logs { yield }
+    log.lines.filter_map { |line|
+      next unless line.include?("[PILOT_USAGE]")
+
+      JSON.parse(line.split("[PILOT_USAGE] ", 2).last)
+    }
+  end
 
   def with_owner(&block)
     isolate_env("FIELD_COMPANION_EPISODE_ENABLED", "true") do

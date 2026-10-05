@@ -36,6 +36,13 @@ class SessionContextBuilder
   def self.build(session, active_photo_context: nil)
     return "" if session.nil?
 
+    trace = { truncated: false }
+    text = assemble_context(session, active_photo_context, trace)
+    mark_context_truncated(session, trace[:truncated])
+    text
+  end
+
+  def self.assemble_context(session, active_photo_context, trace)
     parts = []
 
     if focused_for_prompt?(session)
@@ -72,29 +79,42 @@ class SessionContextBuilder
     end
 
     result = parts.join("\n\n")
-    problem = field_problem_block(session)
+    problem = field_problem_block(session, trace: trace)
     photo = active_photo_block(session, active_photo_context)
     if photo.empty?
       if problem.empty?
-        result.length > MAX_CONTEXT_CHARS ? result[0, MAX_CONTEXT_CHARS] : result
+        if result.length > MAX_CONTEXT_CHARS
+          trace[:truncated] = true
+          result[0, MAX_CONTEXT_CHARS]
+        else
+          result
+        end
       else
-        compose_with_problem(problem, result)
+        compose_with_problem(problem, result, trace)
       end
     else
-      compose_with_photo(problem, photo, result)
+      compose_with_photo(problem, photo, result, trace)
     end
   end
+  private_class_method :assemble_context
+
+  def self.mark_context_truncated(session, truncated)
+    return unless session.respond_to?(:context_truncated=)
+
+    session.context_truncated = truncated == true
+  end
+  private_class_method :mark_context_truncated
 
   # Technician-stated job state for the current web episode.
   # Empty unless both companion flags are on and the episode is still current.
   # The block never includes pinned documents, summaries, or retrieved text.
-  def self.field_problem_block(session)
+  def self.field_problem_block(session, trace: nil)
     return "" unless field_problem_readable?(session)
 
     episode = Rag::ActiveEpisode.parse(session.active_episode)
     return "" if episode.blank?
 
-    render_field_problem(episode)
+    render_field_problem(episode, trace)
   end
 
   # Returns S3 URIs of all active entities (= pinned docs) that have a known source_uri.
@@ -205,28 +225,44 @@ class SessionContextBuilder
   end
   private_class_method :active_photo_block
 
-  def self.compose_with_photo(problem, photo, rest)
+  def self.compose_with_photo(problem, photo, rest, trace = nil)
     head = [ problem, photo ].compact_blank.join("\n\n")
-    return head[0, MAX_CONTEXT_CHARS] if rest.empty?
+    if rest.empty?
+      trace[:truncated] = true if trace && head.length > MAX_CONTEXT_CHARS
+      return head[0, MAX_CONTEXT_CHARS]
+    end
 
     budget = MAX_CONTEXT_CHARS - head.length - 2
-    return head[0, MAX_CONTEXT_CHARS] if budget <= 0
+    if budget <= 0
+      trace[:truncated] = true if trace && (rest.present? || head.length > MAX_CONTEXT_CHARS)
+      return head[0, MAX_CONTEXT_CHARS]
+    end
 
-    trimmed = rest.length > budget ? rest[0, budget] : rest
+    if rest.length > budget
+      trace[:truncated] = true if trace
+      trimmed = rest[0, budget]
+    else
+      trimmed = rest
+    end
     trimmed.empty? ? head : "#{head}\n\n#{trimmed}"
   end
   private_class_method :compose_with_photo
 
-  def self.compose_with_problem(problem, rest)
+  def self.compose_with_problem(problem, rest, trace = nil)
     return problem if rest.empty?
 
     budget = MAX_CONTEXT_CHARS - problem.length - 2
-    trimmed = rest.length > budget ? rest[0, budget] : rest
+    if rest.length > budget
+      trace[:truncated] = true if trace
+      trimmed = rest[0, budget]
+    else
+      trimmed = rest
+    end
     trimmed.empty? ? problem : "#{problem}\n\n#{trimmed}"
   end
   private_class_method :compose_with_problem
 
-  def self.render_field_problem(episode)
+  def self.render_field_problem(episode, trace = nil)
     lines = []
     %w[manufacturer model controller fault_code].each { |key| append_user_fact(lines, episode, key) }
     identifiers = identifier_line(episode)
@@ -234,7 +270,7 @@ class SessionContextBuilder
     photo = photo_line(episode)
     lines << { rank: 2, text: photo } if photo
     conflict_lines(episode).each { |line| lines << { rank: 3, text: line } }
-    fit_problem(episode.goal&.[]("text").to_s.squish, lines)
+    fit_problem(episode.goal&.[]("text").to_s.squish, lines, trace)
   end
   private_class_method :render_field_problem
 
@@ -304,7 +340,7 @@ class SessionContextBuilder
   # Shorten the goal first. Then drop identifiers, photo reads, conflicts, and
   # known facts. Confirmation lines, the header, and the footer stay until
   # nothing else can move. The result is never longer than 400 characters.
-  def self.fit_problem(goal, lines)
+  def self.fit_problem(goal, lines, trace = nil)
     goal = goal.to_s
     working = lines.reject { |line| line[:text].blank? }
 
@@ -312,6 +348,7 @@ class SessionContextBuilder
       text = assemble_problem(goal, working)
       return text if text.length <= MAX_PROBLEM_CHARS
 
+      trace[:truncated] = true if trace
       if goal.present?
         overflow = text.length - MAX_PROBLEM_CHARS
         goal = overflow >= goal.length ? "" : goal[0, goal.length - overflow].rstrip

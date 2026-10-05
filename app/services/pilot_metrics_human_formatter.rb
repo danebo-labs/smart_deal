@@ -106,9 +106,28 @@ class PilotMetricsHumanFormatter
   def turn_card(row)
     trace = row[:field_companion]
     lines = [ "TURN #{row[:correlation_id]}" ]
+    lines << "question=#{row[:question]}" if row[:question].present?
     lines << "session=#{row[:conversation_session_id]}" if row[:conversation_session_id]
     lines << "episode=#{trace[:episode_id]}" if trace[:episode_id]
     lines << "turn=#{trace[:interpreter_move]}" if trace[:interpreter_move]
+    if trace[:interpreter_assertions].present?
+      lines << "assertions:"
+      Array(trace[:interpreter_assertions]).each { |item| lines << "  #{item}" }
+    end
+    if trace[:field_rejections].present?
+      lines << "field_rejections=#{Array(trace[:field_rejections]).join(",")}"
+    end
+    if trace.key?(:episode_fields_changed)
+      lines << "episode_fields_changed=#{Array(trace[:episode_fields_changed]).join(",")}"
+    end
+    lines << "state_before_sha256=#{trace[:state_before_sha256]}" if trace[:state_before_sha256]
+    lines << "state_after_sha256=#{trace[:state_after_sha256]}" if trace[:state_after_sha256]
+    lines << "original_sha256=#{trace[:original_sha256]}" if trace[:original_sha256]
+    lines << "effective_sha256=#{trace[:effective_sha256]}" if trace[:effective_sha256]
+    if trace[:query_components].present?
+      lines << "query_components:"
+      Array(trace[:query_components]).each { |item| lines << "  #{item}" }
+    end
     if trace[:goal]
       lines << "goal:"
       lines << "  text: #{trace[:goal][:text]}"
@@ -151,6 +170,9 @@ class PilotMetricsHumanFormatter
       lines << "  reason=#{scope[:outcome_reason]}" if scope[:outcome_reason]
       lines << "  needles=#{Array(scope[:scope_needles]).join(',')}" if scope[:scope_needles]
       lines << "  conflict=#{scope[:identity_conflict]}" unless scope[:identity_conflict].nil?
+      if scope.key?(:results_count) || scope.key?(:contexts_delivered)
+        lines << "  retrieved=#{scope[:results_count]} delivered=#{scope[:contexts_delivered]}"
+      end
     end
     if trace[:open_retrieval]
       open = trace[:open_retrieval]
@@ -165,8 +187,23 @@ class PilotMetricsHumanFormatter
       lines << "stale_case_write: writer=#{stale[:writer]} expected=#{stale[:expected_episode_id]} live=#{stale[:episode_id]}"
     end
     lines << "execution_path: #{Array(trace[:execution_path]).join(' -> ')}" if trace[:execution_path].present?
+    if trace[:generation_context].present?
+      lines << "generation_context:"
+      Array(trace[:generation_context]).each { |item| lines << "  #{item}" }
+    end
+    lines << "generation_prompt_chars=#{trace[:generation_prompt_chars]}" unless trace[:generation_prompt_chars].nil?
+    lines << "context_truncated=#{trace[:context_truncated]}" unless trace[:context_truncated].nil?
     lines << "citations=#{row[:citations_count]}" unless row[:citations_count].nil?
     lines << "generation_mode=#{row[:generation_mode]}" if row[:generation_mode]
+    Array(row[:llm_calls]).each do |call|
+      bits = [ "model=#{call[:model]}" ]
+      bits << "in=#{call[:input_tokens]}" unless call[:input_tokens].nil?
+      bits << "out=#{call[:output_tokens]}" unless call[:output_tokens].nil?
+      bits << "source=#{call[:token_source]}" if call[:token_source]
+      bits << "latency_ms=#{call[:latency_ms]}" unless call[:latency_ms].nil?
+      lines << bits.join(" ")
+    end
+    lines << "answer=#{row[:answer_snippet]}" if row[:answer_snippet].present?
     lines.join("\n")
   end
 

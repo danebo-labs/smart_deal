@@ -783,6 +783,76 @@ class PilotMetricsReportTest < ActiveSupport::TestCase
     end
   end
 
+  test "a user-scoped cohort counts an attributed kb_retrieve and drops one without a user" do
+    file = Tempfile.new("pilot-retrieve")
+    file.puts("[PILOT_USAGE] #{JSON.generate({ event: "kb_retrieve", ts: @now.iso8601, account_id: accounts(:legacy).id, user_id: @a1.id, conversation_session_id: 9, correlation_id: "query:kept", results_count: 8, latency_ms: 12 })}")
+    file.puts("[PILOT_USAGE] #{JSON.generate({ event: "kb_retrieve", ts: @now.iso8601, account_id: accounts(:legacy).id, correlation_id: "query:dropped", results_count: 8, latency_ms: 12 })}")
+    file.puts("[PILOT_USAGE] #{JSON.generate({ event: "interaction_completed", ts: @now.iso8601, account_id: accounts(:legacy).id, user_id: @a1.id, conversation_session_id: 9, correlation_id: "query:kept", outcome: "answered", route: "text", generation_mode: "generative" })}")
+    file.flush
+
+    report = PilotMetricsReport.new(date: @date, usage_log_path: file.path, user_ids: [ @a1.id ]).as_json
+
+    assert_equal 1, report.dig(:technical_and_cost, :internal_calls, :kb_retrieve, :count)
+    row = report.dig(:interactions, :by_correlation).sole
+    assert_equal "generative", row[:generation_mode]
+    assert_equal 8, row.dig(:field_companion, :retrieval, :results_count)
+  ensure
+    file&.close!
+  end
+
+  test "interaction_completed generation_mode wins and a meta turn has no retrieval or response call" do
+    file = Tempfile.new("pilot-meta")
+    events = [
+      { event: "turn_interpreter", ts: @now.iso8601, account_id: accounts(:legacy).id, user_id: @a1.id, correlation_id: "query:meta", interpreter_move: "meta" },
+      { event: "field_companion_turn", ts: @now.iso8601, account_id: accounts(:legacy).id, user_id: @a1.id, correlation_id: "query:meta", result: "continued", episode_fields_changed: [], query_components: [ "current_turn:dropped" ] },
+      { event: "interaction_completed", ts: @now.iso8601, account_id: accounts(:legacy).id, user_id: @a1.id, correlation_id: "query:meta", outcome: "answered", route: "text", generation_mode: "meta" },
+      { event: "evidence_route", ts: @now.iso8601, account_id: accounts(:legacy).id, user_id: @a1.id, correlation_id: "query:structured", outcome: "answered", generation_mode: "structured" },
+      { event: "interaction_completed", ts: @now.iso8601, account_id: accounts(:legacy).id, user_id: @a1.id, correlation_id: "query:structured", outcome: "answered", route: "text" }
+    ]
+    events.each { |event| file.puts("[PILOT_USAGE] #{JSON.generate(event)}") }
+    file.flush
+
+    rows = PilotMetricsReport.new(date: @date, usage_log_path: file.path).as_json.dig(:interactions, :by_correlation)
+    meta = rows.find { |row| row[:correlation_id] == "query:meta" }
+    structured = rows.find { |row| row[:correlation_id] == "query:structured" }
+
+    assert_equal "meta", meta[:generation_mode]
+    assert_equal [], meta[:llm_calls]
+    assert_not_includes meta.dig(:field_companion, :execution_path), "kb_retrieve"
+    assert_includes meta.dig(:field_companion, :query_components), "current_turn:dropped"
+    assert_equal [], meta.dig(:field_companion, :episode_fields_changed)
+    assert_equal "structured", structured[:generation_mode]
+  ensure
+    file&.close!
+  end
+
+  test "scope counts and the generation manifest are copied only from emitted events" do
+    file = Tempfile.new("pilot-scope")
+    file.puts("[PILOT_USAGE] #{JSON.generate({
+      event: "document_identity_scope", ts: @now.iso8601, account_id: accounts(:legacy).id, user_id: @a1.id,
+      correlation_id: "query:scope", result: "no_compatible", results_count: 8, contexts_delivered: 0
+    })}")
+    file.puts("[PILOT_USAGE] #{JSON.generate({
+      event: "interaction_completed", ts: @now.iso8601, account_id: accounts(:legacy).id, user_id: @a1.id,
+      correlation_id: "query:scope", outcome: "answered", route: "text", generation_mode: "document_identity_scope",
+      generation_context: [ "photo_literal:mixed", "danebo_guidance:present" ], generation_prompt_chars: 40, context_truncated: false
+    })}")
+    file.flush
+
+    trace = PilotMetricsReport.new(date: @date, usage_log_path: file.path)
+      .as_json.dig(:interactions, :by_correlation).sole[:field_companion]
+
+    assert_equal 8, trace.dig(:document_identity_scope, :results_count)
+    assert_equal 0, trace.dig(:document_identity_scope, :contexts_delivered)
+    assert_equal [ "photo_literal:mixed", "danebo_guidance:present" ], trace[:generation_context]
+    assert_equal 40, trace[:generation_prompt_chars]
+    assert_equal false, trace[:context_truncated]
+    assert_not trace.key?(:evidence_applicability)
+    assert_not trace.key?(:meta_kind)
+  ensure
+    file&.close!
+  end
+
   private
 
   def create_call(user, route:, correlation_id:, model_id: "global.anthropic.claude-haiku-4-5-20251001-v1:0",

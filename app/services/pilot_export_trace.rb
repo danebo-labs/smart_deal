@@ -76,7 +76,14 @@ class PilotExportTrace
     )
     audit["question"] = question if question
     audit["answer"] = answer if answer
-    interaction["question"] = question if question && interaction["question"].to_s.strip.empty?
+    if turn&.key?("original_query")
+      raw = turn["original_query"].to_s.strip.presence
+      interaction["question"] = raw if raw
+    elsif turn
+      interaction.delete("question")
+    elsif question && interaction["question"].to_s.strip.empty?
+      interaction["question"] = question
+    end
     interaction["answer_snippet"] = answer if answer && interaction["answer_snippet"].to_s.strip.empty?
 
     if Array(audit["citations"]).empty?

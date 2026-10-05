@@ -124,6 +124,8 @@ module Rag
         force_entity_filter: false,
         number_of_results: RagRetrievalProfile::OPEN_RESULTS,
         account_id: @account_id,
+        user_id: @user_id,
+        conversation_session_id: @conversation_session_id,
         correlation_id: @correlation_id,
         route_taken: "context_evidence_route"
       )

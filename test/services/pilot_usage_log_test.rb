@@ -117,4 +117,31 @@ class PilotUsageLogTest < ActiveSupport::TestCase
   ensure
     PilotEvent.define_singleton_method(:insert!) { |*args, **kwargs| original.call(*args, **kwargs) }
   end
+
+  test "causal trace keys are kept and a long assertion span stays inside the array item limit" do
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+    token = "negate:negate::ignored(no_slot):No veo ningún código de falla"
+
+    PilotUsageLog.log(
+      "turn_interpreter",
+      interpreter_assertions: [ token ],
+      query_components: [ "current_turn:dropped" ],
+      generation_context: [ "photo_literal:mixed" ],
+      context_truncated: false,
+      meta_kind: nil,
+      evidence_applicability: nil
+    )
+
+    payload = JSON.parse(output.string.lines.find { |line| line.include?("[PILOT_USAGE]") }.split("[PILOT_USAGE] ", 2).last)
+    assert_equal [ "current_turn:dropped" ], payload["query_components"]
+    assert_equal [ "photo_literal:mixed" ], payload["generation_context"]
+    assert_equal false, payload["context_truncated"]
+    assert_not payload.key?("meta_kind")
+    assert_not payload.key?("evidence_applicability")
+    assert_equal [ token ], payload["interpreter_assertions"]
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
+  end
 end

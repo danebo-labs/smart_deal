@@ -86,6 +86,48 @@ class Rag::QueryComposerTest < ActiveSupport::TestCase
     assert_nil clarify
   end
 
+  test "a negate that consumes the turn is dropped while the prior goal stays in the query" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: @now)
+    episode.assign_goal!("queda pasado de nivel", correlation_id: "seed")
+    episode.append_observation!("pasa solo en planta 3", correlation_id: "seed")
+    sentence = "No veo ningún código de falla"
+    perception = report.with(
+      move: "report",
+      identities: [
+        Rag::TurnPerception::Identity.new(
+          span: sentence, act: "negate", kind: "negate", slot: nil,
+          value: sentence, source: nil, manufacturer: nil
+        )
+      ]
+    )
+
+    explained = Rag::QueryComposer.explain(
+      state: episode, turn: sentence, perception: perception, decision: decision_for("ready")
+    )
+
+    assert_includes explained[:query], "pasa solo en planta 3"
+    assert_includes explained[:query], "queda pasado de nivel"
+    assert_not_includes explained[:query], "código"
+    assert_includes explained[:components], "current_turn:dropped"
+    assert_includes explained[:components], "truncated:false"
+    assert_equal explained[:query], Rag::QueryComposer.call(
+      state: episode, turn: sentence, perception: perception, decision: decision_for("ready")
+    )
+  end
+
+  test "meta and clarify_first compose no query and mark the turn dropped" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: @now)
+    explained = Rag::QueryComposer.explain(
+      state: episode, turn: "Tengo una foto, ¿te sirve?", perception: report.with(move: "meta"),
+      decision: decision_for("meta")
+    )
+
+    assert_nil explained[:query]
+    assert_includes explained[:components], "current_turn:dropped"
+    assert_includes explained[:components], "observations:0"
+    assert_includes explained[:components], "truncated:false"
+  end
+
   private
 
   def episode_for(photo)

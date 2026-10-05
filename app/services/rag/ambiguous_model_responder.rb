@@ -59,7 +59,9 @@ module Rag
         entity_sources: @entity_sources,
         force_entity_filter: @force_entity_filter,
         number_of_results: RETRIEVAL_RESULTS,
-        account_id: @account&.id
+        account_id: @account&.id,
+        user_id: @user_id,
+        conversation_session_id: @conversation_session_id
       )
       retrieval_ms = elapsed_ms(retrieval_started)
       candidates = candidates_from(retrieval[:chunks])

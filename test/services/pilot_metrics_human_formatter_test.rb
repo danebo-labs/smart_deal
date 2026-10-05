@@ -104,6 +104,45 @@ class PilotMetricsHumanFormatterTest < ActiveSupport::TestCase
     assert_match(/goal:\n  text: No nivela en planta 3\n  source_correlation_id: query:new/, output)
     assert_match(/execution_path: turn_interpreter -> photo_continuity -> identity_promotion -> document_identity_scope -> interaction_completed/, output)
     assert_no_match(/open_retrieval/, output)
+    assert_no_match(/meta_kind/, output)
+    assert_no_match(/evidence_applicability/, output)
+    assert_no_match(/query_components/, output)
+  end
+
+  test "prints only the causal fields the turn actually emitted" do
+    report = full_report
+    report[:interactions][:by_correlation] = [
+      {
+        correlation_id: "query:trace",
+        citations_count: 0,
+        generation_mode: "meta",
+        llm_calls: [],
+        field_companion: {
+          interpreter_move: "meta",
+          interpreter_assertions: [ "negate:negate::ignored(no_slot):No veo ningún código de falla" ],
+          episode_fields_changed: [],
+          query_components: [ "current_turn:dropped", "truncated:false" ],
+          original_sha256: "a" * 64,
+          effective_sha256: "b" * 64,
+          document_identity_scope: { result: "no_compatible", results_count: 8, contexts_delivered: 0 },
+          generation_context: [ "photo_literal:mixed", "danebo_guidance:present" ],
+          generation_prompt_chars: 12,
+          context_truncated: false
+        }
+      }
+    ]
+
+    output = PilotMetricsHumanFormatter.new(report).to_s
+
+    assert_match(/negate:negate::ignored\(no_slot\):No veo ningún código de falla/, output)
+    assert_match(/episode_fields_changed=$/, output)
+    assert_match(/current_turn:dropped/, output)
+    assert_match(/retrieved=8 delivered=0/, output)
+    assert_match(/photo_literal:mixed/, output)
+    assert_match(/generation_mode=meta/, output)
+    assert_match(/citations=0/, output)
+    assert_no_match(/^model=/, output)
+    assert_no_match(/meta_kind/, output)
   end
 
   private

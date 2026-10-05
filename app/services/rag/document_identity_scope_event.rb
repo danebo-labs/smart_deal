@@ -5,7 +5,8 @@ module Rag
   # the Result the caller already has. Does not retrieve, generate, or decide.
   class DocumentIdentityScopeEvent
     def self.record(identity:, correlation_id:, applied: nil, status: nil, reason: nil,
-                    account_id: nil, user_id: nil, conversation_session_id: nil, episode: nil)
+                    account_id: nil, user_id: nil, conversation_session_id: nil, episode: nil,
+                    results_count: nil, contexts_delivered: nil)
       status = applied.status if applied && status.nil?
       reason = applied.reason if applied && reason.nil?
       result = status&.to_s.presence || reason&.to_s.presence
@@ -22,7 +23,9 @@ module Rag
         scope_needles: needles_of(identity),
         identity_conflict: conflict?(applied, reason),
         result: result,
-        outcome_reason: reason&.to_s.presence
+        outcome_reason: reason&.to_s.presence,
+        results_count: results_count,
+        contexts_delivered: contexts_delivered
       )
     rescue StandardError => error
       Rails.logger.warn("document_identity_scope telemetry failed #{error.class}")

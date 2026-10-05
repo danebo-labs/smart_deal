@@ -54,6 +54,30 @@ class PilotExportTraceTest < ActiveSupport::TestCase
     assert_equal 1, interaction["citations_count"]
   end
 
+  test "the cohort question is the raw turn and is not backfilled when capture is off" do
+    File.write(@source, <<~LOG)
+      [TURN_EVIDENCE] {"correlation_id":"query:raw","original_query_sha256":"abc","effective_query":"contexto compuesto"}
+      [RAG_QUALITY] {"correlation_id":"query:raw","question":"contexto compuesto"}
+      [TURN_EVIDENCE] {"correlation_id":"query:captured","original_query":"No veo ningún código de falla","effective_query":"contexto compuesto"}
+      [RAG_QUALITY] {"correlation_id":"query:captured","question":"contexto compuesto"}
+    LOG
+    report = {
+      "interactions" => {
+        "by_correlation" => [
+          { "correlation_id" => "query:raw", "question" => "contexto compuesto", "citations_count" => 0, "retrieved_chunks" => 0 },
+          { "correlation_id" => "query:captured", "question" => "contexto compuesto", "citations_count" => 0, "retrieved_chunks" => 0 }
+        ]
+      }
+    }
+
+    PilotExportTrace.apply!(report, @source)
+
+    raw = report.dig("interactions", "by_correlation").find { |row| row["correlation_id"] == "query:raw" }
+    captured = report.dig("interactions", "by_correlation").find { |row| row["correlation_id"] == "query:captured" }
+    assert_nil raw["question"]
+    assert_equal "No veo ningún código de falla", captured["question"]
+  end
+
   test "leaves the report unchanged when the trace file is missing" do
     report = report_with("query:none")
 

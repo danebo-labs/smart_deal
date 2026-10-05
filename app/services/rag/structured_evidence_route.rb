@@ -425,6 +425,7 @@ module Rag
           outcome_reason: (:uncited_prose if uncited_prose)
         }.compact
       }
+      attach_generation_trace!(result, prompt)
       Outcome.new(status: :answered, result: result)
     rescue BedrockRagService::BedrockServiceError => e
       Rails.logger.warn("Rag::StructuredEvidenceRoute: AWS path failed — #{e.message}")
@@ -476,11 +477,17 @@ module Rag
         Rails.logger.info(
           "[DOCUMENT_IDENTITY] #{ { status: "unavailable", reason: reason.to_s, path: "structured_evidence_route", fallback: false }.to_json }"
         )
-        log_document_identity_scope(identity, status: :unavailable, reason: reason)
+        log_document_identity_scope(
+          identity, status: :unavailable, reason: reason,
+          results_count: Array(chunks).size, contexts_delivered: 0
+        )
         return []
       end
       unless identity&.known? && DocumentIdentityScopeFlag.enabled?
-        log_document_identity_scope(identity, reason: :not_required)
+        log_document_identity_scope(
+          identity, reason: :not_required,
+          results_count: Array(chunks).size, contexts_delivered: Array(chunks).size
+        )
         return Array(chunks)
       end
 
@@ -500,7 +507,11 @@ module Rag
           path: "structured_evidence_route"
         }.to_json }"
       )
-      log_document_identity_scope(identity, applied: applied)
+      delivered = (applied.status == :no_compatible || applied.status == :unavailable) ? 0 : applied.chunks.size
+      log_document_identity_scope(
+        identity, applied: applied,
+        results_count: Array(chunks).size, contexts_delivered: delivered
+      )
       applied.chunks.each_with_index.map do |chunk, index|
         label = applied.labels[index]
         next chunk if label.blank?
@@ -509,7 +520,8 @@ module Rag
       end
     end
 
-    def log_document_identity_scope(identity, applied: nil, status: nil, reason: nil)
+    def log_document_identity_scope(identity, applied: nil, status: nil, reason: nil,
+                                    results_count: nil, contexts_delivered: nil)
       DocumentIdentityScopeEvent.record(
         identity: identity.is_a?(EquipmentIdentity) ? identity : nil,
         applied: applied,
@@ -519,7 +531,9 @@ module Rag
         account_id: @account_id,
         user_id: @user_id,
         conversation_session_id: @conversation_session_id,
-        episode: @episode
+        episode: @episode,
+        results_count: results_count,
+        contexts_delivered: contexts_delivered
       )
     end
 
@@ -633,6 +647,8 @@ module Rag
         force_entity_filter: force,
         number_of_results: number_of_results,
         account_id: @account_id,
+        user_id: @user_id,
+        conversation_session_id: @conversation_session_id,
         correlation_id: @correlation_id
       ).tap do
         @retrieval_report[:queries] << { text: text, number_of_results: number_of_results, force_entity_filter: force }
@@ -1496,7 +1512,23 @@ module Rag
           outcome_reason: reason
         }
       }
+      attach_generation_trace!(result, prompt)
       Outcome.new(status: :abstained, result: result)
+    end
+
+    def attach_generation_trace!(result, prompt)
+      return result if prompt.blank? || !result.is_a?(Hash)
+
+      result.merge!(Rag::CausalTrace.generation_fields(
+        text: prompt,
+        raw_turn: nil,
+        sent_question: @question,
+        truncated: false
+      ))
+      result
+    rescue StandardError => error
+      Rails.logger.warn("generation trace failed #{error.class}")
+      result
     end
 
     def log_route(expansions:, timings:, answer:, outcome:, prompt:, raw_answer:, reason: nil,

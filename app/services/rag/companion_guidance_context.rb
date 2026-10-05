@@ -42,7 +42,12 @@ module Rag
 
     def to_s
       text = [ instruction, turn_block ].compact_blank.join("\n\n")
-      text.length <= MAX_CHARS ? text : text[0, MAX_CHARS]
+      @context_truncated = text.length > MAX_CHARS
+      @context_truncated ? text[0, MAX_CHARS] : text
+    end
+
+    def context_truncated?
+      @context_truncated == true
     end
 
     # Accepted visual fields only. Identity text and reference-only manual

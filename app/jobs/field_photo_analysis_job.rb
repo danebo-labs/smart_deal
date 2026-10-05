@@ -43,7 +43,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
       correlation_id: args[:correlation_id],
       route: "visual_query",
       outcome: "failed",
-      original_query: args[:question],
+      original_query: args[:raw_question].nil? ? args[:question] : args[:raw_question],
       effective_query: args[:question],
       answer: I18n.with_locale(locale) { I18n.t("rag.photo_analysis_failed") }
     )
@@ -58,7 +58,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
 
   def perform(image_token:, image_sha256:, filename:, content_type:, account_id:, user_id: nil,
               conversation_session_id: nil, locale: nil, correlation_id: nil, field_photo_id: nil, question: nil,
-              continuity: nil, expected_episode_id: nil)
+              raw_question: nil, continuity: nil, expected_episode_id: nil)
+    @technician_text = raw_question.nil? ? question.to_s : raw_question.to_s
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     locale = locale.to_s.presence || I18n.default_locale.to_s
     correlation_id ||= "photo:#{SecureRandom.uuid}"
@@ -200,10 +201,14 @@ class FieldPhotoAnalysisJob < ApplicationJob
       correlation_id: correlation_id,
       outcome: delivered.fetch(:outcome),
       latency_ms: elapsed_ms(started_at),
-      original_query: question,
+      original_query: technician_question(question),
       effective_query: delivered[:effective_query] || question,
       answer: delivered[:answer],
       citations: delivered[:citations],
+      generation_mode: delivered[:generation_mode],
+      generation_context: delivered[:generation_context],
+      generation_prompt_chars: delivered[:generation_prompt_chars],
+      context_truncated: delivered[:context_truncated],
       photo: {
         "intent_source" => visual_context.visual_task&.dig("source"),
         "target_visible" => display_value[:target_visible]
@@ -271,10 +276,14 @@ class FieldPhotoAnalysisJob < ApplicationJob
       correlation_id: correlation_id,
       outcome: delivered.fetch(:outcome),
       latency_ms: elapsed_ms(started_at),
-      original_query: question,
+      original_query: technician_question(question),
       effective_query: delivered[:effective_query] || question,
       answer: delivered[:answer],
       citations: delivered[:citations],
+      generation_mode: delivered[:generation_mode],
+      generation_context: delivered[:generation_context],
+      generation_prompt_chars: delivered[:generation_prompt_chars],
+      context_truncated: delivered[:context_truncated],
       photo: { "target_visible" => value[:target_visible] }
     )
   end
@@ -298,7 +307,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
       correlation_id: correlation_id,
       outcome: "answered",
       latency_ms: elapsed_ms(started_at),
-      original_query: question,
+      original_query: technician_question(question),
       effective_query: question,
       answer: message
     )
@@ -461,7 +470,11 @@ class FieldPhotoAnalysisJob < ApplicationJob
       outcome: rag_answer[:failed] ? "failed" : photo_outcome(rag_answer[:answer]),
       answer: rag_answer[:answer],
       effective_query: rag_answer[:effective_query] || question,
-      citations: rag_answer[:retrieved_citations]
+      citations: rag_answer[:retrieved_citations],
+      generation_mode: rag_answer[:generation_mode],
+      generation_context: rag_answer[:generation_context],
+      generation_prompt_chars: rag_answer[:generation_prompt_chars],
+      context_truncated: rag_answer[:context_truncated]
     }
   end
 
@@ -488,7 +501,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
       session_context_snapshot: session_context_snapshot,
       entity_s3_uris_snapshot: entity_s3_uris_snapshot,
       retrieval_question: retrieval_question,
-      equipment_identity: equipment_identity
+      equipment_identity: equipment_identity,
+      raw_question: @technician_text
     ).call
     return nil unless result
 
@@ -500,7 +514,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
       correlation_id: correlation_id,
       route: "visual_query",
       route_taken: "photo_question_rag",
-      question_sha256: Digest::SHA256.hexdigest(question),
+      question_sha256: Digest::SHA256.hexdigest(technician_question(question)),
       generation_mode: result[:generation_mode],
       outcome: photo_outcome(result[:answer]),
       latency_ms: elapsed_ms(started_at)
@@ -629,7 +643,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
       stage: "expired",
       error_class: "PhotoUploadExpired",
       latency_ms: nil,
-      original_query: question,
+      original_query: technician_question(question),
       effective_query: question,
       answer: expired_answer
     )
@@ -642,6 +656,12 @@ class FieldPhotoAnalysisJob < ApplicationJob
     )
   end
 
+  def technician_question(question)
+    return @technician_text unless @technician_text.nil?
+
+    question.to_s
+  end
+
   def elapsed_ms(started_at)
     ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
   end
@@ -652,7 +672,9 @@ class FieldPhotoAnalysisJob < ApplicationJob
   def emit_interaction_completed(account_id:, user_id:, conversation_session_id:, correlation_id:,
                                  outcome:, latency_ms:, stage: nil, error_class: nil,
                                  original_query: nil, effective_query: nil, answer: nil,
-                                 citations: nil, photo: nil)
+                                 citations: nil, photo: nil, generation_mode: nil,
+                                 generation_context: nil, generation_prompt_chars: nil,
+                                 context_truncated: nil)
     PilotUsageLog.log(
       "interaction_completed",
       account_id: account_id,
@@ -663,7 +685,11 @@ class FieldPhotoAnalysisJob < ApplicationJob
       stage: stage,
       error_class: error_class,
       route: "visual_query",
-      latency_ms: latency_ms
+      latency_ms: latency_ms,
+      generation_mode: generation_mode,
+      generation_context: generation_context,
+      generation_prompt_chars: generation_prompt_chars,
+      context_truncated: context_truncated
     )
     chunk_ids, sources = Rag::TurnEvidence.evidence_from(citations)
     Rag::TurnEvidence.log(

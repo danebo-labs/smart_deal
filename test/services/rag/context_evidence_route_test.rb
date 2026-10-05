@@ -25,7 +25,7 @@ class Rag::ContextEvidenceRouteTest < ActiveSupport::TestCase
   end
 
   class RaisingRagService
-    def retrieve_chunks(*)
+    def retrieve_chunks(*, **)
       raise BedrockRagService::BedrockServiceError, "retrieve down"
     end
   end

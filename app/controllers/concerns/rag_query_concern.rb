@@ -32,6 +32,9 @@ module RagQueryConcern
                          :turn_understanding,
                          :equipment_identity_status,
                          :equipment_identity_reason,
+                         :generation_context,
+                         :generation_prompt_chars,
+                         :context_truncated,
                          keyword_init: true)
 
   # Circled numerals for ① ② ③ lists in table conversion and WA legacy callers.
@@ -138,7 +141,7 @@ module RagQueryConcern
                         correlation_id: nil, field_photo_id: nil, conversation_session_id: nil,
                         episode_turn: nil, conversational_turn_analysis: nil,
                         apply_photo_continuity: true, retrieval_question: nil,
-                        equipment_identity: :omit)
+                        equipment_identity: :omit, raw_question: nil, context_truncated: nil)
     question  = question.to_s.strip
     images    = Array(images).compact
     documents = Array(documents).compact
@@ -236,9 +239,11 @@ module RagQueryConcern
     document_uids           = documents.map { SecureRandom.uuid }
     identity_kwargs = equipment_identity.equal?(:omit) ? {} : { equipment_identity: equipment_identity }
 
+    technician_question = raw_question.nil? ? question : raw_question.to_s
     result = QueryOrchestratorService.new(
       effective_question,
-      raw_question:        question,
+      raw_question:        technician_question,
+      context_truncated:   context_truncated,
       images:              images,
       documents:           documents,
       document_uids:       document_uids,
@@ -310,7 +315,10 @@ module RagQueryConcern
       effective_question:       effective_question,
       turn_understanding:       understanding,
       equipment_identity_status: result[:equipment_identity_status],
-      equipment_identity_reason: result[:equipment_identity_reason]
+      equipment_identity_reason: result[:equipment_identity_reason],
+      generation_context: result[:generation_context],
+      generation_prompt_chars: result[:generation_prompt_chars],
+      context_truncated: result[:context_truncated]
     )
   rescue ImageCompressionService::CompressionError => e
     log_rag_error("Image compression", e)

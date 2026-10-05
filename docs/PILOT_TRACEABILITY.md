@@ -115,6 +115,25 @@ The card can show session, episode, interpreter move, goal text and
 open retrieval, kept and rejected chunks, stale writes, the path, citation
 count, and generation mode.
 
+One correlation can also carry the causal chain when those events emitted it:
+
+| Signal | Event | Meaning |
+|---|---|---|
+| `interpreter_assertions` | `turn_interpreter` | `act:kind:slot:applied\|ignored(reason):span`. A cut span ends with `:truncated` |
+| `episode_fields_changed`, `state_before_sha256`, `state_after_sha256` | `field_companion_turn` | Real `changed_fields` and canonical episode digests. Not a snapshot |
+| `query_components`, `original_sha256`, `effective_sha256` | `field_companion_turn` for a technician turn | `original_sha256` is the raw turn. `effective_sha256` is the retrieval query actually used |
+| `results_count`, `contexts_delivered` | `document_identity_scope` | Chunks retrieved before scope, and chunks placed in the generation prompt. `0` is kept |
+| `generation_mode`, `generation_context`, `generation_prompt_chars`, `context_truncated` | `interaction_completed` | Mode of the route that ran, and a token manifest of the prompt actually sent |
+| `user_id`, `conversation_session_id` | `kb_retrieve` | Passed by the caller. A user-scoped cohort still drops an event that has no `user_id` |
+
+`field_companion_turn` with `result=assistant` does not store `original_sha256` or `effective_sha256`. The reply stays `TURN_EVIDENCE.answer_sha256`.
+
+`TURN_EVIDENCE.original_query` is what the technician said on the web, worker, and photo-question lanes. The composed retrieval string stays `effective_query`. With `PILOT_AUDIT_CAPTURE` off, the raw text keys stay absent and the original hash is still the raw turn. The cohort question is not backfilled from the composed query in that case.
+
+`generation_mode` on `interaction_completed` is the route that ran: `generative` for managed RetrieveAndGenerate, `document_identity_scope`, `meta`, `clarify_first`, `structured_evidence_route`, or the mode the photo service returned. Scope status and route distinguish shared strings. `meta_kind` and `evidence_applicability` are allowlisted and not emitted.
+
+`llm_calls` on the same correlation still carry model, tokens, latency, and `token_source`. The card prints them only when the row has them.
+
 `dossier.html` is unchanged by this contract.
 
 ## Streams, modes, and artifacts
@@ -129,7 +148,7 @@ Leave it there. Do not add it to the export.
 
 | Mode | What it is |
 |---|---|
-| Normal | `[PILOT_USAGE]` plus `pilot_events`. No raw prompt, no image, no full history |
+| Normal | `[PILOT_USAGE]` plus `pilot_events`. No raw prompt, no image, no full history. `kb_retrieve` carries the caller's `user_id` and `conversation_session_id` when that caller has them |
 | Forensic | `PILOT_AUDIT_CAPTURE=true` writes `[PILOT_AUDIT]` and the raw question on `[TURN_EVIDENCE]`. Not copied into `pilot_events` |
 | Temporary | `R1A_PROBE` records filter and chunk decisions the gate already computed. It does not change retrieval |
 

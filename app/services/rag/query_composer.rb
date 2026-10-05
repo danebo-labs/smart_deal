@@ -4,10 +4,18 @@ module Rag
   # Retrieval string from the episode after the reducer. The model does not write it.
   class QueryComposer
     def self.call(state:, turn:, perception:, decision:, active_photo_context: nil)
-      new(
+      explain(
         state: state, turn: turn, perception: perception, decision: decision,
         active_photo_context: active_photo_context
-      ).call
+      )[:query]
+    end
+
+    def self.explain(state:, turn:, perception:, decision:, active_photo_context: nil)
+      composer = new(
+        state: state, turn: turn, perception: perception, decision: decision,
+        active_photo_context: active_photo_context
+      )
+      { query: composer.call, components: composer.components }
     end
 
     def initialize(state:, turn:, perception:, decision:, active_photo_context: nil)
@@ -16,22 +24,49 @@ module Rag
       @perception = perception
       @decision = decision
       @active_photo_context = active_photo_context
+      @components = nil
     end
 
+    attr_reader :components
+
     def call
-      return nil if @decision.nil? || %w[meta clarify_first].include?(@decision.decision)
+      if idle?
+        @components = safe_components { CausalTrace.idle_query_components }
+        return nil
+      end
 
       parts = []
-      push(parts, current_turn)
-      push(parts, fact_value("fault_code"))
-      push(parts, fact_value("controller"))
-      push(parts, fact_value("model"))
-      identifier_values.each { |value| push(parts, value) }
-      push(parts, fact_value("manufacturer"))
-      observations.each { |text| push(parts, text) }
-      photo_terms.each { |term| push(parts, term) }
-      push(parts, goal_text)
-      fit(parts)
+      roles = []
+      fault_code = fact_value("fault_code")
+      controller = fact_value("controller")
+      model = fact_value("model")
+      identifier_list = identifier_values
+      manufacturer = fact_value("manufacturer")
+      observation_list = observations
+      photo_list = photo_terms
+      goal = goal_text
+      push_role(parts, roles, current_turn, :current_turn)
+      push_role(parts, roles, fault_code, :identity)
+      push_role(parts, roles, controller, :identity)
+      push_role(parts, roles, model, :identity)
+      identifier_list.each { |value| push_role(parts, roles, value, :identifier) }
+      push_role(parts, roles, manufacturer, :identity)
+      observation_list.each { |text| push_role(parts, roles, text, :observation) }
+      photo_list.each { |term| push_role(parts, roles, term, :photo) }
+      push_role(parts, roles, goal, :goal)
+      query = fit(parts, roles)
+      @components = safe_components {
+        component_tokens(
+          parts, roles,
+          identity_values: [ fault_code, controller, model, manufacturer ].compact,
+          identifier_values: identifier_list,
+          observation_values: observation_list,
+          photo_values: photo_list,
+          goal_value: goal,
+          truncated: @truncated
+        )
+      }
+      query
     end
 
     private
@@ -103,6 +138,10 @@ module Rag
       }
     end
 
+    def idle?
+      @decision.nil? || %w[meta clarify_first].include?(@decision.decision)
+    end
+
     def push(parts, text)
       label = FollowupQueryRewriter.normalize_label(text)
       return if label.blank?
@@ -111,12 +150,53 @@ module Rag
       parts << text.to_s.squish
     end
 
-    def fit(parts)
+    def push_role(parts, roles, text, role)
+      before = parts.length
+      push(parts, text)
+      roles << role if parts.length > before
+    end
+
+    def fit(parts, roles)
+      @truncated = false
       while parts.any? && parts.join(" ").length > FollowupQueryRewriter::MAX_COMPOSED_CHARS
         parts.pop
+        roles.pop
+        @truncated = true
       end
       joined = parts.join(" ").squish
       joined.presence
+    end
+
+    def component_tokens(parts, roles, identity_values:, identifier_values:, observation_values:, photo_values:, goal_value:, truncated:)
+      labels = parts.map { |part| FollowupQueryRewriter.normalize_label(part) }
+      turn_index = roles.index(:current_turn)
+      current = if turn_index.nil?
+        "dropped"
+      elsif labels[turn_index] == FollowupQueryRewriter.normalize_label(@turn)
+        "full"
+      else
+        "partial"
+      end
+      CausalTrace.query_components(
+        current_turn: current,
+        identity: included?(labels, identity_values),
+        identifiers: included?(labels, identifier_values),
+        observations: Array(observation_values).count { |value| labels.include?(FollowupQueryRewriter.normalize_label(value)) },
+        photo: included?(labels, photo_values),
+        goal: included?(labels, [ goal_value ]),
+        truncated: truncated
+      )
+    end
+
+    def included?(labels, values)
+      Array(values).any? { |value| labels.include?(FollowupQueryRewriter.normalize_label(value)) }
+    end
+
+    def safe_components
+      yield
+    rescue StandardError => error
+      Rails.logger.warn("query component trace failed #{error.class}")
+      nil
     end
   end
 end

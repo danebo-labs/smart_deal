@@ -47,7 +47,7 @@ module Rag
     ].freeze
     PLANT_IDENTIFIER_PATTERN = /\b[A-Z]{4,}\s+\d{2,}\b/
 
-    def initialize(question:, evidence_value:, session:, account:, user_id:, correlation_id:, locale:, field_photo_id: nil, accepted_observation: nil, session_context_snapshot: nil, entity_s3_uris_snapshot: nil, retrieval_question: nil, equipment_identity: nil)
+    def initialize(question:, evidence_value:, session:, account:, user_id:, correlation_id:, locale:, field_photo_id: nil, accepted_observation: nil, session_context_snapshot: nil, entity_s3_uris_snapshot: nil, retrieval_question: nil, equipment_identity: nil, raw_question: nil)
       @question = question.to_s.strip
       @evidence = evidence_value.to_h.deep_symbolize_keys
       @session = session
@@ -61,6 +61,8 @@ module Rag
       @entity_s3_uris_snapshot = entity_s3_uris_snapshot
       @retrieval_question = retrieval_question.to_s.strip.presence
       @equipment_identity = equipment_identity
+      @raw_question = raw_question
+      @evidence_truncated = false
     end
 
     attr_reader :equipment_identity, :retrieval_question
@@ -73,10 +75,13 @@ module Rag
       return unavailable_photo_lookup(reason: :missing_identity_snapshot) if missing_required_identity_snapshot?
 
       input = retrieval_input
+      context = merged_session_context
       result = execute_rag_query(
         input,
+        raw_question: @raw_question,
+        context_truncated: context_was_truncated?,
         retrieval_question: (@retrieval_question.present? ? input : nil),
-        session_context: merged_session_context,
+        session_context: context,
         entity_s3_uris:  turn_entity_s3_uris,
         account:         @account,
         user_id:         @user_id,
@@ -110,7 +115,10 @@ module Rag
         provenance_segments: segments,
         retrieved_citations: result.retrieved_citations,
         effective_query: result.effective_question,
-        generation_mode: result.generation_mode
+        generation_mode: result.generation_mode,
+        generation_context: result.generation_context,
+        generation_prompt_chars: result.generation_prompt_chars,
+        context_truncated: result.context_truncated
       }
     end
 
@@ -259,7 +267,14 @@ module Rag
           "- Condition: #{@evidence[:condition] || UNKNOWN}"
         ]
       )
-      lines.join("\n").truncate(EVIDENCE_BLOCK_MAX_CHARS, omission: "")
+      body = lines.join("\n")
+      @evidence_truncated = body.length > EVIDENCE_BLOCK_MAX_CHARS
+      body.truncate(EVIDENCE_BLOCK_MAX_CHARS, omission: "")
+    end
+
+    def context_was_truncated?
+      session_truncated = @session.respond_to?(:context_truncated) && @session.context_truncated == true
+      session_truncated || @evidence_truncated == true
     end
 
     def hidden_target_line

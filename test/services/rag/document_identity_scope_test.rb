@@ -1213,10 +1213,11 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     generator.define_singleton_method(:query) { |_prompt, **| "Sin procedimiento de este equipo." }
     service.define_singleton_method(:document_identity_generator) { generator }
     events = []
+    result = nil
 
     with_flag("true") do
       events = capture_pilot_events do
-        service.send(
+        result = service.send(
           :document_identity_scope_result,
           "no nivela en planta 3",
           episode: orona_known_episode,
@@ -1240,7 +1241,16 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_includes scope["identity_after"], "model:PBCM-V3:photo"
     assert_equal "ep-orona", scope["episode_id"]
     assert_equal "query:scope", scope["correlation_id"]
+    assert_equal 1, scope["results_count"]
+    assert_equal 0, scope["contexts_delivered"]
+    assert_includes result[:generation_context], "danebo_guidance:present"
+    assert_includes result[:generation_context], "photo_literal:absent"
+    assert_includes result[:generation_context], "photo_interpretation:absent"
+    assert result[:generation_prompt_chars].positive?
+    assert_not result.key?(:evidence_applicability)
+    assert_not result.key?(:meta_kind)
     assert_not_includes JSON.generate(scope), secret
+    assert_not_includes JSON.generate(result[:generation_context]), secret
   end
 
   test "unknown identity open retrieval records identity_unknown and skips a required scope" do

@@ -15,7 +15,7 @@ class ConversationSession < ApplicationRecord
   DOCUMENT_FOCUS_KEYS = %w[added_at display_name kb_document_id source_uri].freeze
   PHOTO_PENDING_SLOTS = %w[manufacturer model].freeze
 
-  attr_accessor :turn_active_photo_context
+  attr_accessor :turn_active_photo_context, :turn_causal, :context_truncated
 
   def self.media_type_for(document_or_uri)
     source = document_or_uri.respond_to?(:s3_key) ? document_or_uri.s3_key : document_or_uri
@@ -169,6 +169,7 @@ class ConversationSession < ApplicationRecord
 
   def record_legacy_user_turn!(content, user_id:, correlation_id:, selection_turn:, now:)
     result = nil
+    self.turn_causal = nil
     with_lock do
       stored_episode = active_episode
       result = Rag::ActiveEpisodeTurn.call(
@@ -190,6 +191,7 @@ class ConversationSession < ApplicationRecord
           conversation_session_id: id
         }
       )
+      remember_turn_causal!(stored_episode, result.state)
       persist_user_turn!(stored_episode, result, content, user_id, correlation_id, now)
     end
     log_field_companion_turn(result, content, correlation_id: correlation_id, user_id: user_id)
@@ -208,6 +210,7 @@ class ConversationSession < ApplicationRecord
     result = nil
     dropped = false
     stale_event = nil
+    self.turn_causal = nil
     with_lock do
       current_id = live_episode_id
       expected = expected_episode_id.presence
@@ -229,13 +232,15 @@ class ConversationSession < ApplicationRecord
         next
       end
 
+      stored_episode = active_episode
       result = Rag::ActiveEpisodeTurn.apply_assistant(
-        state: active_episode,
+        state: stored_episode,
         text: content.to_s,
         now: Time.current,
         correlation_id: correlation_id,
         pending_question: pending_question
       )
+      remember_turn_causal!(stored_episode, result.state)
       history = conversation_history.last(MAX_HISTORY - 1)
       history << history_message("assistant", content, user_id: user_id, correlation_id: correlation_id, focus_ids: focus_ids)
       attrs = { conversation_history: history }
@@ -293,12 +298,14 @@ class ConversationSession < ApplicationRecord
         history << history_message("assistant", content, user_id: user_id, correlation_id: correlation_id)
         update!(conversation_history: history)
       else
+        stored_episode = active_episode
         result = Rag::ActiveEpisodeTurn.apply_assistant(
-          state: active_episode,
+          state: stored_episode,
           text: content.to_s,
           now: Time.current,
           correlation_id: correlation_id
         )
+        remember_turn_causal!(stored_episode, result.state)
         history = conversation_history.last(MAX_HISTORY - 1)
         history << history_message("assistant", content, user_id: user_id, correlation_id: correlation_id)
         attrs = { conversation_history: history }
@@ -815,6 +822,7 @@ class ConversationSession < ApplicationRecord
   end
 
   def record_owner_turn!(content, user_id:, correlation_id:, now:, locale:, interpreter_client:)
+    self.turn_causal = nil
     turn = Rag::TurnText.truncate(content)
     if duplicate_user_correlation?(correlation_id)
       return duplicate_owner_result(turn)
@@ -876,6 +884,7 @@ class ConversationSession < ApplicationRecord
       locale: locale,
       relevant_photo: photo_context.relevant?
     )
+    before_episode = base.fork
     working = if perception.move == "new_work" || base.blank?
       Rag::ActiveEpisode.open(correlation_id: correlation_id, now: now)
     else
@@ -892,10 +901,12 @@ class ConversationSession < ApplicationRecord
       return apply_owner_fallback!(turn, correlation_id, user_id, now, locale, focus, "episode_budget_refused")
     end
 
-    query = Rag::QueryComposer.call(
+    explained = Rag::QueryComposer.explain(
       state: working, turn: turn, perception: perception, decision: decision,
       active_photo_context: photo_context
     )
+    query = explained[:query]
+    remember_turn_causal!(before_episode, payload, components: explained[:components])
     decision = decision.with(retrieval_query: query, owns_query: query.present? && decision.performs_retrieval?)
     self.turn_active_photo_context = if photo_context.matches?(working.active_photo&.dig("field_photo_id"))
       photo_context
@@ -906,7 +917,7 @@ class ConversationSession < ApplicationRecord
       reason: perception.move,
       state: payload,
       composed: query,
-      fields_changed: [],
+      fields_changed: Rag::ActiveEpisodeTurn.changed_fields(before_episode, working),
       understanding: decision
     )
     persist_user_turn!(stored, result, turn, user_id, correlation_id, now)
@@ -928,6 +939,7 @@ class ConversationSession < ApplicationRecord
       locale: locale
     )
     decision = decision.with(fallback: true)
+    remember_turn_causal!(stored, stored)
     result = Rag::ActiveEpisodeTurn::Result.new(
       decision: :continued,
       reason: status.to_s,
@@ -941,6 +953,7 @@ class ConversationSession < ApplicationRecord
   end
 
   def duplicate_owner_result(turn)
+    remember_turn_causal!(active_episode, active_episode)
     Rag::ActiveEpisodeTurn::Result.new(
       decision: :continued,
       reason: "duplicate_correlation",
@@ -1021,6 +1034,7 @@ class ConversationSession < ApplicationRecord
 
   def log_turn_interpreter(interpreted, result, correlation_id, user_id, photo_status)
     perception = interpreted.perception
+    assertions = interpreter_assertion_tokens(interpreted, result)
     before_state = result&.state
     goal = before_state.is_a?(Hash) ? before_state["goal"] : nil
     goal = goal.is_a?(Hash) ? goal : {}
@@ -1044,6 +1058,7 @@ class ConversationSession < ApplicationRecord
       schema_version: Rag::TurnPerception::SCHEMA_VERSION,
       catalog_fingerprint: Rag::TurnInterpreter.catalog_fingerprint,
       interpreter_move: perception&.move,
+      interpreter_assertions: assertions,
       field_rejections: perception&.field_rejections,
       catalog_disagreement: perception&.catalog_disagreements,
       pending_question_type: result&.understanding&.pending_subject,
@@ -1630,12 +1645,13 @@ class ConversationSession < ApplicationRecord
     episode.clear_pending!
   end
 
-  # Shadow does not change the text sent to the orchestrator, so both digests
-  # are of that original turn. composed_chars records the unused composition.
+  # original_sha256 is the technician turn. effective_sha256 is the retrieval
+  # query actually used. An assistant reply is not a query, so those digests
+  # stay off that event. The reply hash remains TURN_EVIDENCE.answer_sha256.
   def log_field_companion_turn(result, content, correlation_id:, user_id:)
-    digest = Digest::SHA256.hexdigest(content.to_s)
-    PilotUsageLog.log(
-      "field_companion_turn",
+    causal = turn_causal.is_a?(Hash) ? turn_causal : {}
+    self.turn_causal = nil
+    fields = {
       account_id: account_id,
       user_id: user_id,
       conversation_session_id: id,
@@ -1643,14 +1659,62 @@ class ConversationSession < ApplicationRecord
       route: "field_companion",
       result: result.decision.to_s,
       outcome_reason: result.reason,
-      episode_id: result.state["episode_id"],
+      episode_id: result.state.is_a?(Hash) ? result.state["episode_id"] : nil,
       episode_decision: result.decision.to_s,
       episode_fields_changed: result.fields_changed,
-      pending_question_type: result.state.dig("pending_question", "type"),
+      pending_question_type: result.state.is_a?(Hash) ? result.state.dig("pending_question", "type") : nil,
       composed_chars: result.composed&.length,
-      original_sha256: digest,
-      effective_sha256: digest
+      state_before_sha256: causal[:before],
+      state_after_sha256: causal[:after]
+    }
+    unless result.decision.to_s == "assistant"
+      raw = content.to_s
+      fields[:original_sha256] = Digest::SHA256.hexdigest(raw)
+      fields[:effective_sha256] = Digest::SHA256.hexdigest(effective_retrieval_text(result, raw))
+      fields[:query_components] = causal[:components] if causal[:components]
+    end
+    PilotUsageLog.log("field_companion_turn", **fields)
+  rescue StandardError => error
+    Rails.logger.warn("field_companion_turn telemetry failed #{error.class}")
+  end
+
+  def interpreter_assertion_tokens(interpreted, result)
+    Rag::CausalTrace.assertion_tokens(
+      interpreted.perception,
+      result&.understanding,
+      fallback: interpreted.fallback || result&.understanding&.fallback || false
     )
+  rescue StandardError => error
+    Rails.logger.warn("interpreter assertion trace failed #{error.class}")
+    nil
+  end
+
+  def remember_turn_causal!(before, after, components: nil)
+    self.turn_causal = {
+      before: episode_digest(before),
+      after: episode_digest(after),
+      components: components
+    }
+  rescue StandardError => error
+    Rails.logger.warn("turn causal trace failed #{error.class}")
+    self.turn_causal = nil
+  end
+
+  def episode_digest(episode)
+    source = episode.is_a?(Rag::ActiveEpisode) ? episode.fork : episode
+    parsed = source.is_a?(Rag::ActiveEpisode) ? source : Rag::ActiveEpisode.parse(source)
+    parsed = Rag::ActiveEpisode.new if parsed.nil?
+    Digest::SHA256.hexdigest(JSON.generate(canonicalize_episode(parsed.to_h)))
+  end
+
+  def effective_retrieval_text(result, raw)
+    decision = result.understanding&.decision.to_s
+    return "" if %w[meta clarify_first].include?(decision)
+
+    composed = result.composed
+    return composed if composed.present?
+
+    raw.to_s
   end
 
   def pinned_entity_type(kb_doc)

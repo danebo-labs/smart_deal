@@ -758,6 +758,82 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     set_photo_question_flag(nil)
   end
 
+  test "worker turn evidence keeps the raw technician text out of the composed query" do
+    transmitted = "Sin procedimiento de este equipo."
+    raw = "No veo ningún código de falla"
+    composed = "queda pasado de nivel"
+    original = Rag::PhotoQuestionAnswerService.method(:new)
+    seen = nil
+    Rag::PhotoQuestionAnswerService.define_singleton_method(:new) do |**kwargs|
+      seen = kwargs
+      service = Object.new
+      service.define_singleton_method(:call) do
+        {
+          answer: transmitted,
+          citations: [],
+          retrieved_citations: [],
+          effective_query: composed,
+          generation_mode: "document_identity_scope"
+        }
+      end
+      service
+    end
+    set_photo_question_flag("true")
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+
+    with_analysis_service(result: analysis_result) do
+      FieldPhotoAnalysisJob.perform_now(**job_args.merge(question: composed, raw_question: raw))
+    end
+    hidden = turn_evidence_payloads(output).sole
+    assert_equal raw, seen[:raw_question]
+    assert_equal composed, seen[:question]
+    assert_equal Digest::SHA256.hexdigest(raw), hidden["original_query_sha256"]
+    assert_equal Digest::SHA256.hexdigest(composed), hidden["effective_query_sha256"]
+    assert_not hidden.key?("original_query")
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
+    Rag::PhotoQuestionAnswerService.define_singleton_method(:new) { |**kwargs| original.call(**kwargs) } if original
+    set_photo_question_flag(nil)
+  end
+
+  test "worker turn evidence stores the raw technician text when audit capture is on" do
+    raw = "No veo ningún código de falla"
+    composed = "queda pasado de nivel"
+    original = Rag::PhotoQuestionAnswerService.method(:new)
+    Rag::PhotoQuestionAnswerService.define_singleton_method(:new) do |**|
+      service = Object.new
+      service.define_singleton_method(:call) do
+        { answer: "ok", citations: [], retrieved_citations: [], effective_query: composed, generation_mode: "generative" }
+      end
+      service
+    end
+    set_photo_question_flag("true")
+    previous = ENV["PILOT_AUDIT_CAPTURE"]
+    ENV["PILOT_AUDIT_CAPTURE"] = "true"
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+
+    with_analysis_service(result: analysis_result) do
+      FieldPhotoAnalysisJob.perform_now(**job_args.merge(question: composed, raw_question: raw))
+    end
+
+    captured = turn_evidence_payloads(output).sole
+    assert_equal raw, captured["original_query"]
+    assert_equal composed, captured["effective_query"]
+  ensure
+    if previous.nil?
+      ENV.delete("PILOT_AUDIT_CAPTURE")
+    else
+      ENV["PILOT_AUDIT_CAPTURE"] = previous
+    end
+    Rails.logger.stop_broadcasting_to(logger) if logger
+    Rag::PhotoQuestionAnswerService.define_singleton_method(:new) { |**kwargs| original.call(**kwargs) } if original
+    set_photo_question_flag(nil)
+  end
+
   test "a vision failure logs turn evidence for the transmitted error text" do
     output = StringIO.new
     logger = ActiveSupport::Logger.new(output)

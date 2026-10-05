@@ -187,7 +187,8 @@ class BedrockRagService
   def query(question, session_id: nil, custom_config: {}, response_locale: nil, session_context: nil,
             entity_s3_uris: [], entity_sources: [], output_channel: nil, force_entity_filter: false,
             auto_scope_filter: false, account_id: nil, user_id: nil, conversation_session_id: nil,
-            correlation_id: nil, include_diagnostics: false, episode: nil, equipment_identity: :omit)
+            correlation_id: nil, include_diagnostics: false, episode: nil, equipment_identity: :omit,
+            raw_question: nil, context_truncated: nil)
     unless @knowledge_base_id
       error_msg = 'Knowledge Base ID not configured. Please set BEDROCK_KNOWLEDGE_BASE_ID environment variable or configure in Rails credentials.'
       Rails.logger.error(error_msg)
@@ -233,7 +234,9 @@ class BedrockRagService
         account_id: attribution[:account_id],
         user_id: user_id,
         conversation_session_id: conversation_session_id,
-        correlation_id: correlation_id
+        correlation_id: correlation_id,
+        raw_question: raw_question,
+        context_truncated: context_truncated
       ))
         return scoped
       end
@@ -543,6 +546,13 @@ class BedrockRagService
           attribution_dropped: citation_attribution.dropped_segments
         }
       end
+      attach_generation_trace!(
+        result,
+        config.dig(:generation_configuration, :prompt_template, :text_prompt_template),
+        raw_turn: raw_question,
+        sent_question: question,
+        truncated: context_truncated
+      )
       result
     rescue Aws::BedrockAgentRuntime::Errors::ServiceError => e
       Rails.logger.error("Bedrock RAG error: #{e.message}")
@@ -553,7 +563,8 @@ class BedrockRagService
 
   def retrieve_chunks(question, entity_s3_uris: [], entity_sources: [],
                       force_entity_filter: false, number_of_results: nil,
-                      account_id: nil, correlation_id: nil, route_taken: nil)
+                      account_id: nil, user_id: nil, conversation_session_id: nil,
+                      correlation_id: nil, route_taken: nil)
     unless @knowledge_base_id
       raise MissingKnowledgeBaseError, "Knowledge Base ID not configured"
     end
@@ -616,7 +627,10 @@ class BedrockRagService
     elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
     PilotUsageLog.log(
       "kb_retrieve",
-      account_id: account_id, correlation_id: correlation_id,
+      account_id: account_id,
+      user_id: user_id,
+      conversation_session_id: conversation_session_id,
+      correlation_id: correlation_id,
       route: "retrieve_only", route_taken: route_taken || "retrieve_only",
       latency_ms: elapsed_ms, result: "ok",
       results_count: chunks.size, filter_applied: apply_filter,
@@ -676,7 +690,7 @@ class BedrockRagService
   def document_identity_scope_result(question, episode:, response_locale:, entity_s3_uris:, entity_sources:,
                                      force_entity_filter:, account_id:, user_id:, conversation_session_id:,
                                      correlation_id:, session_context: nil, output_channel: nil,
-                                     equipment_identity: :omit)
+                                     equipment_identity: :omit, raw_question: nil, context_truncated: nil)
     Thread.current[:document_identity_scope] = nil
     identity = resolved_equipment_identity(episode, equipment_identity)
     return nil unless identity == :malformed || (identity.respond_to?(:known?) && identity.known?)
@@ -708,6 +722,8 @@ class BedrockRagService
       force_entity_filter: force_entity_filter,
       number_of_results: number_of_results,
       account_id: account_id,
+      user_id: user_id,
+      conversation_session_id: conversation_session_id,
       correlation_id: correlation_id
     )
     if retrieval[:retrieval].to_s == DENY_RETRIEVAL
@@ -717,6 +733,7 @@ class BedrockRagService
     original = Array(retrieval[:chunks])
     applied = Rag::DocumentIdentityScope.apply(original, identity, focus_uris: entity_s3_uris)
     record_document_identity_scope(original, applied, path: "document_identity")
+    delivered_chunks = applied.status == :scoped ? applied.chunks.size : 0
     Rag::DocumentIdentityScopeEvent.record(
       identity: identity,
       applied: applied,
@@ -724,7 +741,9 @@ class BedrockRagService
       account_id: account_id,
       user_id: user_id,
       conversation_session_id: conversation_session_id,
-      episode: episode
+      episode: episode,
+      results_count: original.size,
+      contexts_delivered: delivered_chunks
     )
     if applied.status == :unavailable
       return identity_closed_result(
@@ -756,6 +775,7 @@ class BedrockRagService
         output_channel: output_channel
       )
     end
+    generation_truncated = context_truncated == true || (companion && guidance.context_truncated?)
     raw_answer = begin
       document_identity_generator.query(
         prompt,
@@ -769,35 +789,44 @@ class BedrockRagService
         }
       )
     rescue Timeout::Error, Net::ReadTimeout, Net::OpenTimeout, BedrockServiceError => e
-      return identity_closed_result(
-        status: :unavailable,
-        reason: identity_failure_reason(e, stage: :generation),
-        question: question,
-        response_locale: response_locale,
-        retrieval: retrieval,
-        model_invoked: true
+      return attach_generation_trace!(
+        identity_closed_result(
+          status: :unavailable,
+          reason: identity_failure_reason(e, stage: :generation),
+          question: question,
+          response_locale: response_locale,
+          retrieval: retrieval,
+          model_invoked: true
+        ),
+        prompt, raw_turn: raw_question, sent_question: question, truncated: generation_truncated
       )
     rescue StandardError => e
       raise unless e.class.name.start_with?("Aws::", "Seahorse::")
 
-      return identity_closed_result(
-        status: :unavailable,
-        reason: :generation_error,
-        question: question,
-        response_locale: response_locale,
-        retrieval: retrieval,
-        model_invoked: true
+      return attach_generation_trace!(
+        identity_closed_result(
+          status: :unavailable,
+          reason: :generation_error,
+          question: question,
+          response_locale: response_locale,
+          retrieval: retrieval,
+          model_invoked: true
+        ),
+        prompt, raw_turn: raw_question, sent_question: question, truncated: generation_truncated
       )
     end
     if raw_answer.blank?
       Rails.logger.warn("[DOCUMENT_IDENTITY] generation_blank; required identity stays closed")
-      return identity_closed_result(
-        status: :unavailable,
-        reason: :generation_blank,
-        question: question,
-        response_locale: response_locale,
-        retrieval: retrieval,
-        model_invoked: true
+      return attach_generation_trace!(
+        identity_closed_result(
+          status: :unavailable,
+          reason: :generation_blank,
+          question: question,
+          response_locale: response_locale,
+          retrieval: retrieval,
+          model_invoked: true
+        ),
+        prompt, raw_turn: raw_question, sent_question: question, truncated: generation_truncated
       )
     end
 
@@ -811,18 +840,23 @@ class BedrockRagService
       safety_evidence: guidance&.safety_evidence
     )
     if companion && result[:answer].blank?
-      return identity_closed_result(
-        status: :unavailable,
-        reason: :generation_blank,
-        question: question,
-        response_locale: response_locale,
-        retrieval: retrieval,
-        model_invoked: true
+      return attach_generation_trace!(
+        identity_closed_result(
+          status: :unavailable,
+          reason: :generation_blank,
+          question: question,
+          response_locale: response_locale,
+          retrieval: retrieval,
+          model_invoked: true
+        ),
+        prompt, raw_turn: raw_question, sent_question: question, truncated: generation_truncated
       )
     end
     result[:equipment_identity_status] = applied.status.to_s
     result[:equipment_identity_reason] = applied.reason&.to_s
-    result
+    attach_generation_trace!(
+      result, prompt, raw_turn: raw_question, sent_question: question, truncated: generation_truncated
+    )
   rescue Timeout::Error, Net::ReadTimeout, Net::OpenTimeout, BedrockServiceError => e
     identity_closed_result(
       status: :unavailable,
@@ -919,6 +953,21 @@ class BedrockRagService
     stats["path"] = "document_identity"
     Thread.current[:document_identity_scope] = stats
     Rails.logger.info("[DOCUMENT_IDENTITY] #{stats.to_json}")
+  end
+
+  def attach_generation_trace!(result, prompt, raw_turn:, sent_question:, truncated:)
+    return result unless result.is_a?(Hash)
+
+    result.merge!(Rag::CausalTrace.generation_fields(
+      text: prompt,
+      raw_turn: raw_turn,
+      sent_question: sent_question,
+      truncated: truncated
+    ))
+    result
+  rescue StandardError => error
+    Rails.logger.warn("generation trace failed #{error.class}")
+    result
   end
 
   def identity_failure_reason(error, stage:)

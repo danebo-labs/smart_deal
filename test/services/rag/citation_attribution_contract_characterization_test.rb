@@ -52,7 +52,7 @@ class Rag::CitationAttributionContractCharacterizationTest < ActiveSupport::Test
       @chunks = chunks
     end
 
-    def retrieve_chunks(*)
+    def retrieve_chunks(*, **)
       {
         chunks: @chunks,
         retrieval_trace: {

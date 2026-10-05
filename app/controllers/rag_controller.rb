@@ -95,7 +95,8 @@ class RagController < ApplicationController
         phase_ms:        phase_ms(result, semantic_analysis_ms, state_ms, started_at),
         original_query:  question,
         effective_query: result.effective_question || question,
-        answer:          result.answer
+        answer:          result.answer,
+        **generation_trace_kwargs(result)
       )
       render_rag_json_error(result)
       return
@@ -141,7 +142,8 @@ class RagController < ApplicationController
         original_query:  question,
         effective_query: result.effective_question || question,
         answer:          answer_text,
-        citations:       result.retrieved_citations
+        citations:       result.retrieved_citations,
+        **generation_trace_kwargs(result)
       )
     end
 
@@ -285,7 +287,8 @@ class RagController < ApplicationController
       original_query: question,
       effective_query: result.effective_question || retrieval_question,
       answer: answer_text,
-      citations: result.retrieved_citations
+      citations: result.retrieved_citations,
+      **generation_trace_kwargs(result)
     )
     render json: json
   end
@@ -296,7 +299,9 @@ class RagController < ApplicationController
   # sites above.
   def emit_interaction_completed(correlation_id:, question_sha256:, outcome:, route:, latency_ms:,
                                  stage: nil, error_class: nil, conv_session: nil, phase_ms: {},
-                                 original_query: nil, effective_query: nil, answer: nil, citations: nil)
+                                 original_query: nil, effective_query: nil, answer: nil, citations: nil,
+                                 generation_mode: nil, generation_context: nil,
+                                 generation_prompt_chars: nil, context_truncated: nil)
     PilotUsageLog.log(
       "interaction_completed",
       correlation_id: correlation_id,
@@ -309,6 +314,10 @@ class RagController < ApplicationController
       error_class: error_class,
       route: route,
       latency_ms: latency_ms,
+      generation_mode: generation_mode,
+      generation_context: generation_context,
+      generation_prompt_chars: generation_prompt_chars,
+      context_truncated: context_truncated,
       **phase_ms
     )
     chunk_ids, sources = Rag::TurnEvidence.evidence_from(citations)
@@ -323,6 +332,19 @@ class RagController < ApplicationController
       chunk_ids: chunk_ids,
       sources: sources
     )
+  end
+
+  def generation_trace_kwargs(result)
+    return {} if result.nil?
+
+    mode = result.respond_to?(:generation_mode) ? result.generation_mode : nil
+    success = result.respond_to?(:success?) ? result.success? : false
+    {
+      generation_mode: Rag::CausalTrace.resolved_generation_mode(mode, success: success),
+      generation_context: result.respond_to?(:generation_context) ? result.generation_context : nil,
+      generation_prompt_chars: result.respond_to?(:generation_prompt_chars) ? result.generation_prompt_chars : nil,
+      context_truncated: result.respond_to?(:context_truncated) ? result.context_truncated : nil
+    }
   end
 
   def phase_ms(result, semantic_analysis_ms, state_ms, started_at)
@@ -384,6 +406,8 @@ class RagController < ApplicationController
           text,
           number_of_results: top_k,
           account_id: current_account.id,
+          user_id: current_user&.id,
+          conversation_session_id: (conv_session.id if conv_session.respond_to?(:id)),
           correlation_id: correlation_id,
           route_taken: "document_discovery"
         )
@@ -481,7 +505,12 @@ class RagController < ApplicationController
   def build_resolution(question:, answer:, result:, conv_session:, entity_s3_uris:, sources_visible:)
     shadow =
       unless result.generation_mode == Rag::StructuredEvidenceRoute::GENERATION_MODE
-        run_evidence_selector_shadow(question: question, entity_s3_uris: entity_s3_uris)
+        run_evidence_selector_shadow(
+          question: question,
+          entity_s3_uris: entity_s3_uris,
+          conv_session: conv_session,
+          correlation_id: result.correlation_id
+        )
       end
     if shadow
       selection = shadow.fetch(:selection)
@@ -515,7 +544,7 @@ class RagController < ApplicationController
   # deliberately relaxed only while this flag is explicitly turned on for the
   # target account's shadow benchmark; it never substitutes the live answer or
   # changes `resolution.mode`. Any failure here must never break the response.
-  def run_evidence_selector_shadow(question:, entity_s3_uris:)
+  def run_evidence_selector_shadow(question:, entity_s3_uris:, conv_session: nil, correlation_id: nil)
     return if question.blank? || !Rag::EvidenceSelectorFlag.enabled?
 
     analysis = Rag::QueryEntities.analyze(question)
@@ -523,7 +552,10 @@ class RagController < ApplicationController
       question,
       entity_s3_uris: entity_s3_uris,
       number_of_results: Rag::EvidenceCandidateSelector::DISCOVERY_RESULTS,
-      account_id: current_account.id
+      account_id: current_account.id,
+      user_id: current_user&.id,
+      conversation_session_id: (conv_session.id if conv_session.respond_to?(:id)),
+      correlation_id: correlation_id
     )
     expander = Rag::SectionNeighborExpander.new if Rag::EvidenceExpansionFlag.enabled?
     selection = Rag::EvidenceCandidateSelector.new(

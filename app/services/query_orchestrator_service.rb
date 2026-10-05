@@ -48,9 +48,10 @@ class QueryOrchestratorService
   def initialize(query, images: [], documents: [], document_uids: [], account: nil, session_id: nil, response_locale: nil, session_context: nil,
                  conv_session: nil, entity_s3_uris: [], output_channel: nil, force_entity_filter: false, auto_scope_filter: false, locale: nil,
                  user_id: nil, conversation_session_id: nil, correlation_id: nil, field_photo_id: nil, raw_question: nil,
-                 apply_photo_continuity: true, expected_episode_id: nil, equipment_identity: :omit)
+                 context_truncated: nil, apply_photo_continuity: true, expected_episode_id: nil, equipment_identity: :omit)
     @query = query
     @raw_question = raw_question
+    @context_truncated = context_truncated
     @images = images || []
     @documents = documents || []
     @document_uids = Array(document_uids)
@@ -146,6 +147,7 @@ class QueryOrchestratorService
         correlation_id: correlation_id,
         field_photo_id: existing_photo_id,
         question: @query.to_s,
+        raw_question: @raw_question,
         expected_episode_id: photo_owner_episode_id(correlation_id)
       )
 
@@ -278,6 +280,7 @@ class QueryOrchestratorService
       correlation_id: correlation_id,
       field_photo_id: photo.id,
       question: @query.to_s,
+      raw_question: @raw_question,
       continuity: continuity,
       expected_episode_id: photo_owner_episode_id(correlation_id)
     )
@@ -334,8 +337,7 @@ class QueryOrchestratorService
       conversation_session_id: @conversation_session_id,
       correlation_id: @correlation_id,
       episode: episode_for_scope,
-      equipment_identity: resolved_equipment_identity,
-      raw_question: @raw_question
+      equipment_identity: resolved_equipment_identity
     )
     outcome = structured&.execute
     if outcome&.status == :answered || outcome&.status == :abstained
@@ -393,6 +395,8 @@ class QueryOrchestratorService
       auto_scope_filter: @auto_scope_filter,
       episode: episode_for_scope,
       equipment_identity: resolved_equipment_identity,
+      raw_question: @raw_question,
+      context_truncated: generation_context_truncated?,
       **rag_telemetry
     )
   end
@@ -468,6 +472,12 @@ class QueryOrchestratorService
 
     Rails.logger.info("QueryOrchestrator: context_evidence_route outcome=#{outcome.status}")
     outcome.result
+  end
+
+  def generation_context_truncated?
+    return true if @context_truncated == true
+
+    @conv_session.respond_to?(:context_truncated) && @conv_session.context_truncated == true
   end
 
   def rag_telemetry

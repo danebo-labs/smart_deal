@@ -572,7 +572,7 @@ class PilotMetricsReport
         stage: terminal[:stage],
         error_class: terminal[:error_class],
         question_sha256: terminal[:question_sha256],
-        generation_mode: route[:generation_mode],
+        generation_mode: terminal[:generation_mode].presence || route[:generation_mode],
         stages: {
           retrieval_ms: route[:retrieval_ms],
           expansion_ms: route[:expansion_ms],
@@ -596,6 +596,7 @@ class PilotMetricsReport
             input_tokens: row[:input_tokens].to_i,
             output_tokens: row[:output_tokens].to_i,
             token_source: row[:token_source],
+            latency_ms: row[:latency_ms],
             attributed_cost_usd: row_cost(row).round(6)
           }
         end,
@@ -640,6 +641,8 @@ class PilotMetricsReport
     if interpreter
       trace[:episode_id] = interpreter[:episode_id] if interpreter[:episode_id].present?
       trace[:interpreter_move] = interpreter[:interpreter_move] if interpreter[:interpreter_move].present?
+      trace[:interpreter_assertions] = interpreter[:interpreter_assertions] if interpreter[:interpreter_assertions].present?
+      trace[:field_rejections] = interpreter[:field_rejections] if interpreter[:field_rejections].present?
       if interpreter[:goal_text].present?
         goal = { text: interpreter[:goal_text] }
         goal[:source_correlation_id] = interpreter[:goal_source_correlation_id] if interpreter[:goal_source_correlation_id].present?
@@ -647,6 +650,8 @@ class PilotMetricsReport
       end
     end
     trace[:episode_id] ||= ordered.filter_map { |event| event[:episode_id].presence }.last
+    copy_turn_delta!(trace, ordered)
+    copy_generation_context!(trace, ordered)
 
     photo = field_companion_photo(ordered)
     trace[:photo] = photo if photo
@@ -732,7 +737,7 @@ class PilotMetricsReport
   end
 
   def field_companion_scope(event)
-    {
+    scope = {
       result: event[:result],
       outcome_reason: event[:outcome_reason],
       scope_needles: event[:scope_needles],
@@ -741,6 +746,31 @@ class PilotMetricsReport
       model: event[:model],
       identity_after: event[:identity_after]
     }.compact
+    scope[:results_count] = event[:results_count] unless event[:results_count].nil?
+    scope[:contexts_delivered] = event[:contexts_delivered] unless event[:contexts_delivered].nil?
+    scope
+  end
+
+  def copy_turn_delta!(trace, ordered)
+    turns = ordered.select { |event| event[:event] == "field_companion_turn" }
+    source = turns.find { |event| event[:result].to_s != "assistant" } || turns.first
+    return if source.nil?
+
+    %i[
+      episode_fields_changed state_before_sha256 state_after_sha256
+      query_components original_sha256 effective_sha256
+    ].each do |key|
+      trace[key] = source[key] unless source[key].nil?
+    end
+  end
+
+  def copy_generation_context!(trace, ordered)
+    terminal = ordered.reverse.find { |event| event[:event] == "interaction_completed" }
+    return if terminal.nil?
+
+    trace[:generation_context] = terminal[:generation_context] if terminal[:generation_context].present?
+    trace[:generation_prompt_chars] = terminal[:generation_prompt_chars] unless terminal[:generation_prompt_chars].nil?
+    trace[:context_truncated] = terminal[:context_truncated] unless terminal[:context_truncated].nil?
   end
 
   def field_companion_retrieval(scope)

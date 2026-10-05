@@ -1727,7 +1727,36 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       assert payload["search_type"].present?
       assert_equal 16, payload["filter_fingerprint"].length
       assert_equal "retrieve_only", payload["route_taken"]
+      assert_not payload.key?("user_id")
+      assert_not payload.key?("conversation_session_id")
     end
+  ensure
+    Rails.logger.stop_broadcasting_to(capture_logger) if capture_logger
+  end
+
+  test "retrieve_chunks keeps the caller user and session on the same kb_retrieve event" do
+    log_output = StringIO.new
+    capture_logger = ActiveSupport::Logger.new(log_output)
+    Rails.logger.broadcast_to(capture_logger)
+
+    with_mock_bedrock_client do |client|
+      client.retrieve_response = ::OpenStruct.new(retrieval_results: [])
+      service = BedrockRagService.new(account: @account)
+      service.retrieve_chunks(
+        "nivelacion",
+        account_id: @account.id,
+        user_id: users(:one).id,
+        conversation_session_id: 44,
+        correlation_id: "query:attr"
+      )
+    end
+
+    line = log_output.string.lines.find { |entry| entry.include?('"event":"kb_retrieve"') }
+    payload = JSON.parse(line.split("[PILOT_USAGE] ", 2).last)
+    assert_equal @account.id, payload["account_id"]
+    assert_equal users(:one).id, payload["user_id"]
+    assert_equal 44, payload["conversation_session_id"]
+    assert_equal "query:attr", payload["correlation_id"]
   ensure
     Rails.logger.stop_broadcasting_to(capture_logger) if capture_logger
   end

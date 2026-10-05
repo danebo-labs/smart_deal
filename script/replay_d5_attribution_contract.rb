@@ -144,7 +144,7 @@ class D5AttributionContractReplay
     fidelity_strategy = "answer_safety"
     if rendered_baseline != archived_answer && structured?(result)
       terminal_replay = replay_structured(result, flag_enabled: false)
-      rendered_baseline = terminal_replay.fetch(:result).fetch(:answer)
+      rendered_baseline = citation_fidelity_answer(terminal_replay.fetch(:result))
       fidelity_strategy = "structured_terminal_gate"
     end
 
@@ -176,7 +176,11 @@ class D5AttributionContractReplay
 
     result["answer"] = transformed.fetch(:answer)
     result["citations"] = transformed.fetch(:citations)
-    off_answer = terminal_replay&.fetch(:result)&.fetch(:answer) || archived_answer
+    off_answer = if terminal_replay
+      citation_fidelity_answer(terminal_replay.fetch(:result))
+    else
+      archived_answer
+    end
     replay = transformed.fetch(:replay)
     attribution = transformed.fetch(:attribution)
 
@@ -215,6 +219,12 @@ class D5AttributionContractReplay
     "El documento no incluye este dato" => "DATA_NOT_AVAILABLE",
     "The document does not include this information" => "DATA_NOT_AVAILABLE"
   }.freeze
+
+  # F1d may replace the published answer after the citation gate. Attribution
+  # fidelity compares the answer that gate would have published.
+  def citation_fidelity_answer(result)
+    result.dig(:diagnostics, :citation_answer).presence || result.fetch(:answer)
+  end
 
   def comparable(text)
     folded = text.to_s.dup

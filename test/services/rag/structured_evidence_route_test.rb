@@ -126,7 +126,7 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     divider = divider_chunk
     neighbor = neighbor_chunk
     rag_service = FakeRagService.new([ divider ])
-    generator = FakeGenerator.new("ABC12 corresponde a la serie documentada. [1]")
+    generator = FakeGenerator.new("La serie de seguridad queda citada. [1]")
     expander = FakeExpander.new(
       chunk: neighbor,
       mechanism: Rag::SectionNeighborExpander::MECHANISM_SECTION_IDENTITY
@@ -163,7 +163,7 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
 
   test "answered outcome emits [PILOT_AUDIT] lines with full question/answer and citation-derived document/page" do
     rag_service = FakeRagService.new([ neighbor_chunk ])
-    generator = FakeGenerator.new("ABC12 corresponde a la serie documentada. [1]")
+    generator = FakeGenerator.new("La serie de seguridad queda citada. [1]")
     route = build_route(rag_service: rag_service, generator: generator)
 
     output = with_audit_capture("true") { route.execute }
@@ -173,7 +173,7 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     interaction = parse_audit(lines.first)
     assert_equal "interaction", interaction["type"]
     assert_equal "¿Qué indica el LED ABC12?", interaction["question"]
-    assert_equal "ABC12 corresponde a la serie documentada. [1]", interaction["answer"]
+    assert_equal "La serie de seguridad queda citada. [1]", interaction["answer"]
     assert_equal 1, interaction["citations"].size
     assert_equal 36, interaction["citations"].first["page"]
 
@@ -516,7 +516,12 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_includes prompt, "Page: 1"
     assert_includes prompt, "Page: 4"
     assert_includes prompt, "turn the answer into a procedure"
-    assert_equal [ 1, 2, 3, 4 ], outcome.result[:citations].pluck(:page)
+    assert_equal :procedure_application, outcome.result[:applicability_violation]
+    assert_equal :value_code, outcome.result[:applicability_violation_basis]
+    assert_empty outcome.result[:citations]
+    assert_equal [ 1, 2, 3, 4 ], outcome.result[:retrieved_citations].map { |citation|
+      citation[:metadata]["page_number"]
+    }
     assert_equal RagRetrievalProfile::PINNED_DOCUMENT_RESULTS, RagRetrievalProfile.new(entity_sources: [ "document" ], question: "¿Qué es K1?").number_of_results
   end
 
@@ -639,9 +644,12 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     ).execute
 
     assert_equal :answered, outcome.status
-    assert_includes outcome.result[:answer], "XA1"
-    assert_includes outcome.result[:answer], I18n.t("rag.data_not_available", locale: :es)
-    assert_equal 1, outcome.result[:citations].size
+    assert_equal :procedure_application, outcome.result[:applicability_violation]
+    assert_equal :value_code, outcome.result[:applicability_violation_basis]
+    assert_not_includes outcome.result[:answer], "XA1"
+    assert_includes outcome.result[:answer], "no está confirmada"
+    assert_empty outcome.result[:citations]
+    assert_equal 1, outcome.result[:retrieved_citations].size
   end
 
   test "a partially-abstaining answer that still cites the documented part passes the citation gate" do
@@ -650,7 +658,7 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
       rank: 1,
       sha: "partial-state"
     )
-    raw_answer = "DL91 corresponde a \"SERIE ZETA HUECO\" [1].\n\n" \
+    raw_answer = "La serie documentada es \"SERIE ZETA HUECO\" [1].\n\n" \
       "El documento no especifica la condición normal."
     rag_service = FakeRagService.new([ chunk ])
 
@@ -674,7 +682,7 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
 
   test "an appended absence paragraph changes neither markers nor citations" do
     chunk = synthetic_chunk("LED DL91 | SERIE ZETA HUECO", rank: 1, sha: "citation-invariant")
-    raw_answer = "DL91 corresponde a \"SERIE ZETA HUECO\" [1].\n\n" \
+    raw_answer = "La serie documentada es \"SERIE ZETA HUECO\" [1].\n\n" \
       "#{"Detalle documentado sin cambio. " * 10}" \
       "El documento no especifica la condición normal."
     off_service = FakeRagService.new([ chunk ])
@@ -780,7 +788,7 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
   test "a single uncited sentence still abstains" do
     outcome = build_route(
       rag_service: FakeRagService.new([ neighbor_chunk ]),
-      generator: FakeGenerator.new("El LED ABC12 corresponde a la serie principal."),
+      generator: FakeGenerator.new("La serie principal queda descrita sin cita."),
       expander: FakeExpander.new(nil)
     ).execute
 
@@ -810,7 +818,7 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
 
   test "single-context assertion markers normalize to the sole evidence block" do
     rag_service = FakeRagService.new([ neighbor_chunk ])
-    raw_answer = "ABC12 corresponde a la serie [1]. Otra afirmación [2]. Tercera [3]."
+    raw_answer = "La serie queda citada [1]. Otra afirmación [2]. Tercera [3]."
 
     outcome = build_route(
       rag_service: rag_service,
@@ -822,7 +830,7 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_equal 1, outcome.result[:citations].size
     assert_equal raw_answer, outcome.result.dig(:diagnostics, :raw_answer)
     assert_equal(
-      "ABC12 corresponde a la serie [1]. Otra afirmación [1]. Tercera [1].",
+      "La serie queda citada [1]. Otra afirmación [1]. Tercera [1].",
       outcome.result.dig(:diagnostics, :normalized_answer)
     )
     assert_equal 1, rag_service.calls.size
@@ -836,7 +844,7 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     outcome = build_route(
       question: "En ABC12, ¿qué borne documenta el esquema?",
       rag_service: rag_service,
-      generator: FakeGenerator.new("Conecte el borne [24]"),
+      generator: FakeGenerator.new("El esquema muestra el borne [24]"),
       expander: FakeExpander.new(nil)
     ).execute
 
@@ -859,7 +867,7 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     outcome = build_route(
       question: "En THYSSEN, ¿qué indican los LEDs ABC12 y DEF34?",
       rag_service: rag_service,
-      generator: FakeGenerator.new("DEF34 corresponde a la serie secundaria [2]"),
+      generator: FakeGenerator.new("La serie secundaria queda citada [2]"),
       expander: FakeExpander.new(nil)
     ).execute
 
@@ -899,15 +907,19 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_includes prompt, "SERIE PUERTAS CABINA - EXTERIORES"
     assert_includes prompt, "SERIE DE PUERTAS"
     assert_includes prompt, "SERIE PUERTAS DE PISO"
-    assert_equal [ 1, 2, 3 ], outcome.result[:citations].pluck(:number)
-    assert_equal [ 9, 88, 91 ], outcome.result[:citations].pluck(:page)
-    assert_includes outcome.result[:answer], "depende de la placa"
-    assert_includes outcome.result[:answer], "SERIE PUERTAS DE PISO"
+    assert_equal :procedure_application, outcome.result[:applicability_violation]
+    assert_equal :value_code, outcome.result[:applicability_violation_basis]
+    assert_empty outcome.result[:citations]
+    assert_equal [ 9, 88, 91 ], outcome.result[:retrieved_citations].map { |citation|
+      citation[:metadata]["page_number"]
+    }
+    assert_not_includes outcome.result[:answer], "TPR50"
+    assert_includes outcome.result[:answer], "no está confirmada"
   end
 
   test "an identifier that passes the lexical equipment gate is still detected from the evidence" do
     rag_service = FakeRagService.new(dl2_board_chunks)
-    raw_answer = "DL2 significa cosas distintas según la placa.\n" \
+    raw_answer = "El indicador cambia según la placa.\n" \
       "En \"LEVEL CONTROL 1B\": \"SERIE CERROJOS CERRADA\" [1].\n" \
       "En \"KDT 11\": \"SERIE PUERTAS EXTERIORES - CABINA\" [2].\n" \
       "¿Qué placa tiene delante?"
@@ -1429,13 +1441,16 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_not_includes generator.calls.first[:prompt], "UNCONFIRMED REFERENCE"
   end
 
-  test "unknown identity residual procedure without an identity assertion is not withheld" do
+  test "unknown identity withholds an unqualified procedure instead of abstaining on citations" do
     procedure = "Envíalo al piso inferior, entra en inspección y corta tensión."
     chunk = identity_chunk(
       "Listado de Averías Orona uP-900", "Reenviar al piso extremo inferior.", page: 4,
       section_identity: "MANIOBRA UNIVERSAL uP-900"
     )
     assert_not Rag::DocumentIdentityScope.unconfirmed_identity_assertion?(procedure, [ chunk ])
+    assert_equal :procedure_application, Rag::DocumentIdentityScope.unconfirmed_applicability_violation(
+      procedure, procedure, [ chunk ], "el display parpadea"
+    )
 
     rag_service = FakeRagService.new([ chunk ])
     generator = FakeGenerator.new(procedure)
@@ -1445,10 +1460,14 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
 
     assert_equal 1, rag_service.calls.size
     assert_equal 1, generator.calls.size
-    assert_nil outcome.result[:applicability_violation]
-    assert_not_includes outcome.result[:answer], procedure
-    assert_equal :abstained, outcome.status
-    assert_equal :citation_failure, outcome.result.dig(:diagnostics, :outcome_reason)
+    assert_equal :answered, outcome.status
+    assert_equal :procedure_application, outcome.result[:applicability_violation]
+    assert_equal :operation, outcome.result[:applicability_violation_basis]
+    assert_equal procedure, outcome.result.dig(:diagnostics, :raw_answer)
+    assert_includes outcome.result[:answer], "no está confirmada"
+    assert_not_includes outcome.result[:answer], "Envíalo"
+    assert_equal [], outcome.result[:citations]
+    assert outcome.result[:retrieved_citations].any?
   end
 
   test "a pinned manual does not confirm identity on the structured route" do

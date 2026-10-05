@@ -105,53 +105,136 @@ module Rag
       ].join("\n")
     end
 
-    # Post-generation check for identity_unknown_reference. Tokens come from
-    # the chunk identity fields already retrieved. A sentence is a violation
-    # only when it assigns one of those identities to the current equipment.
-    # Naming the manual, denying confirmation, or asking the technician to
-    # confirm is not an assignment.
-    ASSERTION_PATTERN = /
-      \b(?:
-        (?:este|el|la|su|mi)\s+(?:equipo|ascensor|elevador|controlador|maniobra)\s+
-          (?:es|sea|son|tiene|dispone|usa|utiliza|cuenta) |
-        (?:he|hemos)\s+identific(?:ado|ada|o) |
-        se\s+ha\s+identific(?:ado|ada) |
-        controlador\s+de\s+este\s+(?:ascensor|equipo|elevador) |
-        (?:this|the)\s+(?:equipment|elevator|lift|controller)\s+(?:is|has) |
-        i\s+have\s+identified
-      )\b
-    /ix
-    NON_ASSERTION_PATTERN = /
-      \bno\s+esta\s+confirmad |
-      \bno\s+se\s+ha\s+confirmad |
-      \bno\s+confirmad |
-      \bsin\s+confirmar |
-      \bnot\s+confirmed |
-      \bconfirm(?:a|e|ar|en|ais)?\s+(?:si|que|whether|if)\b |
-      \ben\s+el\s+manual\b |
-      \bin\s+the\s+(?:manual|document)\b |
-      \bse\s+documenta\b |
-      \b(?:the\s+manual\s+documents|is\s+documented\s+in)\b
-    /ix
+    # Post-generation applicability for identity_unknown_reference.
+    # Identity tokens come from the retrieved chunks. A technical operation
+    # comes from the closed lexicon below, not from imperative mood.
     IDENTITY_STOPWORDS = %w[
       de la el los las un una y o en del al para por con sin sobre
       the and of for a an to from
       manual documento listado averias averia norma montaje pagina page
       codigo codigos pdf png jpg jpeg
     ].freeze
+    ES_IDENTITY_SUBJECT = /(?:este|esta|estos|estas|el|la|tu|tus|su|mi|nuestro|nuestra|nuestros|nuestras)/
+    ES_IDENTITY_EQUIPMENT = /(?:equipo|ascensor|elevador|controlador|maniobra|unidad|placa|cuadro|instalacion)/
+    ES_IDENTITY_GAP = /(?:\s+(?:de|del|este|esta|el|la|ascensor|equipo|elevador|un|una)){0,5}/
+    ES_IDENTITY_COPULA = /(?:es|sea|son|tiene|dispone|usa|utiliza|cuenta|lleva|monta|corresponde\s+a)/
+    EN_IDENTITY_SUBJECT = /(?:this|the|your|my|our)/
+    EN_IDENTITY_EQUIPMENT = /(?:equipment|elevator|lift|controller|unit|board|drive)/
+    EN_IDENTITY_COPULA = /(?:is|has|uses|utilizes|runs|matches|corresponds\s+to)/
+    IDENTITY_ASSERTION_PATTERN = /
+      \b#{ES_IDENTITY_SUBJECT}\s+#{ES_IDENTITY_EQUIPMENT}#{ES_IDENTITY_GAP}\s+#{ES_IDENTITY_COPULA}\b |
+      \b#{EN_IDENTITY_SUBJECT}\s+#{EN_IDENTITY_EQUIPMENT}\s+#{EN_IDENTITY_COPULA}\b |
+      \b(?:he|hemos|i\s+have|i)\s+identific(?:ado|ada|o|ed)\b |
+      \bse\s+ha\s+identific(?:ado|ada)\b |
+      \bse\s+trata\s+de\b |
+      \bparece\s+ser\b |
+      \blooks\s+like(?:\s+a)?\b |
+      (?<!no[[:space:]])(?:\bes\s+un\b|\bit\s+s\s+a\b|\bit\s+is\s+a\b)
+    /ix
+    DEICTIC_EQUIPMENT_PATTERN = /
+      \b(?:este|esta|estos|estas|tu|tus|su|mi|nuestro|nuestra|nuestros|nuestras|this|your|my|our)
+      \s+(?:equipo|ascensor|elevador|controlador|maniobra|unidad|placa|cuadro|instalacion|
+           equipment|elevator|lift|controller|unit|board|drive)\b
+    /ix
+    IDENTITY_NON_CONFIRMATION_PATTERN = /
+      \bno\s+esta\s+confirmad |
+      \bno\s+se\s+ha\s+confirmad |
+      \bno\s+confirmad |
+      \bsin\s+confirmar |
+      \bnot\s+confirmed |
+      \bunconfirmed\b
+    /ix
+    IDENTITY_CONFIRMATION_REQUEST_PATTERN = /
+      \bconfirm(?:a|e|ar|en|ais|ed)?\s+(?:si|que|whether|if)\b
+    /ix
+    IDENTITY_DOCUMENTARY_PATTERN = /
+      \ben\s+el\s+manual\b |
+      \bin\s+the\s+(?:manual|document)\b |
+      \bse\s+documenta\b |
+      \b(?:the\s+manual\s+documents|is\s+documented\s+in)\b
+    /ix
+    # Closed operation families. Forms cover verb, infinitive, gerund, and nominal.
+    # Visual "inspeccione" is not inspection mode. "cambiar" is not an operation.
+    OPERATION_PATTERN = /
+      \benvi(?:ar|a|e|o|alo|ala|ad|ando|ado)\b |
+      \bmov(?:er|iendo|ido|imiento)(?:lo|la)?\b |
+      \bmuev(?:e|a|an|as|elo|ela)\b |
+      \bllev(?:ar|a|e|ando|arlo|arla)\s+(?:la\s+|el\s+)?cabina\b |
+      \b(?:send|move|bring)(?:s|ing)?\b(?:\s+\w+){0,3}\s+(?:car|cab|it)\b |
+      \b(?:entrar|entra|entre|pasar|pasa|pase|paso)\s+(?:a|en|al)\s+inspeccion\b |
+      \bmodo\s+inspeccion\b |
+      \binspection\s+mode\b |
+      \benter(?:ing)?\s+inspection\b |
+      \b(?:cort(?:ar|e|en|a|ando)|corte|quit(?:ar|e|a|ando)|cut(?:ting)?)\s+
+        (?:la\s+|el\s+|de\s+la\s+|de\s+)?(?:tension|alimentacion|power|voltage)\b |
+      \bcorte\s+de\s+(?:tension|alimentacion|luz|power)\b |
+      \bconectar\b | \bconecte\b | \bconecta(?:r|ndo|do)?\b |
+      \bdesconect\w* | \bdesconexion(?:es)?\b | \bdisconnect(?:s|ing|ed)?\b |
+      \bpuente(?:ar|a|e|o|ando)?\b | \bbridge(?:s|d|ing)?\b | \bcortocircuit\w* |
+      \bajust(?:ar|e|a|en|ando)\b | \bajuste\b | \badjust(?:s|ing|ed|ment|ments)?\b |
+      \bcalibr(?:ar|a|e|acion|ando|aciones)\b | \bcalibrat(?:e|es|ed|ing|ion)\b |
+      \breset(?:ear|ea|ee|eando)?\b | \breset\b |
+      \brearm(?:ar|a|e|ando)?\b | \brearme\b |
+      \bprogramar\b | \bprograme\b | \bprogramacion\b | \bprogramming\b | \bprogram\s+the\b |
+      \bparametriz\w* | \bparameteriz\w* |
+      \bconfigurar\b | \bconfigure\b | \bconfiguracion\b | \bconfiguration\b |
+      \baprendizaje\b | \baprender\b | \blearning\b |
+      \bpuls(?:ar|a|e|ad|ando|acion|aciones)\b | \bpress(?:es|ed|ing)?\b |
+      \bgir(?:ar|a|e|en|ando|ado)\b | \brotat(?:e|es|ed|ing)\b |
+      \babr(?:ir|a|an|id)\s+(?:la\s+|el\s+|las\s+|los\s+)?(?:puerta|cuadro|panel|tablero)\b |
+      \bopen(?:s|ed|ing)?\s+(?:the\s+)?(?:door|panel|cabinet)\b |
+      \bretir(?:ar|a|e|ando|elo|ela)\b | \bsustitu\w* | \breemplaz\w* |
+      \breplac(?:e|es|ed|ing)\b | \bremov(?:e|es|ed|ing)\b |
+      \bmedir\b | \bmide\b | \bmida\b | \bmedicion(?:es)?\b |
+      \bmeasur(?:e|es|ed|ing|ement|ements)\b
+    /ix
+    OPERATION_NEGATOR_PATTERN = /
+      \b(?:no|nunca|ni|evita|evite|evitar|eviten|do\s+not|never|avoid)\b
+    /ix
+    ACTION_REQUEST_PATTERN = /
+      \b(?:puedes|podrias|podes|deberias|quieres|has\s+probado|probaste|
+          could\s+you|can\s+you|should\s+you|have\s+you\s+tried|would\s+you)\b
+    /ix
+    NON_APPLICABILITY_PATTERN = /
+      \bno\s+esta\s+confirmad |
+      \bno\s+se\s+ha\s+confirmad |
+      \bsin\s+confirmar |
+      \bno\s+se\s+aplica |
+      \bno\s+aplica\s+a\s+(?:este|tu|el|su)\s+equipo |
+      \bpuede\s+no\s+aplicar |
+      \bpuede\s+no\s+ser\s+(?:este|tu|mi|el|su|your)\s+(?:equipo|ascensor) |
+      \bno\s+es\s+el\s+procedimiento\s+de\s+(?:este|tu|el|su)\s+equipo |
+      \bno\s+corresponde\s+a\s+(?:este|tu|el|su)\s+equipo |
+      \bnot\s+confirmed |
+      \bunconfirmed\b |
+      \bdoes\s+not\s+apply |
+      \bmay\s+not\s+apply |
+      \bnot\s+this\s+(?:job|equipment)\b
+    /ix
+    ATTRIBUTION_PATTERN = /
+      \b(?:manual|documento|documentacion|segun|de\s+acuerdo\s+con|describe|documenta|
+          according\s+to|the\s+manual)\b
+    /ix
+    CHUNK_DESIGNATOR_PATTERN = /\b[A-Z]{1,4}-?\d{1,4}\b/
+    CHUNK_TIME_PATTERN = /\b\d+(?:[.,]\d+)?\s*(?:s|seg|segs|segundos?|seconds?)\b/i
+    ApplicabilityUnit = Struct.new(:text, :paragraph_id, :index, :intro, :heading, :question, keyword_init: true)
+
+    def self.unconfirmed_applicability_violation(answer, raw, chunks, question)
+      applicability_hit(answer, raw, chunks, question)&.fetch(:kind)
+    end
+
+    def self.unconfirmed_applicability_basis(answer, raw, chunks, question)
+      applicability_hit(answer, raw, chunks, question)&.fetch(:basis)
+    end
 
     def self.unconfirmed_identity_assertion?(answer, chunks)
-      phrases = identity_phrases(chunks)
-      return false if phrases.blank? || answer.blank?
+      return false if answer.blank?
 
-      patterns = phrases.map { |phrase| /\b#{Regexp.escape(phrase)}\b/ }
-      AnswerSafetyProcessor.fragments(answer).any? do |fragment|
-        sentence = normalize_label(fragment)
-        next false if sentence.blank?
-        next false unless patterns.any? { |pattern| sentence.match?(pattern) }
-        next false if sentence.match?(NON_ASSERTION_PATTERN)
+      patterns = identity_phrase_patterns(chunks)
+      return false if patterns.empty?
 
-        sentence.match?(ASSERTION_PATTERN)
+      applicability_units(answer).any? do |unit|
+        identity_unit?(applicability_normalize(unit.text), patterns)
       end
     end
 
@@ -163,8 +246,9 @@ module Rag
       )
     end
 
-    def self.log_applicability_violation
-      Rails.logger.info("[APPLICABILITY_VIOLATION] identity_assertion")
+    def self.log_applicability_violation(kind = :identity_assertion, basis: nil)
+      detail = [ kind, basis ].compact.join(" ")
+      Rails.logger.info("[APPLICABILITY_VIOLATION] #{detail}")
     end
 
     def self.needles(identity_or_episode)
@@ -281,6 +365,315 @@ module Rag
       ].join("\n")
     end
     private_class_method :reference_identity
+
+    def self.applicability_hit(answer, raw, chunks, question)
+      return nil if Array(chunks).empty?
+
+      hits = [ answer, raw ].compact.uniq.filter_map { |text| applicability_hit_for(text, chunks, question) }
+      return nil if hits.empty?
+
+      identity = hits.find { |hit| hit[:kind] == :identity_assertion }
+      return identity if identity
+
+      procedures = hits.select { |hit| hit[:kind] == :procedure_application }
+      return nil if procedures.empty?
+
+      bases = procedures.filter_map { |hit| hit[:basis] }
+      basis = if bases.include?(:operation) && bases.include?(:value_code) || bases.include?(:operation_and_value_code)
+        :operation_and_value_code
+      else
+        bases.first
+      end
+      { kind: :procedure_application, basis: basis }
+    end
+    private_class_method :applicability_hit
+
+    def self.applicability_hit_for(text, chunks, question)
+      return nil if text.blank?
+
+      patterns = identity_phrase_patterns(chunks)
+      units = applicability_units(text)
+      identity = false
+      operation = false
+      value = false
+      units.each do |unit|
+        normalized = applicability_normalize(unit.text)
+        if identity_unit?(normalized, patterns)
+          identity = true
+          next
+        end
+        next if qualified_reference?(unit, units, patterns, chunks.size)
+        next if observational_question?(unit)
+
+        operation = true if operation_unit?(normalized)
+        value = true if foreign_value_unit?(unit.text, chunks, question)
+      end
+      return { kind: :identity_assertion, basis: nil } if identity
+      return nil unless operation || value
+
+      basis = if operation && value
+        :operation_and_value_code
+      elsif operation
+        :operation
+      else
+        :value_code
+      end
+      { kind: :procedure_application, basis: basis }
+    end
+    private_class_method :applicability_hit_for
+
+    def self.identity_unit?(normalized, patterns)
+      return false if normalized.blank? || patterns.empty?
+      return false unless patterns.any? { |pattern| normalized.match?(pattern) }
+      return false unless normalized.match?(IDENTITY_ASSERTION_PATTERN)
+      return false if normalized.match?(IDENTITY_NON_CONFIRMATION_PATTERN)
+      return false if normalized.match?(IDENTITY_CONFIRMATION_REQUEST_PATTERN)
+      return false if normalized.match?(IDENTITY_DOCUMENTARY_PATTERN) && !normalized.match?(DEICTIC_EQUIPMENT_PATTERN)
+
+      true
+    end
+    private_class_method :identity_unit?
+
+    def self.operation_unit?(normalized)
+      return false if normalized.blank?
+
+      normalized.to_enum(:scan, OPERATION_PATTERN).any? do
+        !negated_before?(normalized, Regexp.last_match.begin(0))
+      end
+    end
+    private_class_method :operation_unit?
+
+    def self.negated_before?(normalized, index)
+      prefix = normalized[0...index]
+      last = nil
+      prefix.to_enum(:scan, OPERATION_NEGATOR_PATTERN).each { last = Regexp.last_match }
+      return false unless last
+
+      !prefix[last.end(0)..].match?(/[,:;]/)
+    end
+    private_class_method :negated_before?
+
+    def self.observational_question?(unit)
+      unit.question && !applicability_normalize(unit.text).match?(ACTION_REQUEST_PATTERN)
+    end
+    private_class_method :observational_question?
+
+    def self.qualified_reference?(unit, units, patterns, chunk_count)
+      attribution_window = [ unit.text, unit.intro, unit.heading ]
+      neighbors = units.select { |other|
+        other.paragraph_id == unit.paragraph_id && (other.index - unit.index).abs == 1
+      }
+      disclaimer_window = attribution_window + neighbors.map(&:text)
+      attribution_window.compact.any? { |text| attribution_text?(text, patterns, chunk_count) } &&
+        disclaimer_window.compact.any? { |text| applicability_normalize(text).match?(NON_APPLICABILITY_PATTERN) }
+    end
+    private_class_method :qualified_reference?
+
+    def self.attribution_text?(text, patterns, chunk_count)
+      normalized = applicability_normalize(text)
+      return false unless normalized.match?(ATTRIBUTION_PATTERN)
+      return true if patterns.any? { |pattern| normalized.match?(pattern) }
+
+      text.to_s.scan(/\[(\d+)\]/).any? { |number,| number.to_i.between?(1, chunk_count) }
+    end
+    private_class_method :attribution_text?
+
+    def self.foreign_value_unit?(original, chunks, question)
+      return false if echo_of_question?(original, question)
+
+      body = Array(chunks).map { |chunk| chunk[:content].to_s }.join("\n")
+      return false if body.blank?
+      return true if foreign_tokens(original, body, question, chunks).any?
+      return true if promoted_code_meaning?(original, body, question)
+      return true if promoted_connection?(original, body, question, chunks)
+      return true if promoted_function?(original, body, question, chunks)
+
+      false
+    end
+    private_class_method :foreign_value_unit?
+
+    def self.foreign_tokens(original, body, question, chunks)
+      phrases = identity_phrases(chunks).to_set
+      tokens = []
+      tokens.concat(original.to_s.scan(AnswerSafetyProcessor::IDENTIFIER_PATTERN))
+      tokens.concat(fault_tokens(original))
+      tokens.concat(number_unit_spans(original))
+      tokens.concat(body.scan(CHUNK_DESIGNATOR_PATTERN).select { |token| original.include?(token) })
+      tokens.uniq.select { |token|
+        next false if identity_phrase_token?(token, phrases)
+        next false unless body.match?(/#{Regexp.escape(token)}/i)
+        next false if question.to_s.match?(/#{Regexp.escape(token)}/i)
+
+        true
+      }
+    end
+    private_class_method :foreign_tokens
+
+    def self.identity_phrase_token?(token, phrases)
+      label = normalize_label(token)
+      phrases.any? { |phrase| phrase == label || phrase.include?(label) && label.length >= 3 }
+    end
+    private_class_method :identity_phrase_token?
+
+    def self.fault_tokens(text)
+      tokens = text.to_s.scan(AnswerSafetyProcessor::FAULT_CODE_PATTERN)
+      tokens.concat(text.to_s.scan(CHUNK_DESIGNATOR_PATTERN))
+      tokens.uniq
+    end
+    private_class_method :fault_tokens
+
+    def self.number_unit_spans(text)
+      spans = []
+      text.to_s.scan(SourceFidelityGuard::PAIR_PATTERN) { spans << Regexp.last_match(0) }
+      text.to_s.scan(SourceFidelityGuard::RANGE_PATTERN) { spans << Regexp.last_match(0) }
+      text.to_s.scan(CHUNK_TIME_PATTERN) { spans << Regexp.last_match(0) }
+      spans.uniq
+    end
+    private_class_method :number_unit_spans
+
+    def self.promoted_code_meaning?(original, body, _question)
+      return false unless original.match?(AnswerSafetyProcessor::CODE_MEANING_PATTERN)
+
+      fault_tokens(original).any? { |token| body.include?(token) }
+    end
+    private_class_method :promoted_code_meaning?
+
+    def self.promoted_connection?(original, body, _question, _chunks)
+      return false unless original.match?(AnswerSafetyProcessor::CONNECTION_CLAIM_PATTERN)
+
+      body_tokens(original).any? { |token| body.match?(/#{Regexp.escape(token)}/i) }
+    end
+    private_class_method :promoted_connection?
+
+    def self.promoted_function?(original, body, _question, _chunks)
+      return false unless original.match?(AnswerSafetyProcessor::COMPANION_FUNCTION_ATTRIBUTION_PATTERN)
+
+      body_tokens(original).any? { |token| body.match?(/#{Regexp.escape(token)}/i) }
+    end
+    private_class_method :promoted_function?
+
+    def self.body_tokens(original)
+      tokens = original.to_s.scan(AnswerSafetyProcessor::IDENTIFIER_PATTERN)
+      tokens.concat(fault_tokens(original))
+      tokens.uniq
+    end
+    private_class_method :body_tokens
+
+    def self.echo_of_question?(original, question)
+      unit = applicability_normalize(original)
+      asked = applicability_normalize(question)
+      unit.length >= 12 && asked.present? && asked.include?(unit)
+    end
+    private_class_method :echo_of_question?
+
+    def self.applicability_units(text)
+      units = []
+      heading = nil
+      paragraph_id = 0
+      text.to_s.split(/\n[ \t]*\n/).each do |block|
+        lines = block.split("\n")
+        next if lines.all? { |line| line.strip.empty? }
+        if lines.one? && heading_line?(lines.first)
+          heading = lines.first.strip
+          next
+        end
+
+        intro = nil
+        paragraph_units = []
+        lines.each do |line|
+          stripped = line.strip
+          next if stripped.empty?
+          if heading_line?(stripped)
+            heading = stripped
+            next
+          end
+          if intro_line?(stripped)
+            intro = stripped
+            paragraph_units << unit_for(stripped, paragraph_id, intro: nil, heading: heading)
+            next
+          end
+
+          list = stripped.match?(SourceFidelityGuard::LIST_ITEM)
+          body = list ? strip_list_marker(stripped) : stripped
+          split_applicability_sentences(body).each do |sentence|
+            paragraph_units << unit_for(
+              sentence, paragraph_id, intro: (list ? intro : nil), heading: heading
+            )
+          end
+          intro = nil unless list
+        end
+        paragraph_units.each_with_index { |unit, index| unit.index = index }
+        units.concat(paragraph_units)
+        paragraph_id += 1
+      end
+      units
+    end
+    private_class_method :applicability_units
+
+    def self.unit_for(text, paragraph_id, intro:, heading:)
+      ApplicabilityUnit.new(
+        text: text, paragraph_id: paragraph_id, index: 0,
+        intro: intro, heading: heading, question: text.strip.end_with?("?")
+      )
+    end
+    private_class_method :unit_for
+
+    def self.heading_line?(line)
+      stripped = line.to_s.strip
+      stripped.match?(/\A\#{1,6}\s+\S/) || stripped.match?(/\A\*\*[^*]+\*\*\z/)
+    end
+    private_class_method :heading_line?
+
+    def self.intro_line?(line)
+      line.to_s.strip.match?(/:\s*\z/) && !line.match?(SourceFidelityGuard::LIST_ITEM)
+    end
+    private_class_method :intro_line?
+
+    def self.strip_list_marker(line)
+      line.sub(/\A\s*(?:[-*•]|\d{1,2}[.)])\s+/, "")
+    end
+    private_class_method :strip_list_marker
+
+    def self.split_applicability_sentences(text)
+      pieces = []
+      start_at = 0
+      index = 0
+      while index < text.length
+        unless sentence_boundary_at?(text, index)
+          index += 1
+          next
+        end
+        chunk = text[start_at..index].strip
+        pieces << chunk if chunk.present?
+        index += 1
+        index += 1 while index < text.length && text[index] == " "
+        start_at = index
+      end
+      tail = text[start_at..].to_s.strip
+      pieces << tail if tail.present?
+      pieces
+    end
+    private_class_method :split_applicability_sentences
+
+    def self.sentence_boundary_at?(text, index)
+      char = text[index]
+      return true if char == "\n" || char == "!" || char == "?"
+      return false unless char == "."
+
+      rest = text[(index + 1)..].to_s
+      rest.match?(/\A\s*\z/) || rest.match?(/\A\s+[[:upper:]¿¡]/)
+    end
+    private_class_method :sentence_boundary_at?
+
+    def self.applicability_normalize(text)
+      normalize_label(text.to_s.gsub(/n't\b/i, " not "))
+    end
+    private_class_method :applicability_normalize
+
+    def self.identity_phrase_patterns(chunks)
+      identity_phrases(chunks).map { |phrase| /\b#{Regexp.escape(phrase)}\b/ }
+    end
+    private_class_method :identity_phrase_patterns
 
     def self.identity_phrases(chunks)
       phrases = []

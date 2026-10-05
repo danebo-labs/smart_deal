@@ -73,7 +73,7 @@ class BedrockRagServiceAttributionGuardTest < ActiveSupport::TestCase
   end
 
   test "generic path fully abstains when only evidence-sensitive uncited text survives" do
-    raw_answer = "Dato de THYSSEN [1]. El LED ABC12 indica estado normal."
+    raw_answer = "Dato de THYSSEN [1]. El indicador queda en estado normal."
     response = response_with_markers(
       raw_answer,
       [

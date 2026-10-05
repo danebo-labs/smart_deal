@@ -979,8 +979,11 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       result = service.query('dame los torques', entity_s3_uris: [ 's3://bucket/junction_box.pdf' ])
 
       assert_equal 2, call_count, "Expected 2 calls: one with filter, one without"
-      assert_equal real_answer, result[:answer]
-      assert_equal 1, result[:citations].size
+      assert_equal :procedure_application, result[:applicability_violation]
+      assert_equal :value_code, result[:applicability_violation_basis]
+      assert_includes result[:answer], "no está confirmada"
+      assert_not_includes result[:answer], "10 Nm"
+      assert_empty result[:citations]
     end
   end
 
@@ -2325,7 +2328,10 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
       assert retrieve_called
       assert_empty result[:citations]
-      assert_includes result[:answer], "25 Nm"
+      assert_equal :procedure_application, result[:applicability_violation]
+      assert_equal :value_code, result[:applicability_violation_basis]
+      assert_includes result[:answer], "no está confirmada"
+      assert_not_includes result[:answer], "25 Nm"
       assert_equal [ "Manual" ], result[:doc_refs].pluck("canonical_name")
     end
   end

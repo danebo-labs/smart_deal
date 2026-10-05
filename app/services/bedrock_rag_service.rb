@@ -853,6 +853,9 @@ class BedrockRagService
       }
       if result[:applicability_violation]
         result[:diagnostics][:applicability_violation] = result[:applicability_violation]
+        if result[:applicability_violation_basis]
+          result[:diagnostics][:applicability_violation_basis] = result[:applicability_violation_basis]
+        end
       end
     end
     result
@@ -1057,14 +1060,20 @@ class BedrockRagService
   private
 
   def withhold_unconfirmed_identity!(result, raw_answer:, chunks:, question:, response_locale:)
-    return unless Rag::DocumentIdentityScope.unconfirmed_identity_assertion?(result[:answer], chunks) ||
-                  Rag::DocumentIdentityScope.unconfirmed_identity_assertion?(raw_answer, chunks)
+    kind = Rag::DocumentIdentityScope.unconfirmed_applicability_violation(
+      result[:answer], raw_answer, chunks, question
+    )
+    return if kind.nil?
 
+    basis = if kind == :procedure_application
+      Rag::DocumentIdentityScope.unconfirmed_applicability_basis(result[:answer], raw_answer, chunks, question)
+    end
     locale = effective_response_locale(question, response_locale: response_locale)
     result[:answer] = Rag::DocumentIdentityScope.unconfirmed_reference_withheld(chunks, locale: locale)
     result[:citations] = []
-    result[:applicability_violation] = :identity_assertion
-    Rag::DocumentIdentityScope.log_applicability_violation
+    result[:applicability_violation] = kind
+    result[:applicability_violation_basis] = basis if basis
+    Rag::DocumentIdentityScope.log_applicability_violation(kind, basis: basis)
   end
 
   def retrieval_trace(resolved_scope_s3_uris:, applied_filter_s3_uris:,

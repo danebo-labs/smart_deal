@@ -1657,7 +1657,7 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_equal "Listado de Averías Orona uP-900", ran[:result][:doc_refs].sole["canonical_name"]
   end
 
-  test "unknown identity residual procedure without an identity assertion is not an F1c violation" do
+  test "unknown identity withholds an unqualified procedure without another call" do
     procedure = "Envíalo al piso inferior, entra en inspección y corta tensión."
     evidence = chunk(
       "up900", "Reenviar al piso extremo inferior.",
@@ -1665,15 +1665,23 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       section_identity: "MANIOBRA UNIVERSAL uP-900",
       page: 4
     )
+    evidence[:metadata]["original_source_uri"] = "s3://bucket/up900.pdf"
     assert_not Rag::DocumentIdentityScope.unconfirmed_identity_assertion?(procedure, [ evidence ])
 
     ran = run_identity_generation(procedure, [ evidence ], equipment_identity: nil)
+    answer = ran[:result][:answer]
 
     assert_equal 1, ran[:retrieve_calls]
     assert_equal 1, ran[:prompts].size
-    assert_nil ran[:result][:applicability_violation]
-    assert_includes ran[:result][:answer], procedure
+    assert_equal 0, ran[:rag_calls]
+    assert_equal :procedure_application, ran[:result][:applicability_violation]
+    assert_equal :operation, ran[:result][:applicability_violation_basis]
     assert_equal "identity_unknown", ran[:events].find { |event| event["event"] == "open_retrieval" }["outcome_reason"]
+    assert_equal procedure, ran[:result].dig(:diagnostics, :raw_answer)
+    assert_includes answer, "no está confirmada"
+    assert_not_includes answer, "Envíalo"
+    assert_equal [], ran[:result][:citations]
+    assert ran[:result][:retrieved_citations].any?
   end
 
   test "a pin without confirmed identity does not suppress the applicability contract" do

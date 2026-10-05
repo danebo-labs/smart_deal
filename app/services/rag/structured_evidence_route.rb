@@ -347,7 +347,8 @@ module Rag
         question: @question, citations: citation_evidence
       ).call(answer)
       answer = attribution.answer
-      if unconfirmed_identity_violation?(raw_answer, answer, chunks)
+      applicability_kind = unconfirmed_applicability_kind(raw_answer, answer, chunks)
+      if applicability_kind
         return withhold_unconfirmed_identity_outcome(
           retrieval: retrieval,
           retrieval_ms: retrieval_ms,
@@ -362,7 +363,8 @@ module Rag
           generated_answer: generated_answer,
           internal_answer: internal_answer,
           citation_evidence: citation_evidence,
-          attribution: attribution
+          attribution: attribution,
+          kind: applicability_kind
         )
       end
       citations = @citation_processor.build_numbered_references(
@@ -1493,19 +1495,21 @@ module Rag
       citations.pluck(:number).sort == markers.uniq.sort
     end
 
-    def unconfirmed_identity_violation?(raw_answer, answer, chunks)
-      return false unless @evidence_applicability == DocumentIdentityScope::IDENTITY_UNKNOWN_REFERENCE
+    def unconfirmed_applicability_kind(raw_answer, answer, chunks)
+      return nil unless @evidence_applicability == DocumentIdentityScope::IDENTITY_UNKNOWN_REFERENCE
 
-      DocumentIdentityScope.unconfirmed_identity_assertion?(answer, chunks) ||
-        DocumentIdentityScope.unconfirmed_identity_assertion?(raw_answer, chunks)
+      DocumentIdentityScope.unconfirmed_applicability_violation(answer, raw_answer, chunks, @question)
     end
 
     def withhold_unconfirmed_identity_outcome(retrieval:, retrieval_ms:, expansion_ms:, local_ms:,
                                               generation_ms:, expanded_chunks:, chunks:, expansions:,
                                               prompt:, raw_answer:, generated_answer:, internal_answer:,
-                                              citation_evidence:, attribution:)
+                                              citation_evidence:, attribution:, kind:)
       answer = DocumentIdentityScope.unconfirmed_reference_withheld(chunks, locale: locale)
-      DocumentIdentityScope.log_applicability_violation
+      basis = if kind == :procedure_application
+        DocumentIdentityScope.unconfirmed_applicability_basis(answer, raw_answer, chunks, @question)
+      end
+      DocumentIdentityScope.log_applicability_violation(kind, basis: basis)
       trace = structured_trace(
         retrieval: retrieval,
         retrieval_ms: retrieval_ms,
@@ -1540,20 +1544,23 @@ module Rag
         retrieve_ms: retrieval_ms,
         generation_ms: generation_ms,
         route_outcome: :answered,
-        applicability_violation: :identity_assertion,
+        applicability_violation: kind,
+        applicability_violation_basis: basis,
         retrieved_chunk_sha256s: chunks.pluck(:chunk_sha256),
         correlation_id: @correlation_id,
         diagnostics: {
           raw_answer: raw_answer,
           normalized_answer: generated_answer,
           internal_answer: internal_answer,
+          citation_answer: attribution&.answer,
           retrieved_chunks: expanded_chunks,
           generation_chunks: chunks,
           safety_evidence_chunks: citation_evidence,
           expansions: expansions,
           outcome_reason: :applicability_violation,
-          applicability_violation: :identity_assertion
-        }
+          applicability_violation: kind,
+          applicability_violation_basis: basis
+        }.compact
       }
       attach_generation_trace!(result, prompt)
       Outcome.new(status: :answered, result: result)

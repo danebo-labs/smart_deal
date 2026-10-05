@@ -193,12 +193,30 @@ class Rag::UnconfirmedApplicabilityTest < ActiveSupport::TestCase
       "Se debe cortar tensión.",
       "Deberías cortar tensión.",
       "Haz que se mueva la cabina al piso inferior.",
-      "1. Envía la cabina al piso inferior."
+      "1. Envía la cabina al piso inferior.",
+      "Movimiento de la cabina al piso inferior.",
+      "Pulsa el botón de inspección.",
+      "Al pulsar el selector de inspección.",
+      "Al pulsar SI-2.",
+      "Corta tensión ahora.",
+      { answer: "Corta tensión ahora.", question: "Ya corté tensión, ¿y ahora?" },
+      { answer: "Cortar tensión ahora.", question: "Ya corté tensión, ¿y ahora?" },
+      {
+        answer: "Escuche si hay sonidos después de cortar tensión.",
+        question: "Se quedó entre pisos, ¿qué hago?"
+      }
     ]
     operation_allowed = [
       "La cabina se mueve normalmente.",
       "Observa si la cabina se mueve.",
       "Observa si hay movimiento incontrolado.",
+      "Escucha si hay movimiento de la cabina.",
+      "Escucha y observa si hay movimiento de la cabina, sonidos anormales o mensajes en la pantalla de control.",
+      "Anote cuándo comienza (al pulsar el botón, durante los primeros segundos, al llegar a destino).",
+      {
+        answer: "Escuche si hay sonidos de funcionamiento o alarmas después de cortar tensión.",
+        question: "Ya corté tensión, ¿y ahora?"
+      },
       "No realices ajustes ni desconexiones.",
       "Lee la placa y anota el fabricante."
     ]

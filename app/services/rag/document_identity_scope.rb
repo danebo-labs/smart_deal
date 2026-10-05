@@ -161,8 +161,7 @@ module Rag
     OPERATION_PATTERN = /
       \benvi(?:ar|a|e|o|alo|ala|ad|ando|ado)\b |
       \bmov(?:er|iendo|ido)(?:lo|la)?\b |
-      \bmovimiento\s+de\s+la\s+cabina\b |
-      \bmovimiento\s+de\s+cabina\s+(?:al|hacia|hasta|a)\b |
+      \bmovimiento\s+de\s+(?:la\s+)?cabina\s+(?:al|hacia|hasta|a)\b |
       (?<!se[[:space:]])\bmuev(?:e|a|an|as|elo|ela)\b |
       \b(?:haz|haga|hagan|haced|hacer)\s+que\s+(?:la\s+cabina\s+)?se\s+mueva\b |
       \bllev(?:ar|a|e|ando|arlo|arla)\s+(?:la\s+|el\s+)?cabina\b |
@@ -194,6 +193,14 @@ module Rag
       \bmedir\b | \bmide\b | \bmida\b | \bmedicion(?:es)?\b |
       \bmeasur(?:e|es|ed|ing|ement|ements)\b
     /ix
+    PRESS_STEM = /\A(?:puls(?:ar|a|e|ad|ando|acion|aciones)|press(?:es|ed|ing)?)\z/i
+    TEMPORAL_PRESS_PREFIX = /(?:\bal|\bcuando|\bwhen|\bupon)\s+\z/
+    NAMED_CONTROL_PATTERN = /\b(?:selector|borne|terminal|botonera)\b/i
+    OBSERVED_EVENT_PATTERN = /\b(?:comienza|empieza|momento|durante|llegar|arranque|ruido|sonido|chasquido|zumbido|roce)\b/i
+    CUT_STEM = /\bcort|\bcut/i
+    COMPLETED_CUT_QUESTION = /\bya\s+cort(?:e|aste|amos|aron|ado)\b|\bi\s+(?:already\s+)?(?:have\s+)?cut\b/i
+    CUT_COMMAND = /\b(?:corta|corten|cortad|cut)\b/i
+    RETROSPECTIVE_CUT_PREFIX = /(?:despues|tras|luego)\s+de(?:\s+haber)?\s+\z|despues\s+del\s+\z|after\s+(?:you\s+|having\s+)?\z|al\s+\z/
     OPERATION_NEGATOR_PATTERN = /
       \b(?:no|nunca|ni|evita|evite|evitar|eviten|do\s+not|never|avoid)\b
     /ix
@@ -420,7 +427,7 @@ module Rag
         next if qualified_reference?(unit, units, patterns, chunks.size)
         next if observational_question?(unit)
 
-        operation = true if operation_unit?(normalized) && !negated_frame?(unit)
+        operation = true if operation_unit?(normalized, question, unit.text) && !negated_frame?(unit)
         value = true if foreign_value_unit?(unit.text, chunks, question)
       end
       return { kind: :identity_assertion, basis: nil } if identity
@@ -492,14 +499,54 @@ module Rag
     end
     private_class_method :strip_identity_context
 
-    def self.operation_unit?(normalized)
+    def self.operation_unit?(normalized, question = nil, original = nil)
       return false if normalized.blank?
 
+      asked = applicability_normalize(question)
       normalized.to_enum(:scan, OPERATION_PATTERN).any? do
-        !negated_before?(normalized, Regexp.last_match.begin(0))
+        match = Regexp.last_match
+        next false if negated_before?(normalized, match.begin(0))
+        next false if observational_press?(normalized, match, original)
+        next false if completed_action_reference?(normalized, asked, match)
+
+        true
       end
     end
     private_class_method :operation_unit?
+
+    # "al pulsar el botón" while timing a noise the technician already hears
+    # is not an instruction. A press of a named control still is.
+    def self.observational_press?(normalized, match, original)
+      return false unless match[0].match?(PRESS_STEM)
+
+      prefix = normalized[0...match.begin(0)]
+      return false unless prefix.match?(TEMPORAL_PRESS_PREFIX)
+      return false if original.to_s.match?(CHUNK_DESIGNATOR_PATTERN)
+      return false if normalized.match?(NAMED_CONTROL_PATTERN)
+      return false unless normalized.match?(OBSERVED_EVENT_PATTERN)
+
+      true
+    end
+    private_class_method :observational_press?
+
+    # A retrospective mention of a cut the technician already reported is not
+    # a new instruction. An imperative cut still is.
+    def self.completed_action_reference?(normalized, asked, match)
+      return false if asked.blank?
+      return false unless match[0].match?(CUT_STEM)
+      return false unless asked.match?(COMPLETED_CUT_QUESTION)
+      return false if normalized.match?(CUT_COMMAND)
+      return false unless retrospective_cut?(normalized, match.begin(0))
+
+      true
+    end
+    private_class_method :completed_action_reference?
+
+    def self.retrospective_cut?(normalized, index)
+      window = normalized[[ index - 40, 0 ].max...index]
+      window.match?(RETROSPECTIVE_CUT_PREFIX)
+    end
+    private_class_method :retrospective_cut?
 
     def self.negated_frame?(unit)
       negated_intro?(unit.intro) || negated_intro?(unit.heading)

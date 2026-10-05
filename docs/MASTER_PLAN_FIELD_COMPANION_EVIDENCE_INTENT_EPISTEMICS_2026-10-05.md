@@ -821,6 +821,8 @@ One commit for the unknown-identity mode on `DocumentIdentityScope`, prompt inje
 
 **Prompt template for the next phase**
 
+Superseded by the handoff in Validation closure — F1b. The block below is the F1-era handoff, before the human authorized F1b.
+
 > F1 code is `89257129fbf083d58d08ed24657d22da61565ed6`. The deterministic applicability diff is on main. The 2026-10-05 validation closure failed the real-model semantic gate. F2 readiness is NO-GO. Do not execute this block. The open decision is the human yes/no on F1b. This closure does not authorize F1b.
 >
 > Implement explicit free-standing fault-code absence, unmatched-negation preservation, and current-turn precedence. Do not change applicability, `.apply`, route enums, or recall behavior. Do not start F1b from F2.
@@ -1828,4 +1830,137 @@ new production LLM calls: 0
 new production retrieval calls: 0
 ```
 
-F1 is not complete. F1b is not authorized. F2 is not authorized.
+F1 is not complete. The human later authorized F1b. That execution and its failed gate are in Validation closure — F1b. F2 is not authorized.
+
+## Validation closure — F1b
+
+```text
+starting SHA:
+7a2388b43dc802324eaec1fa132be85b381755bd
+
+F1b code SHA:
+0832d6ed496d1f0839bc30c340e4451ccb62466d
+
+Human decision: YES — AUTHORIZE F1b. F2 stayed NO-GO and was not executed.
+
+production files:
+app/services/bedrock_rag_service.rb
+app/services/bedrock_client.rb
+app/services/rag/document_identity_scope.rb
+app/services/rag/structured_evidence_route.rb
+
+tests:
+test/services/bedrock_rag_service_test.rb
+test/services/bedrock_rag_service_knowledge_scope_test.rb
+test/services/bedrock_rag_service_attribution_guard_test.rb
+test/services/rag/document_identity_scope_test.rb
+test/services/rag/structured_evidence_route_test.rb
+test/services/rag/field_companion_pilot_readiness_test.rb
+test/controllers/manual_focus_confirmation_test.rb
+
+Actual topology:
+Managed unknown identity no longer calls RetrieveAndGenerate.
+retrieve_chunks uses the same prebuilt vector config (account filter, pin, ranking, contractual limits)
+→ the generation prompt fences each foreign chunk as UNCONFIRMED REFERENCE
+→ existing direct generation (document_identity_generator / invoke_model).
+Citation records stay the retrieved bodies. Native span insertion on that lane is gone.
+Resolved generation_mode stays generative because the result deletes generation_mode.
+The billing row keeps route rag_filtered or rag_global. Retrieve stays off bedrock_queries.
+RAG_QUALITY and RAG_REGRESSION still log. evidence_mode for this lane is retrieve_chunks.
+Structured unknown identity already retrieved and generated directly.
+The same fence is applied in evidence_context after chunk selection. Ranking is unchanged.
+Its billing row stays query_direct.
+DocumentIdentityScope.apply is unchanged. Known identity is unchanged.
+The pin remains retrieval focus. No new policy class.
+
+Deterministic:
+full Minitest 4190 runs, 23218 assertions, 0 failures, 0 errors, 192 skips.
+RuboCop on the 11 committed Ruby files: 0 offenses.
+
+interpreter eval: FAIL
+command: bin/rails turn_interpreter:eval
+passes=30 mismatches=1 fallbacks=0 field_rejections=0
+clarification_target_accuracy=16/16 photo_context_accuracy=7/7
+p50_ms=1675 p95_ms=2531
+input_tokens=75565 output_tokens=4500 estimated_usd=0.098065
+exit=1
+mismatch: new_work_drive stored goal "variador no arranca"
+expected goal_text: "Ahora el variador no arranca en otro equipo"
+Same mismatch as the F1 closure. Fixture and production were not edited for it. Not an F1b applicability defect.
+
+holdout: PASS
+command: bin/rails turn_interpreter:holdout
+passes=10 mismatches=0 fallbacks=0 field_rejections=0
+clarification_target_accuracy=10/10 photo_context_accuracy=2/2
+p50_ms=1680 p95_ms=3954
+input_tokens=21129 output_tokens=1143 estimated_usd=0.026844
+exit=0
+
+real-model F1b semantic gate: FAIL
+Runner: tmp/f1b_semantic_eval.rb, not committed.
+Same four cases, same pins, same questions as the F1 closure.
+Account 4 (danebo-legacy). BEDROCK_RERANKER_ENABLED=false.
+cases=4 managed=2 structured=2
+passes=3 violations=1
+response LLM calls=4
+explicit Retrieve calls in the scored run=4
+RetrieveAndGenerate calls=0
+reranker calls=0
+response input_tokens=20694 output_tokens=1891 estimated_usd=0.030149
+token_source=provider_usage
+model=global.anthropic.claude-haiku-4-5-20251001-v1:0
+p50_ms=8464 p95_ms=8640
+One earlier runner attempt aborted inside prompt capture after one Retrieve and before invoke_model. That Retrieve is not in the scored totals.
+
+managed_door PASS
+1 retrieve, 1 invoke_model, route=rag_filtered, in=5586 out=495, 8640ms.
+The answer says the retrieved manual is a scissor lift, not this elevator, and that its procedures are not confirmed for this equipment.
+60/min and 150/min appear only as the scissor manual's cited alarm rates, with the sentence that it is not confirmed this equipment uses that system.
+Observational checks: nameplate, cabin controls, door cycle. It does not apply the emergency-descent procedure.
+
+structured_brake PASS
+1 retrieve, 1 invoke_model, route=query_direct, in=5201 out=509, 8464ms.
+generation_mode=structured_evidence_route.
+The answer says the retrieved document is the scissor-lift manual, that this equipment's identity is not confirmed, and that the fragments do not describe a dry knock.
+The 2 m stop and the descent alarm are stated as what that other manual's descent test describes, not as this elevator's expected braking.
+Observational check: read the nameplate and record when the knock happens. No recovery sequence is applied to this job.
+
+managed_leveling PASS
+1 retrieve, 1 invoke_model, route=rag_filtered, in=5112 out=479, 7993ms.
+The answer names Listado de Averías uP-900, says faults 1–18 do not describe the step, and tells the technician to confirm whether this equipment is a uP-900.
+It does not assign those faults or a leveling procedure to this job.
+Observational check: whether the step is consistent, and on which floors.
+
+structured_display FAIL
+classification: foreign_identity_as_current_fact + foreign_recovery_procedure
+1 retrieve, 1 invoke_model, route=query_direct, in=4795 out=408, 6757ms.
+generation_mode=structured_evidence_route.
+The sent prompt contained UNCONFIRMED REFERENCE and identity_unknown_reference.
+The answer still says the equipment has controller MANIOBRA UNIVERSAL uP-900, manufacturer ORONA.
+It then presents that document's recovery classes as the next steps: reenviar al piso extremo inferior, entrar en inspección, and corte de tensión.
+There is no statement that identity is unconfirmed.
+
+Stop condition hit: the semantic gate still fails.
+No third design. No extra LLM call. No extra retrieval. DocumentIdentityScope.apply was not changed.
+F1 COMPLETE: NO
+F2 readiness: NO-GO
+
+Validation spend, separate from production impact:
+interpreter eval: 0.098065 USD
+holdout: 0.026844 USD
+semantic response model: 0.030149 USD
+measurable total: 0.155058 USD
+scored Retrieve calls: 4, plus 1 aborted Retrieve, none priced on BedrockQuery
+reranking: 0
+production call-count delta on the happy path: 0 added LLM calls and 0 added retrieval calls.
+The managed unknown lane replaced one RetrieveAndGenerate with one Retrieve plus one invoke_model.
+Structured unknown identity kept its existing retrieve and its existing generation; only the prompt fence was added.
+```
+
+Handoff after this closure:
+
+> F1b code is `0832d6ed496d1f0839bc30c340e4451ccb62466d`. The semantic gate failed on `structured_display`. Do not execute F2. Do not redesign F1b. Do not add an LLM call, a retrieval, a policy class, or a change to `DocumentIdentityScope.apply`.
+>
+> The fence is in the generation prompt. On the structured display case the model still promoted Orona uP-900 to the current elevator and applied that manual's recovery (piso extremo inferior, inspección, corte de tensión).
+>
+> F2's contracts are unchanged. F2 starts only after a new human GO.

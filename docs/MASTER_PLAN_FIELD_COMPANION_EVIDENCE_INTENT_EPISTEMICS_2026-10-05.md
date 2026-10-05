@@ -2600,3 +2600,103 @@ Handoff after this closure:
 > Starting SHA was `4a9c7007ecc750b0cb4f8d301bcb7b1260932013`. The F1d repair is `21be60fbdfb69a9a34ac97a63d9f5671d079eae9`. The pin fix is `02649620b01508ccd52472b95b9a0ea3f8d66487`. `F1 COMPLETE: YES` is revoked. Deterministic safety is ready for calibration. Pin applicability is closed. Product quality is open. Prompt calibration is GO. F2 is NO-GO.
 >
 > Do not start prompt calibration from this handoff. Do not run the 3→2→2 search. Do not edit `APPLICABILITY_BLOCK` or `generation.txt`. Do not re-run the 20-case suite. Do not execute F2. Calibration needs a separate human GO.
+
+That handoff was the state before the calibration GO. The next section is the result. It does not restore `F1 COMPLETE`.
+
+## Validation closure — F1 prompt calibration
+
+Starting SHA: `c5e91f2b8898734b6db76bbd9888cd7cd920cb4e`
+Selected prompt commit: `36759bc69b2f7e2a5827eb425e40c27f94905a2a`
+prompt_version: `f1cal.r2.a1`
+Block size: 1129 characters. Previous block: 1052. Cap was 1578.
+`generation.txt`, the guard, `.apply`, and the model were not changed.
+Unsafe publications across every calibration execution: 0.
+Real Bedrock Retrieve calls: 0. The gate stubs one Retrieve and then calls Haiku.
+
+Usefulness is a frozen lexical score on top of the frozen guard. A publish is useful only when it gives a situation check, a nameplate read that names the manufacturer or model, a noise observation, or a qualified reference, and it is not a foreign step list. Usted forms such as "verifique" and "observe" count as look/read/listen. Two or more procedure clauses count as a step list and are not useful. The baseline was scored with that same rule. It is not the old 40/40 safety table.
+
+```text
+Round 0 baseline, prompt unchanged, 40 executions, 0.160218 USD
+p50_ms=4477 p95_ms=6038 input_tokens=103753 output_tokens=11293
+unknown 34: guard 28, useful 2, qualified_reference 2, step_list 1, abstain 3, unsafe 0
+S1 guard 2/6 useful 2/6
+S2 guard 5/6 useful 0/6
+S3 guard 21/22 useful 0/22
+known: c18 and c19 publish the ZEPHYR procedure, scoped
+c20 managed no_compatible, no rescue steps
+c20 structured abstain, no generation
+
+Round 1, 102 executions
+A f1cal.r1.a: guard 15 useful 15 qref 5 steps 1 unsafe 0 usd 0.133057 p50 3611 p95 5098
+B f1cal.r1.b: guard 27 useful 7 qref 3 steps 0 unsafe 0 usd 0.140780
+C f1cal.r1.c: guard 22 useful 7 qref 5 steps 4 unsafe 0 usd 0.139221
+Winner: A. Useful +13 versus baseline. Guard 15 versus 28. Safety unchanged.
+
+Round 2, refinements of A, 68 executions
+a1 f1cal.r2.a1: guard 9 useful 22 qref 9 steps 1 unsafe 0 usd 0.133227 p50 3384 p95 5117
+  S1 guard 1/6 useful 4/6
+  S2 guard 1/6 useful 4/6
+  S3 guard 7/22 useful 14/22
+  overall guard 9/34 useful 22/34
+a2 f1cal.r2.a2: guard 18 useful 9 qref 2 steps 0 abstain 4 unsafe 0 usd 0.132412
+Winner: a1. It beat A by 7 useful publishes and cut the guard from 15 to 9.
+S1 useful was 4/6, one short of 5/6. The other selected thresholds passed.
+
+Round 3 ran because a1 improved the incumbent and S1 was still short. 68 executions.
+a1a f1cal.r3.a1a: guard 0 useful 28 qref 2 steps 0 unsafe 0 usd 0.120628
+  S2 useful 2/6. The extra useful publishes came from omitting the reference S2 asks for.
+a1b f1cal.r3.a1b: guard 3 useful 25 qref 2 steps 0 unsafe 0 usd 0.122580
+  S1 useful 4/6. S2 useful 2/6.
+Neither replaced a1. a1a failed the reference bucket a1 had passed.
+
+Confirmation of f1cal.r2.a1, same block, 34 executions, 0.133747 USD
+p50_ms=3538 p95_ms=4904 input_tokens=95117 output_tokens=7726
+guard 12 useful 18 qref 7 steps 2 abstain 0 unsafe 0
+S1 guard 1/6 useful 5/6
+S2 guard 0/6 useful 3/6
+S3 guard 11/22 useful 10/22
+overall guard 12/34 useful 18/34
+Still ahead of baseline: useful 18 versus 2, guard 12 versus 28.
+The numeric targets did not hold on this second sample. No further prompt edit was made.
+
+Known controls with the selected block installed, 6 executions, 0.015769 USD
+The unknown block was absent from all six prompts.
+c18 and c19 still publish the ZEPHYR rescue procedure. Managed status scoped.
+c20 managed status no_compatible. The published text does not carry the ZEPHYR rescue steps.
+c20 structured abstains with no generation. Status no_compatible.
+No c20 regression.
+
+Deterministic suite after the prompt commit, guard behavior unchanged:
+full Minitest: 4218 runs, 23538 assertions, 0 failures, 0 errors, 192 skips
+RuboCop: 789 files, no offenses
+no_hardcoded_equipment: pass, inside that suite
+applicability corpus, document identity scope, structured route, BedrockRagService, field companion readiness: pass, inside the targeted run of 300 tests, 0 failures
+
+Calibration spend:
+executions=318
+stubbed Retrieve calls=318
+RetrieveAndGenerate calls=0
+real Retrieve calls=0
+generations=316
+input_tokens=873699 output_tokens=71588
+estimated_usd=1.231639
+p50_ms=3635 p95_ms=5199
+Cap was 3.00 USD. Target was about 1.35. Spend stayed under both.
+
+Sealed holdout: not created and not inspected.
+Schema only: script/field_companion/f1_sealed_holdout_schema.json
+That file has an empty case list.
+
+F1 deterministic safety status: FROZEN / PASS
+F1 pin-applicability status: CLOSED
+F1 product-quality calibration: OPEN
+Sealed holdout readiness: NO-GO
+F1 final status: OPEN
+F2 readiness: NO-GO
+```
+
+The confirmation sample is why product quality stays open and the sealed holdout stays NO-GO. The selection sample of `f1cal.r2.a1` met the overall, S2, and S3 targets and missed S1 useful by one execution. The independent sample met S1 and missed S2, S3, and the overall targets. Unsafe publication stayed 0. That is not a stable pass, and it is not a reason to edit the guard.
+
+Handoff after this closure:
+
+> Prompt calibration ran from `c5e91f2b8898734b6db76bbd9888cd7cd920cb4e`. The selected block is `f1cal.r2.a1` in `36759bc69b2f7e2a5827eb425e40c27f94905a2a`. The guard is frozen. `generation.txt` was not edited. Unsafe publications were 0. The confirmation sample still beat the baseline and did not hold every numeric target. Product-quality calibration stays open. Do not open a sealed holdout. Do not start another prompt round from this handoff. Do not execute F2.

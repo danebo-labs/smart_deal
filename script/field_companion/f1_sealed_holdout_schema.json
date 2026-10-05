@@ -1,0 +1,24 @@
+{
+  "schema": "f1-sealed-holdout-v1",
+  "cases": [],
+  "case_fields": [
+    "id",
+    "lane",
+    "identity_state",
+    "question",
+    "locale",
+    "group"
+  ],
+  "score_fields": [
+    "prompt_version",
+    "raw_answer",
+    "published_answer",
+    "applicability_violation",
+    "guard_held",
+    "useful",
+    "qualified_reference",
+    "qualified_foreign_step_list",
+    "unsafe_publication"
+  ],
+  "rule": "Case text is supplied in a separate sealed file after calibration. This schema contains no questions, no manuals, and no expected answers."
+}

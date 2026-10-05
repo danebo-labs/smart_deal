@@ -2441,7 +2441,14 @@ The F1c claim that a procedure sentence with no identity assertion can be publis
 F1 final verdict: COMPLETE
 F2 readiness: NO-GO
 
-Debt, not a redesign:
+This COMPLETE line is the claim written at 4a9c700. It is revoked.
+The 20×2 score was not a reproducible clean 40/40.
+c09 structured published "Q-731 = fallo de puerta [1]" and was scored qualified.
+That was a missed detection: the question had already named Q-731, and the answer promoted a new meaning from the foreign chunk.
+c20 published the ZEPHYR rescue steps as THIS JOB'S EQUIPMENT for known ORBITA.
+The authority for the repair is Validation closure — F1 deterministic repair.
+
+Debt, not a redesign, as recorded at 4a9c700:
 new_work_drive remains the only interpreter mismatch.
 Case 20 shows the existing scoped-pin path applying a non-brand manual to a known identity. .apply was not opened.
 The unknown guard fires often because the model puts the disclaimer outside the step paragraph. Lowering that rate is later prompt work, after F1, and it must not weaken this boundary.
@@ -2460,10 +2467,136 @@ reranking: 0
 production call-count delta: 0 added LLM calls and 0 added Retrieve calls
 ```
 
-Handoff after this closure:
+Handoff written at 4a9c700. Revoked by the next section. Do not treat it as the current phase state.
 
 > F1d code is `30a34e2d565f977d574a18e14ff2af925a4cc626`, on top of `675fe171a4b67ef2f30513f0f5c080fa69bdb67c`. Starting SHA was `a6e0d21bc51cb421bf652c9be1e75463abf08fea`. F1 is complete. The original four-case gate is 4/4. The 20×2 gate is 40/40. `managed_leveling`, `structured_display`, and 28 unknown live answers passed only because the deterministic guard replaced the model answer. Do not hide that.
 >
 > Do not execute F2. Do not add an LLM call, a retrieval, a policy class, a prompt change, or a change to `DocumentIdentityScope.apply`. Do not invent F1e to lower the guard trigger rate. That rate is 28/34 on the unknown live cases because the disclaimer sits outside the step paragraph. Prompt tuning is a later, separate optimization and must not weaken the local qualification window.
 >
 > F2's contracts are unchanged. F2 starts only after a new human GO.
+
+## Validation closure — F1 deterministic repair
+
+The `F1 COMPLETE: YES` claim at `4a9c700` is revoked. F1 stays open. This section is the authority.
+
+```text
+starting SHA:
+4a9c7007ecc750b0cb4f8d301bcb7b1260932013
+
+F1d repair SHA:
+21be60fbdfb69a9a34ac97a63d9f5671d079eae9
+
+pin applicability SHA:
+02649620b01508ccd52472b95b9a0ea3f8d66487
+
+Branch: main. Pushed: no. Deploy: no.
+
+The prior live gate was not a reproducible clean 40/40.
+c09 structured was scored qualified and published "Q-731 = fallo de puerta [1]".
+The question had named Q-731. The answer promoted a new meaning from the foreign chunk. That was a missed detection.
+c20 (known ORBITA, retrieved ZEPHYR) published the rescue steps with identity_status=scoped, neutral, and THIS JOB'S EQUIPMENT: ZEPHYR QX-77.
+That violated the pre-specified semantics: a pin is retrieval focus, not equipment identity, and it does not override present non-matching identity.
+
+30a34e2 introduced D1–D3.
+D1: subjectless copulas were anchored to the start of the unit, so a hedge or a short context prefix let the assignment through.
+D2: a negated heading stayed in force after its list.
+D3: bare "movimiento" and "se mueve" were removed, and directed or causative car movement went with them.
+D4 was already open on that classifier. Echoing the code token exempted "Q-731 = fallo de puerta". "=" is a meaning claim. The token echo is not.
+
+Repairs, deterministic, no new policy class:
+D1. A subjectless copula is an assertion only at the start, or after at most two hedges and one context clause of at most four words.
+"Probablemente se trata de…", "Seguramente es un…", "Por lo que describes, se trata de…", and "Based on the display, it is…" are identity_assertion.
+Prose before that prefix is not. "Este es un equipo de plataforma…" stays allowed.
+D2. A negated heading covers its own list, including the next paragraph when that paragraph is only the list.
+It does not cover a later section, a new heading, or a paragraph that is not that list.
+The mandatory case is "**No realices:** / Puentes" followed by "Pasos de rescate: / Envía la cabina…". That is procedure_application.
+D3. "Movimiento de cabina al piso inferior" and "Haz que se mueva la cabina al piso inferior" are procedure_application.
+"La cabina se mueve normalmente", "Observa si la cabina se mueve", and "Hay movimiento incontrolado" stay allowed.
+"movimiento" and "mueve" were not widened as generic stems.
+D4. An equality meaning uses the existing designator and fault-code patterns. Q-731 is not hardcoded.
+Asked code plus a new meaning is procedure_application, basis value_code.
+The same code repeated without a meaning stays allowed.
+A qualified foreign meaning stays allowed.
+Unknown identity withholds the new meaning. Known identity still publishes it and does not enter the guard.
+D5. Structured basis is computed from the processed pre-withhold answer and the raw answer.
+The withheld template is not an input. The published text is unchanged.
+
+Symmetric corpus: test/services/rag/unconfirmed_applicability_test.rb
+"symmetric applicability corpus keeps violations and safe references apart".
+Identity, operations, and values each have violation cases and allowed cases.
+A later narrowing has to keep that test green.
+
+Pin decision, approved and implemented in .apply only:
+A pin may compensate for missing identity metadata.
+A pin may not override present identity that does not match the known equipment.
+An equipment designator in canonical_name, original_filename, or section_identity is identity metadata even when the manufacturer is not in KbDocumentResolver::BRANDS.
+A title with no designator stays neutral.
+
+c20 before: scoped, neutral, THIS JOB'S EQUIPMENT: ZEPHYR QX-77, rescue body kept.
+c20 after: no_compatible, reference_only, REFERENCE ONLY — OTHER EQUIPMENT, rescue body removed, focus URI unchanged.
+Known ORONA plus pinned ZEPHYR QX-77 is the same rejection.
+Known ORBITA LM-5 plus pinned ORBITA LM-5 stays compatible.
+No pin plus ZEPHYR stays reference_only.
+Unknown identity plus a pinned ZEPHYR designator stays neutral. That path is not the known-identity rule.
+
+Preserved neutral pins:
+"Elemont montacargas" and "Elemont" under known KONE stay THIS JOB. Those titles have no model designator. The pin covers that missing identity. They do not stay neutral because Elemont is absent from BRANDS.
+"Manual de nivelación" under known ORBITA LM-5 stays neutral for the same reason.
+Fermator VF5 under known KONE stays reference_only because the metadata names a different known brand.
+Chunk order and account_id are unchanged. Retrieval, ranking, and tenant authorization were not edited.
+
+Prompt calibration was not performed.
+APPLICABILITY_BLOCK, generation.txt, and the Haiku model were not changed.
+The 20-case suite was not re-run. No hidden holdout was created. No new Bedrock generation or Retrieve was spent.
+
+deterministic tests, after both commits:
+full Minitest: 4218 runs, 23538 assertions, 0 failures, 0 errors, 192 skips
+RuboCop: 789 files, no offenses
+no_hardcoded_equipment: pass, inside that suite
+document identity scope, including the pin cases: 71 runs, 822 assertions, 0 failures, 1 skip
+field companion readiness: pass, inside the full suite
+
+D5 attribution replay was not re-run. tmp/d5_abstention_contract is not in the tree.
+Citation attribution was not changed. The prior 32/32 result was not re-verified.
+
+interpreter eval: FAIL, same mismatch, out of scope
+command: bin/rails turn_interpreter:eval
+passes=30 mismatches=1 fallbacks=0 field_rejections=0
+clarification_target_accuracy=16/16 photo_context_accuracy=7/7
+p50_ms=1603 p95_ms=2207
+input_tokens=75565 output_tokens=4531 estimated_usd=0.098220
+mismatch: new_work_drive stored goal "variador no arranca"
+
+holdout: PASS
+command: bin/rails turn_interpreter:holdout
+passes=10 mismatches=0
+p50_ms=1463 p95_ms=1762
+input_tokens=21129 output_tokens=1174 estimated_usd=0.026999
+
+F1 deterministic safety status: READY FOR CALIBRATION
+F1 pin-applicability status: CLOSED
+F1 product-quality status: OPEN
+Prompt calibration readiness: GO
+F2 readiness: NO-GO
+
+Debt, not a new phase:
+new_work_drive remains the only interpreter mismatch.
+A manufacturer word with no designator is still missing model identity. That is the Elemont rule. A title that is only "ZEPHYR", with no designator, stays on that rule.
+A subjectless copula after ordinary prose is not an assertion. The hedge/context prefix is the bound.
+The live gate was not repeated. Product quality stays open until a separately authorized prompt calibration.
+No F1e was added. F2 was not started.
+
+Validation spend this repair, separate from the revoked F1d gate:
+interpreter eval: 0.098220 USD
+holdout: 0.026999 USD
+measurable total: 0.125219 USD
+Retrieve calls: 0
+generation calibration calls: 0
+production call-count delta: 0 added LLM calls and 0 added Retrieve calls
+```
+
+Handoff after this closure:
+
+> Starting SHA was `4a9c7007ecc750b0cb4f8d301bcb7b1260932013`. The F1d repair is `21be60fbdfb69a9a34ac97a63d9f5671d079eae9`. The pin fix is `02649620b01508ccd52472b95b9a0ea3f8d66487`. `F1 COMPLETE: YES` is revoked. Deterministic safety is ready for calibration. Pin applicability is closed. Product quality is open. Prompt calibration is GO. F2 is NO-GO.
+>
+> Do not start prompt calibration from this handoff. Do not run the 3→2→2 search. Do not edit `APPLICABILITY_BLOCK` or `generation.txt`. Do not re-run the 20-case suite. Do not execute F2. Calibration needs a separate human GO.

@@ -704,7 +704,17 @@ One commit limited to truthful trace fields, the cohort read of those fields, an
 
 **Prompt template for the next phase**
 
-> Implement only unknown-identity applicability on `DocumentIdentityScope`, without changing `.apply` and without a new policy class. Use the new trace fields to prove the mode and the query. Do not touch known-identity scope, pins, ranking, goal, or photo promotion.
+> F0 is `9e9e79c9773086cc60b91263c199239fee8524e8`. Verdict: the causal trace is in place and product behavior is unchanged. This block is a template. Do not execute it until a human says `GO F1`.
+>
+> Implement only unknown-identity applicability on `DocumentIdentityScope`, without changing `.apply` and without a new policy class. Do not touch known-identity scope, pins, ranking, goal, or photo promotion. Do not preserve the T4 drop (`current_turn:dropped`, `ignored(no_slot)`). Do not start F1b.
+>
+> Confirmed paths: the managed prompt is `BedrockRagService#load_generation_prompt_with_locale`, placed by `build_complete_optimized_config` at `generation_configuration.prompt_template.text_prompt_template`. F0 reads that sent string for `generation_context`. `StructuredEvidenceRoute#attach_generation_trace!` already manifests the prompt that route sends. `open_retrieval` already records `outcome_reason=identity_unknown` on the managed lane. Unknown identity returns before a document-identity retrieve, so do not invent `results_count` or `contexts_delivered` there.
+>
+> Trace to use: `evidence_applicability` is allowlisted and still unemitted. Emit it on `open_retrieval`, and on `document_identity_scope` only when that event already fires. Put the reason on existing `outcome_reason`. Leave `generation_mode=generative` for a successful managed turn. Do not add `meta_kind` or a parallel mode. Prove the query with `query_components`, `original_sha256`, and `effective_sha256`. `generation_context` has no applicability token; do not add one. Photo bands stay `mixed` until F4.
+>
+> Preserve `kb_retrieve` `user_id` and `conversation_session_id`. Do not call `ActiveEpisode#to_h` a second time on the live episode that owns the persisted payload. `PILOT_AUDIT_CAPTURE` still gates raw `original_query`.
+>
+> Regressions that must stay green: `work_context_goal_test.rb`, `field_photo_analysis_job_test.rb`, `field_companion_pilot_readiness_test.rb`, `document_identity_catalog_tenant_test.rb`, `document_identity_scope_test.rb`. New production LLM calls: 0. New production retrieval calls: 0. The applicability block is the only expected token change, and only on unknown-identity generated turns.
 
 ### F1 — Make unknown-identity applicability explicit
 
@@ -722,7 +732,7 @@ This is the highest-risk production issue and affects T1–T4. The static analog
 - `app/services/bedrock_rag_service.rb`
 - `app/services/rag/structured_evidence_route.rb`
 - `app/prompts/bedrock/generation.txt`
-- `app/services/pilot_usage_log.rb` only if the F0 allowlist commit did not already add `evidence_applicability`
+- `app/services/pilot_usage_log.rb` is not expected. F0 already allowlisted `evidence_applicability`. Do not add another key. The reason uses existing `outcome_reason`.
 - `test/services/rag/document_identity_scope_test.rb`
 - `test/services/rag/structured_evidence_route_test.rb`
 - `test/services/rag/field_companion_pilot_readiness_test.rb`
@@ -739,7 +749,10 @@ No `app/services/rag/evidence_applicability_context.rb`.
 - Retrieval filters, top-k, pin scope, native citation publication, and the managed call stay as they are.
 - A foreign manual may appear only as a named, page-cited indicative reference, never as the current equipment's instruction.
 - The answer still offers at least one generic observational check that does not transfer foreign procedure.
-- Emit `evidence_applicability` and its reason on `open_retrieval` and, when that event exists, on `document_identity_scope`.
+- Emit `evidence_applicability` on `open_retrieval` and, only when that event already fires, on `document_identity_scope`. The reason uses existing `outcome_reason`.
+- Inject the section 5.1 block inside `BedrockRagService#load_generation_prompt_with_locale`, which is the string `build_complete_optimized_config` places in `text_prompt_template`. F0 traces that sent string. A second template render is not the generation context.
+- On the managed unknown-identity lane, `generation_mode` stays `generative`. That lane does not run the document-identity retrieve, so it does not gain `results_count` or `contexts_delivered`.
+- `StructuredEvidenceRoute#attach_generation_trace!` already manifests the prompt that route sends. The same mode block has to be inside that prompt.
 
 **Invariants**
 
@@ -747,6 +760,8 @@ No `app/services/rag/evidence_applicability_context.rb`.
 - A user pin does not confirm equipment identity.
 - No `.apply` semantic change.
 - No extra retrieval, generator, or reranker.
+- `kb_retrieve` keeps explicit `user_id` and `conversation_session_id` from the caller.
+- Do not call `ActiveEpisode#to_h` a second time on the live episode that owns the persisted payload.
 - Citation attribution remains native on the managed lane.
 - F1b is not started from inside F1.
 
@@ -758,6 +773,7 @@ No `app/services/rag/evidence_applicability_context.rb`.
 - The structured route labels the mode and sends one retrieval result set.
 - A generated reference must include foreign manual identity and page and the not-this-job disclaimer.
 - Existing account and general-corpus filters remain exact.
+- Trace proof uses F0 fields: `query_components`, `original_sha256`, `effective_sha256`, `generation_mode=generative` on managed success, and `evidence_applicability` once this phase emits it. Do not assert `meta_kind`, a separated photo band, or that the T4 sentence survives composition.
 
 **Negative tests**
 
@@ -770,7 +786,7 @@ No `app/services/rag/evidence_applicability_context.rb`.
 
 **Observability**
 
-`evidence_applicability=identity_unknown_reference`, the reason, identity status, and existing `open_retrieval.outcome_reason=identity_unknown`. Citation and source lists stay. `evidence_class` is derived in the report.
+`evidence_applicability=identity_unknown_reference` on `open_retrieval`, and on `document_identity_scope` only when that event already fires. The reason stays on allowlisted `outcome_reason`. Managed success stays `generation_mode=generative`. `generation_context` does not grow an applicability token. Citation and source lists stay. `evidence_class` is derived in the report when the emitted fields suffice. F0 does not emit `evidence_class`.
 
 **Cost / latency**
 
@@ -1501,3 +1517,120 @@ historical memory: DEFER POST-PILOT
 ```
 
 F1b, if a human later says yes, still adds no LLM call and no retrieval call. It replaces managed `RetrieveAndGenerate` with one existing retrieve plus existing direct generation.
+
+## Execution findings — F0
+
+```text
+F0 commit SHA:
+9e9e79c9773086cc60b91263c199239fee8524e8
+
+Actual files changed:
+app/services/rag/causal_trace.rb
+app/models/conversation_session.rb
+app/services/rag/query_composer.rb
+app/services/session_context_builder.rb
+app/services/rag/companion_guidance_context.rb
+app/services/bedrock_rag_service.rb
+app/services/rag/document_identity_scope_event.rb
+app/services/rag/structured_evidence_route.rb
+app/services/rag/context_evidence_route.rb
+app/services/rag/ambiguous_model_responder.rb
+app/controllers/rag_controller.rb
+app/controllers/concerns/rag_query_concern.rb
+app/services/query_orchestrator_service.rb
+app/services/rag/photo_question_answer_service.rb
+app/jobs/field_photo_analysis_job.rb
+app/services/pilot_usage_log.rb
+app/services/pilot_metrics_report.rb
+app/services/pilot_metrics_human_formatter.rb
+app/services/pilot_export_trace.rb
+docs/PILOT_TRACEABILITY.md
+plus the tests named in the evidence bundle
+
+Actual code paths discovered:
+Turn tokens: ConversationSession#log_turn_interpreter → Rag::CausalTrace.assertion_tokens
+Episode delta: apply_owner_perception! forks before the reducer, then ActiveEpisodeTurn.changed_fields; digests go through episode_digest on a fork or a parsed copy
+Query parts: QueryComposer.explain; call still returns the query string
+Raw photo turn: FieldPhotoAnalysisJob raw_question keyword, telemetry only; functional question is unchanged
+Managed manifest: the prompt already stored at generation_configuration.prompt_template.text_prompt_template
+Scope counts: document_identity_scope_result after retrieve; structured scope_identity after its existing retrieve
+kb_retrieve ids: explicit user_id and conversation_session_id from the caller
+Cohort card: interaction_completed.generation_mode, then evidence_route
+Cohort question: TURN_EVIDENCE.original_query when capture is on; capture off deletes a composed backfill
+
+Tests/evals:
+targeted trace + readiness + goal + tenant: 244 runs, 1861 assertions, exit 0
+photo, document scope, bedrock, structured, session: 447 runs, 3193 assertions, 12 skips, exit 0
+full Minitest: 4183 runs, 22971 assertions, 0 failures, 192 skips, exit 0
+RuboCop on touched Ruby files: 0 offenses
+git diff --check: exit 0
+interpreter eval, holdout, real-model rubric, and canary export: not run; F0 does not change those paths and those commands bill model calls
+
+Trace signals now available:
+turn_interpreter.interpreter_assertions as act:kind:slot:applied|ignored(reason):span
+field_companion_turn episode_fields_changed, state_before_sha256, state_after_sha256
+query_components; original_sha256 = raw turn; effective_sha256 = retrieval query actually used
+assistant field_companion_turn omits those query digests
+interaction_completed.generation_mode
+kb_retrieve account_id, user_id, conversation_session_id, correlation_id when the caller has them
+document_identity_scope results_count and contexts_delivered after a retrieve
+generation_context, generation_prompt_chars, context_truncated from the prompt actually sent
+llm_calls still carry model, tokens, latency, token_source on the same correlation_id
+meta_kind and evidence_applicability are allowlisted and unemitted
+
+Behavior findings:
+T4 "No veo ningún código de falla" is still ignored(no_slot). The span is not persisted as absent. current_turn is dropped when the composer strips it. Seeded goal and observations keep the effective hash different from the raw hash. episode_fields_changed stays empty. state hashes differ when touch! moves updated_at.
+"Tengo una foto, ¿te sirve?" stays move=meta, composed nil, episode fields unchanged, state hashes equal on a seeded episode. generation_mode=meta is traceable. No meta_kind.
+Known-identity foreign chunk: results_count 1, contexts_delivered 0, danebo guidance present, photo bands absent on that prompt.
+Photo blocks that exist are mixed. F4 has not split them.
+Capture off does not copy the composed query into original_query or the cohort question.
+
+Regression findings:
+444c910 goal tests and 8faf2f8 photo reuse / late-writer tests stayed green without new copies.
+Tenant catalog, document identity scope, and pilot readiness stayed green.
+No production behavior assertion was rewritten to accept a new answer, route, or episode write.
+
+Unexpected constraints:
+safe_value cuts an array item to 120 characters and does not add a truncation marker. CausalTrace.bounded puts :truncated inside the token so the marker survives that cut.
+ActiveEpisode#to_h shares the observations and identifiers arrays. A second to_h on the live episode can shrink the payload that will be persisted. The digest now uses a fork or a parsed copy.
+DeterministicRenderer has an account and no user id. Its kb_retrieve stays without an invented user_id, so a user-scoped cohort still omits it.
+fallback_retrieve does not emit kb_retrieve. F0 did not add that event.
+An early document-identity return before retrieve omits counts rather than emitting a fake 0.
+Photo-only turns do not get a generative fallback when generation_mode is nil.
+
+Assumptions confirmed:
+Cohort loss of kb_retrieve is the user_id filter in PilotTelemetryReader#cohort_payload? and PilotEvent.hot_path_rows, not pilot_metrics_report.rb message filtering.
+changed_fields does not include updated_at.
+QueryComposer.call remains the retrieval string. explain is observational and fail-open around the component tokens.
+PILOT_AUDIT_CAPTURE still gates raw text. TurnEvidence was not weakened.
+Logging stays after the ConversationSession lock. A trace exception does not roll back the turn.
+0 is kept for contexts_delivered. nil is omitted.
+
+Assumptions invalidated:
+The plan text said safe_value marks a cut span. It only cuts. The marker has to be written into the token first.
+A second load_generation_prompt_with_locale call is not the context that was sent. The trace uses the template already on the request. custom_config can replace that template.
+"Episode unchanged" for an ignored negate is empty episode_fields_changed, not necessarily equal state hashes. touch! rewrites updated_at.
+
+Actual call-count impact:
+new production LLM calls: 0
+new production retrieval calls: 0
+
+Actual latency/cost impact:
+local hashes, token arrays, and one read of the prompt string already built for the request
+token impact: 0
+no production flag change
+
+Deferred items:
+F1 evidence_applicability values
+F1b
+F2 act=absent and preserving the dropped T4 turn
+F3 meta_kind
+F4 truncation policy and separated photo bands
+managed top_k telemetry
+per-event app_revision
+MaintenanceCase and historical memory
+interpreter eval, holdout, real-model rubric, canary export
+product debt left in PILOT_TRACEABILITY: photo-offer UX, open-retrieval specificity, over-reading weak visual evidence
+```
+
+F1 above is reconciled to these findings only: the allowlist edit is unnecessary, the injection point is the sent template, managed `generation_mode` stays `generative`, and unknown identity does not invent scope counts. F1 is not authorized.

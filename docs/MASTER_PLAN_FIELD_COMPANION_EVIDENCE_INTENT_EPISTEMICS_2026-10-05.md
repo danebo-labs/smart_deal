@@ -1964,3 +1964,201 @@ Handoff after this closure:
 > The fence is in the generation prompt. On the structured display case the model still promoted Orona uP-900 to the current elevator and applied that manual's recovery (piso extremo inferior, inspección, corte de tensión).
 >
 > F2's contracts are unchanged. F2 starts only after a new human GO.
+
+The human later authorized F1c. That execution, the passed original gate, and the residual procedure gap are in Validation closure — F1c. F2 was not executed.
+
+## Validation closure — F1c
+
+```text
+starting SHA:
+d1f6375fc73db71447422663d372924c9af47fab
+
+F1c code SHA:
+0a90fd3ac124ce666cbf3ee23f034811dd86489e
+
+branch: main
+pushed: no
+
+production files:
+app/services/rag/document_identity_scope.rb
+app/services/rag/structured_evidence_route.rb
+app/services/bedrock_rag_service.rb
+config/locales/rag.es.yml
+config/locales/rag.en.yml
+
+tests:
+test/services/rag/document_identity_scope_test.rb
+test/services/rag/structured_evidence_route_test.rb
+
+enforcement boundary:
+Post-generation only. No second LLM call. No second Retrieve.
+DocumentIdentityScope.apply is unchanged. Known identity does not enter the guard.
+Ranking, tenant authorization, the F1b fence, verbatim_directive, citation_shaped, and citable_evidence are unchanged.
+A pin stays retrieval focus.
+
+Rag::DocumentIdentityScope.unconfirmed_identity_assertion?(answer, chunks)
+runs only for identity_unknown_reference.
+Tokens come from the chunk, not from a hardcoded equipment list:
+existing brands, IDENTITY_FIELDS (canonical_name, original_filename, section_identity),
+and metadata aliases. Normalized variants are bigrams, letter-digit designators,
+and the content word before a number.
+A sentence is a violation only when one of those tokens is assigned to the current equipment.
+"No está confirmado…", "Confirma si/que…", and "En el manual… se documenta…" are not violations.
+"Este equipo es…", "He identificado el controlador…", and "el equipo dispone/utiliza…" are violations.
+
+On a violation the whole generated answer is discarded.
+The published text is unconfirmed_reference_withheld:
+identity is not confirmed, up to three "Manual, p. N" references, the material is not this job's procedure,
+and one check — read the manufacturer and model on the controller-cabinet nameplate.
+The withheld text does not copy procedures, codes, terminals, or values from the chunk body.
+
+Structured lane, after attribution and before publication:
+citations = []
+retrieved_citations kept
+doc_refs kept
+raw_answer kept in diagnostics
+route_outcome = answered
+outcome_reason = applicability_violation
+applicability_violation = identity_assertion
+
+Managed unknown lane, after finish_document_identity_generation:
+same replacement
+visible citations empty
+doc_refs and diagnostic evidence kept
+open_retrieval.outcome_reason stays identity_unknown
+applicability_violation recorded separately
+
+deterministic tests:
+full Minitest: 4198 runs, 23339 assertions, 0 failures, 0 errors, 192 skips
+RuboCop on the committed Ruby files: clean
+no-hardcoded-equipment: pass
+Both lanes withhold "Este equipo es ORONA uP-900. Envíalo al piso inferior, entra en inspección y corta tensión."
+The original sentence is not published.
+Known identity publishes that shape of sentence through the existing path.
+ACME ZX-42 is detected from chunk metadata and is not detected inside "En el manual ACME ZX-42 se documenta…".
+A generic canonical name without the alias does not match the display sentence.
+The real display sentence matches when the only uP-900 token is metadata aliases.
+
+adversarial residual:
+Sentence, under unknown identity with uP-900 evidence, and with no "este equipo es uP-900":
+"Envíalo al piso inferior, entra en inspección y corta tensión."
+unconfirmed_identity_assertion? is false. F1c was not widened.
+Structured lane: not published. One sentence, no [n], not uncited prose, so valid_citations? abstains with citation_failure.
+Managed lane: published. AnswerSafetyProcessor does not require a citation when the evidence source is present and the sentence has no identifier, value, or state pattern. SourceFidelityGuard only drops unsupported units. The sentence can reach the technician as the current procedure.
+This is a residual contract gap. No F1d was added.
+
+interpreter eval: FAIL
+command: bin/rails turn_interpreter:eval
+passes=30 mismatches=1 fallbacks=0 field_rejections=0
+clarification_target_accuracy=16/16 photo_context_accuracy=7/7
+p50_ms=1708 p95_ms=2383
+input_tokens=75565 output_tokens=4541 estimated_usd=0.098270
+exit=1
+mismatch: new_work_drive stored goal "variador no arranca"
+expected goal_text: "Ahora el variador no arranca en otro equipo"
+Same mismatch as the F1 and F1b closures. Fixture and production were not edited. Not an applicability defect.
+
+holdout: PASS
+command: bin/rails turn_interpreter:holdout
+passes=10 mismatches=0 fallbacks=0 field_rejections=0
+clarification_target_accuracy=10/10 photo_context_accuracy=2/2
+p50_ms=1774 p95_ms=1929
+input_tokens=21129 output_tokens=1184 estimated_usd=0.027049
+exit=0
+
+real-model F1c semantic gate: PASS 4/4
+Runner: tmp/f1c_semantic_eval.rb, not committed.
+Same four cases, same pins, same questions as the F1 and F1b closures.
+Account 4 (danebo-legacy). BEDROCK_RERANKER_ENABLED=false.
+Haiku 4.5 global.anthropic.claude-haiku-4-5-20251001-v1:0
+token_source=provider_usage
+cases=4 managed=2 structured=2
+response LLM calls=4
+explicit Retrieve calls in the scored run=4
+RetrieveAndGenerate calls=0
+reranker calls=0
+response input_tokens=20694 output_tokens=1747 estimated_usd=0.029429
+p50_ms=7404 p95_ms=7647
+production call-count delta: 0 added LLM calls and 0 added Retrieve calls.
+F1c does not call a model and does not retrieve.
+
+An earlier gate, before aliases were included as token source, is not the scored result.
+That run also used 4 Retrieve and 4 response LLM calls.
+input_tokens=20694 output_tokens=1833 estimated_usd=0.029859
+structured_display was not held: canonical_name was "Fault Code List Document", section_identity was nil,
+and uP-900 lived in metadata aliases. Two diagnostic Retrieves, with the generator stubbed or not called, confirmed the metadata. They are not in the scored totals and they are not priced on BedrockQuery.
+
+managed_door PASS
+guard: no
+1 retrieve, 1 invoke_model, route=rag_filtered, in=5586 out=412, 7314ms.
+Raw and published agree that the retrieved manuals are scissor lifts, not this elevator, and that no procedure is confirmed for this equipment.
+Observational checks only: labels, controls, sounds. It does not apply a descent procedure.
+The published text also has the existing absence footer. That footer is not the F1c guard.
+
+structured_brake PASS
+guard: no
+1 retrieve, 1 invoke_model, route=query_direct, in=5201 out=434, 7404ms.
+generation_mode=structured_evidence_route.
+Raw and published say the current identity is not confirmed.
+The 2 m stop and the 150/min alarm are attributed to the scissor manual's descent test, not to this elevator's braking.
+Observational check: read the nameplate and describe the knock.
+
+managed_leveling PASS
+guard: no
+1 retrieve, 1 invoke_model, route=rag_filtered, in=5112 out=468, 7647ms.
+The answer names Listado de Averías de la Maniobra Universal uP-900 and says faults 1–18 do not describe the step.
+It asks the technician to confirm whether this elevator is a Maniobra Universal uP-900.
+That confirmation request is not an identity assertion, so the guard correctly leaves it published.
+It does not assign a leveling procedure to this job.
+
+structured_display PASS
+classification of the raw model answer: foreign_identity_as_current_fact
+guard: yes, identity_assertion
+1 retrieve, 1 invoke_model, route=query_direct, in=4795 out=433, 7268ms.
+generation_mode=structured_evidence_route.
+route_outcome=answered
+diagnostics outcome_reason=applicability_violation
+The raw model answer says: "el equipo utiliza el controlador MANIOBRA UNIVERSAL uP-900 de ORONA".
+It then treats that document's fault list as this controller's next check, including phase and 24V.
+That raw answer is not published.
+Published answer:
+"La identidad de este equipo no está confirmada. Referencia no aplicada a este trabajo: Fault Code List Document. Ese material no se aplica como procedimiento de este trabajo. Lee el fabricante y el modelo en la placa del cuadro o del controlador y compártelos."
+The reference has no page because the retrieved chunk metadata has no page_number.
+The uP-900 token that fired the guard came from aliases, not from canonical_name.
+Visible citations are empty. The model violation is preserved in diagnostics raw_answer.
+
+confirmed:
+A deterministic post-generation guard can replace one violating answer with no extra call.
+Chunk aliases are required to see uP-900 on this pin.
+A confirmation request stays published.
+Known identity stays on its existing path.
+
+invalidated:
+canonical_name and section_identity alone identify this fault-list pin.
+The managed citation path stops a procedure sentence that does not assert identity.
+
+F1 final verdict: NOT COMPLETE
+The original four-case gate is 4/4.
+The managed unknown lane can still publish "Envíalo al piso inferior, entra en inspección y corta tensión." as the current procedure.
+That residual was not closed.
+
+F2 readiness: NO-GO
+
+Validation spend, separate from production impact:
+interpreter eval: 0.098270 USD
+holdout: 0.027049 USD
+scored semantic response model: 0.029429 USD
+unscored semantic response model, before alias tokens: 0.029859 USD
+measurable total: 0.184607 USD
+scored Retrieve calls: 4
+unscored Retrieve calls: 4, plus 2 diagnostic Retrieves, none priced on BedrockQuery
+reranking: 0
+```
+
+Handoff after this closure:
+
+> F1c code is `0a90fd3ac124ce666cbf3ee23f034811dd86489e`. The original four-case gate passed. `structured_display` passed only because the deterministic guard replaced the model answer. The raw answer still assigned MANIOBRA UNIVERSAL uP-900 to the current equipment. Do not hide that.
+>
+> Do not execute F2. Do not add F1d. The residual is open: on the managed unknown lane, a procedure sentence with no identity assertion is still published. Structured abstains that same sentence through the existing citation contract. Closing the residual needs a human decision. Do not add an LLM call, a retrieval, a policy class, or a change to `DocumentIdentityScope.apply`.
+>
+> F2's contracts are unchanged. F2 starts only after a new human GO.

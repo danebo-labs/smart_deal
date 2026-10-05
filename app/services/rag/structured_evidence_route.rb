@@ -1223,6 +1223,12 @@ module Rag
       parts.compact_blank.join("\n\n")
     end
 
+    def generation_evidence_content(chunk)
+      return chunk[:content] unless @evidence_applicability == DocumentIdentityScope::IDENTITY_UNKNOWN_REFERENCE
+
+      DocumentIdentityScope.unconfirmed_reference_content(chunk)
+    end
+
     def evidence_context(chunks)
       chunks.each_with_index.map do |chunk, index|
         metadata = chunk[:metadata].to_h.stringify_keys
@@ -1236,7 +1242,7 @@ module Rag
           Page: #{page}
           Chunk SHA256: #{chunk[:chunk_sha256]}
           Content:
-          #{chunk[:content]}
+          #{generation_evidence_content(chunk)}
         EVIDENCE
       end.join("\n")
     end

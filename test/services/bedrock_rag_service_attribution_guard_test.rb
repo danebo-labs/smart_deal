@@ -14,7 +14,12 @@ class BedrockRagServiceAttributionGuardTest < ActiveSupport::TestCase
     end
 
     def retrieve(_params)
-      OpenStruct.new(retrieval_results: [])
+      refs = Array(@response.citations).flat_map { |citation| Array(citation.retrieved_references) }
+      OpenStruct.new(
+        retrieval_results: refs.map do |ref|
+          OpenStruct.new(content: ref.content, score: 0.4, metadata: ref.metadata, location: ref.location)
+        end
+      )
     end
   end
 
@@ -39,7 +44,7 @@ class BedrockRagServiceAttributionGuardTest < ActiveSupport::TestCase
   end
 
   test "generic path drops a foreign segment and preserves retrieval transport" do
-    raw_answer = "Dato Thyssen. Dato Otis."
+    raw_answer = "Dato Thyssen.[1] Dato Otis.[2]"
     response = response_with_spans(
       raw_answer,
       [
@@ -85,7 +90,7 @@ class BedrockRagServiceAttributionGuardTest < ActiveSupport::TestCase
   end
 
   test "separate account turns do not leak attribution state" do
-    first_raw = "Dato Thyssen. Dato Otis."
+    first_raw = "Dato Thyssen.[1] Dato Otis.[2]"
     first = query(
       response_with_spans(
         first_raw,
@@ -97,7 +102,7 @@ class BedrockRagServiceAttributionGuardTest < ActiveSupport::TestCase
       question: "En THYSSEN, ¿qué indica?",
       account_id: 101
     )
-    second_raw = "Dato Edel. Dato Orona."
+    second_raw = "Dato Edel.[1] Dato Orona.[2]"
     second = query(
       response_with_spans(
         second_raw,
@@ -116,7 +121,7 @@ class BedrockRagServiceAttributionGuardTest < ActiveSupport::TestCase
   end
 
   test "flag off preserves the generic response byte exactly" do
-    raw_answer = "Dato Thyssen. Dato Otis."
+    raw_answer = "Dato Thyssen.[1] Dato Otis.[2]"
     response = response_with_spans(
       raw_answer,
       [
@@ -139,6 +144,10 @@ class BedrockRagServiceAttributionGuardTest < ActiveSupport::TestCase
   def query(response, question:, account_id:)
     service = BedrockRagService.new(knowledge_base_id: "test-kb", account: @account)
     service.instance_variable_set(:@client, FakeClient.new(response))
+    text = response.output.text
+    generator = Object.new
+    generator.define_singleton_method(:query) { |*, **| text }
+    service.define_singleton_method(:document_identity_generator) { generator }
     service.query(
       question,
       account_id: account_id,

@@ -1341,9 +1341,11 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_equal 11, rag_service.calls.first[:conversation_session_id]
     assert_equal "structured_evidence_route", outcome.result[:generation_mode]
     assert_applicability_contract(prompt)
+    assert_includes prompt, "UNCONFIRMED REFERENCE"
     assert_includes prompt, "Código de Avería BLT Ascensor"
     assert_includes prompt, "Page: 4"
     assert_includes prompt, body
+    assert prompt.index("UNCONFIRMED REFERENCE") < prompt.index(body)
     assert_not_includes prompt, "THIS JOB'S EQUIPMENT:"
     assert_equal "not_required", scope["outcome_reason"]
     assert_equal "identity_unknown_reference", scope["evidence_applicability"]
@@ -1382,8 +1384,11 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_equal 1, rag_service.calls.size
     assert_equal 1, generator.calls.size
     assert_applicability_contract(prompt)
+    assert_includes prompt, "UNCONFIRMED REFERENCE"
     assert_includes prompt, "Page: 11"
     assert_includes prompt, "Fuji Yida"
+    assert_includes prompt, body
+    assert prompt.index("UNCONFIRMED REFERENCE") < prompt.index(body)
     assert_not_includes prompt, "THIS JOB'S EQUIPMENT:"
     assert_equal "structured_evidence_route", outcome.result[:generation_mode]
     assert_not_equal "identity_unknown_reference", outcome.result[:generation_mode]

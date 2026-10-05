@@ -88,18 +88,25 @@ class BedrockClient
     # tracking (account_id/user_id/conversation_session_id/correlation_id) lets
     # a caller's BedrockQuery row join back to its own request for cost
     # attribution; omitted by callers that don't have that context.
+    extra = tracking.to_h
+    # Callers that already name a retrieval route (rag_filtered / rag_global)
+    # keep that attribution. A bare direct call stays query_direct.
+    route = extra.delete(:route) || "query_direct"
+    attempt = extra.delete(:attempt) || 1
+    token_source = extra.delete(:token_source) || "provider_usage"
     TrackBedrockQueryJob.perform_later(
       model_id: model_id,
       input_tokens: input_tokens,
       output_tokens: output_tokens,
+      token_source: token_source,
       user_query: prompt.to_s.truncate(500),
       latency_ms: latency_ms,
-      route: "query_direct",
-      attempt: 1,
+      route: route,
+      attempt: attempt,
       max_tokens: max_tokens,
       stop_reason: result['stop_reason'].presence,
       source: "query",
-      **tracking.to_h
+      **extra
     )
     Rails.logger.info("BedrockClient: query tracking enqueued (#{input_tokens} in + #{output_tokens} out tokens)")
   rescue StandardError => e

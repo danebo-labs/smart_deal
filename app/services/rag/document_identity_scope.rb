@@ -79,6 +79,32 @@ module Rag
       false
     end
 
+    # Structural fence for a chunk that reached generation while equipment
+    # identity is unconfirmed. The body stays so it can be named as another
+    # manual. It is not .apply and it does not rank.
+    UNCONFIRMED_REFERENCE_MARK = "UNCONFIRMED REFERENCE"
+
+    def self.mark_unconfirmed_reference(chunks)
+      Array(chunks).map do |chunk|
+        chunk.merge(
+          content: unconfirmed_reference_content(chunk),
+          identity_applicability: "unconfirmed_reference"
+        )
+      end
+    end
+
+    def self.unconfirmed_reference_content(chunk)
+      metadata = metadata_of(chunk)
+      page = metadata["page_number"].presence || "DATA_NOT_AVAILABLE"
+      [
+        UNCONFIRMED_REFERENCE_MARK,
+        "Manual: #{document_name(chunk)}",
+        "Page: #{page}",
+        "Not confirmed for the current equipment. Not this job's identity, procedure, code, terminal, value, or recovery.",
+        chunk[:content].to_s
+      ].join("\n")
+    end
+
     def self.needles(identity_or_episode)
       identity = coerce_identity(identity_or_episode)
       return [] unless identity.is_a?(EquipmentIdentity)

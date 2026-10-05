@@ -320,10 +320,9 @@ class Rag::FieldCompanionPilotReadinessTest < ActiveJob::TestCase
     result = nil
     with_pilot_flags do
       service = BedrockRagService.new(account: @account, knowledge_base_id: "test-kb")
-      service.define_singleton_method(:retrieve_and_generate_with_retry) do |_params|
+      service.define_singleton_method(:retrieve_with_retry) do |_params|
         calls += 1
-        output = Struct.new(:text).new("La parada puede depender de cómo llega la cabina.")
-        Struct.new(:output, :citations, :session_id).new(output, [], "sid")
+        Struct.new(:retrieval_results).new([])
       end
       service.define_singleton_method(:fallback_retrieve) { |*, **| [] }
       result = service.query(LEVELING, episode: episode, output_channel: :web, correlation_id: "pilot:open")

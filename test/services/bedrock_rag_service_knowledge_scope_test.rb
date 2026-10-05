@@ -60,11 +60,11 @@ class BedrockRagServiceKnowledgeScopeTest < ActiveSupport::TestCase
       result = BedrockRagService.new(account: @viewer).query("What is S3?")
     end
 
-    assert_equal 1, client.generate_calls
+    assert_equal 0, client.generate_calls
+    assert_equal 1, client.retrieve_calls
     assert_not_includes result[:answer].to_s, "FOREIGN_PRIVATE_BODY"
     assert_empty result[:citations]
     assert_empty result[:retrieved_citations]
-    assert_equal 0, client.retrieve_calls
   end
 
   test "a shared-corpus bulk citation is kept when document_id is sha36" do
@@ -109,7 +109,7 @@ class BedrockRagServiceKnowledgeScopeTest < ActiveSupport::TestCase
     )
     sha36 = "121bfffe0827f6bc681ba9bdc91050390055"
     assert_not_equal sha36, document.document_uid
-    response = cited_response("Elemont answer.", document, "ELEMONT_BORNE", document_id: sha36)
+    response = cited_response("Elemont answer. [1]", document, "ELEMONT_BORNE", document_id: sha36)
     client = FakeClient.new
     client.generate_response = response
     result = nil
@@ -275,7 +275,8 @@ class BedrockRagServiceKnowledgeScopeTest < ActiveSupport::TestCase
       )
     end
 
-    assert_equal 1, client.generate_calls
+    assert_equal 1, client.retrieve_calls
+    assert_equal 0, client.generate_calls
     assert_includes account_ids(client.filter), @viewer.id.to_s
     assert_includes account_ids(client.filter), accounts(:legacy).id.to_s
     assert_includes account_ids(client.filter), accounts(:pilot).id.to_s
@@ -403,7 +404,7 @@ class BedrockRagServiceKnowledgeScopeTest < ActiveSupport::TestCase
       )
     end
 
-    assert_equal 1, client.generate_calls
+    assert_equal 1, client.retrieve_calls
     assert_includes values_for(client.filter, "original_source_uri"), shared.canonical_uri
     assert_empty account_ids(client.filter)
 
@@ -632,10 +633,28 @@ class BedrockRagServiceKnowledgeScopeTest < ActiveSupport::TestCase
 
   def with_client(client)
     original = Aws::BedrockAgentRuntime::Client.method(:new)
+    original_runtime = Aws::BedrockRuntime::Client.method(:new)
     Aws::BedrockAgentRuntime::Client.define_singleton_method(:new) { |*| client }
+    Aws::BedrockRuntime::Client.define_singleton_method(:new) do |*|
+      runtime = Object.new
+      runtime.define_singleton_method(:invoke_model) do |_params|
+        client.note_generation!
+        text = client.generation_text
+        payload = {
+          "content" => [ { "text" => text } ],
+          "usage" => { "input_tokens" => 8, "output_tokens" => 3 },
+          "stop_reason" => "end_turn"
+        }
+        OpenStruct.new(body: StringIO.new(JSON.generate(payload)))
+      end
+      runtime
+    end
     yield
   ensure
     Aws::BedrockAgentRuntime::Client.define_singleton_method(:new) { |*args, **kwargs| original.call(*args, **kwargs) }
+    if original_runtime
+      Aws::BedrockRuntime::Client.define_singleton_method(:new) { |*args, **kwargs| original_runtime.call(*args, **kwargs) }
+    end
   end
 
   def capture_probe_lines
@@ -792,9 +811,36 @@ class BedrockRagServiceKnowledgeScopeTest < ActiveSupport::TestCase
       @filters = []
     end
 
-    def retrieve(_params)
+    def note_generation!
+      @generate_calls += 1
+    end
+
+    def generation_text
+      @generate_response&.output&.text || "ok"
+    end
+
+    def retrieve(params)
       @retrieve_calls += 1
-      OpenStruct.new(retrieval_results: Array(@retrieve_results))
+      @filter = params.dig(:retrieval_configuration, :vector_search_configuration, :filter)
+      @filters << @filter
+      if @sorry_first && @retrieve_calls == 1
+        return OpenStruct.new(retrieval_results: [])
+      end
+
+      OpenStruct.new(retrieval_results: retrieval_results_for_call)
+    end
+
+    def retrieval_results_for_call
+      return Array(@retrieve_results) if @retrieve_results
+
+      Array(@generate_response&.citations).flat_map { |citation| Array(citation.retrieved_references) }.map do |ref|
+        OpenStruct.new(
+          content: ref.content,
+          score: 0.4,
+          metadata: ref.metadata,
+          location: ref.location
+        )
+      end
     end
 
     def retrieve_and_generate(params)

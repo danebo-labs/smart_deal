@@ -35,8 +35,31 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   # Fake AWS BedrockAgentRuntime Client
   class FakeBedrockAgentRuntimeClient
     attr_accessor :retrieve_and_generate_response, :retrieve_response,
-                  :should_raise_error, :error_message
-    attr_reader :last_retrieve_and_generate_params, :last_retrieve_params
+                  :should_raise_error, :error_message, :generation_prompts,
+                  :generation_script, :last_invoke_temperature
+    attr_reader :last_retrieve_params, :retrieve_calls
+
+    def last_retrieve_and_generate_params
+      return @last_retrieve_and_generate_params if @last_retrieve_and_generate_params
+      return nil if @last_retrieve_params.nil? && Array(@generation_prompts).empty?
+
+      {
+        input: { text: @last_retrieve_params&.dig(:retrieval_query, :text) },
+        retrieve_and_generate_configuration: {
+          knowledge_base_configuration: {
+            retrieval_configuration: {
+              vector_search_configuration: @last_retrieve_params&.dig(
+                :retrieval_configuration, :vector_search_configuration
+              )
+            },
+            generation_configuration: {
+              prompt_template: { text_prompt_template: @generation_prompts.last },
+              inference_config: { text_inference_config: { temperature: nil, max_tokens: nil } }
+            }
+          }
+        }
+      }
+    end
 
     def initialize(*)
       @retrieve_and_generate_response = nil
@@ -44,6 +67,8 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       @error_message = nil
       @last_retrieve_and_generate_params = nil
       @last_retrieve_params = nil
+      @retrieve_calls = 0
+      @generation_prompts = []
     end
 
     def retrieve_and_generate(params)
@@ -58,9 +83,38 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       @retrieve_and_generate_response || default_retrieve_and_generate_response
     end
 
+    def note_generation!(prompt)
+      @generation_prompts << prompt
+    end
+
+    def generation_text
+      scripted = Array(@generation_script).shift
+      return scripted if scripted
+
+      response = @retrieve_and_generate_response || default_retrieve_and_generate_response
+      response.output.text
+    end
+
     def retrieve(params)
+      @retrieve_calls += 1
       @last_retrieve_params = params
-      @retrieve_response || ::OpenStruct.new(retrieval_results: [])
+      if @should_raise_error
+        raise Aws::BedrockAgentRuntime::Errors::ServiceError.new(nil, @error_message || "AWS Error")
+      end
+      return @retrieve_response if @retrieve_response
+
+      response = @retrieve_and_generate_response || default_retrieve_and_generate_response
+      refs = Array(response.citations).flat_map { |citation| Array(citation.retrieved_references) }
+      ::OpenStruct.new(
+        retrieval_results: refs.map do |ref|
+          ::OpenStruct.new(
+            content: ref.content,
+            score: 0.4,
+            metadata: ref.metadata,
+            location: ref.location
+          )
+        end
+      )
     end
 
     private
@@ -103,13 +157,58 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     end
 
     original_agent_new = Aws::BedrockAgentRuntime::Client.method(:new)
+    original_runtime_new = Aws::BedrockRuntime::Client.method(:new)
     Aws::BedrockAgentRuntime::Client.define_singleton_method(:new) { |*_args| fake_agent_client }
+    Aws::BedrockRuntime::Client.define_singleton_method(:new) do |*_args|
+      runtime = Object.new
+      runtime.define_singleton_method(:invoke_model) do |params|
+        body = JSON.parse(params[:body])
+        prompt = body.dig("messages", 0, "content")
+        fake_agent_client.last_invoke_temperature = body["temperature"]
+        fake_agent_client.note_generation!(prompt)
+        payload = {
+          "content" => [ { "text" => fake_agent_client.generation_text } ],
+          "usage" => { "input_tokens" => 11, "output_tokens" => 4 },
+          "stop_reason" => "end_turn"
+        }
+        OpenStruct.new(body: StringIO.new(JSON.generate(payload)))
+      end
+      runtime
+    end
 
     yield fake_agent_client
   ensure
     if original_agent_new
       Aws::BedrockAgentRuntime::Client.define_singleton_method(:new) { |*args| original_agent_new.call(*args) }
     end
+    if original_runtime_new
+      Aws::BedrockRuntime::Client.define_singleton_method(:new) { |*args| original_runtime_new.call(*args) }
+    end
+  end
+
+  def authorized_chunk(body = "Retrieved manual excerpt.", uri: "s3://bucket/manual.pdf")
+    ::OpenStruct.new(
+      content: ::OpenStruct.new(text: body),
+      score: 0.4,
+      metadata: {
+        "account_id" => @account.id.to_s,
+        "canonical_name" => "Manual",
+        "original_source_uri" => uri
+      },
+      location: ::OpenStruct.new(s3_location: ::OpenStruct.new(uri: uri))
+    )
+  end
+
+  def authorized_retrieve(body = "Retrieved manual excerpt.", uri: "s3://bucket/manual.pdf")
+    ::OpenStruct.new(retrieval_results: [ authorized_chunk(body, uri: uri) ])
+  end
+
+  def cited_answer(answer_text, body: nil)
+    response = fake_response(answer_text)
+    response.citations = [
+      ::OpenStruct.new(retrieved_references: [ authorized_chunk(body || answer_text) ])
+    ]
+    response
   end
 
   # Builds a fake retrieve_and_generate response with the given answer text.
@@ -179,7 +278,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       assert result.key?(:session_id)
       assert result[:answer].is_a?(String)
       assert result[:citations].is_a?(Array)
-      assert_equal TEST_SESSION_ID, result[:session_id]
+      assert_nil result[:session_id]
     end
   end
 
@@ -308,7 +407,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       service = BedrockRagService.new(account: @account)
       result = service.query('What is the procedure?')
 
-      assert_equal "#{real_answer}[1]", result[:answer]
+      assert_equal real_answer, result[:answer]
     end
   end
 
@@ -329,7 +428,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         # number_of_results is now controlled by RagRetrievalProfile (no-pin → 8),
         # not by BEDROCK_RAG_NUMBER_OF_RESULTS. Temperature still comes from ENV.
         assert_equal 8, retrieval[:number_of_results]
-        assert_equal 0.1, gen_inference[:temperature]
+        assert_equal 0.1, client.last_invoke_temperature
       end
     end
   end
@@ -367,46 +466,40 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   # $output_format_instructions$, retrieve_and_generate discarded the answer and
   # returned its canned "Sorry" refusal even with valid retrieval.
   test 'rendered generation prompt keeps output_format_instructions as the last block' do
+    service = BedrockRagService.new(account: @account)
+    template = service.send(
+      :load_generation_prompt_with_locale,
+      'Compara las dos fotocélulas: qué tensión documenta cada una?',
+      response_locale: :es,
+      session_context: "## Recent Conversation\nUser: prior question",
+      output_channel: :web
+    )
+
+    assert_equal 1, template.scan('$output_format_instructions$').size
+    assert template.rstrip.end_with?('$output_format_instructions$'),
+           'dynamic directives must be appended before the output contract'
+    assert_includes template, '# DELIVERY CHANNEL'
+    assert_includes template, 'MUST be written entirely in Spanish'
+  end
+
+  test 'unknown identity direct generation substitutes the output contract and marks the chunk' do
     with_mock_bedrock_client do |client|
       service = BedrockRagService.new(account: @account)
       service.query(
         'Compara las dos fotocélulas: qué tensión documenta cada una?',
         response_locale: :es,
         session_context: "## Recent Conversation\nUser: prior question",
-        output_channel: :web
+        output_channel: :web,
+        equipment_identity: nil
       )
 
-      template = client.last_retrieve_and_generate_params.dig(
-        :retrieve_and_generate_configuration,
-        :knowledge_base_configuration,
-        :generation_configuration,
-        :prompt_template,
-        :text_prompt_template
-      )
-
-      assert_equal 1, template.scan('$output_format_instructions$').size
-      assert template.rstrip.end_with?('$output_format_instructions$'),
-             'dynamic directives must be appended before the output contract'
-      assert_includes template, '# DELIVERY CHANNEL'
-      assert_includes template, 'MUST be written entirely in Spanish'
-    end
-  end
-
-  test 'rendered generation prompt closes with the output contract on the minimal path' do
-    with_mock_bedrock_client do |client|
-      service = BedrockRagService.new(account: @account)
-      service.query('What is S3?')
-
-      template = client.last_retrieve_and_generate_params.dig(
-        :retrieve_and_generate_configuration,
-        :knowledge_base_configuration,
-        :generation_configuration,
-        :prompt_template,
-        :text_prompt_template
-      )
-
-      assert_equal 1, template.scan('$output_format_instructions$').size
-      assert template.rstrip.end_with?('$output_format_instructions$')
+      prompt = client.generation_prompts.last
+      assert_not_includes prompt, '$output_format_instructions$'
+      assert_includes prompt, 'UNCONFIRMED REFERENCE'
+      assert_includes prompt, 'identity_unknown_reference'
+      assert_includes prompt, '# DELIVERY CHANNEL'
+      assert_includes prompt, 'Cite a claim taken from a search result with [n]'
+      assert prompt.index('identity_unknown_reference') < prompt.index('Cite a claim taken from a search result with [n]')
     end
   end
 
@@ -790,18 +883,17 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     no_results_text = "I'm sorry, I couldn't find relevant information."
     real_answer     = "Revisa primero la alimentación."
 
+    open_hit = authorized_retrieve("Alimentación documentada.")
     with_mock_bedrock_client do |client|
-      client.define_singleton_method(:retrieve_and_generate) do |params|
+      client.generation_script = [ real_answer ]
+      client.define_singleton_method(:retrieve) do |params|
         call_count += 1
-        vector = params.dig(
-          :retrieve_and_generate_configuration,
-          :knowledge_base_configuration,
-          :retrieval_configuration,
-          :vector_search_configuration
-        )
-        entity_filter_present = vector&.dig(:filter).to_s.include?("s3://bucket/mpk_708a.pdf")
-        text = entity_filter_present ? no_results_text : real_answer
-        ::OpenStruct.new(output: ::OpenStruct.new(text: text), citations: [], session_id: 'sid')
+        filter = params.dig(:retrieval_configuration, :vector_search_configuration, :filter)
+        if filter.to_s.include?("s3://bucket/mpk_708a.pdf")
+          ::OpenStruct.new(retrieval_results: [])
+        else
+          open_hit
+        end
       end
 
       own_pin_uri!('s3://bucket/mpk_708a.pdf')
@@ -866,41 +958,19 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'query retries without filter when filtered result returns no results' do
     call_count = 0
-    no_results_text = "I'm sorry, I couldn't find relevant information."
-    real_answer     = "Here are the torque values: 10 Nm."
-    viewer_account_id = @account.id.to_s
+    real_answer = "Here are the torque values: 10 Nm. [1]"
+    open_hit = authorized_retrieve("Torque documentado: 10 Nm.", uri: "s3://bucket/manual.pdf")
 
     with_mock_bedrock_client do |client|
-      client.define_singleton_method(:retrieve_and_generate) do |params|
+      client.generation_script = [ real_answer ]
+      client.define_singleton_method(:retrieve) do |params|
         call_count += 1
-        vector = params.dig(
-          :retrieve_and_generate_configuration,
-          :knowledge_base_configuration,
-          :retrieval_configuration,
-          :vector_search_configuration
-        )
-        filter = vector&.dig(:filter)
-        entity_filter_present = filter.to_s.include?("s3://bucket/junction_box.pdf")
-        text = entity_filter_present ? no_results_text : real_answer
-        citations =
-          if entity_filter_present
-            []
-          else
-            [
-              ::OpenStruct.new(
-                retrieved_references: [
-                  ::OpenStruct.new(
-                    content: ::OpenStruct.new(text: "Torque documentado: 10 Nm."),
-                    location: ::OpenStruct.new(
-                      s3_location: ::OpenStruct.new(uri: "s3://bucket/manual.pdf")
-                    ),
-                    metadata: { "account_id" => viewer_account_id }
-                  )
-                ]
-              )
-            ]
-          end
-        ::OpenStruct.new(output: ::OpenStruct.new(text: text), citations: citations, session_id: 'sid')
+        filter = params.dig(:retrieval_configuration, :vector_search_configuration, :filter)
+        if filter.to_s.include?("s3://bucket/junction_box.pdf")
+          ::OpenStruct.new(retrieval_results: [])
+        else
+          open_hit
+        end
       end
 
       own_pin_uri!('s3://bucket/junction_box.pdf')
@@ -909,23 +979,18 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       result = service.query('dame los torques', entity_s3_uris: [ 's3://bucket/junction_box.pdf' ])
 
       assert_equal 2, call_count, "Expected 2 calls: one with filter, one without"
-      assert_equal "#{real_answer}[1]", result[:answer]
+      assert_equal real_answer, result[:answer]
       assert_equal 1, result[:citations].size
     end
   end
 
   test 'forced pinned query never retries globally when filtered result has no evidence' do
     call_count = 0
-    no_results_text = "I'm sorry, I couldn't find relevant information."
 
     with_mock_bedrock_client do |client|
-      client.define_singleton_method(:retrieve_and_generate) do |_params|
+      client.define_singleton_method(:retrieve) do |_params|
         call_count += 1
-        ::OpenStruct.new(
-          output: ::OpenStruct.new(text: no_results_text),
-          citations: [],
-          session_id: "sid"
-        )
+        ::OpenStruct.new(retrieval_results: [])
       end
 
       service = BedrockRagService.new(account: @account)
@@ -947,28 +1012,10 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   test 'episode inherited T3 canned keeps both entity URIs and never opens rag_global' do
     elemont = "s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf"
     cea15   = "s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/manual-cea15p.pdf"
-    call_count = 0
     retrieve_count = 0
-    rag_filters = []
     retrieve_filters = []
-    no_results_text = "I'm sorry, I couldn't find relevant information."
 
     with_mock_bedrock_client do |client|
-      client.define_singleton_method(:retrieve_and_generate) do |params|
-        call_count += 1
-        rag_filters << params.dig(
-          :retrieve_and_generate_configuration,
-          :knowledge_base_configuration,
-          :retrieval_configuration,
-          :vector_search_configuration,
-          :filter
-        )
-        ::OpenStruct.new(
-          output: ::OpenStruct.new(text: no_results_text),
-          citations: [],
-          session_id: "sid"
-        )
-      end
       client.define_singleton_method(:retrieve) do |params|
         retrieve_count += 1
         retrieve_filters << params.dig(:retrieval_configuration, :vector_search_configuration, :filter)
@@ -986,17 +1033,14 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         include_diagnostics: true
       )
 
-      assert_equal 1, call_count, "force_entity_filter must not open a second retrieve_and_generate"
-      assert_equal 1, rag_filters.size
-      assert filter_contains?(rag_filters.first, "original_source_uri", elemont)
-      assert filter_contains?(rag_filters.first, "original_source_uri", cea15)
-      assert_not filter_contains?(rag_filters.first, "account_id", @account.id.to_s)
+      assert_equal 1, retrieve_count, "force_entity_filter must not open a second retrieve"
+      assert_equal 1, retrieve_filters.size
       retrieve_filters.each do |filter|
         assert filter_contains?(filter, "original_source_uri", elemont)
         assert filter_contains?(filter, "original_source_uri", cea15)
         assert_not filter_contains?(filter, "account_id", @account.id.to_s)
       end
-      assert_equal true, result.dig(:diagnostics, :canned_no_results)
+      assert_equal false, result.dig(:diagnostics, :canned_no_results)
       assert_not_includes result[:answer], "DATA_NOT_AVAILABLE"
     end
   end
@@ -1010,15 +1054,9 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     Bedrock::AuroraColdStartRetry.define_singleton_method(:sleep_for) { |_seconds| }
 
     with_mock_bedrock_client do |client|
-      client.define_singleton_method(:retrieve_and_generate) do |params|
+      client.define_singleton_method(:retrieve) do |params|
         attempts += 1
-        rag_filters << params.dig(
-          :retrieve_and_generate_configuration,
-          :knowledge_base_configuration,
-          :retrieval_configuration,
-          :vector_search_configuration,
-          :filter
-        )
+        rag_filters << params.dig(:retrieval_configuration, :vector_search_configuration, :filter)
         if attempts == 1
           raise Aws::BedrockAgentRuntime::Errors::ServiceError.new(
             nil,
@@ -1026,13 +1064,6 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
           )
         end
 
-        ::OpenStruct.new(
-          output: ::OpenStruct.new(text: "I'm sorry, I couldn't find relevant information."),
-          citations: [],
-          session_id: "sid"
-        )
-      end
-      client.define_singleton_method(:retrieve) do |_params|
         ::OpenStruct.new(retrieval_results: [])
       end
 
@@ -1095,7 +1126,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     quality = captured_quality_payload
     assert_equal true, quality["canned_no_results"]
     assert_equal true, quality["canned_with_retrieval"]
-    assert_equal "fallback_retrieve_top3", quality["evidence_mode"]
+    assert_equal "retrieve_chunks", quality["evidence_mode"]
   end
 
   test "canned-with-retrieval English copy asks for identifiers instead of a blind retry" do
@@ -1140,7 +1171,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       with_mock_bedrock_client(mock_retrieve_and_generate_response: canned_response) do
         result = BedrockRagService.new(account: @account).query('que es EC2', include_diagnostics: true)
 
-        assert result[:diagnostics][:canned_no_results]
+        assert_not result[:diagnostics][:canned_no_results]
         assert_not result[:diagnostics][:canned_with_retrieval]
         assert_empty result[:diagnostics][:safety_evidence_chunks]
         assert_includes result[:answer], 'No se encontró información'
@@ -1148,7 +1179,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     end
 
     quality = captured_quality_payload
-    assert_equal true, quality["canned_no_results"]
+    assert_equal false, quality["canned_no_results"]
     assert_equal false, quality["canned_with_retrieval"]
     assert_equal "none", quality["evidence_mode"]
   end
@@ -1291,14 +1322,14 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       assert_kind_of Integer, args['output_tokens'], 'output_tokens must be precomputed via LocalTokenizer'
       assert_nil args['prompt_text'],  'prompt_text must NOT be in job args'
       assert_nil args['answer_text'],  'answer_text must NOT be in job args'
-      assert_equal 'estimated', args['token_source']
+      assert_equal 'provider_usage', args['token_source']
       assert_equal 'query', args['source'], 'source must be "query"'
 
       line = log_output.string.lines.find { |l| l.include?("[RAG_REGRESSION]") }
       assert line, "RAG_REGRESSION must be logged from the service"
       payload = JSON.parse(line.split("[RAG_REGRESSION] ", 2).last)
       assert_equal 'prompt_template_plus_observed_chunks', payload['input_token_basis']
-      assert_equal 'bedrock_citations', payload['observed_chunk_basis']
+      assert_equal 'retrieve_chunks', payload['observed_chunk_basis']
     end
   ensure
     Rails.logger.stop_broadcasting_to(capture_logger) if capture_logger
@@ -1351,10 +1382,10 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       end
       args = job[:args].first
 
-      assert_equal "The documented value is 13.[1]", result[:answer]
+      assert_equal "The documented value is 13.", result[:answer]
       assert_kind_of Integer, args['input_tokens']
       assert_kind_of Integer, args['output_tokens']
-      assert_equal 'estimated', args['token_source']
+      assert_equal 'provider_usage', args['token_source']
       assert_nil args['answer_text'],  'answer_text must not be in job args'
       assert_nil args['prompt_text'],  'prompt_text must not be in job args'
 
@@ -1376,7 +1407,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     KbDocument.create!(s3_key: "s3://bucket/manual.pdf", display_name: "Manual", aliases: [], account: @account)
 
     raw_answer = <<~ANSWER.strip
-      The documented value is 13.
+      The documented value is 13. [1]
       <DOC_REFS>[{"source_uri":"s3://bucket/manual.pdf","canonical_name":"Manual","aliases":[],"doc_type":"manual"}]</DOC_REFS>
     ANSWER
     citation = ::OpenStruct.new(
@@ -1410,7 +1441,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
     payload = captured_quality_payload
     assert_equal true, payload["evidence_present"]
-    assert_equal "bedrock_citations", payload["evidence_mode"]
+    assert_equal "retrieve_chunks", payload["evidence_mode"]
     assert_equal 1, payload["doc_refs_count"]
     assert_includes payload["retrieved_source_uris"], "s3://bucket/chunks/manual-1.txt"
   end
@@ -1449,7 +1480,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     payload = captured_quality_payload
     assert_equal false, payload["evidence_present"]
     assert_equal true, payload["retrieval_context_present"]
-    assert_equal "fallback_retrieve_top3", payload["evidence_mode"]
+    assert_equal "retrieve_chunks", payload["evidence_mode"]
     assert_equal 1, payload["doc_refs_count"]
     assert_includes payload["retrieved_source_uris"], "s3://bucket/chunks/manual-1.txt"
   end
@@ -1872,21 +1903,11 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'a named page does not open a second call when the document pin is forced' do
     with_env_vars('RAG_PAGE_PIN_ENABLED' => 'true') do
-      bedrock_sorry = "Sorry, I am unable to assist you with this request."
-
       with_mock_bedrock_client do |client|
         call_filters = []
-        sorry_response = fake_response(bedrock_sorry)
-        client.define_singleton_method(:retrieve_and_generate) do |params|
-          @last_retrieve_and_generate_params = params
-          call_filters << params.dig(
-            :retrieve_and_generate_configuration,
-            :knowledge_base_configuration,
-            :retrieval_configuration,
-            :vector_search_configuration,
-            :filter
-          )
-          sorry_response
+        client.define_singleton_method(:retrieve) do |params|
+          call_filters << params.dig(:retrieval_configuration, :vector_search_configuration, :filter)
+          ::OpenStruct.new(retrieval_results: [])
         end
 
         own_pin_uri!('s3://bucket/manual.pdf')
@@ -1904,22 +1925,11 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   end
 
   test 'filtered retry preserves account filter when document filter is stripped' do
-    bedrock_sorry = "Sorry, I am unable to assist you with this request."
-
     with_mock_bedrock_client do |client|
       call_filters = []
-      sorry_response = fake_response(bedrock_sorry)
-      good_response  = fake_response("Documented torque: 25 Nm.")
-      client.define_singleton_method(:retrieve_and_generate) do |params|
-        @last_retrieve_and_generate_params = params
-        call_filters << params.dig(
-          :retrieve_and_generate_configuration,
-          :knowledge_base_configuration,
-          :retrieval_configuration,
-          :vector_search_configuration,
-          :filter
-        )
-        call_filters.size == 1 ? sorry_response : good_response
+      client.define_singleton_method(:retrieve) do |params|
+        call_filters << params.dig(:retrieval_configuration, :vector_search_configuration, :filter)
+        ::OpenStruct.new(retrieval_results: [])
       end
 
       own_pin_uri!('s3://bucket/manual.pdf')
@@ -2179,14 +2189,13 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   test 'filtered no-results fallback leaves two correlated rows: rag_filtered then rag_global' do
     bedrock_sorry = "Sorry, I am unable to assist you with this request."
 
+    hit = authorized_retrieve("Torque documentado: 25 Nm.")
     with_mock_bedrock_client do |client|
       call_count = 0
-      sorry_response = fake_response(bedrock_sorry)
-      good_response  = fake_response("Documented torque: 25 Nm.")
-      client.define_singleton_method(:retrieve_and_generate) do |params|
-        @last_retrieve_and_generate_params = params
+      client.generation_script = [ bedrock_sorry, "Documented torque: 25 Nm." ]
+      client.define_singleton_method(:retrieve) do |_params|
         call_count += 1
-        call_count == 1 ? sorry_response : good_response
+        hit
       end
 
       captured = capture_tracking_jobs do
@@ -2210,12 +2219,12 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       assert_equal 3000, global[:max_tokens]
       assert_kind_of Integer, filtered[:input_tokens],  'filtered row must have precomputed input_tokens'
       assert_kind_of Integer, filtered[:output_tokens], 'filtered row must have precomputed output_tokens'
-      assert_equal 'estimated', filtered[:token_source]
+      assert_equal 'provider_usage', filtered[:token_source]
     end
   end
 
   test 'single filtered query leaves one rag_filtered row with attempt 1' do
-    with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response('Par de apriete: 25 Nm.')) do
+    with_mock_bedrock_client(mock_retrieve_and_generate_response: cited_answer('Par de apriete: 25 Nm.')) do
       captured = capture_tracking_jobs do
         own_pin_uri!('s3://bucket/manual.pdf')
         BedrockRagService.new(account: @account).query('torque del freno', entity_s3_uris: [ 's3://bucket/manual.pdf' ])
@@ -2229,7 +2238,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   end
 
   test 'unfiltered query (no entities) leaves one rag_global row' do
-    with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response('S3 is object storage.')) do
+    with_mock_bedrock_client(mock_retrieve_and_generate_response: cited_answer('S3 is object storage.')) do
       captured = capture_tracking_jobs do
         BedrockRagService.new(account: @account).query('What is S3?')
       end
@@ -2247,7 +2256,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   test 'query honors an externally supplied correlation_id instead of minting its own' do
     captured = nil
 
-    with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response('S3 is object storage.')) do
+    with_mock_bedrock_client(mock_retrieve_and_generate_response: cited_answer('S3 is object storage.')) do
       with_captured_quality_log do
         captured = capture_tracking_jobs do
           BedrockRagService.new(account: @account).query('What is S3?', correlation_id: 'query:external-fixed-id')
@@ -2263,7 +2272,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   end
 
   test 'query mints its own correlation_id when the caller passes none (unchanged behavior)' do
-    with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response('S3 is object storage.')) do
+    with_mock_bedrock_client(mock_retrieve_and_generate_response: cited_answer('S3 is object storage.')) do
       captured = capture_tracking_jobs do
         BedrockRagService.new(account: @account).query('What is S3?')
       end
@@ -2418,7 +2427,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'query renders the internal absence marker when answer leads with prose absence' do
     prose_absence = 'La documentación recuperada no contiene información sobre el torque de apriete de -PBCM -J26.'
-    with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response(prose_absence)) do
+    with_mock_bedrock_client(mock_retrieve_and_generate_response: cited_answer(prose_absence)) do
       service = BedrockRagService.new(account: @account)
       result = service.query('¿Cuál es el torque de apriete de -PBCM -J26?', response_locale: :es)
       assert_not_includes result[:answer], 'DATA_NOT_AVAILABLE'
@@ -2428,7 +2437,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'query renders one user-facing absence phrase when a marker is already present' do
     already_marked = 'El par de apriete: DATA_NOT_AVAILABLE en la documentación recuperada.'
-    with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response(already_marked)) do
+    with_mock_bedrock_client(mock_retrieve_and_generate_response: cited_answer(already_marked)) do
       service = BedrockRagService.new(account: @account)
       result = service.query('¿Cuál es el torque?', response_locale: :es)
       assert_not_includes result[:answer], "DATA_NOT_AVAILABLE"
@@ -2438,7 +2447,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'query does not append marker to a grounded affirmative answer' do
     grounded = 'El número de plano del posicionamiento tipo 3 es 0471226, zona +CC, función =PS.'
-    with_mock_bedrock_client(mock_retrieve_and_generate_response: fake_response(grounded)) do
+    with_mock_bedrock_client(mock_retrieve_and_generate_response: cited_answer(grounded, body: grounded)) do
       service = BedrockRagService.new(account: @account)
       result = service.query('¿Cuál es el número de plano?', response_locale: :es)
       assert_not_includes result[:answer], 'DATA_NOT_AVAILABLE'

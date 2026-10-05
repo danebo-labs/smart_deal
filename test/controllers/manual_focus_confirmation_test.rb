@@ -294,7 +294,8 @@ class ManualFocusConfirmationTest < ActionDispatch::IntegrationTest
     assert_includes sent, document.canonical_uri
     assert_not_includes sent, open_general.canonical_uri
     assert_empty values_for(client.filter, "account_id")
-    assert_equal 1, client.generate_calls
+    assert_equal 1, client.retrieve_calls
+    assert_equal 0, client.generate_calls
   end
 
   test "two pins are both sent and one revoked member denies the set without dropping pins" do
@@ -620,8 +621,9 @@ class ManualFocusConfirmationTest < ActionDispatch::IntegrationTest
       @retrieve_calls = 0
     end
 
-    def retrieve(_params)
+    def retrieve(params)
       @retrieve_calls += 1
+      @filter = params.dig(:retrieval_configuration, :vector_search_configuration, :filter)
       OpenStruct.new(retrieval_results: [])
     end
 

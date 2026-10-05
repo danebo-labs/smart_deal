@@ -930,25 +930,37 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_identity_retrieval_failure(error, "retrieval_error")
   end
 
-  test "unknown identity still allows open retrieve_and_generate" do
+  test "unknown identity retrieves once and generates directly" do
+    body = "Referencia de otro manual."
+    evidence = chunk("otro", body, canonical_name: "Manual ajeno")
     service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
-    service.define_singleton_method(:retrieve_chunks) { flunk "retrieve_chunks" }
+    retrieve_calls = 0
     rag_calls = 0
-    service.define_singleton_method(:fallback_retrieve) { |*, **| [] }
-    service.define_singleton_method(:retrieve_and_generate_with_retry) do |_params|
-      rag_calls += 1
-      output = Struct.new(:text).new("Procedimiento del camino abierto.")
-      Struct.new(:output, :citations, :session_id).new(output, [], nil)
+    prompts = []
+    service.define_singleton_method(:retrieve_chunks) do |*, **|
+      retrieve_calls += 1
+      { chunks: [ evidence ], retrieval_trace: {} }
     end
+    service.define_singleton_method(:retrieve_and_generate_with_retry) { |_params| rag_calls += 1 }
+    generator = Object.new
+    generator.define_singleton_method(:query) do |prompt, **|
+      prompts << prompt
+      "El manual ajeno no está confirmado para este equipo. Mirar la placa. [1]"
+    end
+    service.define_singleton_method(:document_identity_generator) { generator }
 
     result = nil
     with_flag("true") do
       result = service.query("no nivela", episode: { "v" => 1, "facts" => {}, "identifiers" => [] }, output_channel: :web)
     end
 
-    assert_equal 1, rag_calls
-    assert_includes result[:answer], "Procedimiento del camino abierto."
+    assert_equal 1, retrieve_calls
+    assert_equal 0, rag_calls
+    assert_includes prompts.sole, "UNCONFIRMED REFERENCE"
+    assert_includes prompts.sole, body
+    assert_includes result[:answer], "no está confirmado"
     assert_nil result[:equipment_identity_status]
+    assert_nil result[:generation_mode]
   end
 
   test "a pinned foreign manual stays selected and is not a citation" do
@@ -1254,12 +1266,18 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
   end
 
   test "unknown identity open retrieval records identity_unknown and skips a required scope" do
+    evidence = chunk("blt", "E18 fallo de nivelación.", canonical_name: "Código de Avería BLT Ascensor", page: 4)
     service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
-    service.define_singleton_method(:retrieve_and_generate_with_retry) do |_params|
-      output = Struct.new(:text).new("respuesta abierta")
-      Struct.new(:output, :citations, :session_id).new(output, [], "sid")
+    retrieve_calls = []
+    service.define_singleton_method(:retrieve_chunks) do |*, **kwargs|
+      retrieve_calls << kwargs
+      { chunks: [ evidence ], retrieval_trace: {} }
     end
-    service.define_singleton_method(:fallback_retrieve) { |*, **| [] }
+    service.define_singleton_method(:retrieve_and_generate_with_retry) { |_params| flunk "unknown identity must not retrieve_and_generate" }
+    service.define_singleton_method(:fallback_retrieve) { |*, **| flunk "direct generation must not open a fallback retrieve" }
+    generator = Object.new
+    generator.define_singleton_method(:query) { |_prompt, **| "Mirar la placa. [1]" }
+    service.define_singleton_method(:document_identity_generator) { generator }
     events = capture_pilot_events do
       service.query(
         "no nivela",
@@ -1270,6 +1288,9 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     end
 
     open = events.find { |event| event["event"] == "open_retrieval" }
+    assert_equal 1, retrieve_calls.size
+    assert_equal "query:open", retrieve_calls.first[:correlation_id]
+    assert_equal "identity_unknown_reference", retrieve_calls.first[:route_taken]
     assert_equal "identity_unknown", open["outcome_reason"]
     assert_equal "identity_unknown_reference", open["evidence_applicability"]
     assert_not open.key?("results_count")
@@ -1277,7 +1298,6 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_equal "query:open", open["correlation_id"]
     assert_equal "ok", open["result"]
     assert events.none? { |event| event["event"] == "document_identity_scope" }
-    assert events.none? { |event| event["event"] == "kb_retrieve" }
   end
 
   test "document identity scope telemetry failure stays inside the recorder" do
@@ -1339,6 +1359,12 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_nil unknown.status
     assert_equal :not_required, unknown.reason
     assert_equal body, unknown.chunks.sole[:content]
+    marked = Rag::DocumentIdentityScope.mark_unconfirmed_reference([ manual ])
+    assert_includes marked.sole[:content], "UNCONFIRMED REFERENCE"
+    assert_includes marked.sole[:content], "Manual: Manual seleccionado"
+    assert_includes marked.sole[:content], body
+    assert_equal "unconfirmed_reference", marked.sole[:identity_applicability]
+    assert_equal body, unknown.chunks.sole[:content]
     assert_equal :scoped, known.status
     assert_equal "compatible", known.applicability.sole
     assert_equal known_body, known.chunks.sole[:content]
@@ -1371,18 +1397,25 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     explained = Rag::QueryComposer.explain(
       state: episode, turn: raw, perception: perception, decision: decision
     )
-    answer = "Referencia del manual Código de Avería BLT Ascensor, página 4. No está confirmado que aplique al equipo actual."
-    citation = native_citation(answer, canonical_name: "Código de Avería BLT Ascensor", page: 4)
+    answer = "Referencia del manual Código de Avería BLT Ascensor, página 4. No está confirmado que aplique al equipo actual. [1]"
+    blt = chunk("blt", "E18 fallo de nivelación.", canonical_name: "Código de Avería BLT Ascensor", page: 4)
+    blt[:metadata]["original_source_uri"] = "s3://bucket/blt.pdf"
     service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
     rag_calls = 0
-    sent = nil
-    service.define_singleton_method(:retrieve_and_generate_with_retry) do |params|
-      rag_calls += 1
-      sent = params
-      Struct.new(:output, :citations, :session_id).new(Struct.new(:text).new(answer), [ citation ], "sid")
+    retrieve_calls = []
+    prompts = []
+    service.define_singleton_method(:retrieve_and_generate_with_retry) { |_params| rag_calls += 1 }
+    service.define_singleton_method(:retrieve_chunks) do |*, **kwargs|
+      retrieve_calls << kwargs
+      { chunks: [ blt ], retrieval_trace: {} }
     end
-    service.define_singleton_method(:retrieve_chunks) { |*, **| flunk "unknown identity must not retrieve before generation" }
-    service.define_singleton_method(:fallback_retrieve) { |*, **| flunk "native citations must not open a fallback retrieve" }
+    service.define_singleton_method(:fallback_retrieve) { |*, **| flunk "direct generation must not open a fallback retrieve" }
+    generator = Object.new
+    generator.define_singleton_method(:query) do |prompt, **|
+      prompts << prompt
+      answer
+    end
+    service.define_singleton_method(:document_identity_generator) { generator }
 
     events = []
     result = nil
@@ -1399,10 +1432,7 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       )
     end
 
-    prompt = sent.dig(
-      :retrieve_and_generate_configuration, :knowledge_base_configuration,
-      :generation_configuration, :prompt_template, :text_prompt_template
-    )
+    prompt = prompts.sole
     open = events.find { |event| event["event"] == "open_retrieval" }
 
     original_sha = Digest::SHA256.hexdigest(raw)
@@ -1416,18 +1446,27 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_equal 64, original_sha.length
     assert_equal 64, effective_sha.length
     assert_not_equal original_sha, effective_sha
-    assert_equal explained[:query], sent.dig(:input, :text)
-    assert_equal effective_sha, Digest::SHA256.hexdigest(sent.dig(:input, :text).to_s)
+    assert_includes prompt, explained[:query]
     assert_equal explained[:query], Rag::QueryComposer.call(
       state: episode, turn: raw, perception: perception, decision: decision
     )
-    assert_equal 1, rag_calls
+    assert_equal 0, rag_calls
+    assert_equal 1, retrieve_calls.size
+    assert_equal 1, prompts.size
+    assert_equal 9, retrieve_calls.first[:user_id]
+    assert_equal 11, retrieve_calls.first[:conversation_session_id]
+    assert_equal "query:trace", retrieve_calls.first[:correlation_id]
+    assert_equal "identity_unknown_reference", retrieve_calls.first[:route_taken]
+    assert_includes prompt, "UNCONFIRMED REFERENCE"
+    assert_includes prompt, "E18 fallo de nivelación."
+    assert prompt.index("UNCONFIRMED REFERENCE") < prompt.index("E18 fallo de nivelación.")
+    assert_not_includes prompt, "$output_format_instructions$"
+    assert_not_includes prompt, "THIS JOB'S EQUIPMENT:"
     assert_equal "identity_unknown_reference", open["evidence_applicability"]
     assert_equal "identity_unknown", open["outcome_reason"]
     assert_not open.key?("results_count")
     assert_not open.key?("contexts_delivered")
     assert events.none? { |event| event["event"] == "document_identity_scope" }
-    assert events.none? { |event| event["event"] == "kb_retrieve" }
     assert_applicability_contract(prompt)
     assert_nil result[:generation_mode]
     assert_equal "generative", Rag::CausalTrace.resolved_generation_mode(nil, success: true)
@@ -1477,6 +1516,7 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_equal "document_identity_scope", result[:generation_mode]
     assert_not_includes prompts.first, "identity_unknown_reference"
     assert_not_includes prompts.first, "UNKNOWN EQUIPMENT IDENTITY"
+    assert_not_includes prompts.first, "UNCONFIRMED REFERENCE"
     assert_nil scope["evidence_applicability"]
     assert events.none? { |event| event["event"] == "open_retrieval" }
     assert_includes prompts.first, body
@@ -1485,22 +1525,24 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
   test "a pin without confirmed identity does not suppress the applicability contract" do
     uri = "s3://bucket/blt-nivelacion.pdf"
     KbDocument.create!(account: accounts(:legacy), s3_key: uri, display_name: "BLT", aliases: [])
-    answer = "Mirar la cabina al llegar a la planta."
-    citation = native_citation(answer, canonical_name: "BLT", page: 4)
+    answer = "Mirar la cabina al llegar a la planta. [1]"
+    blt = chunk("blt", "Mirar el final de carrera.", canonical_name: "BLT", page: 4)
     service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
-    sent = nil
-    calls = 0
-    service.define_singleton_method(:retrieve_and_generate_with_retry) do |params|
-      calls += 1
-      sent = params
-      Struct.new(:output, :citations, :session_id).new(
-        Struct.new(:text).new(answer),
-        [ citation ],
-        "sid"
-      )
+    prompts = []
+    retrieves = []
+    rag_calls = 0
+    service.define_singleton_method(:retrieve_and_generate_with_retry) { |_params| rag_calls += 1 }
+    service.define_singleton_method(:fallback_retrieve) { |*, **| flunk "a pin does not add a second retrieve" }
+    service.define_singleton_method(:retrieve_chunks) do |*, **kwargs|
+      retrieves << kwargs
+      { chunks: [ blt ], retrieval_trace: {} }
     end
-    service.define_singleton_method(:fallback_retrieve) { |*, **| flunk "a pin does not add a retrieve" }
-    service.define_singleton_method(:retrieve_chunks) { |*, **| flunk "pin is not a document-identity retrieve" }
+    generator = Object.new
+    generator.define_singleton_method(:query) do |prompt, **|
+      prompts << prompt
+      answer
+    end
+    service.define_singleton_method(:document_identity_generator) { generator }
 
     events = capture_pilot_events do
       service.query(
@@ -1514,18 +1556,14 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       )
     end
 
-    prompt = sent.dig(
-      :retrieve_and_generate_configuration, :knowledge_base_configuration,
-      :generation_configuration, :prompt_template, :text_prompt_template
-    )
-    filter = sent.dig(
-      :retrieve_and_generate_configuration, :knowledge_base_configuration,
-      :retrieval_configuration, :vector_search_configuration, :filter
-    )
+    prompt = prompts.sole
+    filter = retrieves.sole[:vector_search_configuration].to_h[:filter]
     open = events.find { |event| event["event"] == "open_retrieval" }
 
-    assert_equal 1, calls
+    assert_equal 0, rag_calls
+    assert_equal 1, retrieves.size
     assert_applicability_contract(prompt)
+    assert_includes prompt, "UNCONFIRMED REFERENCE"
     assert_includes filter.to_json, uri
     assert_equal "identity_unknown_reference", open["evidence_applicability"]
     assert_equal "identity_unknown", open["outcome_reason"]
@@ -1543,9 +1581,9 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_includes prompt, "applicability to the current job is not confirmed"
     assert_includes prompt, "observational check"
     assert_includes prompt, "does not confirm equipment identity"
-    assert_equal 1, prompt.scan("$output_format_instructions$").size
-    assert prompt.rstrip.end_with?("$output_format_instructions$")
-    assert prompt.index("identity_unknown_reference") < prompt.index("$output_format_instructions$")
+    assert_not_includes prompt, "$output_format_instructions$"
+    assert_includes prompt, "Cite a claim taken from a search result with [n]"
+    assert prompt.index("identity_unknown_reference") < prompt.index("Cite a claim taken from a search result with [n]")
     assert_not_includes prompt, "THIS JOB'S EQUIPMENT:"
     assert_not_includes prompt, "REFERENCE ONLY — OTHER EQUIPMENT:"
   end

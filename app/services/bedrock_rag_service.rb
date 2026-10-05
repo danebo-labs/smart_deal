@@ -255,307 +255,24 @@ class BedrockRagService
         Rails.logger.info("BedrockRagService: entity_filter=#{apply_filter} uris=#{filtered_uris.size} forced=#{force_entity_filter}")
       end
 
-      # Build complete optimized configuration and merge with custom config
-      base_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale, session_context: effective_session_context, entity_s3_uris: filtered_uris, entity_sources: entity_sources, output_channel: output_channel)
-      config = enforce_account_filter(enforce_query_contractual_limits(deep_merge_configs(base_config, custom_config)))
-      if @retrieval_denied
-        r1a_probe_filter(correlation_id, question, nil, reason: @retrieval_denied_reason.presence || "DENY_RETRIEVAL")
-        return deny_retrieval_result(question: question, session_id: session_id, response_locale: response_locale, correlation_id: correlation_id)
-      end
-      applied_filter_uris = Array(@applied_pin_uris)
-
-      params = {
-        input: { text: question },
-        retrieve_and_generate_configuration: {
-          type: 'KNOWLEDGE_BASE',
-          knowledge_base_configuration: {
-            knowledge_base_id: @knowledge_base_id,
-            model_arn: @model_ref,
-            **config
-          }
-        },
-        session_id: session_id
-      }
-
-      # Gate 9R I0: groups every billable invocation of this turn (filtered
-      # attempt + global fallback) so the cost matrix can count real calls/query.
-      # Honors the caller's correlation_id (coined once per interaction in
-      # RagController#ask, Fase 1) so a request that fails before reaching this
-      # method still shares the same id its BedrockQuery rows would carry.
-      query_correlation_id = correlation_id.presence || "query:#{SecureRandom.uuid}"
-      generation_attempt   = 1
-      r1a_probe_filter(query_correlation_id, question, params)
-
-      # Use retrieve_and_generate API - combines retrieval and generation in one call
-      # Wraps call with retry logic for Aurora Serverless auto-pause cold-start.
-      # Aurora can take 20-60s to resume; we back off and retry up to 3 times.
-      bedrock_start_time = Time.current
-      response = retrieve_and_generate_with_retry(params)
-
-      # A question does not select a page. A field technician does not remember
-      # a page number across the manuals, so a mentioned page never narrows
-      # retrieval and never opens a second call. An explicit document pin that
-      # was not forced may still retry once over the shared corpus.
-      retry_without_entity_filter = apply_filter && !force_entity_filter
-      if retry_without_entity_filter && bedrock_no_results?(response.output.text)
-        Rails.logger.info("BedrockRagService: filtered query returned no results, retrying without document pin")
-        # The filtered attempt is a billable generation in its own right — track it
-        # before re-running so the turn leaves one row per invocation (I0).
-        track_filtered_no_results_attempt(
-          question:        question,
-          raw_answer:      response.output.text,
-          config:          config,
-          correlation_id:  query_correlation_id,
-          latency_ms:      ((Time.current - bedrock_start_time) * 1000).to_i,
-          response_locale: response_locale,
-          session_context: effective_session_context,
-          output_channel:  output_channel,
-          attribution:     attribution
-        )
-        generation_attempt = 2
-        unfiltered_entity_uris = retry_without_entity_filter ? [] : filtered_uris
-        unfiltered_config = build_complete_optimized_config(region: @region, question: question, response_locale: response_locale, session_context: effective_session_context, entity_s3_uris: unfiltered_entity_uris, entity_sources: entity_sources, output_channel: output_channel, apply_page_filter: false)
-        unfiltered_params = params.merge(
-          retrieve_and_generate_configuration: params[:retrieve_and_generate_configuration].merge(
-            knowledge_base_configuration: params.dig(:retrieve_and_generate_configuration, :knowledge_base_configuration).merge(
-              **enforce_account_filter(enforce_query_contractual_limits(deep_merge_configs(unfiltered_config, custom_config)))
-            )
-          )
-        )
-        params = unfiltered_params
-        if @retrieval_denied
-          r1a_probe_filter(query_correlation_id, question, nil, reason: @retrieval_denied_reason.presence || "DENY_RETRIEVAL")
-          return deny_retrieval_result(question: question, session_id: session_id, response_locale: response_locale, correlation_id: query_correlation_id)
-        end
-        r1a_probe_filter(query_correlation_id, question, unfiltered_params, attempt: generation_attempt)
-        config = params.dig(
-          :retrieve_and_generate_configuration,
-          :knowledge_base_configuration
-        ).except(:knowledge_base_id, :model_arn)
-        applied_filter_uris = Array(@applied_pin_uris)
-        response = retrieve_and_generate_with_retry(unfiltered_params)
-      end
-
-      bedrock_latency_ms = ((Time.current - bedrock_start_time) * 1000).to_i
-
-      raw_citations = response.citations || []
-      citation_gate = authorize_raw_citations(raw_citations, correlation_id: query_correlation_id, query: question)
-      @rejected_result_count = citation_gate.rejected
-      published_citations = citation_gate.groups
-      total_refs = published_citations.sum { |c| c.retrieved_references&.size.to_i }
-
-      Rails.logger.info("BedrockRagService: retrieve_and_generate #{bedrock_latency_ms}ms")
-
-      # Process response
-      raw_answer = response.output.text
-      # Distinguish the Bedrock "Sorry…" guardrail from a genuine no-results:
-      # if the trace shows chunks were retrieved (native citations present), the
-      # canned phrase is a GENERATION/parse failure, not an empty knowledge base.
-      no_results_locale = effective_response_locale(question, response_locale: response_locale)
-      canned_no_results = bedrock_no_results?(raw_answer)
-      # retrieve_and_generate already generated inside Bedrock. The request
-      # filter is the corpus the model was allowed to see. A chunk whose
-      # account_id is outside that corpus is dropped before it is published.
-      # document_id is not compared with KbDocument.document_uid. If every
-      # returned reference fails, the generated text is not published.
-      if citation_gate.dropped_all?
-        canned_no_results = true
-        raw_answer = localized_no_results(no_results_locale)
-        published_citations = []
-        total_refs = 0
-      end
-
-      # Replace Bedrock's default "no results" guardrail message with a user-friendly one.
-      answer_text =
-        if canned_no_results && apply_filter && force_entity_filter
-          localized_pinned_no_results(no_results_locale)
-        elsif canned_no_results
-          localized_no_results(no_results_locale)
-        else
-          raw_answer
-        end
-
-      citations = @citation_processor.extract_citations(published_citations)
-      session_id = response.session_id
-
-      # Defensive cleanup only: the prompt no longer emits <DOC_REFS>, but strip a
-      # residual tail block if the model regresses. Done before span insertion so
-      # markers land in the clean body; the block is always at the tail, so body
-      # offsets used by the spans are unaffected.
-      answer_text = extract_doc_refs(answer_text)[:clean_answer]
-
-      # F2 — Real attribution: insert [n] markers from the spans Bedrock returns
-      # (citation.generated_response_part.text_response_part.span), not a fabricated
-      # every-3-sentences distribution. Only on a genuine generated answer.
-      if !canned_no_results && citations.any? && !answer_text.match?(/\[\d+\]/)
-        answer_text = @citation_processor.add_span_citations(answer_text, published_citations)
-      end
-
-      # F1 — Deterministic document identity: build doc_refs from the metadata of
-      # native citations (canonical_name, aliases, original_source_uri from the
-      # sidecars). fallback_retrieve backs it up only when there are no citations
-      # and the entity is not already pinned. The result hash keeps the :doc_refs
-      # key so KbDocumentEnrichmentService/EntityExtractorService are unchanged.
-      retrieved_for_extraction, observed_chunk_basis, input_token_basis =
-        if citation_gate.dropped_all?
-          [ [], "none", "prompt_template_plus_observed_chunks" ]
-        elsif citations.any?
-          [ citations, "bedrock_citations", "prompt_template_plus_observed_chunks" ]
-        else
-          Rails.logger.info("BedrockRagService: post-gen citations empty; Retrieve API fallback for source_uri")
-          chunks = fallback_retrieve(question, entity_s3_uris: filtered_uris, correlation_id: query_correlation_id)
-          basis = chunks.any? ? "fallback_retrieve_top3" : "none"
-          [ chunks, basis, "prompt_template_plus_observed_chunks" ]
-        end
-      doc_refs = build_doc_refs(retrieved_for_extraction)
-      Rails.logger.info("BedrockRagService: doc_refs=#{doc_refs&.size || 'nil'}") if doc_refs
-      canned_with_retrieval = canned_no_results && retrieved_for_extraction.any?
-      if canned_with_retrieval
-        Rails.logger.warn(
-          "BedrockRagService: canned 'Sorry' response despite retrieved evidence — treating as generation failure, not no-results"
-        )
-        # Evidence WAS retrieved, so the absence wording would tell the technician the
-        # manual lacks a datum it may well document. Do not invite a blind resend:
-        # Bedrock's canned Sorry repeats on the same wording (H4, D14). Ask for the
-        # identifier that would change the retrieve window.
-        answer_text = localized_generation_retry(no_results_locale)
-      end
-
-      # Failure semantics (Gate B): make prose-only absence explicit with the
-      # literal protocol marker so downstream contracts/telemetry can rely on it.
-      answer_text = normalize_absence_semantics(
-        answer_text,
+      unknown_identity_reference_result(
         question: question,
-        locale: no_results_locale,
-        grounded_synthesis: @grounded_synthesis
+        session_id: session_id,
+        response_locale: response_locale,
+        session_context: effective_session_context,
+        output_channel: output_channel,
+        entity_sources: entity_sources,
+        force_entity_filter: force_entity_filter,
+        custom_config: custom_config,
+        attribution: attribution,
+        correlation_id: correlation_id,
+        include_diagnostics: include_diagnostics,
+        raw_question: raw_question,
+        context_truncated: context_truncated,
+        start_time: start_time,
+        filtered_uris: filtered_uris,
+        apply_filter: apply_filter
       )
-      internal_answer_text = answer_text
-      # F3 — Single guardrail pass with the full evidence context: native
-      # citations when present, otherwise the chunks retrieved for identity
-      # (fallback_retrieve). Existence checks validate against this evidence so a
-      # documented identifier (e.g. MR08 CN-112.SC) is not falsely rejected. The
-      # concern-level second pass has been removed.
-      answer_text = Rag::AnswerSafetyProcessor.new(locale: no_results_locale).call(
-        answer_text,
-        evidence: retrieved_for_extraction,
-        require_cited_evidence: !canned_no_results
-      )
-      citation_attribution = Rag::CitationAttributionGuard.new(
-        question: question, citations: citations
-      ).call(answer_text)
-      answer_text = citation_attribution.answer
-      if citation_attribution.dropped_any?
-        Rails.logger.warn(
-          "BedrockRagService: attribution guard dropped #{citation_attribution.dropped_segments.size} " \
-            "segment(s) correlation_id=#{query_correlation_id} anchors=#{citation_attribution.anchors.inspect}"
-        )
-        # I11 fail-safe: no attributable claim left, but the text still carries
-        # evidence-sensitive content — abstain rather than deliver it uncited.
-        if !citation_attribution.attributed_claims? &&
-           Rag::AnswerSafetyProcessor.requires_evidence?(answer_text)
-          answer_text = Rag::AnswerSafetyProcessor.new(locale: no_results_locale)
-            .call("DATA_NOT_AVAILABLE", evidence: [])
-        end
-      end
-
-      latency_ms = ((Time.current - start_time) * 1000).to_i
-      tracked_model_id = @model_ref.include?('/') ? @model_ref.split('/').last : @model_ref
-
-      track_rag_usage(
-        question:                       question,
-        raw_answer:                     raw_answer,
-        visible_answer:                 answer_text,
-        config:                         config,
-        retrieved_chunks:               retrieved_for_extraction,
-        observed_chunk_basis:           observed_chunk_basis,
-        input_token_basis:              input_token_basis,
-        bedrock_cited_references_count: total_refs,
-        doc_refs_present:               doc_refs.present?,
-        doc_refs_valid:                 doc_refs.present?,
-        doc_refs_count:                 doc_refs&.size.to_i,
-        entity_filter_applied:          apply_filter,
-        response_locale:                response_locale,
-        session_context:                effective_session_context,
-        output_channel:                 output_channel,
-        correlation_id:                 query_correlation_id,
-        generation_attempt:             generation_attempt,
-        applied_filter_uris:            applied_filter_uris,
-        latency_ms:                     latency_ms,
-        model_id:                       tracked_model_id,
-        attribution:                    attribution
-      )
-
-      # Build numbered references from the KB response — no S3 listing required.
-      numbered_references = @citation_processor.build_numbered_references(citations, answer_text, question: question)
-
-      r1a_probe_evidence(query_correlation_id, question, citations, stage: "citation_publish")
-      r1a_probe_evidence(query_correlation_id, question, retrieved_for_extraction, stage: "final_evidence", basis: observed_chunk_basis)
-      Rails.logger.info("Found #{citations.length} citation(s)")
-      numbered_references.each do |ref|
-        Rails.logger.info("  Citation [#{ref[:number]}]: #{ref[:title]} (#{ref[:filename]})")
-      end
-
-      log_open_retrieval(query_correlation_id, outcome_reason: @open_retrieval_outcome_reason)
-
-      log_quality_signal(
-        question:         question,
-        answer:           answer_text,
-        citations:        numbered_references,
-        doc_refs:         doc_refs,
-        raw_citations:    published_citations,
-        latency_ms:       latency_ms,
-        entity_filter:    applied_filter_uris,
-        evidence_mode:    observed_chunk_basis,
-        retrieved_chunks: retrieved_for_extraction,
-        canned_no_results: canned_no_results,
-        canned_with_retrieval: canned_with_retrieval,
-        correlation_id:   query_correlation_id,
-        attribution:      attribution,
-        citation_attribution: citation_attribution
-      )
-
-      result = {
-        answer:              answer_text,
-        citations:           numbered_references,
-        # Internal source metadata for document enrichment. This is usually made
-        # from Bedrock citations, but may come from a separate Retrieve fallback
-        # when citations are absent. It must never be interpreted as user-visible
-        # claim attribution; `citations` is the only citation contract.
-        retrieved_citations: retrieved_for_extraction,
-        doc_refs:            doc_refs,
-        session_id:          session_id,
-        rag_ms:              bedrock_latency_ms,
-        retrieval_trace: retrieval_trace(
-          resolved_scope_s3_uris: entity_s3_uris,
-          applied_filter_s3_uris: applied_filter_uris,
-          force_entity_filter: force_entity_filter,
-          vector_search_configuration: config.dig(
-            :retrieval_configuration,
-            :vector_search_configuration
-          )
-        )
-      }
-      if include_diagnostics
-        result[:diagnostics] = {
-          raw_answer: raw_answer,
-          internal_answer: internal_answer_text,
-          cited_chunks: citations,
-          safety_evidence_chunks: retrieved_for_extraction,
-          canned_no_results: canned_no_results,
-          canned_with_retrieval: canned_with_retrieval,
-          raw_citation_groups: raw_citations.size,
-          raw_cited_references: total_refs,
-          attribution_dropped: citation_attribution.dropped_segments
-        }
-      end
-      attach_generation_trace!(
-        result,
-        config.dig(:generation_configuration, :prompt_template, :text_prompt_template),
-        raw_turn: raw_question,
-        sent_question: question,
-        truncated: context_truncated
-      )
-      result
     rescue Aws::BedrockAgentRuntime::Errors::ServiceError => e
       Rails.logger.error("Bedrock RAG error: #{e.message}")
       Rails.logger.error(e.backtrace.join("\n"))
@@ -566,7 +283,8 @@ class BedrockRagService
   def retrieve_chunks(question, entity_s3_uris: [], entity_sources: [],
                       force_entity_filter: false, number_of_results: nil,
                       account_id: nil, user_id: nil, conversation_session_id: nil,
-                      correlation_id: nil, route_taken: nil)
+                      correlation_id: nil, route_taken: nil,
+                      vector_search_configuration: nil)
     unless @knowledge_base_id
       raise MissingKnowledgeBaseError, "Knowledge Base ID not configured"
     end
@@ -586,16 +304,21 @@ class BedrockRagService
 
       resolved_uris = decision.uris
     end
-    apply_filter = resolved_uris.any? &&
-      (force_entity_filter || !query_names_different_document?(question, resolved_uris))
-    applied_uris = apply_filter ? resolved_uris : []
-    vector_config = build_vector_search_configuration(
-      region: @region,
-      question: question,
-      entity_s3_uris: applied_uris,
-      entity_sources: entity_sources,
-      number_of_results: number_of_results
-    )
+    if vector_search_configuration
+      vector_config = vector_search_configuration
+      apply_filter = Array(@applied_pin_uris).any?
+    else
+      apply_filter = resolved_uris.any? &&
+        (force_entity_filter || !query_names_different_document?(question, resolved_uris))
+      applied_uris = apply_filter ? resolved_uris : []
+      vector_config = build_vector_search_configuration(
+        region: @region,
+        question: question,
+        entity_s3_uris: applied_uris,
+        entity_sources: entity_sources,
+        number_of_results: number_of_results
+      )
+    end
     r1a_probe_filter(correlation_id, question, { retrieval_configuration: { vector_search_configuration: vector_config } })
     response = retrieve_with_retry(
       knowledge_base_id: @knowledge_base_id,
@@ -878,6 +601,268 @@ class BedrockRagService
     )
   end
 
+  def unknown_identity_retrieval_config(question:, response_locale:, session_context:, output_channel:,
+                                         entity_s3_uris:, entity_sources:, custom_config:, apply_page_filter:)
+    base_config = build_complete_optimized_config(
+      region: @region,
+      question: question,
+      response_locale: response_locale,
+      session_context: session_context,
+      entity_s3_uris: entity_s3_uris,
+      entity_sources: entity_sources,
+      output_channel: output_channel,
+      apply_page_filter: apply_page_filter
+    )
+    enforce_account_filter(enforce_query_contractual_limits(deep_merge_configs(base_config, custom_config)))
+  end
+
+  # Unknown identity: one Retrieve, foreign chunks fenced as UNCONFIRMED REFERENCE,
+  # then the direct generator DocumentIdentityScope already uses. An unforced pin
+  # that comes back empty or canned still retries once over the open corpus.
+  def unknown_identity_reference_result(question:, session_id:, response_locale:, session_context:,
+                                        output_channel:, entity_sources:, force_entity_filter:,
+                                        custom_config:, attribution:, correlation_id:,
+                                        include_diagnostics:, raw_question:, context_truncated:,
+                                        start_time:, filtered_uris:, apply_filter:)
+    @last_citation_attribution = nil
+    query_correlation_id = correlation_id.presence || "query:#{SecureRandom.uuid}"
+    config = unknown_identity_retrieval_config(
+      question: question,
+      response_locale: response_locale,
+      session_context: session_context,
+      output_channel: output_channel,
+      entity_s3_uris: filtered_uris,
+      entity_sources: entity_sources,
+      custom_config: custom_config,
+      apply_page_filter: true
+    )
+    if @retrieval_denied
+      r1a_probe_filter(query_correlation_id, question, nil, reason: @retrieval_denied_reason.presence || "DENY_RETRIEVAL")
+      return deny_retrieval_result(
+        question: question, session_id: session_id, response_locale: response_locale, correlation_id: query_correlation_id
+      )
+    end
+
+    retry_open = apply_filter && !force_entity_filter
+    retrieval = nil
+    marked = []
+    prompt = nil
+    raw_answer = nil
+    pinned_empty = false
+
+    2.times do |index|
+      if index == 1
+        config = unknown_identity_retrieval_config(
+          question: question,
+          response_locale: response_locale,
+          session_context: session_context,
+          output_channel: output_channel,
+          entity_s3_uris: [],
+          entity_sources: entity_sources,
+          custom_config: custom_config,
+          apply_page_filter: false
+        )
+        if @retrieval_denied
+          r1a_probe_filter(query_correlation_id, question, nil, reason: @retrieval_denied_reason.presence || "DENY_RETRIEVAL")
+          return deny_retrieval_result(
+            question: question, session_id: session_id, response_locale: response_locale, correlation_id: query_correlation_id
+          )
+        end
+      end
+
+      attempt_uris = index.zero? ? filtered_uris : []
+      retrieval = retrieve_chunks(
+        question,
+        entity_s3_uris: attempt_uris,
+        entity_sources: entity_sources,
+        force_entity_filter: force_entity_filter && index.zero? && attempt_uris.any?,
+        vector_search_configuration: config.dig(:retrieval_configuration, :vector_search_configuration),
+        account_id: attribution[:account_id],
+        user_id: attribution[:user_id],
+        conversation_session_id: attribution[:conversation_session_id],
+        correlation_id: query_correlation_id,
+        route_taken: "identity_unknown_reference"
+      )
+      if retrieval[:retrieval].to_s == DENY_RETRIEVAL
+        return deny_retrieval_result(
+          question: question, session_id: session_id, response_locale: response_locale, correlation_id: query_correlation_id
+        )
+      end
+
+      chunks = Array(retrieval[:chunks])
+      if chunks.empty?
+        pinned_empty = apply_filter && force_entity_filter && index.zero?
+        next if retry_open && index.zero?
+
+        log_open_retrieval(query_correlation_id, outcome_reason: @open_retrieval_outcome_reason)
+        return attach_generation_trace!(
+          observe_unknown_reference!(
+            open_reference_no_results(
+              question: question,
+              response_locale: response_locale,
+              retrieval: retrieval,
+              session_id: session_id,
+              pinned: pinned_empty
+            ),
+            question: question, raw_answer: nil, chunks: [], config: config, prompt: nil,
+            correlation_id: query_correlation_id, attribution: attribution,
+            response_locale: response_locale, session_context: session_context,
+            output_channel: output_channel, start_time: start_time,
+            include_diagnostics: include_diagnostics
+          ),
+          nil,
+          raw_turn: raw_question,
+          sent_question: question,
+          truncated: context_truncated
+        )
+      end
+
+      marked = Rag::DocumentIdentityScope.mark_unconfirmed_reference(chunks)
+      prompt = document_identity_generation_prompt(
+        question, marked,
+        response_locale: response_locale,
+        session_context: session_context,
+        output_channel: output_channel
+      )
+      # The fence is generation input. Citation records stay the retrieved bodies.
+      raw_answer = document_identity_generator.query(
+        prompt,
+        max_tokens: @rag_config[:generation_max_tokens],
+        temperature: @rag_config[:generation_temperature],
+        tracking: {
+          account_id: attribution[:account_id],
+          user_id: attribution[:user_id],
+          conversation_session_id: attribution[:conversation_session_id],
+          correlation_id: query_correlation_id,
+          route: Array(@applied_pin_uris).any? ? "rag_filtered" : "rag_global",
+          attempt: index + 1
+        }
+      )
+      break unless retry_open && index.zero? && (raw_answer.blank? || bedrock_no_results?(raw_answer))
+    end
+
+    if raw_answer.blank?
+      locale = effective_response_locale(question, response_locale: response_locale)
+      log_open_retrieval(query_correlation_id, outcome_reason: @open_retrieval_outcome_reason)
+      return attach_generation_trace!(
+        observe_unknown_reference!(
+          open_reference_no_results(
+            question: question,
+            response_locale: response_locale,
+            retrieval: retrieval,
+            session_id: session_id,
+            pinned: false
+          ).merge(answer: localized_generation_retry(locale)),
+          question: question, raw_answer: raw_answer, chunks: Array(retrieval[:chunks]), config: config,
+          prompt: prompt,
+          correlation_id: query_correlation_id, attribution: attribution,
+          response_locale: response_locale, session_context: session_context,
+          output_channel: output_channel, start_time: start_time,
+          include_diagnostics: include_diagnostics
+        ),
+        prompt,
+        raw_turn: raw_question,
+        sent_question: question,
+        truncated: context_truncated
+      )
+    end
+
+    result = finish_document_identity_generation(
+      question: question,
+      raw_answer: raw_answer,
+      chunks: Array(retrieval[:chunks]),
+      response_locale: response_locale,
+      retrieval: retrieval,
+      companion: false
+    )
+    if bedrock_no_results?(raw_answer) && marked.any?
+      result[:answer] = localized_generation_retry(effective_response_locale(question, response_locale: response_locale))
+    end
+    result.delete(:generation_mode)
+    result.delete(:document_identity)
+    result.delete(:route_outcome)
+    result.delete(:model_invoked)
+    result[:session_id] = session_id
+    result[:rag_ms] = ((Time.current - start_time) * 1000).to_i
+    log_open_retrieval(query_correlation_id, outcome_reason: @open_retrieval_outcome_reason)
+    attach_generation_trace!(
+      observe_unknown_reference!(
+        result,
+        question: question, raw_answer: raw_answer, chunks: Array(retrieval[:chunks]), config: config,
+        prompt: prompt,
+        correlation_id: query_correlation_id, attribution: attribution,
+        response_locale: response_locale, session_context: session_context,
+        output_channel: output_channel, start_time: start_time,
+        include_diagnostics: include_diagnostics
+      ),
+      prompt, raw_turn: raw_question, sent_question: question, truncated: context_truncated
+    )
+  end
+
+  # Quality and regression logs only. The generation row is the direct invoke.
+  # Retrieve stays off bedrock_queries.
+  def observe_unknown_reference!(result, question:, raw_answer:, chunks:, config:, prompt:, correlation_id:,
+                                 attribution:, response_locale:, session_context:, output_channel:,
+                                 start_time:, include_diagnostics:)
+    retrieved = Array(result[:retrieved_citations])
+    doc_refs = result[:doc_refs]
+    canned_no_results = raw_answer.present? && bedrock_no_results?(raw_answer)
+    canned_with_retrieval = canned_no_results && chunks.any?
+    evidence_mode = chunks.any? ? "retrieve_chunks" : "none"
+    latency_ms = ((Time.current - start_time) * 1000).to_i
+    guard = @last_citation_attribution || Rag::CitationAttributionGuard.new(question: question, citations: retrieved).call(result[:answer].to_s)
+    tracked_model_id = @model_ref.to_s.include?("/") ? @model_ref.split("/").last : @model_ref
+    input_tokens = AnthropicTokenCounter::LocalTokenizer.estimate([ prompt, question ].compact_blank.join("\n\n"))
+    output_tokens = AnthropicTokenCounter::LocalTokenizer.estimate(raw_answer.to_s)
+
+    log_rag_regression(
+      config: config, retrieved_chunks: retrieved, observed_chunk_basis: evidence_mode,
+      input_token_basis: "prompt_template_plus_observed_chunks",
+      bedrock_cited_references_count: 0,
+      doc_refs_present: doc_refs.present?, doc_refs_valid: doc_refs.present?,
+      doc_refs_count: doc_refs&.size.to_i,
+      entity_filter_applied: Array(@applied_pin_uris).any?,
+      raw_answer: raw_answer.to_s, visible_answer: result[:answer],
+      input_tokens: input_tokens, output_tokens: output_tokens, model_id: tracked_model_id, latency_ms: latency_ms
+    )
+    log_quality_signal(
+      question: question, answer: result[:answer], citations: Array(result[:citations]),
+      doc_refs: doc_refs, raw_citations: [], latency_ms: latency_ms,
+      entity_filter: Array(@applied_pin_uris), evidence_mode: evidence_mode,
+      retrieved_chunks: retrieved, canned_no_results: canned_no_results,
+      canned_with_retrieval: canned_with_retrieval, correlation_id: correlation_id,
+      attribution: attribution, citation_attribution: guard
+    )
+    if include_diagnostics
+      result[:diagnostics] = {
+        raw_answer: raw_answer.to_s,
+        cited_chunks: Array(result[:citations]),
+        safety_evidence_chunks: retrieved,
+        canned_no_results: canned_no_results,
+        canned_with_retrieval: canned_with_retrieval,
+        raw_citation_groups: 0,
+        raw_cited_references: 0,
+        attribution_dropped: guard.dropped_segments
+      }
+    end
+    result
+  end
+
+  def open_reference_no_results(question:, response_locale:, retrieval:, session_id:, pinned:)
+    locale = effective_response_locale(question, response_locale: response_locale)
+    answer = pinned ? localized_pinned_no_results(locale) : localized_no_results(locale)
+    answer = Rag::AnswerSafetyProcessor.new(locale: locale).call(answer, evidence: [])
+    {
+      answer: answer,
+      citations: [],
+      retrieved_citations: [],
+      doc_refs: nil,
+      session_id: session_id,
+      retrieval_trace: retrieval.is_a?(Hash) ? retrieval[:retrieval_trace] : {},
+      rag_ms: 0
+    }
+  end
+
   def document_identity_generation_prompt(question, chunks, response_locale:, session_context:, output_channel:,
                                           labels: [])
     template = load_generation_prompt_with_locale(
@@ -1010,6 +995,7 @@ class BedrockRagService
       companion_guidance: companion
     )
     attribution = Rag::CitationAttributionGuard.new(question: question, citations: citations).call(answer_text)
+    @last_citation_attribution = attribution
     answer_text = attribution.answer
     if !companion && attribution.dropped_any? && !attribution.attributed_claims? &&
        Rag::AnswerSafetyProcessor.requires_evidence?(answer_text)

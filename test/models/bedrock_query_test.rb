@@ -218,4 +218,29 @@ class BedrockQueryTest < ActiveSupport::TestCase
     assert_not_equal default_rate.cost, fallback.cost
     assert_includes BedrockQuery::AWS_BEDROCK_MODEL_PREFIXES, "global.xai"
   end
+
+  test "sonnet 5.5 global standard does not use the haiku or default rate" do
+    query = BedrockQuery.new(
+      model_id: "global.anthropic.claude-sonnet-5-5",
+      input_tokens: 1_000_000,
+      output_tokens: 1_000_000,
+      cache_read_tokens: 1_000_000,
+      cache_creation_tokens: 1_000_000
+    )
+    haiku = BedrockQuery.new(
+      model_id: "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+      input_tokens: 1000,
+      output_tokens: 1000
+    )
+    sonnet = BedrockQuery.new(
+      model_id: "global.anthropic.claude-sonnet-5-5",
+      input_tokens: 1000,
+      output_tokens: 1000
+    )
+
+    assert_equal 14.7, query.cost
+    assert_equal 0.012, sonnet.cost
+    assert_not_equal haiku.cost, sonnet.cost
+    assert_not_equal BedrockQuery::BEDROCK_PRICING.fetch("default"), sonnet.pricing_for
+  end
 end

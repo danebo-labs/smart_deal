@@ -10,7 +10,9 @@
 # F1CAL_SPEND_CAP (default 1.0 for this invocation's new spend),
 # F1CAL_LEDGER (default tmp/f1cal/aprime_ledger.json).
 # F1CAL_GROK=1 with BEDROCK_MODEL_ID=global.xai.grok-4.7 installs the
-# benchmark Converse adapter. A block-file override is refused.
+# benchmark Converse adapter. F1CAL_SONNET=1 with
+# BEDROCK_MODEL_ID=global.anthropic.claude-sonnet-5-5 installs the Sonnet
+# invoke adapter. A block-file override is refused.
 
 STDOUT.sync = true
 
@@ -22,11 +24,17 @@ Score = FieldCompanion::F1CalibrationScore
 abort "refusing F1CAL_BLOCK_FILE: the applicability block is frozen" if ENV["F1CAL_BLOCK_FILE"].present?
 
 grok_requested = ENV["F1CAL_GROK"] == "1"
+sonnet_requested = ENV["F1CAL_SONNET"] == "1"
+abort "set only one of F1CAL_GROK or F1CAL_SONNET" if grok_requested && sonnet_requested
 model_id = BedrockClient::QUERY_MODEL_ID.to_s
 if grok_requested
   require_relative "f1_grok_generation"
   abort "BEDROCK_MODEL_ID must be #{FieldCompanion::F1GrokGeneration::MODEL_ID}" unless model_id == FieldCompanion::F1GrokGeneration::MODEL_ID
   FieldCompanion::F1GrokGeneration.install!
+elsif sonnet_requested
+  require_relative "f1_sonnet_generation"
+  abort "BEDROCK_MODEL_ID must be #{FieldCompanion::F1SonnetGeneration::MODEL_ID}" unless model_id == FieldCompanion::F1SonnetGeneration::MODEL_ID
+  FieldCompanion::F1SonnetGeneration.install!
 else
   abort "refusing non-Haiku model #{model_id}" unless model_id.include?("claude-haiku-4-5")
 end
@@ -141,11 +149,24 @@ ledger = File.exist?(ledger_path) ? JSON.parse(File.read(ledger_path)) : { "usd"
 spent = ledger["usd"].to_f
 rates = if grok_requested
   FieldCompanion::F1GrokGeneration::PRICING
+elsif sonnet_requested
+  FieldCompanion::F1SonnetGeneration::PRICING
 else
   BedrockQuery::BEDROCK_PRICING[model_id] || { input: 0.0, output: 0.0 }
 end
 abort "refusing zero input price for #{model_id}" if rates[:input].to_f <= 0
-projected = cases.size * (grok_requested ? 0.05 : 0.006)
+if sonnet_requested
+  haiku_rates = BedrockQuery::BEDROCK_PRICING.fetch("global.anthropic.claude-haiku-4-5-20251001-v1:0")
+  abort "refusing to price Sonnet at the Haiku rate" if rates[:input] == haiku_rates[:input] && rates[:output] == haiku_rates[:output]
+end
+per_case = if grok_requested
+  0.05
+elsif sonnet_requested
+  0.04
+else
+  0.006
+end
+projected = cases.size * per_case
 if spent + projected > cap
   abort "projected spend #{format('%.3f', spent + projected)} exceeds cap #{cap}; not calling Bedrock"
 end
@@ -166,6 +187,7 @@ cases.each do |row|
   before_model = F1CAL_MODEL.size
   before_job = jobs.size
   before_grok = Array(Thread.current[:f1_grok_calls]).size
+  before_sonnet = Array(Thread.current[:f1_sonnet_calls]).size
   started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
   result = if row[:lane] == :managed
     BedrockRagService.new(account: account).query(
@@ -220,10 +242,13 @@ cases.each do |row|
   input_tokens = case_jobs.sum { |job| job[:input_tokens].to_i }
   output_tokens = case_jobs.sum { |job| job[:output_tokens].to_i }
   cache_read_tokens = case_jobs.sum { |job| job[:cache_read_tokens].to_i }
+  cache_creation_tokens = case_jobs.sum { |job| job[:cache_creation_tokens].to_i }
   grok_meta = Array(Thread.current[:f1_grok_calls])[before_grok..]
+  sonnet_meta = Array(Thread.current[:f1_sonnet_calls])[before_sonnet..]
   usd = (input_tokens / 1000.0 * rates[:input].to_f) +
     (output_tokens / 1000.0 * rates[:output].to_f) +
-    (cache_read_tokens / 1000.0 * rates[:cache_read].to_f)
+    (cache_read_tokens / 1000.0 * rates[:cache_read].to_f) +
+    (cache_creation_tokens / 1000.0 * rates[:cache_creation].to_f)
   spent += usd
   sent_prompt = F1CAL_PROMPTS[before_prompt..]&.last.to_s
   record = {
@@ -239,6 +264,8 @@ cases.each do |row|
     retrieves: retrieve_calls.size - before_retrieve, rag: rag_calls.size - before_rag,
     generation_count: case_jobs.size, input_tokens: input_tokens, output_tokens: output_tokens,
     cache_read_tokens: cache_read_tokens,
+    cache_creation_tokens: cache_creation_tokens,
+    returned_model: sonnet_meta.last&.dig(:returned_model),
     reasoning_tokens: grok_meta.filter_map { |meta| meta[:reasoning_tokens] }.presence&.sum,
     reasoning_chars: grok_meta.sum { |meta| meta[:reasoning_chars].to_i },
     latency_ms: elapsed, usd: usd.round(6),
@@ -261,9 +288,12 @@ summary = {
   head: `git rev-parse HEAD`.strip,
   model: BedrockClient::QUERY_MODEL_ID,
   reasoning_effort: grok_requested ? FieldCompanion::F1GrokGeneration::REASONING_EFFORT : nil,
+  thinking_type: sonnet_requested ? FieldCompanion::F1SonnetGeneration::THINKING_TYPE : nil,
+  returned_models: rows.filter_map { |row| row[:returned_model] }.uniq,
   input_usd_per_1k: rates[:input],
   output_usd_per_1k: rates[:output],
   cache_read_usd_per_1k: rates[:cache_read],
+  cache_creation_usd_per_1k: rates[:cache_creation],
   stopped: stopped,
   executions: rows.size,
   retrieves: retrieve_calls.size,
@@ -272,6 +302,7 @@ summary = {
   input_tokens: rows.sum { |row| row[:input_tokens] },
   output_tokens: rows.sum { |row| row[:output_tokens] },
   cache_read_tokens: rows.sum { |row| row[:cache_read_tokens].to_i },
+  cache_creation_tokens: rows.sum { |row| row[:cache_creation_tokens].to_i },
   reasoning_tokens: rows.filter_map { |row| row[:reasoning_tokens] }.presence&.sum,
   reasoning_chars: rows.sum { |row| row[:reasoning_chars].to_i },
   usd: rows.sum { |row| row[:usd] }.round(6),

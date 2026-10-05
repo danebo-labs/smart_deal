@@ -108,6 +108,11 @@ class BedrockQuery < ApplicationRecord
     # Input $2 / output $6 / cache read $0.50 per 1M tokens.
     # https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-xai-grok-4-7.html
     'global.xai.grok-4.7'                              => { input: 0.002,  output: 0.006, cache_read: 0.0005 },
+    # Sonnet 5.5 Global CRIS, Standard tier. Not the Field Companion query default.
+    # Input $2 / output $10 / cache read $0.20 / 5-minute cache write $2.50 per 1M tokens.
+    # https://platform.claude.com/docs/en/models/sonnet-5-5/overview
+    # Geo profiles (us. / eu.) are not used.
+    'global.anthropic.claude-sonnet-5-5'               => { input: 0.002,  output: 0.01, cache_read: 0.0002, cache_creation: 0.0025 },
     # Embeddings
     'amazon.titan-embed-text-v2:0'                     => { input: 0.00002, output: 0.0    },
     'amazon.nova-2-multimodal-embeddings-v1:0'         => { input: 0.0006,  output: 0.0    },

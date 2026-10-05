@@ -821,7 +821,7 @@ One commit for the unknown-identity mode on `DocumentIdentityScope`, prompt inje
 
 **Prompt template for the next phase**
 
-> F1 code is `89257129fbf083d58d08ed24657d22da61565ed6`. Verdict: unknown-identity applicability is explicit on the prompt that is sent and on the events that already existed. Retrieval, ranking, pins, `.apply`, and known-identity generation are unchanged. Do not execute this block until a human says `GO F2`.
+> F1 code is `89257129fbf083d58d08ed24657d22da61565ed6`. The deterministic applicability diff is on main. The 2026-10-05 validation closure failed the real-model semantic gate. F2 readiness is NO-GO. Do not execute this block. The open decision is the human yes/no on F1b. This closure does not authorize F1b.
 >
 > Implement explicit free-standing fault-code absence, unmatched-negation preservation, and current-turn precedence. Do not change applicability, `.apply`, route enums, or recall behavior. Do not start F1b from F2.
 >
@@ -1744,3 +1744,88 @@ TURN card projection of evidence_applicability
 ```
 
 F2 above is reconciled to these findings only: the verbatim turn goes in session context, ahead of the applicability block, and `$output_format_instructions$` stays last. F2 is not authorized.
+
+## Validation closure — F1
+
+```text
+HEAD at validation:
+c27b46d106dff7e3e8ad685c68184b44a4a307e0
+
+F1 production code unchanged:
+89257129fbf083d58d08ed24657d22da61565ed6
+
+production code changed during validation: NO
+
+interpreter eval: FAIL
+command: bin/rails turn_interpreter:eval
+passes=30 mismatches=1 fallbacks=0 field_rejections=0
+clarification_target_accuracy=16/16 photo_context_accuracy=7/7
+p50_ms=1613 p95_ms=2531
+input_tokens=75565 output_tokens=4500 estimated_usd=0.098065
+exit=1
+mismatch: new_work_drive stored goal "variador no arranca"
+expected goal_text: "Ahora el variador no arranca en otro equipo"
+The reducer stores the interpreter observation when one exists. The fixture was not edited. This is not an F1 applicability defect and it does not authorize a production patch.
+
+holdout: PASS
+command: bin/rails turn_interpreter:holdout
+passes=10 mismatches=0 fallbacks=0 field_rejections=0
+clarification_target_accuracy=10/10 photo_context_accuracy=2/2
+p50_ms=1611 p95_ms=2936
+input_tokens=21129 output_tokens=1184 estimated_usd=0.027049
+exit=0
+
+The 46 turn-interpreter invocations are the queued TrackBedrockQueryJob rows routed semantic_analysis. Their tokens sum to the rake totals above. They are not a second spend.
+
+real-model F1 semantic gate: FAIL
+Runner: tmp/f1_semantic_eval.rb, not committed. It called BedrockRagService#query and StructuredEvidenceRoute#execute. The sent prompt included DocumentIdentityScope::APPLICABILITY_BLOCK. No parallel copy of the block.
+cases=4 managed=2 structured=2
+passes=2 violations=2
+response LLM calls=4
+explicit Retrieve calls during the closure=6 (4 corpus probes + 2 structured case retrieves)
+RetrieveAndGenerate calls=2, each with retrieval inside that call
+reranker calls=0
+response input_tokens=22724 output_tokens=1429 estimated_usd=0.029869
+managed rows token_source=estimated
+structured rows are the provider usage passed to TrackBedrockQueryJob
+p50_ms=7016 p95_ms=7891
+Those jobs were still queued when measured. BedrockQuery had not been written yet. The token figures are the job arguments.
+
+managed_door PASS
+Pin: Manual Plataforma Tijera. generation_mode=generative.
+open_retrieval evidence_applicability=identity_unknown_reference outcome_reason=identity_unknown.
+The answer names the scissor-lift material, cites pages 8, 10, and 12, and does not transfer the emergency-descent step or the alarm rates. It asks the technician to read the nameplate.
+
+structured_brake FAIL
+classification: foreign_value
+Pin: Manual Plataforma Tijera. generation_mode=structured_evidence_route.
+document_identity_scope outcome_reason=not_required evidence_applicability=identity_unknown_reference results_count=3 contexts_delivered=3.
+The opening says the manual is indicative and applicability is not confirmed.
+The body then states foreign expected descent behavior for this brake complaint: the platform stops at 2 m, and the alarm sounds 60 times per minute or 150 times per minute.
+
+managed_leveling PASS
+Pin: Listado de Averías Orona uP-900. generation_mode=generative.
+The answer names that document, says the listed faults do not describe the step, and says the technician still has to confirm whether this equipment is a uP-900. It does not assign Avería 1–18 to this job. The observational checks are a displayed code, the leveling limits, and whether the step repeats. Citation page is null.
+
+structured_display FAIL
+classification: foreign_identity_as_current_fact + foreign_recovery_procedure
+Pin: Listado de Averías Orona uP-900. generation_mode=structured_evidence_route.
+The answer says: "he identificado el controlador de este ascensor: MANIOBRA UNIVERSAL uP-900, fabricante ORONA".
+It then applies that document's recovery to this job: reenviar al piso extremo inferior, entrar en inspección, and corte de tensión.
+There is no not-confirmed disclaimer.
+
+F1b activated: NO
+F1b decision required from human
+F2 readiness: NO-GO
+
+Validation spend, separate from production:
+interpreter model: 0.125114 USD
+retrieval: 6 explicit Retrieve calls, not priced on BedrockQuery
+reranking: 0
+response model: 0.029869 USD
+measurable total: 0.154983 USD
+new production LLM calls: 0
+new production retrieval calls: 0
+```
+
+F1 is not complete. F1b is not authorized. F2 is not authorized.

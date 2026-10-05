@@ -85,6 +85,17 @@ class Rag::UnconfirmedApplicabilityTest < ActiveSupport::TestCase
 
   test "observation and real questions stay open while embedded operations and action requests do not" do
     assert_nil classify("Observa si la puerta abre.")
+    assert_nil classify("Observe si hay movimiento incontrolado.")
+    assert_nil classify("Anota si la cabina se mueve normalmente.")
+    assert_nil classify("Observaciones pasivas.\n\n**No realices:**\n- Ajustes, desconexiones, o acceso a terminales.")
+    assert_nil classify(
+      "Este es un equipo de plataforma elevadora (tijera), no un ascensor convencional.",
+      chunks: [ {
+        content: "Plataforma tijera.",
+        metadata: { "canonical_name" => "Manual Plataforma Tijera", "aliases" => [ "Manual Plataforma Tijera" ] }
+      } ]
+    )
+    assert_equal :procedure_application, classify("Mueve la cabina al piso inferior.")
     assert_nil classify("Inspeccione visualmente la puerta.")
     assert_nil classify("According to the uP-900 manual, p. 12, send the car down. Applicability is not confirmed.")
     assert_equal :procedure_application, classify("Observa si al cortar tensión el display se apaga.")

@@ -126,10 +126,7 @@ module Rag
       \b#{EN_IDENTITY_SUBJECT}\s+#{EN_IDENTITY_EQUIPMENT}\s+#{EN_IDENTITY_COPULA}\b |
       \b(?:he|hemos|i\s+have|i)\s+identific(?:ado|ada|o|ed)\b |
       \bse\s+ha\s+identific(?:ado|ada)\b |
-      \bse\s+trata\s+de\b |
-      \bparece\s+ser\b |
-      \blooks\s+like(?:\s+a)?\b |
-      (?<!no[[:space:]])(?:\bes\s+un\b|\bit\s+s\s+a\b|\bit\s+is\s+a\b)
+      \A(?:se\s+trata\s+de|parece\s+ser|looks\s+like(?:\s+a)?|es\s+un|it\s+s\s+a|it\s+is\s+a)\b
     /ix
     DEICTIC_EQUIPMENT_PATTERN = /
       \b(?:este|esta|estos|estas|tu|tus|su|mi|nuestro|nuestra|nuestros|nuestras|this|your|my|our)
@@ -157,8 +154,9 @@ module Rag
     # Visual "inspeccione" is not inspection mode. "cambiar" is not an operation.
     OPERATION_PATTERN = /
       \benvi(?:ar|a|e|o|alo|ala|ad|ando|ado)\b |
-      \bmov(?:er|iendo|ido|imiento)(?:lo|la)?\b |
-      \bmuev(?:e|a|an|as|elo|ela)\b |
+      \bmov(?:er|iendo|ido)(?:lo|la)?\b |
+      \bmovimiento\s+de\s+la\s+cabina\b |
+      (?<!se[[:space:]])\bmuev(?:e|a|an|as|elo|ela)\b |
       \bllev(?:ar|a|e|ando|arlo|arla)\s+(?:la\s+|el\s+)?cabina\b |
       \b(?:send|move|bring)(?:s|ing)?\b(?:\s+\w+){0,3}\s+(?:car|cab|it)\b |
       \b(?:entrar|entra|entre|pasar|pasa|pase|paso)\s+(?:a|en|al)\s+inspeccion\b |
@@ -190,6 +188,10 @@ module Rag
     /ix
     OPERATION_NEGATOR_PATTERN = /
       \b(?:no|nunca|ni|evita|evite|evitar|eviten|do\s+not|never|avoid)\b
+    /ix
+    INTRO_NEGATION_PATTERN = /
+      \A(?:no\s+(?:realices|hagas|hagais|apliques|aplique|procedas|intervengas)|
+          evita(?:r|e|en)?|do\s+not|never|avoid)\b
     /ix
     ACTION_REQUEST_PATTERN = /
       \b(?:puedes|podrias|podes|deberias|quieres|has\s+probado|probaste|
@@ -405,7 +407,7 @@ module Rag
         next if qualified_reference?(unit, units, patterns, chunks.size)
         next if observational_question?(unit)
 
-        operation = true if operation_unit?(normalized)
+        operation = true if operation_unit?(normalized) && !negated_frame?(unit)
         value = true if foreign_value_unit?(unit.text, chunks, question)
       end
       return { kind: :identity_assertion, basis: nil } if identity
@@ -442,6 +444,16 @@ module Rag
       end
     end
     private_class_method :operation_unit?
+
+    def self.negated_frame?(unit)
+      negated_intro?(unit.intro) || negated_intro?(unit.heading)
+    end
+    private_class_method :negated_frame?
+
+    def self.negated_intro?(intro)
+      applicability_normalize(intro).match?(INTRO_NEGATION_PATTERN)
+    end
+    private_class_method :negated_intro?
 
     def self.negated_before?(normalized, index)
       prefix = normalized[0...index]

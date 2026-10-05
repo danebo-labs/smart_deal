@@ -2780,3 +2780,45 @@ F2 readiness: NO-GO
 A′ FAILED — model bake-off is now authorized for planning only.
 
 Do not execute Sonnet from this closure. A verified Bedrock model-id preflight is required before any Sonnet run. Do not repair the scorer from the disagreements above and rerun A′. Do not edit the prompt, the guard, the thresholds, or the structured composition. Do not open the sealed holdout. Do not execute F2.
+
+## Grok 4.7 benchmark — stopped at preflight
+
+Starting SHA `dcce9ad8ba984d54fa557b6746c8212dbbe31c90`. Production query model remains `global.anthropic.claude-haiku-4-5-20251001-v1:0`. Prompt `f1cal.r2.a1`, scorer v2, the guard, the corpus, the thresholds, retrieval, and structured composition stayed frozen. Haiku A′ was not rerun.
+
+Field Companion answers are `AiProvider#query` → `BedrockClient#generate_text`. That call is Anthropic `invoke_model` with `anthropic_version: bedrock-2023-05-31` and reads `content[0].text`. Grok 4.7 on Bedrock is Converse, model id `global.xai.grok-4.7`, Global CRIS. A model-id swap is not a valid request. Classification: G1, a benchmark-only Converse adapter. G0 is not available. The adapter does not change RAG, routes, prompts, or the Haiku default.
+
+Adapter commit: `8a6f291b44895fea5203c9625f96325d75badf36`.
+
+- `script/field_companion/f1_grok_generation.rb` calls `Aws::BedrockRuntime::Client#converse` on the normal runtime client, not the 8-second shadow client.
+- Request fields: `reasoning_effort: low`, the caller's `max_tokens` and `temperature`, no service tier.
+- The published answer is the text block. A leading `reasoning_content` block is not the answer.
+- Rates are the Global Standard card: input `0.002`, output `0.006`, cache read `0.0005` per 1k tokens ($2 / $6 / $0.50 per 1M). A zero input price aborts. The same row is on `BedrockQuery`, so a persisted query does not fall through to the default rate.
+- The runner installs the adapter only when `F1CAL_GROK=1` and `BEDROCK_MODEL_ID=global.xai.grok-4.7`. Any other id still has to be Haiku.
+
+xAI direct (`https://api.x.ai/v1`, model `grok-4.7`) publishes the same Standard rates below 200k prompt tokens: $2 input, $0.50 cached input, $6 output per 1M, and $4 / $1 / $12 at or above 200k. Reasoning tokens are billed as output. No `XAI_API_KEY` is in the environment, `.env`, or credentials. Direct xAI was not called.
+
+Preflight, one call, no retrieval, region `us-east-1`, prompt `Return exactly: PREFLIGHT_OK`, `max_tokens` 512, temperature 0, `reasoning_effort` low:
+
+```
+Aws::BedrockRuntime::Errors::AccessDeniedException
+xai.grok-4.7 is not available for this account.
+```
+
+The response was empty. There is no Grok model id, token count, latency, or non-zero price from a completed call. A second call was not sent. Sample 1 did not start. Sample 2 did not run. Known controls c18–c20 were not run on Grok. There is no Grok quality, safety, S2, structured-lane, latency, or spend result to compare with Haiku A′.
+
+Haiku A′ remains the only measured baseline: useful 45/68, guard 12/68, S2 useful 4/12, structured useful 19/34, human-reviewed unsafe 0 after the two c05 disagreements, p50 3688 ms, p95 5385 ms, 0.258275 USD for the 68 unknown executions.
+
+```
+GROK_FAIL
+reason: Bedrock model access denied before any scored generation
+Sample 1: not run
+Sample 2: NO
+F1 deterministic safety: PASS / FROZEN
+F1 product quality: FAIL A′; Grok not measured
+Sealed holdout readiness: NO-GO
+F1 final status: OPEN
+F2 readiness: NO-GO
+NEXT CANDIDATE: SONNET 5.5
+```
+
+Sonnet was not executed. The scorer was not edited. The sealed holdout was not opened. F2 was not started. Production `BEDROCK_MODEL_ID` was not switched. No push. No deploy.

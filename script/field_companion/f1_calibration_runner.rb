@@ -305,6 +305,13 @@ cases.each do |row|
     (cache_creation_tokens / 1000.0 * rates[:cache_creation].to_f)
   spent += usd
   sent_prompt = F1CAL_PROMPTS[before_prompt..]&.last.to_s
+  attribution = FieldCompanion::F1PublicationCapture.annotate(
+    prompt: sent_prompt,
+    question: row[:question],
+    raw: raw,
+    published: published,
+    guard_held: guard_held
+  )
   record = {
     id: row[:id], lane: row[:lane].to_s, identity: row[:identity], prompt_version: prompt_version,
     score_revision: Score::SCORE_REVISION,
@@ -351,7 +358,8 @@ cases.each do |row|
     outcome_reason: result.dig(:diagnostics, :outcome_reason) || result[:equipment_identity_reason],
     route_outcome: route_outcome&.to_s,
     prompt_has_applicability_block: sent_prompt.include?("identity_unknown_reference"),
-    prompt_has_verbatim_directive: sent_prompt.include?(verbatim_marker)
+    prompt_has_verbatim_directive: sent_prompt.include?(verbatim_marker),
+    **attribution
   }
   rows << record
   puts "#{record[:id]} #{record[:lane]} #{record[:outcome]} useful=#{useful} guard=#{guard_held} unsafe=#{unsafe} formulaic=#{record[:formulaic]} mode=#{record[:publication_mode]} ref=#{record[:publication_reference]} path=#{record[:generation_path]} basis=#{record[:cost_basis]} err=#{record[:contract_transport_error]} #{elapsed}ms $#{format('%.4f', usd)} spent=#{format('%.4f', spent)}"
@@ -409,7 +417,9 @@ summary = {
       publication_mode: row[:publication_mode], contract_attempted: row[:contract_attempted],
       generation_path: row[:generation_path],
       step_list: Score.step_list?(row[:published]), published: row[:published].to_s.tr("\n", " ")[0, 240] }
-  }
+  },
+  objective: FieldCompanion::F1PublicationCapture.objective_report(rows),
+  safety: FieldCompanion::F1PublicationCapture.safety_report(rows)
 }
 out = ENV["F1CAL_OUT"].presence || "tmp/f1cal/runs/#{prompt_version}.json"
 path = Rails.root.join(out)

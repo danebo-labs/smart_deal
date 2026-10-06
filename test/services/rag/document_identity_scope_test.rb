@@ -1019,6 +1019,27 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert cited.any? { |blob| blob.include?(body) }
   end
 
+  test "a known compatible manual can still publish its measurement instruction" do
+    body = "Revisa el voltaje en los terminales principales con un multímetro."
+    manual = chunk("orona", body, canonical_name: "Manual Orona PBCM-V3")
+    service = closed_identity_service(chunks: [ manual ])
+    generator = Object.new
+    generator.define_singleton_method(:query) do |_prompt, **|
+      "#{body} [1]"
+    end
+    service.define_singleton_method(:document_identity_generator) { generator }
+
+    result = nil
+    with_flag("true") do
+      result = service.query("no nivela", equipment_identity: orona_identity, output_channel: :web)
+    end
+
+    assert_equal "scoped", result[:equipment_identity_status]
+    assert_nil result[:applicability_violation]
+    assert_includes result[:answer], "multímetro"
+    assert_includes result[:answer], "terminales"
+  end
+
   test "known identity and an empty retrieval is no_compatible without an open fallback" do
     service = closed_identity_service(chunks: [])
     rag_calls = 0

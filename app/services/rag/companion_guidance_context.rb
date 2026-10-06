@@ -7,6 +7,27 @@ module Rag
   # safety are allowed to see.
   class CompanionGuidanceContext
     MAX_CHARS = 2400
+    # Diagnostic only. Not rendered, not routed, and not TurnPerception::PROMPT_VERSION.
+    COMPANION_POLICY_VERSION = "2026-10-06.1"
+    ADVANCE_FAULT = "advance_fault"
+    RESOLVE_IDENTITY = "resolve_identity"
+    BASIS_IDENTIFICATION = "explicit_identification_request"
+    BASIS_CONFIRMATION = "explicit_identity_confirmation_request"
+    BASIS_DEFAULT = "default_fault_progress"
+    OBJECTIVE_LINES = {
+      ADVANCE_FAULT => "Current objective: advance the reported fault. Equipment identity is not the current objective.",
+      RESOLVE_IDENTITY => "Current objective: resolve equipment identity."
+    }.freeze
+    EQUIPMENT_WORD = /equipo|ascensor|elevador|montacargas|controlador|controller|elevator|equipment|lift|nameplate/i
+    EQUIPMENT_TARGET = /\b(?:#{EQUIPMENT_WORD.source}|placa\s+de\s+caracteristicas|chapa\s+de\s+caracteristicas)\b/i
+    NAMEPLATE_TARGET = /\b(?:nameplate|placa\s+de\s+caracteristicas|chapa\s+de\s+caracteristicas|placa\s+identificativa)\b/i
+    IDENTIFY_VERB = /\b(?:identific\p{L}*|identify(?:ing)?|identification)\b/i
+    IDENTITY_ATTRIBUTE = /\b(?:marca|modelo|fabricante|manufacturer|model|brand|make)\b/i
+    IDENTITY_ASK = /\b(?:que|cual|cuales|what|which|identific\p{L}*|identify(?:ing)?|leer|lee|read)\b/i
+    EQUIPMENT_COPULA = /\b(?:mi|este|esta|el|la|tu|nuestro|nuestra|our|my|this|the)\s+(?:equipo|ascensor|elevador|controlador|elevator|equipment|controller|lift)\s+(?:es|sea|seria|sera|is|was)\s+(?:un|una|a|an)\b/i
+    CONFIRM_WHETHER = /\bconfirm\p{L}*\s+(?:si|que|whether|if)\b.{0,80}\b(?:equipo|ascensor|controlador|elevator|equipment|controller|marca|modelo|fabricante)\b/i
+    PROPOSED_IDENTITY_COPULA = /(?:\A|[[:space:]¿])(?:[Ee]s|[Ss]era|[Ss]eria|[Ii]s)\s+(?:este[[:space:]]+|esta[[:space:]]+|this[[:space:]]+)?(?:un|una|el|la|a|an)\s+\p{Lu}[\p{L}\d-]{1,}/
+    PART_ATTRIBUTE = /\b(?:marca|modelo|fabricante|model|brand|make|manufacturer)\s+(?:de|del|of)\s+(?:este|esta|el|la|un|una|mi|tu|this|my|our|the|a|an)?\s*(\p{L}+)/i
     QUESTION_CHARS = 400
     TURN_CHARS = 160
     MAX_TURNS = 2
@@ -66,6 +87,22 @@ module Rag
       @context_truncated == true
     end
 
+    # The line in to_s is the generator-visible objective. These readers are
+    # the same derivation, for diagnostics only.
+    def turn_objective
+      return nil unless unknown?
+
+      identity_resolution_request? ? RESOLVE_IDENTITY : ADVANCE_FAULT
+    end
+
+    def turn_objective_basis
+      return nil unless unknown?
+      return BASIS_CONFIRMATION if identity_confirmation_request?
+      return BASIS_IDENTIFICATION if identification_request?
+
+      BASIS_DEFAULT
+    end
+
     # Accepted visual fields only. Identity text and reference-only manual
     # names are not evidence for a terminal, value, or code.
     def safety_evidence
@@ -100,18 +137,86 @@ module Rag
     def unknown_instruction
       <<~TEXT.strip
         # FIELD COMPANION
-        You assist an elevator technician. Advance the active fault. Stay in elevator field service.
-        The equipment identity is not confirmed. That limits manufacturer-specific claims. It does not select the next objective.
-        From the question, problem, observations, photos, corrections, and completed actions, give one short Danebo reading when the facts already support it. Not a manufacturer instruction. Do not ask again when that reading is enough.
-        Otherwise ask one look, read, or listen check of the existing state, action and thing in the same sentence. One main question. Do not make a questionnaire.
-        Do not instruct an operation that changes equipment state.
-        Without applicable evidence, do not give a procedure, reset, adjustment, value, parameter, or manufacturer operation. State the limit, then the reading or the one check. Do not stop at the refusal. Do not ask which equipment this is unless identity is the blocker.
-        If they already report an action as done, use it only as past context. Do not recommend, repeat, or extend it.
-        Ask them to read the nameplate and report manufacturer and model in one sentence, without suggesting either, only when identity is the question, a named identity is proposed, or no other safe check can advance the fault. Do not confirm a proposed identity.
-        Do not teach any retrieved manual. Those contents are not in this prompt. Do not invent values, terminals, fault-code meanings, or manufacturer sequences. Do not cite manuals with [n].
-        On a follow-up, do not greet again. A short greeting is allowed only when this opens the case. Do not print DATA_NOT_AVAILABLE.
+        #{objective_line}
+        Follow that objective.
+        You are assisting an elevator technician in the field.
+        The equipment identity is not confirmed.
+        Do not teach the contents of any retrieved manual. Those contents are not in this prompt.
+        Keep this job in elevator field service. Do not reinterpret it as another kind of machine.
+        Ask for one safe look, read, or listen check tied to the reported symptom. Put the observational verb and the thing observed in the same sentence. One main question. Do not make a questionnaire.
+        If they ask for a procedure, reset, adjustment, value, or manufacturer operation, do not give those steps, do not invent the value, and do not reply by only asking which equipment this is. Say it is not confirmed, then ask that one check. Do not stop at the refusal, and do not send them to an unknown terminal.
+        If they already report an action as done, use it as context and do not instruct it again.
+        #{nameplate_rule}
+        You may observe, interpret, and hypothesize. Do not instruct a physical intervention, an operational intervention, or a tool or instrument measurement without applicable evidence.
+        Do not invent electrical values, distances, tolerances, torque, parameters, terminal numbers, terminal functions, fault-code meanings, manufacturer-specific sequences, menu names, DIP positions, selectors, waits, inspection mode, power cuts, or resets.
+        If the equipment identity conflicts, do not choose a manufacturer. Ask for the evidence that resolves the conflict before any manufacturer-specific step.
+        On a follow-up, do not greet again. A short greeting is allowed only when this opens the case.
+        Do not stop after saying there is no manual. Do not print DATA_NOT_AVAILABLE.
+        Do not cite manuals with [n].
         Write the entire answer in #{language_name}.
       TEXT
+    end
+
+    def objective_line
+      OBJECTIVE_LINES.fetch(turn_objective)
+    end
+
+    def nameplate_rule
+      if turn_objective == RESOLVE_IDENTITY
+        "Ask them to read the nameplate and report the manufacturer and model in one concise observational question. Do not suggest either. Do not confirm a proposed identity without evidence."
+      else
+        "Do not choose the nameplate or the equipment identity as the main question. Unknown identity only limits manufacturer-specific claims and unsupported procedures, values, or parameters."
+      end
+    end
+
+    # Current equipment, its controller, or its nameplate. A part or product
+    # question is not this request. Unknown identity is not this request.
+    def identity_resolution_request?
+      identity_confirmation_request? || identification_request?
+    end
+
+    def identity_confirmation_request?
+      folded = folded_question
+      return true if folded.match?(EQUIPMENT_COPULA)
+      return true if folded.match?(CONFIRM_WHETHER)
+
+      proposed_identity_copula?
+    end
+
+    def identification_request?
+      folded = folded_question
+      return true if folded.match?(IDENTIFY_VERB) && folded.match?(EQUIPMENT_TARGET)
+      return true if nameplate_question?(folded)
+
+      equipment_attribute_question?(folded)
+    end
+
+    def equipment_attribute_question?(folded)
+      return false unless folded.match?(IDENTITY_ATTRIBUTE)
+      return false unless folded.match?(IDENTITY_ASK)
+      return false unless folded.match?(EQUIPMENT_TARGET)
+      return false if part_attribute?(folded)
+
+      true
+    end
+
+    def nameplate_question?(folded)
+      folded.match?(NAMEPLATE_TARGET) && folded.match?(IDENTITY_ASK)
+    end
+
+    def part_attribute?(folded)
+      match = folded.match(PART_ATTRIBUTE)
+      return false unless match
+
+      !match[1].match?(EQUIPMENT_WORD)
+    end
+
+    def proposed_identity_copula?
+      @question.match?(PROPOSED_IDENTITY_COPULA)
+    end
+
+    def folded_question
+      @question.to_s.unicode_normalize(:nfkd).gsub(/\p{Mn}/, "").downcase.gsub(/[^\p{L}\d]+/, " ").squish
     end
 
     def turn_block

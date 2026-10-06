@@ -129,37 +129,124 @@ class Rag::CompanionGuidanceContextTest < ActiveSupport::TestCase
     assert_not_includes prompt, "Ground your answer"
     assert_not_includes prompt, "These facts identify the job"
     assert_includes prompt, "Follow-up: yes."
-    assert_not context_for_unknown_fixture(session_context).context_truncated?
-    assert_includes prompt, "does not select the next objective"
-    assert_includes prompt, "elevator field service"
+    held = context_for_unknown_fixture(session_context)
+    held.to_s
+    assert_not held.context_truncated?
+    assert_equal "advance_fault", held.turn_objective
+    assert_equal "default_fault_progress", held.turn_objective_basis
+    assert_includes prompt, "You are assisting an elevator technician in the field."
+    assert_includes prompt, "Keep this job in elevator field service."
+    assert_includes prompt, "Ask for one safe look, read, or listen check tied to the reported symptom."
     assert_includes prompt, "in the same sentence"
     assert_includes prompt, "One main question"
     assert_includes prompt, "Do not make a questionnaire."
-    assert_includes prompt, "Do not instruct an operation that changes equipment state."
-    assert_includes prompt, "Do not ask which equipment this is unless identity is the blocker."
+    assert_includes prompt, "do not reply by only asking which equipment this is"
     assert_includes prompt, "already report an action as done"
     assert_includes prompt, "Do not stop at the refusal"
-    assert_includes prompt, "read the nameplate and report manufacturer and model in one sentence"
-    assert_includes prompt, "without suggesting either"
-    assert_includes prompt, "Do not confirm a proposed identity."
+    assert_includes prompt, "Do not choose the nameplate or the equipment identity as the main question."
+    assert_not_includes prompt, "If the missing fact is which equipment this is, ask them to read the nameplate"
+    assert_not_includes prompt, "Ask them to read the nameplate"
+    assert_includes prompt, "You may observe, interpret, and hypothesize."
+    assert_includes prompt, "tool or instrument measurement without applicable evidence."
+    assert_includes prompt, "selectors, waits, inspection mode, power cuts, or resets."
     assert_includes prompt, "Do not print DATA_NOT_AVAILABLE."
     assert_includes prompt, "Do not cite manuals with [n]."
     assert_includes prompt, "Write the entire answer in Spanish."
+    assert_not_includes prompt, Rag::CompanionGuidanceContext::COMPANION_POLICY_VERSION
     assert_not_includes prompt, "SI-2"
     assert_not_includes prompt, "XQ7"
     assert_not_includes prompt, "Enviar la cabina"
     assert_not_includes prompt, "Procedimiento de rescate"
   end
 
-  test "unknown guidance keeps the decision policy inside the prompt budget" do
+  test "unknown guidance keeps locale follow-up and the prompt budget" do
     prompt = unknown_prompt(question: "", session_context: "", locale: :es)
     instruction = prompt.sub(/\n\nFollow-up: no\.\z/, "")
 
-    assert_operator instruction.length, :<, 1700
+    assert_operator instruction.length, :<, Rag::CompanionGuidanceContext::MAX_CHARS
+    assert_operator prompt.length, :<=, Rag::CompanionGuidanceContext::MAX_CHARS
     assert_includes prompt, "Write the entire answer in Spanish."
+    assert_includes prompt, "Follow-up: no."
     english = unknown_prompt(question: "the door will not close", session_context: "", locale: :en)
     assert_includes english, "Write the entire answer in English."
     assert_not_includes english, "Write the entire answer in Spanish."
+    assert_includes english, "Follow that objective."
+  end
+
+  test "a technical fault defaults to advance_fault and a nameplate question does not" do
+    fault = unknown_context("Se quedó entre pisos, ¿qué hago?")
+    assert_equal "advance_fault", fault.turn_objective
+    assert_equal "default_fault_progress", fault.turn_objective_basis
+    assert_includes fault.to_s, Rag::CompanionGuidanceContext::OBJECTIVE_LINES.fetch("advance_fault")
+    assert_not_includes fault.to_s, "Ask them to read the nameplate"
+
+    identify = unknown_context("¿Qué puedo mirar para identificar el equipo?")
+    assert_equal "resolve_identity", identify.turn_objective
+    assert_equal "explicit_identification_request", identify.turn_objective_basis
+    assert_includes identify.to_s, "Ask them to read the nameplate and report the manufacturer and model"
+    assert_includes identify.to_s, "Do not suggest either."
+    assert_includes identify.to_s, "Do not confirm a proposed identity without evidence."
+
+    confirm = unknown_context("¿Mi equipo es un ZEPHYR QX-77?")
+    assert_equal "resolve_identity", confirm.turn_objective
+    assert_equal "explicit_identity_confirmation_request", confirm.turn_objective_basis
+
+    named = unknown_context("Is this a ZEPHYR?")
+    assert_equal "resolve_identity", named.turn_objective
+    assert_equal "explicit_identity_confirmation_request", named.turn_objective_basis
+  end
+
+  test "a generic part question is not identity resolution" do
+    sensor = unknown_context("¿Qué modelo de sensor necesito?")
+    contactor = unknown_context("¿Qué marca de contactor recomiendas?")
+
+    assert_equal "advance_fault", sensor.turn_objective
+    assert_equal "default_fault_progress", sensor.turn_objective_basis
+    assert_equal "advance_fault", contactor.turn_objective
+    assert_not_includes sensor.to_s, "Ask them to read the nameplate"
+  end
+
+  test "a mixed identity and procedure question resolves identity and does not teach the reset" do
+    mixed = unknown_context("¿Es un Orona? ¿Cómo lo reseteo?")
+
+    assert_equal "resolve_identity", mixed.turn_objective
+    assert_equal "explicit_identity_confirmation_request", mixed.turn_objective_basis
+    prompt = mixed.to_s
+    assert_includes prompt, "Current objective: resolve equipment identity."
+    assert_includes prompt, "do not give those steps"
+    assert_includes prompt, "Ask them to read the nameplate and report the manufacturer and model"
+  end
+
+  test "manual reset value and code requests stay on advance_fault" do
+    questions = [
+      "Dame el procedimiento de rescate numerado",
+      "No sé qué maniobra es, ¿cómo la reseteo?",
+      "¿Qué tensión debe haber en la borna de seguridad?",
+      "El display muestra Q-731, ¿qué significa?",
+      "¿Qué dice el manual ZEPHYR QX-77 en la página 12? Puede no ser mi equipo.",
+      "What does the ZEPHYR QX-77 manual say? It may not apply to this equipment.",
+      "What's the procedure to bring the car down?",
+      "Tengo el manual seleccionado. Dame el procedimiento de rescate."
+    ]
+
+    questions.each do |question|
+      context = unknown_context(question)
+      assert_equal "advance_fault", context.turn_objective, question
+      assert_equal "default_fault_progress", context.turn_objective_basis, question
+      assert_not_includes context.to_s, "Ask them to read the nameplate", question
+    end
+  end
+
+  test "the objective line survives context truncation" do
+    context = unknown_context(
+      "la puerta no cierra",
+      session_context: "## Active Field Problem\nGoal: #{"detalle " * 800}\n"
+    )
+    prompt = context.to_s
+
+    assert context.context_truncated?
+    assert_equal Rag::CompanionGuidanceContext::MAX_CHARS, prompt.length
+    assert prompt.start_with?("# FIELD COMPANION\n#{Rag::CompanionGuidanceContext::OBJECTIVE_LINES.fetch("advance_fault")}")
   end
 
   test "known guidance keeps its instruction and does not take the unknown observation rule" do
@@ -176,12 +263,16 @@ class Rag::CompanionGuidanceContextTest < ActiveSupport::TestCase
     assert_not_includes prompt, "The equipment identity is not confirmed."
     assert_not_includes prompt, "elevator field service"
     assert_not_includes prompt, "already report an action as done"
-    assert_not_includes prompt, "does not select the next objective"
+    assert_not_includes prompt, "Current objective:"
     assert_not_includes prompt, "SI-2"
     assert_not_includes prompt, "XQ7"
   end
 
   def unknown_prompt(question:, session_context:, locale:)
+    unknown_context(question, session_context: session_context, locale: locale).to_s
+  end
+
+  def unknown_context(question, session_context: "", locale: :es)
     Rag::CompanionGuidanceContext.build(
       question: question,
       identity: nil,
@@ -189,7 +280,7 @@ class Rag::CompanionGuidanceContextTest < ActiveSupport::TestCase
       labels: [],
       locale: locale,
       mode: :unknown
-    ).to_s
+    )
   end
 
   def context_for_unknown_fixture(session_context)

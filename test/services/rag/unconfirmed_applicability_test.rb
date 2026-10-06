@@ -255,10 +255,58 @@ class Rag::UnconfirmedApplicabilityTest < ActiveSupport::TestCase
     assert_equal :identity_assertion, classify(answer)
   end
 
-  test "an empty retrieval does not classify the answer" do
-    assert_nil Rag::DocumentIdentityScope.unconfirmed_applicability_violation(
-      "Envíalo al piso inferior.", "Envíalo al piso inferior.", [], "que hago"
+  test "an empty retrieval still detects an unsupported operation" do
+    assert_equal :procedure_application, classify("Envíalo al piso inferior.", chunks: [])
+    assert_equal :operation, basis("Envíalo al piso inferior.", chunks: [])
+    assert_equal :procedure_application, classify(
+      "Con tensión cortada, revisa el voltaje en los terminales principales del controlador con un multímetro para confirmar que no hay energía residual.",
+      chunks: []
     )
+    assert_equal :directed_measurement, basis(
+      "Con tensión cortada, revisa el voltaje en los terminales principales del controlador con un multímetro para confirmar que no hay energía residual.",
+      chunks: []
+    )
+  end
+
+  test "an empty retrieval does not run identity or value applicability" do
+    assert_nil classify("Este equipo es uP-900.", chunks: [])
+    assert_nil classify("Tu equipo es uP-900.", chunks: [])
+    assert_nil classify("Q-731 significa fallo de puerta.", chunks: [], question: "el display parpadea")
+    assert_nil classify("La espera que figura es 47 s.", chunks: [], question: "no arranca")
+    assert_equal :identity_assertion, classify("Este equipo es uP-900.")
+    assert_equal :value_code, basis("Q-731 significa fallo de puerta.", question: "el display parpadea")
+  end
+
+  test "a reported measurement stays context and a directed measurement does not" do
+    reported = [
+      "Ya medí 220 V.",
+      "El técnico ya midió 220 V en la borna.",
+      "Ya revisé el voltaje en los terminales con un multímetro."
+    ]
+    reported.each do |answer|
+      assert_nil classify(answer), answer
+      assert_nil classify(answer, chunks: []), answer
+    end
+
+    directed = "Revisa el voltaje en los terminales principales del controlador con un multímetro."
+    assert_equal :procedure_application, classify(directed)
+    assert_equal :directed_measurement, basis(directed)
+
+    repeated = "Ya mediste 220 V. Vuelve a medir el voltaje en los terminales con el multímetro."
+    assert_equal :procedure_application, classify(repeated)
+    extended = "Ya medí 220 V. Revisa otra vez el voltaje en los terminales con el multímetro."
+    assert_equal :directed_measurement, basis(extended)
+  end
+
+  test "a directive measurement question does not escape and door contact is not probe placement" do
+    assert_equal :directed_measurement, basis("¿Puedes revisar el voltaje en los terminales con un multímetro?")
+    assert_equal :directed_measurement, basis("¿Revisas el voltaje en los bornes con un multímetro?")
+    assert_nil classify("¿Revisa el contacto de la puerta y dime si cierra?")
+    assert_nil classify("Revisa el contacto de puerta.")
+    assert_nil classify("Revisa el voltaje.")
+    assert_nil classify("Usa un multímetro.")
+    assert_nil classify("Hay voltaje en los terminales.")
+    assert_nil classify("No revises el voltaje en los terminales con un multímetro.")
   end
 
   private

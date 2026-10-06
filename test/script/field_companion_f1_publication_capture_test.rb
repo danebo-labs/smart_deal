@@ -141,6 +141,38 @@ class FieldCompanionF1PublicationCaptureTest < ActiveSupport::TestCase
     assert_equal "jobs", fields[:cost_basis]
   end
 
+  test "objective capture reads the generator-visible line" do
+    line = Rag::CompanionGuidanceContext::OBJECTIVE_LINES.fetch("advance_fault")
+    fields = Capture.annotate(
+      prompt: "# FIELD COMPANION\n#{line}\nFollow that objective.\n",
+      question: "¿Es un Orona? ¿Cómo lo reseteo?",
+      raw: "Mira si la puerta termina de cerrar.",
+      published: "Mira si la puerta termina de cerrar.",
+      guard_held: false
+    )
+
+    assert_equal "advance_fault", fields[:turn_objective]
+    assert_equal "explicit_identity_confirmation_request", fields[:turn_objective_basis]
+    assert_equal false, fields[:objective_line_matches_context]
+    assert_equal true, fields[:objective_followed]
+    assert_equal Rag::CompanionGuidanceContext::COMPANION_POLICY_VERSION, fields[:companion_policy_version]
+    assert_not_includes line, Rag::CompanionGuidanceContext::COMPANION_POLICY_VERSION
+  end
+
+  test "a prompt without the objective line does not invent one" do
+    fields = Capture.annotate(
+      prompt: "identity_unknown_reference",
+      question: "¿Qué puedo mirar para identificar el equipo?",
+      raw: "{}",
+      published: "Según el manual.",
+      guard_held: false
+    )
+
+    assert_nil fields[:turn_objective]
+    assert_nil fields[:turn_objective_basis]
+    assert_equal false, fields[:generation_policy_violation]
+  end
+
   private
 
   def observed_call

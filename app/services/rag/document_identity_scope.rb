@@ -193,6 +193,30 @@ module Rag
       \bmedir\b | \bmide\b | \bmida\b | \bmedicion(?:es)?\b |
       \bmeasur(?:e|es|ed|ing|ement|ements)\b
     /ix
+    # Assistant-directed check of an electrical quantity at a probe or instrument.
+    # Accent-sensitive so a reported "revisé" is not the imperative "revise".
+    # Door-contact components are not probe placement.
+    MEASUREMENT_DIRECTIVE = /
+      \b(?:
+        revis(?:a|e|ar|ad|en|as) |
+        verific(?:a|ar|que|ad|en|as) |
+        comprueb(?:a|e|an|as) |
+        comprobar |
+        cheque(?:a|e|ar|en|as) |
+        check(?:s|ing)? |
+        verify(?:ing)? |
+        review(?:s|ing)?
+      )\b
+    /ix
+    ELECTRICAL_QUANTITY = /
+      \b(?:voltaje|voltage|corriente|tension|amperaje|amperes|resistencia|continuidad|ohms?)\b
+    /ix
+    PROBE_OR_INSTRUMENT = /
+      \b(?:multimetro|multimeter|voltimetro|voltmeter|amperimetro|tester|polimetro)\b |
+      \bpinza\s+amperimetrica\b |
+      \bpunta\s+de\s+prueba\b |
+      \b(?:terminales|terminal|bornes|borne|borna|bornas|conductores|conductor|sonda)\b
+    /ix
     PRESS_STEM = /\A(?:puls(?:ar|a|e|ad|ando|acion|aciones)|press(?:es|ed|ing)?)\z/i
     TEMPORAL_PRESS_PREFIX = /(?:\bal|\bcuando|\bwhen|\bupon)\s+\z/
     NAMED_CONTROL_PATTERN = /\b(?:selector|borne|terminal|botonera)\b/i
@@ -396,9 +420,13 @@ module Rag
     private_class_method :reference_identity
 
     def self.applicability_hit(answer, raw, chunks, question)
-      return nil if Array(chunks).empty?
+      texts = [ answer, raw ].compact.uniq
+      if Array(chunks).empty?
+        hits = texts.filter_map { |text| operation_only_hit_for(text, question) }
+        return combine_operation_hits(hits)
+      end
 
-      hits = [ answer, raw ].compact.uniq.filter_map { |text| applicability_hit_for(text, chunks, question) }
+      hits = texts.filter_map { |text| applicability_hit_for(text, chunks, question) }
       return nil if hits.empty?
 
       identity = hits.find { |hit| hit[:kind] == :identity_assertion }
@@ -408,12 +436,7 @@ module Rag
       return nil if procedures.empty?
 
       bases = procedures.filter_map { |hit| hit[:basis] }
-      basis = if bases.include?(:operation) && bases.include?(:value_code) || bases.include?(:operation_and_value_code)
-        :operation_and_value_code
-      else
-        bases.first
-      end
-      { kind: :procedure_application, basis: basis }
+      { kind: :procedure_application, basis: combined_procedure_basis(bases) }
     end
     private_class_method :applicability_hit
 
@@ -424,6 +447,7 @@ module Rag
       units = applicability_units(text)
       identity = false
       operation = false
+      directed = false
       value = false
       units.each do |unit|
         normalized = applicability_normalize(unit.text)
@@ -434,7 +458,10 @@ module Rag
         next if qualified_reference?(unit, units, patterns, chunks.size)
         next if observational_question?(unit)
 
-        operation = true if operation_unit?(normalized, question, unit.text) && !negated_frame?(unit)
+        if operation_unit?(normalized, question, unit.text) && !negated_frame?(unit)
+          operation = true
+          directed = true if directed_measurement?(normalized, unit.text)
+        end
         value = true if foreign_value_unit?(unit.text, chunks, question)
       end
       return { kind: :identity_assertion, basis: nil } if identity
@@ -442,6 +469,8 @@ module Rag
 
       basis = if operation && value
         :operation_and_value_code
+      elsif directed
+        :directed_measurement
       elsif operation
         :operation
       else
@@ -506,8 +535,49 @@ module Rag
     end
     private_class_method :strip_identity_context
 
+    def self.operation_only_hit_for(text, question)
+      return nil if text.blank?
+
+      units = applicability_units(text)
+      operation = false
+      directed = false
+      units.each do |unit|
+        normalized = applicability_normalize(unit.text)
+        next if qualified_reference?(unit, units, [], 0)
+        next if observational_question?(unit)
+        next unless operation_unit?(normalized, question, unit.text) && !negated_frame?(unit)
+
+        operation = true
+        directed = true if directed_measurement?(normalized, unit.text)
+      end
+      return nil unless operation
+
+      { kind: :procedure_application, basis: directed ? :directed_measurement : :operation }
+    end
+    private_class_method :operation_only_hit_for
+
+    def self.combine_operation_hits(hits)
+      return nil if hits.empty?
+
+      bases = []
+      hits.each { |hit| bases << hit[:basis] }
+      { kind: :procedure_application, basis: combined_procedure_basis(bases) }
+    end
+    private_class_method :combine_operation_hits
+
+    def self.combined_procedure_basis(bases)
+      has_operation = bases.intersect?(%i[operation directed_measurement operation_and_value_code])
+      has_value = bases.intersect?(%i[value_code operation_and_value_code])
+      return :operation_and_value_code if has_operation && has_value
+      return :directed_measurement if bases.include?(:directed_measurement)
+
+      bases.first
+    end
+    private_class_method :combined_procedure_basis
+
     def self.operation_unit?(normalized, question = nil, original = nil)
       return false if normalized.blank?
+      return true if directed_measurement?(normalized, original)
 
       asked = applicability_normalize(question)
       normalized.to_enum(:scan, OPERATION_PATTERN).any? do
@@ -576,7 +646,10 @@ module Rag
     private_class_method :negated_before?
 
     def self.observational_question?(unit)
-      unit.question && !applicability_normalize(unit.text).match?(ACTION_REQUEST_PATTERN)
+      normalized = applicability_normalize(unit.text)
+      return false if directed_measurement?(normalized, unit.text)
+
+      unit.question && !normalized.match?(ACTION_REQUEST_PATTERN)
     end
     private_class_method :observational_question?
 
@@ -812,6 +885,23 @@ module Rag
       rest.match?(/\A\s*\z/) || rest.match?(/\A\s+[[:upper:]¿¡]/)
     end
     private_class_method :sentence_boundary_at?
+
+    # Directive plus electrical quantity plus instrument or probe placement.
+    # A reported past check keeps its accent and does not match the imperative.
+    def self.directed_measurement?(normalized, original = nil)
+      source = original.to_s
+      source = normalized if source.blank?
+      return false if source.blank? || normalized.blank?
+      return false unless source.match?(MEASUREMENT_DIRECTIVE)
+      return false unless normalized.match?(ELECTRICAL_QUANTITY)
+      return false unless normalized.match?(PROBE_OR_INSTRUMENT)
+
+      directive = normalized.match(MEASUREMENT_DIRECTIVE)
+      return false if directive && negated_before?(normalized, directive.begin(0))
+
+      true
+    end
+    private_class_method :directed_measurement?
 
     def self.applicability_normalize(text)
       normalize_label(text.to_s.gsub(/n't\b/i, " not "))

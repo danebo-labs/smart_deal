@@ -161,7 +161,7 @@ class FieldCompanionLongitudinalJourneysTest < ActiveSupport::TestCase
     end
     assert_equal "PASS", packet.dig("verdict", "L1", "A_no_focus")
     assert_equal "PASS", packet.dig("verdict", "L1", "A_selected_elemont")
-    assert_equal "FAIL", packet.dig("verdict", "L1", "B")
+    assert_equal "PASS", packet.dig("verdict", "L1", "B")
     assert_equal "PASS", packet.dig("verdict", "L2", "A_no_focus")
     assert_equal "PASS", packet.dig("verdict", "L2", "A_selected_elemont")
     assert_equal "PASS", packet.dig("verdict", "L3", "no_focus")
@@ -171,6 +171,92 @@ class FieldCompanionLongitudinalJourneysTest < ActiveSupport::TestCase
     assert_equal "B10", packet.dig("first_eviction", "B", "turn")
     assert packet["turns"].all? { |turn| turn["error"].blank? }
     assert_nil packet["usefulness_score"]
+  end
+
+  test "state_only accepts absent_confirmed and rejects a missing or known fault code" do
+    marker = state_only_fact("no_code_fact", "absent_confirmed")
+
+    passed = Score.check([ base_turn("B2", 2, state: fault_state("absent_confirmed"), expect: [ marker ]) ], 0, marker)
+    assert_nil passed["miss"]
+    assert_equal true, passed["state"]
+    assert_equal "n/a", passed["generator"]
+
+    missing = Score.check([ base_turn("B2", 2, state: empty_state, expect: [ marker ]) ], 0, marker)
+    assert_equal "lost_fact", missing["miss"]["fault"]
+    assert_equal false, missing["state"]
+    assert_equal "n/a", missing["generator"]
+
+    known = Score.check([ base_turn("B2", 2, state: fault_state("known", "18"), expect: [ marker ]) ], 0, marker)
+    assert_equal "lost_fact", known["miss"]["fault"]
+    assert_equal "n/a", known["generator"]
+  end
+
+  test "the no-code sentence without the fact does not satisfy the state-only marker" do
+    marker = state_only_fact("no_code_fact", "absent_confirmed")
+    state = empty_state.merge("observations" => [ "No aparece código de falla" ])
+    result = Score.check([ base_turn("B2", 2, state: state, expect: [ marker ]) ], 0, marker)
+
+    assert_equal "lost_fact", result["miss"]["fault"]
+    assert_equal "n/a", result["generator"]
+  end
+
+  test "no_code_text fails when the sentence leaves the generator and the retrieval query" do
+    item = present_text("no_code_text", "No aparece código de falla")
+    state = fault_state("absent_confirmed").merge("observations" => [ "No aparece código de falla" ])
+    lost = Score.check([
+      base_turn("B10", 10, state: state, generator_input: "Puedes seguir.", retrieval_query: "¿Y ahora?", expect: [ item ])
+    ], 0, item)
+    kept = Score.check([
+      base_turn("B10", 10, state: state, generator_input: "", retrieval_query: "No aparece código de falla", expect: [ item ])
+    ], 0, item)
+
+    assert_equal true, lost["state"]
+    assert_equal false, lost["generator"]
+    assert_equal "lost_fact", lost["miss"]["fault"]
+    assert_nil kept["miss"]
+    assert_equal true, kept["generator"]
+  end
+
+  test "a meta acknowledgement keeps state facts without repeating them and a later turn still requires them" do
+    orona = present_text("orona", "Orona").merge("expectation_scope" => "state_only")
+    photo = {
+      "id" => "test_ok", "kind" => "visible_text", "text" => "TEST OK",
+      "polarity" => "present", "weight" => "critical", "expectation_scope" => "state_only"
+    }
+    state = fault_state("absent_confirmed").merge(
+      "goal" => "queda mal nivelado en planta 3",
+      "facts" => {
+        "fault_code" => { "status" => "absent_confirmed", "source" => "user" },
+        "manufacturer" => { "status" => "known", "value" => "Orona", "source" => "photo" },
+        "model" => { "status" => "known", "value" => "PBCM-V3", "source" => "photo" }
+      },
+      "observations" => [ "2 o 3 cm por arriba del nivel" ],
+      "active_photo" => { "visible_text" => [ "TEST OK" ] }
+    )
+    meta = base_turn(
+      "B5", 5, state: state,
+      generator_input: "Puedes seguir con lo que ya me contaste.",
+      retrieval_query: "Adjunto una foto de la placa de este mismo equipo.",
+      generation_mode: "meta", route: "deterministic", model_invoked: false,
+      expectation_contract: { "generation_mode" => "meta", "route" => "deterministic", "model_invoked" => false },
+      expect: [ orona, photo ]
+    )
+
+    assert_nil Score.check([ meta ], 0, orona)["miss"]
+    assert_equal "n/a", Score.check([ meta ], 0, orona)["generator"]
+    assert_nil Score.check([ meta ], 0, photo)["miss"]
+    assert_nil Score.contract_miss(meta)
+
+    later = present_text("orona", "Orona")
+    later_turn = base_turn("B6", 6, state: state, generator_input: "guidance", retrieval_query: "Confirmo la placa", expect: [ later ])
+    later_check = Score.check([ later_turn ], 0, later)
+    assert_equal false, later_check["generator"]
+    assert_equal "lost_fact", later_check["miss"]["fault"]
+
+    invoked = meta.merge("model_invoked" => true)
+    mismatch = Score.contract_miss(invoked)
+    assert_equal "contract_mismatch", mismatch["fault"]
+    assert_equal "n/a", mismatch["generator"]
   end
 
   private
@@ -241,5 +327,19 @@ class FieldCompanionLongitudinalJourneysTest < ActiveSupport::TestCase
 
   def present_text(id, text, weight = "critical")
     { "id" => id, "kind" => "text", "text" => text, "polarity" => "present", "weight" => weight }
+  end
+
+  def fault_state(status, value = nil)
+    fact = { "status" => status, "source" => "user" }
+    fact["value"] = value if value
+    empty_state.merge("facts" => { "fault_code" => fact })
+  end
+
+  def state_only_fact(id, status)
+    {
+      "id" => id, "kind" => "fact", "slot" => "fault_code", "value" => "",
+      "status" => status, "polarity" => "present", "weight" => "critical",
+      "expectation_scope" => "state_only"
+    }
   end
 end

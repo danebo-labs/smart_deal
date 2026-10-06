@@ -3,7 +3,16 @@
 # This file does not define meanings for code 18, LED 7, floors, the
 # door-guide check, or the closing click. CEA15, CEA15P, and CEA15+ are
 # different tokens; this fixture never writes CEA15+ for a CEA15 turn.
+#
+# expectation_scope_revision longitudinal-expectation-scope.1.
+# Historical contract longitudinal-expectation-scope.0 required every present
+# marker in state and in generator input. That contract made B2 no_code_fact
+# and the B5 meta acknowledgement impossible. Those uses are state_only here.
+# no_code_text and later technical turns stay state_and_generation.
+# Fixture hash 3db76c24453d2869f03baf9a9bb7b07dc7e736fd8e80a422b7bf6bf1c03dab8b
+# is the historical scope.0 file. This revision does not change product code.
 label: hand_written_to_interpreter_contract
+expectation_scope_revision: longitudinal-expectation-scope.1
 fixed_time: "2026-10-06 15:00:00 UTC"
 chunk_source: test/fixtures/files/elemont/chunk_p1_2_current.txt
 elemont_document:
@@ -94,7 +103,8 @@ journeys:
           present: [level_floor_3, identity_unknown] }
       - { n: 2, checkpoint: L1, type: report, text: "Solo lo he visto en planta 3; en otras plantas no lo observé. No aparece código de falla.",
           perception: { move: report, observations: ["Solo lo he visto en planta 3", "No aparece código de falla"] },
-          present: [level_floor_3, only_floor_3, no_code_text, no_code_fact, identity_unknown] }
+          present: [level_floor_3, only_floor_3, no_code_text, no_code_fact, identity_unknown],
+          state_only: [no_code_fact] }
       - { n: 3, checkpoint: L1, type: reference, text: "El manual BLT que apareció, ¿qué dice sobre su propio sistema de nivelación? No sé si es mi equipo.",
           perception: { move: follow_up, assertions: [{ span: BLT, act: mention }], observations: [] },
           present: [level_floor_3, only_floor_3, no_code_text, identity_unknown] }
@@ -104,7 +114,9 @@ journeys:
       - { n: 5, checkpoint: L1, type: photo, text: "Adjunto una foto de la placa de este mismo equipo.",
           perception: { move: meta, observations: [] },
           photo: { manufacturer: Orona, model: PBCM-V3, visible_text: "TEST OK", relevance_to_goal: relevant },
-          present: [level_floor_3, identity_known, orona, pbcm, test_ok, above] }
+          present: [level_floor_3, identity_known, orona, pbcm, test_ok, above],
+          state_only: [level_floor_3, identity_known, orona, pbcm, test_ok, above],
+          contract: { generation_mode: meta, route: deterministic, model_invoked: false } }
       - { n: 6, checkpoint: L1, type: report, text: "Confirmo que la placa de este equipo dice Orona, PBCM-V3.",
           perception: { move: report, assertions: [{ span: Orona, act: assert, slot_hint: manufacturer }, { span: PBCM-V3, act: assert, slot_hint: model }], observations: [] },
           present: [orona, pbcm, identity_known, level_floor_3, test_ok, above] }

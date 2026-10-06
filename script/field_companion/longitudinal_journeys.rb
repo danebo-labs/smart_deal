@@ -71,6 +71,11 @@ module FieldCompanion
             faults << miss["fault"]
             absences << miss.merge("id" => turn["id"], "journey" => turn["journey"], "checkpoint" => turn["checkpoint"], "fact" => item["id"])
           end
+          contract = contract_miss(turn)
+          if contract
+            faults << contract["fault"]
+            absences << contract.merge("id" => turn["id"], "journey" => turn["journey"], "checkpoint" => turn["checkpoint"], "fact" => "contract")
+          end
           ellipse = elliptical_miss(turn)
           if ellipse
             faults << ellipse["fault"]
@@ -104,9 +109,47 @@ module FieldCompanion
       end
 
       def item_miss(turns, index, item)
+        check(turns, index, item)["miss"]
+      end
+
+      # state_and_generation is the historical contract. state_only checks the
+      # episode and reports generator as n/a. It does not count as a generator pass.
+      def check(turns, index, item)
         turn = turns[index]
         in_state = state_has?(turn["state"], item)
+        if item["expectation_scope"].to_s == "state_only"
+          return { "state" => in_state, "generator" => "n/a", "miss" => state_only_miss(turns, index, item, in_state) }
+        end
+
         in_gen = generator_has?(turn, item)
+        { "state" => in_state, "generator" => in_gen, "miss" => generation_miss(turns, index, item, in_state, in_gen) }
+      end
+
+      def state_only_miss(turns, index, item, in_state)
+        if item["polarity"] == "absent"
+          return nil unless in_state
+
+          prior = index.positive? && !state_has?(turns[index - 1]["state"], item)
+          return {
+            "fault" => (prior ? "superseded_fact_resurfaced" : "superseded_fact_current"),
+            "cause" => "corrected or replaced",
+            "state" => true,
+            "generator" => "n/a",
+            "weight" => item["weight"]
+          }
+        end
+        return nil if in_state
+
+        {
+          "fault" => (item["weight"] == "diagnostic" ? "diagnostic_lost" : "lost_fact"),
+          "cause" => classify(turns, index, item, false),
+          "state" => false,
+          "generator" => "n/a",
+          "weight" => item["weight"]
+        }
+      end
+
+      def generation_miss(turns, index, item, in_state, in_gen)
         if item["polarity"] == "absent"
           return nil unless in_state || in_gen
 
@@ -127,6 +170,28 @@ module FieldCompanion
           "state" => in_state,
           "generator" => in_gen,
           "weight" => item["weight"]
+        }
+      end
+
+      def contract_miss(turn)
+        contract = turn["expectation_contract"]
+        return nil unless contract.is_a?(Hash)
+
+        mismatches = []
+        %w[generation_mode route].each do |key|
+          next unless contract.key?(key)
+
+          mismatches << key if turn[key].to_s != contract[key].to_s
+        end
+        mismatches << "model_invoked" if contract.key?("model_invoked") && turn["model_invoked"] != contract["model_invoked"]
+        return nil if mismatches.empty?
+
+        {
+          "fault" => "contract_mismatch",
+          "cause" => mismatches.join(","),
+          "state" => true,
+          "generator" => "n/a",
+          "weight" => "critical"
         }
       end
 
@@ -633,6 +698,7 @@ module FieldCompanion
           "route_outcome" => result.respond_to?(:route_outcome) ? result.route_outcome.to_s : "",
           "identity_status" => result.respond_to?(:equipment_identity_status) ? result.equipment_identity_status.to_s : "",
           "model_invoked" => result.respond_to?(:model_invoked) ? result.model_invoked : nil,
+          "expectation_contract" => row["contract"].is_a?(Hash) ? row["contract"] : nil,
           "answer_excerpt" => answer.first(240),
           "answer_is_stub" => answer == STUB_ANSWER,
           "unknown_prompt_includes_chunk_body" => prompt.include?("identity_unknown_reference") && prompt.include?("SEGURIDAD IN"),
@@ -933,11 +999,21 @@ module FieldCompanion
 
       def expectations(row)
         markers = @spec.fetch("markers")
+        state_only = Array(row["state_only"]).map(&:to_s)
         items = []
-        Array(row["present"]).each { |id| items << markers.fetch(id).merge("id" => id, "polarity" => "present", "weight" => "critical") }
-        Array(row["absent"]).each { |id| items << markers.fetch(id).merge("id" => id, "polarity" => "absent", "weight" => "critical") }
-        Array(row["diagnostic"]).each { |id| items << markers.fetch(id).merge("id" => id, "polarity" => "present", "weight" => "diagnostic") }
+        Array(row["present"]).each { |id| items << expectation_item(markers, id, "present", "critical", state_only) }
+        Array(row["absent"]).each { |id| items << expectation_item(markers, id, "absent", "critical", state_only) }
+        Array(row["diagnostic"]).each { |id| items << expectation_item(markers, id, "present", "diagnostic", state_only) }
         items
+      end
+
+      def expectation_item(markers, id, polarity, weight, state_only)
+        markers.fetch(id).merge(
+          "id" => id,
+          "polarity" => polarity,
+          "weight" => weight,
+          "expectation_scope" => state_only.include?(id.to_s) ? "state_only" : "state_and_generation"
+        )
       end
 
       def perception_payload(raw)
@@ -1075,6 +1151,7 @@ module FieldCompanion
         packet = {
           "interpreter_mode" => "owner",
           "fixed_time" => @spec.fetch("fixed_time"),
+          "expectation_scope_revision" => @spec["expectation_scope_revision"],
           "fixture_sha256" => fixture_hash,
           "known_prompt_sha256" => known_hash,
           "chunk_source" => @spec.fetch("chunk_source"),

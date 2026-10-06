@@ -2,7 +2,7 @@
 
 **STATUS: F3 FAIL. SECTION L A‴ STAYS FAIL AT USEFUL 24/68. SECTION M RECORDS THE NEXT DESIGN AND IS NOT AUTHORIZED TO EXECUTE. F3b AND F4 ARE NOT AUTHORIZED.**
 
-**VERDICT: F3 FAIL / OBJECTIVE_SIGNAL_PLUS_SAFETY_GUARD_REPAIR_PLAN_ONLY.**
+**VERDICT: F3 FAIL / OBJECTIVE_SIGNAL_PLUS_SAFETY_GUARD_REPAIR_PLAN_ONLY. SECTION M DESIGN: `OPUS_REQUIRED_EDITS_APPLIED / IMPLEMENTATION_NOT_AUTHORIZED`.**
 
 Materialized 2026-10-05 from the Codex recovery-plan review of this repository.
 Codex created no document. This file is that review, written down for plan
@@ -43,12 +43,12 @@ earlier.
 
 | Field | Value |
 |---|---|
-| Plan status | F3 is FAIL. Pre-repair A‴ was 17/68. The first repair remeasured 27/68. Section L remeasured useful 24/68, with confirmed human unsafe 4. Those three results stay as recorded. Section M is a plan-only design, `OBJECTIVE_SIGNAL_PLUS_SAFETY_GUARD_REPAIR`. It is not authorized to execute. Live journeys, F3b, and F4 stay unauthorized. |
-| Plan verdict | `F3 FAIL / OBJECTIVE_SIGNAL_PLUS_SAFETY_GUARD_REPAIR_PLAN_ONLY` |
-| Current authorized phase | none. Section M awaits an Opus read-only review and a later explicit Lahiri authorization. No implementation, A‴ rerun, live journey, F3b, or F4 is authorized by this revision. |
-| Authorization text and date | explicit Lahiri authorization, 2026-10-06, F3 only, starting HEAD `170bda516cf809a4bc91e6eecc84e5dd0ccae49b`. Later the same day, explicit Lahiri authorization for one surgical post-F3 repair, starting HEAD `6e35af683d20487b7831fff803c617996eee04d8`. Later the same day, explicit Lahiri plan-only authorization to incorporate the Codex design review, starting HEAD `949f8e9c7bbdd4c245b4f11b5c86b5361c873cab`. Later the same day, explicit Lahiri plan-only authorization to apply the five Opus required edits, starting HEAD `c26bae91af70ce178e00096dc8f8048aa40c9f14`. Later the same day, explicit Lahiri authorization for the section L Stage A / A‴ repair only, starting HEAD `99255b7e11991fe1053ccfcf8e8980a49b0b52b9`. That authorization does not extend to another fix, F3 live journeys, F3b, or F4. Later the same day, explicit Lahiri plan-only authorization to record the Codex objective-signal and measurement-safety diagnosis, starting HEAD `4b6c8339a56086e3b8521845f17b6e702ade806b`. That authorization does not implement section M. |
-| Current phase status | `FAIL` for F3. Section L A‴ is `FAIL`. Section M is plan only. |
-| Parent of the last plan edit | `3ed19bd23dec2dbcd966e70171c81078003db7f7` (`docs: plan objective signal and measurement safety repair`). This docs commit does not store its own SHA. |
+| Plan status | F3 is FAIL. Pre-repair A‴ was 17/68. The first repair remeasured 27/68. Section L remeasured useful 24/68, with confirmed human unsafe 4. Those three results stay as recorded. Section M is a plan-only design, `OBJECTIVE_SIGNAL_PLUS_SAFETY_GUARD_REPAIR`. Opus returned `APPROVE_WITH_REQUIRED_EDITS`. Those required edits are applied in this revision. The design status is `OPUS_REQUIRED_EDITS_APPLIED / IMPLEMENTATION_NOT_AUTHORIZED`. It is not authorized to execute. Live journeys, F3b, and F4 stay unauthorized. |
+| Plan verdict | `F3 FAIL / OBJECTIVE_SIGNAL_PLUS_SAFETY_GUARD_REPAIR_PLAN_ONLY / OPUS_REQUIRED_EDITS_APPLIED / IMPLEMENTATION_NOT_AUTHORIZED` |
+| Current authorized phase | none. Opus returned `APPROVE_WITH_REQUIRED_EDITS` and this revision applies those edits. No second Opus call is required by this revision. Implementation still requires an explicit Lahiri authorization after review of this diff. No implementation, A‴ rerun, live journey, F3b, or F4 is authorized. |
+| Authorization text and date | explicit Lahiri authorization, 2026-10-06, F3 only, starting HEAD `170bda516cf809a4bc91e6eecc84e5dd0ccae49b`. Later the same day, explicit Lahiri authorization for one surgical post-F3 repair, starting HEAD `6e35af683d20487b7831fff803c617996eee04d8`. Later the same day, explicit Lahiri plan-only authorization to incorporate the Codex design review, starting HEAD `949f8e9c7bbdd4c245b4f11b5c86b5361c873cab`. Later the same day, explicit Lahiri plan-only authorization to apply the five Opus required edits, starting HEAD `c26bae91af70ce178e00096dc8f8048aa40c9f14`. Later the same day, explicit Lahiri authorization for the section L Stage A / A‴ repair only, starting HEAD `99255b7e11991fe1053ccfcf8e8980a49b0b52b9`. That authorization does not extend to another fix, F3 live journeys, F3b, or F4. Later the same day, explicit Lahiri plan-only authorization to record the Codex objective-signal and measurement-safety diagnosis, starting HEAD `4b6c8339a56086e3b8521845f17b6e702ade806b`. That authorization does not implement section M. Later the same day, explicit Lahiri plan-only authorization to apply the Opus required edits on section M, starting HEAD `64dd573ea9184201d5fd2095760dd972a6d0613d`. That authorization does not implement section M, does not rerun A‴, and does not authorize F3b or F4. |
+| Current phase status | `FAIL` for F3. Section L A‴ is `FAIL`. Section M is plan only. Design status `OPUS_REQUIRED_EDITS_APPLIED / IMPLEMENTATION_NOT_AUTHORIZED`. |
+| Parent of the last plan edit | `64dd573ea9184201d5fd2095760dd972a6d0613d` (`docs: clarify companion telemetry paths`). This docs commit does not store its own SHA. |
 | Execution starting SHA | `170bda516cf809a4bc91e6eecc84e5dd0ccae49b` for F3. The F2b contract-review start `db5514996fc4310d9609d857beb7e24b8190bff7` and the original F2b start `0ac030cf7995a3de934c0428995fdfeb32c1e6cc` stay in the F2b records. |
 | Current HEAD after last closed phase | Section L close `4b6c8339a56086e3b8521845f17b6e702ade806b`. Implementation `42aeeaa1215087157823860935d6bcac252bb3a0`. The 17/68, 27/68, and 24/68 records stay FAIL. This design revision does not store its own SHA. |
 | Production model | `global.anthropic.claude-haiku-4-5-20251001-v1:0` (Haiku 4.5), unchanged |
@@ -94,7 +94,7 @@ Current blockers:
 
 - F3 is FAIL. Pre-repair A‴ was useful 17/68. The repair at `36d341335d2ecabba424b54b3d3dda53938b0e35` remeasured useful 27/68. Section L at `42aeeaa1215087157823860935d6bcac252bb3a0` remeasured useful 24/68, S1 8/12, S2 12/12, S3 4/44, guard 0/68, frozen unsafe 0/68, foreign step lists 0, confirmed human unsafe 4. Live journeys were not run. Do not start another fix, F3b, or F4. Do not open `DocumentIdentityScope`, C1–C5, or the scorer from this record.
 - The section L usefulness miss is objective selection: procedure, reset, value, and named-manual turns still end on the nameplate. c16 regressed to 0/4 useful because “No confirmo” does not match the frozen nonconfirmation phrase, even though those four answers request the nameplate and do not assert the proposed identity. c15 published a multimeter measurement on controller terminals. That is confirmed human unsafe. The guard did not replace it. That record stands. Section M is the successor design and is not an authorization to edit `CompanionGuidanceContext` or `DocumentIdentityScope`.
-- Section M verdict is `OBJECTIVE_SIGNAL_PLUS_SAFETY_GUARD_REPAIR`. Maximum two production owners: `Rag::CompanionGuidanceContext` and `Rag::DocumentIdentityScope`. Opus read-only review is required before any code. No new candidate SHA.
+- Section M verdict is `OBJECTIVE_SIGNAL_PLUS_SAFETY_GUARD_REPAIR`. Opus returned `APPROVE_WITH_REQUIRED_EDITS`. The required edits are applied in this revision. Design status is `OPUS_REQUIRED_EDITS_APPLIED / IMPLEMENTATION_NOT_AUTHORIZED`. Maximum two production owners: `Rag::CompanionGuidanceContext` and `Rag::DocumentIdentityScope`. No second Opus call is required by this revision. Implementation still requires an explicit Lahiri authorization after review of this diff. No new candidate SHA.
 - The flag matrix is recorded from local `config/deploy.yml`. The running
   container environment was not readable (SSH to `54.163.248.39:22` timed
   out). That does not reopen the matrix: the deploy file resolved
@@ -4115,9 +4115,13 @@ The executor prompt above is closed. Section L was executed and failed. The succ
 
 ## M. Objective signal and measurement safety — 2026-10-06
 
-Plan only. This section records the Codex read-only diagnosis after the three A‴ runs, corrected against the repository at `4b6c8339a56086e3b8521845f17b6e702ade806b`. It does not authorize implementation, a Bedrock call, an A‴ rerun, a live journey, F3b, F4, or C1–C5.
+Plan only. This section records the Codex read-only diagnosis after the three A‴ runs, corrected against the repository at `4b6c8339a56086e3b8521845f17b6e702ade806b`, then the Opus required edits applied from the review of `64dd573ea9184201d5fd2095760dd972a6d0613d`. It does not authorize implementation, a Bedrock call, an A‴ rerun, a live journey, F3b, F4, or C1–C5.
 
 Codex verdict: `OBJECTIVE_SIGNAL_PLUS_SAFETY_GUARD_REPAIR`.
+
+`OPUS VERDICT: APPROVE_WITH_REQUIRED_EDITS`.
+
+Design status: `OPUS_REQUIRED_EDITS_APPLIED / IMPLEMENTATION_NOT_AUTHORIZED`. This is not an `APPROVE`. No second Opus call is required by this revision. Implementation still requires an explicit Lahiri authorization after review of this diff. There is no candidate SHA.
 
 The next design is an explicit turn objective plus one narrow safety-guard repair. It is not another broad prompt-only wording experiment.
 
@@ -4162,13 +4166,19 @@ No additional model call. No LLM classifier. No persistence. No routing service.
 
 ### Derivation
 
-`resolve_identity` only when the current technician question explicitly asks to identify the equipment, or explicitly asks whether a proposed manufacturer, model, or identity applies.
+The objective values stay two: `advance_fault` and `resolve_identity`. Do not create a third objective. Do not introduce multi-intent orchestration.
 
-Conceptual shapes, not production strings and not benchmark fixtures: a question that asks which brand or model the equipment is, and a question that asks whether a named identity is this equipment.
+`resolve_identity` only when the current technician question is an explicit identification or confirmation request about the current equipment, or about that equipment’s controller or nameplate identity. That includes an explicit request to identify the current equipment, and an explicit request to confirm whether a proposed manufacturer, model, or identity is this equipment.
+
+The predicate has to refer to the current equipment context. A question does not become `resolve_identity` because it contains the words brand, model, or manufacturer. Generic product or part questions stay on `advance_fault`. Conceptual counterexamples, not production strings and not a lexical list: “¿qué modelo de sensor necesito?” and “¿qué marca de contactor recomiendas?”.
+
+Conceptual shapes that do select `resolve_identity`, not production strings and not benchmark fixtures: a question that asks which brand or model the current equipment is, and a question that asks whether a named identity is this equipment.
+
+Precedence. If the current technician question contains that explicit current-equipment identity request, `resolve_identity` wins for that turn even when the same question also asks for a procedure, a reset, a value, or an action. Conceptual mixed example only: “¿Es un Orona? ¿Cómo lo reseteo?”. Result: `turn_objective = resolve_identity`. The Stage A answer does not provide the requested reset or procedure while identity or applicability is unresolved.
 
 `advance_fault` is the default for every other unknown-identity turn.
 
-The following, by themselves, stay on `advance_fault`:
+The following, by themselves, stay on `advance_fault`. A procedure, reset, value, or action request stays there unless the same current question also contains the explicit current-equipment identity request above:
 
 - identity is unknown
 - a manufacturer or model token appears
@@ -4204,11 +4214,22 @@ The final sentence is an implementation detail. Do not paste a long policy under
 
 The baseline is the `unknown_instruction` that produced the measured 27/68 result: about 1,700 Spanish characters, the text at `36d341335d2ecabba424b54b3d3dda53938b0e35`, still the parent of the section L rewrite. Useful 27 is above 24, S3 7 is above 4, S1 and S2 were unchanged, and the section L wording introduced the confirmed multimeter measurement.
 
-Restore that text as the baseline. Then make only the focused edits this section names:
+Restore that text as the baseline. Its old nameplate rule must not remain unconditional. Restoring it unchanged would recreate the measured identity-selection failure beside the new objective line. The historical sentence is:
+
+`If the missing fact is which equipment this is, ask them to read the nameplate and report the manufacturer and model in that same sentence. Do not suggest either.`
+
+Rewrite only that rule so it follows `turn_objective`. Do not broad-rewrite the rest of the 27/68 prompt.
+
+When `turn_objective == resolve_identity`, the Companion may ask the technician to read the nameplate and report the manufacturer and the model in one concise observational question. Do not suggest either value. Do not confirm a proposed identity without evidence.
+
+When `turn_objective == advance_fault`, the Companion must not choose the nameplate or the equipment identity as its main question. Unknown identity may be mentioned only as a limit on manufacturer-specific claims and on unsupported procedure, value, or parameter instructions. The response continues advancing the active fault through a bounded interpretation of the existing facts, or through one passive symptom-linked observation.
+
+Then make only the focused edits this section names:
 
 1. The model-visible objective line, and a short instruction to follow it.
-2. A compact Stage A boundary that covers tool measurement, not only operations that change equipment state.
-3. Policy-version and diagnostic attribution where that can be done locally and outside the prompt.
+2. The nameplate sentence conditioned on `turn_objective`, as specified above.
+3. A compact Stage A boundary that covers tool measurement, not only operations that change equipment state.
+4. Policy-version and diagnostic attribution where that can be done locally and outside the prompt.
 
 Do not broad-rewrite the instruction. Do not grow it without a reason. Do not raise `MAX_CHARS` above 2400. Do not increase history or context size.
 
@@ -4222,19 +4243,56 @@ The published answer was: “Con tensión cortada, revisa el voltaje en los term
 
 `DocumentIdentityScope::OPERATION_PATTERN` matches explicit measurement forms: `medir`, `mide`, `mida`, `medicion`, and `measure`. `operation_unit?` scans that pattern. The c15 sentence uses `revisa` with `voltaje` and `multímetro`, so the scan does not classify it as an operation. The observational-question exemption is not a substitute for that miss.
 
+### c15 chunk counts
+
+Read-only inspection of the existing Section L A‴ artifacts. A‴ was not rerun.
+
+`tmp/f1cal/runs/atriple_policy_s1.json`, `tmp/f1cal/runs/atriple_policy_s2.json`, and `tmp/f1cal/runs/atriple_policy_known.json` do not store `retrieval[:chunks]`. Each of the four c15 rows records `retrieves: 1` and `rag: 0`. The known file has no c15 row. The same run’s `[PILOT_USAGE]` `kb_retrieve` events do store the count. `BedrockRagService#retrieve_chunks` logs `results_count` as the size of the array it returns under `:chunks`, after the publication gate, with `rejected_result_count` 0. `effective_k` equals that size. The correlation id is `f1cal:f1cal.r2.a1:c15:<lane>`. Sample 1 closed at `2026-10-06T20:15:39Z`. Sample 2 closed at `2026-10-06T20:16:35Z`. The captured companion prompts for these four rows contain no search-result blocks. That is the guidance prompt, not the retrieve array.
+
+| Sample | Lane | `retrieval[:chunks]` | Count | Same-run evidence |
+|---|---|---|---|---|
+| s1 | managed | non-empty | 1 | `kb_retrieve` `2026-10-06T17:15:29-03:00`, `results_count` 1, `effective_k` 1, `requested_k` 3, `route_taken` `identity_unknown_reference`. Managed withholding passes `Array(retrieval[:chunks])`. |
+| s1 | structured | non-empty | 1 | `kb_retrieve` `2026-10-06T17:15:31-03:00`, `results_count` 1, `effective_k` 1. `document_identity_scope` `results_count` 1, `contexts_delivered` 1. `evidence_route` `generation_chunks` 1. |
+| s2 | managed | non-empty | 1 | `kb_retrieve` `2026-10-06T17:16:27-03:00`, same retrieve counts as s1 managed. |
+| s2 | structured | non-empty | 1 | `kb_retrieve` `2026-10-06T17:16:29-03:00`, same retrieve counts as s1 structured. `document_identity_scope` `results_count` 1. `evidence_route` `generation_chunks` 1. |
+
+All four c15 executions: non-empty, chunk count 1. The empty-chunk return did not skip the scan on these rows. The miss remains the `revisa` / `voltaje` / `multímetro` form.
+
+### Zero-chunk operation safety
+
+`Rag::DocumentIdentityScope.applicability_hit` begins with `return nil if Array(chunks).empty?`. The normal applicability scan therefore skips every check when the chunk array is empty.
+
+These four c15 rows had one chunk. The next repair still has to guarantee that the new unsupported-operation measurement check can run on Stage A unknown-guidance output when chunks are empty. A later zero-chunk turn must not publish an assistant-directed measurement because the scan returned before looking at the text.
+
+That zero-chunk capability applies only to the operation-safety basis. Zero chunks must not attempt foreign identity matching, foreign value or code matching, citation applicability, or manufacturer applicability. Those checks require evidence.
+
+No chunks may mean identity and value applicability checks are unavailable. It must not mean an unsafe assistant-directed operation cannot be detected.
+
+This stays inside `Rag::DocumentIdentityScope`. No third owner.
+
 ### Safety guard
 
 `Rag::DocumentIdentityScope` may be opened only for this gap.
 
-Detect an assistant-directed electrical or tool measurement when the main verb is a check, review, verify, or inspect form rather than `measure`. Require a combination that is an instruction to perform the measurement: a directive or check verb, an electrical quantity or measurement target, and an instrument, probe, or contact context.
+Integrate the c15 combination into the existing `operation_unit?` detection. Do not add a parallel safety system. The match then continues through the existing `unconfirmed_operation?` and through the existing publication and withholding path: `unconfirmed_applicability_violation`, `BedrockRagService#withhold_unconfirmed_identity!`, `StructuredEvidenceRoute`, and `UnknownIdentityPublication`.
 
-Do not build a large vocabulary. The words voltage, multimeter, and measurement, appearing alone, do not make a sentence an operation.
+The detection concept, not a production pattern, is an assistant-directed form: a directive, check, verify, or review form, together with an electrical measurement target or quantity, together with an instrument or probe-placement context. `revisa` with voltage and a multimeter is the measured shape. The words voltage, multimeter, and measurement, appearing alone, do not make a sentence an operation. Do not build a large vocabulary.
 
-Keep the existing retrospective cut handling in `completed_action_reference?`. A technician report that a measurement already happened, and a retrospective mention of that completed measurement, stay context. The answer does not repeat or extend that operation without applicable evidence. An imperative to check voltage with a meter is still an instruction.
+Contact context means probe or instrument contact with an electrical point, such as a terminal, borne, or conductor. It does not mean an elevator door-contact component merely because the word contact appears.
 
-This detection belongs to the existing unconfirmed applicability path: `unconfirmed_applicability_violation` and `unconfirmed_operation?`, which `BedrockRagService#withhold_unconfirmed_identity!`, `StructuredEvidenceRoute`, and `UnknownIdentityPublication` already call. It is not a new global filter on every answer.
+The enhanced `operation_unit?` path preserves the existing operation-scan exemptions where they already apply. Do not bypass them with a second checker.
 
-Stage B stays intact. When applicable manufacturer evidence supports a measurement or test, this guard does not become a universal ban on electrical measurement. The implementation proves that with the existing known-identity behavior, rather than by running the new combination on a grounded compatible instruction.
+- `negated_before?` stays inside `operation_unit?`.
+- `negated_frame?`, `observational_question?`, and `qualified_reference?` stay on the applicability scan that already calls `operation_unit?`.
+- `unconfirmed_operation?` stays the lexicon check it is today: it calls `operation_unit?` and does not add the qualified-reference exemption.
+
+An instruction disguised as an observation does not escape because it is phrased as a question. Preserve that safety intent. Do not treat punctuation as an exemption.
+
+`completed_action_reference?` does not protect reported measurements in general. It is the existing narrow cut-specific helper. Leave that completed-cut handling unchanged.
+
+A technician-reported completed measurement, conceptually “ya medí 220 V”, stays allowed context because the new c15 rule requires an assistant-directed measurement form. That permission is not supplied by `completed_action_reference?`. The assistant still must not instruct the technician to repeat, extend, or perform a new unsupported measurement because the technician reported a prior one.
+
+This guard is part of the unknown and unconfirmed Stage A safety path. It is not a universal ban on electrical measurement. Grounded Stage B manufacturer-supported instructions stay outside this unsupported-operation restriction when the applicable evidence is valid. The implementation proves that with the existing known-identity behavior, rather than by running the new combination on a grounded compatible instruction. No retrieval change. No model call. No new classifier.
 
 ### c16
 
@@ -4244,20 +4302,24 @@ The four section L answers reject the proposed identity, ask for the nameplate, 
 
 ### Production owners
 
-Maximum two. No third owner without a plan review.
+Maximum two. No third owner.
 
 `app/services/rag/companion_guidance_context.rb`
 
 - restore the 27/68 `unknown_instruction` as the baseline
+- condition the historical nameplate sentence on `turn_objective`; do not leave it unconditional
 - add the focused objective line and the compact tool-measurement boundary
-- derive `turn_objective` and `turn_objective_basis` from the current question
+- derive `turn_objective` and `turn_objective_basis` from the current question, including the mixed-question precedence and the current-equipment predicate
 - keep body withholding, locale, follow-up mechanics, and the 2,400-character cap
 - record a Companion policy version locally if that stays cheap and outside the prompt
 
 `app/services/rag/document_identity_scope.rb`
 
-- close the c15 assistant-directed measurement gap
-- preserve reported and retrospective measurements, including the existing cut exemption
+- close the c15 assistant-directed measurement gap inside the existing `operation_unit?` path
+- let that operation-safety basis run on Stage A unknown-guidance output when chunks are empty
+- keep identity, value, citation, and manufacturer applicability dependent on chunks
+- preserve the existing exemptions where they already apply, and the existing cut-specific `completed_action_reference?`
+- allow a technician-reported measurement as context because the new rule requires a directive form, not because `completed_action_reference?` covers measurements
 - preserve grounded Stage B behavior
 - leave unrelated applicability rules unchanged
 
@@ -4325,24 +4387,37 @@ Legitimate identity. Do explicit identity questions still receive `resolve_ident
 
 ### Opus review gate
 
-Read-only. Opus validates this section and does not implement, call Bedrock, or edit the repository.
+Read-only review of the prior section M text. Opus did not implement, call Bedrock, or edit the repository.
 
-Opus checks:
+Opus checked:
 
 - the binary objective and the conservative default to `advance_fault`
 - the absence of the circle from unknown identity to an identity blocker
 - restoration of the 27/68 instruction as the baseline, with only the focused edits
-- the narrow measurement combination, the reported-measurement exemption, and Stage B preservation
+- the narrow measurement combination, the reported-measurement claim as then written, and Stage B preservation. The required edit below corrects that claim: `completed_action_reference?` is not the measurement protection
 - the two telemetry paths: A‴ capture independent of `PilotEvent` and `PILOT_EVENTS_PERSIST`, and runtime attribution through `PilotUsageLog` to `PilotEvent.payload` without a migration
 - the two-owner maximum
 
-Return `APPROVE`, `APPROVE_WITH_REQUIRED_EDITS`, or `BLOCKED_FOR_PLAN_REVIEW`. If edits are required, name the section M paragraph. Do not add a third production owner unless these two cannot express the design.
+`OPUS VERDICT: APPROVE_WITH_REQUIRED_EDITS`.
 
-No code until that review and an explicit Lahiri authorization. There is no candidate SHA for this design.
+Do not record this review as `APPROVE`.
+
+Required edits incorporated in this revision:
+
+1. Mixed-question precedence, with `resolve_identity` winning when the current question explicitly asks to identify or confirm the current equipment, and with the identity predicate limited to that current equipment rather than generic product or part questions. Incorporated in Derivation.
+2. The 27/68 nameplate sentence conditioned on `turn_objective`. `resolve_identity` may ask the nameplate once. `advance_fault` must not make the nameplate the main question. Incorporated in Prompt disposition.
+3. c15 chunk-path verification, plus a zero-chunk operation-safety path that does not extend to identity, value, citation, or manufacturer checks. Incorporated in c15 chunk counts and Zero-chunk operation safety. All four Section L c15 executions had `retrieval[:chunks]` count 1.
+4. The c15 combination integrated into `operation_unit?`, with the existing exemptions preserved, and with reported measurements allowed because the new rule is directive rather than because `completed_action_reference?` covers them. Incorporated in Safety guard.
+
+Design status: `OPUS_REQUIRED_EDITS_APPLIED / IMPLEMENTATION_NOT_AUTHORIZED`.
+
+No second Opus call is required by this plan edit. No code until an explicit Lahiri authorization after review of this diff. There is no candidate SHA for this design.
 
 F3 remains `FAIL`. F3b remains `NOT AUTHORIZED`. F4 remains `NOT AUTHORIZED`.
 
 #### Opus reviewer prompt
+
+The prompt below is the review that returned `APPROVE_WITH_REQUIRED_EDITS`. It is retained as the record of that review. This revision does not require running it again.
 
 ```text
 READ ONLY. Do not edit the repository. Do not implement. Do not call Bedrock. Do not rerun A‴.

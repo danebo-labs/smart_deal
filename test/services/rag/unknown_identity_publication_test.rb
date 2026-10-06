@@ -8,13 +8,16 @@ class Rag::UnknownIdentityPublicationTest < ActiveSupport::TestCase
   REFUSAL = "I can't give you a procedure to bring the car down"
   FACT = "Q-731 = fallo de puerta"
   PARAPHRASE = "Q-731 aparece como fallo de puerta"
+  INVENTED = "Q-731 = fallo del freno"
   SAFE_OBSERVATION = "Mira la posición de la cabina y si las puertas están abiertas."
 
   test "the schema has no current-job action field" do
     properties = Rag::UnknownIdentityPublication.tool_schema[:properties]
 
-    assert_equal %w[observations nameplate_question reference_fact], properties.keys.map(&:to_s)
+    assert_equal %w[observations reference_fact], properties.keys.map(&:to_s)
     assert_not_includes properties.keys.map(&:to_s), "current_job_actions"
+    assert_equal %w[citation evidence_span], properties[:reference_fact][:properties].keys.map(&:to_s)
+    assert_equal %w[citation evidence_span], properties[:reference_fact][:required]
   end
 
   test "a qualified code reference survives and the rendered prose passes the guard" do
@@ -43,7 +46,7 @@ class Rag::UnknownIdentityPublicationTest < ActiveSupport::TestCase
   test "attribution does not depend on where the model would have placed the disclaimer" do
     result = compose(
       "observations" => [ SAFE_OBSERVATION ],
-      "reference_fact" => { "citation" => 1, "fact" => FACT }
+      "reference_fact" => { "citation" => 1, "evidence_span" => FACT }
     )
 
     assert_equal "accepted", result.reference_status
@@ -55,7 +58,7 @@ class Rag::UnknownIdentityPublicationTest < ActiveSupport::TestCase
   test "an operation, a measured value, and a setting are dropped" do
     result = compose(
       "observations" => [ "Cortar tensión en el borne XQ7.", SAFE_OBSERVATION ],
-      "reference_fact" => { "citation" => 1, "fact" => "Esperar 47 s." },
+      "reference_fact" => { "citation" => 1, "evidence_span" => "Esperar 47 s." },
       "current_job_actions" => [ "Ajustar el parámetro." ]
     )
 
@@ -73,7 +76,7 @@ class Rag::UnknownIdentityPublicationTest < ActiveSupport::TestCase
   test "a safe observation survives beside a rejected reference" do
     result = compose(
       "observations" => [ SAFE_OBSERVATION, REFUSAL ],
-      "reference_fact" => { "citation" => 1, "fact" => "Cortar tensión en el borne XQ7." }
+      "reference_fact" => { "citation" => 1, "evidence_span" => "Cortar tensión en el borne XQ7." }
     )
 
     assert_includes result.answer, SAFE_OBSERVATION
@@ -83,21 +86,92 @@ class Rag::UnknownIdentityPublicationTest < ActiveSupport::TestCase
     assert_nil guard(result.answer)
   end
 
-  test "citation provenance is the evidence number, not a substring of the fact" do
-    missing = compose(
-      "observations" => [ SAFE_OBSERVATION ],
-      "reference_fact" => { "citation" => 4, "fact" => FACT }
+  test "an exact span from the cited chunk is published as the reference" do
+    result = compose("observations" => [], "reference_fact" => { "citation" => 1, "evidence_span" => FACT })
+
+    assert_includes zephyr_chunk[:content], FACT
+    assert_equal "accepted", result.reference_status
+    assert_includes result.answer, reference_sentence
+    assert_nil guard(result.answer)
+  end
+
+  test "an invented fact with a valid citation is rejected" do
+    [ INVENTED, PARAPHRASE ].each do |fact|
+      result = compose(
+        "observations" => [ SAFE_OBSERVATION ],
+        "reference_fact" => { "citation" => 1, "evidence_span" => fact }
+      )
+
+      assert_not_includes zephyr_chunk[:content], fact
+      assert_equal "rejected", result.reference_status, fact
+      assert_includes result.rejected_fields, "reference_fact"
+      assert_not_includes result.answer, fact
+      assert_not_includes result.answer, "Según el manual"
+      assert_includes result.answer, SAFE_OBSERVATION
+      assert_nil guard(result.answer)
+    end
+  end
+
+  test "a span is checked against the chunk its citation names" do
+    other = zephyr_chunk.merge(
+      content: "ZEPHYR QX-77. Página 30. Revisa el registro de eventos.",
+      metadata: zephyr_chunk[:metadata].merge("page_number" => 30)
     )
-    paraphrased = compose(
-      "observations" => [ SAFE_OBSERVATION ],
-      "reference_fact" => { "citation" => 1, "fact" => PARAPHRASE }
+    chunks = [ other, zephyr_chunk ]
+    wrong = Rag::UnknownIdentityPublication.compose(
+      { "observations" => [], "reference_fact" => { "citation" => 1, "evidence_span" => FACT } },
+      chunks: chunks, question: QUESTION, locale: :es
+    )
+    right = Rag::UnknownIdentityPublication.compose(
+      { "observations" => [], "reference_fact" => { "citation" => 2, "evidence_span" => FACT } },
+      chunks: chunks, question: QUESTION, locale: :es
+    )
+    missing = compose("observations" => [], "reference_fact" => { "citation" => 4, "evidence_span" => FACT })
+    absent = compose("observations" => [], "reference_fact" => { "evidence_span" => FACT })
+
+    assert_equal "rejected", wrong.reference_status
+    assert_not_includes wrong.answer, "fallo de puerta"
+    assert_equal "accepted", right.reference_status
+    assert_includes right.answer, "Según el manual ZEPHYR QX-77, página 12 [2], #{FACT}."
+    [ missing, absent ].each do |result|
+      assert_equal "rejected", result.reference_status
+      assert_not_includes result.answer, "fallo de puerta"
+    end
+  end
+
+  test "the legacy free-text fact field is not published" do
+    result = compose("observations" => [], "reference_fact" => { "citation" => 1, "fact" => FACT })
+
+    assert_equal "rejected", result.reference_status
+    assert_not_includes result.answer, "fallo de puerta"
+  end
+
+  test "whitespace, composition, markers, and surrounding punctuation do not break grounding" do
+    spaced = compose(
+      "observations" => [],
+      "reference_fact" => { "citation" => 1, "evidence_span" => "  «Q-731\u00A0 =\n fallo   de puerta.» [1]" }
+    )
+    accented = { content: "Página 3.\nQ-905  =  señal de puerta abierta.", metadata: zephyr_chunk[:metadata] }
+    decomposed = Rag::UnknownIdentityPublication.compose(
+      {
+        "observations" => [],
+        "reference_fact" => { "citation" => 1, "evidence_span" => "Q-905 = señal de puerta abierta".unicode_normalize(:nfd) }
+      },
+      chunks: [ accented ], question: "El display muestra Q-905, ¿qué significa?", locale: :es
     )
 
-    assert_equal "rejected", missing.reference_status
-    assert_not_includes missing.answer, "fallo de puerta"
-    assert_equal "accepted", paraphrased.reference_status
-    assert_includes paraphrased.answer, "Según el manual ZEPHYR QX-77, página 12 [1], #{PARAPHRASE}."
-    assert_not zephyr_chunk[:content].include?(PARAPHRASE)
+    assert_equal "accepted", spaced.reference_status
+    assert_includes spaced.answer, reference_sentence
+    assert_equal "accepted", decomposed.reference_status
+    assert_includes decomposed.answer, "página 12 [1], Q-905 = señal de puerta abierta."
+  end
+
+  test "a span cut inside a token is not grounded" do
+    [ "731 = fallo de puerta", "Q-731 = fallo de puert", "Q-731 = fallo de puerta y freno" ].each do |span|
+      result = compose("observations" => [], "reference_fact" => { "citation" => 1, "evidence_span" => span })
+
+      assert_equal "rejected", result.reference_status, span
+    end
   end
 
   test "a malformed envelope falls back instead of rendering" do
@@ -227,8 +301,7 @@ class Rag::UnknownIdentityPublicationTest < ActiveSupport::TestCase
     observations = [ observation, unsafe ].compact
     {
       "observations" => observations,
-      "nameplate_question" => nil,
-      "reference_fact" => { "citation" => 1, "fact" => FACT }
+      "reference_fact" => { "citation" => 1, "evidence_span" => FACT }
     }
   end
 

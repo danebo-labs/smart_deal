@@ -6,7 +6,8 @@ module Rag
   # The model fills a semantic envelope. This class validates it and renders
   # the technician-facing prose. There is no current-job action field.
   # A malformed envelope falls back to the existing prose path. One rejected
-  # field does not erase the fields that validate.
+  # field does not erase the fields that validate. A reference is published
+  # only as a span found in the chunk its citation names.
   class UnknownIdentityPublication
     MODE_CONTRACT = "unknown_identity_contract"
     MODE_FALLBACK = "unknown_identity_contract_fallback"
@@ -16,6 +17,9 @@ module Rag
     MEASURED_VALUE = /
       \b\d+(?:[.,]\d+)?\s*(?:s|seg|segs|segundos?|seconds?)\b
     /ix
+    SPAN_EDGES = /\A["'“”‘’«»¿¡(\[ ]+|["'“”‘’«»)\] .,;:!?]+\z/
+    SPAN_START = /(?:\A|(?<=[ "'“”‘’«»¿¡(\[]))/
+    SPAN_END = /(?=\z|[ "'“”‘’«»)\].,;:!?])/
 
     PROMPT = <<~PROMPT.freeze
       You fill the unknown_identity_publication tool. You do not write the answer the technician will read.
@@ -23,8 +27,7 @@ module Rag
       The equipment in service is not confirmed. Retrieved text may describe other equipment.
 
       observations: checks that only look, read, or listen. Allowed topics: car position, doors, people inside, display text, sounds, lights, and the nameplate. Do not name a selector, a terminal, a wait, inspection mode, a power cut, a reset, a code meaning, or another manual's steps. Do not refuse an action by naming it.
-      nameplate_question: null. The publisher asks for the nameplate text.
-      reference_fact: null unless the technician asked what a retrieved manual says or what a displayed code means. citation is the evidence number. fact is the single documentary fact from that evidence. It is not a procedure, a value to apply, or a setting.
+      reference_fact: null unless the technician asked what a retrieved manual says or what a displayed code means. citation is the evidence number. evidence_span is the single documentary fact copied exactly from that evidence, without paraphrase or translation. It is not a procedure, a value to apply, or a setting.
       Do not add any other field.
     PROMPT
 
@@ -41,14 +44,13 @@ module Rag
         type: "object",
         properties: {
           observations: { type: "array", items: { type: "string" } },
-          nameplate_question: { type: %w[string null] },
           reference_fact: {
             type: %w[object null],
             properties: {
               citation: { type: "integer" },
-              fact: { type: "string" }
+              evidence_span: { type: "string" }
             },
-            required: %w[fact]
+            required: %w[citation evidence_span]
           }
         },
         required: %w[observations]
@@ -93,10 +95,6 @@ module Rag
         else
           rejected << "observations[#{index}]"
         end
-      end
-      nameplate = parsed[:nameplate_question]
-      if nameplate.present? && !observation_allowed?(nameplate, chunks, question)
-        rejected << "nameplate_question"
       end
 
       reference = resolve_reference(parsed[:reference_fact], chunks, question)
@@ -163,16 +161,10 @@ module Rag
       reference = data["reference_fact"]
       ignored = []
       ignored << "current_job_actions" if data.key?("current_job_actions")
-      nameplate = data["nameplate_question"]
-      if !nameplate.nil? && !nameplate.is_a?(String)
-        ignored << "nameplate_question"
-        nameplate = nil
-      end
       {
         observations: data["observations"],
         reference_fact: reference.is_a?(Hash) ? reference : nil,
         reference_supplied: !reference.nil?,
-        nameplate_question: nameplate,
         ignored: ignored
       }
     end
@@ -192,7 +184,7 @@ module Rag
     def self.resolve_reference(fact, chunks, question)
       return nil unless fact.is_a?(Hash)
 
-      body = clean_fact(fact["fact"])
+      body = clean_span(fact["evidence_span"])
       return nil if body.blank? || body.length > MAX_FACT_CHARS
       return nil if AnswerSafetyProcessor.fragments(body).size > 1
       return nil if DocumentIdentityScope.unconfirmed_operation?(body, question)
@@ -201,6 +193,7 @@ module Rag
 
       index = citation_index(fact["citation"], chunks)
       return nil unless index
+      return nil unless grounded_span?(body, chunks[index - 1])
 
       meta = metadata(chunks[index - 1])
       manual = document_name(meta)
@@ -216,8 +209,22 @@ module Rag
       number
     end
 
-    def self.clean_fact(text)
-      text.to_s.gsub(/\s*\[\d+\]/, "").gsub(/\s+/, " ").strip.sub(/[.!?]+\z/, "")
+    # Normalization only removes form: Unicode composition, whitespace,
+    # citation markers, and the span's surrounding quotes or punctuation.
+    def self.evidence_text(text)
+      return "" unless text.is_a?(String)
+
+      text.scrub.unicode_normalize(:nfc).gsub(/[[:space:]]*\[\d+\]/, "").gsub(/[[:space:]]+/, " ").strip
+    end
+
+    def self.clean_span(text)
+      evidence_text(text).gsub(SPAN_EDGES, "")
+    end
+
+    # The span must sit in the cited chunk on token edges, so "73" does not
+    # match inside "Q-731".
+    def self.grounded_span?(span, chunk)
+      evidence_text(chunk_content(chunk)).match?(/#{SPAN_START}#{Regexp.escape(span)}#{SPAN_END}/)
     end
 
     def self.measured_value?(text)
@@ -377,8 +384,8 @@ module Rag
     end
 
     private_class_method :converse_params, :tool_prompt, :parse_envelope, :observation_allowed?,
-      :resolve_reference, :citation_index, :clean_fact, :measured_value?, :render, :reference_paragraph,
-      :metadata, :chunk_content, :document_name, :response_content, :extract_tool_input, :tool_use_of,
+      :resolve_reference, :citation_index, :evidence_text, :clean_span, :grounded_span?, :measured_value?,
+      :render, :reference_paragraph, :metadata, :chunk_content, :document_name, :response_content, :extract_tool_input, :tool_use_of,
       :tool_name, :tool_input, :track_usage, :usage_token, :fallback, :log_contract, :log_fallback
   end
 end

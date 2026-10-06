@@ -107,6 +107,23 @@ class FieldCompanionF1PublicationCaptureTest < ActiveSupport::TestCase
     assert_equal 90, fields[:output_tokens]
   end
 
+  test "a transport failure with no usage is a reliable zero" do
+    fields = Capture.case_fields(
+      result: { diagnostics: { raw_answer: nil } },
+      converse_calls: [ observed_call.merge(envelope: nil, tool_name: nil, input_tokens: 0, output_tokens: 0, transport_error: "Aws::BedrockRuntime::Errors::ServiceUnavailableException") ],
+      query_prompts: [ "legacy prompt" ],
+      query_texts: [ "" ],
+      jobs: []
+    )
+
+    assert_equal "no_usage", fields[:cost_basis]
+    assert_equal 0, fields[:input_tokens]
+    assert_equal 0, fields[:generation_count]
+    assert_equal "converse_plus_query", fields[:generation_path]
+    assert_equal "Aws::BedrockRuntime::Errors::ServiceUnavailableException", fields[:contract_transport_error]
+    assert_equal false, fields[:contract_accepted]
+  end
+
   test "known identity does not look like a contract call" do
     fields = Capture.case_fields(
       result: { diagnostics: { raw_answer: "Revisar el sensor. [1]" }, answer: "Revisar el sensor. [1]" },

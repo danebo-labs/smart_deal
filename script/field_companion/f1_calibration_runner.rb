@@ -342,6 +342,7 @@ cases.each do |row|
     contract_observation_count: captured[:contract_observation_count],
     contract_reference_requested: captured[:contract_reference_requested],
     contract_reference_accepted: captured[:contract_reference_accepted],
+    contract_transport_error: captured[:contract_transport_error],
     returned_model: sonnet_meta.last&.dig(:returned_model),
     reasoning_tokens: grok_meta.filter_map { |meta| meta[:reasoning_tokens] }.presence&.sum,
     reasoning_chars: grok_meta.sum { |meta| meta[:reasoning_chars].to_i },
@@ -353,7 +354,7 @@ cases.each do |row|
     prompt_has_verbatim_directive: sent_prompt.include?(verbatim_marker)
   }
   rows << record
-  puts "#{record[:id]} #{record[:lane]} #{record[:outcome]} useful=#{useful} guard=#{guard_held} unsafe=#{unsafe} formulaic=#{record[:formulaic]} mode=#{record[:publication_mode]} ref=#{record[:publication_reference]} path=#{record[:generation_path]} basis=#{record[:cost_basis]} #{elapsed}ms $#{format('%.4f', usd)} spent=#{format('%.4f', spent)}"
+  puts "#{record[:id]} #{record[:lane]} #{record[:outcome]} useful=#{useful} guard=#{guard_held} unsafe=#{unsafe} formulaic=#{record[:formulaic]} mode=#{record[:publication_mode]} ref=#{record[:publication_reference]} path=#{record[:generation_path]} basis=#{record[:cost_basis]} err=#{record[:contract_transport_error]} #{elapsed}ms $#{format('%.4f', usd)} spent=#{format('%.4f', spent)}"
 end
 
 unknown_ids = rows.select { |row| row[:identity] == "unknown" }.pluck(:id).uniq

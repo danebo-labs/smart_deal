@@ -72,6 +72,7 @@ module FieldCompanion
         contract_observation_count: observations.is_a?(Array) ? observations.size : nil,
         contract_reference_requested: !reference_fact.nil?,
         contract_reference_accepted: reference == "accepted",
+        contract_transport_error: calls.filter_map { |item| item[:transport_error] }.last,
         legacy_query_called: query_count.positive?,
         generation_path: generation_path(calls.size, query_count),
         converse_calls: calls.size,
@@ -91,9 +92,10 @@ module FieldCompanion
       converse_cache_read = calls.sum { |item| item[:cache_read_tokens].to_i }
       converse_cache_creation = calls.sum { |item| item[:cache_write_tokens].to_i }
       expected = calls.size + query_count
+      converse_failed = calls.any? && calls.all? { |item| item[:transport_error].present? }
       if jobs.size >= expected
         token_fields(job_input, job_output, job_cache_read, job_cache_creation, jobs.size, "jobs")
-      elsif jobs.size == query_count && calls.any?
+      elsif jobs.size == query_count && calls.any? && !converse_failed
         token_fields(
           job_input + converse_input, job_output + converse_output,
           job_cache_read + converse_cache_read, job_cache_creation + converse_cache_creation,
@@ -104,6 +106,8 @@ module FieldCompanion
           converse_input, converse_output, converse_cache_read, converse_cache_creation,
           calls.size, "converse_usage"
         )
+      elsif jobs.empty? && converse_input.zero? && converse_failed
+        token_fields(0, 0, 0, 0, 0, "no_usage")
       else
         token_fields(job_input, job_output, job_cache_read, job_cache_creation, jobs.size, "unreliable")
       end

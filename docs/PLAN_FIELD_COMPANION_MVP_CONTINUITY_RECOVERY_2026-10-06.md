@@ -2,7 +2,7 @@
 
 **STATUS: DRAFT — NOT AUTHORIZED FOR IMPLEMENTATION**
 
-**VERDICT: READY_FOR_OPUS_SECOND_REVIEW**
+**VERDICT: READY_FOR_FINAL_OPUS_REVIEW**
 
 Materialized 2026-10-05 from the Codex recovery-plan review of this repository.
 Codex created no document. This file is that review, written down for plan
@@ -18,10 +18,11 @@ a corpus change, a benchmark, a Bedrock call, a deploy, or a push.
 | Production model | `global.anthropic.claude-haiku-4-5-20251001-v1:0` (Haiku 4.5) |
 | Historical evidence | [Master Plan](MASTER_PLAN_FIELD_COMPANION_EVIDENCE_INTENT_EPISTEMICS_2026-10-05.md), section “A″ measured — publication contract on Haiku 4.5” |
 
-This plan is about architecture, publication scope, MVP forward continuity,
-and longitudinal validation. Direct Sonnet in the Master Plan is diagnostic
-evidence only. Production remains Haiku 4.5. This plan does not propose a
-model replacement or a model bake-off.
+This plan is about bounded recovery within the current architecture,
+publication scope, MVP forward continuity, and longitudinal validation.
+Direct Sonnet in the Master Plan is diagnostic evidence only. Production
+remains Haiku 4.5. This plan does not propose a model replacement or a model
+bake-off.
 
 The Master Plan stays historical execution evidence. This draft does not
 revise it.
@@ -43,7 +44,7 @@ earlier.
 | Field | Value |
 |---|---|
 | Plan status | DRAFT — NOT AUTHORIZED FOR IMPLEMENTATION |
-| Plan verdict | `READY_FOR_OPUS_SECOND_REVIEW` |
+| Plan verdict | `READY_FOR_FINAL_OPUS_REVIEW` |
 | Current authorized phase | NONE |
 | Authorization text and date | NONE |
 | Current phase status | — |
@@ -77,7 +78,7 @@ Phase status:
 Current blockers:
 
 - Implementation is not authorized.
-- This plan awaits the Opus second review.
+- This plan awaits the final Opus review.
 - The target-environment flag matrix is unread. F0 closes it before F1.
 
 Carried-forward expectations, not findings. These are Opus code-reading
@@ -90,7 +91,7 @@ predictions. F1 confirms or supersedes them with measured evidence:
 - `CompanionGuidanceContext` reads only the `Goal:` line and the last two
   technician turns.
 
-Next authorized action: Opus second review of this plan. After that, F0 runs
+Next authorized action: final Opus review of this plan. After that, F0 runs
 only on Lahiri’s explicit authorization.
 
 ## Same-case continuity clarification (this revision)
@@ -110,6 +111,41 @@ change. B1–B5 and the section 11 edits below are unchanged.
 | Success criterion: one active episode sustains coherent support through an extended mixed text and photo conversation before any multi-thread architecture | Section C, F3, F4 |
 | F0 lists the four historical plans by path | F0 |
 | Living-plan runbook: execution state, protocol, phase records, executor prompts, evidence packet | Top of file, section E, each phase |
+
+## Final MVP-scope clarification (this revision)
+
+The product objective is intentionally narrow:
+
+```text
+one technician
++
+one active technical episode
++
+one reported fault
++
+text / photos / corrections / short follow-ups
++
+Danebo maintains coherent technical support
++
+Danebo keeps progressing the investigation
+```
+
+The plan must prove that objective end to end before adding multiple active
+episodes, resumable previous episodes, ChatGPT-style threads, historical
+conversation navigation, technician handoff, or new session/case tables.
+Benchmark results support that product decision; they do not replace it.
+
+This revision makes four constraints explicit throughout the phase protocol
+and executor prompts:
+
+1. MVP work is reuse-first and anti-reengineering.
+2. A′ is a historical usefulness reference, not a score-equality target.
+3. A‴ / S1-S2-S3 and L1/L2/L3 measure complementary, separate dimensions.
+4. L2 `DEGRADED` is allowed only when the active investigation remains
+   genuinely coherent and usable.
+
+B1–B5 and their incorporated section 11 decisions remain frozen. This
+revision does not reopen them.
 
 ## Opus review incorporation
 
@@ -204,8 +240,10 @@ including symptoms, rescue requests, reset requests, and field guidance.
 
 A″, measured on frozen Haiku 4.5 against frozen Haiku A′, shows both sides
 of that decision. The comparison is an architecture comparison. It is not a
-model comparison. Source: Master Plan, “A″ measured — publication contract
-on Haiku 4.5”.
+model comparison. A′ is a historical usefulness reference showing that these
+unknown-identity cases were previously much more useful; it is not the new
+MVP target and its exact scores are not equality requirements. Source: Master
+Plan, “A″ measured — publication contract on Haiku 4.5”.
 
 | Metric | A′ | A″ | Reading |
 |---|---:|---:|---|
@@ -217,9 +255,17 @@ on Haiku 4.5”.
 | Foreign step lists | 4 | 0 | fell |
 | Human unsafe | 0 | 0 | unchanged |
 
-S2 reference usefulness improved. S1 and S3 regressed. Overall usefulness
-regressed. Guard replacements and foreign step lists fell. Human unsafe
-remains 0.
+S2 reference usefulness improved from 4/12 to 9/12 and that A″ gain should
+be preserved. S1 fell from 11/12 to 1/12 and S3 fell from 30/44 to 1/44;
+those severe regressions must be materially repaired. Overall usefulness
+regressed from 45/68 to 11/68. Guard replacements and foreign step lists
+fell, and human unsafe remains 0. The S1/S3 collapse came from applying the
+reference/publication shape too broadly, not from multi-thread or
+multi-conversation behavior.
+
+F2a must repair S1/S3 while preserving the demonstrated S2 and safety gains
+from A″. It must not tune for exact reproduction of A′, and a difference from
+A′ does not by itself justify reengineering.
 
 The 44 rejected observation fields explain much of the loss. The validator
 removes operational text, and what remains is often too thin to be useful
@@ -472,12 +518,67 @@ case. If the retained selection makes the new case a dead end, the plan
 owner decides before F4. That decision is not an F2b session fix, and this
 plan does not clear the selection.
 
+### MVP reuse-first constraint
+
+The objective is not to redesign the Field Companion architecture. The
+objective is to use the architecture already built, narrow the behavior that
+regressed, and make the minimum measured changes necessary for one active
+technical episode to work coherently and safely.
+
+Prefer reuse, narrowing, routing corrections, removal of obsolete or unsafe
+behavior, small modifications to existing components, and evidence-driven
+bounded fixes. In particular, reuse the existing seams where the measured
+failure owner points to them: `ConversationSession`, `ActiveEpisode`,
+`ActiveEpisodeTurn`, `TurnInterpreter`, `WorkContextReducer`,
+`QueryComposer`, `SessionContextBuilder`, `DocumentIdentityScope`,
+`UnknownIdentityPublication`, `CompanionGuidanceContext`,
+`BedrockRagService`, `StructuredEvidenceRoute`, and the current
+applicability/safety machinery.
+
+Do not prefer a new architectural layer, persistence structure, classifier,
+LLM call, generalized prompt framework, routing framework, or
+conversation/session abstraction merely because it appears cleaner. Before
+introducing any new service, policy object, persistence structure, LLM call,
+classifier, prompt layer, routing framework, or conversation abstraction,
+the executor must prove from measured evidence that the MVP objective cannot
+be met by reusing or narrowly modifying the current components.
+
+If a future phase produces that proof, it does not implement the new
+primitive. It stops with `BLOCKED_FOR_PLAN_REVIEW` and reports:
+
+- the measured failing behavior;
+- the exact invariant that cannot be satisfied;
+- why the existing components cannot solve it;
+- the smallest new primitive being proposed;
+- the evidence that falsifies the reuse-first approach.
+
+This constraint does not require every edit to stay inside the named classes.
+It requires measured necessity before new architecture.
+
 ## D. Preferred architecture
 
 Planning hypothesis, pending implementation review. Identity and publication
 intent stay separate. `DocumentIdentityScope` stays applicability-only: it
 answers whether evidence may support this job, and `applicability_mode`
 takes identity only. It does not own publication routing.
+
+F2a is a surgical routing-and-reuse fix, not a new response system:
+
+```text
+unknown identity
+  ├─ explicit documentary/reference intent
+  │    → existing UnknownIdentityPublication
+  └─ situation / symptom / safe observation / short follow-up /
+       non-reference turn
+       → reuse/adapt existing CompanionGuidanceContext
+         + existing safety/applicability finishing
+```
+
+It narrows where `UnknownIdentityPublication` is used, preserves the behavior
+that improved S2, prevents foreign procedural bodies from entering free-prose
+generation, and recovers useful safe observations and guidance for S1/S3.
+It does not restore A′ wholesale or create a parallel generalized
+publication architecture.
 
 The publication predicate is deterministic
 `UnknownIdentityPublication.reference_request?(raw_turn)`. It is the
@@ -674,9 +775,35 @@ within-history continuity, L2 history-rollover continuity, and L3 case
 boundary (section F). F1 reports them as state and generator-input verdicts.
 F3 reports them as live verdicts.
 
+A‴ and L1/L2/L3 are complementary, not interchangeable:
+
+```text
+A‴ / S1-S2-S3
+========================
+Does an unknown-identity response remain
+useful and safe after the F2a routing change?
+
+L1 / L2 / L3
+========================
+Can Danebo sustain ONE coherent technical
+investigation over an episode?
+```
+
+S1/S2/S3 are frozen unknown-identity quality classes. They are not
+multi-thread or multi-conversation metrics. The MVP is not an exercise in
+maximizing frozen benchmark scores: A‴ protects known unknown-identity
+safety/usefulness regressions, while L1/L2/L3 protect conversational episode
+quality. The primary product objective is coherent and useful support
+throughout one active technical episode. Neither measurement replaces the
+other.
+
 ### Living-plan execution protocol
 
 This protocol governs every phase. A phase that skips a step is not closed.
+Keep only process that improves reproducibility, safety, diagnosis, or
+autonomous handoff. Simplify ritual that improves none of those, without
+weakening the plan's self-contained execution records, gates, evidence
+packet, mandatory stops, or refreshed phase prompts.
 
 **Lifecycle of one phase.**
 
@@ -760,6 +887,9 @@ Never hard-code a SHA that does not exist yet.
 decision before:
 
 - changing the approved architecture, section D, or the guidance evidence contract;
+- introducing a new service, policy object, persistence structure, prompt layer,
+  routing framework, or conversation abstraction without the measured proof
+  required by the MVP reuse-first constraint;
 - adding a database table;
 - adding an LLM call, a model, or a classifier;
 - modifying the frozen scorer, corpus, runner gates, or A‴ thresholds;
@@ -771,9 +901,15 @@ decision before:
 - deploying to production or pushing, unless separately authorized;
 - changing stale `document_focus` behavior outside the section H decision path.
 
+For any architecture-expansion stop, return `BLOCKED_FOR_PLAN_REVIEW` with
+the measured failing behavior, the exact unsatisfied invariant, why the
+existing components cannot solve it, the smallest proposed new primitive,
+and the evidence that falsifies the reuse-first approach. Do not implement
+the proposed architecture automatically.
+
 **Review boundaries.** Reviews happen only at these pre-declared points:
 
-1. Opus second review of this plan, which is the current step.
+1. Final Opus review of this plan, which is the current step.
 2. Any proposed architectural deviation.
 3. A third F2b failure owner.
 4. The section H focus blocker, which goes to the plan owner before F4.
@@ -1289,6 +1425,14 @@ turns, and every reference-contract failure, receive the section D
 body-free guidance. Foreign procedural bodies are not applied as this job’s
 instructions, including through fallback.
 
+This is a surgical reuse-and-narrowing phase. Reuse/adapt
+`CompanionGuidanceContext` and the current finishing, applicability, and
+safety machinery. Do not build a new response system, intent LLM,
+publication framework, generalized prompt framework, or routing framework.
+Do not move publication intent into `DocumentIdentityScope`. A′ is historical
+evidence that S1/S3 can be more useful, not a design to restore wholesale or
+an exact-score target.
+
 **Expected files.**
 
 - `app/services/rag/unknown_identity_publication.rb` (`reference_request?`)
@@ -1342,7 +1486,10 @@ tenant authorization, or the model. Keep the guard as a backstop, not as
 the router.
 
 **Non-goals.** No F2b continuity refactor inside this commit. No prompt-wide
-rewrite. No new classifier. No enlargement of the publication envelope.
+rewrite. No new classifier, LLM call, service layer, policy object,
+persistence structure, publication framework, or routing framework. No
+enlargement of the publication envelope and no tuning to reproduce A′
+exactly.
 
 **Handoff to F2b / F3.** Publication-mode trace per turn, and the F1 harness
 re-run at this HEAD. F2b is authorized only by a pilot blocker in that
@@ -1355,7 +1502,8 @@ the F1 baseline. A pilot blocker is any of these:
 - an L2 FAIL on a critical invariant (section F);
 - an L3 FAIL other than the section H focus decision.
 
-An L2 DEGRADED result is recorded for F4 and is not a blocker. With no
+An L2 DEGRADED result, valid only under section F's strict usable/coherent
+definition, is recorded for F4 and is not a blocker. With no
 blocker, Execution state records `F2b = SKIPPED BY EVIDENCE`, and F3
 receives `<CANDIDATE_SHA_FROM_F2A>`. With a blocker, F2a writes one F2b
 ticket per blocker into the F2b executor prompt. If a blocker belongs to a
@@ -1414,7 +1562,9 @@ START
    mismatch, STOP.
 
 OBJECTIVE
-Implement section D exactly:
+Implement section D exactly as a surgical routing-and-reuse fix, not a new
+response system. Reuse the existing components and safety/applicability
+finishing:
 - UnknownIdentityPublication.reference_request?(raw_turn), deterministic,
   checked only at BedrockRagService#unknown_identity_reference_result and
   StructuredEvidenceRoute#complete_from_retrieval, on the raw turn;
@@ -1441,7 +1591,10 @@ FORBIDDEN
 DocumentIdentityScope behavior; known-identity routing and prompts;
 retrieval budgets; tenant authorization; the model; the scorer, corpus,
 runner, and capture files; enlarging the publication envelope; a new
-classifier or model call; any F2b continuity change; push or deploy.
+classifier or model call; a new service, policy object, persistence
+structure, generalized prompt/publication layer, routing framework, or
+conversation abstraction; restoring A′ wholesale or tuning for its exact
+scores; any F2b continuity change; push or deploy.
 
 TESTS
 The F2a test list in the plan, plus the F1-derived turns above. Then:
@@ -1462,7 +1615,10 @@ PASS: the F2a PASS list holds, the sentinel is absent from every
 unknown-identity free-prose prompt, known-path prompts are byte-identical,
 the model-call budget holds, and the F1 re-run is recorded.
 FAIL: any item in the F2a FAIL list. Fix inside the F2a scope and rerun. If
-the fix needs an architecture change, STOP for plan review.
+the fix needs an architecture change, do not implement it. Return
+`BLOCKED_FOR_PLAN_REVIEW` with the measured failing behavior, exact invariant,
+why existing components cannot satisfy it, the smallest proposed new
+primitive, and the evidence that falsifies reuse-first.
 
 F2b DECISION
 Apply "F2b decision from the re-run" in the F2a phase. Write either
@@ -1494,6 +1650,11 @@ STOP at the phase boundary unless the authorization names the next phase.
 re-run at the F2a HEAD. Do not start from a speculative continuity refactor
 and do not start from the pre-F2a baseline.
 
+This phase is reuse-first. Make the smallest measured change in the existing
+failure owner. A benchmark miss does not authorize a new continuity layer,
+persistence structure, session abstraction, classifier, prompt framework, or
+LLM call.
+
 **Expected files.** Only the owner of the demonstrated failure.
 Candidates: `ConversationSession`, `ActiveEpisode`, `WorkContextReducer`,
 `QueryComposer`, or `SessionContextBuilder`, with matching tests.
@@ -1516,7 +1677,10 @@ reads that same projection.
 cross-case leakage, and tokens stay bounded.
 
 **FAIL.** A third failure owner, or a repair that needs a new store or a new
-model. Stop for another plan review. Do not stack a redesign into this phase.
+model. The same applies to any new service, policy object, prompt/routing
+framework, or conversation abstraction. Return `BLOCKED_FOR_PLAN_REVIEW`
+with the reuse-first evidence packet required by section C. Do not stack a
+redesign into this phase.
 
 **Regression protection.** One commit per failure owner. Owners are the
 projection and the reducer when those are the demonstrated causes. Two
@@ -1590,13 +1754,15 @@ OBJECTIVE
 Fix only these tickets, using the existing JSON episode and the existing
 bounded context. Owners are limited to ConversationSession, ActiveEpisode,
 WorkContextReducer, QueryComposer, and SessionContextBuilder.
+Make the smallest measured change in the existing failure owner.
 
 FORBIDDEN
 A third failure owner; a new store, table, summary, or model; any change to
 section D, the guidance evidence contract, the reference predicate,
 known-identity routing, the scorer, corpus, or runner; any turn-count or
 history-length episode boundary (NO_TURN_COUNT_EPISODE_BOUNDARY); clearing
-document_focus; push or deploy.
+document_focus; a new service, policy object, prompt layer, routing
+framework, classifier, LLM call, or conversation abstraction; push or deploy.
 
 TESTS
 A failing test first for each ticket's invariant, from the journey fixture.
@@ -1611,7 +1777,10 @@ GATE
 PASS: each ticket's invariant passes, adjacent controls pass, L3 passes, no
 cross-case leakage, prompt size stays bounded.
 FAIL or STOP: a third owner, or a fix that needs a new store or model.
-STOP for plan review.
+For any architecture expansion, return `BLOCKED_FOR_PLAN_REVIEW` with the
+measured failure, exact invariant, why existing components cannot solve it,
+smallest proposed primitive, and evidence falsifying reuse-first. Do not
+implement that primitive.
 
 BEFORE CLOSING, UPDATE THE PLAN
 Execution state (F2b status, <F3_CANDIDATE_SHA>), the F2b execution record,
@@ -1638,9 +1807,11 @@ rollover continuity, and L3 case boundary.
 **Expected files.** Result packet only. Runners and fixtures already exist
 or were added in F1. Product code stays at the F2a/F2b HEAD.
 
-**Before.** A″ usefulness 11/68 on the frozen scorer, with S2 improved and
-S1/S3 collapsed. F1 has measured generator inputs with stubbed generation.
-Live usefulness is still unmeasured.
+**Before.** A″ usefulness 11/68 on the frozen scorer, with S2 improved from
+4/12 to 9/12 and S1/S3 collapsed from 11/12 to 1/12 and from 30/44 to 1/44,
+respectively. A′ is the historical usefulness reference, not an equality
+target. F1 has measured generator inputs with stubbed generation. Live
+usefulness is still unmeasured.
 
 **Run.** A‴ uses the frozen corpus, two lanes, and two samples, under the
 existing US$1 invocation cap. Journeys, when A‴ has passed, use:
@@ -1680,10 +1851,27 @@ L2 LIVE ROLLOVER CONTINUITY     PASS / DEGRADED / FAIL       (section F)
 L3 CASE BOUNDARY                PASS / FAIL                  (section H)
 ```
 
+F3 reports two A‴ readings separately:
+
+1. **Formal gate result:** whether A‴ passes the frozen section G gates.
+2. **Historical regression reading:** compared with A′ and A″, whether S1
+   materially recovered from 1/12, S2 preserved the A″ improvement from
+   9/12, S3 materially recovered from 1/44, overall usefulness recovered,
+   foreign operational leakage remained eliminated, and human unsafe
+   remained 0.
+
+Do not fail automatically because A‴ does not reproduce A′ exactly, and do
+not tune for equality with A′. Conversely, do not describe a numeric A‴ pass
+as “fully recovered” when human review still shows obvious S1/S3 product
+degradation. Use a qualified reading such as
+`FORMAL_GATE_PASS / HISTORICAL_RECOVERY_PARTIAL` when that is the evidence.
+F4 decides whether any remaining difference matters for the pilot.
+
 **PASS.** A‴ passes the section G gates, including the three capture checks.
 L1 passes. L3 passes. L2 is PASS or DEGRADED. Human unsafe is 0. An L2
-DEGRADED result goes to F4 as a stated limit of the pilot promise. It does
-not block F3.
+DEGRADED result is allowed only under section F's strict usable/coherent
+definition and goes to F4 as a stated limit of the pilot promise. It does
+not block F3. Broken active-case continuity is L2 FAIL, never DEGRADED.
 
 **FAIL.** A numeric gate in section G misses, human unsafe is above 0, an
 unqualified foreign operational sequence is published, L1 fails, L3 fails,
@@ -1702,6 +1890,8 @@ comparison.
 `c13` / `c14` / `c16`.
 
 **Handoff to F4.** One auditable result packet and the unresolved risks.
+It carries the formal A‴ gate and the historical regression reading as
+separate fields, alongside the separate L1/L2/L3 results.
 
 **Expected commits.** One evidence-and-plan commit
 (`docs: record MVP continuity F3 evaluation`). No product commit.
@@ -1723,6 +1913,8 @@ Spend — A‴ (cap US$1.00):
 Spend — journeys (cap about US$0.50):
 Transport failures and identical retries:
 A‴ verdict and metrics versus A′ / A″:
+A‴ formal gate result:
+Historical regression reading (S1, S2, S3, overall, foreign leakage, human unsafe):
 A‴ capture checks (scorer unsafe, sentinel, known controls):
 L1 LIVE COMPANION COHERENCE (per journey, rubric, invariants):
 L2 LIVE ROLLOVER CONTINUITY (rubric, critical invariants, degradations):
@@ -1782,7 +1974,10 @@ Record the first eviction point and the per-turn packet fields.
 SCORING
 Apply section F L1, L2, and L3 criteria and the human companion rubric
 (F3 only; it scores senior-companion progression, not sentence recall).
-Report the four verdicts separately.
+Report the four verdicts separately. For A‴, report both the formal frozen
+gate result and the historical regression reading from the F3 phase. A′ is
+not an equality target. Do not call the regression fully recovered when
+human review shows obvious remaining S1/S3 degradation.
 
 FORBIDDEN
 Any product, prompt, scorer, corpus, runner, or fixture change. Retuning
@@ -1795,8 +1990,9 @@ As in the F3 phase PASS / FAIL / INCONCLUSIVE.
 BEFORE CLOSING, UPDATE THE PLAN
 Execution state, the F3 execution record, the A‴ result appended after the
 A′/A″ evidence in section G (do not edit A′/A″), and the F4 executor prompt
-inputs (all four verdicts, known controls, human review, safety verdict,
-L2 degradations, section H decision status, unresolved blockers).
+inputs (formal A‴ gate, historical regression reading, all four verdicts,
+known controls, human review, safety verdict, L2 degradations, section H
+decision status, unresolved blockers).
 
 COMMIT
 `docs: record MVP continuity F3 evaluation`, plus the evidence packet
@@ -1804,7 +2000,8 @@ entry. Clean tree after. Do not push.
 
 RETURN
 1. starting SHA  2. ending HEAD  3. commit SHA  4. spend per step
-5. A‴ metrics and capture checks  6. L1 / L2 / L3 live verdicts with rubric
+5. A‴ formal gate, historical regression reading, metrics, and capture checks
+6. L1 / L2 / L3 live verdicts with rubric
 7. first eviction point  8. human unsafe  9. section H blocker status
 10. verdict PASS / FAIL / INCONCLUSIVE
 STOP at the phase boundary unless the authorization names F4.
@@ -1844,10 +2041,11 @@ that the code and the packet do not show.
 **Non-goals.** No deploy, no sealed holdout, no automatic start of the
 prior plan’s next phase.
 
-**Inputs from F3.** The A‴ verdict; the L1, L2, and L3 live verdicts; known
-controls; human review; safety verdict; L2 degradations; the section H
-decision if it fired; unresolved pilot blockers. F4 does not consolidate
-anything by hand. It reads the F3 execution record and the evidence packet.
+**Inputs from F3.** The formal A‴ gate result; the separate historical
+regression reading; the L1, L2, and L3 live verdicts; known controls; human
+review; safety verdict; L2 degradations; the section H decision if it fired;
+unresolved pilot blockers. F4 does not consolidate anything by hand. It
+reads the F3 execution record and the evidence packet.
 
 The pilot promise in F4 states the episode-duration contract from section
 C: an episode lasts as long as the same physical fault or case, with no
@@ -1856,6 +2054,11 @@ per technician, a new case replaces it, and no resume or switch during the
 pilot. If L2 was DEGRADED, F4 states which state classes did not survive
 rollover. F4 states whether the section C success criterion is met. Only a
 met criterion allows a later plan to propose multi-thread architecture.
+F4 does not equate a frozen benchmark pass with the one-episode product
+objective, does not require exact A′ reproduction, and does not authorize
+architecture expansion. If the existing architecture is shown insufficient,
+it reports `BLOCKED_FOR_PLAN_REVIEW` with the section C reuse-first evidence
+rather than proposing or implementing the expansion here.
 
 **Expected commits.** One documentation commit
 (`docs: record MVP continuity pilot recommendation`).
@@ -1907,8 +2110,10 @@ Make docs/ACTIVE_ARCHITECTURE.md, docs/SESSION_AND_RETRIEVAL.md, and
 docs/PRODUCT_ROADMAP.md match the code and the F3 evidence. State the pilot
 promise (episode-duration contract, no target length,
 NO_TURN_COUNT_EPISODE_BOUNDARY), the actual focus behavior, the safety
-boundary, the measured L1, L2, and L3 results, and a release or no-release
-recommendation.
+boundary, the formal A‴ gate and separate historical regression reading, the
+measured L1, L2, and L3 results, and a release or no-release recommendation.
+Judge the primary product objective as one coherent active episode; do not
+treat benchmark maximization or exact A′ reproduction as that objective.
 
 F3 INPUTS
 <F3_RESULTS_FOR_F4: written by F3.>
@@ -1919,7 +2124,11 @@ The three docs above, this plan, and the evidence packet.
 FORBIDDEN
 Product code, tests, scorer, corpus. Claiming focus clearing, historical
 recall, a turn-count episode rule, or a model change that the code and the
-packet do not show. Revising the Master Plan. Deploy or push.
+packet do not show. New architecture or persistence. Revising the Master
+Plan. Deploy or push. If the recommendation needs architecture expansion,
+return `BLOCKED_FOR_PLAN_REVIEW` with the measured failure, exact invariant,
+why existing components cannot solve it, smallest proposed primitive, and
+evidence falsifying reuse-first; do not implement it.
 
 COMMANDS
 git diff --check
@@ -2010,17 +2219,29 @@ checkpoint.
   - same `episode_id`, with no new episode at the eviction point;
   - current identity retained, with no unnecessary re-identification request;
   - current fault retained;
-  - corrected facts stay corrected, so a superseded fact does not resurface as current;
-  - no generic restart, and no rollover-driven repetitive diagnostic loop.
-- L2 diagnostic items. A loss is DEGRADED, not FAIL: older observations,
-  completed checks that no longer matter, older condition details.
+  - corrected codes and facts stay corrected, so a superseded fact does not
+    resurface as current;
+  - an elliptical `¿y ahora?` resolves against and advances the active fault;
+  - no generic restart, no repeated request for an already-current critical
+    fact, and no rollover-driven repetitive diagnostic loop;
+  - no unsafe behavior.
+- L2 diagnostic items. A loss may be DEGRADED, not FAIL, only when the
+  investigation remains genuinely coherent and usable: an older non-critical
+  observation, an older condition detail that no longer matters, or a
+  completed check that is no longer relevant. `DEGRADED` must not hide a lost
+  current fault or identity, a lost corrected code/fact, resurrection of a
+  superseded fact, a generic restart, a repeated request for an already-current
+  critical fact, inability to understand `¿y ahora?`, unsafe behavior, or
+  failure to continue the technical investigation. Any of those is FAIL.
 - F1 verdict: PASS when every critical invariant holds and no diagnostic item
   is lost. DEGRADED when the critical invariants hold and a diagnostic item
   is lost with a classified cause. FAIL when a critical invariant breaks.
 - F3 verdict: the same critical invariants on the live run, plus the human
   rubric on T11–T14 judged against the whole case. PASS at 2 or more, with
-  no critical break. DEGRADED at 1, with no critical break. FAIL at 0, or on
-  any critical break.
+  no critical break and no diagnostic loss. DEGRADED at 2 or more only when
+  the investigation remains coherent and usable and a permitted diagnostic
+  item is lost. FAIL below 2, on any critical break, or when the response
+  cannot keep progressing the active investigation.
 - Reading: if L1 passes and L2 degrades, the problem is specifically
   retention or projection after rollover. If L1 fails before rollover, do
   not blame `MAX_HISTORY`.
@@ -2070,7 +2291,8 @@ L3 CASE BOUNDARY
 The L1 expectation is strong: coherent, focused, useful conversation
 throughout the case. For L2, F3 measures degradation explicitly. It does not
 require perfect transcript memory. It does require the recent and current
-technical investigation to stay coherent.
+technical investigation to stay coherent and usable. `DEGRADED` is not a
+label for broken active-case continuity.
 
 F3 measures:
 
@@ -2215,8 +2437,23 @@ the v2 scorer (`script/field_companion/f1_calibration_score.rb`, revision
 `v2-locality-independent-unsafe`), the fixture evidence, two lanes, two
 samples, and `global.anthropic.claude-haiku-4-5-20251001-v1:0`.
 
-Preserve A′ and A″ outputs as baselines. The scorer’s exact frozen gates,
-copied from the scorer file, are:
+This gate asks whether unknown-identity responses remain useful and safe
+after the F2a routing change. S1/S2/S3 are frozen unknown-identity quality
+classes, not longitudinal, multi-thread, or multi-conversation metrics.
+L1/L2/L3 separately ask whether one technical investigation remains coherent
+through its active episode. Both dimensions matter; neither substitutes for
+the other, and benchmark optimization remains subordinate to the one active
+episode MVP objective.
+
+Preserve A′ and A″ outputs as baselines. A′ is the historical usefulness
+reference (overall 45/68, S1 11/12, S2 4/12, S3 30/44, guard 12/68, four
+foreign step lists, human unsafe 0), not an exact target. A″ is the current
+comparison (overall 11/68, S1 1/12, S2 9/12, S3 1/44, guard 0/68, zero
+foreign step lists, human unsafe 0). F2a should materially repair the severe
+S1/S3 regression, preserve the S2 improvement and safety gains, and avoid
+tuning for equality with A′.
+
+The scorer’s exact frozen gates, copied from the scorer file, remain:
 
 - unsafe `0/68`
 - useful `>= 44/68`
@@ -2245,6 +2482,11 @@ A″’s 503 tail is displayed separately from semantic quality. An incomplete
 A‴ is **INCONCLUSIVE**. A transport failure is not a semantic failure.
 Retry only the identical failed rows after service recovery, within the
 existing US$1 invocation cap.
+
+After A‴, report the formal frozen-gate result and the historical regression
+reading separately. A formal pass may still be
+`HISTORICAL_RECOVERY_PARTIAL`; F4 decides whether that remaining product
+difference matters for the pilot.
 
 ## H. Episode-boundary gate
 
@@ -2332,10 +2574,11 @@ does not authorize F1.
 
 ## K. Final recommendation
 
-**READY_FOR_OPUS_SECOND_REVIEW**
+**READY_FOR_FINAL_OPUS_REVIEW**
 
 Implementation is not authorized. Opus’s section 11 edits are in this draft.
-This revision adds the same-case continuity clarification. An episode lasts
+This revision preserves the same-case continuity clarification and locks the
+final MVP scope. An episode lasts
 as long as the same physical fault or case, with no target length, under
 `NO_TURN_COUNT_EPISODE_BOUNDARY`. The longitudinal gate reports L1
 within-history, L2 history-rollover, and L3 case-boundary verdicts
@@ -2346,12 +2589,19 @@ episode must sustain coherent support through an extended mixed text and
 photo conversation before any multi-thread architecture. It also adds the
 living-plan runbook: Execution state, the protocol, phase execution
 records, and executor prompts.
-F2a is the preferred production hypothesis: `reference_request?` at the two
+The MVP is reuse-first: bounded changes to existing components must be tried
+and measured before any new architecture. A demonstrated need for a new
+primitive returns `BLOCKED_FOR_PLAN_REVIEW`; it is not implemented inside a
+phase. F2a is the surgical production hypothesis:
+`reference_request?` at the two
 sinks, qualified reference only when that contract succeeds, and body-free
 guidance for every other unknown turn and for every contract failure.
 `DocumentIdentityScope` stays applicability-only. The model stays Haiku 4.5.
 F2b does not run unless the F1 harness re-run at the F2a HEAD shows a
-specific longitudinal blocker.
+specific longitudinal blocker. A′ remains a historical usefulness reference,
+not an equality target. A‴ protects unknown-identity quality; L1/L2/L3
+protect one-episode continuity. L2 `DEGRADED` is valid only while the active
+investigation remains coherent and usable.
 
 ### Audit record
 
@@ -2364,4 +2614,5 @@ specific longitudinal blocker.
 - Unresolved evidence: deployed image and flag values, which F0 must close before F1; the F1 input baseline; whether the section H focus variant is a pilot blocker for the plan owner before F4; whether three observations and the prompt caps retain turn-10 checks on the F2a re-run. These are gates. They are not grounds to redesign session state now.
 - Opus verdict on the prior draft: `APPROVE_WITH_REQUIRED_EDITS`. The previous revision’s verdict was `READY_FOR_SECOND_REVIEW` (`b440800`).
 - Same-case continuity revision, parent `b4408003e2ea6c8b4ab31a0c0e9a1017589fe962`: documentation only. It adds the episode-duration contract, `NO_TURN_COUNT_EPISODE_BOUNDARY`, L1/L2/L3, the Journey A rollover extension, the explicit F0 plan list, and the living-plan runbook. Code facts re-read for it: `MAX_HISTORY` and `add_to_history` (`conversation_session.rb:5`, `131-136`), `EPISODE_WINDOW` idle expiry (`active_episode.rb:54-55`), `episode_user_messages` (`conversation_session.rb:496-512`), and the runner environment variables (`f1_calibration_runner.rb:7-12`).
-- This revision’s verdict: `READY_FOR_OPUS_SECOND_REVIEW`. Implementation is not authorized.
+- Final MVP-scope revision, parent `5b371fc1e694956d9e5f2b639dd3690eebe1dc41`: documentation only. It adds the reuse-first constraint, architecture-expansion stop, historical A′ interpretation, formal-versus-historical A‴ reading, A‴ versus L1/L2/L3 separation, surgical F2a wording, and strict usable/coherent L2 `DEGRADED` rule. B1–B5 remain frozen.
+- This revision’s verdict: `READY_FOR_FINAL_OPUS_REVIEW`. Implementation is not authorized.

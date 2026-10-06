@@ -18,8 +18,6 @@ module Rag
       \b\d+(?:[.,]\d+)?\s*(?:s|seg|segs|segundos?|seconds?)\b
     /ix
     SPAN_EDGES = /\A["'“”‘’«»¿¡(\[ ]+|["'“”‘’«»)\] .,;:!?]+\z/
-    SPAN_START = /(?:\A|(?<=[ "'“”‘’«»¿¡(\[]))/
-    SPAN_END = /(?=\z|[ "'“”‘’«»)\].,;:!?])/
 
     PROMPT = <<~PROMPT.freeze
       You fill the unknown_identity_publication tool. You do not write the answer the technician will read.
@@ -221,10 +219,10 @@ module Rag
       evidence_text(text).gsub(SPAN_EDGES, "")
     end
 
-    # The span must sit in the cited chunk on token edges, so "73" does not
-    # match inside "Q-731".
+    # The span must be a whole fragment of the cited chunk. A cut subspan
+    # could drop a negation: "fallo de freno" from "Q-731 no indica fallo de freno".
     def self.grounded_span?(span, chunk)
-      evidence_text(chunk_content(chunk)).match?(/#{SPAN_START}#{Regexp.escape(span)}#{SPAN_END}/)
+      AnswerSafetyProcessor.fragments(chunk_content(chunk)).any? { |fragment| clean_span(fragment) == span }
     end
 
     def self.measured_value?(text)

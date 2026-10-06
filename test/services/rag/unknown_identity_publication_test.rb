@@ -174,6 +174,28 @@ class Rag::UnknownIdentityPublicationTest < ActiveSupport::TestCase
     end
   end
 
+  test "a subspan that drops a negation is rejected and the whole fragment is accepted" do
+    negated = zephyr_chunk.merge(content: "ZEPHYR QX-77. Página 12.\nQ-731 no indica fallo de freno. Revisa el registro.")
+    outcome = lambda do |span|
+      Rag::UnknownIdentityPublication.compose(
+        { "observations" => [ SAFE_OBSERVATION ], "reference_fact" => { "citation" => 1, "evidence_span" => span } },
+        chunks: [ negated ], question: QUESTION, locale: :es
+      )
+    end
+
+    [ "fallo de freno", "indica fallo de freno", "Q-731 no indica fallo" ].each do |span|
+      result = outcome.call(span)
+
+      assert_equal "rejected", result.reference_status, span
+      assert_not_includes result.answer, "fallo de freno"
+      assert_includes result.answer, SAFE_OBSERVATION
+    end
+    whole = outcome.call(" Q-731  no indica\nfallo de freno. ")
+    assert_equal "accepted", whole.reference_status
+    assert_includes whole.answer, "Según el manual ZEPHYR QX-77, página 12 [1], Q-731 no indica fallo de freno."
+    assert_nil Rag::DocumentIdentityScope.unconfirmed_applicability_violation(whole.answer, nil, [ negated ], QUESTION)
+  end
+
   test "a malformed envelope falls back instead of rendering" do
     [ nil, "prose", { "observations" => "Mira la puerta." } ].each do |envelope|
       result = Rag::UnknownIdentityPublication.compose(envelope, chunks: [ zephyr_chunk ], question: QUESTION, locale: :es)

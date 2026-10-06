@@ -374,7 +374,7 @@
     "f3b": "documented, not authorized",
     "tests": "bundle exec rails test — 4284 runs, 24139 assertions, 0 failures, 0 errors, 192 skips. rubocop 19 files, no offenses."
   },
-  "F2b": {
+  "F2b_historical_blocked_review": {
     "phase": "F2b",
     "status": "BLOCKED_FOR_PLAN_REVIEW",
     "authorization": "explicit Lahiri authorization, 2026-10-06, F2b only. The two-commit review boundary was superseded. Three owners were authorized. A fourth was not.",
@@ -418,5 +418,57 @@
     "f3": "not authorized",
     "f3b": "not authorized",
     "tests": "bundle exec rails test — 4292 runs, 24184 assertions, 0 failures, 0 errors, 192 skips. rubocop on touched Ruby files, no offenses."
+  },
+  "F2b": {
+    "phase": "F2b",
+    "status": "PASS",
+    "authorization": "explicit Lahiri authorization, 2026-10-06, resume F2b only from db5514996fc4310d9609d857beb7e24b8190bff7. Close the reviewed B2/B5 benchmark-contract defects and the WorkContextReducer false-supersession regression.",
+    "starting_sha": "db5514996fc4310d9609d857beb7e24b8190bff7",
+    "historical_blocked_record": "F2b_historical_blocked_review",
+    "historical_note": "The blocked measurement is preserved and is not a pass. Scope.0 fixture 3db76c24453d2869f03baf9a9bb7b07dc7e736fd8e80a422b7bf6bf1c03dab8b produced B L1 FAIL.",
+    "reducer_regression_fix_sha": "a69da177e171cd63079e53acfa02c0c356a7b11a",
+    "benchmark_contract_sha": "0792480c9841ac76b8f15c3102af58d2cfe4ccee",
+    "ending_sha": null,
+    "ending_sha_note": "The docs commit cannot store its own SHA. Its parent is benchmark_contract_sha.",
+    "f3_candidate_sha": "0792480c9841ac76b8f15c3102af58d2cfe4ccee",
+    "f3_candidate_note": "Parent of the F2b close. F3 is not authorized.",
+    "product_code_changed_for_b2_b5": false,
+    "product_code_changed_for_reducer_regression": true,
+    "model_calls": 0,
+    "spend_usd": 0,
+    "expectation_scope_revision": "longitudinal-expectation-scope.1",
+    "historical_expectation_scope_revision": "longitudinal-expectation-scope.0",
+    "historical_fixture_sha256": "3db76c24453d2869f03baf9a9bb7b07dc7e736fd8e80a422b7bf6bf1c03dab8b",
+    "fixture_sha256": "feb2d625d18667e1452c87784a11cdf7e91dc3011d9f75a2aa8f2faee9065386",
+    "pre_f2a_known_controls_sha256": "54a0d0693712fe7ccb707c13b15779f6b55cf0de914e80832e5b7b12c8d85962",
+    "known_controls_match": true,
+    "post_f2a_journey_a_prompt_hash": "a364fadf921e13ed69d4f76250fdeeeb5f1c5127332344bcb1d319f392450a7a",
+    "post_f2b_journey_a_prompt_hash": "a364fadf921e13ed69d4f76250fdeeeb5f1c5127332344bcb1d319f392450a7a",
+    "journey_a_prompt_delta": "none. 20395 bytes. The reducer repair did not change the Journey A prompt slice.",
+    "reducer_before": "Shared-word overlap deleted la puerta de planta 1 está cerrada when the technician corrected the plant-2 door.",
+    "reducer_after": "Same token length and exactly one non-numeric substitution. A changed number is a different referent unless the turn says no de. Plant-1 door remains. Cabin floor, por arriba, and code 18 corrections still apply. The no-code sentence survives the level correction.",
+    "b2_before": "no_code_fact required generator text. A fact expectation with status cannot pass that check. SCORER_CONTRACT_DEFECT.",
+    "b2_after": "state_only. Passes only when fault_code.status is absent_confirmed. Missing fact, known value, or the sentence without the fact fails. no_code_text stays state_and_generation.",
+    "b5_before": "The meta acknowledgement was required to repeat technical facts. FIXTURE/SCORER_CONTRACT_DEFECT.",
+    "b5_after": "State-only for level floor, identity, Orona, PBCM-V3, TEST OK, and por arriba. Contract requires meta, deterministic, model_invoked false. B6-B10 stay on the generation contract. meta_result was not changed.",
+    "photo_plus_question": "Product path unchanged. Existing tests in test/jobs/field_photo_analysis_job_test.rb: legacy photo reuse carries accepted equipment identity into retrieval; same-turn photo question composes retrieval after accepted visual identity.",
+    "longitudinal_post": {
+      "journey_a_l1": "PASS",
+      "journey_a_l2": "PASS",
+      "journey_a_l3": "PASS",
+      "journey_b_l1": "PASS",
+      "journey_b_l2": "NOT_IN_FIXTURE",
+      "journey_b_l3": "NOT_IN_FIXTURE",
+      "remaining_critical": [],
+      "first_eviction_a": "A11",
+      "first_eviction_b": "B10",
+      "turn_errors": 0
+    },
+    "additional_production_owner_required": false,
+    "f3": "not authorized",
+    "f3b": "not authorized",
+    "f4": "not authorized",
+    "tests": "work_context_reducer_test.rb 6 runs, 27 assertions, 0 failures. Longitudinal file plus reducer file 25 runs, 153 assertions, 0 failures. PARALLEL_WORKERS=1 bundle exec rails test — 4297 runs, 24211 assertions, 0 failures, 0 errors, 192 skips. RuboCop on touched Ruby files, no offenses."
   }
+
 }

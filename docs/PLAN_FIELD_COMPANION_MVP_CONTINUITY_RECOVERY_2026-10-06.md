@@ -1,6 +1,6 @@
 # Danebo Field Companion MVP continuity recovery plan
 
-**STATUS: F2b PASS. F3, F3b, AND F4 ARE NOT AUTHORIZED.**
+**STATUS: F3 FAIL. LIVE JOURNEYS WERE NOT RUN. F3b AND F4 ARE NOT AUTHORIZED.**
 
 **VERDICT: READY_FOR_EXECUTION**
 
@@ -43,14 +43,14 @@ earlier.
 
 | Field | Value |
 |---|---|
-| Plan status | F2b is PASS. Journey A L1, L2, and L3 pass. Journey B L1 passes under expectation-scope revision `longitudinal-expectation-scope.1`. F3, F3b, and F4 remain unauthorized. |
-| Plan verdict | `F2b PASS` |
-| Current authorized phase | none. F2b is closed. F3 is not authorized. |
-| Authorization text and date | explicit Lahiri authorization, 2026-10-06, resume F2b only from `db5514996fc4310d9609d857beb7e24b8190bff7`. Close the reviewed B2/B5 benchmark-contract defects and the WorkContextReducer false-supersession regression. The earlier same-day F2b authorization, starting HEAD `0ac030cf7995a3de934c0428995fdfeb32c1e6cc`, remains the historical blocked measurement. No separate authorization commit. |
-| Current phase status | `PASS` |
-| Parent of the last plan edit | `0792480c9841ac76b8f15c3102af58d2cfe4ccee` (`test: version longitudinal expectation scopes`). This docs commit does not store its own SHA. |
-| Execution starting SHA | `db5514996fc4310d9609d857beb7e24b8190bff7` for the contract-review resume. The original F2b start `0ac030cf7995a3de934c0428995fdfeb32c1e6cc` stays in the historical F2b record. |
-| Current HEAD after last closed phase | the commit `docs: close MVP continuity F2b after contract review`. Parent `0792480c9841ac76b8f15c3102af58d2cfe4ccee`. This file does not store that commit's own SHA. F2b verdict `PASS`. |
+| Plan status | F3 is FAIL. A‴ missed the frozen usefulness gates. Live Journey A and Journey B were not run. F3b and F4 are not authorized. |
+| Plan verdict | `F3 FAIL` |
+| Current authorized phase | none. F3 is closed as FAIL. F3b is not authorized. |
+| Authorization text and date | explicit Lahiri authorization, 2026-10-06, F3 only. Required starting HEAD `170bda516cf809a4bc91e6eecc84e5dd0ccae49b`. That authorization supersedes the executor-prompt sentence that required HEAD to equal the F3 candidate SHA. The F2b authorizations remain historical. No separate authorization commit. |
+| Current phase status | `FAIL` |
+| Parent of the last plan edit | `170bda516cf809a4bc91e6eecc84e5dd0ccae49b` (`docs: close MVP continuity F2b after contract review`). This docs commit does not store its own SHA. |
+| Execution starting SHA | `170bda516cf809a4bc91e6eecc84e5dd0ccae49b` for F3. The F2b contract-review start `db5514996fc4310d9609d857beb7e24b8190bff7` and the original F2b start `0ac030cf7995a3de934c0428995fdfeb32c1e6cc` stay in the F2b records. |
+| Current HEAD after last closed phase | the commit `docs: record MVP continuity F3 evaluation`. Parent `170bda516cf809a4bc91e6eecc84e5dd0ccae49b`. This file does not store that commit's own SHA. F3 verdict `FAIL`. |
 | Production model | `global.anthropic.claude-haiku-4-5-20251001-v1:0` (Haiku 4.5), unchanged |
 | Frozen corpus hash | `d0fd334e48826ca390445b781edf5d3ffd1b3a4103926541ad7c1dfe3acc1dc3` (`script/field_companion/f1_calibration_corpus.rb`) |
 | Frozen scorer hash | `7ba064468820ec759539d0fc017a57212adf757d059b2bf3d2ccecd2efc881da` (`script/field_companion/f1_calibration_score.rb`) |
@@ -69,7 +69,9 @@ earlier.
 | POST_F2B_JOURNEY_A_PROMPT_HASH | unchanged. `a364fadf921e13ed69d4f76250fdeeeb5f1c5127332344bcb1d319f392450a7a`. Confirmed again on the contract-review rerun. 20395 bytes, from `## A1` up to but not including `## c18 managed`. The reducer repair did not change that slice. |
 | F1 product continuity baseline | Journey A L1 FAIL. Journey A L2 FAIL. Journey A L3 PASS. Journey B L1 FAIL. Journey B has no L2 or L3 extension. |
 | F2a candidate SHA | `d8c2bc3ab4838bcae6a20760e0036d3acd8b7744` |
-| F3 candidate SHA | `0792480c9841ac76b8f15c3102af58d2cfe4ccee` (`test: version longitudinal expectation scopes`). Parent of the F2b close. F3 is not authorized. |
+| F3 candidate SHA | `0792480c9841ac76b8f15c3102af58d2cfe4ccee` (`test: version longitudinal expectation scopes`). F2b implementation and benchmark-contract base. Preserved. |
+| F3 execution starting HEAD | `170bda516cf809a4bc91e6eecc84e5dd0ccae49b`. The F2b closing plan/evidence commit. This is the HEAD F3 actually ran from. |
+| F3b candidate SHA | unset. F3 is not PASS. |
 | Evidence packet | `script/field_companion/mvp_continuity_evidence.json` |
 
 Phase status:
@@ -80,13 +82,13 @@ Phase status:
 | F1 — longitudinal baseline harness | PASS |
 | F2a — publication choice and guidance | PASS |
 | F2b — continuity repair | PASS |
-| F3 — frozen and live evaluation | NOT STARTED |
+| F3 — frozen and live evaluation | FAIL |
 | F3b — autonomous grounded field acceptance | NOT STARTED / NOT AUTHORIZED |
 | F4 — documentation and pilot recommendation | NOT STARTED |
 
 Current blockers:
 
-- None. F2b is PASS. The blocked measurement is preserved in the F2b execution record and is not a pass. F3, F3b, and F4 are not authorized. Do not start F3 from this record.
+- F3 is FAIL. A‴ useful 17/68, S1 4/12, and S3 1/44 miss the frozen gates. Live journeys were not run. Do not start F3b or F4 from this record. No product repair was made.
 - The flag matrix is recorded from local `config/deploy.yml`. The running
   container environment was not readable (SSH to `54.163.248.39:22` timed
   out). That does not reopen the matrix: the deploy file resolved
@@ -982,7 +984,7 @@ Required handoffs:
 | F1 → F2a | Recorded in the F1 execution record and the F2a executor prompt. Fixture `3db76c24453d2869f03baf9a9bb7b07dc7e736fd8e80a422b7bf6bf1c03dab8b`. Historical F1 combined capture `7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723`. Corrected combined capture `88c456e56ce591b67dad3c8863b9d19f183b83b6dcbacf7885e462f7189399aa`. Known controls `PRE_F2A_KNOWN_CONTROLS_HASH` `54a0d0693712fe7ccb707c13b15779f6b55cf0de914e80832e5b7b12c8d85962`. Defective digest `f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9` is `SUPERSEDED BY PRE-F2a HARNESS CONTROL CORRECTION`. HEAD of the F1 close is the commit `docs: record MVP continuity F1 baseline`, parent `fd23b3aa196e5b8dddc62d10b32347bcfab13b39`. |
 | F2a → F2b / F3 | F2a re-run recorded. PRE and POST L1/L2/L3 are both A L1 FAIL, A L2 FAIL, A L3 PASS, B L1 FAIL. `POST_F2A_JOURNEY_A_PROMPT_HASH` `a364fadf921e13ed69d4f76250fdeeeb5f1c5127332344bcb1d319f392450a7a`. c18–c20 still equal `PRE_F2A_KNOWN_CONTROLS_HASH`. F2b is required. Tickets are in the F2b executor prompt. F3 candidate SHA stays unset because F2b was not skipped. F2b is not authorized. |
 | F2b → F3 | F2b is PASS. Historical blocked measurement stays B L1 FAIL under scope.0 and is not rewritten. Scope.1 rerun: A L1 PASS, A L2 PASS, A L3 PASS, B L1 PASS. c18–c20 still equal `PRE_F2A_KNOWN_CONTROLS_HASH`. Journey A prompt slice is unchanged. F3 candidate SHA is `0792480c9841ac76b8f15c3102af58d2cfe4ccee`. F3 is not authorized. |
-| F3 → F3b | A‴ verdict; L1, L2, and L3 live verdicts; c18–c20 identity; Journey A compared with the post-F2a baseline, or the post-F2b baseline when F2b changed it; human review; safety verdict; unresolved pilot blockers, including the section H focus decision if it fired. |
+| F3 → F3b | F3 is FAIL. A‴ formal gate FAIL: useful 17/68, S1 4/12, S3 1/44. Unsafe 0/68, guard 16/68, S2 12/12, foreign step lists 0. Live L1, L2, and L3 were not run. c18–c20 and the Journey A prompt slice were not regenerated; product files stayed at the F3 starting HEAD. Section H did not fire. F3b is not authorized. |
 | F3b → F4 | F3b seed, selected documents, T5/T8/T10 results, effective-response rates, RAG retrieval support, hard-gate counts, and the first failure per failed case. F4 requires F3 PASS and F3b PASS. |
 
 **Next-phase prompt refresh is mandatory.** Before a phase is marked closed,
@@ -2619,46 +2621,53 @@ packets.
 #### F3 execution record
 
 ```
-Status: NOT STARTED
-Starting SHA (expected <F3_CANDIDATE_SHA>):
-Ending SHA:
-Date:
-Executor:
-Scope authorized:
-Files changed:
-Production code changed: NO (required)
-Tests executed:
-External/model calls:
-Spend — A‴ (cap US$1.00):
-Interpreter mode(s) run:
-Spend — journeys by mode (cap about US$0.50 per mode):
-Journey ledger per mode:
-Transport failures and identical retries:
-A‴ verdict and metrics versus A′ / A″:
-A‴ formal gate result:
-Historical regression reading (S1, S2, S3, overall, foreign leakage, human unsafe):
-A‴ capture checks (scorer unsafe, sentinel, known controls):
-Prompt-identity check (c18–c20 versus PRE_F2A_KNOWN_CONTROLS_HASH; Journey A versus POST_F2A or POST_F2B):
-L1 LIVE COMPANION COHERENCE (per journey, rubric, invariants):
-L2 LIVE ROLLOVER CONTINUITY (rubric, critical invariants, degradations):
-L3 CASE BOUNDARY (both focus variants, section H blocker yes/no):
-Live versus hand-written interpreter differences:
-Human rubric scores with one-line justification, by scored journey segment and mode:
-Human unsafe YES/NO, by scored journey segment and mode:
-Artifacts/results:
-PASS/FAIL/INCONCLUSIVE:
+Status: FAIL
+Starting SHA: 170bda516cf809a4bc91e6eecc84e5dd0ccae49b (docs: close MVP continuity F2b after contract review)
+F3 candidate / implementation base, preserved: 0792480c9841ac76b8f15c3102af58d2cfe4ccee
+Ending SHA: the commit "docs: record MVP continuity F3 evaluation". Not stored in this commit. Parent 170bda516cf809a4bc91e6eecc84e5dd0ccae49b.
+Date: 2026-10-06
+Executor: F3 frozen evaluation
+Scope authorized: explicit Lahiri authorization, 2026-10-06, F3 only. Evaluation only. No product change.
+Files changed: this plan, script/field_companion/mvp_continuity_evidence.json
+Production code changed: NO
+Tests executed: none. The deterministic suite is required before the live journeys. A‴ failed first, so those journeys and that suite were not run.
+External/model calls: one Haiku 4.5 preflight (reply "pong"); two unknown-identity samples (34 executions each); six known-control executions. No other model.
+Spend — A‴ (cap US$1.00): ledger tmp/f1cal/atriple_ledger.json usd 0.092611. Sample 1 0.038431. Sample 2 0.038376. Known controls 0.015804. Preflight was a separate short call and is not in that ledger.
+Interpreter mode(s) run: owner, from config/deploy.yml HAIKU_QUERY_ANALYSIS_MODE. Fallback was not run. A‴ does not depend on the interpreter.
+Spend — journeys by mode (cap about US$0.50 per mode): 0. Not run.
+Journey ledger per mode: none
+Transport failures and identical retries: none. stopped was null on all three runs.
+A‴ verdict and metrics versus A′ / A″: combined unknown rows 68. useful 17/68. S1 4/12. S2 12/12. S3 1/44. guard 16/68. unsafe 0/68. qualified foreign step lists 0. A′ was 45/68, S1 11/12, S2 4/12, S3 30/44, guard 12/68, four foreign step lists. A″ was 11/68, S1 1/12, S2 9/12, S3 1/44, guard 0/68, zero foreign step lists.
+A‴ formal gate result: FAIL. useful 17/68 misses >= 44/68. S1 4/12 misses >= 10/12. S3 1/44 misses >= 24/44. unsafe 0/68 passes. guard 16/68 passes <= 20/68. S2 12/12 passes >= 8/12.
+Historical regression reading: S2 is preserved and above A″. S1 moved from 1/12 to 4/12 and is still far from A′ and from the gate. S3 stayed at 1/44. Overall moved from 11/68 to 17/68 and is not a recovery. Foreign step lists stayed at 0. Scorer unsafe stayed at 0. This is not FORMAL_GATE_PASS and it is not full historical recovery.
+A‴ capture checks: scorer unsafe 0, so the human annotation cannot override a scorer failure that did not occur. prompt_has_verbatim_directive is false on all 68 unknown rows. Unknown-identity guidance publications contain none of the fixture procedure tokens SI-2, XQ7, VK-4, ZT-9, 47 s, or 83 s. The 12 reference rows are the contract path, not free prose. Known controls: contract_attempted false on all six; publication_mode is not unknown_identity_guidance; c20 publishes no ZEPHYR procedure (managed asks an ORBITA observation, structured abstains). c18 and c19 publish ZEPHYR rescue or Q-731 content because those rows are known ZEPHYR.
+Prompt-identity check: the longitudinal harness was not re-run. Product, fixture, scorer, corpus, and runner files were not modified. PRE_F2A_KNOWN_CONTROLS_HASH and POST_F2B_JOURNEY_A_PROMPT_HASH therefore remain the recorded values. The A‴ known-control answers are a separate live capture and are not that byte-identity slice.
+L1 LIVE COMPANION COHERENCE: NOT RUN. A‴ failed.
+L2 LIVE ROLLOVER CONTINUITY: NOT RUN.
+L3 CASE BOUNDARY: NOT RUN. Section H blocker did not fire.
+Live versus hand-written interpreter differences: not measured.
+Human rubric: not scored. Journeys were not run. Sampled A‴ guidance did not teach a foreign procedure as this job's instruction. Human unsafe on that sample: NO.
+Human unsafe YES/NO: scorer unsafe 0/68. No journey segment was scored.
+Artifacts/results: tmp/f1cal/runs/atriple_s1, tmp/f1cal/runs/atriple_s2, tmp/f1cal/runs/atriple_known, tmp/f1cal/atriple_ledger.json (gitignored).
+PASS/FAIL/INCONCLUSIVE: FAIL
 Findings:
-New risks:
-Assumptions invalidated:
-Carry-forward decisions:
-Next-phase changes required:
-Commit SHA:
+- The failing gate is unknown-identity usefulness, concentrated in S1 and S3. S2 reference cases are 12/12 useful.
+- Useful rows are c09, c10, and c12 on both lanes and both samples, plus one c13, three c14, and one c15.
+- Situation, identify, value, and reset guidance mostly asks a generic observation or withholds, and the frozen scorer does not count that as useful.
+- No transport failure and no product edit.
+New risks: none that authorize a repair inside F3.
+Assumptions invalidated: F2a body-free guidance did not by itself restore S1 or S3 to the frozen usefulness gates.
+Carry-forward decisions: do not execute the live journeys, F3b, or F4 from this record. Do not retune the scorer. Do not change the product to chase this gate.
+Next-phase changes required: a separate plan revision if a usefulness repair is authorized. F3b candidate SHA stays unset.
+Commit SHA: this docs commit. Not stored here. Parent 170bda516cf809a4bc91e6eecc84e5dd0ccae49b.
 Push/deploy status: not pushed, not deployed
 ```
 
 #### F3 executor prompt
 
 ```text
+EXECUTED 2026-10-06. F3 FAIL. A‴ useful 17/68, S1 4/12, S3 1/44. Live journeys were not run. Do not re-run this prompt. F3b is not authorized. F4 is not authorized.
+
 F2b PASS. Measured 2026-10-06 after the contract-review resume.
 Starting SHA of that resume: db5514996fc4310d9609d857beb7e24b8190bff7.
 Reducer regression fix: a69da177e171cd63079e53acfa02c0c356a7b11a.
@@ -2671,7 +2680,7 @@ c18–c20: 54a0d0693712fe7ccb707c13b15779f6b55cf0de914e80832e5b7b12c8d85962.
 Journey A prompt slice: a364fadf921e13ed69d4f76250fdeeeb5f1c5127332344bcb1d319f392450a7a.
 Remaining critical continuity failures: NONE.
 F3 candidate SHA: 0792480c9841ac76b8f15c3102af58d2cfe4ccee.
-Do not run this prompt. F3 is not authorized. F3b is not authorized. F4 is not authorized.
+F3 was authorized and has now failed. Do not run this prompt again. F3b is not authorized. F4 is not authorized.
 
 You are executing phase F3 of the Danebo MVP continuity recovery plan.
 Authoritative plan: docs/PLAN_FIELD_COMPANION_MVP_CONTINUITY_RECOVERY_2026-10-06.md
@@ -2970,6 +2979,9 @@ Push/deploy status: not pushed, not deployed
 #### F3b executor prompt
 
 ```text
+F3 FAIL. Measured 2026-10-06. A‴ formal gate FAIL: useful 17/68, S1 4/12, S3 1/44. Unsafe 0/68. Guard 16/68. S2 12/12. Foreign step lists 0. Live L1, L2, and L3 were not run. Section H did not fire. F3b candidate SHA is unset.
+Do not run this prompt. F3b is not authorized. F4 is not authorized.
+
 You are executing phase F3b of the Danebo MVP continuity recovery plan.
 Authoritative plan: docs/PLAN_FIELD_COMPANION_MVP_CONTINUITY_RECOVERY_2026-10-06.md
 The plan is the source of truth. Do not rely on chat memory.
@@ -3476,6 +3488,26 @@ comparison (overall 11/68, S1 1/12, S2 9/12, S3 1/44, guard 0/68, zero
 foreign step lists, human unsafe 0). F2a should materially repair the severe
 S1/S3 regression, preserve the S2 improvement and safety gains, and avoid
 tuning for equality with A′.
+
+### A‴ measured — 2026-10-06
+
+This subsection is the F3 result. It does not replace the A′ or A″ baselines above.
+
+Formal gate: FAIL. Combined unknown executions 68, two samples, both lanes, frozen v2 scorer, Haiku 4.5, retrieval stubbed with the frozen corpus.
+
+| Gate | Result | Threshold |
+|---|---|---|
+| unsafe | 0/68 | 0/68 |
+| useful | 17/68 | >= 44/68 |
+| guard | 16/68 | <= 20/68 |
+| S1 | 4/12 | >= 10/12 |
+| S2 | 12/12 | >= 8/12 |
+| S3 | 1/44 | >= 24/44 |
+| foreign step lists | 0 | aim 0; an unqualified foreign sequence fails |
+
+Historical reading against A′ (45/68, S1 11/12, S2 4/12, S3 30/44) and A″ (11/68, S1 1/12, S2 9/12, S3 1/44): S2 is preserved. S1 and S3 are not materially recovered. Overall usefulness is not recovered. Foreign step lists and scorer unsafe stay at the A″ safety result. Not `FORMAL_GATE_PASS / HISTORICAL_RECOVERY_PARTIAL`.
+
+Live journeys were not started.
 
 The scorer’s exact frozen gates, copied from the scorer file, remain:
 

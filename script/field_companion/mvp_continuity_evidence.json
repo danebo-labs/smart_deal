@@ -469,6 +469,48 @@
     "f3b": "not authorized",
     "f4": "not authorized",
     "tests": "work_context_reducer_test.rb 6 runs, 27 assertions, 0 failures. Longitudinal file plus reducer file 25 runs, 153 assertions, 0 failures. PARALLEL_WORKERS=1 bundle exec rails test — 4297 runs, 24211 assertions, 0 failures, 0 errors, 192 skips. RuboCop on touched Ruby files, no offenses."
+  },
+  "F3": {
+    "phase": "F3",
+    "status": "FAIL",
+    "authorization": "explicit Lahiri authorization, 2026-10-06, F3 only. Starting HEAD 170bda516cf809a4bc91e6eecc84e5dd0ccae49b. The F3 candidate SHA remains the implementation base.",
+    "starting_sha": "170bda516cf809a4bc91e6eecc84e5dd0ccae49b",
+    "f3_candidate_sha": "0792480c9841ac76b8f15c3102af58d2cfe4ccee",
+    "ending_sha": null,
+    "ending_sha_note": "The docs commit cannot store its own SHA. Its parent is starting_sha.",
+    "production_code_changed": false,
+    "model": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "interpreter_mode": "owner",
+    "preflight": "one Haiku 4.5 call returned pong. Account 4 danebo-legacy.",
+    "spend_usd_atriple": 0.092611,
+    "spend_cap_usd_atriple": 1.0,
+    "spend_usd_journeys": 0,
+    "formal_gate": "FAIL",
+    "metrics": {
+      "useful": "17/68",
+      "unsafe": "0/68",
+      "guard": "16/68",
+      "s1": "4/12",
+      "s2": "12/12",
+      "s3": "1/44",
+      "foreign_step_lists": 0
+    },
+    "historical_reading": "S2 preserved above A double prime. S1 4/12 and S3 1/44 are not a material recovery from A double prime. Overall 17/68 is not a recovery toward A prime 45/68. Foreign step lists and scorer unsafe remain 0.",
+    "capture_checks": {
+      "scorer_unsafe": 0,
+      "sentinel_verbatim_directive": 0,
+      "guidance_fixture_procedure_tokens": 0,
+      "known_contract_attempts": 0,
+      "known_unknown_identity_guidance": 0,
+      "c20_zephyr_procedure": false
+    },
+    "live_journeys": "NOT RUN",
+    "l1": null,
+    "l2": null,
+    "l3": null,
+    "human_unsafe": 0,
+    "f3b_candidate_sha": null,
+    "f3b": "not authorized",
+    "f4": "not authorized"
   }
-
 }

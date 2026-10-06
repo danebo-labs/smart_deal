@@ -113,6 +113,7 @@ class Rag::CompanionGuidanceContextTest < ActiveSupport::TestCase
 
     assert_includes prompt, "# FIELD COMPANION"
     assert_includes prompt, "The equipment identity is not confirmed."
+    assert_includes prompt, "Those contents are not in this prompt."
     assert_includes prompt, "Question: ¿Qué reviso?"
     assert_includes prompt, "Goal: la puerta 1 no termina de cerrar"
     assert_includes prompt, "Manufacturer: Elemont (catalog)"
@@ -127,5 +128,33 @@ class Rag::CompanionGuidanceContextTest < ActiveSupport::TestCase
     assert_not_includes prompt, "## Session Focus"
     assert_not_includes prompt, "Ground your answer"
     assert_not_includes prompt, "These facts identify the job"
+    assert_includes prompt, "same sentence"
+    assert_includes prompt, "elevator field service"
+    assert_includes prompt, "do not reply by only asking which equipment this is."
+    assert_includes prompt, "already report an action as done"
+    assert_includes prompt, "Do not stop at the refusal"
+    assert_includes prompt, "manufacturer and model in that same sentence"
+    assert_not_includes prompt, "SI-2"
+    assert_not_includes prompt, "XQ7"
+    assert_not_includes prompt, "Enviar la cabina"
+    assert_not_includes prompt, "Procedimiento de rescate"
+  end
+
+  test "known guidance keeps its instruction and does not take the unknown observation rule" do
+    prompt = Rag::CompanionGuidanceContext.build(
+      question: "la puerta no cierra",
+      identity: nil,
+      session_context: "",
+      labels: [],
+      locale: :es
+    ).to_s
+
+    assert_includes prompt, "There is no compatible manufacturer procedure available."
+    assert_includes prompt, "One main question"
+    assert_not_includes prompt, "The equipment identity is not confirmed."
+    assert_not_includes prompt, "elevator field service"
+    assert_not_includes prompt, "already report an action as done"
+    assert_not_includes prompt, "SI-2"
+    assert_not_includes prompt, "XQ7"
   end
 end

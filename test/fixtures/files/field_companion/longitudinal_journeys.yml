@@ -1,0 +1,132 @@
+# Hand-written to the TurnInterpreter contract (turn_perception.3).
+# Spans and observations are literal substrings of the technician turn.
+# This file does not define meanings for code 18, LED 7, floors, the
+# door-guide check, or the closing click. CEA15, CEA15P, and CEA15+ are
+# different tokens; this fixture never writes CEA15+ for a CEA15 turn.
+label: hand_written_to_interpreter_contract
+fixed_time: "2026-10-06 15:00:00 UTC"
+chunk_source: test/fixtures/files/elemont/chunk_p1_2_current.txt
+elemont_document:
+  document_uid: dcc8e046-037d-48a6-8913-1992aed28507
+  s3_key: bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf
+  display_name: Elemont Montacargas Hidraulico Modelo MH
+
+markers:
+  elemont: { kind: text, text: Elemont }
+  mh: { kind: text, text: MH }
+  cea15: { kind: text, text: CEA15 }
+  door: { kind: text, text: "puerta 1 no termina de cerrar" }
+  magnet: { kind: text, text: "imán no magnetiza" }
+  code_8: { kind: fact, slot: fault_code, value: "8" }
+  code_18: { kind: fact, slot: fault_code, value: "18" }
+  floor_1: { kind: text, text: "planta 1" }
+  floor_2: { kind: text, text: "planta 2" }
+  nobody: { kind: text, text: "no hay personas dentro" }
+  visual: { kind: text, text: "guía de la puerta" }
+  click: { kind: text, text: clic }
+  level_floor_3: { kind: text, text: "planta 3" }
+  only_floor_3: { kind: text, text: "Solo lo he visto en planta 3" }
+  no_code_text: { kind: text, text: "No aparece código de falla" }
+  no_code_fact: { kind: fact, slot: fault_code, value: "", status: absent_confirmed }
+  orona: { kind: text, text: Orona }
+  pbcm: { kind: text, text: PBCM-V3 }
+  test_ok: { kind: visible_text, text: "TEST OK" }
+  above: { kind: text, text: "por arriba", generator: full }
+  below: { kind: text, text: "por debajo" }
+  door_closed: { kind: text, text: "está cerrada" }
+  identity_unknown: { kind: identity, known: false }
+  identity_known: { kind: identity, known: true, values: ["Orona", "PBCM-V3"] }
+
+journeys:
+  A:
+    turns:
+      - { n: 1, checkpoint: L1, type: report, text: "Elemont MH con placa CEA15; la puerta 1 no termina de cerrar y el imán no magnetiza. ¿Qué reviso?",
+          perception: { move: report, assertions: [{ span: Elemont, act: assert, slot_hint: manufacturer }, { span: MH, act: assert, slot_hint: designator }, { span: CEA15, act: assert, slot_hint: designator }], observations: ["la puerta 1 no termina de cerrar", "el imán no magnetiza"] },
+          present: [elemont, mh, cea15, door, magnet] }
+      - { n: 2, checkpoint: L1, type: report, text: "El display muestra código 8.",
+          perception: { move: report, assertions: [{ span: "8", act: assert, slot_hint: fault_code }], observations: ["El display muestra código 8"] },
+          present: [elemont, mh, cea15, door, magnet, code_8] }
+      - { n: 3, checkpoint: L1, type: report, text: "La cabina está detenida cerca de planta 1 y no hay personas dentro.",
+          perception: { move: report, observations: ["detenida cerca de planta 1", "no hay personas dentro"] },
+          present: [elemont, mh, cea15, door, magnet, code_8, floor_1, nobody] }
+      - { n: 4, checkpoint: L1, type: report, text: "La puerta llega al marco, pero vuelve a abrir.",
+          perception: { move: report, observations: ["llega al marco, pero vuelve a abrir"] },
+          present: [elemont, mh, cea15, door, magnet, code_8, floor_1, nobody] }
+      - { n: 5, checkpoint: L1, type: correction, text: "No, leí mal: era código 18, no 8.",
+          perception: { move: correct, assertions: [{ span: "8", act: negate }, { span: "18", act: assert, slot_hint: fault_code }], observations: [] },
+          present: [elemont, mh, cea15, door, magnet, code_18, floor_1, nobody], absent: [code_8] }
+      - { n: 6, checkpoint: L1, type: report, text: "Ya comprobé visualmente la guía de la puerta; no veo una obstrucción.",
+          perception: { move: report, observations: ["comprobé visualmente la guía de la puerta", "no veo una obstrucción"] },
+          present: [elemont, mh, cea15, door, magnet, code_18, floor_1, nobody, visual], absent: [code_8] }
+      - { n: 7, checkpoint: L1, type: follow_up, text: "El LED 7 está apagado. ¿Qué indica para esta placa?",
+          perception: { move: follow_up, observations: ["El LED 7 está apagado"] },
+          present: [elemont, mh, cea15, door, magnet, code_18, floor_1, nobody, visual], absent: [code_8] }
+      - { n: 8, checkpoint: L1, type: report, text: "Al pedir cierre se oye un clic, pero no termina de cerrar.",
+          perception: { move: report, observations: ["se oye un clic, pero no termina de cerrar"] },
+          present: [elemont, mh, cea15, door, magnet, code_18, floor_1, nobody, visual, click], absent: [code_8] }
+      - { n: 9, checkpoint: L1, type: follow_up, text: "Sigue igual. ¿Y ahora?",
+          perception: { move: follow_up, observations: [] },
+          present: [elemont, mh, cea15, door, magnet, code_18, floor_1, nobody, visual, click], absent: [code_8],
+          elliptical: { referents: ["puerta", "código 18", "Elemont"] } }
+      - { n: 10, checkpoint: L1, type: follow_up, text: "Resúmeme lo que llevamos y dime qué observación segura sigue.",
+          perception: { move: follow_up, observations: [] },
+          present: [elemont, mh, cea15, door, magnet, code_18, floor_1, nobody, visual, click], absent: [code_8] }
+      - { n: 11, checkpoint: L2, type: report, text: "Hice esa revisión: sigue el clic y la puerta no termina de cerrar.",
+          perception: { move: report, observations: ["sigue el clic y la puerta no termina de cerrar"] },
+          present: [elemont, mh, cea15, door, code_18], absent: [code_8], critical: true }
+      - { n: 12, checkpoint: L2, type: follow_up, text: "Sigue igual.",
+          perception: { move: follow_up, observations: [] },
+          present: [elemont, mh, cea15, door, code_18], absent: [code_8],
+          elliptical: { referents: ["puerta", "Elemont", "código 18"] } }
+      - { n: 13, checkpoint: L2, type: correction, text: "Corrijo algo de antes: la cabina está detenida cerca de planta 2, no de planta 1.",
+          perception: { move: report, observations: ["detenida cerca de planta 2"] },
+          present: [elemont, mh, cea15, door, code_18, floor_2], absent: [code_8, floor_1] }
+      - { n: 14, checkpoint: L2, type: follow_up, text: "¿Y ahora?",
+          perception: { move: follow_up, observations: [] },
+          present: [elemont, mh, cea15, door, code_18, floor_2],
+          absent: [code_8, floor_1],
+          diagnostic: [visual, click, nobody],
+          elliptical: { referents: ["puerta", "Elemont", "código 18", "planta 2"] } }
+  B:
+    turns:
+      - { n: 1, checkpoint: L1, type: report, text: "Este ascensor queda mal nivelado en planta 3; aún no identifiqué la maniobra. ¿Qué observo primero?",
+          perception: { move: report, observations: ["queda mal nivelado en planta 3"] },
+          present: [level_floor_3, identity_unknown] }
+      - { n: 2, checkpoint: L1, type: report, text: "Solo lo he visto en planta 3; en otras plantas no lo observé. No aparece código de falla.",
+          perception: { move: report, observations: ["Solo lo he visto en planta 3", "No aparece código de falla"] },
+          present: [level_floor_3, only_floor_3, no_code_text, no_code_fact, identity_unknown] }
+      - { n: 3, checkpoint: L1, type: reference, text: "El manual BLT que apareció, ¿qué dice sobre su propio sistema de nivelación? No sé si es mi equipo.",
+          perception: { move: follow_up, assertions: [{ span: BLT, act: mention }], observations: [] },
+          present: [level_floor_3, only_floor_3, no_code_text, identity_unknown] }
+      - { n: 4, checkpoint: L1, type: report, text: "Queda unos 2 o 3 cm por arriba del nivel.",
+          perception: { move: report, observations: ["2 o 3 cm por arriba del nivel"] },
+          present: [level_floor_3, above, identity_unknown, no_code_text] }
+      - { n: 5, checkpoint: L1, type: photo, text: "Adjunto una foto de la placa de este mismo equipo.",
+          perception: { move: meta, observations: [] },
+          photo: { manufacturer: Orona, model: PBCM-V3, visible_text: "TEST OK", relevance_to_goal: relevant },
+          present: [level_floor_3, identity_known, orona, pbcm, test_ok, above] }
+      - { n: 6, checkpoint: L1, type: report, text: "Confirmo que la placa de este equipo dice Orona, PBCM-V3.",
+          perception: { move: report, assertions: [{ span: Orona, act: assert, slot_hint: manufacturer }, { span: PBCM-V3, act: assert, slot_hint: model }], observations: [] },
+          present: [orona, pbcm, identity_known, level_floor_3, test_ok, above] }
+      - { n: 7, checkpoint: L1, type: follow_up, text: "¿El 'TEST OK' de la foto demuestra que la nivelación está correcta?",
+          perception: { move: follow_up, assertions: [{ span: "TEST OK", act: mention }], observations: [] },
+          present: [test_ok, orona, pbcm, level_floor_3, above] }
+      - { n: 8, checkpoint: L1, type: report, text: "Ya observé la puerta: está cerrada; la cabina sigue detenida cerca de planta 3.",
+          perception: { move: report, observations: ["está cerrada", "la cabina sigue detenida cerca de planta 3"] },
+          present: [door_closed, level_floor_3, orona, pbcm, above, test_ok] }
+      - { n: 9, checkpoint: L1, type: correction, text: "Corrijo lo de arriba: queda unos 2 o 3 cm por debajo del nivel.",
+          perception: { move: report, observations: ["2 o 3 cm por debajo del nivel"] },
+          present: [below, level_floor_3, orona, pbcm], absent: [above] }
+      - { n: 10, checkpoint: L1, type: follow_up, text: "¿Y ahora, con lo que ya sabemos de esta falla?",
+          perception: { move: follow_up, observations: [] },
+          present: [level_floor_3, orona, pbcm, below, test_ok, no_code_text, identity_known], absent: [above],
+          elliptical: { referents: ["planta 3", "Orona", "por debajo"] } }
+
+l3:
+  boundary: "Ahora tengo otra falla en otro ascensor: no nivela en planta 3."
+  follow_up: "¿Y ahora?"
+  boundary_perception: { move: new_work, observations: ["no nivela en planta 3"] }
+  follow_perception: { move: follow_up, observations: [] }
+  prior_markers: ["puerta 1 no termina de cerrar", "imán no magnetiza", "código 18", "guía de la puerta", "código 8"]
+  new_referents: ["planta 3", "nivela"]
+  focus_display_name: Elemont Montacargas Hidraulico Modelo MH

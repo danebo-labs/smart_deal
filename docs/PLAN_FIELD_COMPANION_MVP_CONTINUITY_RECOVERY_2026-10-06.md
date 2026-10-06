@@ -48,7 +48,7 @@ earlier.
 | Current authorized phase | none. Section M awaits an Opus read-only review and a later explicit Lahiri authorization. No implementation, A‴ rerun, live journey, F3b, or F4 is authorized by this revision. |
 | Authorization text and date | explicit Lahiri authorization, 2026-10-06, F3 only, starting HEAD `170bda516cf809a4bc91e6eecc84e5dd0ccae49b`. Later the same day, explicit Lahiri authorization for one surgical post-F3 repair, starting HEAD `6e35af683d20487b7831fff803c617996eee04d8`. Later the same day, explicit Lahiri plan-only authorization to incorporate the Codex design review, starting HEAD `949f8e9c7bbdd4c245b4f11b5c86b5361c873cab`. Later the same day, explicit Lahiri plan-only authorization to apply the five Opus required edits, starting HEAD `c26bae91af70ce178e00096dc8f8048aa40c9f14`. Later the same day, explicit Lahiri authorization for the section L Stage A / A‴ repair only, starting HEAD `99255b7e11991fe1053ccfcf8e8980a49b0b52b9`. That authorization does not extend to another fix, F3 live journeys, F3b, or F4. Later the same day, explicit Lahiri plan-only authorization to record the Codex objective-signal and measurement-safety diagnosis, starting HEAD `4b6c8339a56086e3b8521845f17b6e702ade806b`. That authorization does not implement section M. |
 | Current phase status | `FAIL` for F3. Section L A‴ is `FAIL`. Section M is plan only. |
-| Parent of the last plan edit | `4b6c8339a56086e3b8521845f17b6e702ade806b` (`docs: record companion A-triple repair`). This docs commit does not store its own SHA. |
+| Parent of the last plan edit | `3ed19bd23dec2dbcd966e70171c81078003db7f7` (`docs: plan objective signal and measurement safety repair`). This docs commit does not store its own SHA. |
 | Execution starting SHA | `170bda516cf809a4bc91e6eecc84e5dd0ccae49b` for F3. The F2b contract-review start `db5514996fc4310d9609d857beb7e24b8190bff7` and the original F2b start `0ac030cf7995a3de934c0428995fdfeb32c1e6cc` stay in the F2b records. |
 | Current HEAD after last closed phase | Section L close `4b6c8339a56086e3b8521845f17b6e702ade806b`. Implementation `42aeeaa1215087157823860935d6bcac252bb3a0`. The 17/68, 27/68, and 24/68 records stay FAIL. This design revision does not store its own SHA. |
 | Production model | `global.anthropic.claude-haiku-4-5-20251001-v1:0` (Haiku 4.5), unchanged |
@@ -4269,19 +4269,30 @@ Repository precedent: `Rag::TurnPerception::PROMPT_VERSION` is `"2026-10-02.7"`.
 
 Each later run should be attributable as policy version, objective, basis, raw response, and guard or publication result.
 
-### Telemetry seam
+### Telemetry and measurement paths
 
-Verified in this revision. Do not invent a logger, and do not treat Codex’s `PilotUsageLog` name as a class that still has to be created.
+Two paths carry the same attribution concepts. They are not the same data path.
 
-`PilotUsageLog` already exists. `PilotUsageLog.log` keeps only `ALLOWED_FIELDS`, writes a structured log line, and calls `PilotEventRecorder.record`. `PilotEventRecorder` inserts one `PilotEvent` with `insert!`. The durable field is `pilot_events.payload`, already `jsonb`. Failures are rescued and do not propagate. `PILOT_EVENTS_PERSIST=false` is the existing kill switch.
+Local A‴ and any other controlled evaluation obtain the diagnostic fields from the candidate execution itself:
 
-`Rag::DocumentIdentityScopeEvent` already logs `document_identity_scope` through `PilotUsageLog`. That event records the scope decision. It does not currently carry the Stage A generation, the objective, or a Companion policy version.
+- `companion_policy_version`
+- `turn_objective`
+- `turn_objective_basis`
+- raw generation
+- published answer and guard result
+- `objective_followed`
 
-`BedrockRagService#persist_quality_event` writes `PilotEvent::RAG_QUALITY_EVENT` through `PilotEventRecorder` and strips raw question and answer text before the insert. That durable row is not a place to store the raw generation.
+That capture does not read `PilotEvent`, the local database, or `script/pilot_metrics_export.rb`. A‴ stays reproducible when `PILOT_EVENTS_PERSIST=false`. The objective that was sent to generation is recovered from the generator-visible context in that capture. The evaluator does not keep a second objective implementation. `objective_followed` is annotation of that captured objective against the raw and published answer. The frozen scorer stays unchanged.
 
-The three diagnostic fields are `companion_policy_version`, `turn_objective`, and `turn_objective_basis`. They are not in `PilotUsageLog::ALLOWED_FIELDS`, so a call through `PilotUsageLog.log` drops them today.
+Runtime telemetry is separate. A real application execution emits the same attribution through the existing seam:
 
-Implementation, before any code change, finds the existing Companion or RAG call that already fires for a Stage A unknown guidance generation. It adds the three fields to that existing payload when the payload can carry them. A new column or migration is not required. Extending `ALLOWED_FIELDS` is allowed only when the chosen call is `PilotUsageLog.log` and the current slice would otherwise drop the keys. That is not a new subsystem. Diagnostics stay best-effort and non-blocking. If a different existing trace is the generation seam, use that seam. Versioning does not alter routing.
+`PilotUsageLog.log` writes the structured `[PILOT_USAGE]` line, `PilotEventRecorder` inserts `PilotEvent.payload`, and `PilotTelemetryReader` feeds `PilotMetricsReport`, which `script/pilot_metrics_export.rb` already exports.
+
+That path is for a local manual run against the development database, for staging and production usage, and for later pilot export. It is best-effort and non-blocking. A failed telemetry write does not change the generated answer or the turn objective. No new table and no migration. `pilot_events.payload` is already `jsonb`.
+
+`PilotUsageLog.log` currently keeps only `ALLOWED_FIELDS`, so the three keys are dropped today. If the Stage A runtime event uses `PilotUsageLog`, extend `ALLOWED_FIELDS` narrowly with `companion_policy_version`, `turn_objective`, and `turn_objective_basis`, unless an existing allowed field is intentionally reused and the meaning stays clear. Do not overload an unrelated field only to avoid those keys. `prompt_version` may carry the Companion policy version only when implementation review shows that name stays unambiguous beside `TurnPerception::PROMPT_VERSION`. Otherwise use the explicit Companion field.
+
+`Rag::DocumentIdentityScopeEvent` already logs `document_identity_scope` through `PilotUsageLog`. That event is the scope decision. It does not currently carry the Stage A generation. `BedrockRagService#persist_quality_event` writes `PilotEvent::RAG_QUALITY_EVENT` and strips raw question and answer text, so that durable row is not the raw generation. Implementation still confirms which existing Stage A call is the runtime event before adding the three fields. Versioning does not alter routing.
 
 ### Out of this repair
 
@@ -4302,7 +4313,7 @@ Record, without editing `f1_calibration_score.rb`:
 
 Also keep unnecessary identity requests, symptom-linked observations, confirmed human unsafe, c13, c16, the candidate SHA, and the prompt hash.
 
-The objective is a pure function of the current question, and the policy version is the local constant. The next measurement reads the objective from the generator-visible prompt that was actually sent, using the same external capture section L used, so a second offline copy cannot drift. That capture is not a scorer or runner edit. `objective_followed` is evaluator annotation.
+The A‴ harness records the six fields from the candidate execution, including the objective line in the generator-visible context. It does not query `PilotEvent` or depend on `PILOT_EVENTS_PERSIST`. That capture is not a scorer edit.
 
 The next run has to answer three questions.
 
@@ -4322,7 +4333,7 @@ Opus checks:
 - the absence of the circle from unknown identity to an identity blocker
 - restoration of the 27/68 instruction as the baseline, with only the focused edits
 - the narrow measurement combination, the reported-measurement exemption, and Stage B preservation
-- the versioning and telemetry seam as verified here, including `PilotEvent.payload` and the `PilotUsageLog` allowlist
+- the two telemetry paths: A‴ capture independent of `PilotEvent` and `PILOT_EVENTS_PERSIST`, and runtime attribution through `PilotUsageLog` to `PilotEvent.payload` without a migration
 - the two-owner maximum
 
 Return `APPROVE`, `APPROVE_WITH_REQUIRED_EDITS`, or `BLOCKED_FOR_PLAN_REVIEW`. If edits are required, name the section M paragraph. Do not add a third production owner unless these two cannot express the design.
@@ -4338,7 +4349,7 @@ READ ONLY. Do not edit the repository. Do not implement. Do not call Bedrock. Do
 
 Authoritative plan: docs/PLAN_FIELD_COMPANION_MVP_CONTINUITY_RECOVERY_2026-10-06.md
 Section: M. Objective signal and measurement safety — 2026-10-06
-HEAD under review: the commit "docs: plan objective signal and measurement safety repair". Its parent is 4b6c8339a56086e3b8521845f17b6e702ade806b.
+HEAD under review: the commit "docs: clarify companion telemetry paths". Its parent is 3ed19bd23dec2dbcd966e70171c81078003db7f7.
 
 Validate the checks in the section M Opus review gate. Return APPROVE or APPROVE_WITH_REQUIRED_EDITS or BLOCKED_FOR_PLAN_REVIEW. If edits are required, name the section M paragraph. Do not add a third production owner unless CompanionGuidanceContext and DocumentIdentityScope cannot express the design.
 

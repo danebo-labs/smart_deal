@@ -1,8 +1,8 @@
 # Danebo Field Companion MVP continuity recovery plan
 
-**STATUS: F3 FAIL. THE AUTHORIZED UNKNOWN-GUIDANCE REPAIR WAS MEASURED AND A‴ STILL FAILS. LIVE JOURNEYS WERE NOT RUN. F3b AND F4 ARE NOT AUTHORIZED.**
+**STATUS: F3 FAIL. POST-REPAIR A‴ REMAINS 27/68. SECTION L INCORPORATES THE CODEX DESIGN REVIEW. THE NEXT REPAIR IS NOT AUTHORIZED. LIVE JOURNEYS WERE NOT RUN. F3b AND F4 ARE NOT AUTHORIZED.**
 
-**VERDICT: READY_FOR_EXECUTION**
+**VERDICT: DESIGN_REVIEW_INCORPORATED. IMPLEMENTATION NOT AUTHORIZED. AWAITING OPUS READ-ONLY VALIDATION.**
 
 Materialized 2026-10-05 from the Codex recovery-plan review of this repository.
 Codex created no document. This file is that review, written down for plan
@@ -43,14 +43,14 @@ earlier.
 
 | Field | Value |
 |---|---|
-| Plan status | F3 is FAIL. The pre-repair A‴ and the post-repair A‴ both missed the frozen usefulness gates. Live Journey A and Journey B were not run. F3b and F4 are not authorized. |
-| Plan verdict | `F3 FAIL` |
-| Current authorized phase | none. The post-repair remeasure is closed as FAIL. F3b is not authorized. |
-| Authorization text and date | explicit Lahiri authorization, 2026-10-06, F3 only, starting HEAD `170bda516cf809a4bc91e6eecc84e5dd0ccae49b`. Later the same day, explicit Lahiri authorization for one surgical post-F3 repair, starting HEAD `6e35af683d20487b7831fff803c617996eee04d8`. That repair authorization does not authorize F3b or F4. |
-| Current phase status | `FAIL` |
-| Parent of the last plan edit | `36d341335d2ecabba424b54b3d3dda53938b0e35` (`fix: make unknown guidance diagnostically useful`). This docs commit does not store its own SHA. |
+| Plan status | F3 is FAIL. The pre-repair A‴ and the post-repair A‴ both missed the frozen usefulness gates. Section L records the Codex design review. It does not authorize the next repair, live journeys, F3b, or F4. |
+| Plan verdict | `F3 FAIL / DESIGN_REVIEW_INCORPORATED` |
+| Current authorized phase | none. Next gate is the section L Opus read-only review. The `unknown_instruction` repair is specified and not authorized. |
+| Authorization text and date | explicit Lahiri authorization, 2026-10-06, F3 only, starting HEAD `170bda516cf809a4bc91e6eecc84e5dd0ccae49b`. Later the same day, explicit Lahiri authorization for one surgical post-F3 repair, starting HEAD `6e35af683d20487b7831fff803c617996eee04d8`. Later the same day, explicit Lahiri plan-only authorization to incorporate the Codex design review, starting HEAD `949f8e9c7bbdd4c245b4f11b5c86b5361c873cab`. That authorization does not authorize implementation, A‴, Bedrock, F3 live journeys, F3b, or F4. |
+| Current phase status | `FAIL` for F3. This edit is a design revision, not a phase execution. |
+| Parent of the last plan edit | `949f8e9c7bbdd4c245b4f11b5c86b5361c873cab` (`docs: record post-repair F3 evaluation`). This docs commit does not store its own SHA. |
 | Execution starting SHA | `170bda516cf809a4bc91e6eecc84e5dd0ccae49b` for F3. The F2b contract-review start `db5514996fc4310d9609d857beb7e24b8190bff7` and the original F2b start `0ac030cf7995a3de934c0428995fdfeb32c1e6cc` stay in the F2b records. |
-| Current HEAD after last closed phase | the commit `docs: record post-repair F3 evaluation`. Its parent is `36d341335d2ecabba424b54b3d3dda53938b0e35` (`fix: make unknown guidance diagnostically useful`). This file does not store the docs commit's own SHA. The earlier F3 evaluation commit is `6e35af683d20487b7831fff803c617996eee04d8`. F3 verdict remains `FAIL`. |
+| Current HEAD after last closed phase | `949f8e9c7bbdd4c245b4f11b5c86b5361c873cab` (`docs: record post-repair F3 evaluation`). Parent `36d341335d2ecabba424b54b3d3dda53938b0e35`. The earlier F3 evaluation commit is `6e35af683d20487b7831fff803c617996eee04d8`. F3 verdict remains `FAIL`. This design revision does not store its own SHA. |
 | Production model | `global.anthropic.claude-haiku-4-5-20251001-v1:0` (Haiku 4.5), unchanged |
 | Frozen corpus hash | `d0fd334e48826ca390445b781edf5d3ffd1b3a4103926541ad7c1dfe3acc1dc3` (`script/field_companion/f1_calibration_corpus.rb`) |
 | Frozen scorer hash | `7ba064468820ec759539d0fc017a57212adf757d059b2bf3d2ccecd2efc881da` (`script/field_companion/f1_calibration_score.rb`) |
@@ -73,6 +73,7 @@ earlier.
 | F3 candidate SHA | `0792480c9841ac76b8f15c3102af58d2cfe4ccee` (`test: version longitudinal expectation scopes`). F2b implementation and benchmark-contract base. Preserved. |
 | F3 execution starting HEAD | `170bda516cf809a4bc91e6eecc84e5dd0ccae49b`. The F2b closing plan/evidence commit. This is the HEAD F3 actually ran from. |
 | F3b candidate SHA | unset. F3 is not PASS. |
+| Next A‴ repair candidate SHA | unset. Section L is design only. No product commit is claimed. |
 | Evidence packet | `script/field_companion/mvp_continuity_evidence.json` |
 
 Phase status:
@@ -90,6 +91,7 @@ Phase status:
 Current blockers:
 
 - F3 is FAIL. Pre-repair A‴ was useful 17/68, S1 4/12, S3 1/44. The authorized repair at `36d341335d2ecabba424b54b3d3dda53938b0e35` remeasured useful 27/68, S1 8/12, S2 12/12, S3 7/44, guard 1/68, unsafe 0/68, foreign step lists 0. Live journeys were not run. Do not start F3b or F4. Do not open `DocumentIdentityScope` from this record.
+- Section L is the current Companion design. The next repair owner is `CompanionGuidanceContext#unknown_instruction` only. That repair is not authorized until Opus completes the section L read-only review and Lahiri explicitly authorizes implementation. C1–C5 are separately scoped and are not part of that repair.
 - The flag matrix is recorded from local `config/deploy.yml`. The running
   container environment was not readable (SSH to `54.163.248.39:22` timed
   out). That does not reopen the matrix: the deploy file resolved
@@ -642,6 +644,10 @@ primitive. It stops with `BLOCKED_FOR_PLAN_REVIEW` and reports:
 
 This constraint does not require every edit to stay inside the named classes.
 It requires measured necessity before new architecture.
+
+### Active-fault priority
+
+Unknown identity constrains how specific an answer may be. It does not become the diagnostic objective by itself. The ordered policy, the unknown/body-free stage, the later grounded stage, and the single-owner next repair are in section L. Section L does not rewrite the measured F3 records.
 
 ## D. Preferred architecture
 
@@ -2696,7 +2702,7 @@ Push/deploy: not pushed, not deployed.
 #### F3 executor prompt
 
 ```text
-EXECUTED 2026-10-06. F3 FAIL. A‴ useful 17/68, S1 4/12, S3 1/44. The later surgical repair remeasured useful 27/68, S1 8/12, S3 7/44, and still FAIL. Live journeys were not run. Do not re-run this prompt. F3b is not authorized. F4 is not authorized.
+EXECUTED 2026-10-06. F3 FAIL. A‴ useful 17/68, S1 4/12, S3 1/44. The later surgical repair remeasured useful 27/68, S1 8/12, S3 7/44, and still FAIL. Live journeys were not run. Do not re-run this prompt. The next repair, if later authorized, is section L and is not authorized by this prompt. F3b is not authorized. F4 is not authorized.
 
 F2b PASS. Measured 2026-10-06 after the contract-review resume.
 Starting SHA of that resume: db5514996fc4310d9609d857beb7e24b8190bff7.
@@ -3727,3 +3733,255 @@ investigation remains coherent and usable.
 - Same-case continuity revision, parent `b4408003e2ea6c8b4ab31a0c0e9a1017589fe962`: documentation only. It adds the episode-duration contract, `NO_TURN_COUNT_EPISODE_BOUNDARY`, L1/L2/L3, the Journey A rollover extension, the explicit F0 plan list, and the living-plan runbook. Code facts re-read for it: `MAX_HISTORY` and `add_to_history` (`conversation_session.rb:5`, `131-136`), `EPISODE_WINDOW` idle expiry (`active_episode.rb:54-55`), `episode_user_messages` (`conversation_session.rb:496-512`), and the runner environment variables (`f1_calibration_runner.rb:7-12`).
 - Final MVP-scope revision, parent `5b371fc1e694956d9e5f2b639dd3690eebe1dc41`: documentation only. It adds the reuse-first constraint, architecture-expansion stop, historical A′ interpretation, formal-versus-historical A‴ reading, A‴ versus L1/L2/L3 separation, surgical F2a wording, and strict usable/coherent L2 `DEGRADED` rule. B1–B5 remain frozen.
 - This revision’s verdict: `READY_FOR_EXECUTION`. Implementation is not authorized.
+
+## L. Companion design review — 2026-10-06
+
+Plan-only incorporation of the Codex read-only review of `949f8e9c7bbdd4c245b4f11b5c86b5361c873cab`. This section does not execute a repair, does not change a measured result, and does not authorize implementation.
+
+Codex verdict, kept as two separate statements:
+
+- `MULTI_OWNER_REPAIR_REQUIRED` for the complete product behavior before pilot readiness.
+- The next A‴ repair stays inside `CompanionGuidanceContext`.
+
+The complete product has consistency gaps, recorded below as C1–C5. Those gaps are not the cause of the 32 post-repair nameplate failures. Do not turn the immediate repair into a multi-owner implementation.
+
+### Causal diagnosis
+
+The dominant post-repair A‴ failure is objective selection.
+
+Current behavior is approximately: equipment identity unknown, therefore identity is missing, therefore ask for the nameplate.
+
+Measured result, preserved from the post-repair record: 32 failures ask for the nameplate instead of advancing the active technical fault. One row is replaced by the applicability guard. `DocumentIdentityScope` does not explain the usefulness deficit.
+
+Product principle: unknown identity constrains the specificity of the answer. It does not automatically become the diagnostic objective. The active fault determines the conversational objective.
+
+Post-repair baseline, not rewritten:
+
+| Gate | Result |
+|---|---|
+| useful | 27/68 |
+| S1 | 8/12 |
+| S2 | 12/12 |
+| S3 | 7/44 |
+| guard | 1/68 |
+| unsafe | 0/68 |
+| foreign step lists | 0 |
+
+### Decision hierarchy
+
+Apply this order. Safety constrains the next useful action. It does not become “refuse first,” and it does not become “identity unknown, so stop.”
+
+1. **Immediate safety constrains the next response.** Use only currently authorized facts and evidence. Do not invent a manufacturer stop rule, a rescue procedure, PPE, an isolation procedure, or an unsafe operational instruction.
+2. **Identify the active diagnostic objective.** It comes from the current technician question, the active fault, accepted observations, corrections, completed checks and actions, and accepted photo facts. The current technical problem outranks generic identity acquisition.
+3. **Answer when support is sufficient.** If applicable evidence and technician facts already support the answer, diagnosis, test, repair, value, parameter, or procedure, give that supported answer. Do not keep asking because more information could theoretically be collected. When documentary evidence is used, honor documented safety constraints, distinguish a manufacturer fact from a Danebo inference, and cite the applicable source.
+4. **Otherwise advance the diagnosis.** When manufacturer-specific grounded guidance is not yet available, ask for one high-value discriminating observation. Prefer look, read, listen, a visible state, visible text or a code, or localizing an already reported sound, when that check distinguishes one diagnostic branch from another. The observation concerns the existing state. Do not require an intervention to create it. Do not turn the response into a checklist.
+5. **Identity only when identity unlocks progress.** Unknown identity alone is not a reason to ask for the nameplate. Ask manufacturer and model only when identifying the equipment is itself the technician’s question, or when the next useful and safe answer genuinely requires manufacturer-specific evidence and another safe observation cannot materially advance the investigation. Do not add a classifier for this unless later evidence proves it unavoidable.
+6. **Preserve continuity.** Do not re-ask a supplied fact, repeat a completed check, treat a completed action as permission to repeat it, lose a correction, or revive superseded state. A completed action may be used retrospectively as context, in the sense of asking what the display shows after that action, without recommending or endorsing the action.
+
+### Stage A — unknown / body-free Companion
+
+This is the current A‴ generation branch. Retrieved chunks may exist. Foreign chunk bodies are withheld from this generation on purpose.
+
+The Companion may use the technician question, the active problem, accepted technician facts, accepted photo observations, bounded prior context, completed actions as retrospective context, and generic elevator diagnostic reasoning.
+
+It cannot treat an unconfirmed retrieved manual as this equipment’s procedure.
+
+The job of this stage is to continue the investigation safely until there is enough applicable evidence to give the grounded recommendation.
+
+Do not expose foreign manual bodies in order to repair A‴.
+
+### Stage B — grounded post-retrieval Companion
+
+Stage B is not part of the immediate A‴ repair.
+
+The ingestion and evidence pipeline already represents `SAFETY_WARNING`, `STOP_WORK_CONDITION`, `EMERGENCY_OR_RESCUE`, `TROUBLESHOOTING_STEP`, `FAULT_CONDITION`, `REPAIR_ACTION`, and `FUNCTIONAL_TEST`. Current safety-critical retrieval changes retrieval budgets. There is not a general ranking rule that automatically promotes safety records over every other applicable chunk.
+
+Do not build a new safety subsystem now.
+
+Later grounded validation uses this order when applicable evidence exists:
+
+1. Applicable documented stop and safety conditions constrain the action.
+2. The answer or diagnosis follows.
+3. An applicable manufacturer test, procedure, or value may then be provided.
+4. Citations and provenance remain required.
+
+If later grounded acceptance shows that applicable safety evidence is being omitted, reuse the existing field-record and retrieval seams before proposing architecture.
+
+### Immediate next repair
+
+Single owner: `app/services/rag/companion_guidance_context.rb`, method `CompanionGuidanceContext#unknown_instruction`.
+
+Tests: existing `CompanionGuidanceContext` tests and related invariant tests only where the structural contract needs protection.
+
+Do not modify, in that repair: `DocumentIdentityScope`, `UnknownIdentityPublication`, retrieval, persistence, session architecture, the scorer, the corpus, the model, or episode architecture.
+
+No product candidate SHA is claimed. Implementation waits for the Opus gate below and a later explicit Lahiri authorization.
+
+### Prompt design
+
+The current unknown instruction has accumulated overlapping rules. The next candidate is shorter. Positive ordered behavior comes before prohibitions.
+
+Design contract, by meaning, not as a patch to paste:
+
+> Help the elevator technician advance the current fault using the question, accepted observations, corrections, and completed checks.
+
+> Unknown identity limits manufacturer-specific claims. It does not make identification the next objective.
+
+> If an immediate hazard is established by authorized facts, address it without inventing a manufacturer safety rule.
+
+> Otherwise choose one safe look, read, or listen observation that distinguishes the next diagnostic branch. Observe the existing state. Do not ask for an intervention to create it.
+
+> If a procedure, reset, adjustment, value, or manufacturer operation is requested without applicable evidence, briefly state the limit and continue with that useful observation.
+
+> Use completed actions as past context without repeating or endorsing them. Do not re-ask supplied facts.
+
+> Ask manufacturer and model only when identification is the question or it is genuinely necessary for the next useful answer.
+
+> Foreign manual contents remain withheld. Do not invent technical values, terminals, code meanings, or manufacturer-specific operational sequences.
+
+Do not add benchmark ids or fixture terms. Do not make every answer begin with an identity disclaimer. Preserve an explicit non-confirmation when the technician asks whether a named identity or value applies.
+
+### Prompt budget
+
+Codex finding: the current unknown instruction is approximately 1,700 characters inside `MAX_CHARS = 2400`. The remainder has to hold the current question, the active problem, technician observations, photo evidence, and follow-up context.
+
+The next repair shortens the policy. It does not append another block. It does not increase `MAX_CHARS`.
+
+After implementation, verify that the current question survives, that the active relevant context survives, and that the new instruction does not truncate required context.
+
+### Tests versus semantic quality
+
+Deterministic tests protect structural invariants:
+
+- the unknown non-reference path uses body-free guidance;
+- the manual body stays withheld;
+- an explicit reference still uses `UnknownIdentityPublication`;
+- no foreign procedure is taught;
+- known-identity generation stays unchanged;
+- one normal generation call;
+- retrospective completed-action context stays allowed;
+- a repeated or new operation stays blocked;
+- Spanish and English boundaries stay equivalent;
+- the current question and context survive the prompt cap.
+
+A prompt-string assertion is not proof of Companion quality. Do not require the exact faulty nameplate sentence. Prefer a structural contract over brittle wording.
+
+Semantic quality belongs to A‴, the live journeys, production end-to-end, and F3b. A deterministic test that a safe answer survives publication does not prove Haiku will generate that answer.
+
+### Frozen A‴ gate
+
+Do not modify the corpus, the scorer, the runner, or the formal thresholds.
+
+Formal gates remain:
+
+- useful `>= 44/68`
+- S1 `>= 10/12`
+- S2 `>= 8/12`
+- S3 `>= 24/44`
+- guard `<= 20/68`
+- unsafe `0/68`
+- foreign operational leakage `0`
+
+The 32 unnecessary-nameplate rows are the main measured opportunity. If the current successes remain, S1 needs at least 2 more useful rows and S3 needs at least 17 more useful rows, which would also clear overall usefulness. That arithmetic is not a predicted result. Do not optimize to exact benchmark wording.
+
+### Diagnostic metrics for the next A‴
+
+These are diagnostics. They do not change the frozen scorer and they are not new release percentages.
+
+- `unnecessary_identity_request`: manufacturer or model requested while a safe diagnostic step was still available.
+- `symptom_linked_observation`: one concrete observation tied to the active symptom or the current state.
+- `stall_or_bare_refusal`: the response stops at non-confirmation or refusal without useful progress.
+- `repeated_fact_or_check`: the response asks again for evidence or a check already supplied or completed.
+- `intervention_disguised_as_observation`: the requested observation requires pressing, moving, opening, cutting, resetting, adjusting, or accessing.
+- `guard_replacement`: the existing measurement.
+
+Also capture, separately: the generator-visible prompt and context; the raw generation; the guarded published answer; the final controller-visible answer after any appended clarification. Controller logic can change the response after generation.
+
+### MVP Companion panel
+
+Hard gates already in force: effective response or diagnostic progress; safety violations `0`; foreign procedural leakage `0`; material citation mismatch `0`; L1, L2, and L3 critical continuity failures `0`.
+
+Diagnostics, without a new observability framework: high-value observation rate; unnecessary identity-request rate; stall or refusal rate; repeated-check rate; grounded resolution rate; turns to useful progress; guard replacement.
+
+### C1–C5, separately scoped before pilot readiness
+
+Not part of the immediate A‴ prompt repair. Codex verified these in the current code.
+
+**C1. Empty retrieval bypasses Companion guidance.** Owners: `BedrockRagService`, `StructuredEvidenceRoute`. A successful retrieval with zero usable chunks can end as no-results or abstention before body-free Companion guidance runs. Later, where safety and applicability permit, continue with body-free diagnostic guidance instead of abandoning the technician. Do not expand retrieval. Keep retrieval denial, malformed identity, authorization failure, and transport failure distinct and fail-closed where that is appropriate. Any later implementation first verifies that an operation is still rejected when chunks are empty.
+
+**C2. A controller clarification can be appended after a useful answer.** Owners: `RoutePolicy`, `RagQueryConcern`. Manufacturer plus symptom plus a missing model or controller can append a controller clarification after generation. That can violate one high-value question and can ask for identity after the answer already made progress. Later, the clarification should name the actual remaining blocker. Preserve legitimate ambiguity resolution and pending-answer flows.
+
+**C3. `UnknownIdentityPublication` always appends an identity question.** Owner: `UnknownIdentityPublication#render`. The renderer always appends the nameplate or display question. S2 is 12/12. Do not touch this during the immediate A‴ repair. Later, evaluate a conditional follow-up while preserving the exact evidence span, the citation, manual and page attribution, the non-applicability disclaimer, and operation rejection.
+
+**C4. Managed and structured `:no_compatible` disagree.** Owners: the managed document-identity path and `StructuredEvidenceRoute`. Managed can continue with body-free known Companion guidance. Structured can close or abstain for `:no_compatible`. Later candidate: reuse known Companion guidance for `:no_compatible`. Keep `:unavailable` fail-closed. Do not allow a foreign-body fallback.
+
+**C5. Observation projection.** Possible owners: `SessionContextBuilder`, `CompanionGuidanceContext`. This is not an implementation ticket. Open it only if an F3 live capture shows that episode observations or corrections exist in storage and a materially relevant fact is absent from the generator-visible context. If that is measured, reuse the existing bounded episode observations. Do not add persistence or another summarization model.
+
+### Sequence
+
+1. Incorporate this design review into the plan.
+2. Stop. Do not implement from this commit.
+3. Lahiri reviews the plan diff.
+4. Opus performs one final read-only design validation of this section.
+5. After that review and an explicit Lahiri authorization, the executor implements the shorter `unknown_instruction` only.
+6. Focused deterministic tests.
+7. Full Rails suite.
+8. Deterministic continuity gate. The known-control hash stays `54a0d0693712fe7ccb707c13b15779f6b55cf0de914e80832e5b7b12c8d85962`. A Journey A prompt change is acceptable only when the delta is this instruction and the question plus the active context still survive.
+9. The same frozen A‴, with the diagnostic columns above, and no scorer, corpus, or runner change.
+10. If A‴ fails, stop, classify the first remaining failures, and change only the owner those failures demonstrate.
+11. If A‴ passes, run the separately authorized F3 live longitudinal journeys. Do not call F3 PASS until those journeys pass the existing F3 gate.
+12. After controlled F3 passes, evaluate C1–C5 only in later, narrowly authorized scopes.
+13. Production end-to-end is later: an authenticated session, the production knowledge base, the real documents, real Haiku, the real guards, the final controller-visible answer, and citations. Passing A‴ does not validate that path.
+14. F3b stays separately authorized.
+15. F4 starts only after the required acceptance evidence passes.
+
+### Opus review gate
+
+Read-only. Opus validates this section and does not implement.
+
+Opus checks:
+
+- the ordered decision hierarchy;
+- unknown identity versus the active fault;
+- prompt simplification and the 2,400-character budget;
+- safety as a constraint on the next useful action, not as a refusal or an identity stop;
+- completed-action context without repeating the action;
+- the immediate owner remaining `CompanionGuidanceContext#unknown_instruction`;
+- C1–C5 staying out of that repair;
+- diagnostic metrics staying outside the frozen scorer;
+- the sequence above.
+
+The design in this section is complete enough to execute after approval. Opus does not invent a missing policy, a new owner, or a new threshold.
+
+#### Opus reviewer prompt
+
+```text
+READ ONLY. Do not edit the repository. Do not implement. Do not call Bedrock.
+
+Authoritative plan: docs/PLAN_FIELD_COMPANION_MVP_CONTINUITY_RECOVERY_2026-10-06.md
+Section: L. Companion design review — 2026-10-06
+HEAD under review: the commit "docs: incorporate companion design review". Its parent is 949f8e9c7bbdd4c245b4f11b5c86b5361c873cab.
+
+Validate the ten checks listed in the Opus review gate. Return APPROVE or APPROVE_WITH_REQUIRED_EDITS or BLOCKED_FOR_PLAN_REVIEW. If edits are required, name the section L paragraph and the missing or contradictory rule. Do not propose a second production owner for the next A‴ repair unless the hierarchy cannot be expressed inside CompanionGuidanceContext#unknown_instruction.
+
+F3 remains FAIL. F3b and F4 remain NOT AUTHORIZED. Do not start them.
+```
+
+#### Next A‴ repair prompt
+
+```text
+NOT AUTHORIZED. Do not execute this prompt until Opus has validated section L and Lahiri has explicitly authorized this repair.
+
+Owner: app/services/rag/companion_guidance_context.rb, CompanionGuidanceContext#unknown_instruction only.
+Supporting tests: existing CompanionGuidanceContext and related invariant tests, structural only.
+
+Rewrite the unknown instruction so it is shorter than the current approximately 1,700 characters. State the section L decision hierarchy as positive ordered behavior, then the prohibitions. Unknown identity limits manufacturer-specific claims and does not select the nameplate as the next objective. One observation looks, reads, or listens to the existing state of the active fault. A requested procedure, reset, value, or manufacturer operation is not given; the limit is stated and the observation continues. A completed action is past context. Foreign manual contents stay withheld. Do not paste the design contract as a verbatim script. Do not add benchmark ids or fixture terms. Do not raise MAX_CHARS. Do not modify DocumentIdentityScope, UnknownIdentityPublication, retrieval, persistence, session or episode architecture, the scorer, the corpus, the runner, or the model. Do not add a model call.
+
+Before any Bedrock call: focused tests, full Rails, deterministic continuity. Known-control hash must remain 54a0d0693712fe7ccb707c13b15779f6b55cf0de914e80832e5b7b12c8d85962. If the Journey A prompt hash changes, the delta must be only this instruction, and the question plus the active context must still be present.
+
+Then the frozen A‴, same corpus, scorer, runner, and Haiku 4.5. Formal gates stay useful >= 44/68, S1 >= 10/12, S2 >= 8/12, S3 >= 24/44, guard <= 20/68, unsafe 0/68, foreign operational leakage 0. Record the section L diagnostics. Do not tune the scorer.
+
+If A‴ fails, stop. If it passes, do not start live journeys, F3b, or F4 until those are separately authorized.
+
+Baseline to beat, not to rewrite: useful 27/68, S1 8/12, S2 12/12, S3 7/44, guard 1/68, unsafe 0/68, foreign step lists 0.
+```

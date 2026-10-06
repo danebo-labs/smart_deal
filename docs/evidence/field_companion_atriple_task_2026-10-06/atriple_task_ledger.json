@@ -1,0 +1,26 @@
+{
+  "usd": 0.075955,
+  "runs": [
+    {
+      "version": "f1cal.r2.a1",
+      "usd": 0.030588,
+      "executions": 34,
+      "stopped": null,
+      "at": "2026-10-06T23:03:33Z"
+    },
+    {
+      "version": "f1cal.r2.a1",
+      "usd": 0.030728,
+      "executions": 34,
+      "stopped": null,
+      "at": "2026-10-06T23:04:37Z"
+    },
+    {
+      "version": "f1cal.r2.a1",
+      "usd": 0.014639,
+      "executions": 6,
+      "stopped": null,
+      "at": "2026-10-06T23:05:03Z"
+    }
+  ]
+}

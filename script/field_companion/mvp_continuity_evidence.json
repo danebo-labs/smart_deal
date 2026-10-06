@@ -242,5 +242,33 @@
       "tmp/mvp_continuity/f1/summary.json",
       "tmp/mvp_continuity/f1/known_prompts.txt"
     ]
+  },
+  "post_f1_gate_hygiene": {
+    "kind": "documentation_only",
+    "parent_sha": "1a150022f6f613d97683e67f8850aabdddee96a3",
+    "ending_sha": null,
+    "ending_sha_note": "This hygiene commit cannot store its own SHA. Its parent is parent_sha.",
+    "f1_phase_verdict": "PASS",
+    "f1_phase_verdict_scope": "measurement phase only; not a product continuity PASS",
+    "product_continuity_baseline": {
+      "journey_a_l1": "FAIL",
+      "journey_a_l2": "FAIL",
+      "journey_a_l3": "PASS",
+      "journey_b_l1": "FAIL",
+      "journey_b_l2": "NOT_IN_FIXTURE",
+      "journey_b_l3": "NOT_IN_FIXTURE"
+    },
+    "combined_capture_sha256": "7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723",
+    "pre_f2a_known_controls_sha256": "f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9",
+    "known_controls_extraction": "SHA256 of tmp/mvp_continuity/f1/known_prompts.txt from the first line '## c18 managed' through EOF. Six sections in file order: c18 managed, c18 structured, c19 managed, c19 structured, c20 managed, c20 structured. Structured bodies are the F1 harness ArgumentError text for missing keywords. The file was present. It was not regenerated. No model call.",
+    "known_controls_slice_bytes": 24664,
+    "known_controls_slice_offset": 193987,
+    "post_f2a_journey_a_prompt_hash": null,
+    "post_f2a_journey_a_extraction": "At F2a close, SHA256 of the re-run capture from the first line '## A1' up to but not including '## c18 managed'.",
+    "post_f2b_journey_a_prompt_hash": null,
+    "journey_a_role": "unknown-identity. Not a known-path control. F2a is expected to change its generator input.",
+    "f3b": "documented, not authorized",
+    "production_code_changed": false,
+    "capture_regenerated": false
   }
 }

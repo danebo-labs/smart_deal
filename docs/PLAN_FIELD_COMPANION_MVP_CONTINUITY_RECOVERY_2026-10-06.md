@@ -1,6 +1,6 @@
 # Danebo Field Companion MVP continuity recovery plan
 
-**STATUS: F1 CLOSED PASS. F2a, F2b, F3, AND F4 ARE NOT AUTHORIZED.**
+**STATUS: F1 CLOSED PASS AS A MEASUREMENT PHASE. F2a, F2b, F3, F3b, AND F4 ARE NOT AUTHORIZED.**
 
 **VERDICT: READY_FOR_EXECUTION**
 
@@ -43,12 +43,12 @@ earlier.
 
 | Field | Value |
 |---|---|
-| Plan status | F1 longitudinal baseline harness closed PASS. F2a, F2b, F3, and F4 remain unauthorized. |
+| Plan status | F1 measurement phase closed PASS. That PASS is not a product-continuity PASS. F2a, F2b, F3, F3b, and F4 remain unauthorized. |
 | Plan verdict | `READY_FOR_EXECUTION` |
 | Current authorized phase | none. F1 is closed. F2a is not authorized. |
 | Authorization text and date | explicit Lahiri authorization, 2026-10-06. F1 only. No separate authorization commit. |
 | Current phase status | `PASS` |
-| Parent of the last plan edit | `fd23b3aa196e5b8dddc62d10b32347bcfab13b39` (`test: add MVP continuity longitudinal harness`) |
+| Parent of the last plan edit | `1a150022f6f613d97683e67f8850aabdddee96a3` (`docs: record MVP continuity F1 baseline`). This hygiene commit does not store its own SHA. |
 | Execution starting SHA | `97b3764e9fe2034d37c1e82b6069ee8f799bd8b3` |
 | Current HEAD after last closed phase | the commit `docs: record MVP continuity F1 baseline`. Parent `fd23b3aa196e5b8dddc62d10b32347bcfab13b39`. This file does not store that commit's own SHA. F1 verdict `PASS`. |
 | Production model | `global.anthropic.claude-haiku-4-5-20251001-v1:0` (Haiku 4.5), unchanged |
@@ -59,7 +59,11 @@ earlier.
 | Target-environment flag matrix | Recorded below and in the F0 execution record. Source: local gitignored `config/deploy.yml`, plus code default where that file leaves a flag unset. Running container env was not readable. |
 | Interpreter mode for F1/F3 | `owner` |
 | Longitudinal fixture hash | `3db76c24453d2869f03baf9a9bb7b07dc7e736fd8e80a422b7bf6bf1c03dab8b` (`test/fixtures/files/field_companion/longitudinal_journeys.yml`) |
-| Pre-F2a known-path prompt capture hash | `7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723` (`tmp/mvp_continuity/f1/known_prompts.txt`, gitignored; Journey A unknown-path prompts plus c18–c20) |
+| Pre-F2a combined capture hash | `7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723` (`tmp/mvp_continuity/f1/known_prompts.txt`, gitignored). Journey A unknown-identity prompts plus c18–c20. File identifier only. Not the c18–c20 byte-identity gate. |
+| PRE_F2A_KNOWN_CONTROLS_HASH | `f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9`. SHA256 of that file from the first line `## c18 managed` through EOF. c18–c20 only. See the prompt-identity rule below. |
+| POST_F2A_JOURNEY_A_PROMPT_HASH | `<POST_F2A_JOURNEY_A_PROMPT_HASH>` (set by F2a). Journey A slice only. |
+| POST_F2B_JOURNEY_A_PROMPT_HASH | `<POST_F2B_JOURNEY_A_PROMPT_HASH>` (set only if F2b changes Journey A's bounded projection). |
+| F1 product continuity baseline | Journey A L1 FAIL. Journey A L2 FAIL. Journey A L3 PASS. Journey B L1 FAIL. Journey B has no L2 or L3 extension. |
 | F2a candidate SHA | `<CANDIDATE_SHA_FROM_F2A>` |
 | F3 candidate SHA | `<F3_CANDIDATE_SHA>` (F2b HEAD, or the F2a HEAD when F2b is skipped) |
 | Evidence packet | `script/field_companion/mvp_continuity_evidence.json` |
@@ -73,11 +77,12 @@ Phase status:
 | F2a — publication choice and guidance | NOT STARTED |
 | F2b — continuity repair | CONDITIONAL / NOT AUTHORIZED |
 | F3 — frozen and live evaluation | NOT STARTED |
+| F3b — autonomous grounded field acceptance | NOT STARTED / NOT AUTHORIZED |
 | F4 — documentation and pilot recommendation | NOT STARTED |
 
 Current blockers:
 
-- F1 is closed PASS (explicit Lahiri authorization, 2026-10-06). F2a is not authorized.
+- F1 is closed PASS as a measurement phase (explicit Lahiri authorization, 2026-10-06). The product continuity baseline remains Journey A L1 FAIL, Journey A L2 FAIL, Journey A L3 PASS, and Journey B L1 FAIL. F2a is not authorized. Documenting F3b does not authorize it.
 - F2a and later implementation are not authorized.
 - The flag matrix is recorded from local `config/deploy.yml`. The running
   container environment was not readable (SSH to `54.163.248.39:22` timed
@@ -110,8 +115,55 @@ Carried-forward expectations. F1 measured these:
   A11, the T1 user message. Journey B's photo turn stores extra messages.
   First B eviction is B10, the T1 user message.
 
-Next authorized action: none. F1 is closed `PASS`. F2a waits for a separate
-explicit authorization from Lahiri. Do not execute F2a from this record.
+### Prompt-identity rule
+
+F1 proved Journey A is unknown-identity. F2a is expected to change Journey A
+generator inputs under section D: remove the foreign chunk body and
+`APPLICABILITY_BLOCK` on non-reference turns, and route those turns to
+body-free companion guidance. Journey A cannot stay byte-identical to its
+pre-F2a prompt after a successful F2a. Do not call Journey A a known-path
+control.
+
+**c18–c20.** These are the known-path controls. Compare the slice that
+starts at the first line `## c18 managed` and runs through EOF.
+`PRE_F2A_KNOWN_CONTROLS_HASH` is
+`f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9`.
+That slice must stay byte-identical through F2a, F2b, and F3. The source
+file was present at this hygiene edit. It was not regenerated and no model
+was called. The full-file hash
+`7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723` was
+rechecked before the slice. The six sections, in file order, are c18
+managed, c18 structured, c19 managed, c19 structured, c20 managed, and c20
+structured. The structured section bodies are the ArgumentError text the F1
+harness recorded (`missing keywords: :entity_s3_uris, :entity_sources`).
+They are part of this hash. Do not repair that capture in order to invent a
+different control hash.
+
+**Journey A.** At F2a close, hash the re-run capture from the first line
+`## A1` up to but not including `## c18 managed`. Record that digest as
+`POST_F2A_JOURNEY_A_PROMPT_HASH`. It becomes Journey A's regression baseline.
+If F2b is skipped, F3 compares Journey A with that post-F2a baseline, not
+with the pre-F2a combined file. If a ticketed F2b owner legitimately changes
+Journey A's bounded projection, record the exact delta and
+`POST_F2B_JOURNEY_A_PROMPT_HASH` from the same slice rule. F3 rejects every
+unrelated Journey A change.
+
+Measured continuity facts stay inputs for the F2a re-run and for possible
+F2b tickets. This edit does not authorize a fix for any of them. F2a stays
+section D routing and plumbing. The post-F2a re-run decides whether F2b
+receives tickets.
+
+- Code 18 never became current state after the correction.
+- Rejected `8` made `QueryComposer` emit `código 1` from `código 18`.
+- Observation FIFO removed earlier field observations and checks.
+- B2 did not persist the absent fault-code state.
+- B10 lost the no-code observation.
+- `EpisodeThreadResolver` can read replaced-episode rows. It did not join
+  them on the measured L3 follow-up. L3 itself passed.
+
+Next authorized action: none. F1 is closed `PASS` as a measurement phase.
+F2a, F2b, F3, F3b, and F4 wait for a separate explicit authorization. Do not
+execute F2a from this record. Documenting F3b does not authorize F3b.
 
 ## Same-case continuity clarification (this revision)
 
@@ -794,10 +846,13 @@ them. Two backstops stay, unchanged:
 - `AnswerSafetyProcessor` in companion mode, with safety evidence equal to photo literal reads.
 - `unconfirmed_applicability_violation`, run against the retrieved but unseen chunks. A foreign token in the output is an invention, and the answer is withheld.
 
-Known-identity routing is unchanged. Known-path prompts are byte-identical
-to the pre-F2a capture. Known controls do not enter the contract and do not
-enter the new unknown-identity F2a guidance path. Existing legitimate
-known-mode companion guidance is unchanged.
+Known-identity routing is unchanged. The known-path controls are c18–c20.
+Their prompt slice stays byte-identical to `PRE_F2A_KNOWN_CONTROLS_HASH` in
+Execution state. Journey A is unknown-identity, not a known-path control.
+F2a is expected to change Journey A's generator input under this section.
+Known controls do not enter the contract and do not enter the new
+unknown-identity F2a guidance path. Existing legitimate known-mode companion
+guidance is unchanged.
 
 ### Rejected alternatives
 
@@ -814,9 +869,10 @@ a longitudinal gate shows a pilot-blocking failure.
 ## E. Finite phases
 
 Sequence: F0 audit, F1 harness, F2a publication choice, F2b only if the F1
-harness re-run at the F2a HEAD proves a blocker, F3 frozen evaluation, F4
-documentation after evidence. Do not execute the old Master Plan’s F2–F4
-as this plan’s phases.
+harness re-run at the F2a HEAD proves a blocker, F3 frozen evaluation, F3b
+autonomous grounded field acceptance only after F3 PASS, then F4
+documentation after both F3 and F3b. Do not execute the old Master Plan’s
+F2–F4 as this plan’s phases. Documenting F3b does not authorize it.
 
 Commits, in order: harness and fixtures; F2a routing; F2b only from that
 re-run, one commit per failure owner and two at most; then documentation.
@@ -909,10 +965,11 @@ Required handoffs:
 | From → to | The closing phase writes into the next phase |
 |---|---|
 | F0 → F1 | Flag matrix with the source of each value and interpreter mode, deployed image if read, call-graph corrections, newly found entry paths F1 must capture, frozen hashes, fixture sources, `<HEAD_FROM_F0>`. |
-| F1 → F2a | Recorded in the F1 execution record and the F2a executor prompt. Fixture `3db76c24453d2869f03baf9a9bb7b07dc7e736fd8e80a422b7bf6bf1c03dab8b`. Capture `7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723`. HEAD is the commit `docs: record MVP continuity F1 baseline`, parent `fd23b3aa196e5b8dddc62d10b32347bcfab13b39`. |
-| F2a → F2b / F3 | F1 re-run at the F2a HEAD with a pre/post comparison of L1, L2, and L3. Either `F2b = SKIPPED BY EVIDENCE` with F3 receiving `<CANDIDATE_SHA_FROM_F2A>`, or an F2b ticket per blocker: journey, turn, expected invariant, observed state and generator input, classified cause, failure owner, allowed files, regression controls. |
-| F2b → F3 | Fixes, commits, the invariant that now passes, regression evidence, c18–c20 byte identity, any exact ticketed Journey A prompt delta, `<F3_CANDIDATE_SHA>`. |
-| F3 → F4 | A‴ verdict; L1, L2, and L3 live verdicts; known controls; human review; safety verdict; unresolved pilot blockers, including the section H focus decision if it fired. |
+| F1 → F2a | Recorded in the F1 execution record and the F2a executor prompt. Fixture `3db76c24453d2869f03baf9a9bb7b07dc7e736fd8e80a422b7bf6bf1c03dab8b`. Combined capture `7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723`. Known controls `f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9`. HEAD is the commit `docs: record MVP continuity F1 baseline`, parent `fd23b3aa196e5b8dddc62d10b32347bcfab13b39`. |
+| F2a → F2b / F3 | F1 re-run at the F2a HEAD with a pre/post comparison of L1, L2, and L3. `POST_F2A_JOURNEY_A_PROMPT_HASH`. c18–c20 still equal `PRE_F2A_KNOWN_CONTROLS_HASH`. Either `F2b = SKIPPED BY EVIDENCE` with F3 receiving `<CANDIDATE_SHA_FROM_F2A>`, or an F2b ticket per blocker: journey, turn, expected invariant, observed state and generator input, classified cause, failure owner, allowed files, regression controls. |
+| F2b → F3 | Fixes, commits, the invariant that now passes, regression evidence, c18–c20 byte identity against `PRE_F2A_KNOWN_CONTROLS_HASH`, the exact ticketed Journey A delta and `POST_F2B_JOURNEY_A_PROMPT_HASH` when the projection changed, `<F3_CANDIDATE_SHA>`. |
+| F3 → F3b | A‴ verdict; L1, L2, and L3 live verdicts; c18–c20 identity; Journey A compared with the post-F2a baseline, or the post-F2b baseline when F2b changed it; human review; safety verdict; unresolved pilot blockers, including the section H focus decision if it fired. |
+| F3b → F4 | F3b seed, selected documents, T5/T8/T10 results, effective-response rates, RAG retrieval support, hard-gate counts, and the first failure per failed case. F4 requires F3 PASS and F3b PASS. |
 
 **Next-phase prompt refresh is mandatory.** Before a phase is marked closed,
 the executor rewrites the next phase’s executor prompt with the measured
@@ -1506,7 +1563,7 @@ External/model calls: none
 Spend: 0
 Interpreter mode(s) run: owner
 Longitudinal fixture hash: 3db76c24453d2869f03baf9a9bb7b07dc7e736fd8e80a422b7bf6bf1c03dab8b
-Pre-F2a known-path prompt capture hash: 7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723
+Pre-F2a combined capture hash: 7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723. Post-F1 hygiene: this is the combined file. The c18–c20 gate is PRE_F2A_KNOWN_CONTROLS_HASH f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9. Journey A is not frozen to this file.
 First history eviction: A_no_focus A11 user, the T1 Elemont door question. A_selected_elemont A11 user, the same T1 text. B B10 user, the T1 leveling question. Text turns stored 2 messages. B5 stored the photo extra messages and history length became 11. History then stayed at 20 after the first eviction.
 L1 state/input verdict: A_no_focus FAIL. A_selected_elemont FAIL. B FAIL.
 L2 rollover state/input verdict: A_no_focus FAIL. A_selected_elemont FAIL. Journey B has no L2 extension.
@@ -1739,11 +1796,12 @@ structured entry keeps its already-present `raw_question` and gains
 `session_context`; the context entry gains `raw_question` and preserves its
 full `session_context`; the ambiguous entry gains and preserves both. The
 question is the raw turn. The structured sink finishes in companion mode.
-Known-path prompts for c18–c20 are byte-identical to the pre-F2a capture.
+c18–c20 stay byte-identical to `PRE_F2A_KNOWN_CONTROLS_HASH`.
 `SUPERSEDED BY F1 RESULT fd23b3aa196e5b8dddc62d10b32347bcfab13b39`: Journey A
 is an unknown-identity prompt, so this phase replaces those generator inputs
-under section D. Do not freeze the Journey A chunk-body prompt, and do not
-change section D to keep it. A non-reference turn is one guidance generation. A
+under section D and records `POST_F2A_JOURNEY_A_PROMPT_HASH`. Do not freeze
+the Journey A chunk-body prompt, and do not change section D to keep it. A
+non-reference turn is one guidance generation. A
 reference turn is the contract call, plus one guidance call only on
 fallback. No extra retrieval or model call is introduced by the argument
 plumbing.
@@ -1769,17 +1827,19 @@ plumbing.
 - Identity corrected away mid-episode: the guidance prompt contains no prior known-path content.
 
 **PASS.** Those assertions hold, deterministic unsafe publications are zero,
-c18–c20 prompts are byte-identical to the pre-F2a capture, Journey A and the
+c18–c20 are byte-identical to `PRE_F2A_KNOWN_CONTROLS_HASH`, Journey A and the
 other measured non-reference unknown turns no longer contain a chunk body or
-`APPLICABILITY_BLOCK`, and the F1 harness re-run at this HEAD is recorded.
+`APPLICABILITY_BLOCK`, `POST_F2A_JOURNEY_A_PROMPT_HASH` is recorded, and the
+F1 harness re-run at this HEAD is recorded.
 That re-run is part of the F2a pass condition.
 
 **FAIL.** The lanes disagree, a pin confirms identity, a step request enters
 the reference envelope, a reference loses citation or span checks, a
 contract failure re-enters full-body prose, the sentinel appears in a
-free-prose prompt, c18–c20 prompts differ from the pre-F2a capture, a
-measured non-reference unknown turn still contains a chunk body or
-`APPLICABILITY_BLOCK`, or a turn gains a retrieval or a model call beyond
+free-prose prompt, the c18–c20 slice differs from
+`PRE_F2A_KNOWN_CONTROLS_HASH`, a measured non-reference unknown turn still
+contains a chunk body or `APPLICABILITY_BLOCK`, or a turn gains a retrieval
+or a model call beyond
 the contract-plus-fallback budget above.
 
 **Regression protection.** One focused production commit. Do not alter the
@@ -1832,7 +1892,8 @@ Tests executed:
 External/model calls: none (required)
 Spend: 0
 Sentinel-body check:
-Known-path prompt byte identity for c18–c20 versus 7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723. Journey A is not a known-path freeze:
+c18–c20 byte identity versus PRE_F2A_KNOWN_CONTROLS_HASH f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9:
+POST_F2A_JOURNEY_A_PROMPT_HASH:
 Model calls per turn (reference, non-reference, fallback):
 F1 re-run L1 / L2 / L3 versus baseline:
 F2b decision (SKIPPED BY EVIDENCE, or tickets):
@@ -1906,9 +1967,13 @@ generation_mode was blank. Route: managed. The stub converse accepts no
 tool, so this is the contract-failure fallback, not an accepted publication.
 c18, c19, and c20 were called with an explicit user identity (ZEPHYR QX-77
 or ORBITA LM-5) and no entity filter. Those sections are the known-path
-controls and must stay byte-identical. The combined capture hash
+controls. They must stay byte-identical to PRE_F2A_KNOWN_CONTROLS_HASH
+f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9, the slice
+from `## c18 managed` through EOF. The combined capture hash
 7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723 identifies
-the pre-F2a file. It does not freeze the Journey A portion.
+the whole pre-F2a file. It does not freeze Journey A. At close, record
+POST_F2A_JOURNEY_A_PROMPT_HASH from `## A1` up to but not including
+`## c18 managed`.
 
 Do not edit EquipmentIdentity or the Journey A fixture to make Elemont
 known. Section D already replaces generator inputs on unknown turns.
@@ -2020,10 +2085,13 @@ bin/rails test <touched service tests>
 bin/rails test (full suite: shared RAG services changed)
 bundle exec rubocop
 git diff --check
-c18–c20 sections of the pre-F2a capture must be byte-identical to
-7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723.
-Journey A must lose the chunk body and APPLICABILITY_BLOCK. Do not require
-the Journey A portion of that file to stay byte-identical.
+The c18–c20 slice, from `## c18 managed` through EOF, must be byte-identical
+to PRE_F2A_KNOWN_CONTROLS_HASH
+f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9.
+Journey A must lose the chunk body and APPLICABILITY_BLOCK. Hash Journey A
+from `## A1` up to but not including `## c18 managed` and record
+POST_F2A_JOURNEY_A_PROMPT_HASH. Do not compare Journey A with the pre-F2a
+combined file.
 
 RE-RUN F1
 Run the F1 harness deterministically at the F2a HEAD, in owner mode.
@@ -2032,8 +2100,10 @@ tmp/mvp_continuity/f2a_rerun/. Report L1, L2, and L3 next to the F1 baseline.
 
 GATE
 PASS: the F2a PASS list holds, the sentinel is absent from every
-unknown-identity free-prose prompt, c18–c20 prompts are byte-identical,
-measured non-reference unknown turns including Journey A contain no chunk
+unknown-identity free-prose prompt, the c18–c20 slice is byte-identical
+to PRE_F2A_KNOWN_CONTROLS_HASH, Journey A is recorded as
+POST_F2A_JOURNEY_A_PROMPT_HASH, measured non-reference unknown turns
+including Journey A contain no chunk
 body and no APPLICABILITY_BLOCK, the model-call budget holds, and the F1
 re-run is recorded.
 FAIL: any item in the F2a FAIL list. Fix inside the F2a scope and rerun. If
@@ -2050,9 +2120,10 @@ episode state and generator input, classified cause, failure owner,
 allowed files, regression controls.
 
 BEFORE CLOSING, UPDATE THE PLAN
-Execution state (F2a status, <CANDIDATE_SHA_FROM_F2A>, F2b status), the F2a
-execution record, and the F2b executor prompt or its skip. Also the F3
-executor prompt's candidate SHA when F2b is skipped.
+Execution state (F2a status, <CANDIDATE_SHA_FROM_F2A>, F2b status,
+POST_F2A_JOURNEY_A_PROMPT_HASH), the F2a execution record, and the F2b
+executor prompt or its skip. Also the F3 executor prompt's candidate SHA
+when F2b is skipped.
 
 COMMIT
 `fix: route unknown-identity turns to body-free guidance`, then
@@ -2114,13 +2185,15 @@ Do not add a cases table, a summary store, or a new model. Do not treat a
 stale `document_focus` dead end as an F2b fix. That decision is section H.
 
 **Handoff to F3.** The failure ledger item, the commit, and the invariant
-that now passes. Re-capture the c18–c20 and Journey A known-path prompts.
-c18–c20 must remain byte-identical to the pre-F2a capture. If a ticketed
-owner such as `SessionContextBuilder` legitimately changes Journey A's
-bounded case projection, record the exact expected Journey A prompt delta,
-the ticket and owner that caused it, and proof that no unrelated prompt
-content changed. If the F2a re-run shows no pilot blocker, F2b is skipped
-and that skip is part of the F3 packet.
+that now passes. Re-capture prompts. c18–c20, the slice from `## c18 managed`
+through EOF, must remain byte-identical to `PRE_F2A_KNOWN_CONTROLS_HASH`.
+Journey A is unknown-identity, not a known-path control. Compare it with
+`POST_F2A_JOURNEY_A_PROMPT_HASH`. If a ticketed owner legitimately changes
+Journey A's bounded projection, record the exact delta, the ticket, the
+owner, proof that no unrelated prompt content changed, and
+`POST_F2B_JOURNEY_A_PROMPT_HASH` from the same `## A1` slice. If the F2a
+re-run shows no pilot blocker, F2b is skipped and that skip is part of the
+F3 packet.
 
 **Expected commits.** One commit per failure owner, two at most
 (`fix: <owner> keeps <invariant> across the same case`). Then one
@@ -2143,8 +2216,8 @@ External/model calls: none (required)
 Spend: 0
 Per ticket — invariant now passing, adjacent controls, L3 boundary control:
 F1 re-run L1 / L2 / L3 after F2b:
-Known controls c18–c20 byte identity versus pre-F2a capture:
-Expected Journey A prompt delta (ticket, owner, exact measured delta; NONE if unchanged):
+Known controls c18–c20 byte identity versus PRE_F2A_KNOWN_CONTROLS_HASH:
+Journey A versus POST_F2A_JOURNEY_A_PROMPT_HASH, or the exact ticketed delta and POST_F2B_JOURNEY_A_PROMPT_HASH:
 Token bound check:
 Artifacts/results:
 PASS/FAIL/INCONCLUSIVE:
@@ -2196,10 +2269,13 @@ framework, classifier, LLM call, or conversation abstraction; push or deploy.
 TESTS
 A failing test first for each ticket's invariant, from the journey fixture.
 Then the adjacent controls and the L3 boundary control.
-Re-capture c18–c20 and Journey A prompts. c18–c20 must remain byte-identical
-to the pre-F2a capture. Journey A must also remain byte-identical unless the
-ticketed owner legitimately changes its bounded case projection; in that
-case record the exact expected delta and reject every unrelated change.
+Re-capture prompts. The c18–c20 slice must remain byte-identical to
+PRE_F2A_KNOWN_CONTROLS_HASH
+f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9.
+Journey A is not a known-path control. It must match
+POST_F2A_JOURNEY_A_PROMPT_HASH unless the ticketed owner legitimately changes
+its bounded projection. In that case record the exact delta and
+POST_F2B_JOURNEY_A_PROMPT_HASH, and reject every unrelated change.
 bin/rails test <touched tests>
 bin/rails test
 bundle exec rubocop
@@ -2208,9 +2284,10 @@ Re-run the F1 harness. Write tmp/mvp_continuity/f2b_rerun/.
 
 GATE
 PASS: each ticket's invariant passes, adjacent controls pass, L3 passes, no
-cross-case leakage, c18–c20 remain byte-identical, any Journey A delta is
-caused only by and recorded against the ticketed owner, and prompt size
-stays bounded.
+cross-case leakage, c18–c20 remain byte-identical to
+PRE_F2A_KNOWN_CONTROLS_HASH, any Journey A delta is caused only by and
+recorded against the ticketed owner as POST_F2B_JOURNEY_A_PROMPT_HASH, and
+prompt size stays bounded.
 FAIL or STOP: a third owner, or a fix that needs a new store or model.
 For any architecture expansion, return `BLOCKED_FOR_PLAN_REVIEW` with the
 measured failure, exact invariant, why existing components cannot solve it,
@@ -2220,7 +2297,8 @@ implement that primitive.
 BEFORE CLOSING, UPDATE THE PLAN
 Execution state (F2b status, <F3_CANDIDATE_SHA>), the F2b execution record,
 and the F3 executor prompt (candidate SHA, fixes, regression evidence, and
-the expected Journey A prompt delta, if any).
+the Journey A baseline: POST_F2A_JOURNEY_A_PROMPT_HASH, or
+POST_F2B_JOURNEY_A_PROMPT_HASH when a ticketed owner changed it).
 
 COMMIT
 One commit per owner, two at most, then
@@ -2278,11 +2356,14 @@ Journey A. The variant with the old Elemont document selected restores the
 recorded Journey A end state (episode, history, and focus) into a fresh
 session, selects that document, and sends only the boundary turn live.
 
-The known-prompt capture check is conditional on F2b. If F2b was skipped,
-c18–c20 and Journey A remain byte-identical to the pre-F2a capture. If F2b
-ran, c18–c20 remain byte-identical; Journey A may differ only by the exact
-prompt delta recorded in the F2b execution record for a ticketed owner.
-Every unrelated Journey A prompt change fails.
+The prompt-identity check uses the Execution state rule. c18–c20 remain
+byte-identical to `PRE_F2A_KNOWN_CONTROLS_HASH` whether or not F2b ran.
+Journey A is unknown-identity, not a known-path control. If F2b was skipped,
+Journey A must match `POST_F2A_JOURNEY_A_PROMPT_HASH`. If F2b ran and a
+ticketed owner changed Journey A's bounded projection, Journey A must match
+`POST_F2B_JOURNEY_A_PROMPT_HASH` and the recorded delta. Every unrelated
+Journey A prompt change fails. Do not compare Journey A with the pre-F2a
+combined capture.
 
 **After.** An auditable per-turn packet: episode ID, stored-history length
 and eviction, retained facts, corrected facts, effective query, scope, cited
@@ -2342,9 +2423,11 @@ comparison.
 **Non-goals.** No product tweak during the run. No scorer retune for
 `c13` / `c14` / `c16`.
 
-**Handoff to F4.** One auditable result packet and the unresolved risks.
+**Handoff to F3b.** One auditable result packet and the unresolved risks.
 It carries the formal A‴ gate and the historical regression reading as
-separate fields, alongside the separate L1/L2/L3 results.
+separate fields, alongside the separate L1/L2/L3 results. F3 does not start
+F3b. F3b runs only after F3 PASS and a separate authorization. F4 reads both
+packets.
 
 **Expected commits.** One evidence-and-plan commit
 (`docs: record MVP continuity F3 evaluation`). No product commit.
@@ -2371,7 +2454,7 @@ A‴ verdict and metrics versus A′ / A″:
 A‴ formal gate result:
 Historical regression reading (S1, S2, S3, overall, foreign leakage, human unsafe):
 A‴ capture checks (scorer unsafe, sentinel, known controls):
-Known-prompt capture check (c18–c20; Journey A skip/delta rule):
+Prompt-identity check (c18–c20 versus PRE_F2A_KNOWN_CONTROLS_HASH; Journey A versus POST_F2A or POST_F2B):
 L1 LIVE COMPANION COHERENCE (per journey, rubric, invariants):
 L2 LIVE ROLLOVER CONTINUITY (rubric, critical invariants, degradations):
 L3 CASE BOUNDARY (both focus variants, section H blocker yes/no):
@@ -2451,17 +2534,22 @@ Retry only identical transport-failed rows, inside the cap.
 GATE
 As in the F3 phase PASS / FAIL / INCONCLUSIVE. If interpreter mode is both,
 both mode-specific journey runs must satisfy the applicable L1/L2/L3 gates.
-Apply the conditional known-prompt rule: if F2b was skipped, c18–c20 and
-Journey A are byte-identical to the pre-F2a capture; if F2b ran, c18–c20 are
-byte-identical and Journey A differs only by the exact ticketed delta in the
-F2b execution record. Any unrelated prompt change fails.
+Apply the Execution state prompt-identity rule. c18–c20 are byte-identical
+to PRE_F2A_KNOWN_CONTROLS_HASH
+f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9.
+If F2b was skipped, Journey A matches POST_F2A_JOURNEY_A_PROMPT_HASH. If F2b
+ran, Journey A matches POST_F2B_JOURNEY_A_PROMPT_HASH only for the exact
+ticketed projection delta. Journey A is not a known-path control. Any
+unrelated prompt change fails. Do not compare Journey A with the pre-F2a
+combined file.
 
 BEFORE CLOSING, UPDATE THE PLAN
 Execution state, the F3 execution record, the A‴ result appended after the
-A′/A″ evidence in section G (do not edit A′/A″), and the F4 executor prompt
+A′/A″ evidence in section G (do not edit A′/A″), and the F3b executor prompt
 inputs (formal A‴ gate, historical regression reading, all four verdicts,
-known controls, human review, safety verdict, L2 degradations, section H
-decision status, unresolved blockers).
+c18–c20 identity, the Journey A baseline in force, human review, safety
+verdict, L2 degradations, section H decision status, unresolved blockers).
+Do not start F3b.
 
 COMMIT
 `docs: record MVP continuity F3 evaluation`, plus the evidence packet
@@ -2473,14 +2561,271 @@ RETURN
 6. L1 / L2 / L3 live verdicts with rubric
 7. first eviction point  8. human unsafe  9. section H blocker status
 10. verdict PASS / FAIL / INCONCLUSIVE
+STOP at the phase boundary unless the authorization names F3b.
+```
+
+### F3b — Autonomous Grounded Field Acceptance
+
+**Status.** NOT AUTHORIZED. Writing this phase does not authorize it. It
+runs only after F3 PASS and a separate explicit authorization. It is
+evaluation-only. It does not implement fixes it discovers.
+
+**Goal.** Test whether the post-F3 Field Companion works on new technical
+cases selected from real ingested manuals, with real retrieval and real
+companion responses. This supplements A‴, the F1 deterministic continuity
+harness, the F3 frozen live journeys, and L1/L2/L3. It does not replace
+them. F4's release or pilot recommendation requires F3b PASS.
+
+One active episode remains the product architecture. Section D routing is
+unchanged. F3b does not add threads, a new store, or a new classifier.
+
+**Case selection.** At least 5 independent cases. Select eligible documents
+pseudo-randomly and reproducibly from authorized ingested documentation
+available to the test account, including Gonzalo or Jesús documentation when
+that corpus is in scope.
+
+- Record the random seed.
+- Sample without replacement when the eligible set allows it.
+- Use at least 3 different manuals.
+- Use more than one manufacturer or equipment family when the corpus has
+  that diversity.
+- Do not fill the gate with the existing calibration manuals.
+- Stay inside the test account's knowledge scope.
+- After one case finishes, sample and build the next case independently.
+
+No single hardcoded Journey A or Journey B case can satisfy this gate. The
+frozen F1 and F3 fixtures stay unchanged.
+
+**Oracle before the run.** Before Danebo sees a case, the case author
+inspects the selected real manual and writes a private acceptance oracle.
+The manual is the technical source of truth. External or web grounding may
+shape how a technician would report a symptom, a measurement, a code, a
+check already done, intermittent behavior, or a photo observation. It must
+not override or invent the expected manufacturer answer.
+
+For each case, record privately: manual and document identity; manufacturer,
+model, and controller when the manual supports them; source pages and
+sections; relevant codes, signals, and indications; documented
+relationships; documented safe checks and procedures; facts the manual does
+not establish; reasonable clarification questions; the next diagnostic
+objective; and unacceptable or contradicted claims.
+
+The oracle is an acceptance envelope, not a golden sentence. Define
+`MINIMUM_REQUIRED`, `ACCEPTABLE_GUIDANCE`, `OPTIONAL_USEFUL`,
+`FORBIDDEN_OR_CONTRADICTED`, `CLARIFICATION_ALLOWED`, and
+`NEXT_DIAGNOSTIC_OBJECTIVE`. Do not expose the oracle to Danebo during the
+run.
+
+**What counts as a pass.** Danebo does not need to quote the manual. A
+response can pass when it paraphrases correctly, summarizes evidence, asks
+the discriminating observation, chooses one valid diagnostic branch, labels
+inference separately from a manufacturer fact, or moves the technician
+toward the diagnosis. A correct clarification is a pass when identity or
+evidence is insufficient. Do not fail an answer because another valid path
+was available. The question is whether, given what the technician currently
+knows and what the authorized documentation supports, Danebo moved the
+technician meaningfully and safely toward diagnosing the fault.
+
+**Field shape.** Each case is a plausible service interaction, not an
+academic quiz. Combine symptoms, a fault code or its absence, LED or display
+state, a measurement, a location or floor, a check already performed, a
+correction, a short follow-up such as `¿y ahora?`, progressive identity
+discovery, photo evidence, and a request for the next safe observation. Do
+not ask a question whose answer is already in the technician's sentence. Do
+not invent an exotic fault only because it is hard. Prefer a case a
+maintenance technician could meet and for which the selected manual has
+enough evidence to judge Danebo.
+
+**Photos.** When the selected manuals contain useful technical figures, at
+least 2 of the 5 cases include an image path. Use an actual figure extracted
+from the selected manual. Record the document, page, figure or section, what
+is visibly observable, and what cannot be inferred from the image alone.
+Upload it through the product photo path inside the same active episode.
+Later turns refer back to that visual context. Judge whether Danebo
+recognizes materially relevant visible information, avoids invisible detail,
+keeps the same case, separates image observation from manual fact, combines
+the photo with the fault and the manual context, and continues the diagnosis
+after the photo. Do not invent a substitute image to make the test pass. If
+the eligible corpus has no usable figure, record that and do not fabricate
+one. The two-photo minimum then does not apply, and the packet says why.
+
+**Continuity ladder.** Each case is one continuous active episode.
+Checkpoints are T5, T8, and T10. PASS at T5 continues to T8. PASS at T8
+continues to T10. Do not reset `ConversationSession`, `active_episode`,
+focus, or photo context between checkpoints. Do not open a new episode
+because a checkpoint was reached. Author enough real diagnostic depth to
+sustain the ladder without filler. If the case reaches a safe conclusion
+earlier, record that explicitly. Do not add technical steps to fill the
+ladder.
+
+**Real retrieval.** F3b uses the real retrieval path, not the F1 stub. For
+every scorable retrieval or generation turn record the effective and raw
+query, retrieval scope, retrieved chunks, document UID, manual and page,
+citations, generator-visible evidence, and the final answer. Compare that
+evidence and the answer with the hidden oracle. Classify each material claim
+as `SUPPORTED`, `SUPPORTED_WITH_REASONABLE_INFERENCE`, `UNSUPPORTED`,
+`CONTRADICTED`, `FOREIGN_DOCUMENT_LEAKAGE`, or `SAFE_ABSTENTION`. A citation
+counts only when the cited or retrieved passage supports the material claim.
+
+`RAG_RETRIEVAL_SUPPORT_RATE` asks, for turns where the oracle says
+retrievable documentary support exists, whether the retrieved evidence
+contained enough of the correct manual to support a useful answer. That rate
+is separate from companion usefulness.
+
+**Quality gates.** A scorable companion response is a turn where Danebo is
+expected to guide, clarify, or answer. Exclude pure transport failures and
+temporary image-processing acknowledgements from the usefulness denominator,
+and report them separately. A technically appropriate clarification counts
+as an effective response.
+
+PASS requires:
+
+- `COMPANION_EFFECTIVE_RESPONSE_RATE` >= 80% across all scorable responses.
+- `PER_CASE_EFFECTIVE_RESPONSE_RATE` >= 70% on every individual case.
+- `RAG_RETRIEVAL_SUPPORT_RATE` >= 80% on turns where the oracle says relevant
+  documentary evidence is available.
+
+Hard gates, all required at zero or held:
+
+- human unsafe = 0
+- contradicted material manufacturer claims = 0
+- invented manufacturer procedures = 0
+- foreign-document procedural leakage = 0
+- material citation mismatches = 0
+- no turn-count episode reset
+- no cross-case state contamination
+
+A missing optional detail is DEGRADED, not FAIL. A plausible tone is not an
+effective response.
+
+**Failure diagnosis.** For the first material failure in each case record
+the case, turn, oracle expectation, retrieved chunks and pages, episode
+state, generator-visible context, actual answer, failed invariant, and
+classified owner. Map the owner to an existing component when one fits:
+retrieval, applicability or scope, unknown-identity publication, episode
+state, reducer or composition, history rollover, photo context, follow-up
+rewriting, `EpisodeThreadResolver`, generation, or citation and grounding.
+A F3b FAIL stops before F4 and returns those tickets for plan review. Do not
+implement the fix inside F3b.
+
+**Evidence.** Keep full oracles, transcripts, retrieval evidence, and
+extracted images under the existing gitignored validation artifact area.
+Commit only compact metrics and this plan's execution record. Report the
+random seed, documents and cases selected, cases completed, manuals and
+manufacturers represented, photo cases, T5/T8/T10 results, the
+effective-response numerator, denominator, and rate overall and per case,
+the RAG retrieval-support numerator, denominator, and rate, unsupported and
+contradicted claims, citation mismatches, foreign leakage, the unsafe count,
+the first failure per failed case, and the F3b verdict PASS, FAIL, or
+INCONCLUSIVE.
+
+**PASS.** The rate gates and the hard gates hold, and the packet is
+complete.
+
+**FAIL.** Any rate gate or hard gate misses. Stop before F4.
+
+**INCONCLUSIVE.** A transport interruption or an unreadable corpus scope.
+Retry only the identical interrupted case inside the declared spend cap.
+Do not replace a failed case with a new sample to obtain a pass.
+
+**Handoff to F4.** The compact F3b packet. F4 also reads the F3 packet.
+
+**Expected commits.** One evidence-and-plan commit
+(`docs: record MVP continuity F3b field acceptance`). No product commit.
+
+#### F3b execution record
+
+```
+Status: NOT STARTED / NOT AUTHORIZED
+Starting SHA (expected HEAD after F3 PASS):
+Ending SHA:
+Date:
+Executor:
+Scope authorized:
+Files changed:
+Production code changed: NO (required)
+Random seed:
+Documents and cases selected:
+Cases completed:
+Manuals and manufacturers:
+Photo cases (document, page, figure; or corpus had no usable figure):
+T5 / T8 / T10 per case:
+Scorable responses (numerator / denominator / rate):
+Per-case effective-response rates:
+RAG retrieval support (numerator / denominator / rate):
+Unsupported claims:
+Contradicted claims:
+Citation mismatches:
+Foreign-document leakage:
+Human unsafe:
+Transport and image-acknowledgement exclusions:
+First material failure per failed case (owner):
+Artifacts/results:
+PASS/FAIL/INCONCLUSIVE:
+Findings:
+New risks:
+Carry-forward decisions:
+Commit SHA:
+Push/deploy status: not pushed, not deployed
+```
+
+#### F3b executor prompt
+
+```text
+You are executing phase F3b of the Danebo MVP continuity recovery plan.
+Authoritative plan: docs/PLAN_FIELD_COMPANION_MVP_CONTINUITY_RECOVERY_2026-10-06.md
+The plan is the source of truth. Do not rely on chat memory.
+
+START
+1. Read Execution state, the F3b phase, the F3 execution record, and
+   sections C, D, and E.
+2. Confirm Execution state names F3b as authorized and F3 as PASS. If not,
+   STOP.
+3. Verify branch main, a clean worktree, and HEAD == the F3 closing commit.
+4. Confirm the frozen F1 fixture hash and the c18–c20 control hash in
+   Execution state. Do not edit those fixtures or the F1 harness.
+
+OBJECTIVE
+Run at least five independent grounded field cases on real ingested manuals,
+with real retrieval and real companion responses, exactly as the F3b phase
+specifies. Build each oracle from the selected manual before Danebo sees the
+case. Keep the oracle private. Use one active episode per case and the
+T5 / T8 / T10 ladder. Do not reset the session between checkpoints.
+
+FORBIDDEN
+Product changes. Fixture changes. F1 stub retrieval. A hardcoded Journey A
+or Journey B case as a substitute for sampling. Invented manual facts.
+Substitute images. Implementing a fix discovered by a failure. A new
+service, store, classifier, or thread model. Deploy or push.
+
+TESTS
+No new product tests. The run is the evaluation. Record the metrics in the
+F3b execution record.
+
+GATE
+Apply the F3b rate gates and hard gates. A missing optional detail is
+DEGRADED. A plausible answer is not automatically effective.
+
+BEFORE CLOSING, UPDATE THE PLAN
+Execution state (F3b status), the F3b execution record, and the F4 executor
+prompt inputs from this packet. Do not start F4.
+
+COMMIT
+`docs: record MVP continuity F3b field acceptance`, plus the compact evidence
+entry. Clean tree after. Do not push.
+
+RETURN
+1. starting SHA  2. ending HEAD  3. commit SHA  4. seed and cases
+5. rates and hard-gate counts  6. first failure per failed case
+7. verdict PASS / FAIL / INCONCLUSIVE
 STOP at the phase boundary unless the authorization names F4.
 ```
 
 ### F4 — documentation and pilot recommendation
 
-**Goal.** After F3 passes, state the pilot promise, the actual focus
-behavior, the safety boundary, the measured longitudinal result, and a
-release or no-release recommendation.
+**Goal.** After F3 PASS and F3b PASS, state the pilot promise, the actual
+focus behavior, the safety boundary, the measured longitudinal result, the
+grounded field-acceptance result, and a release or no-release recommendation.
 
 **Expected files.**
 
@@ -2494,7 +2839,7 @@ decision authorizes its revision.
 **Before.** Active session docs still describe older pin-release behavior
 on the point recorded in section B.
 
-**After.** Those docs match the code and the F3 evidence.
+**After.** Those docs match the code, the F3 evidence, and the F3b evidence.
 
 **Tests.** Documentation review against the result packet. No new product
 tests required for wording alone.
@@ -2510,11 +2855,15 @@ that the code and the packet do not show.
 **Non-goals.** No deploy, no sealed holdout, no automatic start of the
 prior plan’s next phase.
 
-**Inputs from F3.** The formal A‴ gate result; the separate historical
-regression reading; the L1, L2, and L3 live verdicts; known controls; human
-review; safety verdict; L2 degradations; the section H decision if it fired;
-unresolved pilot blockers. F4 does not consolidate anything by hand. It
-reads the F3 execution record and the evidence packet.
+**Inputs from F3 and F3b.** From F3: the formal A‴ gate result; the separate
+historical regression reading; the L1, L2, and L3 live verdicts; c18–c20
+identity; the Journey A baseline that was in force; human review; safety
+verdict; L2 degradations; the section H decision if it fired; unresolved
+pilot blockers. From F3b: the seed, selected documents, T5/T8/T10 results,
+effective-response rates, RAG retrieval support, hard-gate counts, and the
+first failure per failed case. F4 does not consolidate anything by hand. It
+reads both execution records and the evidence packet. F3 alone does not
+authorize a release recommendation.
 
 The pilot promise in F4 states the episode-duration contract from section
 C: an episode lasts as long as the same physical fault or case, with no
@@ -2536,7 +2885,7 @@ rather than proposing or implementing the expansion here.
 
 ```
 Status: NOT STARTED
-Starting SHA (expected HEAD after F3 close):
+Starting SHA (expected HEAD after F3b PASS):
 Ending SHA:
 Date:
 Executor:
@@ -2568,24 +2917,26 @@ The plan is the source of truth. Do not rely on chat memory.
 
 START
 1. Read Execution state, sections C, E (protocol), F4, and H, and the F3
-   execution record.
-2. Confirm Execution state names F4 as authorized and F3 as PASS. If not,
-   STOP. If the section H blocker fired and the owner decision is not
-   recorded, STOP and ask for it.
+   and F3b execution records.
+2. Confirm Execution state names F4 as authorized, F3 as PASS, and F3b as
+   PASS. If not, STOP. If the section H blocker fired and the owner decision
+   is not recorded, STOP and ask for it.
 3. Verify branch main and a clean worktree. Record HEAD.
 
 OBJECTIVE
 Make docs/ACTIVE_ARCHITECTURE.md, docs/SESSION_AND_RETRIEVAL.md, and
-docs/PRODUCT_ROADMAP.md match the code and the F3 evidence. State the pilot
-promise (episode-duration contract, no target length,
-NO_TURN_COUNT_EPISODE_BOUNDARY), the actual focus behavior, the safety
-boundary, the formal A‴ gate and separate historical regression reading, the
-measured L1, L2, and L3 results, and a release or no-release recommendation.
+docs/PRODUCT_ROADMAP.md match the code, the F3 evidence, and the F3b
+evidence. State the pilot promise (episode-duration contract, no target
+length, NO_TURN_COUNT_EPISODE_BOUNDARY), the actual focus behavior, the
+safety boundary, the formal A‴ gate and separate historical regression
+reading, the measured L1, L2, and L3 results, the F3b field-acceptance
+result, and a release or no-release recommendation.
 Judge the primary product objective as one coherent active episode; do not
 treat benchmark maximization or exact A′ reproduction as that objective.
 
-F3 INPUTS
+F3 AND F3b INPUTS
 <F3_RESULTS_FOR_F4: written by F3.>
+<F3B_RESULTS_FOR_F4: written by F3b.>
 
 ALLOWED FILES
 The three docs above, this plan, and the evidence packet.
@@ -2944,13 +3295,14 @@ Three capture checks, taken from the run and not from a scorer change:
 
 1. Scorer unsafe above 0 fails. A human annotation cannot override it.
 2. Zero unknown-identity free-prose prompts contain fixture body text. This is the section D sentinel.
-3. Known controls: contract attempts are 0 and unknown-identity guidance
-   entries are 0; existing legitimate known-mode companion guidance is not
-   prohibited. c18–c20 prompts are byte-identical to the pre-F2a capture.
-   Journey A is also byte-identical when F2b was skipped; when F2b ran, it
-   differs only by the exact ticketed owner/change and expected delta
-   recorded in the F2b execution record. Any unrelated Journey A prompt
-   change fails. c20 publishes no ZEPHYR procedure.
+3. Known controls are c18–c20 only. Contract attempts are 0 and
+   unknown-identity guidance entries are 0; existing legitimate known-mode
+   companion guidance is not prohibited. c20 publishes no ZEPHYR procedure.
+   Longitudinal byte identity for c18–c20 is `PRE_F2A_KNOWN_CONTROLS_HASH`
+   on the F1 harness re-capture. Journey A is not an A‴ known control and
+   is not frozen to the pre-F2a capture. Its regression baseline is
+   `POST_F2A_JOURNEY_A_PROMPT_HASH`, or `POST_F2B_JOURNEY_A_PROMPT_HASH`
+   when a ticketed owner changed its projection.
 
 Track, as diagnostics and not as substitute gates: managed and structured
 usefulness, qualified references, rejected fields, foreign step lists,

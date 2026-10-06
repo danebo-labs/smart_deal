@@ -298,6 +298,35 @@ class Rag::UnconfirmedApplicabilityTest < ActiveSupport::TestCase
     assert_equal :directed_measurement, basis(extended)
   end
 
+  test "assistant directed control actuation is withheld and a state description is not" do
+    blocked = [
+      "Pulsa el botón de inspección.",
+      "Activa el botón de llamada.",
+      "Cuando actives el botón de llamada, espera el resultado.",
+      "Cuando intentes activar el botón de llamada desde la cabina o el piso.",
+      "Cuando pulses el botón, escucha si hay un clic.",
+      "Al pulsar el botón, escucha si cambia el ruido."
+    ]
+    allowed = [
+      "Observa si se activa el contactor.",
+      "El indicador está activado.",
+      "Activé el botón.",
+      "No actives el botón.",
+      "Anote cuándo comienza (al pulsar el botón, durante los primeros segundos, al llegar a destino)."
+    ]
+
+    blocked.each do |answer|
+      assert_equal :procedure_application, classify(answer, chunks: []), answer
+      assert_equal :operation, basis(answer, chunks: []), answer
+      assert_equal :procedure_application, classify(answer, chunks: [ @zephyr ]), answer
+      assert_equal :operation, basis(answer, chunks: [ @zephyr ]), answer
+    end
+    allowed.each do |answer|
+      assert_nil classify(answer, chunks: []), answer
+      assert_nil classify(answer, chunks: [ @zephyr ]), answer
+    end
+  end
+
   test "a directive measurement question does not escape and door contact is not probe placement" do
     assert_equal :directed_measurement, basis("¿Puedes revisar el voltaje en los terminales con un multímetro?")
     assert_equal :directed_measurement, basis("¿Revisas el voltaje en los bornes con un multímetro?")

@@ -184,7 +184,7 @@ module Rag
       \bparametriz\w* | \bparameteriz\w* |
       \bconfigurar\b | \bconfigure\b | \bconfiguracion\b | \bconfiguration\b |
       \baprendizaje\b | \baprender\b | \blearning\b |
-      \bpuls(?:ar|a|e|ad|ando|acion|aciones)\b | \bpress(?:es|ed|ing)?\b |
+      \bpuls(?:ar|a|e|es|eis|ad|ando|acion|aciones)\b | \bpress(?:es|ed|ing)?\b |
       \bgir(?:ar|a|e|en|ando|ado)\b | \brotat(?:e|es|ed|ing)\b |
       \babr(?:ir|a|an|id)\s+(?:la\s+|el\s+|las\s+|los\s+)?(?:puerta|cuadro|panel|tablero)\b |
       \bopen(?:s|ed|ing)?\s+(?:the\s+)?(?:door|panel|cabinet)\b |
@@ -221,6 +221,24 @@ module Rag
     TEMPORAL_PRESS_PREFIX = /(?:\bal|\bcuando|\bwhen|\bupon)\s+\z/
     NAMED_CONTROL_PATTERN = /\b(?:selector|borne|terminal|botonera)\b/i
     OBSERVED_EVENT_PATTERN = /\b(?:comienza|empieza|momento|durante|llegar|arranque|ruido|sonido|chasquido|zumbido|roce)\b/i
+    # Second-person press stays an operation. The infinitive "al pulsar" can
+    # still time a sound the technician already hears.
+    PERCEPTION_IMPERATIVE = /\b(?:escuch(?:a|e|ad|en|es)|mir(?:a|e|ad|en)|observ(?:a|e|ad|en)|oye|oiga|look|listen|watch)\b/i
+    CONTROL_OBJECT = /\b(?:boton(?:es)?|pulsador(?:es)?|interruptor(?:es)?|mando|contactor(?:es)?|button|switch)\b/i
+    IMPERATIVE_CONTROL = /
+      \b(?:activa|active|activen|activad|actives|acciona|accione|accionen|acciones|
+          presiona|presione|presionen|presiones)\s+(?:el|la|los|las|un|una)\b |
+      \bactivate\s+the\s+(?:button|switch)\b
+    /ix
+    PROSPECTIVE_ACTIVATION = /
+      \b(?:cuando|si)\s+(?:(?:tu|usted|ustedes)\s+)?(?:intentes|intente|intentas|intenta|intenten)\s+
+        (?:activar|accionar|presionar|pulsar)\b |
+      \b(?:cuando|si)\s+(?:(?:tu|usted|ustedes)\s+)?(?:actives|active|acciones|accione|presiones|presione)\b |
+      \b(?:intenta|intente|intenten|intentes|intentas)\s+(?:activar|accionar|presionar|pulsar)\b |
+      \bwhen\s+you\s+(?:try\s+to\s+)?activate\b
+    /ix
+    PRETERITE_ACTIVATION = /\b(?:activ|puls|accion|presion)é\b/i
+    COMMAND_PREFIX = /\A(?:por favor|ahora|luego|entonces|y|and|please|now|then)\z/i
     CUT_STEM = /\bcort|\bcut/i
     COMPLETED_CUT_QUESTION = /\bya\s+cort(?:e|aste|amos|aron|ado)\b|\bi\s+(?:already\s+)?(?:have\s+)?cut\b/i
     CUT_COMMAND = /\b(?:corta|corten|cortad|cut)\b/i
@@ -578,6 +596,7 @@ module Rag
     def self.operation_unit?(normalized, question = nil, original = nil)
       return false if normalized.blank?
       return true if directed_measurement?(normalized, original)
+      return true if control_actuation?(normalized, original)
 
       asked = applicability_normalize(question)
       normalized.to_enum(:scan, OPERATION_PATTERN).any? do
@@ -592,7 +611,8 @@ module Rag
     private_class_method :operation_unit?
 
     # "al pulsar el botón" while timing a noise the technician already hears
-    # is not an instruction. A press of a named control still is.
+    # is not an instruction. A press of a named control still is. So is a
+    # press wrapped as the way to produce the sound or sight being checked.
     def self.observational_press?(normalized, match, original)
       return false unless match[0].match?(PRESS_STEM)
 
@@ -601,10 +621,56 @@ module Rag
       return false if original.to_s.match?(CHUNK_DESIGNATOR_PATTERN)
       return false if normalized.match?(NAMED_CONTROL_PATTERN)
       return false unless normalized.match?(OBSERVED_EVENT_PATTERN)
+      return false if normalized.match?(PERCEPTION_IMPERATIVE)
 
       true
     end
     private_class_method :observational_press?
+
+    # Assistant-directed or prospective actuation of a control. "se activa" and
+    # "está activado" stay descriptions. A first-person preterite stays a report.
+    def self.control_actuation?(normalized, original)
+      return false if normalized.blank?
+      return false if preterite_activation?(original)
+      return false unless normalized.match?(CONTROL_OBJECT)
+
+      index = activation_index(normalized)
+      return false if index.nil?
+
+      !negated_before?(normalized, index)
+    end
+    private_class_method :control_actuation?
+
+    def self.preterite_activation?(original)
+      text = original.to_s
+      return false unless text.match?(PRETERITE_ACTIVATION)
+
+      rest = text.gsub(PRETERITE_ACTIVATION, "")
+      !rest.match?(IMPERATIVE_CONTROL) && !rest.match?(PROSPECTIVE_ACTIVATION)
+    end
+    private_class_method :preterite_activation?
+
+    def self.activation_index(normalized)
+      prospective = normalized.match(PROSPECTIVE_ACTIVATION)
+      return prospective.begin(0) if prospective
+
+      normalized.to_enum(:scan, IMPERATIVE_CONTROL).each do
+        match = Regexp.last_match
+        prefix = normalized[0...match.begin(0)]
+        next if prefix.match?(/\bse\s+\z/)
+        next unless command_prefix?(prefix)
+
+        return match.begin(0)
+      end
+      nil
+    end
+    private_class_method :activation_index
+
+    def self.command_prefix?(prefix)
+      rest = prefix.to_s.squish
+      rest.blank? || rest.match?(COMMAND_PREFIX)
+    end
+    private_class_method :command_prefix?
 
     # A retrospective mention of a cut the technician already reported is not
     # a new instruction. An imperative cut still is.
@@ -648,6 +714,7 @@ module Rag
     def self.observational_question?(unit)
       normalized = applicability_normalize(unit.text)
       return false if directed_measurement?(normalized, unit.text)
+      return false if control_actuation?(normalized, unit.text)
 
       unit.question && !normalized.match?(ACTION_REQUEST_PATTERN)
     end

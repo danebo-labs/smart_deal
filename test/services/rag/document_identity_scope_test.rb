@@ -1778,6 +1778,27 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert ran[:events].none? { |event| event["event"] == "open_retrieval" }
   end
 
+  test "known identity publishes a grounded control instruction the unknown guard withholds" do
+    published = "Pulse el botón de inspección. [1]"
+    body = "Pulse el botón de inspección."
+    chunks = [
+      chunk(
+        "orona", body,
+        canonical_name: "Manual Orona PBCM-V3", section_identity: "ORONA PBCM-V3"
+      )
+    ]
+    known = run_identity_generation(published, chunks, equipment_identity: orona_identity, question: "como sigo")
+    unknown = run_identity_generation(
+      "Pulse el botón de inspección.", chunks, equipment_identity: nil, question: "como sigo"
+    )
+
+    assert_equal published, known[:result][:answer]
+    assert_nil known[:result][:applicability_violation]
+    assert_equal :procedure_application, unknown[:result][:applicability_violation]
+    assert_equal :operation, unknown[:result][:applicability_violation_basis]
+    assert_not_includes unknown[:result][:answer], "Pulse el botón"
+  end
+
   test "known identity still publishes a code meaning the unknown guard would withhold" do
     published = "Q-731 = fallo de puerta. [1]"
     chunks = [

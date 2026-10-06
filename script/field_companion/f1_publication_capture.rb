@@ -275,21 +275,81 @@ module FieldCompanion
     # identity question. Diagnostic only. Not a scorer.
     UNNECESSARY_IDENTITY_FAMILY = %w[c03 c05 c07 c08 c11 c17].freeze
 
-    def annotate(prompt:, question:, raw:, published:, guard_held:)
-      objective = objective_from_prompt(prompt)
-      return blank_annotation if objective.nil?
+    # companion is the already-built guidance object snapshot. Basis and the
+    # state signal are copied from it. They are not rebuilt from the question.
+    def annotate(prompt:, question:, raw:, published:, guard_held:, companion: nil)
+      current_question = question.to_s.presence
+      from_prompt = objective_from_prompt(prompt)
+      objective = companion_field(companion, :turn_objective) || from_prompt
+      return blank_annotation.merge(current_question: current_question) if objective.nil? && companion.nil?
 
       model_text = guard_held ? raw.to_s : "#{raw}\n#{published}"
       plate = nameplate_request?(model_text)
-      {
-        companion_policy_version: Rag::CompanionGuidanceContext::COMPANION_POLICY_VERSION,
+      blank_annotation.merge(
+        current_question: current_question,
+        companion_policy_version: objective ? Rag::CompanionGuidanceContext::COMPANION_POLICY_VERSION : nil,
         turn_objective: objective,
-        turn_objective_basis: companion_basis(question),
-        objective_line_matches_context: objective == companion_objective(question),
+        turn_objective_basis: companion_field(companion, :turn_objective_basis),
+        objective_line_matches_context: companion.nil? ? nil : companion_field(companion, :turn_objective) == from_prompt,
         objective_followed: objective_followed(objective, model_text),
         nameplate_request: plate,
-        generation_policy_violation: objective == "advance_fault" && plate
+        generation_policy_violation: objective == "advance_fault" && plate,
+        **companion_trace(companion)
+      )
+    end
+
+    def companion_trace(companion)
+      return {} if companion.nil?
+
+      prompt = companion_field(companion, :prompt).to_s
+      {
+        companion_prompt: prompt,
+        companion_prompt_chars: prompt.length,
+        companion_prompt_truncated: companion_field(companion, :truncated) == true,
+        reported_state_present: companion_field(companion, :reported_state_present),
+        companion_sections: sections_from_prompt(prompt)
       }
+    end
+
+    def sections_from_prompt(prompt)
+      lines = prompt.to_s.lines.map(&:strip)
+      {
+        "question" => lines.find { |line| line.start_with?("Question: ") },
+        "problem" => lines.grep(/\A(?:Goal:|Manufacturer:|Model:|Controller:)/),
+        "visual" => section_items(lines, "Accepted visual observation:"),
+        "technician_observations" => section_items(lines, "Technician observations:"),
+        "follow_up" => lines.find { |line| line.start_with?("Follow-up: ") }
+      }
+    end
+
+    def section_items(lines, heading)
+      body = lines.drop_while { |line| line != heading }.drop(1)
+      body.take_while { |line| line.start_with?("- ") }
+    end
+
+    def usefulness_reason(case_id, text, route_outcome = nil)
+      require_relative "f1_calibration_score"
+      score = FieldCompanion::F1CalibrationScore
+      id = case_id.to_s
+      return "withheld" if score.withheld?(text)
+      return "abstain" if score.abstained_text?(text, route_outcome)
+      return "step_list" if score.step_list?(text)
+      return "useful" if score.useful?(id, text)
+
+      needs_situation = (score::SITUATION + score::VALUE + score::RESET).include?(id)
+      return "missing_situation_observation" if needs_situation && !score.situation_observation?(text)
+      return "missing_nonconfirmation" if score::VALUE.include?(id) && !score.nonconfirmation?(text)
+      return "missing_nameplate" if (score::IDENTIFY + score::IDENTITY_Q).include?(id) && !score.nameplate_read?(text)
+      return "missing_symptom_observation" if score::SYMPTOM.include?(id) && !score.symptom_observation?(text)
+      return "missing_qualified_reference" if score::REFERENCE.include?(id) && !score.qualified_reference?(text)
+
+      "not_useful"
+    end
+
+    def companion_field(companion, key)
+      return nil if companion.nil?
+
+      companion[key] || companion[key.to_s]
     end
 
     def objective_report(rows)
@@ -325,29 +385,12 @@ module FieldCompanion
 
     def objective_from_prompt(prompt)
       text = prompt.to_s
+      return "advance_fault" if text.include?(Rag::CompanionGuidanceContext::NO_STATE_OBJECTIVE)
+
       Rag::CompanionGuidanceContext::OBJECTIVE_LINES.each do |objective, line|
         return objective if text.include?(line)
       end
       nil
-    end
-
-    def companion_objective(question)
-      companion_context(question).turn_objective
-    end
-
-    def companion_basis(question)
-      companion_context(question).turn_objective_basis
-    end
-
-    def companion_context(question)
-      Rag::CompanionGuidanceContext.build(
-        question: question.to_s,
-        identity: nil,
-        session_context: "",
-        labels: [],
-        locale: :es,
-        mode: :unknown
-      )
     end
 
     def objective_followed(objective, text)
@@ -382,13 +425,19 @@ module FieldCompanion
 
     def blank_annotation
       {
+        current_question: nil,
         companion_policy_version: nil,
         turn_objective: nil,
         turn_objective_basis: nil,
         objective_line_matches_context: nil,
         objective_followed: nil,
         nameplate_request: nil,
-        generation_policy_violation: false
+        generation_policy_violation: false,
+        companion_prompt: nil,
+        companion_prompt_chars: nil,
+        companion_prompt_truncated: nil,
+        reported_state_present: nil,
+        companion_sections: nil
       }
     end
 

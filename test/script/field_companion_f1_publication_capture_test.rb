@@ -141,22 +141,58 @@ class FieldCompanionF1PublicationCaptureTest < ActiveSupport::TestCase
     assert_equal "jobs", fields[:cost_basis]
   end
 
-  test "objective capture reads the generator-visible line" do
+  test "objective capture reads the generator-visible line and does not rebuild the prompt" do
     line = Rag::CompanionGuidanceContext::OBJECTIVE_LINES.fetch("advance_fault")
+    prompt = "# FIELD COMPANION\n#{line}\nFollow that objective.\n\nQuestion: SENTINEL_PROMPT\nFollow-up: no."
     fields = Capture.annotate(
-      prompt: "# FIELD COMPANION\n#{line}\nFollow that objective.\n",
+      prompt: prompt,
       question: "¿Es un Orona? ¿Cómo lo reseteo?",
       raw: "Mira si la puerta termina de cerrar.",
       published: "Mira si la puerta termina de cerrar.",
+      guard_held: false,
+      companion: {
+        prompt: prompt,
+        truncated: false,
+        turn_objective: "advance_fault",
+        turn_objective_basis: "default_fault_progress",
+        reported_state_present: true
+      }
+    )
+
+    assert_equal prompt, fields[:companion_prompt]
+    assert_equal prompt.length, fields[:companion_prompt_chars]
+    assert_equal false, fields[:companion_prompt_truncated]
+    assert_equal "SENTINEL_PROMPT", fields.dig(:companion_sections, "question").delete_prefix("Question: ")
+    assert_equal "advance_fault", fields[:turn_objective]
+    assert_equal "default_fault_progress", fields[:turn_objective_basis]
+    assert_equal true, fields[:reported_state_present]
+    assert_equal true, fields[:objective_line_matches_context]
+    assert_equal true, fields[:objective_followed]
+    assert_equal Rag::CompanionGuidanceContext::COMPANION_POLICY_VERSION, fields[:companion_policy_version]
+    assert_not_includes prompt, Rag::CompanionGuidanceContext::COMPANION_POLICY_VERSION
+  end
+
+  test "a no-state objective line is advance_fault and a missing snapshot is not rebuilt" do
+    prompt = "# FIELD COMPANION\n#{Rag::CompanionGuidanceContext::NO_STATE_OBJECTIVE}\n"
+    from_line = Capture.annotate(
+      prompt: prompt,
+      question: "Dame el procedimiento",
+      raw: "Mira la puerta.",
+      published: "Mira la puerta.",
       guard_held: false
     )
 
-    assert_equal "advance_fault", fields[:turn_objective]
-    assert_equal "explicit_identity_confirmation_request", fields[:turn_objective_basis]
-    assert_equal false, fields[:objective_line_matches_context]
-    assert_equal true, fields[:objective_followed]
-    assert_equal Rag::CompanionGuidanceContext::COMPANION_POLICY_VERSION, fields[:companion_policy_version]
-    assert_not_includes line, Rag::CompanionGuidanceContext::COMPANION_POLICY_VERSION
+    assert_equal "advance_fault", from_line[:turn_objective]
+    assert_nil from_line[:turn_objective_basis]
+    assert_nil from_line[:reported_state_present]
+    assert_nil from_line[:companion_prompt]
+    assert_nil from_line[:objective_line_matches_context]
+  end
+
+  test "usefulness reason names a missing situation observation without changing the score" do
+    assert_equal "useful", Capture.usefulness_reason("c01", "Observa si la puerta está abierta y si hay personas dentro.")
+    assert_equal "missing_situation_observation", Capture.usefulness_reason("c01", "Describe la falla completa.")
+    assert_equal "withheld", Capture.usefulness_reason("c01", "La identidad de este equipo no está confirmada.")
   end
 
   test "a prompt without the objective line does not invent one" do

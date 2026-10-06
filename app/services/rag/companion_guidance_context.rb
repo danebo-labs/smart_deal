@@ -8,7 +8,7 @@ module Rag
   class CompanionGuidanceContext
     MAX_CHARS = 2400
     # Diagnostic only. Not rendered, not routed, and not TurnPerception::PROMPT_VERSION.
-    COMPANION_POLICY_VERSION = "2026-10-06.1"
+    COMPANION_POLICY_VERSION = "2026-10-06.2"
     ADVANCE_FAULT = "advance_fault"
     RESOLVE_IDENTITY = "resolve_identity"
     BASIS_IDENTIFICATION = "explicit_identification_request"
@@ -18,6 +18,23 @@ module Rag
       ADVANCE_FAULT => "Current objective: advance the reported fault. Equipment identity is not the current objective.",
       RESOLVE_IDENTITY => "Current objective: resolve equipment identity."
     }.freeze
+    # Used only when the turn is advance_fault and no concrete state was reported.
+    NO_STATE_OBJECTIVE = "Current objective: advance the current request. No fault or symptom was reported. Equipment identity is not the current objective."
+    SYMPTOM_LEAD = "Ask for one safe look, read, or listen check tied to the reported symptom. Put the observational verb and the thing observed in the same sentence. One main question. Do not make a questionnaire."
+    TASK_LEAD = "This request is the anchor. Do not ask them to describe the fault, restate the symptom, or explain the abnormal behavior. Ask one passive look, read, or listen check: anyone inside, car position relative to the floor, door state, the literal display or indicator, or a sound already present. One sentence. Not a checklist. If too ambiguous, one narrow question, not which fault it is."
+    PASSIVE_RULE = "Passive means a state that already exists. Do not have them press, activate, call, send, move, power, reset, or measure to create it."
+    # Concrete equipment state already reported. Not a request, a manual, or an identity.
+    STATE_CUE = /
+      \bquedo\b | \batascad\w* | \bstuck\b | \btrapped\b | \bentre\s+pisos\b | \ba\s+nivel\b |
+      \bno\s+(?:termina\s+de\s+)?(?:cierr\w*|cerr\w*|abr\w*|abiert\w*|nivel\w*|arranc\w*|mov\w*|funcion\w*|respond\w*)\b |
+      \b(?:wont|will\s+not|does\s+not|doesnt|cannot|cant)\s+(?:close|open|level|start|move|run)\b |
+      \b(?:ruido|sonido|zumbido|chasquido|vibracion|noise|sound|vibration|parpade\w*|intermit\w*|blink\w*)\b |
+      \b(?:display|pantalla|indicador)\s+(?:\w+\s+){0,4}(?:muestra|indica|dice|ensen|shows|reads|displays|encendid\w*|lit)\b |
+      \b(?:personas|gente|ocupantes|alguien)\s+(?:\w+\s+){0,4}(?:dentro|adentro|inside)\b |
+      \b(?:puerta|door)\s+(?:\w+\s+){0,6}(?:abiert\w*|cerrad\w*|atascad\w*|open|closed|stuck)\b |
+      \b(?:se\s+paro|parado|detenid\w*|stopped|not\s+moving)\b
+    /ix
+    IDENTITY_PROJECTION = /\A(?:manufacturer|model|marca|modelo|fabricante|controller|controlador)\b/i
     EQUIPMENT_WORD = /equipo|ascensor|elevador|montacargas|controlador|controller|elevator|equipment|lift|nameplate/i
     EQUIPMENT_TARGET = /\b(?:#{EQUIPMENT_WORD.source}|placa\s+de\s+caracteristicas|chapa\s+de\s+caracteristicas)\b/i
     NAMEPLATE_TARGET = /\b(?:nameplate|placa\s+de\s+caracteristicas|chapa\s+de\s+caracteristicas|placa\s+identificativa)\b/i
@@ -103,6 +120,15 @@ module Rag
       BASIS_DEFAULT
     end
 
+    # True only when a concrete equipment state, symptom, or observation is
+    # already in this context. A prior request is not a state. Nil outside
+    # unknown guidance. Diagnostic readers do not change the rendered text.
+    def reported_state_present
+      return nil unless unknown?
+
+      state_reported?
+    end
+
     # Accepted visual fields only. Identity text and reference-only manual
     # names are not evidence for a terminal, value, or code.
     def safety_evidence
@@ -142,15 +168,16 @@ module Rag
         You are assisting an elevator technician in the field.
         The equipment identity is not confirmed.
         Do not teach the contents of any retrieved manual. Those contents are not in this prompt.
-        Keep this job in elevator field service. Do not reinterpret it as another kind of machine.
-        Ask for one safe look, read, or listen check tied to the reported symptom. Put the observational verb and the thing observed in the same sentence. One main question. Do not make a questionnaire.
-        If they ask for a procedure, reset, adjustment, value, or manufacturer operation, do not give those steps, do not invent the value, and do not reply by only asking which equipment this is. Say it is not confirmed, then ask that one check. Do not stop at the refusal, and do not send them to an unknown terminal.
+        Keep this job in elevator field service.
+        #{observation_lead}
+        If they ask for a procedure, reset, or value, do not give those steps, and do not reply by only asking which equipment this is. Say it is not confirmed, then ask that one check. Do not stop at the refusal, and do not send them to an unknown terminal.
         If they already report an action as done, use it as context and do not instruct it again.
         #{nameplate_rule}
+        #{PASSIVE_RULE}
         You may observe, interpret, and hypothesize. Do not instruct a physical intervention, an operational intervention, or a tool or instrument measurement without applicable evidence.
         Do not invent electrical values, distances, tolerances, torque, parameters, terminal numbers, terminal functions, fault-code meanings, manufacturer-specific sequences, menu names, DIP positions, selectors, waits, inspection mode, power cuts, or resets.
-        If the equipment identity conflicts, do not choose a manufacturer. Ask for the evidence that resolves the conflict before any manufacturer-specific step.
-        On a follow-up, do not greet again. A short greeting is allowed only when this opens the case.
+        If the equipment identity conflicts, do not choose a manufacturer.
+        On a follow-up, do not greet again.
         Do not stop after saying there is no manual. Do not print DATA_NOT_AVAILABLE.
         Do not cite manuals with [n].
         Write the entire answer in #{language_name}.
@@ -158,7 +185,45 @@ module Rag
     end
 
     def objective_line
-      OBJECTIVE_LINES.fetch(turn_objective)
+      return OBJECTIVE_LINES.fetch(RESOLVE_IDENTITY) if turn_objective == RESOLVE_IDENTITY
+      return NO_STATE_OBJECTIVE if task_anchored?
+
+      OBJECTIVE_LINES.fetch(ADVANCE_FAULT)
+    end
+
+    # Identity resolution keeps the symptom lead so the nameplate rule stays
+    # the main question. Only an advance_fault turn with no reported state
+    # switches to the current request.
+    def observation_lead
+      task_anchored? ? TASK_LEAD : SYMPTOM_LEAD
+    end
+
+    def task_anchored?
+      turn_objective == ADVANCE_FAULT && !reported_state_present
+    end
+
+    def state_reported?
+      return true if state_text?(folded_question)
+      return true if problem_projection_lines.any? { |line| state_projection?(line) }
+      return true if visual_fields.any?
+      return true if technician_turns.any? { |turn| state_text?(fold_text(turn)) }
+
+      false
+    end
+
+    def state_projection?(line)
+      label, body = line.split(":", 2)
+      return false if label.to_s.match?(IDENTITY_PROJECTION)
+
+      state_text?(fold_text(body || line))
+    end
+
+    def state_text?(folded)
+      folded.present? && folded.match?(STATE_CUE)
+    end
+
+    def fold_text(text)
+      text.to_s.unicode_normalize(:nfkd).gsub(/\p{Mn}/, "").downcase.gsub(/[^\p{L}\d]+/, " ").squish
     end
 
     def nameplate_rule
@@ -216,7 +281,7 @@ module Rag
     end
 
     def folded_question
-      @question.to_s.unicode_normalize(:nfkd).gsub(/\p{Mn}/, "").downcase.gsub(/[^\p{L}\d]+/, " ").squish
+      @folded_question ||= fold_text(@question)
     end
 
     def turn_block

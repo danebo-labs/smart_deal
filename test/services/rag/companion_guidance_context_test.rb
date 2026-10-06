@@ -136,6 +136,7 @@ class Rag::CompanionGuidanceContextTest < ActiveSupport::TestCase
     assert_equal "default_fault_progress", held.turn_objective_basis
     assert_includes prompt, "You are assisting an elevator technician in the field."
     assert_includes prompt, "Keep this job in elevator field service."
+    assert_not_includes prompt, "another kind of machine"
     assert_includes prompt, "Ask for one safe look, read, or listen check tied to the reported symptom."
     assert_includes prompt, "in the same sentence"
     assert_includes prompt, "One main question"
@@ -249,6 +250,119 @@ class Rag::CompanionGuidanceContextTest < ActiveSupport::TestCase
     assert prompt.start_with?("# FIELD COMPANION\n#{Rag::CompanionGuidanceContext::OBJECTIVE_LINES.fetch("advance_fault")}")
   end
 
+  test "a question that states an equipment condition uses the symptom branch" do
+    stuck = unknown_context("Se quedó entre pisos, ¿qué hago?")
+    noise = unknown_context("Hace un ruido al arrancar. ¿Qué puedo observar sin intervenir?")
+
+    assert_equal true, stuck.reported_state_present
+    assert_equal true, noise.reported_state_present
+    [ stuck, noise ].each do |context|
+      prompt = context.to_s
+      assert_includes prompt, "tied to the reported symptom"
+      assert_includes prompt, Rag::CompanionGuidanceContext::OBJECTIVE_LINES.fetch("advance_fault")
+      assert_not_includes prompt, Rag::CompanionGuidanceContext::NO_STATE_OBJECTIVE
+    end
+  end
+
+  test "a procedure reset or value request with no state uses the task branch" do
+    questions = [
+      "Dame el procedimiento de rescate numerado",
+      "No sé qué maniobra es, ¿cómo la reseteo?",
+      "¿Qué tensión debe haber en la borna de seguridad?"
+    ]
+
+    questions.each do |question|
+      context = unknown_context(question)
+      prompt = context.to_s
+      assert_equal false, context.reported_state_present, question
+      assert_equal "advance_fault", context.turn_objective, question
+      assert_includes prompt, Rag::CompanionGuidanceContext::NO_STATE_OBJECTIVE, question
+      assert_not_includes prompt, "reported fault", question
+      assert_not_includes prompt, "reported symptom", question
+      assert_includes prompt, "Do not ask them to describe the fault", question
+      assert_includes prompt, "restate the symptom", question
+      assert_includes prompt, "one passive look, read, or listen check", question
+      assert_includes prompt, "Not a checklist.", question
+      assert_includes prompt, "not which fault it is", question
+      assert_includes prompt, "anyone inside", question
+      assert_includes prompt, "Passive means a state that already exists.", question
+      assert_includes prompt, "Do not have them press, activate, call, send, move", question
+      assert_includes prompt, "Say it is not confirmed", question
+    end
+  end
+
+  test "an active problem or a visual observation is state and a request-only prior turn is not" do
+    problem = unknown_context(
+      "¿Qué reviso?",
+      session_context: "## Active Field Problem\nGoal: la puerta no termina de cerrar\nManufacturer: Elemont (catalog)\n"
+    )
+    visual = unknown_context(
+      "Dame el procedimiento",
+      session_context: "## Photo Evidence (this turn)\n- Condition: abierta\n"
+    )
+    request = unknown_context(
+      "¿Y ahora?",
+      session_context: "## Recent Conversation\nUser: Dame el procedimiento\nAssistant: Sigo.\n"
+    )
+
+    assert_equal true, problem.reported_state_present
+    assert_includes problem.to_s, "tied to the reported symptom"
+    assert_equal true, visual.reported_state_present
+    assert_equal false, request.reported_state_present
+    assert_includes request.to_s, Rag::CompanionGuidanceContext::NO_STATE_OBJECTIVE
+    assert_nil unknown_context("la puerta no cierra", mode: :known).reported_state_present
+  end
+
+  test "resolve identity keeps the nameplate question" do
+    identify = unknown_context("¿Qué puedo mirar para identificar el equipo?")
+    prompt = identify.to_s
+
+    assert_equal "resolve_identity", identify.turn_objective
+    assert_equal false, identify.reported_state_present
+    assert_includes prompt, "Current objective: resolve equipment identity."
+    assert_includes prompt, "Ask them to read the nameplate and report the manufacturer and model"
+    assert_not_includes prompt, Rag::CompanionGuidanceContext::NO_STATE_OBJECTIVE
+  end
+
+  test "a representative context stays inside the character budget and truncation keeps the head" do
+    manuals = [
+      "Manual largo de referencia uno, p. 12",
+      "Manual largo de referencia dos, p. 4",
+      "Manual largo de referencia tres, p. 8"
+    ]
+    session = <<~TEXT
+      ## Active Field Problem
+      Goal: #{'la puerta no cierra ' * 12}
+      ## Photo Evidence (this turn)
+      - Component: puerta
+      - Condition: abierta
+      ## Recent Conversation
+      User: #{'ruido al arrancar ' * 8}
+      Assistant: Sigo con la puerta.
+      User: #{'sigue el ruido ' * 8}
+    TEXT
+    context = Rag::CompanionGuidanceContext.build(
+      question: "Se quedó entre pisos, ¿qué hago? #{'detalle ' * 40}",
+      identity: nil,
+      session_context: session,
+      labels: [],
+      locale: :es,
+      mode: :unknown,
+      manuals: manuals
+    )
+    prompt = context.to_s
+
+    assert_operator prompt.length, :<=, Rag::CompanionGuidanceContext::MAX_CHARS
+    assert_equal true, context.reported_state_present
+    if context.context_truncated?
+      assert_equal Rag::CompanionGuidanceContext::MAX_CHARS, prompt.length
+      assert prompt.start_with?("# FIELD COMPANION\n#{Rag::CompanionGuidanceContext::OBJECTIVE_LINES.fetch('advance_fault')}")
+    else
+      assert_includes prompt, "Se quedó entre pisos"
+      assert_includes prompt, "Follow-up:"
+    end
+  end
+
   test "known guidance keeps its instruction and does not take the unknown observation rule" do
     prompt = Rag::CompanionGuidanceContext.build(
       question: "la puerta no cierra",
@@ -272,14 +386,14 @@ class Rag::CompanionGuidanceContextTest < ActiveSupport::TestCase
     unknown_context(question, session_context: session_context, locale: locale).to_s
   end
 
-  def unknown_context(question, session_context: "", locale: :es)
+  def unknown_context(question, session_context: "", locale: :es, mode: :unknown)
     Rag::CompanionGuidanceContext.build(
       question: question,
       identity: nil,
       session_context: session_context,
       labels: [],
       locale: locale,
-      mode: :unknown
+      mode: mode
     )
   end
 

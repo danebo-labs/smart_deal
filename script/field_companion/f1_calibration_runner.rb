@@ -103,7 +103,22 @@ rag_calls = []
 F1CAL_PROMPTS = []
 F1CAL_MODEL = []
 F1CAL_CONVERSE = []
+F1CAL_COMPANION = []
 jobs = []
+
+Rag::CompanionGuidanceContext.prepend(Module.new do
+  def to_s
+    rendered = super
+    F1CAL_COMPANION << {
+      prompt: rendered,
+      truncated: context_truncated?,
+      turn_objective: turn_objective,
+      turn_objective_basis: turn_objective_basis,
+      reported_state_present: reported_state_present
+    }
+    rendered
+  end
+end)
 
 BedrockRagService.class_eval do
   alias_method :f1cal_retrieve_with_retry, :retrieve_with_retry unless method_defined?(:f1cal_retrieve_with_retry)
@@ -231,6 +246,7 @@ cases.each do |row|
   before_retrieve = retrieve_calls.size
   before_rag = rag_calls.size
   before_prompt = F1CAL_PROMPTS.size
+  before_companion = F1CAL_COMPANION.size
   before_model = F1CAL_MODEL.size
   before_converse = F1CAL_CONVERSE.size
   before_job = jobs.size
@@ -305,12 +321,18 @@ cases.each do |row|
     (cache_creation_tokens / 1000.0 * rates[:cache_creation].to_f)
   spent += usd
   sent_prompt = F1CAL_PROMPTS[before_prompt..]&.last.to_s
+  companion_calls = F1CAL_COMPANION[before_companion..]
+  companion = companion_calls.reverse.find { |item| item[:prompt] == sent_prompt } || companion_calls.last
   attribution = FieldCompanion::F1PublicationCapture.annotate(
     prompt: sent_prompt,
     question: row[:question],
     raw: raw,
     published: published,
-    guard_held: guard_held
+    guard_held: guard_held,
+    companion: companion
+  )
+  score_reason = FieldCompanion::F1PublicationCapture.usefulness_reason(
+    row[:id], published, route_outcome
   )
   record = {
     id: row[:id], lane: row[:lane].to_s, identity: row[:identity], prompt_version: prompt_version,
@@ -357,6 +379,7 @@ cases.each do |row|
     routes: case_jobs.map { |job| job[:route] },
     outcome_reason: result.dig(:diagnostics, :outcome_reason) || result[:equipment_identity_reason],
     route_outcome: route_outcome&.to_s,
+    score_reason: score_reason,
     prompt_has_applicability_block: sent_prompt.include?("identity_unknown_reference"),
     prompt_has_verbatim_directive: sent_prompt.include?(verbatim_marker),
     **attribution

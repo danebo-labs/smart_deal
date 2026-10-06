@@ -43,32 +43,32 @@ earlier.
 
 | Field | Value |
 |---|---|
-| Plan status | DRAFT — NOT AUTHORIZED FOR IMPLEMENTATION |
+| Plan status | F0 audit authorized and closed. F1 and implementation remain unauthorized. |
 | Plan verdict | `READY_FOR_EXECUTION` |
-| Current authorized phase | NONE |
-| Authorization text and date | NONE |
-| Current phase status | — |
-| Parent of the last plan edit | `dd8c439e815eeb0e495def69d3076cad4d4cda55` |
-| Execution starting SHA | `<F0_START_SHA>` (set by F0) |
-| Current HEAD after last closed phase | `<HEAD_FROM_LAST_CLOSED_PHASE>` |
+| Current authorized phase | `F0 — factual audit` (closed). F1 is not authorized. |
+| Authorization text and date | explicit Lahiri authorization, 2026-10-06. F0 only. No separate authorization commit. |
+| Current phase status | `PASS` |
+| Parent of the last plan edit | `955ca39915e19802fe0d88f3acfa3ed0b55c7ede` |
+| Execution starting SHA | `955ca39915e19802fe0d88f3acfa3ed0b55c7ede` |
+| Current HEAD after last closed phase | The F0 closing commit. Its parent is `955ca39915e19802fe0d88f3acfa3ed0b55c7ede`. This file does not store that commit’s own SHA. |
 | Production model | `global.anthropic.claude-haiku-4-5-20251001-v1:0` (Haiku 4.5), unchanged |
-| Frozen corpus hash | `<FROZEN_CORPUS_SHA256>` (set by F0) |
-| Frozen scorer hash | `<FROZEN_SCORER_SHA256>` (set by F0) |
-| Frozen runner and capture hashes | `<FROZEN_RUNNER_SHA256>` (set by F0) |
-| A′ / A″ artifact hashes | `<A_PRIME_ARTIFACT_HASHES>` (set by F0) |
-| Target-environment flag matrix | `<FLAG_MATRIX>` (set by F0) |
-| Interpreter mode for F1/F3 | `<INTERPRETER_MODE>` (set by F0: `owner`, `fallback`, or `both`) |
+| Frozen corpus hash | `d0fd334e48826ca390445b781edf5d3ffd1b3a4103926541ad7c1dfe3acc1dc3` (`script/field_companion/f1_calibration_corpus.rb`) |
+| Frozen scorer hash | `7ba064468820ec759539d0fc017a57212adf757d059b2bf3d2ccecd2efc881da` (`script/field_companion/f1_calibration_score.rb`) |
+| Frozen runner and capture hashes | runner `141c7f6ab109d4c77c69925c0c65abd38a62400dc27464d8fb9edeb0fda71666`; capture `eae05c0eff750dda33a18a5294e968a09e1a3a3bc527342c2649b8c9b823989e`; manifest `ae6f6188e4f0de4dde3cf68f128218a3716ca7b10037fe81e582620468ff711c` |
+| A′ / A″ artifact hashes | Recorded in the F0 execution record. Local `tmp/f1cal/runs` files were hashed. Named calibration files match the manifest. |
+| Target-environment flag matrix | Recorded below and in the F0 execution record. Source: local gitignored `config/deploy.yml`, plus code default where that file leaves a flag unset. Running container env was not readable. |
+| Interpreter mode for F1/F3 | `owner` |
 | Longitudinal fixture hash | `<FROZEN_LONGITUDINAL_FIXTURE_HASH>` (set by F1) |
 | Pre-F2a known-path prompt capture hash | `<PRE_F2A_KNOWN_PROMPT_CAPTURE_HASH>` (set by F1) |
 | F2a candidate SHA | `<CANDIDATE_SHA_FROM_F2A>` |
 | F3 candidate SHA | `<F3_CANDIDATE_SHA>` (F2b HEAD, or the F2a HEAD when F2b is skipped) |
-| Evidence packet | `script/field_companion/mvp_continuity_evidence.json` (created by F0) |
+| Evidence packet | `script/field_companion/mvp_continuity_evidence.json` |
 
 Phase status:
 
 | Phase | Status |
 |---|---|
-| F0 — factual audit | NOT STARTED |
+| F0 — factual audit | PASS |
 | F1 — longitudinal baseline harness | NOT STARTED |
 | F2a — publication choice and guidance | NOT STARTED |
 | F2b — continuity repair | CONDITIONAL / NOT AUTHORIZED |
@@ -77,10 +77,12 @@ Phase status:
 
 Current blockers:
 
-- Implementation is not authorized.
-- The final Opus review returned `READY_AFTER_SMALL_PLAN_EDITS`; this
-  documentation revision closes those execution-readiness edits.
-- The target-environment flag matrix is unread. F0 closes it before F1.
+- F1 is not authorized. F0 does not start it.
+- F2a and later implementation are not authorized.
+- The flag matrix is recorded from local `config/deploy.yml`. The running
+  container environment was not readable (SSH to `54.163.248.39:22` timed
+  out). That does not reopen the matrix: the deploy file resolved
+  `HAIKU_QUERY_ANALYSIS_MODE=owner`.
 
 Carried-forward expectations, not findings. These are Opus code-reading
 predictions. F1 confirms or supersedes them with measured evidence:
@@ -92,8 +94,8 @@ predictions. F1 confirms or supersedes them with measured evidence:
 - `CompanionGuidanceContext` reads only the `Goal:` line and the last two
   technician turns.
 
-Next authorized action: final Opus review of this plan. After that, F0 runs
-only on Lahiri’s explicit authorization.
+Next authorized action: none. F0 is closed `PASS`. F1 waits for a separate
+explicit authorization from Lahiri. Do not execute F1 from this record.
 
 ## Same-case continuity clarification (this revision)
 
@@ -663,9 +665,20 @@ projection.
 The `QueryOrchestratorService → AmbiguousModelResponder.build` entry passes
 both `raw_question: @raw_question` and `session_context: @session_context`.
 `AmbiguousModelResponder` retains them and passes both into its internal
-`StructuredEvidenceRoute` when `answer_from` is used. F2a may add the minimal
-`session_context:` argument to the existing `StructuredEvidenceRoute`
-build/initialize path. All of this is argument propagation only, not an
+`StructuredEvidenceRoute` when `answer_from` is used.
+
+SUPERSEDED BY F0 RESULT `955ca39915e19802fe0d88f3acfa3ed0b55c7ede`: that
+sentence described the F2a target as current code. At the F0 SHA,
+`QueryOrchestratorService` does not pass `raw_question` or `session_context`
+into `AmbiguousModelResponder.build` (`query_orchestrator_service.rb:350-362`).
+`AmbiguousModelResponder.build` does not accept those keywords
+(`ambiguous_model_responder.rb:20-36`). `answer_from` does not pass them,
+`episode`, or `equipment_identity` into `StructuredEvidenceRoute.new`
+(`ambiguous_model_responder.rb:118-132`). F2a still adds that wiring. It is
+not already present.
+
+F2a may add the minimal `session_context:` argument to the existing
+`StructuredEvidenceRoute` build/initialize path. All of this is argument propagation only, not an
 orchestrator, route, or session redesign. The predicate then sees the same
 raw turn and body-free guidance sees the same bounded case projection on all
 three structured entry paths. A composed “¿qué dice el manual…?” must not
@@ -1071,6 +1084,11 @@ prompt `f1cal.r2.a1`, scorer `v2-locality-independent-unsafe`) is historical
 evidence of that run, not a substitute for hashing the files that F3 will
 execute.
 
+SUPERSEDED BY F0 RESULT `955ca39915e19802fe0d88f3acfa3ed0b55c7ede`: the flag
+matrix, frozen file hashes, and local A′/A″ artifact hashes are recorded in
+the F0 execution record. The running container image was not read. That does
+not leave F0 open.
+
 **FAIL.** A call site in section B does not exist, a claimed branch writes
 `document_focus` on a case boundary, or an episode boundary path depends on
 turn count or history length. Each is a stop for plan review.
@@ -1094,38 +1112,158 @@ evidence packet.
 #### F0 execution record
 
 ```
-Status: NOT STARTED
-Starting SHA:
-Ending SHA:
-Date:
-Executor:
-Scope authorized:
-Files changed:
-Production code changed: NO (required)
-Tests executed: none required
-External/model calls: none (required)
+Status: PASS
+Starting SHA: 955ca39915e19802fe0d88f3acfa3ed0b55c7ede
+Ending SHA: the F0 closing commit. Parent is the starting SHA. This file does not store its own commit SHA.
+Date: 2026-10-06
+Executor: F0 factual audit, authorized in this same documentation commit
+Scope authorized: F0 — factual audit. Explicit Lahiri authorization, 2026-10-06. F1, F2a, F2b, F3, F4, production changes, deployment, and push were not authorized.
+Files changed: this plan; script/field_companion/mvp_continuity_evidence.json
+Production code changed: NO
+Tests executed: none
+External/model calls: none
 Spend: 0
-Artifacts/results:
-Flag matrix:
+
+Flag matrix (resolved values):
+- HAIKU_QUERY_ANALYSIS_MODE = owner
+- RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED = true
+- FIELD_COMPANION_EPISODE_ENABLED = true
+- FIELD_COMPANION_TURN_ENABLED = true
+- DOCUMENT_IDENTITY_SCOPE_ENABLED = true
+- SHARED_SESSION_ENABLED = false
+- RAG_EPISODE_SCOPE_ENABLED = enabled (unset)
+- RAG_THREAD_MENU_ENABLED = enabled (unset). Gates EpisodeThreadResolver.
+- PHOTO_QUESTION_RAG_ENABLED = true. Gates the photo-question assistant history write.
+- BEDROCK_MODEL_ID = global.anthropic.claude-haiku-4-5-20251001-v1:0
+
 Source of each flag value:
-Interpreter mode for F1/F3:
-Deployed image (only if read):
+- The eight keys present under env.clear in the owner's local gitignored config/deploy.yml: HAIKU_QUERY_ANALYSIS_MODE, RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED, FIELD_COMPANION_EPISODE_ENABLED, FIELD_COMPANION_TURN_ENABLED, DOCUMENT_IDENTITY_SCOPE_ENABLED, SHARED_SESSION_ENABLED, PHOTO_QUESTION_RAG_ENABLED, BEDROCK_MODEL_ID.
+- RAG_EPISODE_SCOPE_ENABLED is absent from that file. EpisodeScopeFlag.enabled? is true unless the env value is the string "false".
+- RAG_THREAD_MENU_ENABLED is absent from that file. ThreadMenuFlag.enabled? is true unless the env value is the string "false".
+- Running container environment: not readable. ssh to 54.163.248.39 port 22 timed out. No container env was changed. Deployed image: not read.
+
+Interpreter mode for F1/F3: owner
+Deployed image (only if read): not read
+
 Call-site corrections:
+Section B and "Corrections while materializing" call sites were re-read at the starting SHA. The cited line numbers still match, including record_user_turn! at rag_controller.rb:46, owner methods at conversation_session.rb:820-824 and 867 and 967-971, case_boundary_changes at 1076, record_assistant_turn! at 202, photo writers at 269 and 336, pin_kb_document_if_episode_owner! at 727, stale_case_write_dropped at 1154, episode_history_cutoff at 471, uses_document_focus? at 586, document_focus_entries at 591, unknown_identity_reference_result at bedrock_rag_service.rb:622, UnknownIdentityPublication.attempt at 722, document_identity_scope_result at 415, CompanionGuidanceContext.build at 485, structured complete_from_retrieval at 240 calling unknown_identity_publication at 299 and defining it at 1535, scope_identity at 501, identity_closed_outcome at 589, tool_schema at unknown_identity_publication.rb:40, compose at 84, applicability_mode at document_identity_scope.rb:64-65, RagRetrievalProfile predicates at rag_retrieval_profile.rb:74-75, 108, 116, and 147, resolve_retrieval_scope pin_only at rag_query_concern.rb:578 and 591, and the raw-versus-effective question split at 159-189.
+Line notes, behavior unchanged:
+- ContextEvidenceRoute#stack is lines 85-104 (plan cited 86-102). It does not pass raw_question. It keeps only the photo-evidence block extracted from session_context.
+- AmbiguousModelResponder#answer_from is lines 118-132 (plan cited 119-131).
+- Structured fallback generation_prompt is lines 1234-1253. Lines 1256-1260 are generation_evidence_content, which fences unknown-identity bodies. The plan's 304-316 fallback call still matches.
+- Managed fallback still calls document_identity_generation_prompt at 741-746. The applicability append the plan cited at bedrock_rag_service.rb:1556 is still that line, inside the prompt loader that method uses.
+- reference_request? does not exist. That is the F2a predicate, not a missing current call site.
+
 New entry paths for F1 to capture:
-Episode lifecycle paths and turn-count check:
-History writers:
-One active episode (session identifier, SharedSession::ENABLED, history readers past opened_at):
-Frozen hashes (corpus, scorer, runner, capture, manifest):
+No fifth UnknownIdentityPublication sink. attempt is only bedrock_rag_service.rb:722 and structured_evidence_route.rb:1538. Production reaches those through BedrockRagService#query, StructuredEvidenceRoute.build/execute, ContextEvidenceRoute#stack, and AmbiguousModelResponder#answer_from.
+Photo-with-question is an additional caller of the same orchestrator: FieldPhotoAnalysisJob → PhotoQuestionAnswerService#execute_rag_query. It is not a new sink.
+QueryOrchestrator also exits through DocumentOverviewResponder and DeterministicRenderer before the publication sinks. Those exits do not call UnknownIdentityPublication.
+BedrockRagService#retrieve_and_generate_with_retry has no production caller at this SHA. The live retrieve seam is retrieve_chunks → retrieve_with_retry. F1 should keep the seams already named in the F1 phase.
+
+Episode lifecycle paths and turn-count check: NO_TURN_COUNT_EPISODE_BOUNDARY PASS
+Open or replace:
+- Owner path, when HaikuQueryAnalysisFlag.owner? and the turn is not a selection. apply_owner_perception! opens ActiveEpisode when perception.move == "new_work" or the base is blank. Blank includes expired and invalid_state via stale_episode?. owner_episode_decision returns :new_episode for new_work and :opened when the base is blank. Otherwise :continued.
+- ActiveEpisodeTurn, used when episode recording is on and the turn is not an owner typed turn (selection turns, and any mode other than owner). Opens on reset_explicit? (RESET_RE), on a blank episode that is substantive or names equipment or a catalog designator or a bare field identifier, on disjoint catalog equipment, and on a subject-brand sentence whose current text has at least 6 words. In conditional mode only, also on an owned switch and on fail_closed_shift. The 6-word check is the current turn's word count. It is not a stored-history length.
+- ensure_case_for_photo_submission!, called from QueryOrchestratorService#photo_owner_episode_id. Opens on invalid_state, expired, or blank. A live episode is reused.
+- start_new_case! opens a replacement episode. No application caller. Not wired to a route.
+Expire: ActiveEpisode.parse marks expired when updated_at is missing or older than now - EPISODE_WINDOW (4 hours). The next text or photo write replaces that JSON. case_boundary_changes records episode_expired and clears current_procedure only.
+Invalidate: parse marks invalid_state for a non-object, a version other than 1, or a missing episode_id. The same boundary clears current_procedure. A substantive turn can then open a new episode.
+Reset to empty without a new id: reset_active_episode!. No application caller.
+Workspace expiry of 30 days destroys the ConversationSession row in find_or_create_for. That is not an episode turn-count boundary.
+No path opens an episode because of technician turn count, conversation_history.length, or MAX_HISTORY. MAX_HISTORY = 20 only truncates the stored array on append (keep 19, append 1).
+
+History writers (stored messages added, pilot episode recording on):
+- Normal web text ask: record_user_turn! adds 1 user message, then RagController#ask record_assistant_turn! adds 1 assistant message. Count 2. Meta, clarify_first, document overview, and deterministic renderer answers use that same assistant writer. Count 2.
+- Owner duplicate correlation: record_owner_turn! returns before persist_user_turn!. Count 0 new user messages.
+- Stale assistant or photo writer (expected_episode_id mismatch): count 0 for that write. Event stale_case_write_dropped.
+- Text ask with images: the controller records the user message and skips its assistant write. The photo job then writes.
+- record_photo_observation!: count 0. It updates active_episode only.
+- record_photo_assistant_context!: count 1 assistant message when evidence is present and the write is not stale.
+- Photo question with PHOTO_QUESTION_RAG_ENABLED=true and a non-failed RAG answer: record_assistant_turn!(writer: "photo_assistant") adds 1 more assistant message. A photo-plus-question interaction that takes both assistant writes is 1 user + 2 assistant = 3 stored messages.
+- Photo with no question text: controller does not record a user message. One assistant context message when evidence is written. Count 1.
+- stamp_user_retrieval_query!: count 0. It updates the existing user row.
+- Focus replay of a cached answer: count 0. A fresh replay records 1 assistant message.
+- add_to_history and add_to_history_and_refresh are the flag-off and WhatsApp writers. WhatsApp is dormant. Twilio inbound adds 1 user message. SendWhatsappReplyJob adds 1 assistant message per reply path.
+F1 must measure the first eviction. For a Journey A text-only harness that records both the user turn and the assistant turn, two messages per interaction is the measured writer count. Do not apply that count to Journey B photo turns.
+
+One active episode:
+- Web identifier: RagController#ask calls find_or_create_for with identifier current_user.id.to_s, channel "web", account_id current_account.id. One workspace row per account and technician user. It is not a browser-session id.
+- SharedSession::ENABLED at target: false, from config/deploy.yml. Code constant is false unless SHARED_SESSION_ENABLED is the string true, and it is forced false in test. Not a pilot-configuration blocker.
+- With that flag false and both field-companion flags true, episode_recording? is true on web and SessionContextBuilder.field_problem_readable? is true.
+- active_episode holds one episode. A new episode replaces it and does not copy goal, facts, pending, observations, or active photo.
+Readers that can see conversation_history rows older than the live episode opened_at:
+- EpisodeThreadResolver#episode_rows floors at now - EPISODE_WINDOW only (episode_thread_resolver.rb:76-81). It does not read opened_at. ThreadMenuFlag is enabled by code default, and the deploy file does not turn it off, so this reader is live on short fallback follow-ups. This is the L3 fact already named in section C. F0 does not treat it as a defect and does not change it.
+- detect_locale_from_history reads the last HISTORY_LOCALE_LOOKBACK (6) stored messages with no opened_at floor. Locale only.
+- ThreadMenuSelection reads the stored array to detect a legacy menu chip. Selection detection only.
+- recent_history_for_prompt takes the last N messages with no opened_at floor. SessionContextBuilder uses it only when EpisodeScopeFlag is off. The target flag is on, so the generation prompt uses episode_user_messages instead.
+- history_for_prompt maps the whole array. No production caller under app/.
+- user_message_for, assistant_for_focus, duplicate_user_correlation?, and stamp_user_retrieval_query! scan the stored array by correlation id.
+- pilot_metrics_report reads stored history for reporting.
+- FieldPhotoAnalysisJob passes the full array into VisualTaskContext. That resolver then floors at max(now - EPISODE_WINDOW, opened_at) when an episode is present.
+Floored at opened_at when a live episode exists: episode_history_cutoff, recent_user_turns, episode_user_messages, last_assistant_message, and FollowupQueryRewriter#episode_rows (it calls episode_history_cutoff). TechnicalReferentResolver refilters prior turns at EPISODE_WINDOW, but those turns already come from recent_user_turns.
+
+Frozen hashes:
+- corpus d0fd334e48826ca390445b781edf5d3ffd1b3a4103926541ad7c1dfe3acc1dc3
+- scorer 7ba064468820ec759539d0fc017a57212adf757d059b2bf3d2ccecd2efc881da
+- runner 141c7f6ab109d4c77c69925c0c65abd38a62400dc27464d8fb9edeb0fda71666
+- capture eae05c0eff750dda33a18a5294e968a09e1a3a3bc527342c2649b8c9b823989e
+- manifest ae6f6188e4f0de4dde3cf68f128218a3716ca7b10037fe81e582620468ff711c
+Scorer revision remains v2-locality-independent-unsafe. F1CAL_SPEND_CAP default remains "1.0".
+
 A′/A″ artifact hashes:
+Local files were present under tmp/f1cal/runs and were hashed. They were not regenerated.
+Manifest matches for the named calibration files:
+- f1cal.r2.a1.json 7da986fbe6cfb4842096f4a28ae592cfa002a0a6259e4e42766b599a5435d184
+- f1cal.r2.a1.confirm.json 4b4fac9f4318345d69931c99b3de4d29dc858b51882abb7c61489b6be9c6ab69
+- f1cal.r2.a1.known.json 87dbeb570a75b496972c09e6f7a41d8ad2199d0d438d6266c728563d7abd2a24
+A′ sample files, not listed as separate manifest rows:
+- f1cal.r2.a1.aprime.s1.json f108141dad736fbbb162c8abf2db233979f13ed612fcffde44b345f2cb2a4bff
+- f1cal.r2.a1.aprime.s2.json be51da1f2827bc10047c5bf10a8ab20dacf83219f5b23632b625a961efbd108f
+- f1cal.r2.a1.aprime.known.json 9aab186aa0e1d7e376e2f599feb3de9cd8188e561fcb67cab63784136316cab5
+A″ sample files, not in the manifest:
+- f1cal.r2.a1.aprimeprime.preflight.json 7e3fe123614a8399ce6ff3c19b71f314a996d712d8405b2ddd80d7f0d50160bb
+- f1cal.r2.a1.aprimeprime.preflight2.json b4e5d349bb2be8dfe0375155a3dcc18a3555b0bf6ea395b71765c410be56d8bd
+- f1cal.r2.a1.aprimeprime.preflight3.json df60542794752bb9a754c7c50163346bfc16ff7bde22546e0bbe5e4eada3ec20
+- f1cal.r2.a1.aprimeprime.preflight4.json 70e9b1a02a3cf056b3d790f1ea1cc893b7130c015d60500540cf5e2e3b6fd1bd
+- f1cal.r2.a1.aprimeprime.s1.json 160a016a03c05be5f9fa35e4dc4c4edde13aca0f0c52b0388d7e3723b56dc4b0
+- f1cal.r2.a1.aprimeprime.s2.json 8ab1d3e83656da147c2f1be2d2f125479085098ee5190d72566f26b53cb870a6
+- f1cal.r2.a1.aprimeprime.known.json 0388e6225672d6bd84b91e801714cc4a361abc03826416103001dc30443bea0c
+Master Plan A″ identity remains historical: HEAD f9d6277d54e42e8d9d441aedf27bd232ec06a956, prompt f1cal.r2.a1, block b1cc6b5b81f9f4ee93c8e97ddc1d9ea798ba5ea6592239ecca5ab599cb898fd4, scorer v2-locality-independent-unsafe.
+
 Fixture sources for F1:
+- test/fixtures/files/field_companion/cases.yml cases T-B and T-C: Elemont, MH, CEA15, puerta 1, imán no magnetiza, código 8, and the follow-up "¿y el LED 7?".
+- test/services/rag/active_episode_turn_test.rb ELEMONT_GOAL and the LED 7 continuity example.
+- config/document_identities.yml: Elemont brand, designator MH, display name "Elemont Montacargas Hidraulico Modelo MH", evidence text "ELEMONT-N/A". Separate row: manual-cea15p, brand "Controles S.A.", designator CEA15+, evidence text "CONTROLADOR DE ASCENSORES PROGRAMABLE CEA15+".
+- docs/PLAN_QUIRURGICO_JESUS_GRATEROL_2026-09-16.md: do not treat CEA15, CEA15P, and CEA15+ as the same board.
+- test/fixtures/files/field_companion/replay_2026-09-23.json case R-B: the Elemont MH / CEA15 door question and manual-cea15p page citations. The code-8 answer excerpt in that file is a historical reply, not a chunk oracle.
+- test/fixtures/files/elemont/chunk_p1_2_current.txt and test/services/elemont_mh_sheet1_bornera_patch_test.rb: sheet-1 bornera text only.
+- script/fixtures/production_conversational_baseline_v2.json: the existing 14-flow replay. It does not contain the Elemont or Orona journey strings.
+- Master Plan section 3: Orona, PBCM-V3, literal TEST OK, field_photo_id 41, leveling goal, and the listed correlation ids. No compatible Orona manual was found. Orona and PBCM-V3 are not rows in config/document_identities.yml.
+- test/services/pilot_metrics_report_test.rb repeats the Orona / PBCM-V3 identity string as a trace fixture.
+Journey technician lines that have no document source, and must not be given an invented manual meaning: code 18, floor 1, floor 2, the door-guide visual check, the closing click, and any LED 7 on/off meaning. Code 8 may be retrieved only from an existing CEA15 chunk the harness already has. Do not copy the replay answer excerpt in as that chunk.
+
 Historical-plan contradictions:
-PASS/FAIL/INCONCLUSIVE:
+- R1B "What happens to pins" says a live new episode clears pins and expiry filters them. SUPERSEDED BY F0 RESULT 955ca39915e19802fe0d88f3acfa3ed0b55c7ede. case_boundary_changes, start_new_case!, and ensure_case_for_photo_submission! clear current_procedure only. pin_release_reason stays nil. document_focus is not written. Section B already treated that R1B text as historical.
+- PLAN_FIELD_COMPANION_DOCUMENT_FOCUS_REFACTOR_2026-10-01.md episode diagnosis says FACT_KEYS has no controller and SOURCES is only user and photo. SUPERSEDED BY F0 RESULT 955ca39915e19802fe0d88f3acfa3ed0b55c7ede. ActiveEpisode::FACT_KEYS includes controller. SOURCES includes catalog.
+- Master Plan Issue A describes unknown identity as open retrieve_and_generate. SUPERSEDED BY F0 RESULT 955ca39915e19802fe0d88f3acfa3ed0b55c7ede as a description of the current entry path. The current managed unknown lane is unknown_identity_reference_result. The Master Plan remains the historical incident and A″ evidence. It was not edited.
+- PLAN_CONTINUIDAD_SESION_FOLLOWUP_2026-09-21.md and PLAN_FIX_RETRIEVAL_PIN_Y_CONTINUIDAD_2026-09-28.md do not contradict the current episode boundary, the current document_focus contract, or this plan's MVP scope. Older line numbers and the pre-focus pin story stay historical.
+No contradiction invalidates the F1 harness or the F2a routing hypothesis.
+
+document_focus boundary: PASS. Explicit new-case paths do not write or clear document_focus. Persistence of the selection stays separate from episode identity.
+
+PASS/FAIL/INCONCLUSIVE: PASS
 Findings:
-New risks:
-Assumptions invalidated:
-Carry-forward decisions:
-Next-phase changes required:
-Commit SHA:
+- NO_TURN_COUNT_EPISODE_BOUNDARY holds.
+- document_focus is not case-owned.
+- Interpreter mode is owner. Shared sessions are off. One workspace per technician user per account. One active_episode on that row.
+- EpisodeThreadResolver can read stored user questions from the replaced episode inside EPISODE_WINDOW. L3 tests that. F0 does not change it.
+- Text interactions store 2 messages. A photo-plus-question interaction can store 3.
+- CompanionGuidanceContext#goal reads only the "Goal:" line. technician_turns keeps the last 2 user lines (MAX_TURNS = 2). render_field_problem does not render ActiveEpisode#observations. The 269-character budget was not measured.
+New risks: none that stop F1. The live thread resolver remains the L3 check already in section H.
+Assumptions invalidated: the section D present-tense claim that ambiguous entry wiring already exists. See the superseded mark in section D.
+Carry-forward decisions: F1 runs owner only. F1 measures the real first eviction. F1 does not invent document facts. F2a still has to thread raw_question and session_context into the ambiguous entry and raw_question into ContextEvidenceRoute. Shared session is not a pilot blocker.
+Next-phase changes required: the F1 executor prompt below.
+Commit SHA: this commit. Not stored inside the commit.
 Push/deploy status: not pushed, not deployed
 ```
 
@@ -1311,6 +1449,7 @@ correlation IDs, hand-written interpreter tool outputs, and stubbed
 retrieval and generation. Each journey runs in a fresh account-scoped web
 session, with episode and turn flags and interpreter mode recorded. The mode
 is the one F0 recorded, or both modes when F0 could not read the matrix.
+F0 recorded `owner`.
 
 **FAIL.** The harness cannot see a seeded fault, it changes product
 behavior, it reports stubbed assistant text as companion quality, or it
@@ -1337,7 +1476,7 @@ recorded in the same commit.
 
 ```
 Status: NOT STARTED
-Starting SHA (expected <HEAD_FROM_F0>):
+Starting SHA (expected: the F0 commit "docs: record MVP continuity F0 audit", parent 955ca39915e19802fe0d88f3acfa3ed0b55c7ede):
 Ending SHA:
 Date:
 Executor:
@@ -1378,13 +1517,65 @@ Authoritative plan: docs/PLAN_FIELD_COMPANION_MVP_CONTINUITY_RECOVERY_2026-10-06
 The plan is the source of truth. Do not rely on chat memory.
 
 START
-1. Read Execution state, sections C, D, E (protocol), the F1 phase, section F
-   (L1/L2/L3, both journeys), and section H.
+1. Read Execution state, the F0 execution record, sections C, D, E (protocol),
+   the F1 phase, section F (L1/L2/L3, both journeys), and section H.
 2. Confirm Execution state names F1 as authorized and F0 as PASS. If not, STOP.
-3. Verify branch main, clean worktree, and HEAD == <HEAD_FROM_F0>. If HEAD
-   differs, record the commits between them. If any is a product commit,
-   STOP.
-4. Interpreter mode to run: <INTERPRETER_MODE>. Flags: <FLAG_MATRIX>.
+3. Verify branch main and a clean worktree. HEAD must be the commit
+   "docs: record MVP continuity F0 audit" whose parent is
+   955ca39915e19802fe0d88f3acfa3ed0b55c7ede. The plan does not embed that
+   commit's own SHA. If later commits exist, record them. If any is a product
+   commit, STOP.
+4. Interpreter mode to run: owner. Do not run fallback. Flags, from F0:
+   HAIKU_QUERY_ANALYSIS_MODE=owner
+   RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED=true
+   FIELD_COMPANION_EPISODE_ENABLED=true
+   FIELD_COMPANION_TURN_ENABLED=true
+   DOCUMENT_IDENTITY_SCOPE_ENABLED=true
+   SHARED_SESSION_ENABLED=false
+   RAG_EPISODE_SCOPE_ENABLED=enabled (unset in config/deploy.yml; code default)
+   RAG_THREAD_MENU_ENABLED=enabled (unset; code default)
+   PHOTO_QUESTION_RAG_ENABLED=true
+   BEDROCK_MODEL_ID=global.anthropic.claude-haiku-4-5-20251001-v1:0
+   Source: local gitignored config/deploy.yml, except the two unset flags,
+   which use their code defaults. Container env was not readable.
+
+F0 FACTS TO USE
+- Frozen hashes: corpus d0fd334e48826ca390445b781edf5d3ffd1b3a4103926541ad7c1dfe3acc1dc3;
+  scorer 7ba064468820ec759539d0fc017a57212adf757d059b2bf3d2ccecd2efc881da;
+  runner 141c7f6ab109d4c77c69925c0c65abd38a62400dc27464d8fb9edeb0fda71666;
+  capture eae05c0eff750dda33a18a5294e968a09e1a3a3bc527342c2649b8c9b823989e;
+  manifest ae6f6188e4f0de4dde3cf68f128218a3716ca7b10037fe81e582620468ff711c.
+  Do not edit those files. A′/A″ raw hashes are in the F0 execution record.
+- History writers: a normal web text interaction stores 2 messages (1 user +
+  1 assistant), including meta, clarify_first, overview, and deterministic
+  answers. A photo-plus-question interaction can store 3 (1 user + photo
+  context assistant + photo-question assistant). record_photo_observation!
+  stores 0. Measure the first eviction from the harness. Do not assume T11
+  is the first eviction except as the text-path prediction of 2 messages
+  per interaction.
+- Call sites from the plan were re-verified. Corrections: ContextEvidenceRoute
+  does not receive raw_question and does not pass the full session context
+  into its StructuredEvidenceRoute; it keeps the photo-evidence block.
+  AmbiguousModelResponder.build does not receive raw_question or
+  session_context, and answer_from does not pass them on. F1 captures those
+  current routes. F1 does not add the F2a arguments.
+- No fifth UnknownIdentityPublication sink. Photo-with-question re-enters
+  execute_rag_query. retrieve_and_generate_with_retry has no production
+  caller. Stub retrieve_with_retry, AiProvider#query, and AiProvider#converse
+  as the F1 phase already says.
+- One active episode: session identifier is current_user.id for the account,
+  channel web. SharedSession is false. Not a pilot blocker.
+  EpisodeThreadResolver floors at EPISODE_WINDOW, not opened_at, and the
+  thread-menu flag is on. The L3 post-boundary follow-up must show whether
+  that reader joins the replaced episode. Do not change the resolver in F1.
+- document_focus is not written or cleared by a case boundary.
+- Fixture sources are listed in the F0 execution record. Elemont / MH / CEA15
+  door and code 8 come from cases.yml T-B/T-C and the catalog rows named
+  there. CEA15, CEA15P, and CEA15+ are not the same board. Orona / PBCM-V3 /
+  TEST OK come from Master Plan section 3. Do not invent a manual meaning
+  for code 18, LED 7, floor numbers, the door-guide check, or the click.
+- NO_TURN_COUNT_EPISODE_BOUNDARY passed. The harness must still fail a seeded
+  episode open at T11 or at the first eviction.
 
 OBJECTIVE
 Build the deterministic longitudinal harness and record L1, L2, and L3
@@ -1696,9 +1887,9 @@ Known-path prompts for c18–c20 and Journey A must be byte-identical to
 <PRE_F2A_KNOWN_PROMPT_CAPTURE_HASH>.
 
 RE-RUN F1
-Run the F1 harness deterministically at the F2a HEAD, in the same
-interpreter modes. Write tmp/mvp_continuity/f2a_rerun/. Report L1, L2, and
-L3 next to the F1 baseline.
+Run the F1 harness deterministically at the F2a HEAD, in owner mode.
+That is the single interpreter mode F0 recorded. Write
+tmp/mvp_continuity/f2a_rerun/. Report L1, L2, and L3 next to the F1 baseline.
 
 GATE
 PASS: the F2a PASS list holds, the sentinel is absent from every
@@ -2089,7 +2280,7 @@ section G gates and the three capture checks. Add the human review as an
 annotated column only. If A‴ FAILs, record it and do not run the journeys.
 
 STEP 2 — journeys (only after A‴ PASS)
-Interpreter mode: <INTERPRETER_MODE>. Frozen retrieval fixtures. One sample.
+Interpreter mode: owner. F0 resolved this from config/deploy.yml. Do not also run fallback. Frozen retrieval fixtures. One sample.
 If this is owner or fallback, run that actual mode with
 MVP_JOURNEY_LIVE=1, MVP_JOURNEY_SPEND_CAP=0.50, and its own named ledger.
 If this is both, run the complete live journeys once in owner mode and once

@@ -1,0 +1,146 @@
+{
+  "F0": {
+    "phase": "F0",
+    "starting_sha": "955ca39915e19802fe0d88f3acfa3ed0b55c7ede",
+    "ending_sha": null,
+    "ending_sha_note": "The F0 closing commit cannot store its own SHA. Its parent is starting_sha. The return report records the commit SHA.",
+    "plan_revision_sha": "955ca39915e19802fe0d88f3acfa3ed0b55c7ede",
+    "fixtures_hash": null,
+    "scorer_hash": "7ba064468820ec759539d0fc017a57212adf757d059b2bf3d2ccecd2efc881da",
+    "model": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "flags": {
+      "HAIKU_QUERY_ANALYSIS_MODE": "owner",
+      "RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED": "true",
+      "FIELD_COMPANION_EPISODE_ENABLED": "true",
+      "FIELD_COMPANION_TURN_ENABLED": "true",
+      "DOCUMENT_IDENTITY_SCOPE_ENABLED": "true",
+      "SHARED_SESSION_ENABLED": "false",
+      "RAG_EPISODE_SCOPE_ENABLED": "enabled_by_code_default",
+      "RAG_THREAD_MENU_ENABLED": "enabled_by_code_default",
+      "PHOTO_QUESTION_RAG_ENABLED": "true",
+      "BEDROCK_MODEL_ID": "global.anthropic.claude-haiku-4-5-20251001-v1:0"
+    },
+    "flag_sources": {
+      "HAIKU_QUERY_ANALYSIS_MODE": "config/deploy.yml env.clear",
+      "RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED": "config/deploy.yml env.clear",
+      "FIELD_COMPANION_EPISODE_ENABLED": "config/deploy.yml env.clear",
+      "FIELD_COMPANION_TURN_ENABLED": "config/deploy.yml env.clear",
+      "DOCUMENT_IDENTITY_SCOPE_ENABLED": "config/deploy.yml env.clear",
+      "SHARED_SESSION_ENABLED": "config/deploy.yml env.clear",
+      "PHOTO_QUESTION_RAG_ENABLED": "config/deploy.yml env.clear",
+      "BEDROCK_MODEL_ID": "config/deploy.yml env.clear",
+      "RAG_EPISODE_SCOPE_ENABLED": "absent from config/deploy.yml; EpisodeScopeFlag is enabled unless the value is the string false",
+      "RAG_THREAD_MENU_ENABLED": "absent from config/deploy.yml; ThreadMenuFlag is enabled unless the value is the string false",
+      "running_container_environment": "unreadable; ssh to 54.163.248.39 port 22 timed out; not mutated",
+      "deployed_image": "not read"
+    },
+    "interpreter_mode": "owner",
+    "interpreter_modes_run": ["owner"],
+    "interpreter_modes_run_note": "F0 resolved the mode. It did not execute journeys.",
+    "tests": [],
+    "pass_count": 0,
+    "failure_count": 0,
+    "spend_usd": 0,
+    "transport_failures": 0,
+    "semantic_failures": 0,
+    "critical_invariants": {
+      "NO_TURN_COUNT_EPISODE_BOUNDARY": "PASS",
+      "document_focus_not_written_on_case_boundary": "PASS",
+      "section_b_and_d_call_sites_present": "PASS",
+      "one_active_episode_shared_session_blocker": "NOT_APPLICABLE"
+    },
+    "longitudinal": {
+      "L1": "NOT_APPLICABLE",
+      "L2": "NOT_APPLICABLE",
+      "L3": "NOT_APPLICABLE"
+    },
+    "verdict": "PASS",
+    "frozen_hashes": {
+      "corpus": "d0fd334e48826ca390445b781edf5d3ffd1b3a4103926541ad7c1dfe3acc1dc3",
+      "scorer": "7ba064468820ec759539d0fc017a57212adf757d059b2bf3d2ccecd2efc881da",
+      "runner": "141c7f6ab109d4c77c69925c0c65abd38a62400dc27464d8fb9edeb0fda71666",
+      "capture": "eae05c0eff750dda33a18a5294e968a09e1a3a3bc527342c2649b8c9b823989e",
+      "manifest": "ae6f6188e4f0de4dde3cf68f128218a3716ca7b10037fe81e582620468ff711c"
+    },
+    "artifact_hashes": {
+      "local_tmp_f1cal_runs": "present",
+      "manifest_matches": {
+        "tmp/f1cal/runs/f1cal.r2.a1.json": "7da986fbe6cfb4842096f4a28ae592cfa002a0a6259e4e42766b599a5435d184",
+        "tmp/f1cal/runs/f1cal.r2.a1.confirm.json": "4b4fac9f4318345d69931c99b3de4d29dc858b51882abb7c61489b6be9c6ab69",
+        "tmp/f1cal/runs/f1cal.r2.a1.known.json": "87dbeb570a75b496972c09e6f7a41d8ad2199d0d438d6266c728563d7abd2a24"
+      },
+      "a_prime_local": {
+        "tmp/f1cal/runs/f1cal.r2.a1.aprime.s1.json": "f108141dad736fbbb162c8abf2db233979f13ed612fcffde44b345f2cb2a4bff",
+        "tmp/f1cal/runs/f1cal.r2.a1.aprime.s2.json": "be51da1f2827bc10047c5bf10a8ab20dacf83219f5b23632b625a961efbd108f",
+        "tmp/f1cal/runs/f1cal.r2.a1.aprime.known.json": "9aab186aa0e1d7e376e2f599feb3de9cd8188e561fcb67cab63784136316cab5"
+      },
+      "a_double_prime_local": {
+        "tmp/f1cal/runs/f1cal.r2.a1.aprimeprime.preflight.json": "7e3fe123614a8399ce6ff3c19b71f314a996d712d8405b2ddd80d7f0d50160bb",
+        "tmp/f1cal/runs/f1cal.r2.a1.aprimeprime.preflight2.json": "b4e5d349bb2be8dfe0375155a3dcc18a3555b0bf6ea395b71765c410be56d8bd",
+        "tmp/f1cal/runs/f1cal.r2.a1.aprimeprime.preflight3.json": "df60542794752bb9a754c7c50163346bfc16ff7bde22546e0bbe5e4eada3ec20",
+        "tmp/f1cal/runs/f1cal.r2.a1.aprimeprime.preflight4.json": "70e9b1a02a3cf056b3d790f1ea1cc893b7130c015d60500540cf5e2e3b6fd1bd",
+        "tmp/f1cal/runs/f1cal.r2.a1.aprimeprime.s1.json": "160a016a03c05be5f9fa35e4dc4c4edde13aca0f0c52b0388d7e3723b56dc4b0",
+        "tmp/f1cal/runs/f1cal.r2.a1.aprimeprime.s2.json": "8ab1d3e83656da147c2f1be2d2f125479085098ee5190d72566f26b53cb870a6",
+        "tmp/f1cal/runs/f1cal.r2.a1.aprimeprime.known.json": "0388e6225672d6bd84b91e801714cc4a361abc03826416103001dc30443bea0c"
+      }
+    },
+    "history_writers": {
+      "web_text_ask": 2,
+      "owner_duplicate_correlation_user_messages": 0,
+      "stale_writer": 0,
+      "photo_observation": 0,
+      "photo_assistant_context": 1,
+      "photo_plus_question_when_both_assistant_writes_happen": 3,
+      "photo_without_question_text": 1,
+      "stamp_user_retrieval_query": 0,
+      "focus_replay_cached": 0,
+      "focus_replay_fresh_assistant": 1
+    },
+    "one_active_episode": {
+      "web_identifier": "current_user.id string, channel web, scoped by account_id",
+      "shared_session_enabled": false,
+      "pilot_configuration_blocker": false,
+      "readers_past_opened_at": [
+        "EpisodeThreadResolver#episode_rows floors at EPISODE_WINDOW only and is live because RAG_THREAD_MENU_ENABLED defaults on",
+        "detect_locale_from_history last 6 messages, locale only",
+        "ThreadMenuSelection, selection detection only",
+        "recent_history_for_prompt, used by SessionContextBuilder only when EpisodeScopeFlag is off",
+        "history_for_prompt has no production caller",
+        "correlation lookups: user_message_for, assistant_for_focus, duplicate_user_correlation?, stamp_user_retrieval_query!",
+        "pilot_metrics_report"
+      ]
+    },
+    "call_site_corrections": [
+      "Section B line citations still match at the starting SHA.",
+      "ContextEvidenceRoute#stack is lines 85-104 and does not receive raw_question.",
+      "AmbiguousModelResponder.build does not accept or receive raw_question or session_context. answer_from does not pass them into StructuredEvidenceRoute.",
+      "No fifth UnknownIdentityPublication sink.",
+      "PhotoQuestionAnswerService re-enters execute_rag_query.",
+      "retrieve_and_generate_with_retry has no production caller."
+    ],
+    "carry_forward_findings": [
+      "F1 runs interpreter mode owner only.",
+      "F1 measures the first history eviction. Text interactions store 2 messages. Photo-plus-question can store 3.",
+      "L3 must observe EpisodeThreadResolver against the replaced episode. F0 does not change it.",
+      "F2a still adds raw_question and session_context on the ambiguous entry and raw_question on ContextEvidenceRoute.",
+      "Do not invent manual meanings for code 18, LED 7, floors, the door-guide check, or the click. Do not equate CEA15 with CEA15+.",
+      "SharedSession is off. Not a pilot blocker.",
+      "document_focus survives a new episode and is not identity."
+    ],
+    "raw_artifacts": [
+      "tmp/f1cal/runs/f1cal.r2.a1.json",
+      "tmp/f1cal/runs/f1cal.r2.a1.confirm.json",
+      "tmp/f1cal/runs/f1cal.r2.a1.known.json",
+      "tmp/f1cal/runs/f1cal.r2.a1.aprime.s1.json",
+      "tmp/f1cal/runs/f1cal.r2.a1.aprime.s2.json",
+      "tmp/f1cal/runs/f1cal.r2.a1.aprime.known.json",
+      "tmp/f1cal/runs/f1cal.r2.a1.aprimeprime.preflight.json",
+      "tmp/f1cal/runs/f1cal.r2.a1.aprimeprime.preflight2.json",
+      "tmp/f1cal/runs/f1cal.r2.a1.aprimeprime.preflight3.json",
+      "tmp/f1cal/runs/f1cal.r2.a1.aprimeprime.preflight4.json",
+      "tmp/f1cal/runs/f1cal.r2.a1.aprimeprime.s1.json",
+      "tmp/f1cal/runs/f1cal.r2.a1.aprimeprime.s2.json",
+      "tmp/f1cal/runs/f1cal.r2.a1.aprimeprime.known.json"
+    ]
+  }
+}

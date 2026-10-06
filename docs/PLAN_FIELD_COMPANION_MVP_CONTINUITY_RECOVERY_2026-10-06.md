@@ -48,7 +48,7 @@ earlier.
 | Current authorized phase | NONE |
 | Authorization text and date | NONE |
 | Current phase status | — |
-| Parent of the last plan edit | `664dd75a670dd27495edf955c9968ba0cad4852d` |
+| Parent of the last plan edit | `dd8c439e815eeb0e495def69d3076cad4d4cda55` |
 | Execution starting SHA | `<F0_START_SHA>` (set by F0) |
 | Current HEAD after last closed phase | `<HEAD_FROM_LAST_CLOSED_PHASE>` |
 | Production model | `global.anthropic.claude-haiku-4-5-20251001-v1:0` (Haiku 4.5), unchanged |
@@ -2766,5 +2766,5 @@ investigation remains coherent and usable.
 - Unresolved evidence: deployed image and flag values, which F0 must close before F1; the F1 input baseline; whether the section H focus variant is a pilot blocker for the plan owner before F4; whether three observations and the prompt caps retain turn-10 checks on the F2a re-run. These are gates. They are not grounds to redesign session state now.
 - Opus verdict on the prior draft: `APPROVE_WITH_REQUIRED_EDITS`. The previous revision’s verdict was `READY_FOR_SECOND_REVIEW` (`b440800`).
 - Same-case continuity revision, parent `b4408003e2ea6c8b4ab31a0c0e9a1017589fe962`: documentation only. It adds the episode-duration contract, `NO_TURN_COUNT_EPISODE_BOUNDARY`, L1/L2/L3, the Journey A rollover extension, the explicit F0 plan list, and the living-plan runbook. Code facts re-read for it: `MAX_HISTORY` and `add_to_history` (`conversation_session.rb:5`, `131-136`), `EPISODE_WINDOW` idle expiry (`active_episode.rb:54-55`), `episode_user_messages` (`conversation_session.rb:496-512`), and the runner environment variables (`f1_calibration_runner.rb:7-12`).
-- Final MVP-scope revision, parent `664dd75a670dd27495edf955c9968ba0cad4852d`: documentation only. It adds the reuse-first constraint, architecture-expansion stop, historical A′ interpretation, formal-versus-historical A‴ reading, A‴ versus L1/L2/L3 separation, surgical F2a wording, and strict usable/coherent L2 `DEGRADED` rule. B1–B5 remain frozen.
+- Final MVP-scope revision, parent `5b371fc1e694956d9e5f2b639dd3690eebe1dc41`: documentation only. It adds the reuse-first constraint, architecture-expansion stop, historical A′ interpretation, formal-versus-historical A‴ reading, A‴ versus L1/L2/L3 separation, surgical F2a wording, and strict usable/coherent L2 `DEGRADED` rule. B1–B5 remain frozen.
 - This revision’s verdict: `READY_FOR_EXECUTION`. Implementation is not authorized.

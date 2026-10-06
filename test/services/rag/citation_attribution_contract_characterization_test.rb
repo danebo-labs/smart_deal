@@ -112,14 +112,28 @@ class Rag::CitationAttributionContractCharacterizationTest < ActiveSupport::Test
       response_locale: :es,
       rag_service: FakeRagService.new([ chunk ]),
       generator: FakeGenerator.new("Afirmación técnica [2]"),
-      expander: FakeExpander.new
+      expander: FakeExpander.new,
+      equipment_identity: Rag::EquipmentIdentity.new(
+        manufacturer: "Manual",
+        needles: [ "Manual" ],
+        facts: [ { "slot" => "manufacturer", "value" => "Manual", "source" => "user", "correlation_id" => "citation-contract" } ]
+      )
     )
 
+    outcome = nil
+    previous_scope = ENV.fetch("DOCUMENT_IDENTITY_SCOPE_ENABLED", nil)
+    ENV["DOCUMENT_IDENTITY_SCOPE_ENABLED"] = "true"
     outcome = route.execute
 
     assert_equal :abstained, outcome.status
     assert_empty outcome.result[:citations]
     assert_equal :citation_failure, outcome.result.dig(:diagnostics, :outcome_reason)
+  ensure
+    if previous_scope.nil?
+      ENV.delete("DOCUMENT_IDENTITY_SCOPE_ENABLED")
+    else
+      ENV["DOCUMENT_IDENTITY_SCOPE_ENABLED"] = previous_scope
+    end
   end
 
   test "citation processor currently drops markers with no citation entry" do

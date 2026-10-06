@@ -265,6 +265,12 @@ class D5AttributionContractReplay
     source_uris = Array(retrieval_trace[:resolved_scope_s3_uris])
     account_id = chunks.filter_map { |chunk| chunk.dig(:metadata, :account_id) }.first.to_i
     account_id = 1 unless account_id.positive?
+    name = chunks.filter_map { |chunk| chunk.dig(:metadata, :canonical_name).presence }.first || "Manual"
+    identity = Rag::EquipmentIdentity.new(
+      manufacturer: name,
+      needles: [ name ],
+      facts: [ { "slot" => "manufacturer", "value" => name, "source" => "user", "correlation_id" => "replay" } ]
+    )
     route = Rag::StructuredEvidenceRoute.new(
       question: result.fetch("question"),
       account: AccountIdentity.new(id: account_id),
@@ -276,11 +282,14 @@ class D5AttributionContractReplay
       correlation_id: "replay:#{result.fetch('id')}",
       rag_service: rag_service,
       generator: FakeGenerator.new(result.fetch("raw_answer")),
-      expander: FakeExpander.new
+      expander: FakeExpander.new,
+      equipment_identity: identity
     )
 
     outcome = with_contract_flag(flag_enabled ? "true" : "false") do
-      with_partial_contract_flag("true") { route.execute }
+      with_partial_contract_flag("true") do
+        with_env("DOCUMENT_IDENTITY_SCOPE_ENABLED", "true") { route.execute }
+      end
     end
     {
       outcome_status: outcome.status,

@@ -822,10 +822,52 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
 
     assert_equal episode, captured[:episode]
     assert_equal "## Photo Evidence (this turn)\n- Component: Amarre", captured[:session_context]
+    assert_nil captured[:raw_question]
   ensure
     if original_build
       Rag::ContextEvidenceRoute.define_singleton_method(:build) { |**kwargs| original_build.call(**kwargs) }
     end
+  end
+
+  test "structured context and ambiguous entries keep the raw turn and the full session context" do
+    raw = "¿Y ahora?"
+    context = <<~TEXT.strip
+      ## Active Field Problem (technician-stated job state, not documentary evidence)
+      Goal: nivelar
+      ## Photo Evidence (this turn)
+      - Component: Amarre
+    TEXT
+    captured = {}
+    original_structured = Rag::StructuredEvidenceRoute.method(:build)
+    original_ambiguous = Rag::AmbiguousModelResponder.method(:build)
+    original_context = Rag::ContextEvidenceRoute.method(:build)
+    Rag::StructuredEvidenceRoute.define_singleton_method(:build) { |**kwargs| captured[:structured] = kwargs; nil }
+    Rag::AmbiguousModelResponder.define_singleton_method(:build) { |**kwargs| captured[:ambiguous] = kwargs; nil }
+    Rag::ContextEvidenceRoute.define_singleton_method(:build) { |**kwargs| captured[:context] = kwargs; nil }
+    rag = Object.new
+    rag.define_singleton_method(:query) { |*| { answer: "ok", citations: [], session_id: "s" } }
+    original_new = BedrockRagService.method(:new)
+    BedrockRagService.define_singleton_method(:new) { |**| rag }
+
+    QueryOrchestratorService.new(
+      "¿Y ahora? no nivela en planta 3",
+      raw_question: raw,
+      session_context: context,
+      account: accounts(:legacy),
+      output_channel: :web
+    ).execute
+
+    %i[structured ambiguous context].each do |entry|
+      assert_equal raw, captured[entry][:raw_question], entry.to_s
+      assert_equal context, captured[entry][:session_context], entry.to_s
+    end
+    assert_includes captured[:context][:session_context], "Goal: nivelar"
+    assert_includes captured[:context][:session_context], "Component: Amarre"
+  ensure
+    Rag::StructuredEvidenceRoute.define_singleton_method(:build) { |**kwargs| original_structured.call(**kwargs) }
+    Rag::AmbiguousModelResponder.define_singleton_method(:build) { |**kwargs| original_ambiguous.call(**kwargs) }
+    Rag::ContextEvidenceRoute.define_singleton_method(:build) { |**kwargs| original_context.call(**kwargs) }
+    BedrockRagService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) }
   end
 
   def store_visual_observation!(photo, manufacturer: "KONE")

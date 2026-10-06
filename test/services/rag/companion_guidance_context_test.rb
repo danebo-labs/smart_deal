@@ -85,4 +85,47 @@ class Rag::CompanionGuidanceContextTest < ActiveSupport::TestCase
     assert_not_includes context.safety_evidence, "KONE"
     assert_not_includes context.safety_evidence, "Fuji"
   end
+
+  test "unknown identity guidance withholds chunk bodies and prior assistant prose" do
+    sentinel = "SENTINEL_XQ7_BORNE cortar tensión en el borne XQ7"
+    session_context = <<~TEXT
+      ## Session Focus
+      The technician has explicitly pinned the following documents. Ground your answer in SEGURIDAD IN.
+      ## Active Field Problem (technician-stated job state, not documentary evidence)
+      Goal: la puerta 1 no termina de cerrar
+      Manufacturer: Elemont (catalog)
+      These facts identify the job. Procedures, values, terminals and code meanings still come only from retrieved evidence.
+      ## Photo Evidence (this turn)
+      - Visible text/codes: TEST OK
+      ## Recent Conversation
+      User: Ya comprobé la guía.
+      Assistant: Paso 11. Ajusta el interruptor a 2,5 mm. #{sentinel}
+    TEXT
+    prompt = Rag::CompanionGuidanceContext.build(
+      question: "¿Qué reviso?",
+      identity: nil,
+      session_context: session_context,
+      labels: [],
+      locale: :es,
+      mode: :unknown,
+      manuals: [ "Elemont Montacargas Hidraulico Modelo MH, p. 1" ]
+    ).to_s
+
+    assert_includes prompt, "# FIELD COMPANION"
+    assert_includes prompt, "The equipment identity is not confirmed."
+    assert_includes prompt, "Question: ¿Qué reviso?"
+    assert_includes prompt, "Goal: la puerta 1 no termina de cerrar"
+    assert_includes prompt, "Manufacturer: Elemont (catalog)"
+    assert_includes prompt, "Ya comprobé la guía."
+    assert_includes prompt, "not confirmed for this equipment"
+    assert_includes prompt, "Contents withheld"
+    assert_includes prompt, "Elemont Montacargas Hidraulico Modelo MH, p. 1"
+    assert_not_includes prompt, sentinel
+    assert_not_includes prompt, "APPLICABILITY_BLOCK"
+    assert_not_includes prompt, "identity_unknown_reference"
+    assert_not_includes prompt, "Paso 11"
+    assert_not_includes prompt, "## Session Focus"
+    assert_not_includes prompt, "Ground your answer"
+    assert_not_includes prompt, "These facts identify the job"
+  end
 end

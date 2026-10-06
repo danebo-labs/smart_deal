@@ -1083,8 +1083,12 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
 
     assert_equal 1, retrieve_calls
     assert_equal 0, rag_calls
-    assert_includes prompts.sole, "UNCONFIRMED REFERENCE"
-    assert_includes prompts.sole, body
+    assert_includes prompts.sole, "# FIELD COMPANION"
+    assert_includes prompts.sole, "The equipment identity is not confirmed."
+    assert_includes prompts.sole, "Manual ajeno, p. 1"
+    assert_not_includes prompts.sole, "UNCONFIRMED REFERENCE"
+    assert_not_includes prompts.sole, body
+    assert_not_includes prompts.sole, "APPLICABILITY_BLOCK"
     assert_includes result[:answer], "no está confirmado"
     assert_nil result[:equipment_identity_status]
     assert_nil result[:generation_mode]
@@ -1573,7 +1577,8 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_equal 64, original_sha.length
     assert_equal 64, effective_sha.length
     assert_not_equal original_sha, effective_sha
-    assert_includes prompt, explained[:query]
+    assert_includes prompt, raw
+    assert_not_includes prompt, explained[:query] unless explained[:query] == raw
     assert_equal explained[:query], Rag::QueryComposer.call(
       state: episode, turn: raw, perception: perception, decision: decision
     )
@@ -1584,9 +1589,12 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_equal 11, retrieve_calls.first[:conversation_session_id]
     assert_equal "query:trace", retrieve_calls.first[:correlation_id]
     assert_equal "identity_unknown_reference", retrieve_calls.first[:route_taken]
-    assert_includes prompt, "UNCONFIRMED REFERENCE"
-    assert_includes prompt, "E18 fallo de nivelación."
-    assert prompt.index("UNCONFIRMED REFERENCE") < prompt.index("E18 fallo de nivelación.")
+    assert_includes prompt, "# FIELD COMPANION"
+    assert_includes prompt, "The equipment identity is not confirmed."
+    assert_includes prompt, "Código de Avería BLT Ascensor, p. 4"
+    assert_not_includes prompt, "UNCONFIRMED REFERENCE"
+    assert_not_includes prompt, "E18 fallo de nivelación."
+    assert_not_includes prompt, "APPLICABILITY_BLOCK"
     assert_not_includes prompt, "$output_format_instructions$"
     assert_not_includes prompt, "THIS JOB'S EQUIPMENT:"
     assert_equal "identity_unknown_reference", open["evidence_applicability"]
@@ -1594,7 +1602,6 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_not open.key?("results_count")
     assert_not open.key?("contexts_delivered")
     assert events.none? { |event| event["event"] == "document_identity_scope" }
-    assert_applicability_contract(prompt)
     assert_nil result[:generation_mode]
     assert_equal "generative", Rag::CausalTrace.resolved_generation_mode(nil, success: true)
     assert result[:generation_context].none? { |token| token.include?("applicability") || token.include?("identity_unknown") }
@@ -1799,7 +1806,10 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_equal 1, ran[:retrieve_calls]
     assert_equal 1, ran[:prompts].size
     assert_equal 0, ran[:rag_calls]
-    assert_includes ran[:prompts].first, "UNCONFIRMED REFERENCE"
+    assert_includes ran[:prompts].first, "# FIELD COMPANION"
+    assert_includes ran[:prompts].first, "Listado de Averías Orona uP-900, p. 4"
+    assert_not_includes ran[:prompts].first, "UNCONFIRMED REFERENCE"
+    assert_not_includes ran[:prompts].first, body
     assert_equal "identity_unknown", open["outcome_reason"]
     assert_equal :identity_assertion, ran[:result][:applicability_violation]
     assert_equal adversarial, ran[:result].dig(:diagnostics, :raw_answer)
@@ -1882,8 +1892,12 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
 
     assert_equal 0, rag_calls
     assert_equal 1, retrieves.size
-    assert_applicability_contract(prompt)
-    assert_includes prompt, "UNCONFIRMED REFERENCE"
+    assert_includes prompt, "# FIELD COMPANION"
+    assert_includes prompt, "The equipment identity is not confirmed."
+    assert_includes prompt, "BLT, p. 4"
+    assert_not_includes prompt, "UNCONFIRMED REFERENCE"
+    assert_not_includes prompt, "Mirar el final de carrera."
+    assert_not_includes prompt, "APPLICABILITY_BLOCK"
     assert_includes filter.to_json, uri
     assert_equal "identity_unknown_reference", open["evidence_applicability"]
     assert_equal "identity_unknown", open["outcome_reason"]

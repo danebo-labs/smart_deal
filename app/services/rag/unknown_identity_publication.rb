@@ -33,7 +33,7 @@ module Rag
       :mode, :answer, :prompt, :reference_status, :rejected_fields, :fallback_reason, :envelope
     ) do
       def accepted?
-        mode == MODE_CONTRACT
+        mode == MODE_CONTRACT && reference_status != "rejected"
       end
     end
 
@@ -54,6 +54,31 @@ module Rag
         required: %w[observations]
       }
     end
+
+    # Positive documentary reference on the raw turn. A pin does not enter.
+    # Manual-plus-steps and a bare follow-up stay on guidance.
+    def self.reference_request?(raw_turn)
+      text = raw_turn.to_s.squish
+      return false if text.blank?
+
+      manual_reference?(text) || code_meaning?(text)
+    end
+
+    def self.manual_reference?(text)
+      folded = I18n.transliterate(text).downcase
+      asks = folded.match?(/\bque dice\b/) || (folded.match?(/\bwhat does\b/) && folded.match?(/\bsay\b/))
+      asks && folded.match?(/\b(?:manual|documento|document)\b/)
+    end
+    private_class_method :manual_reference?
+
+    def self.code_meaning?(text)
+      folded = I18n.transliterate(text).downcase
+      meaning = folded.match?(/\bque significa\b/) || folded.match?(/\bwhat does\b.{0,80}\bmean\b/)
+      return false unless meaning
+
+      folded.match?(/\bcodigo\s+\d+\b/) || text.match?(/\b[A-Za-z]{1,6}-?\d{2,}[A-Za-z0-9.+]*\b/)
+    end
+    private_class_method :code_meaning?
 
     def self.attempt(client:, question:, chunks:, locale:, tracking: nil)
       unless client.respond_to?(:converse)

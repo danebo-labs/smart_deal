@@ -203,6 +203,26 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     ::OpenStruct.new(retrieval_results: [ authorized_chunk(body, uri: uri) ])
   end
 
+  def known_manual_identity
+    Rag::EquipmentIdentity.new(
+      manufacturer: "Manual",
+      needles: [ "Manual" ],
+      facts: [ { "slot" => "manufacturer", "value" => "Manual", "source" => "user", "correlation_id" => "bedrock-known" } ]
+    )
+  end
+
+  def with_known_generation_scope
+    previous = ENV.fetch("DOCUMENT_IDENTITY_SCOPE_ENABLED", nil)
+    ENV["DOCUMENT_IDENTITY_SCOPE_ENABLED"] = "true"
+    yield
+  ensure
+    if previous.nil?
+      ENV.delete("DOCUMENT_IDENTITY_SCOPE_ENABLED")
+    else
+      ENV["DOCUMENT_IDENTITY_SCOPE_ENABLED"] = previous
+    end
+  end
+
   def cited_answer(answer_text, body: nil)
     response = fake_response(answer_text)
     response.citations = [
@@ -350,8 +370,11 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'query injects English prompt when response_locale is :en despite Spanish-looking question' do
     with_mock_bedrock_client do |client|
+      client.retrieve_response = authorized_retrieve
       service = BedrockRagService.new(account: @account)
-      service.query('modernización', response_locale: :en)
+      with_known_generation_scope do
+        service.query('modernización', response_locale: :en, equipment_identity: known_manual_identity)
+      end
 
       template = client.last_retrieve_and_generate_params.dig(
         :retrieve_and_generate_configuration,
@@ -370,12 +393,16 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
   # Middle injection removed (cost_opt 2026-05-22: saves ~30-40 tokens/query).
   test 'query reinforces Spanish language directive at top and tail of prompt' do
     with_mock_bedrock_client do |client|
+      client.retrieve_response = authorized_retrieve
       service = BedrockRagService.new(account: @account)
       session_context = "## Recent Conversation\nUser: prior question\nAssistant: prior English answer"
-      service.query(
-        'si deseo hacer una integracion entre ellos guiame paso a paso',
-        session_context: session_context
-      )
+      with_known_generation_scope do
+        service.query(
+          'si deseo hacer una integracion entre ellos guiame paso a paso',
+          session_context: session_context,
+          equipment_identity: known_manual_identity
+        )
+      end
 
       template = client.last_retrieve_and_generate_params.dig(
         :retrieve_and_generate_configuration,
@@ -482,24 +509,26 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     assert_includes template, 'MUST be written entirely in Spanish'
   end
 
-  test 'unknown identity direct generation substitutes the output contract and marks the chunk' do
-    with_mock_bedrock_client do |client|
+  test 'unknown non-reference generation is body-free companion guidance' do
+    sentinel = "SENTINEL_XQ7_BORNE"
+    with_mock_bedrock_client(mock_retrieve_and_generate_response: cited_answer("ok", body: sentinel)) do |client|
       service = BedrockRagService.new(account: @account)
       service.query(
         'Compara las dos fotocélulas: qué tensión documenta cada una?',
         response_locale: :es,
-        session_context: "## Recent Conversation\nUser: prior question",
+        session_context: "## Recent Conversation\nUser: prior question\nAssistant: #{sentinel} en la respuesta anterior",
         output_channel: :web,
-        equipment_identity: nil
+        equipment_identity: nil,
+        raw_question: "Compara las dos fotocélulas: qué tensión documenta cada una?"
       )
 
       prompt = client.generation_prompts.last
-      assert_not_includes prompt, '$output_format_instructions$'
-      assert_includes prompt, 'UNCONFIRMED REFERENCE'
-      assert_includes prompt, 'identity_unknown_reference'
-      assert_includes prompt, '# DELIVERY CHANNEL'
-      assert_includes prompt, 'Cite a claim taken from a search result with [n]'
-      assert prompt.index('identity_unknown_reference') < prompt.index('Cite a claim taken from a search result with [n]')
+      assert_includes prompt, "# FIELD COMPANION"
+      assert_includes prompt, "The equipment identity is not confirmed."
+      assert_not_includes prompt, sentinel
+      assert_not_includes prompt, "identity_unknown_reference"
+      assert_not_includes prompt, "UNCONFIRMED REFERENCE"
+      assert_not_includes prompt, "APPLICABILITY_BLOCK"
     end
   end
 
@@ -548,9 +577,12 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'query appends session_context to generation prompt when provided' do
     with_mock_bedrock_client do |client|
+      client.retrieve_response = authorized_retrieve
       service = BedrockRagService.new(account: @account)
       ctx = "## Session Focus\nThe following documents/images have been referenced\n- [document] manual.pdf"
-      service.query('What is S3?', session_context: ctx)
+      with_known_generation_scope do
+        service.query('What is S3?', session_context: ctx, equipment_identity: known_manual_identity)
+      end
 
       template = client.last_retrieve_and_generate_params.dig(
         :retrieve_and_generate_configuration,
@@ -673,8 +705,11 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'web channel appends its own DELIVERY CHANNEL block with web-specific rules' do
     with_mock_bedrock_client do |client|
+      client.retrieve_response = authorized_retrieve
       service = BedrockRagService.new(account: @account)
-      service.query('What is S3?', output_channel: :web)
+      with_known_generation_scope do
+        service.query('What is S3?', output_channel: :web, equipment_identity: known_manual_identity)
+      end
 
       template = client.last_retrieve_and_generate_params.dig(
         :retrieve_and_generate_configuration,
@@ -911,15 +946,19 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'query appends photo label safety override for photo-only pins' do
     with_mock_bedrock_client do |client|
+      client.retrieve_response = authorized_retrieve(uri: "s3://bucket/photo.jpg")
       service = BedrockRagService.new(account: @account)
       own_pin_uri!('s3://bucket/photo.jpg')
-      service.query(
-        'Que componentes aparecen?',
-        entity_s3_uris: [ 's3://bucket/photo.jpg' ],
-        entity_sources: [ 'image_upload' ],
-        output_channel: :web,
-        force_entity_filter: true
-      )
+      with_known_generation_scope do
+        service.query(
+          'Que componentes aparecen?',
+          entity_s3_uris: [ 's3://bucket/photo.jpg' ],
+          entity_sources: [ 'image_upload' ],
+          output_channel: :web,
+          force_entity_filter: true,
+          equipment_identity: known_manual_identity
+        )
+      end
 
       template = client.last_retrieve_and_generate_params.dig(
         :retrieve_and_generate_configuration,
@@ -937,8 +976,11 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   test 'query appends stop-work evidence override only for stop-work intent' do
     with_mock_bedrock_client do |client|
+      client.retrieve_response = authorized_retrieve
       service = BedrockRagService.new(account: @account)
-      service.query('Cuando debo detener el trabajo?')
+      with_known_generation_scope do
+        service.query('Cuando debo detener el trabajo?', equipment_identity: known_manual_identity)
+      end
 
       template = client.last_retrieve_and_generate_params.dig(
         :retrieve_and_generate_configuration,
@@ -1406,7 +1448,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
 
   # ===== [RAG_QUALITY] evidence telemetry =====
 
-  test 'RAG_QUALITY logs evidence_present true, evidence_mode bedrock_citations, and source uris when citations exist' do
+  test 'RAG_QUALITY logs guidance without cited evidence and still records retrieved source uris' do
     KbDocument.create!(s3_key: "s3://bucket/manual.pdf", display_name: "Manual", aliases: [], account: @account)
 
     raw_answer = <<~ANSWER.strip
@@ -1443,7 +1485,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     end
 
     payload = captured_quality_payload
-    assert_equal true, payload["evidence_present"]
+    assert_equal false, payload["evidence_present"]
     assert_equal "retrieve_chunks", payload["evidence_mode"]
     assert_equal 1, payload["doc_refs_count"]
     assert_includes payload["retrieved_source_uris"], "s3://bucket/chunks/manual-1.txt"
@@ -2206,20 +2248,15 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         BedrockRagService.new(account: @account).query('torque del freno', entity_s3_uris: [ 's3://bucket/manual.pdf' ])
       end
 
-      assert_equal 2, call_count, 'expected filtered attempt + global fallback'
-      assert_equal 2, captured.size, 'one BedrockQuery row per billable invocation'
+      assert_equal 1, call_count, 'non-reference guidance does not open-corpus retry'
+      assert_equal 1, captured.size, 'one BedrockQuery row for the guidance generation'
 
-      filtered, global = captured
+      filtered = captured.first
       assert_equal 'rag_filtered', filtered[:route]
       assert_equal 1,              filtered[:attempt]
-      assert_equal 'rag_global',   global[:route]
-      assert_equal 2,              global[:attempt]
 
       assert filtered[:correlation_id].to_s.start_with?('query:'), 'correlation must use the query: scheme'
-      assert_equal filtered[:correlation_id], global[:correlation_id],
-                   'both invocations of the turn must share the correlation_id'
       assert_equal 3000, filtered[:max_tokens]
-      assert_equal 3000, global[:max_tokens]
       assert_kind_of Integer, filtered[:input_tokens],  'filtered row must have precomputed input_tokens'
       assert_kind_of Integer, filtered[:output_tokens], 'filtered row must have precomputed output_tokens'
       assert_equal 'provider_usage', filtered[:token_source]
@@ -2435,7 +2472,14 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     prose_absence = 'La documentación recuperada no contiene información sobre el torque de apriete de -PBCM -J26.'
     with_mock_bedrock_client(mock_retrieve_and_generate_response: cited_answer(prose_absence)) do
       service = BedrockRagService.new(account: @account)
-      result = service.query('¿Cuál es el torque de apriete de -PBCM -J26?', response_locale: :es)
+      result = nil
+      with_known_generation_scope do
+        result = service.query(
+          '¿Cuál es el torque de apriete de -PBCM -J26?',
+          response_locale: :es,
+          equipment_identity: known_manual_identity
+        )
+      end
       assert_not_includes result[:answer], 'DATA_NOT_AVAILABLE'
       assert_includes result[:answer], I18n.t("rag.data_not_available", locale: :es)
     end
@@ -2445,7 +2489,14 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     already_marked = 'El par de apriete: DATA_NOT_AVAILABLE en la documentación recuperada.'
     with_mock_bedrock_client(mock_retrieve_and_generate_response: cited_answer(already_marked)) do
       service = BedrockRagService.new(account: @account)
-      result = service.query('¿Cuál es el torque?', response_locale: :es)
+      result = nil
+      with_known_generation_scope do
+        result = service.query(
+          '¿Cuál es el torque?',
+          response_locale: :es,
+          equipment_identity: known_manual_identity
+        )
+      end
       assert_not_includes result[:answer], "DATA_NOT_AVAILABLE"
       assert_equal 1, result[:answer].scan(I18n.t("rag.data_not_available", locale: :es)).size
     end

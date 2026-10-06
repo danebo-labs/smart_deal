@@ -58,7 +58,7 @@ module Rag
                    response_locale:, output_channel:, account_id: nil, user_id: nil,
                    conversation_session_id: nil, correlation_id: nil, rag_service: nil,
                    generator: nil, expander: nil, episode: nil, raw_question: nil,
-                   equipment_identity: :omit)
+                   session_context: nil, equipment_identity: :omit)
       profile = RagRetrievalProfile.new(entity_sources: entity_sources, question: question)
       return nil unless eligible?(
         profile: profile,
@@ -83,6 +83,7 @@ module Rag
         expander: expander,
         episode: episode,
         raw_question: raw_question,
+        session_context: session_context,
         equipment_identity: equipment_identity
       )
     end
@@ -156,9 +157,10 @@ module Rag
                    response_locale:, account_id: nil, user_id: nil,
                    conversation_session_id: nil, correlation_id: nil, rag_service: nil,
                    generator: nil, expander: nil, episode: nil, route_taken: nil,
-                   raw_question: nil, equipment_identity: :omit)
+                   raw_question: nil, session_context: nil, equipment_identity: :omit)
       @question = question.to_s
       @raw_question = raw_question.presence || @question
+      @session_context = session_context
       @account = account
       @entity_s3_uris = Array(entity_s3_uris)
       @entity_sources = Array(entity_sources)
@@ -296,24 +298,56 @@ module Rag
       local_before_generation_ms = elapsed_ms(local_started)
 
       generation_started = monotonic_now
-      publication = unknown_identity_publication(chunks)
-      @publication = publication
-      if publication&.accepted?
-        prompt = publication.prompt
-        raw_answer = publication.answer
+      companion = false
+      guidance = nil
+      if @evidence_applicability == DocumentIdentityScope::IDENTITY_UNKNOWN_REFERENCE
+        if UnknownIdentityPublication.reference_request?(@raw_question)
+          publication = unknown_identity_publication(chunks)
+          @publication = publication
+          if publication&.accepted?
+            prompt = publication.prompt
+            raw_answer = publication.answer
+          else
+            companion = true
+          end
+        else
+          companion = true
+        end
+        if companion
+          guidance = unknown_guidance(chunks)
+          prompt = guidance.to_s
+          raw_answer = @generator.query(
+            prompt,
+            max_tokens: BedrockRagService::DEFAULT_RAG_CONFIG[:generation_max_tokens],
+            temperature: BedrockRagService::DEFAULT_RAG_CONFIG[:generation_temperature],
+            tracking: {
+              account_id: @account_id,
+              user_id: @user_id,
+              conversation_session_id: @conversation_session_id,
+              correlation_id: @correlation_id
+            }
+          ).to_s.strip
+        end
       else
-        prompt = generation_prompt(chunks, ambiguity: @ambiguity)
-        raw_answer = @generator.query(
-          prompt,
-          max_tokens: BedrockRagService::DEFAULT_RAG_CONFIG[:generation_max_tokens],
-          temperature: BedrockRagService::DEFAULT_RAG_CONFIG[:generation_temperature],
-          tracking: {
-            account_id: @account_id,
-            user_id: @user_id,
-            conversation_session_id: @conversation_session_id,
-            correlation_id: @correlation_id
-          }
-        ).to_s.strip
+        publication = unknown_identity_publication(chunks)
+        @publication = publication
+        if publication&.accepted?
+          prompt = publication.prompt
+          raw_answer = publication.answer
+        else
+          prompt = generation_prompt(chunks, ambiguity: @ambiguity)
+          raw_answer = @generator.query(
+            prompt,
+            max_tokens: BedrockRagService::DEFAULT_RAG_CONFIG[:generation_max_tokens],
+            temperature: BedrockRagService::DEFAULT_RAG_CONFIG[:generation_temperature],
+            tracking: {
+              account_id: @account_id,
+              user_id: @user_id,
+              conversation_session_id: @conversation_session_id,
+              correlation_id: @correlation_id
+            }
+          ).to_s.strip
+        end
       end
       generation_ms = elapsed_ms(generation_started)
       if raw_answer.blank?
@@ -335,26 +369,39 @@ module Rag
       end
 
       local_after_generation_started = monotonic_now
-      generated_answer = Rag::CitationMarkerNormalizer.call(
-        raw_answer,
-        evidence_count: chunks.size,
-        evidence_text: chunks.pluck(:content).join("\n")
-      )
-      internal_answer = BedrockRagService.allocate.send(
-        :normalize_absence_semantics,
-        generated_answer,
-        question: @question,
-        locale: locale
-      )
-      answer = Rag::AnswerSafetyProcessor.new(locale: locale).call(
-        internal_answer,
-        evidence: citation_evidence,
-        require_cited_evidence: true
-      )
+      if companion
+        generated_answer = raw_answer.to_s
+        internal_answer = generated_answer
+        safety = guidance&.safety_evidence.to_s
+        answer = Rag::AnswerSafetyProcessor.new(locale: locale).call(
+          internal_answer,
+          evidence: safety.present? ? [ { content: safety } ] : [],
+          require_cited_evidence: false,
+          companion_guidance: true
+        )
+      else
+        generated_answer = Rag::CitationMarkerNormalizer.call(
+          raw_answer,
+          evidence_count: chunks.size,
+          evidence_text: chunks.pluck(:content).join("\n")
+        )
+        internal_answer = BedrockRagService.allocate.send(
+          :normalize_absence_semantics,
+          generated_answer,
+          question: @question,
+          locale: locale
+        )
+        answer = Rag::AnswerSafetyProcessor.new(locale: locale).call(
+          internal_answer,
+          evidence: citation_evidence,
+          require_cited_evidence: true
+        )
+      end
       attribution = Rag::CitationAttributionGuard.new(
         question: @question, citations: citation_evidence
       ).call(answer)
       answer = attribution.answer
+      answer = answer.gsub(/[ \t]*\[\d+\]/, "") if companion
       applicability_kind = unconfirmed_applicability_kind(raw_answer, answer, chunks)
       if applicability_kind
         return withhold_unconfirmed_identity_outcome(
@@ -376,15 +423,19 @@ module Rag
           processed_answer: answer
         )
       end
-      citations = @citation_processor.build_numbered_references(
-        citation_evidence,
-        answer,
-        question: @question
-      )
+      citations = if companion
+        []
+      else
+        @citation_processor.build_numbered_references(
+          citation_evidence,
+          answer,
+          question: @question
+        )
+      end
       local_ms = local_before_generation_ms + elapsed_ms(local_after_generation_started)
-      uncited_prose = uncited_prose?(answer, internal_answer, attribution)
+      uncited_prose = !companion && uncited_prose?(answer, internal_answer, attribution)
       citations = [] if uncited_prose
-      unless uncited_prose || valid_citations?(answer, citations, chunks.size)
+      unless companion || uncited_prose || valid_citations?(answer, citations, chunks.size)
         return abstained_outcome(
           reason: attribution.dropped_any? ? :attribution_failure : :citation_failure,
           retrieval: retrieval,
@@ -428,8 +479,8 @@ module Rag
       result = {
         answer: answer,
         citations: citations,
-        retrieved_citations: citation_evidence,
-        doc_refs: doc_refs(chunks),
+        retrieved_citations: companion ? [] : citation_evidence,
+        doc_refs: companion ? nil : doc_refs(chunks),
         retrieval_trace: trace,
         session_id: nil,
         generation_mode: GENERATION_MODE,
@@ -456,6 +507,9 @@ module Rag
         }.compact
       }
       apply_publication_fields!(result)
+      if companion && result[:publication_mode] != UnknownIdentityPublication::MODE_FALLBACK
+        result[:publication_mode] = "unknown_identity_guidance"
+      end
       attach_generation_trace!(result, prompt)
       Outcome.new(status: :answered, result: result)
     rescue BedrockRagService::BedrockServiceError => e
@@ -1530,6 +1584,18 @@ module Rag
     # must not withhold that publication. The prose fallback still checks raw.
     def publication_raw(raw_answer)
       @publication&.accepted? ? nil : raw_answer
+    end
+
+    def unknown_guidance(chunks)
+      CompanionGuidanceContext.build(
+        question: @raw_question,
+        identity: nil,
+        session_context: @session_context,
+        labels: [],
+        locale: locale,
+        mode: :unknown,
+        manuals: CompanionGuidanceContext.withheld_manuals(chunks)
+      )
     end
 
     def unknown_identity_publication(chunks)

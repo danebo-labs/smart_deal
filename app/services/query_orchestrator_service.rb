@@ -338,7 +338,8 @@ class QueryOrchestratorService
       correlation_id: @correlation_id,
       episode: episode_for_scope,
       equipment_identity: resolved_equipment_identity,
-      raw_question: @raw_question
+      raw_question: @raw_question,
+      session_context: @session_context
     )
     outcome = structured&.execute
     if outcome&.status == :answered || outcome&.status == :abstained
@@ -358,7 +359,11 @@ class QueryOrchestratorService
         # route keep the same attribution as the ones the route answers directly.
         user_id:                 @user_id,
         conversation_session_id: @conversation_session_id,
-        correlation_id:          @correlation_id
+        correlation_id:          @correlation_id,
+        raw_question:            @raw_question,
+        session_context:         @session_context,
+        episode:                 episode_for_scope,
+        equipment_identity:      resolved_equipment_identity
       )
       if disambiguation && (disambiguated = disambiguation.execute)
         Rails.logger.info("QueryOrchestrator: Routing to deterministic_model_disambiguation for: '#{@query}'")
@@ -466,7 +471,8 @@ class QueryOrchestratorService
       correlation_id: @correlation_id,
       episode: episode_for_scope,
       equipment_identity: resolved_equipment_identity,
-      session_context: @session_context
+      session_context: @session_context,
+      raw_question: @raw_question
     )
     outcome = route&.execute
     return nil unless outcome&.status == :answered || outcome&.status == :abstained

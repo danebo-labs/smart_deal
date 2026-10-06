@@ -112,9 +112,11 @@ class Rag::ContextEvidenceRouteTest < ActiveSupport::TestCase
     assert_equal 1, generator.calls.size
     prompt = generator.calls.first[:prompt]
     assert_includes prompt, THYSSEN
-    assert_includes prompt, "SERIE SEGURIDADES PRINCIPALES"
+    assert_includes prompt, "# FIELD COMPANION"
+    assert_not_includes prompt, "SERIE SEGURIDADES PRINCIPALES"
     assert_not_includes prompt, "TCM VARIADOR"
     assert_not_includes prompt, "DISPLAY LCD"
+    assert_not_includes prompt, "APPLICABILITY_BLOCK"
   end
 
   test "closed episode facts are not requested again on this route" do

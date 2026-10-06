@@ -113,17 +113,31 @@ class BedrockRagServiceKnowledgeScopeTest < ActiveSupport::TestCase
     client = FakeClient.new
     client.generate_response = response
     result = nil
+    identity = Rag::EquipmentIdentity.new(
+      manufacturer: "Elemont",
+      needles: [ "Elemont" ],
+      facts: [ { "slot" => "manufacturer", "value" => "Elemont", "source" => "user", "correlation_id" => "scope-citation" } ]
+    )
+    previous_scope = ENV.fetch("DOCUMENT_IDENTITY_SCOPE_ENABLED", nil)
+    ENV["DOCUMENT_IDENTITY_SCOPE_ENABLED"] = "true"
     with_client(client) do
       result = BedrockRagService.new(account: accounts(:legacy)).query(
         "borne 12",
         entity_s3_uris: [ document.canonical_uri ],
-        force_entity_filter: true
+        force_entity_filter: true,
+        equipment_identity: identity
       )
     end
 
     bodies = Array(result[:retrieved_citations]).map { |chunk| chunk[:content].to_s }
     assert_includes bodies, "ELEMONT_BORNE"
     assert_equal 1, result[:citations].size
+  ensure
+    if previous_scope.nil?
+      ENV.delete("DOCUMENT_IDENTITY_SCOPE_ENABLED")
+    else
+      ENV["DOCUMENT_IDENTITY_SCOPE_ENABLED"] = previous_scope
+    end
   end
 
   test "pilot keeps a legacy sha36 manual and drops that account photo and a client manual" do

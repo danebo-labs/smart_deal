@@ -22,22 +22,38 @@ module Rag
       "Condition" => "condition"
     }.freeze
 
-    def self.build(question:, identity:, session_context:, labels:, locale:)
+    def self.build(question:, identity:, session_context:, labels:, locale:, mode: :known, manuals: nil)
       new(
         question: question,
         identity: identity,
         session_context: session_context,
         labels: labels,
-        locale: locale
+        locale: locale,
+        mode: mode,
+        manuals: manuals
       )
     end
 
-    def initialize(question:, identity:, session_context:, labels:, locale:)
+    # Name and page only. Chunk bodies stay out of the unknown-identity prompt.
+    def self.withheld_manuals(chunks)
+      Array(chunks).filter_map { |chunk|
+        metadata = chunk[:metadata].to_h.stringify_keys
+        name = metadata["canonical_name"].presence || metadata["original_filename"].presence
+        next if name.blank? || name == "DATA_NOT_AVAILABLE"
+
+        page = metadata["page_number"].presence
+        page.present? ? "#{name}, p. #{page}" : name
+      }.uniq.first(MAX_MANUALS)
+    end
+
+    def initialize(question:, identity:, session_context:, labels:, locale:, mode: :known, manuals: nil)
       @question = question.to_s.squish.truncate(QUESTION_CHARS, omission: "")
       @identity = identity
       @session_context = session_context.to_s
       @labels = Array(labels)
       @locale = locale
+      @mode = mode.to_sym
+      @manuals = Array(manuals).compact_blank.first(MAX_MANUALS)
     end
 
     def to_s
@@ -59,6 +75,8 @@ module Rag
     private
 
     def instruction
+      return unknown_instruction if unknown?
+
       <<~TEXT.strip
         # FIELD COMPANION
         You are assisting the technician in the field.
@@ -75,7 +93,31 @@ module Rag
       TEXT
     end
 
+    def unknown?
+      @mode == :unknown
+    end
+
+    def unknown_instruction
+      <<~TEXT.strip
+        # FIELD COMPANION
+        You are assisting the technician in the field.
+        The equipment identity is not confirmed.
+        Do not teach the contents of any retrieved manual. Those contents are not in this prompt.
+        Continue helping from the active problem and generic diagnostic reasoning.
+        Ask for one high-value next observation when needed. One main question. A short alternative is allowed. Do not turn the answer into a questionnaire, and do not ask for manufacturer, model, controller, fault code, and a photo together.
+        Clearly distinguish observation from guidance. Guidance is a hypothesis or a field check, not a manufacturer instruction.
+        Do not invent electrical values, distances, tolerances, torque, parameters, terminal numbers, terminal functions, fault-code meanings, manufacturer-specific sequences, menu names, or DIP positions.
+        If the equipment identity conflicts, do not choose a manufacturer. Ask for the evidence that resolves the conflict before any manufacturer-specific step.
+        On a follow-up, do not greet again. A short greeting is allowed only when this opens the case.
+        Do not stop after saying there is no manual. Do not print DATA_NOT_AVAILABLE.
+        Do not cite manuals with [n].
+        Write the entire answer in #{language_name}.
+      TEXT
+    end
+
     def turn_block
+      return unknown_turn_block if unknown?
+
       lines = []
       lines << "Question: #{@question}" if @question.present?
       lines << "Active problem: #{goal}" if goal.present?
@@ -98,6 +140,36 @@ module Rag
       end
       lines << (follow_up? ? "Follow-up: yes." : "Follow-up: no.")
       lines.join("\n")
+    end
+
+    def unknown_turn_block
+      lines = []
+      lines << "Question: #{@question}" if @question.present?
+      problem_projection_lines.each { |line| lines << line }
+      if visual_fields.any?
+        lines << "Accepted visual observation:"
+        visual_fields.each { |label, value| lines << "- #{label}: #{value}" }
+      end
+      turns = technician_turns
+      if turns.any?
+        lines << "Technician observations:"
+        turns.each { |turn| lines << "- #{turn}" }
+      end
+      if @manuals.any?
+        lines << "Retrieved manuals, not confirmed for this equipment. Contents withheld. Available on explicit request:"
+        @manuals.each { |name| lines << "- #{name}" }
+      end
+      lines << (follow_up? ? "Follow-up: yes." : "Follow-up: no.")
+      lines.join("\n")
+    end
+
+    def problem_projection_lines
+      section(PROBLEM_HEADING).lines.filter_map { |line|
+        text = line.strip
+        next if text.blank? || text.start_with?("(") || text.start_with?("These facts identify")
+
+        text
+      }
     end
 
     def language_name

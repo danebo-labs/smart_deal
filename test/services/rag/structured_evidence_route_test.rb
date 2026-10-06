@@ -71,6 +71,8 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     ENV["RAG_CITATION_ATTRIBUTION_CONTRACT_ENABLED"] = "true"
     @original_gs_flag = ENV.fetch("RAG_GROUNDED_SYNTHESIS_ENABLED", nil)
     ENV.delete("RAG_GROUNDED_SYNTHESIS_ENABLED")
+    @original_identity_scope = ENV.fetch("DOCUMENT_IDENTITY_SCOPE_ENABLED", nil)
+    ENV["DOCUMENT_IDENTITY_SCOPE_ENABLED"] = "true"
     @account = accounts(:legacy)
     @source_uri = "s3://test-bucket/manual.pdf"
   end
@@ -95,6 +97,11 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
       ENV.delete("RAG_GROUNDED_SYNTHESIS_ENABLED")
     else
       ENV["RAG_GROUNDED_SYNTHESIS_ENABLED"] = @original_gs_flag
+    end
+    if @original_identity_scope.nil?
+      ENV.delete("DOCUMENT_IDENTITY_SCOPE_ENABLED")
+    else
+      ENV["DOCUMENT_IDENTITY_SCOPE_ENABLED"] = @original_identity_scope
     end
   end
 
@@ -181,7 +188,7 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_equal "chunk", chunk["type"]
     assert_equal "Manual", chunk["document"]
     assert_equal 36, chunk["page"]
-    assert_equal "LED ABC12 | SERIE SEGURIDAD", chunk["text"]
+    assert_equal "THIS JOB'S EQUIPMENT: Manual\nLED ABC12 | SERIE SEGURIDAD", chunk["text"]
     assert_equal false, chunk["truncated"]
   end
 
@@ -242,7 +249,8 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
   test "complete_from_retrieval abstains instead of reporting the retrieve as unspent" do
     route = build_route(
       rag_service: FakeRagService.new([]),
-      generator: FakeGenerator.new(nil)
+      generator: FakeGenerator.new(nil),
+      equipment_identity: nil
     )
 
     outcome = route.complete_from_retrieval({ chunks: [], retrieval_trace: {} }, retrieval_ms: 0)
@@ -254,21 +262,21 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
   test "narrows widened recall to the labelled identifier and lexical sibling match" do
     target = {
       content: "## ABC12 - ELECTRICO\nLED ZX9 | SERIE PRINCIPAL",
-      metadata: { "page_number" => 29, "section_identity" => "SECTION-A" },
+      metadata: { "canonical_name" => "Manual", "original_source_uri" => @source_uri, "page_number" => 29, "section_identity" => "SECTION-A" },
       location_uri: "s3://test-bucket/chunks/target.txt",
       chunk_sha256: "target-sha",
       rank: 1
     }
     sibling = {
       content: "## ABC12 - HIDRAULICO\nLED ZX9 | SERIE PRINCIPAL",
-      metadata: { "page_number" => 30, "section_identity" => "SECTION-A" },
+      metadata: { "canonical_name" => "Manual", "original_source_uri" => @source_uri, "page_number" => 30, "section_identity" => "SECTION-A" },
       location_uri: "s3://test-bucket/chunks/sibling.txt",
       chunk_sha256: "sibling-sha",
       rank: 2
     }
     unrelated = {
       content: "## OTHER\nLED QP7 | SERIE SECUNDARIA",
-      metadata: { "page_number" => 80, "section_identity" => "SECTION-B" },
+      metadata: { "canonical_name" => "Manual", "original_source_uri" => @source_uri, "page_number" => 80, "section_identity" => "SECTION-B" },
       location_uri: "s3://test-bucket/chunks/unrelated.txt",
       chunk_sha256: "unrelated-sha",
       rank: 3
@@ -516,9 +524,8 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_includes prompt, "Page: 1"
     assert_includes prompt, "Page: 4"
     assert_includes prompt, "turn the answer into a procedure"
-    assert_equal :procedure_application, outcome.result[:applicability_violation]
-    assert_equal :value_code, outcome.result[:applicability_violation_basis]
-    assert_empty outcome.result[:citations]
+    assert_nil outcome.result[:applicability_violation]
+    assert outcome.result[:citations].any?
     assert_equal [ 1, 2, 3, 4 ], outcome.result[:retrieved_citations].map { |citation|
       citation[:metadata]["page_number"]
     }
@@ -644,11 +651,9 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     ).execute
 
     assert_equal :answered, outcome.status
-    assert_equal :procedure_application, outcome.result[:applicability_violation]
-    assert_equal :value_code, outcome.result[:applicability_violation_basis]
-    assert_not_includes outcome.result[:answer], "XA1"
-    assert_includes outcome.result[:answer], "no está confirmada"
-    assert_empty outcome.result[:citations]
+    assert_nil outcome.result[:applicability_violation]
+    assert_includes outcome.result[:answer], "XA1"
+    assert outcome.result[:citations].any?
     assert_equal 1, outcome.result[:retrieved_citations].size
   end
 
@@ -712,27 +717,24 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_equal off_service.calls.size, on_service.calls.size
   end
 
-  test "unknown identity keeps citations and does not require verbatim foreign text" do
+  test "unknown non-reference guidance withholds the chunk body" do
     rag_service = FakeRagService.new([ neighbor_chunk ])
     generator = FakeGenerator.new("\"SERIE CAB. EXT. CERRADA\" [1]")
 
     outcome = build_route(
       rag_service: rag_service,
       generator: generator,
-      expander: FakeExpander.new(nil)
+      expander: FakeExpander.new(nil),
+      equipment_identity: nil
     ).execute
     prompt = generator.calls.first[:prompt]
 
     assert_equal :answered, outcome.status
-    assert_includes prompt, "Write the explanatory prose in Spanish"
-    assert_includes prompt, "identity_unknown_reference"
-    assert_includes prompt, "Only if the technician asked"
-    assert_includes prompt, "Cite every supported technical claim"
-    assert_not_includes prompt, "Never translate or rewrite a value reproduced verbatim"
-    assert_no_match(/reproduce that\s+string exactly as printed/, prompt)
-    assert_equal 1, prompt.scan("UNKNOWN EQUIPMENT IDENTITY").size
-    assert_equal 1, prompt.scan("Cite every supported technical claim").size
-    assert_no_match MANUFACTURER_PATTERN, prompt
+    assert_body_free_guidance(prompt, absent: [ "ABC12 | SERIE SEGURIDAD", "Chunk SHA256" ])
+    assert_includes prompt, "Manual, p. 36"
+    assert_not_includes outcome.result[:answer], "[1]"
+    assert_empty outcome.result[:citations]
+    assert_equal "unknown_identity_guidance", outcome.result[:publication_mode]
     assert_no_match(/reproduce that\s+string exactly as printed/,
       BedrockRagService.load_generation_prompt_template)
   end
@@ -911,14 +913,12 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_includes prompt, "SERIE PUERTAS CABINA - EXTERIORES"
     assert_includes prompt, "SERIE DE PUERTAS"
     assert_includes prompt, "SERIE PUERTAS DE PISO"
-    assert_equal :procedure_application, outcome.result[:applicability_violation]
-    assert_equal :value_code, outcome.result[:applicability_violation_basis]
-    assert_empty outcome.result[:citations]
+    assert_nil outcome.result[:applicability_violation]
+    assert outcome.result[:citations].any?
     assert_equal [ 9, 88, 91 ], outcome.result[:retrieved_citations].map { |citation|
       citation[:metadata]["page_number"]
     }
-    assert_not_includes outcome.result[:answer], "TPR50"
-    assert_includes outcome.result[:answer], "no está confirmada"
+    assert_includes outcome.result[:answer], "TPR50"
   end
 
   test "an identifier that passes the lexical equipment gate is still detected from the evidence" do
@@ -1012,7 +1012,8 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
         question: question,
         rag_service: FakeRagService.new(arca_board_chunks),
         generator: on_generator,
-        expander: FakeExpander.new(nil)
+        expander: FakeExpander.new(nil),
+        equipment_identity: nil
       ).execute
     end
     off = with_family_guard("false") do
@@ -1020,7 +1021,8 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
         question: question,
         rag_service: FakeRagService.new(arca_board_chunks),
         generator: off_generator,
-        expander: FakeExpander.new(nil)
+        expander: FakeExpander.new(nil),
+        equipment_identity: nil
       ).execute
     end
 
@@ -1360,12 +1362,8 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_equal 9, rag_service.calls.first[:user_id]
     assert_equal 11, rag_service.calls.first[:conversation_session_id]
     assert_equal "structured_evidence_route", outcome.result[:generation_mode]
-    assert_applicability_contract(prompt)
-    assert_includes prompt, "UNCONFIRMED REFERENCE"
-    assert_includes prompt, "Código de Avería BLT Ascensor"
-    assert_includes prompt, "Page: 4"
-    assert_includes prompt, body
-    assert prompt.index("UNCONFIRMED REFERENCE") < prompt.index(body)
+    assert_body_free_guidance(prompt, absent: [ body, "UNCONFIRMED REFERENCE" ])
+    assert_includes prompt, "Código de Avería BLT Ascensor, p. 4"
     assert_not_includes prompt, "THIS JOB'S EQUIPMENT:"
     assert_equal "not_required", scope["outcome_reason"]
     assert_equal "identity_unknown_reference", scope["evidence_applicability"]
@@ -1373,9 +1371,10 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_equal 1, scope["contexts_delivered"]
     assert_equal :answered, outcome.status
     assert_includes outcome.result[:answer], "No está confirmado"
-    assert_includes outcome.result[:answer], "[1]"
+    assert_not_includes outcome.result[:answer], "[1]"
     assert_not_includes outcome.result[:answer], "Ajusta"
-    assert outcome.result[:citations].any?
+    assert_empty outcome.result[:citations]
+    assert_equal "unknown_identity_guidance", outcome.result[:publication_mode]
     assert outcome.result[:generation_context].none? { |token| token.include?("applicability") }
   end
 
@@ -1395,7 +1394,8 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
 
     assert_equal 1, rag_service.calls.size
     assert_equal 1, generator.calls.size
-    assert_includes generator.calls.first[:prompt], "UNCONFIRMED REFERENCE"
+    assert_body_free_guidance(generator.calls.first[:prompt], absent: [ body, "UNCONFIRMED REFERENCE" ])
+    assert_includes generator.calls.first[:prompt], "Listado de Averías Orona uP-900, p. 4"
     assert_equal :answered, outcome.status
     assert_equal :answered, outcome.result[:route_outcome]
     assert_equal :identity_assertion, outcome.result[:applicability_violation]
@@ -1525,12 +1525,8 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
 
     assert_equal 1, rag_service.calls.size
     assert_equal 1, generator.calls.size
-    assert_applicability_contract(prompt)
-    assert_includes prompt, "UNCONFIRMED REFERENCE"
-    assert_includes prompt, "Page: 11"
-    assert_includes prompt, "Fuji Yida"
-    assert_includes prompt, body
-    assert prompt.index("UNCONFIRMED REFERENCE") < prompt.index(body)
+    assert_body_free_guidance(prompt, absent: [ body, "UNCONFIRMED REFERENCE" ])
+    assert_includes prompt, "Fuji Yida, p. 11"
     assert_not_includes prompt, "THIS JOB'S EQUIPMENT:"
     assert_equal "structured_evidence_route", outcome.result[:generation_mode]
     assert_not_equal "identity_unknown_reference", outcome.result[:generation_mode]
@@ -2562,6 +2558,23 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_equal [ "document" ], call[:entity_sources]
   end
 
+  def assert_body_free_guidance(prompt, absent: [])
+    assert_includes prompt, "# FIELD COMPANION"
+    assert_includes prompt, "The equipment identity is not confirmed."
+    assert_not_includes prompt, "APPLICABILITY_BLOCK"
+    assert_not_includes prompt, "identity_unknown_reference"
+    assert_not_includes prompt, "## Session Focus"
+    Array(absent).each { |text| assert_not_includes prompt, text }
+  end
+
+  def manual_identity
+    Rag::EquipmentIdentity.new(
+      manufacturer: "Manual",
+      needles: [ "Manual" ],
+      facts: [ { "slot" => "manufacturer", "value" => "Manual", "source" => "user", "correlation_id" => "structured-known" } ]
+    )
+  end
+
   def assert_applicability_contract(prompt)
     assert_includes prompt, "identity_unknown_reference"
     assert_includes prompt, "UNKNOWN EQUIPMENT IDENTITY"
@@ -2592,7 +2605,8 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
 
   def build_route(question: "¿Qué indica el LED ABC12?", entity_s3_uris: [ @source_uri ],
                   entity_sources: [ "document" ], output_channel: :web, rag_service: nil,
-                  generator: nil, expander: nil, episode: nil, raw_question: nil)
+                  generator: nil, expander: nil, episode: nil, raw_question: nil,
+                  equipment_identity: :known)
     Rag::StructuredEvidenceRoute.build(
       question: question,
       account: @account,
@@ -2605,7 +2619,8 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
       generator: generator,
       expander: expander,
       episode: episode,
-      raw_question: raw_question
+      raw_question: raw_question,
+      equipment_identity: equipment_identity == :known ? manual_identity : equipment_identity
     )
   end
 

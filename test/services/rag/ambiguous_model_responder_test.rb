@@ -175,8 +175,11 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
     assert_not result.key?(:quick_replies)
     assert_includes result[:answer], "SSEG"
     assert_equal 1, generator.calls
-    assert_includes generator.prompt, "TWISTER TW"
+    assert_includes generator.prompt, "Twister TW"
+    assert_includes generator.prompt, "# FIELD COMPANION"
+    assert_not_includes generator.prompt, "TWISTER TW – ELECTRICO"
     assert_not_includes generator.prompt, "EDEL-K3"
+    assert_not_includes generator.prompt, "APPLICABILITY_BLOCK"
     assert_equal 1, responder.instance_variable_get(:@service).retrieve_count
   end
 

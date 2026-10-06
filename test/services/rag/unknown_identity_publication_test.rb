@@ -11,6 +11,25 @@ class Rag::UnknownIdentityPublicationTest < ActiveSupport::TestCase
   INVENTED = "Q-731 = fallo del freno"
   SAFE_OBSERVATION = "Mira la posición de la cabina y si las puertas están abiertas."
 
+  test "reference_request is the raw-turn documentary predicate" do
+    assert Rag::UnknownIdentityPublication.reference_request?("¿Qué dice el manual ZEPHYR QX-77 en la página 12? Puede no ser mi equipo.")
+    assert Rag::UnknownIdentityPublication.reference_request?("What does the ZEPHYR QX-77 manual say? It may not apply to this equipment.")
+    assert Rag::UnknownIdentityPublication.reference_request?("El display muestra Q-731, ¿qué significa?")
+    assert Rag::UnknownIdentityPublication.reference_request?("El manual BLT que apareció, ¿qué dice sobre su propio sistema de nivelación? No sé si es mi equipo.")
+    assert_not Rag::UnknownIdentityPublication.reference_request?("What's the procedure to bring the car down?")
+    assert_not Rag::UnknownIdentityPublication.reference_request?("Tengo el manual seleccionado. Dame el procedimiento de rescate.")
+    assert_not Rag::UnknownIdentityPublication.reference_request?("Dame los pasos del manual ZEPHYR, yo verifico antes")
+    assert_not Rag::UnknownIdentityPublication.reference_request?("¿Y ahora?")
+    assert_not Rag::UnknownIdentityPublication.reference_request?("¿y eso?")
+    assert_not Rag::UnknownIdentityPublication.reference_request?("Elemont MH con placa CEA15; la puerta 1 no termina de cerrar y el imán no magnetiza. ¿Qué reviso?")
+    assert_not Rag::UnknownIdentityPublication.reference_request?("Este ascensor queda mal nivelado en planta 3; aún no identifiqué la maniobra. ¿Qué observo primero?")
+  end
+
+  test "a composed reference question does not classify a later follow-up" do
+    assert_not Rag::UnknownIdentityPublication.reference_request?("¿Y ahora?")
+    assert Rag::UnknownIdentityPublication.reference_request?("¿Y ahora? ¿Qué dice el manual?")
+  end
+
   test "the schema has no current-job action field" do
     properties = Rag::UnknownIdentityPublication.tool_schema[:properties]
 
@@ -260,6 +279,56 @@ class Rag::UnknownIdentityPublicationTest < ActiveSupport::TestCase
     assert_equal :procedure_application, managed[:applicability_violation]
     assert_includes managed[:answer], "La identidad de este equipo no está confirmada."
     assert_not_includes managed[:answer], "Envíalo"
+    assert_includes managed[:guidance_prompt], "# FIELD COMPANION"
+    assert_not_includes managed[:guidance_prompt], "fallo de puerta"
+    assert_not_includes managed[:guidance_prompt], "APPLICABILITY_BLOCK"
+  end
+
+  test "c12 enters the publication contract on both lanes and c04 stays body-free guidance" do
+    c12 = "What does the ZEPHYR QX-77 manual say? It may not apply to this equipment."
+    c04 = "What's the procedure to bring the car down?"
+    prior = "## Session Focus\nGround your answer in SEGURIDAD IN.\n## Recent Conversation\nAssistant: Paso 11. Ajusta el interruptor."
+
+    [ c12 ].each do |question|
+      managed = run_managed(qualified_envelope, question: question)
+      structured = run_structured(qualified_envelope, question: question)
+      [ managed, structured ].each do |result|
+        assert_equal 1, result[:converse_calls]
+        assert_equal 0, result[:query_calls]
+        assert_equal "unknown_identity_contract", result[:publication_mode]
+        assert_includes result[:answer], "Esto no está confirmado para el equipo que tienes delante."
+      end
+    end
+
+    [ c04 ].each do |question|
+      managed = run_managed(qualified_envelope, question: question, session_context: prior, prose: "Mirar la posición de la cabina.")
+      structured = run_structured(qualified_envelope, question: question, session_context: prior, prose: "Mirar la posición de la cabina.")
+      [ managed, structured ].each do |result|
+        assert_equal 0, result[:converse_calls]
+        assert_equal 1, result[:query_calls]
+        assert_equal "unknown_identity_guidance", result[:publication_mode]
+        assert_includes result[:guidance_prompt], "# FIELD COMPANION"
+        assert_includes result[:guidance_prompt], question
+        assert_not_includes result[:guidance_prompt], "fallo de puerta"
+        assert_not_includes result[:guidance_prompt], "Paso 11"
+        assert_not_includes result[:guidance_prompt], "## Session Focus"
+        assert_not_includes result[:guidance_prompt], "APPLICABILITY_BLOCK"
+      end
+    end
+  end
+
+  test "a rejected span on both lanes becomes body-free guidance without a qualified reference" do
+    rejected = { "observations" => [ SAFE_OBSERVATION ], "reference_fact" => { "citation" => 1, "evidence_span" => "Cortar tensión en el borne XQ7." } }
+    prose = "La cabina está por encima del nivel."
+    [ run_managed(rejected, prose: prose), run_structured(rejected, prose: prose) ].each do |result|
+      assert_equal 1, result[:converse_calls]
+      assert_equal 1, result[:query_calls]
+      assert_equal "unknown_identity_guidance", result[:publication_mode]
+      assert_includes result[:guidance_prompt], "# FIELD COMPANION"
+      assert_not_includes result[:guidance_prompt], "fallo de puerta"
+      assert_not_includes result[:answer], "Según el manual"
+      assert_not_includes result[:answer], "XQ7"
+    end
   end
 
   test "known identity does not use the publication contract" do
@@ -350,24 +419,37 @@ class Rag::UnknownIdentityPublicationTest < ActiveSupport::TestCase
     }
   end
 
-  def run_managed(envelope, prose: nil)
+  def run_managed(envelope, prose: nil, question: QUESTION, session_context: nil)
     generator = RecordingGenerator.new(envelope, prose: prose)
     chunk = zephyr_chunk
     service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
     service.define_singleton_method(:retrieve_chunks) { |*, **| { chunks: [ chunk ], retrieval_trace: {} } }
     service.define_singleton_method(:document_identity_generator) { generator }
     service.define_singleton_method(:retrieve_and_generate_with_retry) { |_params| flunk "open rag" }
-    result = service.query(QUESTION, equipment_identity: nil, output_channel: :web, response_locale: :es, include_diagnostics: true)
-    result.merge(query_calls: generator.query_calls.size)
+    result = service.query(
+      question, equipment_identity: nil, output_channel: :web, response_locale: :es,
+      include_diagnostics: true, session_context: session_context, raw_question: question
+    )
+    result.merge(
+      query_calls: generator.query_calls.size,
+      converse_calls: generator.converse_calls.size,
+      guidance_prompt: generator.query_calls.last&.dig(:prompt).to_s
+    )
   end
 
-  def run_structured(envelope)
-    generator = RecordingGenerator.new(envelope)
-    outcome = structured_route(generator, [ zephyr_chunk ], equipment_identity: nil).execute
-    outcome.result.merge(query_calls: generator.query_calls.size)
+  def run_structured(envelope, question: QUESTION, session_context: nil, prose: nil)
+    generator = RecordingGenerator.new(envelope, prose: prose)
+    outcome = structured_route(
+      generator, [ zephyr_chunk ], equipment_identity: nil, question: question, session_context: session_context
+    ).execute
+    outcome.result.merge(
+      query_calls: generator.query_calls.size,
+      converse_calls: generator.converse_calls.size,
+      guidance_prompt: generator.query_calls.last&.dig(:prompt).to_s
+    )
   end
 
-  def structured_route(generator, chunks, equipment_identity:, question: QUESTION)
+  def structured_route(generator, chunks, equipment_identity:, question: QUESTION, session_context: nil)
     expander = Object.new
     expander.define_singleton_method(:neighbor_chunk) { |**| nil }
     rag = Object.new
@@ -382,7 +464,9 @@ class Rag::UnknownIdentityPublicationTest < ActiveSupport::TestCase
       rag_service: rag,
       generator: generator,
       expander: expander,
-      equipment_identity: equipment_identity
+      equipment_identity: equipment_identity,
+      raw_question: question,
+      session_context: session_context
     )
   end
 

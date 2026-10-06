@@ -11,8 +11,8 @@ module Rag
   class ContextEvidenceRoute
     def self.build(question:, account:, entity_s3_uris:, entity_sources:, response_locale:,
                    output_channel:, account_id: nil, user_id: nil, conversation_session_id: nil,
-                   correlation_id: nil, episode: nil, session_context: nil, rag_service: nil,
-                   generator: nil, expander: nil, equipment_identity: :omit)
+                   correlation_id: nil, episode: nil, session_context: nil, raw_question: nil,
+                   rag_service: nil, generator: nil, expander: nil, equipment_identity: :omit)
       return nil unless output_channel.to_s == "web"
       return nil if Array(entity_s3_uris).any?
       return nil unless ContextProjection.applicable?(question)
@@ -28,6 +28,7 @@ module Rag
         correlation_id: correlation_id,
         episode: episode,
         session_context: session_context,
+        raw_question: raw_question,
         rag_service: rag_service,
         generator: generator,
         expander: expander,
@@ -36,8 +37,9 @@ module Rag
     end
 
     # The block PhotoQuestionAnswerService writes for a photo-with-question
-    # turn. It is the only part of the session context this route reads
-    # (CG-D19: the photo reading opens the prose of the single answer).
+    # turn. The route also keeps the full bounded session context for the
+    # structured guidance stack. The photo block is what this route's own
+    # generator preface reads.
     PHOTO_EVIDENCE_HEADING = "## Photo Evidence (this turn)"
 
     def self.photo_evidence_block(session_context)
@@ -52,9 +54,10 @@ module Rag
 
     def initialize(question:, account:, entity_sources:, response_locale:, account_id: nil,
                    user_id: nil, conversation_session_id: nil, correlation_id: nil,
-                   episode: nil, session_context: nil, rag_service: nil, generator: nil, expander: nil,
-                   equipment_identity: :omit)
+                   episode: nil, session_context: nil, raw_question: nil, rag_service: nil,
+                   generator: nil, expander: nil, equipment_identity: :omit)
       @question = question.to_s
+      @raw_question = raw_question
       @account = account
       @entity_sources = Array(entity_sources)
       @response_locale = response_locale
@@ -64,6 +67,7 @@ module Rag
       @correlation_id = correlation_id
       @episode = ActiveEpisode.parse(episode)
       @equipment_identity = equipment_identity
+      @session_context = session_context
       @photo_evidence = self.class.photo_evidence_block(session_context)
       @rag_service = rag_service || BedrockRagService.new(account: account)
       @generator = generator
@@ -99,6 +103,8 @@ module Rag
         expander: @expander,
         episode: @episode,
         equipment_identity: @equipment_identity,
+        raw_question: @raw_question,
+        session_context: @session_context,
         route_taken: "context_evidence_route"
       )
     end

@@ -616,9 +616,22 @@ class BedrockRagService
     enforce_account_filter(enforce_query_contractual_limits(deep_merge_configs(base_config, custom_config)))
   end
 
-  # Unknown identity: one Retrieve, foreign chunks fenced as UNCONFIRMED REFERENCE,
-  # then the direct generator DocumentIdentityScope already uses. An unforced pin
-  # that comes back empty or canned still retries once over the open corpus.
+  def unknown_identity_guidance(raw_turn:, session_context:, chunks:, response_locale:, question:)
+    Rag::CompanionGuidanceContext.build(
+      question: raw_turn,
+      identity: nil,
+      session_context: session_context,
+      labels: [],
+      locale: effective_response_locale(question, response_locale: response_locale),
+      mode: :unknown,
+      manuals: Rag::CompanionGuidanceContext.withheld_manuals(chunks)
+    )
+  end
+
+  # Unknown identity: one Retrieve. A positive reference enters the publication
+  # contract. Every other unknown turn, and every contract failure, uses
+  # body-free companion guidance. An unforced pin that comes back empty still
+  # retries once over the open corpus before that choice.
   def unknown_identity_reference_result(question:, session_id:, response_locale:, session_context:,
                                         output_channel:, entity_sources:, force_entity_filter:,
                                         custom_config:, attribution:, correlation_id:,
@@ -650,6 +663,9 @@ class BedrockRagService
     prompt = nil
     raw_answer = nil
     pinned_empty = false
+    raw_turn = raw_question.presence || question
+    reference_turn = Rag::UnknownIdentityPublication.reference_request?(raw_turn)
+    guidance = nil
 
     2.times do |index|
       if index == 1
@@ -719,32 +735,37 @@ class BedrockRagService
       end
 
       marked = Rag::DocumentIdentityScope.mark_unconfirmed_reference(chunks)
-      publication = Rag::UnknownIdentityPublication.attempt(
-        client: document_identity_generator,
-        question: question,
-        chunks: chunks,
-        locale: effective_response_locale(question, response_locale: response_locale),
-        tracking: {
-          account_id: attribution[:account_id],
-          user_id: attribution[:user_id],
-          conversation_session_id: attribution[:conversation_session_id],
-          correlation_id: query_correlation_id,
-          route: Array(@applied_pin_uris).any? ? "rag_filtered" : "rag_global",
-          attempt: index + 1
-        }
-      )
-      @unknown_identity_publication = publication
-      if publication.accepted?
+      publication = nil
+      if reference_turn
+        publication = Rag::UnknownIdentityPublication.attempt(
+          client: document_identity_generator,
+          question: question,
+          chunks: chunks,
+          locale: effective_response_locale(question, response_locale: response_locale),
+          tracking: {
+            account_id: attribution[:account_id],
+            user_id: attribution[:user_id],
+            conversation_session_id: attribution[:conversation_session_id],
+            correlation_id: query_correlation_id,
+            route: Array(@applied_pin_uris).any? ? "rag_filtered" : "rag_global",
+            attempt: index + 1
+          }
+        )
+        @unknown_identity_publication = publication
+      end
+      if publication&.accepted?
+        guidance = nil
         prompt = publication.prompt
         raw_answer = publication.answer
       else
-        prompt = document_identity_generation_prompt(
-          question, marked,
-          response_locale: response_locale,
+        guidance = unknown_identity_guidance(
+          raw_turn: raw_turn,
           session_context: session_context,
-          output_channel: output_channel
+          chunks: chunks,
+          response_locale: response_locale,
+          question: question
         )
-        # The fence is generation input. Citation records stay the retrieved bodies.
+        prompt = guidance.to_s
         raw_answer = document_identity_generator.query(
           prompt,
           max_tokens: @rag_config[:generation_max_tokens],
@@ -759,7 +780,7 @@ class BedrockRagService
           }
         )
       end
-      break unless retry_open && index.zero? && (raw_answer.blank? || bedrock_no_results?(raw_answer))
+      break unless publication&.accepted? && retry_open && index.zero? && (raw_answer.blank? || bedrock_no_results?(raw_answer))
     end
 
     if raw_answer.blank?
@@ -794,7 +815,8 @@ class BedrockRagService
       chunks: Array(retrieval[:chunks]),
       response_locale: response_locale,
       retrieval: retrieval,
-      companion: false
+      companion: guidance.present?,
+      safety_evidence: guidance&.safety_evidence
     )
     if bedrock_no_results?(raw_answer) && marked.any?
       result[:answer] = localized_generation_retry(effective_response_locale(question, response_locale: response_locale))
@@ -806,6 +828,9 @@ class BedrockRagService
     result[:session_id] = session_id
     result[:rag_ms] = ((Time.current - start_time) * 1000).to_i
     stamp_unknown_identity_publication!(result)
+    if guidance && result[:publication_mode] != Rag::UnknownIdentityPublication::MODE_FALLBACK
+      result[:publication_mode] = "unknown_identity_guidance"
+    end
     withhold_unconfirmed_identity!(
       result,
       raw_answer: raw_answer,
@@ -1012,7 +1037,6 @@ class BedrockRagService
     answer_text = extract_doc_refs(raw_answer.to_s)[:clean_answer]
     canned_no_results = bedrock_no_results?(answer_text)
     answer_text = localized_no_results(no_results_locale) if canned_no_results
-    answer_text = answer_text.gsub(/[ \t]*\[\d+\]/, "") if companion
 
     citations = document_identity_citation_records(chunks)
     unless companion
@@ -1036,10 +1060,12 @@ class BedrockRagService
     attribution = Rag::CitationAttributionGuard.new(question: question, citations: citations).call(answer_text)
     @last_citation_attribution = attribution
     answer_text = attribution.answer
-    if !companion && attribution.dropped_any? && !attribution.attributed_claims? &&
+    if attribution.dropped_any? && !attribution.attributed_claims? &&
        Rag::AnswerSafetyProcessor.requires_evidence?(answer_text)
       answer_text = Rag::AnswerSafetyProcessor.new(locale: no_results_locale)
         .call("DATA_NOT_AVAILABLE", evidence: [])
+    elsif companion
+      answer_text = answer_text.gsub(/[ \t]*\[\d+\]/, "")
     end
 
     uncited = I18n.t("rag.uncited_technical_answer", locale: no_results_locale)

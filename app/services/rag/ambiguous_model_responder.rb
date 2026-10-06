@@ -19,7 +19,8 @@ module Rag
 
     def self.build(question:, account:, entity_s3_uris:, entity_sources:, force_entity_filter:,
                    response_locale: nil, user_id: nil,
-                   conversation_session_id: nil, correlation_id: nil)
+                   conversation_session_id: nil, correlation_id: nil,
+                   raw_question: nil, session_context: nil, episode: nil, equipment_identity: :omit)
       return unless DeterministicIntent.ambiguous_hardware_query?(question)
 
       new(
@@ -31,13 +32,18 @@ module Rag
         response_locale: response_locale,
         user_id: user_id,
         conversation_session_id: conversation_session_id,
-        correlation_id: correlation_id
+        correlation_id: correlation_id,
+        raw_question: raw_question,
+        session_context: session_context,
+        episode: episode,
+        equipment_identity: equipment_identity
       )
     end
 
     def initialize(question:, account:, entity_s3_uris:, entity_sources:, force_entity_filter:,
                    response_locale: nil, rag_service: nil, user_id: nil,
-                   conversation_session_id: nil, correlation_id: nil, generator: nil)
+                   conversation_session_id: nil, correlation_id: nil, generator: nil,
+                   raw_question: nil, session_context: nil, episode: nil, equipment_identity: :omit)
       @question = question
       @account = account
       @service = rag_service || BedrockRagService.new(account: account)
@@ -49,6 +55,10 @@ module Rag
       @conversation_session_id = conversation_session_id
       @correlation_id = correlation_id
       @generator = generator
+      @raw_question = raw_question
+      @session_context = session_context
+      @episode = episode
+      @equipment_identity = equipment_identity
     end
 
     def execute
@@ -128,7 +138,11 @@ module Rag
         conversation_session_id: @conversation_session_id,
         correlation_id: @correlation_id,
         rag_service: @service,
-        generator: @generator
+        generator: @generator,
+        raw_question: @raw_question,
+        session_context: @session_context,
+        episode: @episode,
+        equipment_identity: @equipment_identity
       ).complete_from_retrieval(retrieval, retrieval_ms: retrieval_ms).result
     end
 

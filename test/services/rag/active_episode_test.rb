@@ -202,6 +202,24 @@ class Rag::ActiveEpisodeTest < ActiveSupport::TestCase
     assert_nil photo["manufacturer"]
   end
 
+  test "the cross-turn observation store keeps a case longer than the per-turn cap" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: NOW)
+    stored = Rag::ActiveEpisode::MAX_STORED_OBSERVATIONS
+    texts = Array.new(stored) { |index| "observacion de campo #{index} sigue vigente" }
+    texts.each { |text| episode.append_observation!(text, correlation_id: "seed") }
+
+    assert_equal stored, episode.observations.size
+    assert_equal texts.first, episode.observations.first["text"]
+
+    episode.append_observation!("observacion de campo extra que desplaza la primera", correlation_id: "seed")
+    assert_equal stored, episode.observations.size
+    assert_equal texts.second, episode.observations.first["text"]
+
+    reloaded = Rag::ActiveEpisode.parse(episode.to_h, now: NOW)
+    assert_equal stored, reloaded.observations.size
+    assert_equal texts.second, reloaded.observations.first["text"]
+  end
+
   test "field companion flags are off unless the env value is the string true" do
     with_flags(nil) do
       assert_not Rag::FieldCompanionEpisodeFlag.enabled?

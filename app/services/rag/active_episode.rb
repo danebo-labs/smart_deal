@@ -18,6 +18,7 @@ module Rag
     MAX_IDENTIFIER_CHARS = 30
     MAX_CONFLICTS = 3
     MAX_OBSERVATIONS = 3
+    MAX_STORED_OBSERVATIONS = 12
     MAX_OBSERVATION_CHARS = 180
     MAX_REJECTED = 4
     REJECTED_SLOTS = %w[manufacturer model controller fault_code identifier].freeze
@@ -180,7 +181,7 @@ module Rag
       return if observations.any? { |item| FollowupQueryRewriter.normalize_label(item["text"]) == label }
 
       observations << { "text" => literal, "correlation_id" => correlation_id.to_s }
-      observations.shift while observations.size > MAX_OBSERVATIONS
+      observations.shift while observations.size > MAX_STORED_OBSERVATIONS
     end
 
     def clear_observations!
@@ -369,7 +370,7 @@ module Rag
         next if text.blank?
 
         { "text" => text, "correlation_id" => item["correlation_id"].to_s }
-      }.last(MAX_OBSERVATIONS)
+      }.last(MAX_STORED_OBSERVATIONS)
     end
     private_class_method :sanitize_observations
 

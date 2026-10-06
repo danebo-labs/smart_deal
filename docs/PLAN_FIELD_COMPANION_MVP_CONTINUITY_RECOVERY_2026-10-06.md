@@ -48,7 +48,7 @@ earlier.
 | Current authorized phase | none. F1 is closed. F2a is not authorized. |
 | Authorization text and date | explicit Lahiri authorization, 2026-10-06. F1 only. No separate authorization commit. |
 | Current phase status | `PASS` |
-| Parent of the last plan edit | `1a150022f6f613d97683e67f8850aabdddee96a3` (`docs: record MVP continuity F1 baseline`). This hygiene commit does not store its own SHA. |
+| Parent of the last plan edit | `350f2750f6fef6e70fbe12a8d25b94e660b62131` (`test: fix structured known-control capture`). This docs commit does not store its own SHA. The prior hygiene parent remains `1a150022f6f613d97683e67f8850aabdddee96a3`. |
 | Execution starting SHA | `97b3764e9fe2034d37c1e82b6069ee8f799bd8b3` |
 | Current HEAD after last closed phase | the commit `docs: record MVP continuity F1 baseline`. Parent `fd23b3aa196e5b8dddc62d10b32347bcfab13b39`. This file does not store that commit's own SHA. F1 verdict `PASS`. |
 | Production model | `global.anthropic.claude-haiku-4-5-20251001-v1:0` (Haiku 4.5), unchanged |
@@ -59,8 +59,10 @@ earlier.
 | Target-environment flag matrix | Recorded below and in the F0 execution record. Source: local gitignored `config/deploy.yml`, plus code default where that file leaves a flag unset. Running container env was not readable. |
 | Interpreter mode for F1/F3 | `owner` |
 | Longitudinal fixture hash | `3db76c24453d2869f03baf9a9bb7b07dc7e736fd8e80a422b7bf6bf1c03dab8b` (`test/fixtures/files/field_companion/longitudinal_journeys.yml`) |
-| Pre-F2a combined capture hash | `7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723` (`tmp/mvp_continuity/f1/known_prompts.txt`, gitignored). Journey A unknown-identity prompts plus c18–c20. File identifier only. Not the c18–c20 byte-identity gate. |
-| PRE_F2A_KNOWN_CONTROLS_HASH | `f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9`. SHA256 of that file from the first line `## c18 managed` through EOF. c18–c20 only. See the prompt-identity rule below. |
+| Historical F1 combined capture hash | `7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723`. The F1 `known_prompts.txt`. Preserved. Not the c18–c20 byte-identity gate. |
+| Corrected pre-F2a combined capture hash | `88c456e56ce591b67dad3c8863b9d19f183b83b6dcbacf7885e462f7189399aa`. Regenerated `tmp/mvp_continuity/f1/known_prompts.txt` after the harness control correction. Journey A plus c18–c20. File identifier only. |
+| PRE_F2A_KNOWN_CONTROLS_HASH | `54a0d0693712fe7ccb707c13b15779f6b55cf0de914e80832e5b7b12c8d85962`. SHA256 of that file from the first line `## c18 managed` through EOF. c18–c20 only. See the prompt-identity rule below. |
+| Superseded known-controls hash | `f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9`. `SUPERSEDED BY PRE-F2a HARNESS CONTROL CORRECTION`. Structured c18–c20 sections contained harness ArgumentError text rather than captured prompts. |
 | POST_F2A_JOURNEY_A_PROMPT_HASH | `<POST_F2A_JOURNEY_A_PROMPT_HASH>` (set by F2a). Journey A slice only. |
 | POST_F2B_JOURNEY_A_PROMPT_HASH | `<POST_F2B_JOURNEY_A_PROMPT_HASH>` (set only if F2b changes Journey A's bounded projection). |
 | F1 product continuity baseline | Journey A L1 FAIL. Journey A L2 FAIL. Journey A L3 PASS. Journey B L1 FAIL. Journey B has no L2 or L3 extension. |
@@ -127,17 +129,28 @@ control.
 **c18–c20.** These are the known-path controls. Compare the slice that
 starts at the first line `## c18 managed` and runs through EOF.
 `PRE_F2A_KNOWN_CONTROLS_HASH` is
-`f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9`.
-That slice must stay byte-identical through F2a, F2b, and F3. The source
-file was present at this hygiene edit. It was not regenerated and no model
-was called. The full-file hash
-`7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723` was
-rechecked before the slice. The six sections, in file order, are c18
-managed, c18 structured, c19 managed, c19 structured, c20 managed, and c20
-structured. The structured section bodies are the ArgumentError text the F1
-harness recorded (`missing keywords: :entity_s3_uris, :entity_sources`).
-They are part of this hash. Do not repair that capture in order to invent a
-different control hash.
+`54a0d0693712fe7ccb707c13b15779f6b55cf0de914e80832e5b7b12c8d85962`.
+That slice must stay byte-identical through F2a, F2b, and F3. The
+pre-correction digest
+`f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9` is
+`SUPERSEDED BY PRE-F2a HARNESS CONTROL CORRECTION`. Its structured c18–c20
+sections contained harness ArgumentError text (`missing keywords:
+:entity_s3_uris, :entity_sources`) rather than captured prompts. The
+corrected capture calls `Rag::StructuredEvidenceRoute` with the calibration
+runner inputs: `entity_s3_uris: [Corpus::PIN]`, `entity_sources:
+["document"]`, and `force_entity_filter: true`. No model was called. The six
+sections, in file order, are c18 managed, c18 structured, c19 managed, c19
+structured, c20 managed, and c20 structured. Each is a captured prompt.
+None is `EMPTY` and none contains `ERROR ArgumentError`. c20 managed
+remains the field-companion prompt. c20 structured uses the frozen ORBITA
+fixture, because the corpus row labels every case `manual: :zephyr` and a
+ZEPHYR stub closes the structured route before generation. The historical F1
+combined file hash
+`7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723` stays
+the F1 measurement. The corrected combined capture is
+`88c456e56ce591b67dad3c8863b9d19f183b83b6dcbacf7885e462f7189399aa`.
+The `## c18 managed` line is still at byte offset 193987. The corrected
+slice is 57730 bytes.
 
 **Journey A.** At F2a close, hash the re-run capture from the first line
 `## A1` up to but not including `## c18 managed`. Record that digest as
@@ -965,7 +978,7 @@ Required handoffs:
 | From → to | The closing phase writes into the next phase |
 |---|---|
 | F0 → F1 | Flag matrix with the source of each value and interpreter mode, deployed image if read, call-graph corrections, newly found entry paths F1 must capture, frozen hashes, fixture sources, `<HEAD_FROM_F0>`. |
-| F1 → F2a | Recorded in the F1 execution record and the F2a executor prompt. Fixture `3db76c24453d2869f03baf9a9bb7b07dc7e736fd8e80a422b7bf6bf1c03dab8b`. Combined capture `7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723`. Known controls `f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9`. HEAD is the commit `docs: record MVP continuity F1 baseline`, parent `fd23b3aa196e5b8dddc62d10b32347bcfab13b39`. |
+| F1 → F2a | Recorded in the F1 execution record and the F2a executor prompt. Fixture `3db76c24453d2869f03baf9a9bb7b07dc7e736fd8e80a422b7bf6bf1c03dab8b`. Historical F1 combined capture `7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723`. Corrected combined capture `88c456e56ce591b67dad3c8863b9d19f183b83b6dcbacf7885e462f7189399aa`. Known controls `PRE_F2A_KNOWN_CONTROLS_HASH` `54a0d0693712fe7ccb707c13b15779f6b55cf0de914e80832e5b7b12c8d85962`. Defective digest `f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9` is `SUPERSEDED BY PRE-F2a HARNESS CONTROL CORRECTION`. HEAD of the F1 close is the commit `docs: record MVP continuity F1 baseline`, parent `fd23b3aa196e5b8dddc62d10b32347bcfab13b39`. |
 | F2a → F2b / F3 | F1 re-run at the F2a HEAD with a pre/post comparison of L1, L2, and L3. `POST_F2A_JOURNEY_A_PROMPT_HASH`. c18–c20 still equal `PRE_F2A_KNOWN_CONTROLS_HASH`. Either `F2b = SKIPPED BY EVIDENCE` with F3 receiving `<CANDIDATE_SHA_FROM_F2A>`, or an F2b ticket per blocker: journey, turn, expected invariant, observed state and generator input, classified cause, failure owner, allowed files, regression controls. |
 | F2b → F3 | Fixes, commits, the invariant that now passes, regression evidence, c18–c20 byte identity against `PRE_F2A_KNOWN_CONTROLS_HASH`, the exact ticketed Journey A delta and `POST_F2B_JOURNEY_A_PROMPT_HASH` when the projection changed, `<F3_CANDIDATE_SHA>`. |
 | F3 → F3b | A‴ verdict; L1, L2, and L3 live verdicts; c18–c20 identity; Journey A compared with the post-F2a baseline, or the post-F2b baseline when F2b changed it; human review; safety verdict; unresolved pilot blockers, including the section H focus decision if it fired. |
@@ -1511,8 +1524,15 @@ eviction versus the 400-character projection). It also proves that the live
 mode refuses to start without its cap.
 
 **Known-path prompt capture.** F1 records the stubbed generation prompts for
-corpus known controls c18–c20 and for Journey A. Their combined hash is
+corpus known controls c18–c20 and for Journey A. The F1 combined hash is
 `7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723`.
+That historical file is preserved. The harness control correction
+regenerated the capture. The corrected combined hash is
+`88c456e56ce591b67dad3c8863b9d19f183b83b6dcbacf7885e462f7189399aa`.
+The c18–c20 gate is `PRE_F2A_KNOWN_CONTROLS_HASH`
+`54a0d0693712fe7ccb707c13b15779f6b55cf0de914e80832e5b7b12c8d85962`.
+`f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9` is
+`SUPERSEDED BY PRE-F2a HARNESS CONTROL CORRECTION`.
 Measured result: c18–c20 are the known-path controls. Journey A prompts in
 that file are unknown-identity prompts. `SUPERSEDED BY F1 RESULT fd23b3aa196e5b8dddc62d10b32347bcfab13b39`
 for the assumption that Journey A is a known-path freeze. The F2a executor
@@ -1563,7 +1583,7 @@ External/model calls: none
 Spend: 0
 Interpreter mode(s) run: owner
 Longitudinal fixture hash: 3db76c24453d2869f03baf9a9bb7b07dc7e736fd8e80a422b7bf6bf1c03dab8b
-Pre-F2a combined capture hash: 7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723. Post-F1 hygiene: this is the combined file. The c18–c20 gate is PRE_F2A_KNOWN_CONTROLS_HASH f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9. Journey A is not frozen to this file.
+Pre-F2a combined capture hash: 7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723. This is the historical F1 combined file. Journey A is not frozen to this file. The defective c18–c20 digest f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9 is SUPERSEDED BY PRE-F2a HARNESS CONTROL CORRECTION. The canonical gate is PRE_F2A_KNOWN_CONTROLS_HASH 54a0d0693712fe7ccb707c13b15779f6b55cf0de914e80832e5b7b12c8d85962. The corrected combined capture is 88c456e56ce591b67dad3c8863b9d19f183b83b6dcbacf7885e462f7189399aa.
 First history eviction: A_no_focus A11 user, the T1 Elemont door question. A_selected_elemont A11 user, the same T1 text. B B10 user, the T1 leveling question. Text turns stored 2 messages. B5 stored the photo extra messages and history length became 11. History then stayed at 20 after the first eviction.
 L1 state/input verdict: A_no_focus FAIL. A_selected_elemont FAIL. B FAIL.
 L2 rollover state/input verdict: A_no_focus FAIL. A_selected_elemont FAIL. Journey B has no L2 extension.
@@ -1892,7 +1912,7 @@ Tests executed:
 External/model calls: none (required)
 Spend: 0
 Sentinel-body check:
-c18–c20 byte identity versus PRE_F2A_KNOWN_CONTROLS_HASH f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9:
+c18–c20 byte identity versus PRE_F2A_KNOWN_CONTROLS_HASH 54a0d0693712fe7ccb707c13b15779f6b55cf0de914e80832e5b7b12c8d85962:
 POST_F2A_JOURNEY_A_PROMPT_HASH:
 Model calls per turn (reference, non-reference, fallback):
 F1 re-run L1 / L2 / L3 versus baseline:
@@ -1966,12 +1986,19 @@ chunk body, including SEGURIDAD IN, plus APPLICABILITY_BLOCK
 generation_mode was blank. Route: managed. The stub converse accepts no
 tool, so this is the contract-failure fallback, not an accepted publication.
 c18, c19, and c20 were called with an explicit user identity (ZEPHYR QX-77
-or ORBITA LM-5) and no entity filter. Those sections are the known-path
+or ORBITA LM-5). The managed lane has no entity filter. The structured lane
+uses the calibration runner inputs: the corpus PIN, source `document`, and
+`force_entity_filter: true`. Those sections are the known-path
 controls. They must stay byte-identical to PRE_F2A_KNOWN_CONTROLS_HASH
-f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9, the slice
-from `## c18 managed` through EOF. The combined capture hash
+54a0d0693712fe7ccb707c13b15779f6b55cf0de914e80832e5b7b12c8d85962, the slice
+from `## c18 managed` through EOF. The defective digest
+f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9 is
+SUPERSEDED BY PRE-F2a HARNESS CONTROL CORRECTION. The historical F1 combined
+capture hash
 7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723 identifies
-the whole pre-F2a file. It does not freeze Journey A. At close, record
+the F1 file. The corrected combined capture is
+88c456e56ce591b67dad3c8863b9d19f183b83b6dcbacf7885e462f7189399aa.
+Neither combined hash freezes Journey A. At close, record
 POST_F2A_JOURNEY_A_PROMPT_HASH from `## A1` up to but not including
 `## c18 managed`.
 
@@ -2087,7 +2114,7 @@ bundle exec rubocop
 git diff --check
 The c18–c20 slice, from `## c18 managed` through EOF, must be byte-identical
 to PRE_F2A_KNOWN_CONTROLS_HASH
-f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9.
+54a0d0693712fe7ccb707c13b15779f6b55cf0de914e80832e5b7b12c8d85962.
 Journey A must lose the chunk body and APPLICABILITY_BLOCK. Hash Journey A
 from `## A1` up to but not including `## c18 managed` and record
 POST_F2A_JOURNEY_A_PROMPT_HASH. Do not compare Journey A with the pre-F2a
@@ -2271,7 +2298,7 @@ A failing test first for each ticket's invariant, from the journey fixture.
 Then the adjacent controls and the L3 boundary control.
 Re-capture prompts. The c18–c20 slice must remain byte-identical to
 PRE_F2A_KNOWN_CONTROLS_HASH
-f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9.
+54a0d0693712fe7ccb707c13b15779f6b55cf0de914e80832e5b7b12c8d85962.
 Journey A is not a known-path control. It must match
 POST_F2A_JOURNEY_A_PROMPT_HASH unless the ticketed owner legitimately changes
 its bounded projection. In that case record the exact delta and
@@ -2536,7 +2563,7 @@ As in the F3 phase PASS / FAIL / INCONCLUSIVE. If interpreter mode is both,
 both mode-specific journey runs must satisfy the applicable L1/L2/L3 gates.
 Apply the Execution state prompt-identity rule. c18–c20 are byte-identical
 to PRE_F2A_KNOWN_CONTROLS_HASH
-f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9.
+54a0d0693712fe7ccb707c13b15779f6b55cf0de914e80832e5b7b12c8d85962.
 If F2b was skipped, Journey A matches POST_F2A_JOURNEY_A_PROMPT_HASH. If F2b
 ran, Journey A matches POST_F2B_JOURNEY_A_PROMPT_HASH only for the exact
 ticketed projection delta. Journey A is not a known-path control. Any

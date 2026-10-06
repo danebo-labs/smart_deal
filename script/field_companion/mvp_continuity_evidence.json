@@ -259,8 +259,11 @@
       "journey_b_l3": "NOT_IN_FIXTURE"
     },
     "combined_capture_sha256": "7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723",
+    "combined_capture_sha256_note": "Historical F1 combined file. Preserved. The corrected file is pre_f2a_harness_control_correction.corrected_combined_capture_sha256.",
     "pre_f2a_known_controls_sha256": "f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9",
-    "known_controls_extraction": "SHA256 of tmp/mvp_continuity/f1/known_prompts.txt from the first line '## c18 managed' through EOF. Six sections in file order: c18 managed, c18 structured, c19 managed, c19 structured, c20 managed, c20 structured. Structured bodies are the F1 harness ArgumentError text for missing keywords. The file was present. It was not regenerated. No model call.",
+    "pre_f2a_known_controls_sha256_status": "SUPERSEDED BY PRE-F2a HARNESS CONTROL CORRECTION",
+    "pre_f2a_known_controls_sha256_reason": "structured c18-c20 sections contained harness ArgumentError text rather than captured prompts",
+    "known_controls_extraction": "Historical hygiene slice of the then-present file from the first line '## c18 managed' through EOF. Six sections in file order: c18 managed, c18 structured, c19 managed, c19 structured, c20 managed, c20 structured. Structured bodies were the F1 harness ArgumentError text for missing keywords. The file was present. It was not regenerated in that hygiene edit. No model call. This digest is superseded. The canonical gate is pre_f2a_harness_control_correction.pre_f2a_known_controls_sha256.",
     "known_controls_slice_bytes": 24664,
     "known_controls_slice_offset": 193987,
     "post_f2a_journey_a_prompt_hash": null,
@@ -270,5 +273,42 @@
     "f3b": "documented, not authorized",
     "production_code_changed": false,
     "capture_regenerated": false
+  },
+  "pre_f2a_harness_control_correction": {
+    "kind": "harness_capture_only",
+    "parent_sha": "350f2750f6fef6e70fbe12a8d25b94e660b62131",
+    "ending_sha": null,
+    "ending_sha_note": "The docs commit cannot store its own SHA. Its parent is parent_sha.",
+    "f2a_started": false,
+    "production_code_changed": false,
+    "model_calls": 0,
+    "spend_usd": 0,
+    "product_baseline_unchanged": true,
+    "product_baseline": {
+      "journey_a_l1": "FAIL",
+      "journey_a_l2": "FAIL",
+      "journey_a_l3": "PASS",
+      "journey_b_l1": "FAIL",
+      "first_eviction_a": "A11",
+      "first_eviction_b": "B10"
+    },
+    "historical_f1_combined_capture_sha256": "7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723",
+    "corrected_combined_capture_sha256": "88c456e56ce591b67dad3c8863b9d19f183b83b6dcbacf7885e462f7189399aa",
+    "superseded_known_controls_sha256": "f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9",
+    "superseded_known_controls_mark": "SUPERSEDED BY PRE-F2a HARNESS CONTROL CORRECTION",
+    "superseded_known_controls_reason": "structured c18-c20 sections contained harness ArgumentError text rather than captured prompts",
+    "pre_f2a_known_controls_sha256": "54a0d0693712fe7ccb707c13b15779f6b55cf0de914e80832e5b7b12c8d85962",
+    "known_controls_extraction": "SHA256 of the regenerated tmp/mvp_continuity/f1/known_prompts.txt from the first line '## c18 managed' through EOF.",
+    "known_controls_slice_offset": 193987,
+    "known_controls_slice_bytes": 57730,
+    "sections": {
+      "c18 managed": { "bytes": 11353, "empty": false, "argument_error": false },
+      "c18 structured": { "bytes": 11128, "empty": false, "argument_error": false },
+      "c19 managed": { "bytes": 11361, "empty": false, "argument_error": false },
+      "c19 structured": { "bytes": 11136, "empty": false, "argument_error": false },
+      "c20 managed": { "bytes": 1560, "empty": false, "argument_error": false },
+      "c20 structured": { "bytes": 11078, "empty": false, "argument_error": false }
+    },
+    "tests": "bundle exec rails test test/script/field_companion_longitudinal_journeys_test.rb — 15 runs, 103 assertions, 0 failures, 0 errors"
   }
 }

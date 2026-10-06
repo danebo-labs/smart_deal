@@ -2,7 +2,7 @@
 
 **STATUS: DRAFT — NOT AUTHORIZED FOR IMPLEMENTATION**
 
-**VERDICT: READY_FOR_SECOND_REVIEW**
+**VERDICT: READY_FOR_OPUS_SECOND_REVIEW**
 
 Materialized 2026-10-05 from the Codex recovery-plan review of this repository.
 Codex created no document. This file is that review, written down for plan
@@ -25,6 +25,91 @@ model replacement or a model bake-off.
 
 The Master Plan stays historical execution evidence. This draft does not
 revise it.
+
+This file is a living plan, an execution runbook, and the handoff contract
+between phases. After explicit authorization, the executor runs one phase,
+writes the result back into this file, refreshes the next phase’s executor
+prompt, commits, and stops at the phase boundary. The protocol is in
+section E, “Living-plan execution protocol”. Chat memory is never the
+source for the next phase.
+
+## Execution state
+
+The executor updates this block at the close of every phase. It is the only
+source of truth for phase status. Values in angle brackets are placeholders
+that the named phase replaces when the value exists. Do not invent them
+earlier.
+
+| Field | Value |
+|---|---|
+| Plan status | DRAFT — NOT AUTHORIZED FOR IMPLEMENTATION |
+| Plan verdict | `READY_FOR_OPUS_SECOND_REVIEW` |
+| Current authorized phase | NONE |
+| Authorization text and date | NONE |
+| Current phase status | — |
+| Parent of the last plan edit | `b4408003e2ea6c8b4ab31a0c0e9a1017589fe962` |
+| Execution starting SHA | `<F0_START_SHA>` (set by F0) |
+| Current HEAD after last closed phase | `<HEAD_FROM_LAST_CLOSED_PHASE>` |
+| Production model | `global.anthropic.claude-haiku-4-5-20251001-v1:0` (Haiku 4.5), unchanged |
+| Frozen corpus hash | `<FROZEN_CORPUS_SHA256>` (set by F0) |
+| Frozen scorer hash | `<FROZEN_SCORER_SHA256>` (set by F0) |
+| Frozen runner and capture hashes | `<FROZEN_RUNNER_SHA256>` (set by F0) |
+| A′ / A″ artifact hashes | `<A_PRIME_ARTIFACT_HASHES>` (set by F0) |
+| Target-environment flag matrix | `<FLAG_MATRIX>` (set by F0) |
+| Interpreter mode for F1/F3 | `<INTERPRETER_MODE>` (set by F0: `owner`, `fallback`, or `both`) |
+| Longitudinal fixture hash | `<FROZEN_LONGITUDINAL_FIXTURE_HASH>` (set by F1) |
+| Pre-F2a known-path prompt capture hash | `<PRE_F2A_KNOWN_PROMPT_CAPTURE_HASH>` (set by F1) |
+| F2a candidate SHA | `<CANDIDATE_SHA_FROM_F2A>` |
+| F3 candidate SHA | `<F3_CANDIDATE_SHA>` (F2b HEAD, or the F2a HEAD when F2b is skipped) |
+| Evidence packet | `script/field_companion/mvp_continuity_evidence.json` (created by F0) |
+
+Phase status:
+
+| Phase | Status |
+|---|---|
+| F0 — factual audit | NOT STARTED |
+| F1 — longitudinal baseline harness | NOT STARTED |
+| F2a — publication choice and guidance | NOT STARTED |
+| F2b — continuity repair | CONDITIONAL / NOT AUTHORIZED |
+| F3 — frozen and live evaluation | NOT STARTED |
+| F4 — documentation and pilot recommendation | NOT STARTED |
+
+Current blockers:
+
+- Implementation is not authorized.
+- This plan awaits the Opus second review.
+- The target-environment flag matrix is unread. F0 closes it before F1.
+
+Carried-forward expectations, not findings. These are Opus code-reading
+predictions. F1 confirms or supersedes them with measured evidence:
+
+- The `## Active Field Problem` header and footer take 269 of its 400
+  characters. Journey A’s four identity facts take 117 more, so the goal is
+  expected to be cut.
+- `ActiveEpisode#observations` is not rendered in the generation prompt.
+- `CompanionGuidanceContext` reads only the `Goal:` line and the last two
+  technician turns.
+
+Next authorized action: Opus second review of this plan. After that, F0 runs
+only on Lahiri’s explicit authorization.
+
+## Same-case continuity clarification (this revision)
+
+Product-contract and benchmark clarification. It is not an architecture
+change. B1–B5 and the section 11 edits below are unchanged.
+
+| Clarification | Where |
+|---|---|
+| An episode lasts as long as the same physical fault or case, subject only to the existing boundary and expiry semantics. There is no target episode length. | Section C |
+| `NO_TURN_COUNT_EPISODE_BOUNDARY` invariant | Section C, F0, F1, F3, section F |
+| `MAX_HISTORY = 20` is 20 stored messages, not 20 technician turns | Sections A, C, F |
+| L1 within-history continuity, L2 history-rollover continuity, and L3 case boundary are separate verdicts | Sections E, F, H |
+| A technician interaction is any turn type, including a photo, “sí”, “no”, “K1”, and “¿y ahora?” | Section C, section F |
+| Journey A gains a four-interaction L2 extension in the same episode. Journey B stays focused on identity, photo, and reference behavior. | Section F |
+| One active episode per technician. A new case replaces it. Resume and switch are out of scope until after pilot validation. | Section C, F0, section H |
+| Success criterion: one active episode sustains coherent support through an extended mixed text and photo conversation before any multi-thread architecture | Section C, F3, F4 |
+| F0 lists the four historical plans by path | F0 |
+| Living-plan runbook: execution state, protocol, phase records, executor prompts, evidence packet | Top of file, section E, each phase |
 
 ## Opus review incorporation
 
@@ -149,13 +234,24 @@ shape, and the measured fix is to narrow where that shape is used.
 
 Episode boundaries and late-writer ownership already have substantial
 implementation and tests. The unmeasured gap is different: whether a case
-remains useful over ten technician turns. Stored history reaches 20 messages
-(`ConversationSession::MAX_HISTORY`). The generation prompt currently exposes
-the last three episode user messages, the last assistant answer (truncated
-to 200 characters), and the bounded case projection. `ActiveEpisode` keeps
-at most three observations and has no dedicated “checks performed” field.
-Those limits make long-form continuity an open product question, even though
-short follow-ups pass.
+that naturally runs long stays coherent and useful. Short follow-ups pass.
+Nobody has measured a same-case conversation that reaches the stored-history
+capacity, or one that continues past it.
+
+Stored history is capped at 20 stored messages, not 20 technician turns
+(`ConversationSession::MAX_HISTORY = 20`, `conversation_session.rb:5`).
+`add_to_history` keeps the last 19 messages and appends one
+(`conversation_session.rb:131-136`). With one technician message and one
+Danebo answer per interaction, about 10 interactions fill that window, and
+the oldest message starts to roll out on the next write. The generation
+prompt is smaller than stored history. It exposes the last three episode
+user messages (`EPISODE_MAX_USER_MESSAGES = 3`), the last assistant answer
+truncated to 200 characters, and the 400-character case projection.
+`ActiveEpisode` keeps at most three observations and has no dedicated
+“checks performed” field. Rollover therefore does not shrink the prompt’s
+history block directly. After rollover, what carries the case is
+`ActiveEpisode` and the bounded projection. Section F measures that
+separately as L2.
 
 ## B. Current architecture map
 
@@ -265,10 +361,103 @@ For the pilot:
   new-case clarification.
 - The promise ends at the case boundary.
 
+### Episode duration
+
+An episode lasts as long as the technician is working on the same physical
+fault or case. Only the existing case-boundary and expiry semantics end it:
+
+- an explicit new fault, unit, or case (`new_work` on the owner path, or the
+  explicit reset and switch rules in `ActiveEpisodeTurn`);
+- idle expiry: the episode is marked expired when it was last updated more
+  than `EPISODE_WINDOW = 4.hours` ago (`active_episode.rb:54-55`);
+- invalid stored state.
+
+There is no target episode length. One case may finish in 2 interactions,
+another in 5, another in 15 or 30. Turn count, stored-message count, and
+`MAX_HISTORY` do not define the episode boundary.
+
+The longitudinal benchmark in section F exists only to show that when a case
+naturally needs an extended conversation, Danebo keeps conversational
+coherence, technical focus, relevant state, technician feedback,
+corrections, observations, photo context, and retrieval context, and keeps
+progressing toward the reported fault. If the same case continues for at
+least the benchmark duration, Danebo must still behave as one coherent
+technical companion, not as ten independent question-and-answer turns.
+
+### Invariant `NO_TURN_COUNT_EPISODE_BOUNDARY`
+
+No implementation or benchmark may open a new episode solely because the
+conversation reaches T10, `MAX_HISTORY`, 20 stored messages, or any benchmark
+length. Episode changes stay driven by the case-boundary semantics above. F0
+verifies that no current boundary path reads turn count or history length.
+F1 and F3 assert the same `episode_id` across the T10 → T11 transition and
+across the first history eviction.
+
+### What a technician interaction is
+
+A technician interaction is any technician turn in the same episode, not only
+a full text question. It can be:
+
+- a normal text query;
+- a short follow-up;
+- a correction;
+- a technician observation;
+- a photo upload, or another image;
+- a question about a photo;
+- a documentary-reference question;
+- an identity clarification;
+- “sí”, “no”, “K1”, or “¿y ahora?”.
+
+A photo of the same physical fault does not start a new episode. A more
+precise equipment identity obtained during the same investigation does not
+start a new episode.
+
+### MVP concurrency constraint: one active episode
+
+Each technician has at most one active technical episode at a time. Starting
+a new case replaces the current active episode. The replaced episode is not
+kept as a resumable thread. Resuming or switching between previous episodes
+is out of scope until after pilot validation.
+
+Current code fact: `conversation_sessions.active_episode` holds exactly one
+episode, and a new episode replaces it without copying the prior goal,
+facts, pending state, observations, or active photo (section B.2). A
+session is keyed by account, identifier, and channel
+(`ConversationSession.find_or_create_for`, `conversation_session.rb:95`).
+Whether that is one per technician depends on what the web identifier is and
+on `SharedSession::ENABLED`. F0 records both. If shared sessions are on, the
+constraint does not hold per technician, and the field-problem projection is
+also off (`SessionContextBuilder.field_problem_readable?`). F0 reports that as
+a pilot-configuration blocker. It does not change code.
+
+Code risk that F0 verifies and L3 tests: `EpisodeThreadResolver` selects
+stored user questions inside `now - EPISODE_WINDOW`, not from the live
+episode’s `opened_at` (`episode_thread_resolver.rb:76-81`). After an explicit
+new case, a short follow-up on the fallback path could join a question from
+the replaced episode. That would be the resume behavior this constraint rules
+out. Section H adds a post-boundary short follow-up that must compose only
+from the new episode. If it joins the replaced episode, L3 fails. The fix
+goes through the normal F2b ticket path, with `EpisodeThreadResolver` as the
+failure owner, or through plan review if that owner is outside the F2b
+candidates.
+
+### Success criterion before any multi-thread architecture
+
+Before adding multi-thread or multi-episode session architecture, Danebo
+must prove that one active episode can sustain coherent technical support
+from the start of a fault through an extended mixed text and photo
+conversation. In this plan, that proof is F3: L1 PASS on both journeys
+(Journey B carries the photo turns), L2 PASS or DEGRADED on Journey A, L3
+PASS, A‴ PASS, and human unsafe 0. Until that proof exists, no phase may add
+episode switching, resumption, or parallel episodes, and none may propose
+them as a continuity fix. Doing so is a mandatory stop (section E).
+
 Out of MVP, and not required by this plan:
 
 - a historical episode browser
 - reopening yesterday’s diagnosis
+- resuming or switching between previous episodes
+- more than one active episode per technician, or a multi-thread session architecture
 - long-term memory
 - historical reconstruction
 - a new cases table
@@ -480,19 +669,200 @@ to product code. The pre-F2a F1 baseline does not authorize F2b. F2a
 replaces the generator inputs on every unknown turn, so a pre-F2a continuity
 defect is not the trigger.
 
+Every longitudinal measurement reports three separate verdicts: L1
+within-history continuity, L2 history-rollover continuity, and L3 case
+boundary (section F). F1 reports them as state and generator-input verdicts.
+F3 reports them as live verdicts.
+
+### Living-plan execution protocol
+
+This protocol governs every phase. A phase that skips a step is not closed.
+
+**Lifecycle of one phase.**
+
+```
+read Execution state and this phase
+↓
+verify authorization, starting SHA, branch, clean tree, prerequisites
+↓
+execute only the authorized phase scope
+↓
+collect evidence into the evidence packet
+↓
+evaluate PASS / FAIL / INCONCLUSIVE against this phase’s gate
+↓
+fill this phase’s execution record in this file
+↓
+update downstream phases if measured findings changed their assumptions
+↓
+refresh the next phase’s executor prompt with those findings
+↓
+update Execution state
+↓
+commit the phase result, leaving a clean tree
+↓
+STOP at the phase boundary unless the authorization explicitly covers the next phase
+```
+
+**Authorization.** Lahiri authorizes by naming a phase or a range, for example
+“Authorize F0” or “Authorize F0 through F2a, stop before F3”. The executor
+copies that text and its date into Execution state. Continuing across a phase
+boundary needs an authorization that names the next phase. Without it, the
+executor stops after the phase-closing commit.
+
+**Source of truth.** The repository, this plan, the committed evidence
+packet, and the next phase’s executor prompt in this file. Chat memory is not
+a source. A phase that needs a value from an earlier phase reads it from that
+phase’s execution record or from Execution state.
+
+**Findings change downstream execution details, not the approved
+architecture.** A phase may change the next phase’s turns, fixtures, tests,
+paths to exercise, and expected failures from measured evidence. It may not
+change section D, the guidance evidence contract, the reference predicate,
+the A‴ gates, the scorer, the corpus, or the model. Any architectural
+deviation stops for plan review.
+
+Required handoffs:
+
+| From → to | The closing phase writes into the next phase |
+|---|---|
+| F0 → F1 | Flag matrix and interpreter mode, deployed image if read, call-graph corrections, newly found entry paths F1 must capture, frozen hashes, fixture sources, `<HEAD_FROM_F0>`. |
+| F1 → F2a | L1, L2, and L3 baselines; route per turn; generator-visible facts; missing-fact causes; failures relevant to F2a; regression cases F2a must keep; exact journey turns that become F2a tests; `<FROZEN_LONGITUDINAL_FIXTURE_HASH>`; `<PRE_F2A_KNOWN_PROMPT_CAPTURE_HASH>`; `<HEAD_FROM_F1>`. |
+| F2a → F2b / F3 | F1 re-run at the F2a HEAD with a pre/post comparison of L1, L2, and L3. Either `F2b = SKIPPED BY EVIDENCE` with F3 receiving `<CANDIDATE_SHA_FROM_F2A>`, or an F2b ticket per blocker: journey, turn, expected invariant, observed state and generator input, classified cause, failure owner, allowed files, regression controls. |
+| F2b → F3 | Fixes, commits, the invariant that now passes, regression evidence, `<F3_CANDIDATE_SHA>`. |
+| F3 → F4 | A‴ verdict; L1, L2, and L3 live verdicts; known controls; human review; safety verdict; unresolved pilot blockers, including the section H focus decision if it fired. |
+
+**Next-phase prompt refresh is mandatory.** Before a phase is marked closed,
+the executor rewrites the next phase’s executor prompt with the measured
+findings. The refresh is concrete. “Fix continuity” is not acceptable. A
+refreshed item names the journey, the turn, the expected fact or check, the
+observed generator input, the classified cause, the failed invariant, and the
+fixture that reproduces it.
+
+**Placeholders.** Future SHAs and hashes are placeholders, such as
+`<HEAD_FROM_F1>`, `<CANDIDATE_SHA_FROM_F2A>`, and
+`<FROZEN_LONGITUDINAL_FIXTURE_HASH>`. The phase that produces a value replaces
+the placeholder in Execution state and in every executor prompt that uses it.
+Never hard-code a SHA that does not exist yet.
+
+**Autonomous authority.** Inside an authorized phase, the executor may:
+
+- add or update the tests that phase requires;
+- implement exactly the approved phase scope;
+- fix implementation mistakes found inside that scope;
+- rerun deterministic tests;
+- retry identical transport-failed benchmark rows inside the declared cap;
+- update documentation and evidence;
+- refresh the next phase’s executor prompt from measured findings;
+- commit the phase work.
+
+**Mandatory stops.** The executor stops and asks for plan review or an owner
+decision before:
+
+- changing the approved architecture, section D, or the guidance evidence contract;
+- adding a database table;
+- adding an LLM call, a model, or a classifier;
+- modifying the frozen scorer, corpus, runner gates, or A‴ thresholds;
+- weakening unknown-identity safety;
+- opening the sealed holdout;
+- changing episode lifecycle semantics, including any turn-count or history-length boundary;
+- adding episode resumption, switching, parallel episodes, or a multi-thread session architecture (section C);
+- making a third independent F2b fix;
+- deploying to production or pushing, unless separately authorized;
+- changing stale `document_focus` behavior outside the section H decision path.
+
+**Review boundaries.** Reviews happen only at these pre-declared points:
+
+1. Opus second review of this plan, which is the current step.
+2. Any proposed architectural deviation.
+3. A third F2b failure owner.
+4. The section H focus blocker, which goes to the plan owner before F4.
+5. An F3 FAIL, which stops for plan review.
+6. The F4 release recommendation, which goes to the plan owner. Deploy is outside this plan.
+
+When a deterministic gate passes, do not ask for another opinion for
+reassurance. When a phase fails inside a declared repair path, follow that
+path. Do not ask Lahiri to inspect dozens of outputs. Give a compact
+evidence packet.
+
+**Evidence packet.** Each phase appends one entry, keyed by phase, to
+`script/field_companion/mvp_continuity_evidence.json`. That follows the
+precedent of `script/field_companion/f1_calibration_manifest.json`. Raw
+prompts, transcripts, and logs stay in gitignored `tmp/mvp_continuity/`. The
+plan names those files and does not paste them. Fields:
+
+```
+phase
+starting_sha
+ending_sha
+plan_revision_sha
+fixtures_hash
+scorer_hash            (when applicable)
+model                  (when applicable)
+flags
+interpreter_mode
+tests                  (commands and result counts)
+pass_count
+failure_count
+spend_usd
+transport_failures
+semantic_failures
+critical_invariants    (name → PASS / FAIL / DEGRADED / NOT_APPLICABLE)
+longitudinal           (L1, L2, L3 verdicts when the phase measures them)
+verdict                (PASS / FAIL / INCONCLUSIVE)
+carry_forward_findings
+raw_artifacts          (paths under tmp/mvp_continuity/)
+```
+
+`plan_revision_sha` is the parent commit of the phase-closing commit. A
+commit cannot contain its own SHA. The executor records the phase-closing
+commit SHA in Execution state in the next plan edit, or in the return
+message when no later edit happens in the same phase.
+
+**Commit discipline.** Each phase lists its expected commits. Use an
+implementation-and-test commit plus a phase evidence-and-plan commit only
+when both are useful. Do not make ritual commits. The phase-closing commit
+leaves a clean tree, an updated Execution state, a filled execution record,
+a refreshed next-phase executor prompt, and the recorded HEAD.
+
+**Plan-version discipline.** Do not erase measured results or earlier
+assumptions. When a finding supersedes an assumption, keep the old text and
+mark it `SUPERSEDED BY <phase> RESULT <sha>`, with a one-line reason. A′ and
+A″ stay frozen historical evidence. A‴ results append to them.
+
 ### F0 — factual architecture audit
 
 **Goal.** Record a compact call graph, the actual flag values in the target
 environment, the current deployed image if pilot readiness is being claimed,
 the A′/A″ artifact hashes, and the `document_focus` boundary contract. The
 flag matrix closes before F1 starts, not only before a pilot claim. Read
-the Master Plan, the four older plans named in the F0 audit request, and the
-code paths in section B. The Codex review recorded five planning documents
-in total, including the Master Plan. This draft does not invent the other
-four titles. Plans actually cited by that review, and re-read while
-materializing where a claim depended on them, are the Master Plan (A″ table
-and section 3) and
-`PLAN_FIELD_COMPANION_DOCUMENT_FOCUS_REFACTOR_2026-10-01.md`.
+the code paths in section B and these planning documents:
+
+- `docs/MASTER_PLAN_FIELD_COMPANION_EVIDENCE_INTENT_EPISTEMICS_2026-10-05.md` (A″ table and section 3)
+- `docs/PLAN_R1B_SESSION_CORRECTNESS_2026-09-30.md`
+- `docs/PLAN_FIX_RETRIEVAL_PIN_Y_CONTINUIDAD_2026-09-28.md`
+- `docs/PLAN_CONTINUIDAD_SESION_FOLLOWUP_2026-09-21.md`
+- `docs/PLAN_FIELD_COMPANION_DOCUMENT_FOCUS_REFACTOR_2026-10-01.md`
+
+The four older plans are historical context. F0 records only where one of
+them contradicts current code or this plan. R1B text about case-owned pins
+is historical on that point (section B).
+
+**Episode lifecycle check.** F0 lists every code path that opens, expires,
+or invalidates an episode, and confirms that none reads turn count, stored
+history length, or `MAX_HISTORY`. That is the code-level check for
+`NO_TURN_COUNT_EPISODE_BOUNDARY` (section C). F0 also records which writers
+append to `conversation_history` (user turn, assistant answer, photo
+writers, canned replies) so F1 knows which interactions may add more or fewer
+than two stored messages. F1 measures the actual count. F0 does not predict
+the eviction turn.
+
+**One-active-episode check.** F0 records what the web session identifier is
+(per technician, or per browser session), the value of
+`SharedSession::ENABLED`, and whether any reader of stored history reaches
+past the live episode’s `opened_at`. `EpisodeThreadResolver` is the known
+candidate: it floors at `EPISODE_WINDOW`. F0 lists every such reader for the
+section H post-boundary check.
 
 **Flag matrix.** Read these from the target environment. `config/deploy.yml`
 is gitignored, so the file in git is not the source:
@@ -530,8 +900,9 @@ prompt `f1cal.r2.a1`, scorer `v2-locality-independent-unsafe`) is historical
 evidence of that run, not a substitute for hashing the files that F3 will
 execute.
 
-**FAIL.** A call site in section B does not exist, or a claimed branch writes
-`document_focus` on a case boundary.
+**FAIL.** A call site in section B does not exist, a claimed branch writes
+`document_focus` on a case boundary, or an episode boundary path depends on
+turn count or history length. Each is a stop for plan review.
 
 **Regression protection.** Read-only.
 
@@ -540,53 +911,232 @@ call, no deploy.
 
 **Handoff to F1.** The closed flag matrix, or the explicit decision to run
 both interpreter modes. Fixture-source list. The statement that
-`document_focus` survives a new episode and is not identity. F1 does not
-start without one of those two flag outcomes.
+`document_focus` survives a new episode and is not identity. The lifecycle
+check result and the list of history writers. F1 does not start without one
+of those two flag outcomes.
+
+**Expected commits.** One documentation commit:
+`docs: record MVP continuity F0 audit`. It changes this plan and creates the
+evidence packet.
+
+#### F0 execution record
+
+```
+Status: NOT STARTED
+Starting SHA:
+Ending SHA:
+Date:
+Executor:
+Scope authorized:
+Files changed:
+Production code changed: NO (required)
+Tests executed: none required
+External/model calls: none (required)
+Spend: 0
+Artifacts/results:
+Flag matrix:
+Interpreter mode for F1/F3:
+Deployed image (only if read):
+Call-site corrections:
+New entry paths for F1 to capture:
+Episode lifecycle paths and turn-count check:
+History writers:
+One active episode (session identifier, SharedSession::ENABLED, history readers past opened_at):
+Frozen hashes (corpus, scorer, runner, capture, manifest):
+A′/A″ artifact hashes:
+Fixture sources for F1:
+Historical-plan contradictions:
+PASS/FAIL/INCONCLUSIVE:
+Findings:
+New risks:
+Assumptions invalidated:
+Carry-forward decisions:
+Next-phase changes required:
+Commit SHA:
+Push/deploy status: not pushed, not deployed
+```
+
+#### F0 executor prompt
+
+```text
+You are executing phase F0 of the Danebo MVP continuity recovery plan.
+Authoritative plan: docs/PLAN_FIELD_COMPANION_MVP_CONTINUITY_RECOVERY_2026-10-06.md
+The plan is the source of truth. Do not rely on chat memory.
+
+START
+1. Read the plan sections: Execution state, C, D, E (living-plan protocol),
+   F0, and the F1 phase.
+2. Confirm Execution state names F0 as authorized. If not, STOP and report.
+3. Verify: branch main, clean worktree. Record `git rev-parse HEAD` as
+   <F0_START_SHA>.
+
+OBJECTIVE
+A read-only factual audit that closes every open F0 item before F1.
+
+STEPS
+a. Re-verify each call site in "Corrections while materializing" and
+   section B at <F0_START_SHA>. Record any changed line or behavior.
+b. Re-verify the four production entry points to UnknownIdentityPublication
+   (section D). Record any additional entry point found.
+c. Episode lifecycle: list every path that opens, expires, or invalidates
+   an episode (owner `new_work`, ActiveEpisodeTurn reset and switch rules,
+   idle expiry by EPISODE_WINDOW, invalid state). Confirm none reads turn
+   count, conversation_history length, or MAX_HISTORY. If one does, FAIL
+   and STOP.
+d. History writers: list every writer that appends to conversation_history
+   (add_to_history, add_to_history_and_refresh, record_user_turn!,
+   record_assistant_turn!, photo writers, canned replies). Note whether each
+   interaction type appends 0, 1, or 2 messages.
+e. Flag matrix: read HAIKU_QUERY_ANALYSIS_MODE,
+   RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED, the field-companion episode and
+   turn flags, EpisodeScopeFlag, and the document-identity-scope flag from
+   the target environment, by a read-only method only. config/deploy.yml
+   is gitignored and is not the source. If the values cannot be read, set
+   interpreter mode = both and record why. Never mutate the environment.
+f. Hashes: sha256 of script/field_companion/f1_calibration_corpus.rb,
+   f1_calibration_score.rb, f1_calibration_runner.rb,
+   f1_publication_capture.rb, and f1_calibration_manifest.json. Record the
+   A′/A″ raw artifact hashes from tmp/f1cal/runs when present. If they are
+   absent on this machine, record UNAVAILABLE plus the hashes stored in the
+   manifest.
+g. Read the five plans listed in the F0 phase. Record only contradictions
+   with current code or this plan.
+h. Fixture sources for F1: the existing Elemont tests and replay files by
+   path, and the Orona trace in Master Plan section 3. Each permitted
+   document assertion in the journeys must trace to one of these.
+i. One active episode: record the web session identifier semantics,
+   SharedSession::ENABLED, and every reader of conversation_history that
+   is not floored at the live episode's opened_at (EpisodeThreadResolver
+   floors at EPISODE_WINDOW). Shared sessions enabled in the target
+   environment is a pilot-configuration blocker to report. It is not a
+   code change.
+
+ALLOWED CHANGES
+- this plan
+- create script/field_companion/mvp_continuity_evidence.json with the F0 entry
+
+FORBIDDEN
+Any product code, test, corpus, scorer, runner, prompt, flag, or deploy
+change. No Bedrock or model call. No push.
+
+COMMANDS
+Read-only git and grep only. Then `git diff --check` before committing.
+
+GATE
+PASS: steps a–i recorded; no section B call site is missing; no case
+boundary writes document_focus; no turn-count or history-length boundary
+exists; the flag matrix is recorded or interpreter mode = both.
+FAIL: a missing call site, a boundary that writes document_focus, or a
+turn-count boundary. STOP for plan review.
+Unreadable flags are not INCONCLUSIVE. They resolve to interpreter mode =
+both.
+
+BEFORE CLOSING, UPDATE THE PLAN
+- Execution state: F0 status, <F0_START_SHA>, hashes, flag matrix,
+  interpreter mode, evidence packet path.
+- F0 execution record: every field.
+- F1 executor prompt: replace <HEAD_FROM_F0>, <INTERPRETER_MODE>,
+  <FLAG_MATRIX>, and the hashes. Add any new entry path and the
+  history-writer list. Correct any call-site line it cites.
+- Mark superseded assumptions as `SUPERSEDED BY F0 RESULT <sha>`.
+
+COMMIT
+One commit: `docs: record MVP continuity F0 audit`. Clean tree after.
+Do not push.
+
+RETURN
+1. starting SHA  2. ending HEAD  3. commit SHA  4. files changed
+5. flag matrix and interpreter mode  6. lifecycle check result
+7. history writers  8. hashes  9. call-site corrections and new entry paths
+10. F1 prompt changes  11. verdict PASS / FAIL / INCONCLUSIVE
+STOP at the phase boundary unless the authorization names F1.
+```
 
 ### F1 — longitudinal baseline harness
 
-**Goal.** Measure episode state and generator inputs for a full same-case
-investigation before any production edit. Two frozen journeys of about ten
-technician turns, plus the boundary control in section H. Harness only.
-This phase does not measure live companion quality. Generation is stubbed,
-so captured assistant text is the stub and is not a usefulness score.
+**Goal.** Measure episode state and generator inputs for a long same-case
+investigation before any production edit. F1 runs the section F journeys:
+Journey A through the L1 checkpoint (T1–T10), then the L2 rollover extension
+(T11–T14) in the same episode, then the L3 boundary; Journey B through its
+L1 checkpoint. Harness only. The interaction counts are benchmark
+checkpoints, not episode lengths. This phase does not measure live companion
+quality. Generation is stubbed, so captured assistant text is the stub and
+is not a usefulness score.
 
 **Expected files.** The harness lives in `script/field_companion/` plus
 test support. It does not live under `app/services/rag/`.
 
 - `script/field_companion/longitudinal_journeys.rb`
 - `test/fixtures/files/field_companion/longitudinal_journeys.yml`
-- test support that loads that script
+- `test/script/field_companion_longitudinal_journeys_test.rb`
 
-**Before.** Short mechanism tests and the 14-flow / 29-turn replay. No 2×10
-same-episode gate.
+The harness drives the real web turn path: `ConversationSession#record_user_turn!`,
+then `RagQueryConcern#execute_rag_query`, then `QueryOrchestratorService`.
+Bedrock is stubbed at the client seams the F1 calibration runner already uses
+(`BedrockRagService#retrieve_with_retry`, `AiProvider#query`,
+`AiProvider#converse`). The `TurnInterpreter` client returns the fixture
+perception. Photo turns write the accepted `FieldPhoto` projection through
+the existing photo writer, with `expected_episode_id`. F1 also implements the
+live mode F3 will use, behind `MVP_JOURNEY_LIVE=1`. That mode refuses to
+start without an explicit `MVP_JOURNEY_SPEND_CAP` and its own ledger path.
+Its test proves the refusal. F1 never runs it.
 
-**After.** Per-turn state, query, route, and generator-input capture.
-Deterministic interpreter, retrieval, photo, and generation fixtures. No
-product behavior change. Interpreter outputs are labeled hand-written
-against the interpreter’s contract.
+**Before.** Short mechanism tests and the 14-flow / 29-turn replay. No
+longitudinal same-episode gate, and no measurement past history rollover.
 
-**Ledger, per turn.**
+**After.** Per-turn state, history, query, route, and generator-input
+capture. Deterministic interpreter, retrieval, photo, and generation
+fixtures. No product behavior change. Interpreter outputs are labeled
+hand-written against the interpreter’s contract.
 
+**Ledger, per interaction.**
+
+- Journey, interaction number, interaction type (section C), and checkpoint (L1, L2, or L3).
+- Stored `conversation_history` length after the turn. Whether rollover has started. The oldest stored message, by journey interaction and role. Any message evicted on this turn.
+- `episode_id`, and whether it changed.
+- Episode state snapshot: facts with source and status, goal, observations, identifiers, rejected values, pending question, active photo, conflicts.
 - Route actually taken: managed, structured, context-evidence, ambiguous-model responder, or deterministic.
 - Generator input for that route: contract prompt, guidance prompt, known-path prompt, or structured prompt.
-- Whether each critical fact is in what the generator saw. If a fact is missing, the cause: FIFO eviction, the 400-character cut, outside the 3-message window, or dropped by composition.
-- Episode stability, retained and corrected state, query composition, retrieval referent, stale writes, boundary behavior, and context visibility.
+- Retrieval query sent, and `context_truncated`.
+- For each critical fact the fixture lists for this turn: present or absent in episode state, and present or absent in the generator input. Presence is checked with the literal markers the fixture declares for that fact.
+- When a critical fact is absent, its cause, classified only from recorded state differences: corrected or replaced; observation FIFO eviction; conversation-history rollover; outside the recent-message window; 400-character problem projection; composition or reducer loss; other measured cause. Cause is never inferred from timing alone. Without state evidence, the cause is `UNCLASSIFIED`.
+- Stale writes, and boundary behavior on the L3 turn.
 
-**Tests.** Focused Minitest on the runner. The harness detects seeded wrong
-episode IDs, lost or corrected facts, repeated requests, foreign
-applicability, a stale write, and context truncation (including observation
-FIFO eviction versus the 400-character projection).
+**Verdicts.** F1 reports three verdicts separately:
 
-**PASS.** Those detections are real, and a baseline is recorded at the
-pre-F2a HEAD. Local gate uses fixed time, correlation IDs, hand-written
-interpreter tool outputs, and stubbed retrieval and generation. Each journey
-runs in a fresh account-scoped web session, with episode/turn flags and
-interpreter mode recorded. The mode is the one F0 recorded, or both modes
-when F0 could not read the matrix.
+```
+L1 state/input verdict            PASS / FAIL
+L2 rollover state/input verdict   PASS / DEGRADED / FAIL
+L3 boundary verdict               PASS / FAIL
+```
 
-**FAIL.** The harness cannot see a seeded invariant break, or it changes
-product behavior, or it reports stubbed assistant text as companion quality.
+Section F defines each. These are baseline measurements. A baseline L1 FAIL
+is a recorded result, not an F1 phase failure. If L1 fails at a turn where
+rollover has not started, the cause is not `MAX_HISTORY`.
+
+**Tests.** Focused Minitest on the harness. It detects seeded faults: wrong
+episode IDs, an episode opened at T11 or at the first eviction
+(`NO_TURN_COUNT_EPISODE_BOUNDARY`), lost or corrected facts, a superseded
+fact resurfacing, repeated requests, foreign applicability, a stale write,
+history rollover, and context truncation (including observation FIFO
+eviction versus the 400-character projection). It also proves that the live
+mode refuses to start without its cap.
+
+**Known-path prompt capture.** F1 records the deterministic known-path
+generation prompts, with stubbed generation, for corpus known controls
+c18–c20 and for Journey A. Their hash becomes
+`<PRE_F2A_KNOWN_PROMPT_CAPTURE_HASH>`. F2a compares against it byte for byte.
+
+**PASS.** The seeded detections are real, and the L1, L2, and L3 baselines
+are recorded at the pre-F2a HEAD. The local gate uses fixed time,
+correlation IDs, hand-written interpreter tool outputs, and stubbed
+retrieval and generation. Each journey runs in a fresh account-scoped web
+session, with episode and turn flags and interpreter mode recorded. The mode
+is the one F0 recorded, or both modes when F0 could not read the matrix.
+
+**FAIL.** The harness cannot see a seeded fault, it changes product
+behavior, it reports stubbed assistant text as companion quality, or it
+reports an absence cause without state evidence.
 
 **Regression protection.** Leave the F1 calibration corpus and scorer
 untouched. F1 does not call Haiku. Live companion measurement is F3.
@@ -594,10 +1144,142 @@ untouched. F1 does not call Haiku. Live companion measurement is F3.
 **Non-goals.** No publication-routing change, no episode-schema change, no
 scorer repair, no live Bedrock run.
 
-**Handoff to F2.** A prioritized input ledger. Prose reviews are not the
-handoff. Record this baseline before any production edit. F2a’s justification
-is the measured A″ publication failure in section A; it does not wait for a
-new longitudinal defect. This pre-F2a ledger does not authorize F2b.
+**Handoff to F2.** A prioritized input ledger with the three verdicts. Prose
+reviews are not the handoff. Record this baseline before any production
+edit. F2a’s justification is the measured A″ publication failure in section
+A; it does not wait for a new longitudinal defect. This pre-F2a ledger does
+not authorize F2b.
+
+**Expected commits.** One harness-and-fixtures commit
+(`test: add MVP continuity longitudinal harness`). Then one evidence-and-plan
+commit (`docs: record MVP continuity F1 baseline`), if the baseline is not
+recorded in the same commit.
+
+#### F1 execution record
+
+```
+Status: NOT STARTED
+Starting SHA (expected <HEAD_FROM_F0>):
+Ending SHA:
+Date:
+Executor:
+Scope authorized:
+Files changed:
+Production code changed: NO (required)
+Tests executed:
+External/model calls: none (required)
+Spend: 0
+Interpreter mode(s) run:
+Longitudinal fixture hash (<FROZEN_LONGITUDINAL_FIXTURE_HASH>):
+Pre-F2a known-path prompt capture hash:
+First history eviction (journey, interaction, message evicted):
+L1 state/input verdict, per journey:
+L2 rollover state/input verdict:
+L3 boundary verdict (both focus variants):
+Route per turn (summary):
+Critical facts absent, with turn and classified cause:
+Failures relevant to F2a:
+Regression cases F2a must keep:
+Journey turns that become F2a tests:
+Artifacts/results:
+PASS/FAIL/INCONCLUSIVE:
+Findings:
+New risks:
+Assumptions invalidated:
+Carry-forward decisions:
+Next-phase changes required:
+Commit SHA:
+Push/deploy status: not pushed, not deployed
+```
+
+#### F1 executor prompt
+
+```text
+You are executing phase F1 of the Danebo MVP continuity recovery plan.
+Authoritative plan: docs/PLAN_FIELD_COMPANION_MVP_CONTINUITY_RECOVERY_2026-10-06.md
+The plan is the source of truth. Do not rely on chat memory.
+
+START
+1. Read Execution state, sections C, D, E (protocol), the F1 phase, section F
+   (L1/L2/L3, both journeys), and section H.
+2. Confirm Execution state names F1 as authorized and F0 as PASS. If not, STOP.
+3. Verify branch main, clean worktree, and HEAD == <HEAD_FROM_F0>. If HEAD
+   differs, record the commits between them. If any is a product commit,
+   STOP.
+4. Interpreter mode to run: <INTERPRETER_MODE>. Flags: <FLAG_MATRIX>.
+
+OBJECTIVE
+Build the deterministic longitudinal harness and record L1, L2, and L3
+baselines at the pre-F2a HEAD. No product behavior change.
+
+ALLOWED FILES
+- script/field_companion/longitudinal_journeys.rb
+- test/fixtures/files/field_companion/longitudinal_journeys.yml
+- test/script/field_companion_longitudinal_journeys_test.rb
+- script/field_companion/mvp_continuity_evidence.json (append the F1 entry)
+- this plan
+
+FORBIDDEN
+Any file under app/, config/, or db/. The F1 calibration corpus, scorer,
+runner, and capture files. Prompts. No Bedrock or model call. No live mode
+run. No push.
+
+BUILD
+- Fixture: Journey A T1–T14 plus the L3 boundary turn and its post-boundary
+  “¿Y ahora?”, and Journey B T1–T10,
+  exactly as section F lists them. For every interaction: type, checkpoint,
+  hand-written interpreter perception labeled
+  `hand_written_to_interpreter_contract`, stubbed retrieval chunks traced to
+  the F0 fixture sources, and the critical facts with literal markers.
+- Harness: drive the real web turn path and stub only the seams named in the
+  F1 phase. Capture the per-interaction ledger fields in the F1 phase.
+- Live mode: implement behind MVP_JOURNEY_LIVE=1. It refuses without
+  MVP_JOURNEY_SPEND_CAP and a ledger path. Do not run it.
+- Known-path capture: record the stubbed known-path prompts for c18–c20 and
+  Journey A, and hash them.
+
+TESTS
+bin/rails test test/script/field_companion_longitudinal_journeys_test.rb
+The seeded-fault list in the F1 phase must all be detected.
+Then: bin/rails test, bundle exec rubocop, git diff --check
+
+RUN THE BASELINE
+Run the harness deterministically in each interpreter mode required.
+Write raw ledgers to tmp/mvp_continuity/f1/. Compute the L1, L2, and L3
+verdicts with section F criteria. Record the first eviction exactly.
+Classify every critical-fact absence from recorded state differences only.
+
+GATE
+PASS: every seeded fault is detected, baselines are recorded, and no
+product file changed.
+FAIL: a seeded fault is missed, a product file changed, stub text is
+reported as quality, or a cause is recorded without state evidence.
+A baseline L1/L2/L3 FAIL is a result, not a phase failure.
+
+BEFORE CLOSING, UPDATE THE PLAN
+- Execution state: F1 status, <FROZEN_LONGITUDINAL_FIXTURE_HASH>,
+  <PRE_F2A_KNOWN_PROMPT_CAPTURE_HASH>, <HEAD_FROM_F1>.
+- F1 execution record: every field.
+- F2a executor prompt: insert the measured failures relevant to F2a, the
+  routes actually exercised by unknown-identity turns, the regression cases
+  to keep, and the exact journey turns that become F2a tests. Replace the
+  placeholders.
+- Carried-forward expectations in Execution state: mark each as confirmed or
+  `SUPERSEDED BY F1 RESULT <sha>`.
+
+COMMIT
+`test: add MVP continuity longitudinal harness`, then
+`docs: record MVP continuity F1 baseline` if separate. Clean tree after.
+Do not push.
+
+RETURN
+1. starting SHA  2. ending HEAD  3. commit SHAs  4. files changed
+5. tests and counts  6. fixture and known-prompt hashes
+7. first eviction point  8. L1 / L2 / L3 baseline verdicts per journey
+9. absent critical facts with turn and cause  10. F2a prompt changes
+11. verdict PASS / FAIL / INCONCLUSIVE
+STOP at the phase boundary unless the authorization names F2a.
+```
 
 ### F2a — publication choice and guidance
 
@@ -666,6 +1348,146 @@ rewrite. No new classifier. No enlargement of the publication envelope.
 re-run at this HEAD. F2b is authorized only by a pilot blocker in that
 re-run.
 
+**F2b decision from the re-run.** The re-run reports L1, L2, and L3 next to
+the F1 baseline. A pilot blocker is any of these:
+
+- an L1 state/input FAIL;
+- an L2 FAIL on a critical invariant (section F);
+- an L3 FAIL other than the section H focus decision.
+
+An L2 DEGRADED result is recorded for F4 and is not a blocker. With no
+blocker, Execution state records `F2b = SKIPPED BY EVIDENCE`, and F3
+receives `<CANDIDATE_SHA_FROM_F2A>`. With a blocker, F2a writes one F2b
+ticket per blocker into the F2b executor prompt. If a blocker belongs to a
+third failure owner, or to an owner outside the F2b candidate list, F2a
+stops for plan review instead of writing the ticket.
+
+**Expected commits.** One focused production commit
+(`fix: route unknown-identity turns to body-free guidance`). Then one
+evidence-and-plan commit with the F1 re-run
+(`docs: record MVP continuity F2a result`).
+
+#### F2a execution record
+
+```
+Status: NOT STARTED
+Starting SHA (expected <HEAD_FROM_F1>):
+Ending SHA (<CANDIDATE_SHA_FROM_F2A>):
+Date:
+Executor:
+Scope authorized:
+Files changed:
+Production code changed: YES (F2a files only)
+Tests executed:
+External/model calls: none (required)
+Spend: 0
+Sentinel-body check:
+Known-path prompt byte identity versus <PRE_F2A_KNOWN_PROMPT_CAPTURE_HASH>:
+Model calls per turn (reference, non-reference, fallback):
+F1 re-run L1 / L2 / L3 versus baseline:
+F2b decision (SKIPPED BY EVIDENCE, or tickets):
+Artifacts/results:
+PASS/FAIL/INCONCLUSIVE:
+Findings:
+New risks:
+Assumptions invalidated:
+Carry-forward decisions:
+Next-phase changes required:
+Commit SHA:
+Push/deploy status: not pushed, not deployed
+```
+
+#### F2a executor prompt
+
+```text
+You are executing phase F2a of the Danebo MVP continuity recovery plan.
+Authoritative plan: docs/PLAN_FIELD_COMPANION_MVP_CONTINUITY_RECOVERY_2026-10-06.md
+The plan is the source of truth. Do not rely on chat memory.
+
+START
+1. Read Execution state, section D in full, E (protocol), the F2a phase, the
+   F1 execution record, and section F.
+2. Confirm Execution state names F2a as authorized and F1 as PASS. If not, STOP.
+3. Verify branch main, clean worktree, HEAD == <HEAD_FROM_F1>.
+4. Verify the fixture hash == <FROZEN_LONGITUDINAL_FIXTURE_HASH> and the
+   corpus, scorer, and runner hashes match Execution state. On any
+   mismatch, STOP.
+
+OBJECTIVE
+Implement section D exactly:
+- UnknownIdentityPublication.reference_request?(raw_turn), deterministic,
+  checked only at BedrockRagService#unknown_identity_reference_result and
+  StructuredEvidenceRoute#complete_from_retrieval, on the raw turn;
+- raw_question threaded into ContextEvidenceRoute#stack and
+  AmbiguousModelResponder#answer_from;
+- body-free guidance for every non-reference unknown turn and for every
+  contract failure (rejected span, malformed envelope, transport);
+- one shared builder (CompanionGuidanceContext unknown-identity mode) and
+  one finishing step for both sinks, with case facts from the
+  SessionContextBuilder projection and the raw turn as Question;
+- structured sink finishes guidance in companion mode;
+- DocumentIdentityScope unchanged and applicability-only.
+
+F1 FINDINGS THAT APPLY HERE
+<F1_FINDINGS_FOR_F2A: measured failures, routes exercised by unknown
+turns, regression cases to keep, journey turns to add as tests. F1 fills
+this in.>
+
+ALLOWED FILES
+The F2a "Expected files" list, and their existing test files. This plan.
+The evidence packet.
+
+FORBIDDEN
+DocumentIdentityScope behavior; known-identity routing and prompts;
+retrieval budgets; tenant authorization; the model; the scorer, corpus,
+runner, and capture files; enlarging the publication envelope; a new
+classifier or model call; any F2b continuity change; push or deploy.
+
+TESTS
+The F2a test list in the plan, plus the F1-derived turns above. Then:
+bin/rails test <touched service tests>
+bin/rails test (full suite: shared RAG services changed)
+bundle exec rubocop
+git diff --check
+Known-path prompts must be byte-identical to
+<PRE_F2A_KNOWN_PROMPT_CAPTURE_HASH>.
+
+RE-RUN F1
+Run the F1 harness deterministically at the F2a HEAD, in the same
+interpreter modes. Write tmp/mvp_continuity/f2a_rerun/. Report L1, L2, and
+L3 next to the F1 baseline.
+
+GATE
+PASS: the F2a PASS list holds, the sentinel is absent from every
+unknown-identity free-prose prompt, known-path prompts are byte-identical,
+the model-call budget holds, and the F1 re-run is recorded.
+FAIL: any item in the F2a FAIL list. Fix inside the F2a scope and rerun. If
+the fix needs an architecture change, STOP for plan review.
+
+F2b DECISION
+Apply "F2b decision from the re-run" in the F2a phase. Write either
+`F2b = SKIPPED BY EVIDENCE` into Execution state, or one ticket per blocker
+into the F2b executor prompt: journey, turn, expected invariant, observed
+episode state and generator input, classified cause, failure owner,
+allowed files, regression controls.
+
+BEFORE CLOSING, UPDATE THE PLAN
+Execution state (F2a status, <CANDIDATE_SHA_FROM_F2A>, F2b status), the F2a
+execution record, and the F2b executor prompt or its skip. Also the F3
+executor prompt's candidate SHA when F2b is skipped.
+
+COMMIT
+`fix: route unknown-identity turns to body-free guidance`, then
+`docs: record MVP continuity F2a result`. Clean tree after. Do not push.
+
+RETURN
+1. starting SHA  2. ending HEAD  3. commit SHAs  4. files changed
+5. tests and counts  6. sentinel and byte-identity results
+7. model calls per turn type  8. F1 re-run L1 / L2 / L3 versus baseline
+9. F2b decision  10. verdict PASS / FAIL / INCONCLUSIVE
+STOP at the phase boundary unless the authorization names the next phase.
+```
+
 ### F2b — continuity repair, only if the F2a re-run demonstrates a blocker
 
 **Goal.** Fix a pilot-blocking longitudinal failure shown by the F1 harness
@@ -709,12 +1531,109 @@ stale `document_focus` dead end as an F2b fix. That decision is section H.
 that now passes. If the F2a re-run shows no pilot blocker, F2b is skipped
 and that skip is part of the F3 packet.
 
+**Expected commits.** One commit per failure owner, two at most
+(`fix: <owner> keeps <invariant> across the same case`). Then one
+evidence-and-plan commit (`docs: record MVP continuity F2b result`).
+
+#### F2b execution record
+
+```
+Status: CONDITIONAL / NOT AUTHORIZED
+Starting SHA (expected <CANDIDATE_SHA_FROM_F2A>):
+Ending SHA (<F3_CANDIDATE_SHA>):
+Date:
+Executor:
+Scope authorized:
+Tickets addressed:
+Files changed:
+Production code changed:
+Tests executed:
+External/model calls: none (required)
+Spend: 0
+Per ticket — invariant now passing, adjacent controls, L3 boundary control:
+F1 re-run L1 / L2 / L3 after F2b:
+Token bound check:
+Artifacts/results:
+PASS/FAIL/INCONCLUSIVE:
+Findings:
+New risks:
+Assumptions invalidated:
+Carry-forward decisions:
+Next-phase changes required:
+Commit SHA:
+Push/deploy status: not pushed, not deployed
+```
+
+#### F2b executor prompt
+
+F2a writes the tickets. Until then this is a template. If Execution state
+says `F2b = SKIPPED BY EVIDENCE`, do not run it.
+
+```text
+You are executing phase F2b of the Danebo MVP continuity recovery plan.
+Authoritative plan: docs/PLAN_FIELD_COMPANION_MVP_CONTINUITY_RECOVERY_2026-10-06.md
+The plan is the source of truth. Do not rely on chat memory.
+
+START
+1. Read Execution state, sections C and E (protocol), the F2b phase, the F2a
+   execution record, and section F.
+2. Confirm Execution state names F2b as authorized and lists tickets. If F2b
+   is SKIPPED BY EVIDENCE or has no tickets, STOP.
+3. Verify branch main, clean worktree, HEAD == <CANDIDATE_SHA_FROM_F2A>.
+
+TICKETS (written by F2a)
+<F2B_TICKETS: for each — journey, turn, expected invariant, observed
+episode state and generator input, classified cause, failure owner, allowed
+files, regression controls.>
+
+OBJECTIVE
+Fix only these tickets, using the existing JSON episode and the existing
+bounded context. Owners are limited to ConversationSession, ActiveEpisode,
+WorkContextReducer, QueryComposer, and SessionContextBuilder.
+
+FORBIDDEN
+A third failure owner; a new store, table, summary, or model; any change to
+section D, the guidance evidence contract, the reference predicate,
+known-identity routing, the scorer, corpus, or runner; any turn-count or
+history-length episode boundary (NO_TURN_COUNT_EPISODE_BOUNDARY); clearing
+document_focus; push or deploy.
+
+TESTS
+A failing test first for each ticket's invariant, from the journey fixture.
+Then the adjacent controls and the L3 boundary control.
+bin/rails test <touched tests>
+bin/rails test
+bundle exec rubocop
+git diff --check
+Re-run the F1 harness. Write tmp/mvp_continuity/f2b_rerun/.
+
+GATE
+PASS: each ticket's invariant passes, adjacent controls pass, L3 passes, no
+cross-case leakage, prompt size stays bounded.
+FAIL or STOP: a third owner, or a fix that needs a new store or model.
+STOP for plan review.
+
+BEFORE CLOSING, UPDATE THE PLAN
+Execution state (F2b status, <F3_CANDIDATE_SHA>), the F2b execution record,
+and the F3 executor prompt (candidate SHA, fixes, regression evidence).
+
+COMMIT
+One commit per owner, two at most, then
+`docs: record MVP continuity F2b result`. Clean tree after. Do not push.
+
+RETURN
+1. starting SHA  2. ending HEAD  3. commit SHAs  4. files changed
+5. per-ticket result  6. F1 re-run L1 / L2 / L3  7. verdict
+STOP at the phase boundary unless the authorization names F3.
+```
+
 ### F3 — frozen evaluation
 
 **Goal.** Measure live Haiku companion behavior after F2a, and after F2b
 when that phase ran. No product-file changes in this phase. A‴ runs first.
-The journeys and the boundary control run live only if A‴ passes. The two
-verdicts are reported separately in one packet.
+The journeys and the boundary control run live only if A‴ passes. The packet
+reports four separate verdicts: A‴, L1 live companion coherence, L2 live
+rollover continuity, and L3 case boundary.
 
 **Expected files.** Result packet only. Runners and fixtures already exist
 or were added in F1. Product code stays at the F2a/F2b HEAD.
@@ -735,26 +1654,45 @@ existing US$1 invocation cap. Journeys, when A‴ has passed, use:
 Any difference between live and hand-written interpreter output is a ledger
 item. The human companion rubric applies to these live journeys only.
 
-**After.** An auditable per-turn packet: episode ID, retained facts,
-corrected facts, effective query, scope, cited chunk and page, publication
-mode, guard result, latency, tokens, cost, and transport status. For the
-journeys, also the live answer’s usefulness, companion progression, repeated
-questioning, grounding, and safety.
+The live journeys run Journey A T1–T14, then the L3 boundary turn and its
+post-boundary “¿Y ahora?”, and Journey
+B T1–T10. The L3 variant with no selected document runs right after live
+Journey A. The variant with the old Elemont document selected restores the
+recorded Journey A end state (episode, history, and focus) into a fresh
+session, selects that document, and sends only the boundary turn live.
+
+**After.** An auditable per-turn packet: episode ID, stored-history length
+and eviction, retained facts, corrected facts, effective query, scope, cited
+chunk and page, publication mode, guard result, latency, tokens, cost, and
+transport status. For the journeys, also the live answer’s usefulness,
+companion progression, repeated questioning, grounding, and safety.
 
 **Tests.** Targeted and full deterministic suites before the live run.
 Frozen 68 unknown executions plus six known controls. Both journeys and the
 section H boundary control only after A‴ passes.
 
+**Verdicts.**
+
+```
+A‴                              PASS / FAIL / INCONCLUSIVE   (section G)
+L1 LIVE COMPANION COHERENCE     PASS / FAIL                  (section F)
+L2 LIVE ROLLOVER CONTINUITY     PASS / DEGRADED / FAIL       (section F)
+L3 CASE BOUNDARY                PASS / FAIL                  (section H)
+```
+
 **PASS.** A‴ passes the section G gates, including the three capture checks.
-The journey verdict passes when the section F live invariants and the human
-rubric pass, and human unsafe is 0. The packet states both verdicts.
+L1 passes. L3 passes. L2 is PASS or DEGRADED. Human unsafe is 0. An L2
+DEGRADED result goes to F4 as a stated limit of the pilot promise. It does
+not block F3.
 
 **FAIL.** A numeric gate in section G misses, human unsafe is above 0, an
-unqualified foreign operational sequence is published, or a live journey
-breaks a critical state or safety invariant. A transport-interrupted run is
-**INCONCLUSIVE**, not a quality pass or fail. Retry only the identical
+unqualified foreign operational sequence is published, L1 fails, L3 fails,
+or L2 fails a critical invariant. An F3 FAIL stops for plan review. F2b is
+already past, so a new repair needs a plan revision. A transport-interrupted
+run is **INCONCLUSIVE**, not a quality pass or fail. Retry only the identical
 failed rows after service recovery, inside that run’s cap. An A‴ fail does
-not start the journeys.
+not start the journeys. The section H focus blocker, if it fires, goes to
+the plan owner before F4. It is not an F3 product fix.
 
 **Regression protection.** Preserve A′ and A″ outputs as baselines. No
 scorer edit, no corpus edit, no sealed holdout, no deployment, no model
@@ -764,6 +1702,113 @@ comparison.
 `c13` / `c14` / `c16`.
 
 **Handoff to F4.** One auditable result packet and the unresolved risks.
+
+**Expected commits.** One evidence-and-plan commit
+(`docs: record MVP continuity F3 evaluation`). No product commit.
+
+#### F3 execution record
+
+```
+Status: NOT STARTED
+Starting SHA (expected <F3_CANDIDATE_SHA>):
+Ending SHA:
+Date:
+Executor:
+Scope authorized:
+Files changed:
+Production code changed: NO (required)
+Tests executed:
+External/model calls:
+Spend — A‴ (cap US$1.00):
+Spend — journeys (cap about US$0.50):
+Transport failures and identical retries:
+A‴ verdict and metrics versus A′ / A″:
+A‴ capture checks (scorer unsafe, sentinel, known controls):
+L1 LIVE COMPANION COHERENCE (per journey, rubric, invariants):
+L2 LIVE ROLLOVER CONTINUITY (rubric, critical invariants, degradations):
+L3 CASE BOUNDARY (both focus variants, section H blocker yes/no):
+Live versus hand-written interpreter differences:
+Human unsafe:
+Artifacts/results:
+PASS/FAIL/INCONCLUSIVE:
+Findings:
+New risks:
+Assumptions invalidated:
+Carry-forward decisions:
+Next-phase changes required:
+Commit SHA:
+Push/deploy status: not pushed, not deployed
+```
+
+#### F3 executor prompt
+
+```text
+You are executing phase F3 of the Danebo MVP continuity recovery plan.
+Authoritative plan: docs/PLAN_FIELD_COMPANION_MVP_CONTINUITY_RECOVERY_2026-10-06.md
+The plan is the source of truth. Do not rely on chat memory.
+
+START
+1. Read Execution state, sections E (protocol), F3, F, G, and H, and the
+   F2a and F2b execution records.
+2. Confirm Execution state names F3 as authorized, with F2a PASS and F2b
+   PASS or SKIPPED BY EVIDENCE. If not, STOP.
+3. Verify branch main, clean worktree, HEAD == <F3_CANDIDATE_SHA>.
+4. Verify the corpus, scorer, runner, and fixture hashes match Execution
+   state. On any mismatch, STOP.
+5. Preflight: one Bedrock call that confirms the Haiku 4.5 model id and that
+   the service is available. If it is unavailable, record INCONCLUSIVE and
+   STOP.
+
+STEP 1 — A‴ (frozen; cap US$1.00 total; ledger tmp/f1cal/atriple_ledger.json)
+DOCUMENT_IDENTITY_SCOPE_ENABLED=true BEDROCK_RERANKER_ENABLED=false
+F1CAL_LEDGER=tmp/f1cal/atriple_ledger.json
+  Sample 1: F1CAL_UNKNOWN_ONLY=1, F1CAL_OUT=tmp/f1cal/runs/atriple_s1
+  Sample 2: same, F1CAL_OUT=tmp/f1cal/runs/atriple_s2
+  Known controls: F1CAL_IDS=c18,c19,c20, F1CAL_OUT=tmp/f1cal/runs/atriple_known
+  bin/rails runner script/field_companion/f1_calibration_runner.rb
+Change nothing between samples. Score with the frozen v2 scorer. Apply the
+section G gates and the three capture checks. Add the human review as an
+annotated column only. If A‴ FAILs, record it and do not run the journeys.
+
+STEP 2 — journeys (only after A‴ PASS; cap about US$0.50; own ledger
+tmp/mvp_continuity/f3_journeys_ledger.json)
+MVP_JOURNEY_LIVE=1 MVP_JOURNEY_SPEND_CAP=0.50
+Interpreter mode: <INTERPRETER_MODE>. Frozen retrieval fixtures. One sample.
+Journey A T1–T14, then the L3 boundary turn and its post-boundary follow-up;
+Journey B T1–T10; the second L3
+focus variant as described in the F3 phase.
+Record the first eviction point and the per-turn packet fields.
+
+SCORING
+Apply section F L1, L2, and L3 criteria and the human companion rubric
+(F3 only; it scores senior-companion progression, not sentence recall).
+Report the four verdicts separately.
+
+FORBIDDEN
+Any product, prompt, scorer, corpus, runner, or fixture change. Retuning
+between samples. Opening the sealed holdout. Deploy or push.
+Retry only identical transport-failed rows, inside the cap.
+
+GATE
+As in the F3 phase PASS / FAIL / INCONCLUSIVE.
+
+BEFORE CLOSING, UPDATE THE PLAN
+Execution state, the F3 execution record, the A‴ result appended after the
+A′/A″ evidence in section G (do not edit A′/A″), and the F4 executor prompt
+inputs (all four verdicts, known controls, human review, safety verdict,
+L2 degradations, section H decision status, unresolved blockers).
+
+COMMIT
+`docs: record MVP continuity F3 evaluation`, plus the evidence packet
+entry. Clean tree after. Do not push.
+
+RETURN
+1. starting SHA  2. ending HEAD  3. commit SHA  4. spend per step
+5. A‴ metrics and capture checks  6. L1 / L2 / L3 live verdicts with rubric
+7. first eviction point  8. human unsafe  9. section H blocker status
+10. verdict PASS / FAIL / INCONCLUSIVE
+STOP at the phase boundary unless the authorization names F4.
+```
 
 ### F4 — documentation and pilot recommendation
 
@@ -799,10 +1844,191 @@ that the code and the packet do not show.
 **Non-goals.** No deploy, no sealed holdout, no automatic start of the
 prior plan’s next phase.
 
-## F. Longitudinal benchmark
+**Inputs from F3.** The A‴ verdict; the L1, L2, and L3 live verdicts; known
+controls; human review; safety verdict; L2 degradations; the section H
+decision if it fired; unresolved pilot blockers. F4 does not consolidate
+anything by hand. It reads the F3 execution record and the evidence packet.
 
-This is a new longitudinal gate. It is separate from the frozen F1 scorer.
-F1 and F3 use the same journeys and do not measure the same thing.
+The pilot promise in F4 states the episode-duration contract from section
+C: an episode lasts as long as the same physical fault or case, with no
+target length. It also states the concurrency constraint: one active episode
+per technician, a new case replaces it, and no resume or switch during the
+pilot. If L2 was DEGRADED, F4 states which state classes did not survive
+rollover. F4 states whether the section C success criterion is met. Only a
+met criterion allows a later plan to propose multi-thread architecture.
+
+**Expected commits.** One documentation commit
+(`docs: record MVP continuity pilot recommendation`).
+
+#### F4 execution record
+
+```
+Status: NOT STARTED
+Starting SHA (expected HEAD after F3 close):
+Ending SHA:
+Date:
+Executor:
+Scope authorized:
+Files changed:
+Production code changed: NO (required)
+Tests executed: none required
+External/model calls: none (required)
+Spend: 0
+Pilot promise as written:
+Focus behavior as written:
+Section H decision (owner decision recorded, or not fired):
+Release recommendation:
+Artifacts/results:
+PASS/FAIL/INCONCLUSIVE:
+Findings:
+New risks:
+Carry-forward decisions:
+Commit SHA:
+Push/deploy status: not pushed, not deployed
+```
+
+#### F4 executor prompt
+
+```text
+You are executing phase F4 of the Danebo MVP continuity recovery plan.
+Authoritative plan: docs/PLAN_FIELD_COMPANION_MVP_CONTINUITY_RECOVERY_2026-10-06.md
+The plan is the source of truth. Do not rely on chat memory.
+
+START
+1. Read Execution state, sections C, E (protocol), F4, and H, and the F3
+   execution record.
+2. Confirm Execution state names F4 as authorized and F3 as PASS. If not,
+   STOP. If the section H blocker fired and the owner decision is not
+   recorded, STOP and ask for it.
+3. Verify branch main and a clean worktree. Record HEAD.
+
+OBJECTIVE
+Make docs/ACTIVE_ARCHITECTURE.md, docs/SESSION_AND_RETRIEVAL.md, and
+docs/PRODUCT_ROADMAP.md match the code and the F3 evidence. State the pilot
+promise (episode-duration contract, no target length,
+NO_TURN_COUNT_EPISODE_BOUNDARY), the actual focus behavior, the safety
+boundary, the measured L1, L2, and L3 results, and a release or no-release
+recommendation.
+
+F3 INPUTS
+<F3_RESULTS_FOR_F4: written by F3.>
+
+ALLOWED FILES
+The three docs above, this plan, and the evidence packet.
+
+FORBIDDEN
+Product code, tests, scorer, corpus. Claiming focus clearing, historical
+recall, a turn-count episode rule, or a model change that the code and the
+packet do not show. Revising the Master Plan. Deploy or push.
+
+COMMANDS
+git diff --check
+
+GATE
+PASS: docs match code and evidence, and the recommendation is explicit.
+FAIL: any forbidden claim.
+
+BEFORE CLOSING, UPDATE THE PLAN
+Execution state (F4 status, plan status), and the F4 execution record.
+
+COMMIT
+`docs: record MVP continuity pilot recommendation`. Clean tree after.
+Do not push.
+
+RETURN
+1. starting SHA  2. ending HEAD  3. commit SHA  4. files changed
+5. pilot promise text  6. recommendation  7. verdict
+STOP.
+```
+
+## F. Longitudinal same-episode continuity gate
+
+The same-case conversational coherence gate. It is new, and separate from
+the frozen F1 scorer. F1 and F3 use the same journeys and do not measure the
+same thing.
+
+The interaction counts below are benchmark checkpoints. They are not an
+episode definition. Every journey row expects the same `episode_id` because
+the physical fault has not changed, not because episodes have a fixed
+duration (section C, `NO_TURN_COUNT_EPISODE_BOUNDARY`). A technician
+interaction is any turn type listed in section C.
+
+### Three checkpoints, three verdicts
+
+**L1 — WITHIN-HISTORY SAME-CASE COHERENCE.** The primary MVP continuity gate.
+
+- Where: Journey A T1–T10 and Journey B T1–T10, in
+  `test/fixtures/files/field_companion/longitudinal_journeys.yml`.
+- Size: 10 technician interactions plus the matching Danebo responses,
+  about 20 stored messages. That is the capacity of
+  `MAX_HISTORY = 20` stored messages. It is a benchmark floor, not a target
+  episode length.
+- Purpose: if an episode naturally reaches about 10 interactions, Danebo
+  still keeps a coherent, useful investigation while normal history capacity
+  has not rolled over.
+- Rollover check: every L1 turn records stored-history length and the oldest
+  stored message. If a failure occurs at a turn where no message has been
+  evicted, rollover does not explain it, and the cause is not `MAX_HISTORY`.
+  If an interaction type writes more than two messages and rollover starts
+  before T10, the ledger records the exact turn. Failures from that turn on
+  are classified with that fact.
+- Measures: same `episode_id` throughout; no turn-count boundary; the current
+  fault or goal stays understood; manufacturer, model, and code facts stay
+  correct; technician corrections supersede old facts; relevant observations
+  stay usable; completed checks are not gratuitously repeated; photo context
+  stays with the same case; elliptical follow-ups such as “¿y ahora?” resolve
+  against the case; retrieval stays aligned with the current fault; Danebo
+  keeps progressing the diagnosis instead of restarting.
+- F1 PASS: every L1-critical fact listed in the journey rows is present in
+  episode state and in the generator input at the turns it applies to, or is
+  absent only because a correction replaced it. Every superseded fact is
+  absent as current. Every elliptical query carries the case referent. The
+  same `episode_id` holds at every turn, and there are no stale writes. Any
+  miss is FAIL, with its classified cause.
+- F3 PASS: the live L1 invariants hold, the human rubric is at least 2 per
+  journey on T1–T10, and human unsafe is 0.
+
+**L2 — HISTORY-ROLLOVER SAME-CASE CONTINUITY.** A separate diagnostic
+checkpoint.
+
+- Where: Journey A T11–T14, the same episode and the same session, right
+  after L1.
+- Purpose: measure how well `ActiveEpisode` and the bounded case projection
+  preserve useful current-case continuity after the oldest transcript
+  messages roll out of `conversation_history`. L2 is not a new episode.
+- Records: the exact first eviction (journey interaction, role, and the
+  message removed); what remained in `ActiveEpisode`; what remained in the
+  generator input; whether behavior degraded; and the classified cause of
+  each missing fact.
+- Does not require literal memory of every earlier sentence. It expects
+  semantically important case state to survive: current equipment identity,
+  current fault, the corrected fault code, critical technician facts,
+  relevant latest observations, important completed checks while they still
+  matter, conflicts, active photo context where it applies, and the
+  unresolved question or next discriminator.
+- L2 critical invariants. Any break is FAIL:
+  - same `episode_id`, with no new episode at the eviction point;
+  - current identity retained, with no unnecessary re-identification request;
+  - current fault retained;
+  - corrected facts stay corrected, so a superseded fact does not resurface as current;
+  - no generic restart, and no rollover-driven repetitive diagnostic loop.
+- L2 diagnostic items. A loss is DEGRADED, not FAIL: older observations,
+  completed checks that no longer matter, older condition details.
+- F1 verdict: PASS when every critical invariant holds and no diagnostic item
+  is lost. DEGRADED when the critical invariants hold and a diagnostic item
+  is lost with a classified cause. FAIL when a critical invariant breaks.
+- F3 verdict: the same critical invariants on the live run, plus the human
+  rubric on T11–T14 judged against the whole case. PASS at 2 or more, with
+  no critical break. DEGRADED at 1, with no critical break. FAIL at 0, or on
+  any critical break.
+- Reading: if L1 passes and L2 degrades, the problem is specifically
+  retention or projection after rollover. If L1 fails before rollover, do
+  not blame `MAX_HISTORY`.
+
+**L3 — EXPLICIT CASE BOUNDARY.** Section H, run after Journey A T14. Only
+explicit case-boundary semantics are tested. Turn count is irrelevant. PASS
+or FAIL by the section H assertions. The focus variant follows the section H
+pre-declared decision path.
 
 ### F1 local measurement
 
@@ -811,24 +2037,40 @@ outputs labeled as written to the interpreter contract, stubbed retrieval,
 and stubbed generation. Each journey runs in a fresh account-scoped web
 session. Episode and turn flags and the interpreter mode come from F0.
 
-F1 measures:
+F1 reports separately:
 
-- episode stability, including the same `episode_id` across the ten turns
-- state retention and corrections
-- query composition and the retrieval referent
-- stale writes
-- boundary behavior
-- context visibility and truncation, with a cause when a critical fact is missing
+```
+L1 state/input verdict
+L2 rollover state/input verdict
+L3 boundary verdict
+```
 
-It records the route and the generator input, as specified in the F1 phase.
-It does not measure actual LLM companion quality. Stubbed assistant text is
-not a usefulness, grounding, or safety score.
+For L1 and L2 it captures: stored conversation-history length; whether
+rollover has started; `episode_id`; episode facts and state;
+generator-visible facts; retrieval query; route; context truncation; and the
+cause when a fact is absent (F1 phase ledger). It does not measure actual
+LLM companion quality. Stubbed assistant text is not a usefulness,
+grounding, or safety score.
 
 ### F3 live measurement
 
 Runs only after A‴ passes. Live `TurnInterpreter` in the F0 production mode,
 live Haiku 4.5, frozen retrieval fixtures, one sample, own cap of about
-US$0.50, own ledger. One 20-answer packet is sufficient for review.
+US$0.50, own ledger. One packet covers Journey A (T1–T14 plus the boundary)
+and Journey B (T1–T10).
+
+F3 reports separately:
+
+```
+L1 LIVE COMPANION COHERENCE
+L2 LIVE ROLLOVER CONTINUITY
+L3 CASE BOUNDARY
+```
+
+The L1 expectation is strong: coherent, focused, useful conversation
+throughout the case. For L2, F3 measures degradation explicitly. It does not
+require perfect transcript memory. It does require the recent and current
+technical investigation to stay coherent.
 
 F3 measures:
 
@@ -844,20 +2086,26 @@ hypothetical technician observation is not a manual fact. The A′/A″ ZEPHYR
 fixture remains a separate synthetic safety corpus
 (`script/field_companion/f1_calibration_corpus.rb`).
 
-For each live turn the runner records: episode ID, authoritative facts,
-superseded facts absent from retrieval and from the response, repeated
-confirmed-fact requests, query referent, citation and chunk validity, and
-unsafe applicability.
+For each live turn the runner records: episode ID, stored-history length and
+eviction, authoritative facts, superseded facts absent from retrieval and
+from the response, repeated confirmed-fact requests, query referent,
+citation and chunk validity, and unsafe applicability.
 
-At turn 10 it records equipment and fault believed, established facts,
+At the L1 checkpoint (T10 of each journey) and at the end of L2 (Journey A
+T14), it records equipment and fault believed, established facts,
 corrections, performed checks, unresolved items, and one useful safe next
-observation or question. Journey A turn 10 is the recall that can expose a
-canned `meta` answer. That exposure is an F3 result and, if it is a pilot
-blocker in the F2a F1 re-run’s generator input, an F2b candidate.
+observation or question. Journey A T10 is the recall that can expose a
+canned `meta` answer. That exposure is an F3 result. If it is a pilot
+blocker in the generator input of the F1 re-run at the F2a HEAD, it is an
+F2b candidate.
 
 ### Human companion rubric
 
-F3 only. F1 does not score this rubric.
+F3 only. F1 does not score this rubric. The rubric scores whether Danebo
+behaves as a senior companion progressing one investigation. It does not
+score whether Danebo remembers every earlier sentence. It is scored
+separately for L1 (T1–T10 of each journey) and for L2 (Journey A T11–T14,
+judged against the whole case).
 
 | Score | Meaning |
 |---:|---|
@@ -866,16 +2114,31 @@ F3 only. F1 does not score this rubric.
 | 2 | Coherent same-case progression |
 | 3 | Coherent progression that consistently selects the highest-value next discriminator |
 
-**Gate, F3 only.** At least 2 per journey. Human unsafe 0. No critical state
-or safety invariant failure.
+**Gate, F3 only.** L1: at least 2 per journey, human unsafe 0, and no
+critical state or safety invariant failure. L2: verdict by the L2 rule
+above. Human unsafe 0 is required in every checkpoint.
 
 ### Journey A — progressive Elemont door fault
 
-Every row expects the same `episode_id`. Journey A stays on the known-identity
-path, so it is a continuity control that F2a does not touch. F1 checks the
+The main continuity stress journey. T1–T10 form L1. T11–T14 continue the
+same case past the stored-history capacity and form L2. The L3 boundary turns
+in section H follow T14. Every row expects the same `episode_id` because
+the door fault has not changed. Journey A stays on the known-identity path,
+so it is a continuity control that F2a does not touch. F1 checks the
 generator input. F3 checks that the live reply advances from what is known,
 cites only a compatible fact when one is available, and otherwise asks one
 useful safe discriminator.
+
+L1-critical facts, with literal markers declared in the fixture:
+
+- identity Elemont, MH, CEA15, from T1;
+- the door fault: door 1 does not finish closing, magnet does not engage, from T1;
+- code 8 as current at T2–T4; code 18 as current from T5, with 8 absent as current from T5;
+- car stopped near floor 1 and nobody inside, from T3;
+- the completed visual check of the door guide with no obstruction seen, from T6;
+- a click is heard when closing is requested, from T8.
+
+### Journey A — L1 checkpoint (T1–T10)
 
 | Turn | Technician input | Persist / retrieve and failure signal |
 |---|---|---|
@@ -890,6 +2153,22 @@ useful safe discriminator.
 | 9 | “Sigue igual. ¿Y ahora?” | Does not restate the turn-6 check, so eviction stays visible. Elliptical retrieval retains the door goal and code 18. If the visual check is missing from the generator input, record the cause: FIFO eviction, the 400-character cut, or outside the 3-message window. Fail if it searches as an isolated “¿y ahora?”. |
 | 10 | “Resúmeme lo que llevamos y dime qué observación segura sigue.” | Recall plus next step. The generator input carries the retained case. Fail if the live answer is a canned `meta` reply that drops the case, or if the next question repeats identity, code 8, or the completed visual check. |
 
+### Journey A — L2 rollover extension (T11–T14), same episode
+
+Four short interactions after T10. They are diagnostic, not a new script for
+its own sake. They do not restate earlier facts, so what survives comes from
+`ActiveEpisode` and the bounded projection. With two stored messages per
+interaction, the T11 technician message is the 21st and evicts the T1
+technician message. F1 and F3 record the actual first eviction, and do not
+assume it.
+
+| Turn | Type | Technician input | Persist / retrieve and failure signal |
+|---|---|---|---|
+| 11 | Result of the previous observation | “Hice esa revisión: sigue el clic y la puerta no termina de cerrar.” | Same `episode_id` across T10 → T11 and across the first eviction. Record the evicted message. The door fault, Elemont/MH/CEA15, and code 18 stay in episode state and in the generator input. Fail on a new episode, a re-identification request, or a restart. |
+| 12 | Short follow-up | “Sigue igual.” | Elliptical. The query carries the door fault referent, not an isolated “sigue igual”. Fail on a generic restart. |
+| 13 | Correction | “Corrijo algo de antes: la cabina está detenida cerca de planta 2, no de planta 1.” | Corrects a T3 fact whose original message may already have rolled out. Floor 2 is current. Floor 1 must not resurface as current in the query, the generator input, or a live answer. Record why floor 1 is absent: replaced by the correction, FIFO eviction, or rollover. |
+| 14 | Elliptical follow-up | “¿Y ahora?” | End-of-L2 check. Critical: same `episode_id`, identity, door fault, code 18 current and 8 not current, floor 2 current. Diagnostic: the T6 visual check, the T8 click, and “nobody inside”. If missing, record the cause. Fail on a critical loss, a superseded fact resurfacing, or a rollover-driven loop that re-asks earlier questions. |
+
 ### Journey B — one leveling fault; identity becomes known
 
 The photo is a deterministic accepted `FieldPhoto` projection. It reads
@@ -899,6 +2178,22 @@ becomes known at turn 5 from that photo read, inside the same episode. Turn 6
 is a technician confirmation that agrees with the photo: no conflict and the
 same `episode_id`. Turn 3 names BLT inside a longer sentence and must not
 open a new episode.
+
+Journey B stays focused on unknown → known identity, photo context,
+documentary reference, correction, and multimodal same-case continuity. Its
+10 interactions form its L1 checkpoint. It is not extended into L2 unless
+the executor finds a specific measured reason, and then records that reason
+in the phase record. It exercises text, photo, a question about the photo, a
+documentary-reference question, an identity confirmation, and a correction.
+
+L1-critical facts, with literal markers declared in the fixture:
+
+- the leveling fault at floor 3, from T1;
+- only seen at floor 3, and no fault code stored as confirmed-absent, from T2;
+- identity unknown at T1–T4; Orona and PBCM-V3 known from T5;
+- `TEST OK` as literal visible text only, from T5;
+- door closed and car near floor 3, from T8;
+- direction `por arriba` at T4–T8, then `por debajo` from T9, with `por arriba` absent from T9.
 
 | Turn | Technician input | Persist / retrieve and failure signal |
 |---|---|---|
@@ -953,9 +2248,17 @@ existing US$1 invocation cap.
 
 ## H. Episode-boundary gate
 
-After Journey A, issue:
+This is L3 — EXPLICIT CASE BOUNDARY. It stays separate from L1 and L2. Only
+explicit case-boundary semantics are tested. Turn count is irrelevant
+(`NO_TURN_COUNT_EPISODE_BOUNDARY`).
+
+After Journey A T14, the end of L2, issue:
 
 `Ahora tengo otra falla en otro ascensor: no nivela en planta 3.`
+
+Then one short follow-up in the new case:
+
+`¿Y ahora?`
 
 Assert:
 
@@ -965,6 +2268,7 @@ Assert:
 - an old assistant result and an old photo result delivered after the boundary yield `stale_case_write_dropped`
 - no new history entry and no state mutation from those stale writes
 - prompt history after `opened_at` is the only prompt history
+- the post-boundary “¿Y ahora?” stays in the new `episode_id` and composes only from the new case (the leveling fault at floor 3). It does not join a stored question from the replaced episode, including through `EpisodeThreadResolver`. A join is an L3 FAIL (section C, one active episode).
 
 Run the focus control in two variants: no selected document, and an
 explicitly selected old Elemont document.
@@ -993,11 +2297,13 @@ selection.
 | Risk | Mitigation | Pilot blocker? |
 |---|---|---|
 | Safety regression / foreign procedure | Chunk bodies reach a model only inside `UnknownIdentityPublication`. Contract fallback is body-free guidance. The guard is a backstop. Human review and the sentinel fixture. | Yes |
-| Utility regression | Frozen A‴ gates plus the two longitudinal journeys. | Yes |
+| Utility regression | Frozen A‴ gates plus the two longitudinal journeys (L1, L2, L3). | Yes |
 | Intent misrouting | Positive reference decision from the raw turn. Test code meaning, explicit manual question, step request, pin-only wording, and ellipse on both lanes. | Yes if S2 or safety fails |
-| Accidental episode boundary | Ten same-episode assertions. Preserve current interpreter and fallback tests. | Yes |
-| Missed episode boundary | Explicit new-case control in section H. Preserve current interpreter and fallback tests. | Yes |
-| Context truncation near `MAX_HISTORY = 20` | Record stored versus prompt-visible facts, `context_truncated`, three-observation eviction, the 400-character projection, and the turn-10 query. Repair only a measured loss. | Yes if critical facts or checks vanish |
+| Accidental episode boundary | Same-episode assertions on every L1 and L2 interaction, including the T10 → T11 transition and the first history eviction (`NO_TURN_COUNT_EPISODE_BOUNDARY`). Preserve current interpreter and fallback tests. | Yes |
+| A turn count or history length treated as a lifecycle rule | Section C invariant. F0 lifecycle check. F1 seeded fault for a new episode at T11 or at the first eviction. Mandatory stop in the protocol. | Yes |
+| Missed episode boundary | Explicit new-case control in section H (L3). Preserve current interpreter and fallback tests. | Yes |
+| Context loss within stored-history capacity (L1) | Record stored versus prompt-visible facts, `context_truncated`, three-observation eviction, the 400-character projection, and the T10 query, with stored-history length per turn. A pre-rollover loss is not blamed on `MAX_HISTORY`. Repair only a measured loss. | Yes if critical facts or checks vanish |
+| Context loss after rollover past `MAX_HISTORY = 20` stored messages (L2) | Record the first eviction, what stayed in `ActiveEpisode`, and what stayed in the generator input. A critical-invariant break is FAIL. Loss of a diagnostic item is DEGRADED and is stated in the F4 pilot promise. | Yes on a critical L2 break |
 | Persistent or stale `document_focus` | Show the retained selection separately from case state. The section H blocker, if it fires, is a product decision for the plan owner before F4. | Yes if it traps common pilot flows |
 | Stale async writer | Reuse `expected_episode_id` tests for assistant, photo, auto-pin, and history. | Yes |
 | Bedrock transport noise | Preflight, bounded identical retry, and separate transport counts. | Blocks the conclusion. It is not evidence of poor quality. |
@@ -1005,10 +2311,17 @@ selection.
 
 ## J. Commit strategy
 
+0. F0 audit documentation commit, which creates the evidence packet.
 1. Harness and fixtures commit (F1), under `script/field_companion/` plus test support.
 2. F2a production commit (publication choice and body-free guidance). Its pass includes the F1 harness re-run.
 3. F2b only from that re-run: one commit per failure owner, two at most.
-4. Documentation commit (F4), only after F3 evidence.
+4. F3 evaluation documentation commit. No product change.
+5. Documentation commit (F4), only after F3 evidence.
+
+Each phase may add one evidence-and-plan commit when it is useful. Each
+phase’s “Expected commits” line is authoritative. The phase-closing commit
+leaves a clean tree, an updated Execution state, a filled execution record,
+and a refreshed next-phase executor prompt.
 
 No giant implementation commit. Freeze fixture and scorer hashes before the
 F2a commit.
@@ -1019,9 +2332,20 @@ does not authorize F1.
 
 ## K. Final recommendation
 
-**READY_FOR_SECOND_REVIEW**
+**READY_FOR_OPUS_SECOND_REVIEW**
 
 Implementation is not authorized. Opus’s section 11 edits are in this draft.
+This revision adds the same-case continuity clarification. An episode lasts
+as long as the same physical fault or case, with no target length, under
+`NO_TURN_COUNT_EPISODE_BOUNDARY`. The longitudinal gate reports L1
+within-history, L2 history-rollover, and L3 case-boundary verdicts
+separately. It records the MVP concurrency constraint: one active episode
+per technician, replaced by a new case, with no resume or switch until
+after pilot validation. It records the success criterion: one active
+episode must sustain coherent support through an extended mixed text and
+photo conversation before any multi-thread architecture. It also adds the
+living-plan runbook: Execution state, the protocol, phase execution
+records, and executor prompts.
 F2a is the preferred production hypothesis: `reference_request?` at the two
 sinks, qualified reference only when that contract succeeds, and body-free
 guidance for every other unknown turn and for every contract failure.
@@ -1038,4 +2362,6 @@ specific longitudinal blocker.
 - Preferred architecture: `UnknownIdentityPublication.reference_request?` at the two sinks, plus body-free guidance. Contract fallback does not return to full-body prose.
 - Rejected: broadening the reference envelope, restoring A′ wholesale, a new classifier or model, new case storage, and `DocumentIdentityScope` as the publication owner.
 - Unresolved evidence: deployed image and flag values, which F0 must close before F1; the F1 input baseline; whether the section H focus variant is a pilot blocker for the plan owner before F4; whether three observations and the prompt caps retain turn-10 checks on the F2a re-run. These are gates. They are not grounds to redesign session state now.
-- Opus verdict on the prior draft: `APPROVE_WITH_REQUIRED_EDITS`. This draft’s verdict: `READY_FOR_SECOND_REVIEW`. Implementation is not authorized.
+- Opus verdict on the prior draft: `APPROVE_WITH_REQUIRED_EDITS`. The previous revision’s verdict was `READY_FOR_SECOND_REVIEW` (`b440800`).
+- Same-case continuity revision, parent `b4408003e2ea6c8b4ab31a0c0e9a1017589fe962`: documentation only. It adds the episode-duration contract, `NO_TURN_COUNT_EPISODE_BOUNDARY`, L1/L2/L3, the Journey A rollover extension, the explicit F0 plan list, and the living-plan runbook. Code facts re-read for it: `MAX_HISTORY` and `add_to_history` (`conversation_session.rb:5`, `131-136`), `EPISODE_WINDOW` idle expiry (`active_episode.rb:54-55`), `episode_user_messages` (`conversation_session.rb:496-512`), and the runner environment variables (`f1_calibration_runner.rb:7-12`).
+- This revision’s verdict: `READY_FOR_OPUS_SECOND_REVIEW`. Implementation is not authorized.

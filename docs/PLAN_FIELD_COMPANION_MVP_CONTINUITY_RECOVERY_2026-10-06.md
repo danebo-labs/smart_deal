@@ -1,6 +1,6 @@
 # Danebo Field Companion MVP continuity recovery plan
 
-**STATUS: F2a CLOSED PASS. F2b IS REQUIRED BY EVIDENCE AND IS NOT AUTHORIZED. F3, F3b, AND F4 ARE NOT AUTHORIZED.**
+**STATUS: F2b BLOCKED_FOR_PLAN_REVIEW. F2b IS NOT PASS. F3, F3b, AND F4 ARE NOT AUTHORIZED.**
 
 **VERDICT: READY_FOR_EXECUTION**
 
@@ -43,14 +43,14 @@ earlier.
 
 | Field | Value |
 |---|---|
-| Plan status | F2a closed PASS. That PASS is section D routing, not a product-continuity PASS. F2b is required by the F2a re-run and is not authorized. F3, F3b, and F4 remain unauthorized. |
-| Plan verdict | `READY_FOR_EXECUTION` |
-| Current authorized phase | none. F2a is closed. F2b is not authorized. |
-| Authorization text and date | explicit Lahiri authorization, 2026-10-06, F2a only. Required starting HEAD `7d83c4fc289e48037dcb3eeedf86ae188924f35c`. The F2a executor prompt's sentence that named the historical F1 closing commit as the current HEAD is superseded. That historical SHA was not rewritten. No separate authorization commit. |
-| Current phase status | `PASS` |
-| Parent of the last plan edit | `d8c2bc3ab4838bcae6a20760e0036d3acd8b7744` (`fix: route unknown-identity turns to body-free guidance`). This docs commit does not store its own SHA. |
-| Execution starting SHA | `7d83c4fc289e48037dcb3eeedf86ae188924f35c` |
-| Current HEAD after last closed phase | the commit `docs: record MVP continuity F2a result`. Parent `d8c2bc3ab4838bcae6a20760e0036d3acd8b7744`. This file does not store that commit's own SHA. F2a verdict `PASS`. |
+| Plan status | F2b is BLOCKED_FOR_PLAN_REVIEW and is not PASS. Journey A L1, L2, and L3 pass. Journey B L1 still fails. F3, F3b, and F4 remain unauthorized. |
+| Plan verdict | `BLOCKED_FOR_PLAN_REVIEW` |
+| Current authorized phase | none. F2b was executed and did not pass. F3 is not authorized. |
+| Authorization text and date | explicit Lahiri authorization, 2026-10-06, F2b only. Required starting HEAD `0ac030cf7995a3de934c0428995fdfeb32c1e6cc`. The F2b two-commit review boundary is superseded by that authorization. No separate authorization commit. |
+| Current phase status | `BLOCKED_FOR_PLAN_REVIEW` |
+| Parent of the last plan edit | `45d966dd143a257466e09f7cd5f2f220afbfd9ec` (`fix: stop a rejected digit from rewriting the current fault code`). This docs commit does not store its own SHA. |
+| Execution starting SHA | `0ac030cf7995a3de934c0428995fdfeb32c1e6cc` |
+| Current HEAD after last closed phase | the commit `docs: record MVP continuity F2b result`. Parent `45d966dd143a257466e09f7cd5f2f220afbfd9ec`. This file does not store that commit's own SHA. F2b verdict `BLOCKED_FOR_PLAN_REVIEW`. |
 | Production model | `global.anthropic.claude-haiku-4-5-20251001-v1:0` (Haiku 4.5), unchanged |
 | Frozen corpus hash | `d0fd334e48826ca390445b781edf5d3ffd1b3a4103926541ad7c1dfe3acc1dc3` (`script/field_companion/f1_calibration_corpus.rb`) |
 | Frozen scorer hash | `7ba064468820ec759539d0fc017a57212adf757d059b2bf3d2ccecd2efc881da` (`script/field_companion/f1_calibration_score.rb`) |
@@ -64,10 +64,10 @@ earlier.
 | PRE_F2A_KNOWN_CONTROLS_HASH | `54a0d0693712fe7ccb707c13b15779f6b55cf0de914e80832e5b7b12c8d85962`. SHA256 of that file from the first line `## c18 managed` through EOF. c18–c20 only. See the prompt-identity rule below. |
 | Superseded known-controls hash | `f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9`. `SUPERSEDED BY PRE-F2a HARNESS CONTROL CORRECTION`. Structured c18–c20 sections contained harness ArgumentError text rather than captured prompts. |
 | POST_F2A_JOURNEY_A_PROMPT_HASH | `a364fadf921e13ed69d4f76250fdeeeb5f1c5127332344bcb1d319f392450a7a`. SHA256 of `tmp/mvp_continuity/f2a_rerun/known_prompts.txt` from the first line `## A1` up to but not including `## c18 managed`. |
-| POST_F2B_JOURNEY_A_PROMPT_HASH | `<POST_F2B_JOURNEY_A_PROMPT_HASH>` (set only if F2b changes Journey A's bounded projection). |
+| POST_F2B_JOURNEY_A_PROMPT_HASH | unchanged. `a364fadf921e13ed69d4f76250fdeeeb5f1c5127332344bcb1d319f392450a7a`. The Journey A prompt slice in `tmp/mvp_continuity/f2b_rerun/known_prompts.txt` is byte-identical to the post-F2a slice. Retrieval queries changed. That slice does not include them. |
 | F1 product continuity baseline | Journey A L1 FAIL. Journey A L2 FAIL. Journey A L3 PASS. Journey B L1 FAIL. Journey B has no L2 or L3 extension. |
 | F2a candidate SHA | `d8c2bc3ab4838bcae6a20760e0036d3acd8b7744` |
-| F3 candidate SHA | `<F3_CANDIDATE_SHA>` (F2b HEAD, or the F2a HEAD when F2b is skipped) |
+| F3 candidate SHA | unset. F2b is not PASS, so there is no F3 candidate. |
 | Evidence packet | `script/field_companion/mvp_continuity_evidence.json` |
 
 Phase status:
@@ -77,14 +77,14 @@ Phase status:
 | F0 — factual audit | PASS |
 | F1 — longitudinal baseline harness | PASS |
 | F2a — publication choice and guidance | PASS |
-| F2b — continuity repair | REQUIRED BY EVIDENCE / NOT AUTHORIZED |
+| F2b — continuity repair | BLOCKED_FOR_PLAN_REVIEW |
 | F3 — frozen and live evaluation | NOT STARTED |
 | F3b — autonomous grounded field acceptance | NOT STARTED / NOT AUTHORIZED |
 | F4 — documentation and pilot recommendation | NOT STARTED |
 
 Current blockers:
 
-- F2a is closed PASS (explicit Lahiri authorization, 2026-10-06, F2a only). Section D routing passed. Product continuity did not: the F2a re-run is Journey A L1 FAIL, Journey A L2 FAIL, Journey A L3 PASS, and Journey B L1 FAIL. F2b has measured tickets and is not authorized. F3, F3b, and F4 are not authorized. Documenting F3b does not authorize it.
+- F2b is BLOCKED_FOR_PLAN_REVIEW (explicit Lahiri authorization, 2026-10-06, F2b only). The five ticket invariants are in the episode and in the retrieval query. Journey A L1 PASS, Journey A L2 PASS, Journey A L3 PASS. Journey B L1 FAIL. The remaining critical misses are B2 `no_code_fact` and B5. F3, F3b, and F4 are not authorized. Do not start F3 from this record.
 - The flag matrix is recorded from local `config/deploy.yml`. The running
   container environment was not readable (SSH to `54.163.248.39:22` timed
   out). That does not reopen the matrix: the deploy file resolved
@@ -979,7 +979,7 @@ Required handoffs:
 | F0 → F1 | Flag matrix with the source of each value and interpreter mode, deployed image if read, call-graph corrections, newly found entry paths F1 must capture, frozen hashes, fixture sources, `<HEAD_FROM_F0>`. |
 | F1 → F2a | Recorded in the F1 execution record and the F2a executor prompt. Fixture `3db76c24453d2869f03baf9a9bb7b07dc7e736fd8e80a422b7bf6bf1c03dab8b`. Historical F1 combined capture `7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723`. Corrected combined capture `88c456e56ce591b67dad3c8863b9d19f183b83b6dcbacf7885e462f7189399aa`. Known controls `PRE_F2A_KNOWN_CONTROLS_HASH` `54a0d0693712fe7ccb707c13b15779f6b55cf0de914e80832e5b7b12c8d85962`. Defective digest `f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9` is `SUPERSEDED BY PRE-F2a HARNESS CONTROL CORRECTION`. HEAD of the F1 close is the commit `docs: record MVP continuity F1 baseline`, parent `fd23b3aa196e5b8dddc62d10b32347bcfab13b39`. |
 | F2a → F2b / F3 | F2a re-run recorded. PRE and POST L1/L2/L3 are both A L1 FAIL, A L2 FAIL, A L3 PASS, B L1 FAIL. `POST_F2A_JOURNEY_A_PROMPT_HASH` `a364fadf921e13ed69d4f76250fdeeeb5f1c5127332344bcb1d319f392450a7a`. c18–c20 still equal `PRE_F2A_KNOWN_CONTROLS_HASH`. F2b is required. Tickets are in the F2b executor prompt. F3 candidate SHA stays unset because F2b was not skipped. F2b is not authorized. |
-| F2b → F3 | Fixes, commits, the invariant that now passes, regression evidence, c18–c20 byte identity against `PRE_F2A_KNOWN_CONTROLS_HASH`, the exact ticketed Journey A delta and `POST_F2B_JOURNEY_A_PROMPT_HASH` when the projection changed, `<F3_CANDIDATE_SHA>`. |
+| F2b → F3 | F2b is BLOCKED_FOR_PLAN_REVIEW, not PASS. Journey A L1 PASS, L2 PASS, L3 PASS. Journey B L1 FAIL. c18–c20 still equal `PRE_F2A_KNOWN_CONTROLS_HASH`. Journey A prompt slice is unchanged, so `POST_F2B_JOURNEY_A_PROMPT_HASH` is not a new value. F3 candidate SHA stays unset. F3 is not authorized. |
 | F3 → F3b | A‴ verdict; L1, L2, and L3 live verdicts; c18–c20 identity; Journey A compared with the post-F2a baseline, or the post-F2b baseline when F2b changed it; human review; safety verdict; unresolved pilot blockers, including the section H focus decision if it fired. |
 | F3b → F4 | F3b seed, selected documents, T5/T8/T10 results, effective-response rates, RAG retrieval support, hard-gate counts, and the first failure per failed case. F4 requires F3 PASS and F3b PASS. |
 
@@ -2235,31 +2235,46 @@ evidence-and-plan commit (`docs: record MVP continuity F2b result`).
 #### F2b execution record
 
 ```
-Status: CONDITIONAL / NOT AUTHORIZED
-Starting SHA (expected the commit "docs: record MVP continuity F2a result", parent d8c2bc3ab4838bcae6a20760e0036d3acd8b7744):
-Ending SHA (<F3_CANDIDATE_SHA>):
-Date:
-Executor:
-Scope authorized:
-Tickets addressed:
-Files changed:
-Production code changed:
-Tests executed:
-External/model calls: none (required)
+Status: BLOCKED_FOR_PLAN_REVIEW
+Starting SHA: 0ac030cf7995a3de934c0428995fdfeb32c1e6cc (docs: record MVP continuity F2a result, parent d8c2bc3ab4838bcae6a20760e0036d3acd8b7744)
+Ending SHA: the commit "docs: record MVP continuity F2b result". Not stored in this commit. Parent 45d966dd143a257466e09f7cd5f2f220afbfd9ec.
+Date: 2026-10-06
+Executor: F2b measured continuity repair
+Scope authorized: explicit Lahiri authorization, 2026-10-06. F2b only. The two-commit review boundary in the executor prompt is superseded. All three measured owners were authorized. A fourth owner was not.
+Tickets addressed: all five. State and retrieval-query invariants pass. The Journey B L1 harness cell does not.
+Files changed: app/services/rag/work_context_reducer.rb, app/services/rag/query_composer.rb, app/services/rag/active_episode.rb, their tests, test/script/field_companion_longitudinal_journeys_test.rb, this plan, script/field_companion/mvp_continuity_evidence.json
+Production code changed: YES, inside the three authorized owners
+Tests executed: BUNDLE_PATH=vendor/bundle PARALLEL_WORKERS=1 bundle exec rails test — 4292 runs, 24184 assertions, 0 failures, 0 errors, 192 skips. bundle exec rubocop on the touched Ruby files — no offenses. git diff --check clean. Deterministic harness re-run, no live Bedrock.
+External/model calls: none
 Spend: 0
-Per ticket — invariant now passing, adjacent controls, L3 boundary control:
-F1 re-run L1 / L2 / L3 after F2b:
-Known controls c18–c20 byte identity versus PRE_F2A_KNOWN_CONTROLS_HASH:
-Journey A versus POST_F2A_JOURNEY_A_PROMPT_HASH, or the exact ticketed delta and POST_F2B_JOURNEY_A_PROMPT_HASH:
-Token bound check:
-Artifacts/results:
-PASS/FAIL/INCONCLUSIVE:
+Owner commits:
+- WorkContextReducer 49fb46911109142c6b759b1f1b2a97ec96843739
+- ActiveEpisode 319c149995c3369f446ac20dc375de2524c21f16
+- QueryComposer 45d966dd143a257466e09f7cd5f2f220afbfd9ec
+Per ticket:
+1. A5–A14 fault_code known 18, rejected 8. Before: fact absent, rejected 8. After: fact known 18, rejected 8. Retrieval query contains "código 18" and does not contain a standalone "código 1".
+2. A5 rejected 8 no longer rewrites "código 18". Before: "era código 1 , no". After: "era código 18, no".
+3. A6–A10 floor 1, nobody inside, and the door-guide check stay in episode state and in the retrieval query. A14 click and floor 2 stay. A14 visual, click, and nobody remain and are diagnostic only; L2 is PASS, not DEGRADED.
+4. B2 fault_code status absent_confirmed. Before: facts empty. After: absent_confirmed, value nil. The sentence stays an observation. No code meaning was invented.
+5. B10 "No aparece código de falla" is still in episode state and in the retrieval query. fault_code remains absent_confirmed.
+Adjacent controls: B3 route, mode, outcome, and answer excerpt match the F2a capture. B6, B8, B9, and B10 stay document_identity_scope / no_compatible. B5 stays meta, model not invoked. B7 stays deterministic, model not invoked, same answer excerpt. L3 both variants PASS. Query "¿Y ahora? no nivela en planta 3". Prior markers absent from query and prompt. Resolver does not join. Focus retained on the selected variant. document_focus was not cleared. No episode opened on turn count or history eviction. First eviction remains A11 and B10. 0 turn errors. Model invoked on 4 turns, the same four as F2a.
+F1 re-run L1 / L2 / L3 after F2b: A_no_focus L1 PASS, A_selected_elemont L1 PASS, A L2 PASS both variants, A L3 PASS both variants, B L1 FAIL. B L2 and B L3 remain NOT_IN_FIXTURE.
+Known controls c18–c20 byte identity versus PRE_F2A_KNOWN_CONTROLS_HASH 54a0d0693712fe7ccb707c13b15779f6b55cf0de914e80832e5b7b12c8d85962: MATCH. 57730 bytes. Six sections. No EMPTY. No ArgumentError.
+Journey A versus POST_F2A_JOURNEY_A_PROMPT_HASH: byte-identical. Hash a364fadf921e13ed69d4f76250fdeeeb5f1c5127332344bcb1d319f392450a7a. 20395 bytes. No POST_F2B hash. The prompt slice does not contain the retrieval query, which did change.
+Token bound check: composed queries stay within 442 characters. Guidance prompts on the changed B turns stay under 2400 characters. context_truncated is true on B6, B8, B9, and B10 because storing absent_confirmed makes the 400-character field-problem block report a cut during photo capture, and that session flag remains for later turns. No scored fact was lost on those turns.
+Artifacts/results: tmp/mvp_continuity/f2b_rerun/ledger.json, summary.json, known_prompts.txt (gitignored).
+PASS/FAIL/INCONCLUSIVE: BLOCKED_FOR_PLAN_REVIEW. Not PASS.
 Findings:
-New risks:
-Assumptions invalidated:
-Carry-forward decisions:
-Next-phase changes required:
-Commit SHA:
+- The five ticket invariants hold in episode state and in the retrieval query.
+- Journey B L1 still has two critical misses.
+- B2 no_code_fact: state true (absent_confirmed), generator false. Score#generator_has? returns false before it reads the prompt or the query when the fact expectation has status. The frozen scorer, runner, and fixture were not edited.
+- B5: level floor 3, known identity, Orona, PBCM-V3, TEST OK, and "por arriba" are in state and absent from the meta canned answer. Owner remains RagQueryConcern#meta_result. Not implemented.
+- No fourth product change was made.
+New risks: none that authorize a new store or a new model.
+Assumptions invalidated: storing absent_confirmed does not by itself make the frozen no_code_fact marker pass, because that marker carries status.
+Carry-forward decisions: do not execute F3, F3b, or F4 from this record. Do not edit the scorer to obtain B L1. Do not clear document_focus. Do not invent meanings for code 18, LED 7, the floors, the door-guide check, or the click.
+Next-phase changes required: plan review of the B2 scorer status short-circuit and of the excluded B5 meta path. F3 candidate SHA stays unset.
+Commit SHA: reducer 49fb46911109142c6b759b1f1b2a97ec96843739. Episode 319c149995c3369f446ac20dc375de2524c21f16. Composer 45d966dd143a257466e09f7cd5f2f220afbfd9ec. Docs commit is this commit and is not stored here.
 Push/deploy status: not pushed, not deployed
 ```
 
@@ -2269,6 +2284,8 @@ F2a writes the tickets. Until then this is a template. If Execution state
 says `F2b = SKIPPED BY EVIDENCE`, do not run it.
 
 ```text
+EXECUTED 2026-10-06. Result BLOCKED_FOR_PLAN_REVIEW, not PASS. Do not re-run this prompt as if F2b were still unauthorized. The two-commit sentence below was superseded by the authorization. F3 is not authorized.
+
 You are executing phase F2b of the Danebo MVP continuity recovery plan.
 Authoritative plan: docs/PLAN_FIELD_COMPANION_MVP_CONTINUITY_RECOVERY_2026-10-06.md
 The plan is the source of truth. Do not rely on chat memory.
@@ -2599,6 +2616,10 @@ Push/deploy status: not pushed, not deployed
 #### F3 executor prompt
 
 ```text
+F2b DID NOT PASS. Measured 2026-10-06. Status BLOCKED_FOR_PLAN_REVIEW.
+Journey A L1 PASS, Journey A L2 PASS, Journey A L3 PASS, Journey B L1 FAIL.
+F3 candidate SHA is unset. Do not run this prompt. F3 is not authorized.
+
 You are executing phase F3 of the Danebo MVP continuity recovery plan.
 Authoritative plan: docs/PLAN_FIELD_COMPANION_MVP_CONTINUITY_RECOVERY_2026-10-06.md
 The plan is the source of truth. Do not rely on chat memory.

@@ -373,5 +373,50 @@
     ],
     "f3b": "documented, not authorized",
     "tests": "bundle exec rails test — 4284 runs, 24139 assertions, 0 failures, 0 errors, 192 skips. rubocop 19 files, no offenses."
+  },
+  "F2b": {
+    "phase": "F2b",
+    "status": "BLOCKED_FOR_PLAN_REVIEW",
+    "authorization": "explicit Lahiri authorization, 2026-10-06, F2b only. The two-commit review boundary was superseded. Three owners were authorized. A fourth was not.",
+    "starting_sha": "0ac030cf7995a3de934c0428995fdfeb32c1e6cc",
+    "reducer_sha": "49fb46911109142c6b759b1f1b2a97ec96843739",
+    "active_episode_sha": "319c149995c3369f446ac20dc375de2524c21f16",
+    "query_composer_sha": "45d966dd143a257466e09f7cd5f2f220afbfd9ec",
+    "ending_sha": null,
+    "ending_sha_note": "The docs commit cannot store its own SHA. Its parent is query_composer_sha.",
+    "f3_candidate_sha": null,
+    "f3_candidate_note": "Unset because F2b is not PASS.",
+    "production_code_changed": true,
+    "model_calls": 0,
+    "spend_usd": 0,
+    "pre_f2a_known_controls_sha256": "54a0d0693712fe7ccb707c13b15779f6b55cf0de914e80832e5b7b12c8d85962",
+    "known_controls_match": true,
+    "post_f2a_journey_a_prompt_hash": "a364fadf921e13ed69d4f76250fdeeeb5f1c5127332344bcb1d319f392450a7a",
+    "post_f2b_journey_a_prompt_hash": null,
+    "journey_a_prompt_delta": "none. The Journey A prompt slice is byte-identical to the post-F2a slice. Retrieval queries changed and are outside that slice.",
+    "tickets": {
+      "1_code_18": "PASS in state and retrieval query. fault_code known 18, rejected 8.",
+      "2_codigo_1": "PASS. A5 retrieval query keeps código 18.",
+      "3_observations": "PASS. floor 1, nobody inside, and the door-guide check remain through A10.",
+      "4_absent_confirmed": "PASS in state. B2 harness cell still FAIL because the frozen scorer ignores a fact expectation that has status.",
+      "5_no_code_survives": "PASS. The no-code sentence and absent_confirmed are still present at B10."
+    },
+    "longitudinal_post": {
+      "journey_a_l1": "PASS",
+      "journey_a_l2": "PASS",
+      "journey_a_l3": "PASS",
+      "journey_b_l1": "FAIL",
+      "journey_b_l2": "NOT_IN_FIXTURE",
+      "journey_b_l3": "NOT_IN_FIXTURE",
+      "remaining_critical": ["B2 no_code_fact generator false because status is set", "B5 meta canned answer"],
+      "first_eviction_a": "A11",
+      "first_eviction_b": "B10",
+      "turn_errors": 0,
+      "model_invoked_turns": 4
+    },
+    "new_owner_implemented": false,
+    "f3": "not authorized",
+    "f3b": "not authorized",
+    "tests": "bundle exec rails test — 4292 runs, 24184 assertions, 0 failures, 0 errors, 192 skips. rubocop on touched Ruby files, no offenses."
   }
 }

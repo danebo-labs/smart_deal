@@ -310,5 +310,68 @@
       "c20 structured": { "bytes": 11078, "empty": false, "argument_error": false }
     },
     "tests": "bundle exec rails test test/script/field_companion_longitudinal_journeys_test.rb — 15 runs, 103 assertions, 0 failures, 0 errors"
+  },
+  "F2a": {
+    "phase": "F2a",
+    "status": "PASS",
+    "authorization": "explicit Lahiri authorization, 2026-10-06, F2a only",
+    "starting_sha": "7d83c4fc289e48037dcb3eeedf86ae188924f35c",
+    "starting_sha_note": "The F2a executor preflight that named the historical F1 closing commit as HEAD was superseded. That historical SHA was not rewritten.",
+    "candidate_sha": "d8c2bc3ab4838bcae6a20760e0036d3acd8b7744",
+    "ending_sha": null,
+    "ending_sha_note": "The docs commit cannot store its own SHA. Its parent is candidate_sha.",
+    "production_code_changed": true,
+    "model_calls": 0,
+    "spend_usd": 0,
+    "pre_f2a_known_controls_sha256": "54a0d0693712fe7ccb707c13b15779f6b55cf0de914e80832e5b7b12c8d85962",
+    "known_controls_match": true,
+    "known_controls_extraction": "SHA256 of tmp/mvp_continuity/f2a_rerun/known_prompts.txt from the first line '## c18 managed' through EOF.",
+    "post_f2a_journey_a_prompt_hash": "a364fadf921e13ed69d4f76250fdeeeb5f1c5127332344bcb1d319f392450a7a",
+    "post_f2a_journey_a_extraction": "SHA256 of that file from the first line '## A1' up to but not including '## c18 managed'.",
+    "journey_a_slice_bytes": 20395,
+    "known_controls_slice_bytes": 57730,
+    "sentinel_body_check": "PASS",
+    "routes": {
+      "reference_success": { "turns": 0, "contract_calls": 0, "guidance_calls": 0 },
+      "reference_fallback": { "turns": 1, "turn": "B3", "contract_calls": 1, "guidance_calls": 1 },
+      "non_reference": { "turns": 35, "contract_calls": 0, "guidance_calls": 35 },
+      "known_identity_companion_unchanged": { "journey_turns": ["B6", "B8", "B9", "B10"] },
+      "deterministic": { "turns": ["B5", "B7"], "model_calls": 0 }
+    },
+    "longitudinal_pre": {
+      "journey_a_l1": "FAIL",
+      "journey_a_l2": "FAIL",
+      "journey_a_l3": "PASS",
+      "journey_b_l1": "FAIL",
+      "journey_b_l2": "NOT_IN_FIXTURE",
+      "journey_b_l3": "NOT_IN_FIXTURE"
+    },
+    "longitudinal_post": {
+      "journey_a_l1": "FAIL",
+      "journey_a_l2": "FAIL",
+      "journey_a_l3": "PASS",
+      "journey_b_l1": "FAIL",
+      "journey_b_l2": "NOT_IN_FIXTURE",
+      "journey_b_l3": "NOT_IN_FIXTURE",
+      "first_eviction_a": "A11",
+      "first_eviction_b": "B10",
+      "turn_errors": 0
+    },
+    "f2b": "REQUIRED BY EVIDENCE / NOT AUTHORIZED",
+    "f2b_tickets": [
+      "Journey A A5-A14 code 18 not stored: WorkContextReducer",
+      "Journey A A5 codigo 1 substring: QueryComposer",
+      "Journey A A6-A10 observation FIFO: ActiveEpisode",
+      "Journey B B2 absent fault code not stored: WorkContextReducer",
+      "Journey B B10 no-code observation FIFO: ActiveEpisode"
+    ],
+    "not_ticketed": [
+      "A4 code 8 remains in state; harness omits SessionContextBuilder",
+      "B5 meta canned answer; owner RagQueryConcern#meta_result is outside the F2b candidate list",
+      "B7 photo short-circuit",
+      "EpisodeThreadResolver reads replaced rows; L3 PASS; no join"
+    ],
+    "f3b": "documented, not authorized",
+    "tests": "bundle exec rails test — 4284 runs, 24139 assertions, 0 failures, 0 errors, 192 skips. rubocop 19 files, no offenses."
   }
 }

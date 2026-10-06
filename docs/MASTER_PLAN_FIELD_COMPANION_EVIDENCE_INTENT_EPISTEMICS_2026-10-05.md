@@ -3056,3 +3056,35 @@ Production: Bedrock Haiku 4.5, unchanged
 ```
 
 Do not integrate Sonnet. Do not deploy. Do not push. Do not modify F1 from this result. Do not start F2.
+
+## A″ blocked — Bedrock unavailable
+
+A″ was the measurement of the unknown-identity publication contract on the frozen Haiku path. It did not run. Production code was not changed for the benchmark.
+
+Starting HEAD `a92d253895880a0dcfa999f7f71407c0b5434875`. Instrumentation commits, benchmark code only:
+
+- `45acc9ed0b276b35e62ac39160fb05d7d7a42ad8` captures `AiProvider#converse` separately from `AiProvider#query`. An accepted contract stores the tool envelope as `raw` and the pipeline answer as `published`. Token totals stay on `TrackBedrockQueryJob` when that job was enqueued, and add converse response usage only when the job ledger missed the contract call.
+- `fed1efc5a8a82fbb463b3dcb9a54081d9945a03d` records the converse error class and treats a transport failure with no usage as a reliable zero (`cost_basis=no_usage`).
+
+Frozen and untouched: corpus, scorer `v2-locality-independent-unsafe`, prompt `f1cal.r2.a1` sha `b1cc6b5b81f9f4ee93c8e97ddc1d9ea798ba5ea6592239ecca5ab599cb898fd4`, retrieval fixtures, production model `global.anthropic.claude-haiku-4-5-20251001-v1:0`, `app/`.
+
+Preflight was c09 only, both lanes, then one more managed call after a wait. Five executions. Every contract call and every fallback `invoke_model` returned `Aws::BedrockRuntime::Errors::ServiceUnavailableException` (`Bedrock is unable to process your request.`). No tool envelope. No billed tokens. USD 0.000000. The runner saw the request: model Haiku 4.5, tool `unknown_identity_publication`, schema properties `observations` and `reference_fact`, reference properties `citation` and `evidence_span`, no `current_job_actions`, path `converse_plus_query`. Structured stamped `publication_mode=unknown_identity_contract_fallback` and `publication_fallback_reason=transport`. Managed returned the blank-generation retry string before that stamp, so those result fields were empty; the intercept still recorded the attempt and the error class.
+
+That is a systemic transport failure. Sample 1 was not started. Sample 2 was not started. Known controls c18–c20 were not started. There is no S2 review, no scorer-human disagreement, and no A′ comparison from this run. Offline capture tests cover an accepted envelope, a counted fallback, and the zero-usage failure. They are not a quality measurement.
+
+```
+A″ quality: NOT SCORED
+```
+
+This is not `A_PRIME_PRIME_PASS`, `A_PRIME_PRIME_PARTIAL`, or a product `A_PRIME_PRIME_FAIL`. The publication contract was not exercised past the provider error.
+
+```
+F1 deterministic safety: PASS / FROZEN
+F1 product quality: FAIL A′; A″ not scored
+Sealed holdout readiness: NO-GO
+F1 final status: OPEN
+F2 readiness: NO-GO
+Production: Bedrock Haiku 4.5, unchanged
+```
+
+Do not retune the prompt, the guard, the scorer, or the contract from this outage. Do not open the sealed holdout. Do not start F2. Do not deploy. Do not push.

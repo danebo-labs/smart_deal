@@ -37,6 +37,8 @@ module Rag
 
       apply_negations
       write_assertions
+      write_replacement_fault_code
+      write_absent_fault_code
       write_observations unless @decision&.decision == "clarify_first"
       assign_goal_if_needed
       clear_pending_unless_meta
@@ -129,6 +131,94 @@ module Rag
       @perception.observations.each do |text|
         @episode.append_observation!(text, correlation_id: @correlation_id)
       end
+      supersede_retracted_observations
+    end
+
+    # A correction names the replacement as a mention when the turn has no
+    # manufacturer, model, or controller fact. The reducer adopts that mention
+    # onto the negated fault-code slot. It does not invent a code meaning.
+    def write_replacement_fault_code
+      return unless @perception.move == "correct"
+      return if @episode.fact("fault_code")&.dig("status") == "known"
+
+      negated = @perception.identities.select { |item| item.kind == "negate" && item.slot == "fault_code" }
+      return if negated.empty?
+
+      negated_labels = negated.map { |item| FollowupQueryRewriter.normalize_label(item.value.presence || item.span) }
+      mention = @perception.mentions.find { |item|
+        label = FollowupQueryRewriter.normalize_label(item.value.presence || item.span)
+        label.match?(TurnPerception::FAULT_RE) && negated_labels.exclude?(label)
+      }
+      return if mention.nil?
+
+      value = (mention.value.presence || mention.span).to_s
+      @episode.delete_rejected!("fault_code", value)
+      @episode.write_fact!(
+        "fault_code",
+        status: "known",
+        value: value,
+        source: "user",
+        correlation_id: @correlation_id,
+        at: @now.iso8601
+      )
+    end
+
+    # "No aparece código de falla" is a report, not an answer to a pending slot.
+    # Reuse the fallback absence phrase. Do not replace a known code.
+    def write_absent_fault_code
+      return if @perception.identities.any? { |item| item.kind == "negate" && item.slot.blank? }
+
+      current = @episode.fact("fault_code")
+      return if current && %w[known absent_confirmed].include?(current["status"])
+
+      text = ([ @turn ] + Array(@perception.observations)).join(" ")
+      return unless FollowupQueryRewriter.normalize_label(text).match?(ActiveEpisodeTurn::ABSENT_CODE_RE)
+
+      @episode.write_fact!(
+        "fault_code",
+        status: "absent_confirmed",
+        source: "user",
+        correlation_id: @correlation_id,
+        at: @now.iso8601
+      )
+    end
+
+    def supersede_retracted_observations
+      retracted_phrases.each { |phrase| drop_observations_matching(phrase) }
+      return unless @turn.match?(/\bcorrijo\b/i)
+
+      fresh = Array(@perception.observations).map { |text| text.to_s.squish }
+      @episode.observations.reject! { |item|
+        text = item["text"].to_s
+        next false if fresh.any? { |phrase| same_label?(phrase, text) }
+
+        fresh.any? { |phrase| observation_replaced?(text, phrase) }
+      }
+    end
+
+    def retracted_phrases
+      FollowupQueryRewriter.normalize_label(@turn).scan(/\bno de\s+([a-z0-9]+(?:\s+[a-z0-9]+){0,2})/).flatten
+    end
+
+    def drop_observations_matching(phrase)
+      pattern = token_pattern(phrase)
+      @episode.observations.reject! { |item| FollowupQueryRewriter.normalize_label(item["text"]).match?(pattern) }
+    end
+
+    def same_label?(left, right)
+      FollowupQueryRewriter.normalize_label(left) == FollowupQueryRewriter.normalize_label(right)
+    end
+
+    def observation_replaced?(old_text, new_text)
+      old_words = FollowupQueryRewriter.normalize_label(old_text).split
+      new_words = FollowupQueryRewriter.normalize_label(new_text).split
+      return false if old_words.empty?
+
+      shared = old_words & new_words
+      return false unless shared.any? { |word| word.length >= 4 }
+      return false if shared.size < 4
+
+      shared.size * 2 >= old_words.size
     end
 
     def assign_goal_if_needed
@@ -203,7 +293,7 @@ module Rag
     def strip_value(value)
       return if value.blank?
 
-      pattern = /#{Regexp.escape(value)}/i
+      pattern = token_pattern(value)
       if @episode.goal.is_a?(Hash)
         text = @episode.goal["text"].to_s.gsub(pattern, " ").squish
         if text.blank?
@@ -213,6 +303,10 @@ module Rag
         end
       end
       @episode.observations.reject! { |item| item["text"].to_s.match?(pattern) }
+    end
+
+    def token_pattern(value)
+      /(?<![[:alnum:]])#{Regexp.escape(value.to_s)}(?![[:alnum:]])/i
     end
   end
 end

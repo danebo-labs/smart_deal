@@ -53,6 +53,18 @@ class Rag::WorkContextReducerTest < ActiveSupport::TestCase
     assert_nil episode.fact("fault_code")
   end
 
+  test "a correction of a different door does not delete the other floor" do
+    episode = open_episode
+    episode.append_observation!("la puerta de planta 1 está cerrada", correlation_id: "seed")
+    turn = "Corrijo la puerta de planta 2: la puerta de planta 2 está abierta."
+
+    with_owner { settle(episode, report_payload([ "la puerta de planta 2 está abierta" ]), turn) }
+
+    texts = episode.observations.pluck("text")
+    assert_includes texts, "la puerta de planta 1 está cerrada"
+    assert_includes texts, "la puerta de planta 2 está abierta"
+  end
+
   test "a retracted floor drops that observation and keeps the replacement" do
     episode = open_episode
     episode.append_observation!("detenida cerca de planta 1", correlation_id: "seed")

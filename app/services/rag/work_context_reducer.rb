@@ -209,16 +209,25 @@ module Rag
       FollowupQueryRewriter.normalize_label(left) == FollowupQueryRewriter.normalize_label(right)
     end
 
+    # Same sentence with one replaced word. A changed number is a different
+    # referent unless the turn retracts it with "no de". Shared words alone
+    # do not make two observations the same correction.
     def observation_replaced?(old_text, new_text)
       old_words = FollowupQueryRewriter.normalize_label(old_text).split
       new_words = FollowupQueryRewriter.normalize_label(new_text).split
-      return false if old_words.empty?
+      return false unless old_words.size == new_words.size && old_words.any?
 
-      shared = old_words & new_words
-      return false unless shared.any? { |word| word.length >= 4 }
-      return false if shared.size < 4
+      changed = old_words.zip(new_words).select { |left, right| left != right }
+      return false unless changed.size == 1
 
-      shared.size * 2 >= old_words.size
+      left, right = changed.first
+      return false if numeric_token?(left) || numeric_token?(right)
+
+      true
+    end
+
+    def numeric_token?(word)
+      word.match?(/\A\d+\z/)
     end
 
     def assign_goal_if_needed

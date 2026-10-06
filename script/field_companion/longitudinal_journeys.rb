@@ -486,6 +486,24 @@ module FieldCompanion
         previous.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
       end
 
+      # The calibration runner passes this PIN with force_entity_filter.
+      # KnowledgeScopePolicy denies the set unless one owned row matches it,
+      # which happens before the stubbed Retrieve. The row lets that same
+      # call reach generation. It is not a different route contract.
+      def ensure_known_control_document!(pin)
+        found = KbDocument.find_by(account: @account, s3_key: pin)
+        return found if found
+
+        KbDocument.create!(
+          account: @account,
+          document_uid: "f1c18c19-c020-4000-8000-c18c19c20a11",
+          s3_key: pin,
+          display_name: "F1 calibration pin",
+          aliases: [],
+          knowledge_scope: "tenant_private"
+        )
+      end
+
       def ensure_elemont_document!
         spec = @spec.fetch("elemont_document")
         found = KbDocument.find_by(document_uid: spec["document_uid"]) || KbDocument.find_by(s3_key: spec["s3_key"])
@@ -841,6 +859,7 @@ module FieldCompanion
       def capture_known_controls
         require Rails.root.join("script/field_companion/f1_calibration_corpus")
         corpus = FieldCompanion::F1CalibrationCorpus
+        ensure_known_control_document!(corpus::PIN)
         corpus.cases.select { |row| corpus::KNOWN.include?(row[:id]) }.each do |row|
           label = "#{row[:id]} #{row[:lane]}"
           text = capture_control(row)
@@ -864,9 +883,20 @@ module FieldCompanion
             correlation_id: "mvp:known:#{row[:id]}:#{row[:lane]}"
           )
         else
+          # Corpus rows label every case manual :zephyr, including ORBITA c20.
+          # A ZEPHYR stub is other equipment, so the structured route closes
+          # before generation and captures nothing. The structured lane uses
+          # the frozen fixture for that known identity.
+          if row[:identity] == "orbita"
+            Thread.current[:mvp_chunk_text] = corpus.fixture_body(:orbita)
+            Thread.current[:mvp_chunk_name] = corpus.fixture_name(:orbita)
+          end
           Rag::StructuredEvidenceRoute.new(
             question: row[:question],
             account: @account,
+            entity_s3_uris: [ corpus::PIN ],
+            entity_sources: [ "document" ],
+            force_entity_filter: true,
             response_locale: row[:locale],
             equipment_identity: identity,
             correlation_id: "mvp:known:#{row[:id]}:#{row[:lane]}"

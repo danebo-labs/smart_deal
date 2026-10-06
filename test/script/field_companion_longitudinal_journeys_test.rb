@@ -129,7 +129,7 @@ class FieldCompanionLongitudinalJourneysTest < ActiveSupport::TestCase
   end
 
   test "owner baseline records L1 L2 and L3 without a usefulness score" do
-    packet = Journeys.run!(account: accounts(:legacy), user: users(:one))
+    packet = harness_packet
     assert_nil packet["usefulness_score"]
     assert_match(/\A[0-9a-f]{64}\z/, packet["fixture_sha256"])
     assert_match(/\A[0-9a-f]{64}\z/, packet["known_prompt_sha256"])
@@ -147,7 +147,61 @@ class FieldCompanionLongitudinalJourneysTest < ActiveSupport::TestCase
     assert Rails.root.join("tmp/mvp_continuity/f1/ledger.json").exist?
   end
 
+  test "known controls capture managed and structured prompts without a model call" do
+    packet = harness_packet
+    text = Rails.root.join("tmp/mvp_continuity/f1/known_prompts.txt").read
+    sections = known_control_sections(text)
+    assert_equal KNOWN_CONTROL_SECTIONS, sections.keys
+    KNOWN_CONTROL_SECTIONS.each do |name|
+      body = sections[name]
+      assert body.present?, name
+      assert_not_equal "EMPTY", body.strip, name
+      assert_not_includes body, "ERROR ArgumentError", name
+      assert_not_includes body, "LiveRefused", name
+    end
+    assert_equal "FAIL", packet.dig("verdict", "L1", "A_no_focus")
+    assert_equal "FAIL", packet.dig("verdict", "L1", "A_selected_elemont")
+    assert_equal "FAIL", packet.dig("verdict", "L1", "B")
+    assert_equal "FAIL", packet.dig("verdict", "L2", "A_no_focus")
+    assert_equal "FAIL", packet.dig("verdict", "L2", "A_selected_elemont")
+    assert_equal "PASS", packet.dig("verdict", "L3", "no_focus")
+    assert_equal "PASS", packet.dig("verdict", "L3", "selected_elemont")
+    assert_equal "A11", packet.dig("first_eviction", "A_no_focus", "turn")
+    assert_equal "A11", packet.dig("first_eviction", "A_selected_elemont", "turn")
+    assert_equal "B10", packet.dig("first_eviction", "B", "turn")
+    assert packet["turns"].all? { |turn| turn["error"].blank? }
+    assert_nil packet["usefulness_score"]
+  end
+
   private
+
+  KNOWN_CONTROL_SECTIONS = [
+    "c18 managed",
+    "c18 structured",
+    "c19 managed",
+    "c19 structured",
+    "c20 managed",
+    "c20 structured"
+  ].freeze
+
+  def harness_packet
+    @@longitudinal_packet ||= Journeys.run!(account: accounts(:legacy), user: users(:one))
+  end
+
+  def known_control_sections(text)
+    sections = {}
+    current = nil
+    text.each_line do |line|
+      header = line.match(/\A## (c(?:18|19|20) (?:managed|structured))\n\z/)
+      if header
+        current = header[1]
+        sections[current] = +""
+      elsif current
+        sections[current] << line
+      end
+    end
+    sections.transform_values { |body| body.sub(/\A\n/, "").sub(/\n+\z/, "") }
+  end
 
   def with_env(values)
     previous = values.keys.index_with { |key| ENV[key] }

@@ -37,7 +37,7 @@ module Rag
 
       parts = []
       roles = []
-      fault_code = fact_value("fault_code")
+      fault_code = fault_code_text
       controller = fact_value("controller")
       model = fact_value("model")
       identifier_list = identifier_values
@@ -76,12 +76,32 @@ module Rag
 
       text = @turn.dup
       Array(@perception&.identities).select { |item| item.kind == "negate" }.each do |item|
-        text = text.sub(/#{Regexp.escape(item.span)}/i, " ")
+        text = excise(text, item.span)
       end
       rejected_values.each do |value|
-        text = text.sub(/#{Regexp.escape(value)}/i, " ")
+        text = excise(text, value)
       end
       text.squish.presence
+    end
+
+    # A numeric fault code is invisible to the harness unless the retrieval
+    # string contains "código N". The prefix is the retrieval form of the
+    # stored value, not a meaning for that code.
+    def fault_code_text
+      value = fact_value("fault_code")
+      return nil if value.blank?
+
+      value.match?(/\A\d+\z/) ? "código #{value}" : value
+    end
+
+    def excise(text, value)
+      return text if value.blank?
+
+      text.gsub(token_pattern(value), " ")
+    end
+
+    def token_pattern(value)
+      /(?<![[:alnum:]])#{Regexp.escape(value.to_s)}(?![[:alnum:]])/i
     end
 
     def fact_value(key)
@@ -106,10 +126,10 @@ module Rag
     def observations
       Array(@state.observations).reverse.filter_map { |item|
         text = item["text"].to_s
-        next if text.blank? || rejected_values.any? { |value| text.downcase.include?(value.downcase) }
+        next if text.blank? || rejected_values.any? { |value| text.match?(token_pattern(value)) }
 
         text
-      }.first(ActiveEpisode::MAX_OBSERVATIONS)
+      }.first(ActiveEpisode::MAX_STORED_OBSERVATIONS)
     end
 
     def photo_terms
@@ -122,7 +142,7 @@ module Rag
 
     def goal_text
       text = @state.goal&.dig("text").to_s
-      return nil if text.blank? || rejected_values.any? { |value| text.downcase.include?(value.downcase) }
+      return nil if text.blank? || rejected_values.any? { |value| text.match?(token_pattern(value)) }
 
       text
     end

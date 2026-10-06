@@ -115,6 +115,50 @@ class Rag::QueryComposerTest < ActiveSupport::TestCase
     )
   end
 
+  test "a rejected 8 does not rewrite código 18 and a later turn still shows that code" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: @now)
+    episode.write_fact!(
+      "fault_code", status: "known", value: "18", source: "user",
+      correlation_id: "seed", at: @now.iso8601
+    )
+    episode.append_rejected!("fault_code", "8")
+    correction = "No, leí mal: era código 18, no 8."
+    negate = Rag::TurnPerception::Identity.new(
+      span: "8", act: "negate", kind: "negate", slot: "fault_code",
+      value: "8", source: nil, manufacturer: nil
+    )
+    perception = report.with(move: "correct", identities: [ negate ])
+
+    corrected = Rag::QueryComposer.call(
+      state: episode, turn: correction, perception: perception, decision: decision_for("ready")
+    )
+    later = Rag::QueryComposer.call(
+      state: episode, turn: "¿Y ahora?", perception: report, decision: decision_for("ready")
+    )
+
+    assert_includes corrected, "código 18"
+    assert_no_match(/(?<![[:alnum:]])código 1(?![[:alnum:]])/i, corrected)
+    assert_includes later, "código 18"
+    assert_no_match(/(?<![[:alnum:]])código 1(?![[:alnum:]])/i, later)
+  end
+
+  test "retained observations stay in the retrieval string" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: @now)
+    kept = [
+      "detenida cerca de planta 1",
+      "no hay personas dentro",
+      "comprobé visualmente la guía de la puerta",
+      "se oye un clic, pero no termina de cerrar"
+    ]
+    kept.each { |text| episode.append_observation!(text, correlation_id: "seed") }
+
+    query = Rag::QueryComposer.call(
+      state: episode, turn: "¿Y ahora?", perception: report, decision: decision_for("ready")
+    )
+
+    kept.each { |text| assert_includes query, text }
+  end
+
   test "meta and clarify_first compose no query and mark the turn dropped" do
     episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: @now)
     explained = Rag::QueryComposer.explain(

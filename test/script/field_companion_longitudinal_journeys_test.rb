@@ -159,11 +159,11 @@ class FieldCompanionLongitudinalJourneysTest < ActiveSupport::TestCase
       assert_not_includes body, "ERROR ArgumentError", name
       assert_not_includes body, "LiveRefused", name
     end
-    assert_equal "FAIL", packet.dig("verdict", "L1", "A_no_focus")
-    assert_equal "FAIL", packet.dig("verdict", "L1", "A_selected_elemont")
+    assert_equal "PASS", packet.dig("verdict", "L1", "A_no_focus")
+    assert_equal "PASS", packet.dig("verdict", "L1", "A_selected_elemont")
     assert_equal "FAIL", packet.dig("verdict", "L1", "B")
-    assert_equal "FAIL", packet.dig("verdict", "L2", "A_no_focus")
-    assert_equal "FAIL", packet.dig("verdict", "L2", "A_selected_elemont")
+    assert_equal "PASS", packet.dig("verdict", "L2", "A_no_focus")
+    assert_equal "PASS", packet.dig("verdict", "L2", "A_selected_elemont")
     assert_equal "PASS", packet.dig("verdict", "L3", "no_focus")
     assert_equal "PASS", packet.dig("verdict", "L3", "selected_elemont")
     assert_equal "A11", packet.dig("first_eviction", "A_no_focus", "turn")

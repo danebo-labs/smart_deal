@@ -142,5 +142,105 @@
       "tmp/f1cal/runs/f1cal.r2.a1.aprimeprime.s2.json",
       "tmp/f1cal/runs/f1cal.r2.a1.aprimeprime.known.json"
     ]
+  },
+  "F1": {
+    "phase": "F1",
+    "starting_sha": "97b3764e9fe2034d37c1e82b6069ee8f799bd8b3",
+    "harness_sha": "fd23b3aa196e5b8dddc62d10b32347bcfab13b39",
+    "ending_sha": null,
+    "ending_sha_note": "The F1 closing commit cannot store its own SHA. Its parent is harness_sha. The return report records the commit SHA.",
+    "plan_revision_sha": "fd23b3aa196e5b8dddc62d10b32347bcfab13b39",
+    "authorization": "explicit Lahiri authorization, 2026-10-06. F1 only.",
+    "interpreter_mode": "owner",
+    "model": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "production_code_changed": false,
+    "external_model_calls": 0,
+    "spend_usd": 0,
+    "usefulness_score": null,
+    "fixture_sha256": "3db76c24453d2869f03baf9a9bb7b07dc7e736fd8e80a422b7bf6bf1c03dab8b",
+    "known_prompt_sha256": "7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723",
+    "frozen_hashes_unchanged": {
+      "corpus": "d0fd334e48826ca390445b781edf5d3ffd1b3a4103926541ad7c1dfe3acc1dc3",
+      "scorer": "7ba064468820ec759539d0fc017a57212adf757d059b2bf3d2ccecd2efc881da",
+      "runner": "141c7f6ab109d4c77c69925c0c65abd38a62400dc27464d8fb9edeb0fda71666",
+      "capture": "eae05c0eff750dda33a18a5294e968a09e1a3a3bc527342c2649b8c9b823989e",
+      "manifest": "ae6f6188e4f0de4dde3cf68f128218a3716ca7b10037fe81e582620468ff711c"
+    },
+    "tests": {
+      "harness": "14 runs, 54 assertions, 0 failures, 0 errors",
+      "full_suite": "4277 runs, 23991 assertions, 0 failures, 0 errors, 192 skips",
+      "rubocop": "2 files, no offenses",
+      "git_diff_check": "clean"
+    },
+    "first_eviction": {
+      "A_no_focus": { "turn": "A11", "role": "user", "content": "Elemont MH con placa CEA15; la puerta 1 no termina de cerrar y el imán no magnetiza. ¿Qué reviso?" },
+      "A_selected_elemont": { "turn": "A11", "role": "user", "content": "Elemont MH con placa CEA15; la puerta 1 no termina de cerrar y el imán no magnetiza. ¿Qué reviso?" },
+      "B": { "turn": "B10", "role": "user", "content": "Este ascensor queda mal nivelado en planta 3; aún no identifiqué la maniobra. ¿Qué observo primero?" }
+    },
+    "longitudinal": {
+      "L1": { "A_no_focus": "FAIL", "A_selected_elemont": "FAIL", "B": "FAIL" },
+      "L2": { "A_no_focus": "FAIL", "A_selected_elemont": "FAIL", "B": "NOT_IN_FIXTURE" },
+      "L3": { "no_focus": "PASS", "selected_elemont": "PASS" }
+    },
+    "routes": {
+      "journey_a_t1_t14": "managed unknown-identity generation; generation_mode blank; chunk body plus APPLICABILITY_BLOCK",
+      "journey_b_t1_t4": "managed unknown-identity generation; chunk body plus identity_unknown_reference",
+      "B5": "deterministic meta; canned answer; no model prompt; photo facts stored on the same episode",
+      "B6_B8_B9_B10": "managed document_identity_scope; identity_status no_compatible; companion guidance; Elemont name only",
+      "B7": "deterministic photo-continuity; rag.image_analyzing_message; no model prompt",
+      "l3_follow_up": "managed unknown-identity generation on both focus variants"
+    },
+    "critical_absences": [
+      { "turns": "A4", "fact": "code_8", "state": true, "generator": false, "cause": "outside the recent-message window" },
+      { "turns": "A5-A14", "fact": "code_18", "state": false, "generator": false, "cause": "composition or reducer loss" },
+      { "turns": "A6-A10", "fact": "floor_1 and nobody", "state": false, "generator": false, "cause": "observation FIFO eviction" },
+      { "turns": "A8-A10", "fact": "visual", "state": false, "generator": false, "cause": "observation FIFO eviction" },
+      { "turns": "A14", "fact": "visual and nobody", "weight": "diagnostic", "cause": "observation FIFO eviction" },
+      { "turns": "B2", "fact": "no_code_fact", "state": false, "generator": false, "cause": "composition or reducer loss" },
+      { "turns": "B5", "fact": "level_floor_3, identity_known, above", "state": true, "generator": false, "cause": "composition or reducer loss" },
+      { "turns": "B5", "fact": "orona, pbcm, test_ok", "state": true, "generator": false, "cause": "outside the recent-message window" },
+      { "turns": "B10", "fact": "no_code_text", "state": false, "generator": false, "cause": "observation FIFO eviction" }
+    ],
+    "episode_thread_resolver": {
+      "outcome": "pass",
+      "reason": "not_followup_shape",
+      "joined_prior": false,
+      "reads_replaced_episode": true,
+      "replaced_rows_in_window": 8,
+      "prior_marker_rows": 0,
+      "l3_fail": false
+    },
+    "l3": {
+      "episode_changed": true,
+      "follow_same_episode": true,
+      "retrieval_query": "¿Y ahora? no nivela en planta 3",
+      "prior_in_query": [],
+      "prior_in_prompt": [],
+      "selected_focus_retained": true,
+      "no_focus_retained": false,
+      "focus_blocker": false,
+      "stale_event": true,
+      "stale_mutated": false
+    },
+    "query_composer_rejected_substring": {
+      "turn": "A5",
+      "observed_query_fragment": "era código 1 , no",
+      "technician_text": "era código 18, no 8",
+      "rejected_value": "8",
+      "fixed": false
+    },
+    "assumptions_superseded": [
+      "269/117 character cut",
+      "observations never reach the question field",
+      "CompanionGuidanceContext limited to the Goal line and the last two raw turns",
+      "Journey A is a known-identity prompt"
+    ],
+    "verdict": "PASS",
+    "push_deploy": "not pushed, not deployed",
+    "raw_artifacts": [
+      "tmp/mvp_continuity/f1/ledger.json",
+      "tmp/mvp_continuity/f1/summary.json",
+      "tmp/mvp_continuity/f1/known_prompts.txt"
+    ]
   }
 }

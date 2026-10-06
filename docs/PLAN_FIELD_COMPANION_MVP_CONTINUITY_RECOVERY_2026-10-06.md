@@ -1,6 +1,6 @@
 # Danebo Field Companion MVP continuity recovery plan
 
-**STATUS: DRAFT — NOT AUTHORIZED FOR IMPLEMENTATION**
+**STATUS: F1 CLOSED PASS. F2a, F2b, F3, AND F4 ARE NOT AUTHORIZED.**
 
 **VERDICT: READY_FOR_EXECUTION**
 
@@ -43,14 +43,14 @@ earlier.
 
 | Field | Value |
 |---|---|
-| Plan status | F0 audit authorized and closed. F1 and implementation remain unauthorized. |
+| Plan status | F1 longitudinal baseline harness closed PASS. F2a, F2b, F3, and F4 remain unauthorized. |
 | Plan verdict | `READY_FOR_EXECUTION` |
-| Current authorized phase | `F0 — factual audit` (closed). F1 is not authorized. |
-| Authorization text and date | explicit Lahiri authorization, 2026-10-06. F0 only. No separate authorization commit. |
+| Current authorized phase | none. F1 is closed. F2a is not authorized. |
+| Authorization text and date | explicit Lahiri authorization, 2026-10-06. F1 only. No separate authorization commit. |
 | Current phase status | `PASS` |
-| Parent of the last plan edit | `955ca39915e19802fe0d88f3acfa3ed0b55c7ede` |
-| Execution starting SHA | `955ca39915e19802fe0d88f3acfa3ed0b55c7ede` |
-| Current HEAD after last closed phase | The F0 closing commit. Its parent is `955ca39915e19802fe0d88f3acfa3ed0b55c7ede`. This file does not store that commit’s own SHA. |
+| Parent of the last plan edit | `fd23b3aa196e5b8dddc62d10b32347bcfab13b39` (`test: add MVP continuity longitudinal harness`) |
+| Execution starting SHA | `97b3764e9fe2034d37c1e82b6069ee8f799bd8b3` |
+| Current HEAD after last closed phase | the commit `docs: record MVP continuity F1 baseline`. Parent `fd23b3aa196e5b8dddc62d10b32347bcfab13b39`. This file does not store that commit's own SHA. F1 verdict `PASS`. |
 | Production model | `global.anthropic.claude-haiku-4-5-20251001-v1:0` (Haiku 4.5), unchanged |
 | Frozen corpus hash | `d0fd334e48826ca390445b781edf5d3ffd1b3a4103926541ad7c1dfe3acc1dc3` (`script/field_companion/f1_calibration_corpus.rb`) |
 | Frozen scorer hash | `7ba064468820ec759539d0fc017a57212adf757d059b2bf3d2ccecd2efc881da` (`script/field_companion/f1_calibration_score.rb`) |
@@ -58,8 +58,8 @@ earlier.
 | A′ / A″ artifact hashes | Recorded in the F0 execution record. Local `tmp/f1cal/runs` files were hashed. Named calibration files match the manifest. |
 | Target-environment flag matrix | Recorded below and in the F0 execution record. Source: local gitignored `config/deploy.yml`, plus code default where that file leaves a flag unset. Running container env was not readable. |
 | Interpreter mode for F1/F3 | `owner` |
-| Longitudinal fixture hash | `<FROZEN_LONGITUDINAL_FIXTURE_HASH>` (set by F1) |
-| Pre-F2a known-path prompt capture hash | `<PRE_F2A_KNOWN_PROMPT_CAPTURE_HASH>` (set by F1) |
+| Longitudinal fixture hash | `3db76c24453d2869f03baf9a9bb7b07dc7e736fd8e80a422b7bf6bf1c03dab8b` (`test/fixtures/files/field_companion/longitudinal_journeys.yml`) |
+| Pre-F2a known-path prompt capture hash | `7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723` (`tmp/mvp_continuity/f1/known_prompts.txt`, gitignored; Journey A unknown-path prompts plus c18–c20) |
 | F2a candidate SHA | `<CANDIDATE_SHA_FROM_F2A>` |
 | F3 candidate SHA | `<F3_CANDIDATE_SHA>` (F2b HEAD, or the F2a HEAD when F2b is skipped) |
 | Evidence packet | `script/field_companion/mvp_continuity_evidence.json` |
@@ -69,7 +69,7 @@ Phase status:
 | Phase | Status |
 |---|---|
 | F0 — factual audit | PASS |
-| F1 — longitudinal baseline harness | NOT STARTED |
+| F1 — longitudinal baseline harness | PASS |
 | F2a — publication choice and guidance | NOT STARTED |
 | F2b — continuity repair | CONDITIONAL / NOT AUTHORIZED |
 | F3 — frozen and live evaluation | NOT STARTED |
@@ -77,25 +77,41 @@ Phase status:
 
 Current blockers:
 
-- F1 is not authorized. F0 does not start it.
+- F1 is closed PASS (explicit Lahiri authorization, 2026-10-06). F2a is not authorized.
 - F2a and later implementation are not authorized.
 - The flag matrix is recorded from local `config/deploy.yml`. The running
   container environment was not readable (SSH to `54.163.248.39:22` timed
   out). That does not reopen the matrix: the deploy file resolved
   `HAIKU_QUERY_ANALYSIS_MODE=owner`.
 
-Carried-forward expectations, not findings. These are Opus code-reading
-predictions. F1 confirms or supersedes them with measured evidence:
+Carried-forward expectations. F1 measured these:
 
-- The `## Active Field Problem` header and footer take 269 of its 400
-  characters. Journey A’s four identity facts take 117 more, so the goal is
-  expected to be cut.
-- `ActiveEpisode#observations` is not rendered in the generation prompt.
-- `CompanionGuidanceContext` reads only the `Goal:` line and the last two
-  technician turns.
+- The 269-character header/footer plus 117 characters of identity cutting the
+  goal: `SUPERSEDED BY F1 RESULT fd23b3aa196e5b8dddc62d10b32347bcfab13b39`.
+  `context_truncated` was false on all 38 turns. No 400-character cut was
+  recorded.
+- `ActiveEpisode#observations` is absent as its own prompt list.
+  `SUPERSEDED BY F1 RESULT fd23b3aa196e5b8dddc62d10b32347bcfab13b39` as a claim
+  that observation text never reaches generation. Text still in the
+  three-slot store is copied into the composed retrieval query, and that
+  query is the question field. FIFO drops older observations from both.
+- `CompanionGuidanceContext` is limited to the Goal line and the last two raw
+  technician turns: `SUPERSEDED BY F1 RESULT fd23b3aa196e5b8dddc62d10b32347bcfab13b39`.
+  The measured B6 no_compatible prompt's Question line is the composed
+  retrieval query. It carried the current turn, stored observations, the
+  goal, and photo terms.
+- Journey A is a known-identity prompt: `SUPERSEDED BY F1 RESULT fd23b3aa196e5b8dddc62d10b32347bcfab13b39`.
+  Manufacturer Elemont is stored with source catalog.
+  `EquipmentIdentity.known?` requires a user or photo manufacturer or model
+  fact. The captured Journey A prompts are the unknown-identity generation
+  prompt. c18–c20, called with an explicit user identity, are the known-path
+  controls.
+- Text interactions store 2 messages. Confirmed. Journey A first eviction is
+  A11, the T1 user message. Journey B's photo turn stores extra messages.
+  First B eviction is B10, the T1 user message.
 
-Next authorized action: none. F0 is closed `PASS`. F1 waits for a separate
-explicit authorization from Lahiri. Do not execute F1 from this record.
+Next authorized action: none. F1 is closed `PASS`. F2a waits for a separate
+explicit authorization from Lahiri. Do not execute F2a from this record.
 
 ## Same-case continuity clarification (this revision)
 
@@ -893,7 +909,7 @@ Required handoffs:
 | From → to | The closing phase writes into the next phase |
 |---|---|
 | F0 → F1 | Flag matrix with the source of each value and interpreter mode, deployed image if read, call-graph corrections, newly found entry paths F1 must capture, frozen hashes, fixture sources, `<HEAD_FROM_F0>`. |
-| F1 → F2a | L1, L2, and L3 baselines; route per turn; generator-visible facts; missing-fact causes; failures relevant to F2a; regression cases F2a must keep; exact journey turns that become F2a tests; `<FROZEN_LONGITUDINAL_FIXTURE_HASH>`; `<PRE_F2A_KNOWN_PROMPT_CAPTURE_HASH>`; `<HEAD_FROM_F1>`. |
+| F1 → F2a | Recorded in the F1 execution record and the F2a executor prompt. Fixture `3db76c24453d2869f03baf9a9bb7b07dc7e736fd8e80a422b7bf6bf1c03dab8b`. Capture `7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723`. HEAD is the commit `docs: record MVP continuity F1 baseline`, parent `fd23b3aa196e5b8dddc62d10b32347bcfab13b39`. |
 | F2a → F2b / F3 | F1 re-run at the F2a HEAD with a pre/post comparison of L1, L2, and L3. Either `F2b = SKIPPED BY EVIDENCE` with F3 receiving `<CANDIDATE_SHA_FROM_F2A>`, or an F2b ticket per blocker: journey, turn, expected invariant, observed state and generator input, classified cause, failure owner, allowed files, regression controls. |
 | F2b → F3 | Fixes, commits, the invariant that now passes, regression evidence, c18–c20 byte identity, any exact ticketed Journey A prompt delta, `<F3_CANDIDATE_SHA>`. |
 | F3 → F4 | A‴ verdict; L1, L2, and L3 live verdicts; known controls; human review; safety verdict; unresolved pilot blockers, including the section H focus decision if it fired. |
@@ -1437,11 +1453,13 @@ history rollover, and context truncation (including observation FIFO
 eviction versus the 400-character projection). It also proves that the live
 mode refuses to start without its cap.
 
-**Known-path prompt capture.** F1 records the deterministic known-path
-generation prompts, with stubbed generation, for corpus known controls
-c18–c20 and for Journey A. Their hash becomes
-`<PRE_F2A_KNOWN_PROMPT_CAPTURE_HASH>`. Before any F2b change, F2a compares
-both c18–c20 and Journey A against it byte for byte.
+**Known-path prompt capture.** F1 records the stubbed generation prompts for
+corpus known controls c18–c20 and for Journey A. Their combined hash is
+`7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723`.
+Measured result: c18–c20 are the known-path controls. Journey A prompts in
+that file are unknown-identity prompts. `SUPERSEDED BY F1 RESULT fd23b3aa196e5b8dddc62d10b32347bcfab13b39`
+for the assumption that Journey A is a known-path freeze. The F2a executor
+prompt states the comparison that follows from that measurement.
 
 **PASS.** The seeded detections are real, and the L1, L2, and L3 baselines
 are recorded at the pre-F2a HEAD. The local gate uses fixed time,
@@ -1475,37 +1493,58 @@ recorded in the same commit.
 #### F1 execution record
 
 ```
-Status: NOT STARTED
-Starting SHA (expected: the F0 commit "docs: record MVP continuity F0 audit", parent 955ca39915e19802fe0d88f3acfa3ed0b55c7ede):
-Ending SHA:
-Date:
-Executor:
-Scope authorized:
-Files changed:
-Production code changed: NO (required)
-Tests executed:
-External/model calls: none (required)
+Status: PASS
+Starting SHA: 97b3764e9fe2034d37c1e82b6069ee8f799bd8b3 (docs: record MVP continuity F0 audit, parent 955ca39915e19802fe0d88f3acfa3ed0b55c7ede)
+Ending SHA: the commit "docs: record MVP continuity F1 baseline". Not stored in this commit. Parent fd23b3aa196e5b8dddc62d10b32347bcfab13b39.
+Date: 2026-10-06
+Executor: F1 longitudinal baseline harness
+Scope authorized: explicit Lahiri authorization, 2026-10-06. F1 only.
+Files changed: script/field_companion/longitudinal_journeys.rb, test/fixtures/files/field_companion/longitudinal_journeys.yml, test/script/field_companion_longitudinal_journeys_test.rb, script/field_companion/mvp_continuity_evidence.json, this plan
+Production code changed: NO
+Tests executed: bundle exec rails test test/script/field_companion_longitudinal_journeys_test.rb — 14 runs, 54 assertions, 0 failures, 0 errors. bundle exec rails test — 4277 runs, 23991 assertions, 0 failures, 0 errors, 192 skips. bundle exec rubocop on the harness and its test — 2 files, no offenses. git diff --check clean.
+External/model calls: none
 Spend: 0
-Interpreter mode(s) run:
-Longitudinal fixture hash (<FROZEN_LONGITUDINAL_FIXTURE_HASH>):
-Pre-F2a known-path prompt capture hash:
-First history eviction (journey, interaction, message evicted):
-L1 state/input verdict, per journey:
-L2 rollover state/input verdict:
-L3 boundary verdict (both focus variants):
-Route per turn (summary):
+Interpreter mode(s) run: owner
+Longitudinal fixture hash: 3db76c24453d2869f03baf9a9bb7b07dc7e736fd8e80a422b7bf6bf1c03dab8b
+Pre-F2a known-path prompt capture hash: 7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723
+First history eviction: A_no_focus A11 user, the T1 Elemont door question. A_selected_elemont A11 user, the same T1 text. B B10 user, the T1 leveling question. Text turns stored 2 messages. B5 stored the photo extra messages and history length became 11. History then stayed at 20 after the first eviction.
+L1 state/input verdict: A_no_focus FAIL. A_selected_elemont FAIL. B FAIL.
+L2 rollover state/input verdict: A_no_focus FAIL. A_selected_elemont FAIL. Journey B has no L2 extension.
+L3 boundary verdict: no_focus PASS. selected_elemont PASS. Reasons empty for both.
+Route per turn (summary): Journey A T1–T14 managed unknown-identity generation. RagResult generation_mode blank. Captured prompt contains the stub chunk body and APPLICABILITY_BLOCK. Journey B T1–T4 the same unknown prompt. B5 deterministic, generation_mode meta, canned answer only. B6 B8 B9 B10 managed, generation_mode document_identity_scope, identity_status no_compatible. B7 deterministic photo-continuity short-circuit, rag.image_analyzing_message, no model prompt. L3 follow-up on both variants managed unknown prompt. 0 turn errors. context_truncated false on every turn. usefulness_score nil.
 Critical facts absent, with turn and classified cause:
+- A4 code 8, both A variants. In state, absent from generator input. Cause: outside the recent-message window.
+- A5–A14 code 18, both A variants. Never in state and absent from generator input. Cause: composition or reducer loss. The correction rejected fault_code 8 and did not store fault_code 18. This critical miss is why L1 and L2 are FAIL.
+- A6–A10 floor 1 and nobody inside, both A variants. Cause: observation FIFO eviction.
+- A8–A10 visual door-guide check, both A variants. Cause: observation FIFO eviction.
+- A14 visual check and nobody inside, diagnostic. Cause: observation FIFO eviction. L2 is FAIL because code 18 is critical, not because of these diagnostics alone.
+- B2 confirmed-absent fault code. Never stored. Cause: composition or reducer loss.
+- B5 floor-3 leveling, known identity, and "por arriba". In state, absent from the meta canned answer. Cause: composition or reducer loss.
+- B5 Orona, PBCM-V3, and TEST OK. In state, absent from the canned answer and from the last two user messages and the goal. Cause: outside the recent-message window.
+- B10 "No aparece código de falla". Cause: observation FIFO eviction.
+- Code 8 did not stay current after the correction. Floor 1 did not resurface as current at A13 once the current correction sentence was excluded. The click and floor 2 were not absent at A14. Elliptical queries were composed. One episode per journey. No episode opened at T11 or at the first eviction.
 Failures relevant to F2a:
-Regression cases F2a must keep:
-Journey turns that become F2a tests:
-Artifacts/results:
-PASS/FAIL/INCONCLUSIVE:
+- Journey A and B1–B4 are unknown-identity turns. The prompt includes the Elemont bornera body and identity_unknown_reference. Catalog source does not make EquipmentIdentity known.
+- B1, B2, and B4 are non-reference diagnostic turns on that path.
+- B3 asks what the BLT manual says about its own leveling system. Same prompt shape. Same episode. Section D's raw-turn predicate decides it. F1 does not pre-judge the predicate.
+- B6 and later known-identity turns use no_compatible companion guidance. The prompt names the Elemont manual as reference-only and does not include the bornera body. F2a does not change that path.
+- B5 and B7 never reach a model prompt. Record them on the re-run. They are not F2a files.
+- L3 opens a new episode. The follow-up stays on it. Query: "¿Y ahora? no nivela en planta 3". Prior door markers are absent from that query and from the prompt outside Session Focus. The selected Elemont document stays pinned and the follow-up does not abstain. Do not clear the pin.
+Regression cases F2a must keep: c18, c19, c20 prompt sections byte-identical. B6, B8, B9, and B10 stay document_identity_scope / no_compatible. Do not reclassify Journey A as known identity. Do not equate CEA15, CEA15P, and CEA15+. Do not invent meanings for code 18, LED 7, floors, the door-guide check, or the click.
+Journey turns that become F2a tests: B1, B2, B4, B3, Journey A T1, and the L3 follow-up.
+Artifacts/results: tmp/mvp_continuity/f1/ledger.json, summary.json, known_prompts.txt (gitignored). Evidence packet F1 key. Fixture hash and capture hash above. Frozen corpus, scorer, runner, capture, and manifest hashes unchanged.
+PASS/FAIL/INCONCLUSIVE: PASS
 Findings:
-New risks:
-Assumptions invalidated:
-Carry-forward decisions:
-Next-phase changes required:
-Commit SHA:
+- Baselines are recorded. L1 FAIL and L2 FAIL are results. L3 PASS is a result. The phase gate does not require an L1 or L2 PASS.
+- EpisodeThreadResolver on the L3 follow-up returned pass / not_followup_shape and did not join the replaced episode. episode_rows still returned 8 user rows from the replaced episode inside EPISODE_WINDOW (T7 through the pre-boundary "¿Y ahora?"). Prior-marker rows in that read: 0. Those marker messages had already been evicted. A read without a join is not an L3 fail. F1 does not change the resolver.
+- QueryComposer removes rejected value "8" as a substring. The A5 retrieval query shows "código 1" where the technician said "código 18". F1 does not change QueryComposer. This pre-F2a ledger does not authorize F2b.
+- Stale assistant and stale photo writes after the boundary, with the old episode id, were dropped. Event stale_case_write_dropped. History and episode state did not change.
+- The stub answer is not a usefulness score. Journey A answer text is STUB_ANSWER plus the existing clarify_controller string. usefulness_score stayed nil.
+New risks: none that authorize F2a to leave section D, and none that authorize F2b from this ledger. The unknown-path chunk body on Journey A is the publication defect section D already names. The resolver read and the code-18 loss are recorded for the F2a re-run.
+Assumptions invalidated: Journey A known-path freeze; the 269/117 character cut; observations never reaching the question field; CompanionGuidanceContext limited to the Goal line and the last two raw turns. Each is marked SUPERSEDED BY F1 RESULT fd23b3aa196e5b8dddc62d10b32347bcfab13b39 in Execution state.
+Carry-forward decisions: owner only. F2a justification remains A″, not a new longitudinal defect. Do not start F2b from this ledger. Do not clear a selected document. Do not fix EpisodeThreadResolver, the reducer, or QueryComposer in F2a.
+Next-phase changes required: the refreshed F2a executor prompt.
+Commit SHA: harness fd23b3aa196e5b8dddc62d10b32347bcfab13b39. Docs commit is this commit and is not stored here.
 Push/deploy status: not pushed, not deployed
 ```
 
@@ -1700,8 +1739,11 @@ structured entry keeps its already-present `raw_question` and gains
 `session_context`; the context entry gains `raw_question` and preserves its
 full `session_context`; the ambiguous entry gains and preserves both. The
 question is the raw turn. The structured sink finishes in companion mode.
-Known-path prompts for c18–c20 and Journey A are byte-identical to the
-pre-F2a capture. A non-reference turn is one guidance generation. A
+Known-path prompts for c18–c20 are byte-identical to the pre-F2a capture.
+`SUPERSEDED BY F1 RESULT fd23b3aa196e5b8dddc62d10b32347bcfab13b39`: Journey A
+is an unknown-identity prompt, so this phase replaces those generator inputs
+under section D. Do not freeze the Journey A chunk-body prompt, and do not
+change section D to keep it. A non-reference turn is one guidance generation. A
 reference turn is the contract call, plus one guidance call only on
 fallback. No extra retrieval or model call is introduced by the argument
 plumbing.
@@ -1727,16 +1769,18 @@ plumbing.
 - Identity corrected away mid-episode: the guidance prompt contains no prior known-path content.
 
 **PASS.** Those assertions hold, deterministic unsafe publications are zero,
-known-path prompts for c18–c20 and Journey A are byte-identical to the
-pre-F2a capture, and the F1 harness re-run at this HEAD is recorded. That
-re-run is part of the F2a pass condition.
+c18–c20 prompts are byte-identical to the pre-F2a capture, Journey A and the
+other measured non-reference unknown turns no longer contain a chunk body or
+`APPLICABILITY_BLOCK`, and the F1 harness re-run at this HEAD is recorded.
+That re-run is part of the F2a pass condition.
 
 **FAIL.** The lanes disagree, a pin confirms identity, a step request enters
 the reference envelope, a reference loses citation or span checks, a
 contract failure re-enters full-body prose, the sentinel appears in a
-free-prose prompt, known-path prompts differ from the pre-F2a capture, or a
-turn gains a retrieval or a model call beyond the contract-plus-fallback
-budget above.
+free-prose prompt, c18–c20 prompts differ from the pre-F2a capture, a
+measured non-reference unknown turn still contains a chunk body or
+`APPLICABILITY_BLOCK`, or a turn gains a retrieval or a model call beyond
+the contract-plus-fallback budget above.
 
 **Regression protection.** One focused production commit. Do not alter the
 frozen scorer, the frozen corpus, known-identity scope, retrieval budgets,
@@ -1777,7 +1821,7 @@ evidence-and-plan commit with the F1 re-run
 
 ```
 Status: NOT STARTED
-Starting SHA (expected <HEAD_FROM_F1>):
+Starting SHA (expected the commit "docs: record MVP continuity F1 baseline", parent fd23b3aa196e5b8dddc62d10b32347bcfab13b39):
 Ending SHA (<CANDIDATE_SHA_FROM_F2A>):
 Date:
 Executor:
@@ -1788,7 +1832,7 @@ Tests executed:
 External/model calls: none (required)
 Spend: 0
 Sentinel-body check:
-Known-path prompt byte identity for c18–c20 and Journey A versus <PRE_F2A_KNOWN_PROMPT_CAPTURE_HASH>:
+Known-path prompt byte identity for c18–c20 versus 7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723. Journey A is not a known-path freeze:
 Model calls per turn (reference, non-reference, fallback):
 F1 re-run L1 / L2 / L3 versus baseline:
 F2b decision (SKIPPED BY EVIDENCE, or tickets):
@@ -1814,10 +1858,14 @@ START
 1. Read Execution state, section D in full, E (protocol), the F2a phase, the
    F1 execution record, and section F.
 2. Confirm Execution state names F2a as authorized and F1 as PASS. If not, STOP.
-3. Verify branch main, clean worktree, HEAD == <HEAD_FROM_F1>.
-4. Verify the fixture hash == <FROZEN_LONGITUDINAL_FIXTURE_HASH> and the
-   corpus, scorer, and runner hashes match Execution state. On any
-   mismatch, STOP.
+3. Verify branch main and a clean worktree. HEAD must be the commit
+   "docs: record MVP continuity F1 baseline". Its parent is
+   fd23b3aa196e5b8dddc62d10b32347bcfab13b39. This plan does not embed that
+   commit's own SHA.
+4. Verify the fixture hash ==
+   3db76c24453d2869f03baf9a9bb7b07dc7e736fd8e80a422b7bf6bf1c03dab8b and the
+   corpus, scorer, runner, capture, and manifest hashes match Execution
+   state. On any mismatch, STOP.
 
 OBJECTIVE
 Implement section D exactly as a surgical routing-and-reuse fix, not a new
@@ -1844,9 +1892,98 @@ finishing:
 - DocumentIdentityScope unchanged and applicability-only.
 
 F1 FINDINGS THAT APPLY HERE
-<F1_FINDINGS_FOR_F2A: measured failures, routes exercised by unknown
-turns, regression cases to keep, journey turns to add as tests. F1 fills
-this in.>
+Measured at harness fd23b3aa196e5b8dddc62d10b32347bcfab13b39. Owner mode.
+No Bedrock. The harness stub returns the Elemont bornera fixture chunk on
+every retrieve. That stub is not a production retrieval ranking.
+
+Journey A stores manufacturer Elemont with source catalog.
+EquipmentIdentity.known? is false unless a manufacturer or model fact has
+source user or photo. Catalog, MH, and CEA15 are not enough. Every Journey A
+turn and Journey B T1–T4 used the unknown-identity generation prompt:
+chunk body, including SEGURIDAD IN, plus APPLICABILITY_BLOCK
+(identity_unknown_reference, prompt_version f1cal.r2.a1). RagResult
+generation_mode was blank. Route: managed. The stub converse accepts no
+tool, so this is the contract-failure fallback, not an accepted publication.
+c18, c19, and c20 were called with an explicit user identity (ZEPHYR QX-77
+or ORBITA LM-5) and no entity filter. Those sections are the known-path
+controls and must stay byte-identical. The combined capture hash
+7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723 identifies
+the pre-F2a file. It does not freeze the Journey A portion.
+
+Do not edit EquipmentIdentity or the Journey A fixture to make Elemont
+known. Section D already replaces generator inputs on unknown turns.
+Journey A T1–T14 and the L3 follow-up are unknown under the measured rule.
+
+Routes and the turns that become tests:
+- B1. Raw turn: "Este ascensor queda mal nivelado en planta 3; aún no
+  identifiqué la maniobra. ¿Qué observo primero?" Unknown. Non-reference.
+  Observed generator input: managed unknown prompt with the bornera body.
+  Expected after F2a: body-free guidance. No chunk body. No
+  APPLICABILITY_BLOCK. One guidance generation. Failed invariant: foreign
+  body in a non-reference unknown prompt. Fixture: longitudinal_journeys.yml
+  Journey B T1.
+- B2. Same route and the same expected guidance. The turn also reports that
+  no fault code appears. F2a does not invent a stored absent fault code.
+- B4. Same route. The turn adds the above-level observation. Same expected
+  guidance.
+- B3. Raw turn asks what the BLT manual says about its own leveling system
+  and says the technician does not know if it is this equipment. Observed
+  generator input is the same unknown prompt with the chunk body. Same
+  episode as B1. Section D's reference_request? on that raw turn decides
+  publication versus guidance. Do not pre-judge the predicate in this
+  prompt. Fixture: Journey B T3.
+- Journey A T1. Raw turn is the Elemont MH / CEA15 door question, "¿Qué
+  reviso?". Observed generator input is the unknown prompt with the bornera
+  body. Expected after F2a: body-free guidance, because the identity is not
+  known. Do not treat CEA15, CEA15P, and CEA15+ as the same board. Do not
+  invent a meaning for the door, the magnet, code 18, LED 7, the floors, or
+  the click.
+- L3 follow-up, both focus variants. Raw turn "¿Y ahora?". New episode.
+  Observed retrieval query: "¿Y ahora? no nivela en planta 3". Observed
+  generator input: managed unknown prompt. Prior door markers were not in
+  that query and not in the prompt outside Session Focus. Expected after
+  F2a: body-free guidance for this non-reference unknown turn. The selected
+  Elemont document stayed pinned and the follow-up did not abstain. Do not
+  clear the pin. A selected-document dead end stays the section H decision
+  for the plan owner before F4. It is not an F2b fix.
+
+Do not change these routes:
+- B6, B8, B9, B10. generation_mode document_identity_scope.
+  identity_status no_compatible. Companion guidance. Known identity from the
+  photo: Orona and PBCM-V3, source photo. The prompt names "Elemont
+  Montacargas Hidraulico Modelo MH" as a reference-only manual and says not
+  to teach its contents. No bornera body. This is existing known-identity
+  guidance.
+- B5. generation_mode meta. Canned answer "Puedes seguir con lo que ya me
+  contaste." No model prompt. The photo writer still stored Orona, PBCM-V3,
+  and visible text TEST OK on the same episode. Record it on the re-run.
+  It is not an F2a file.
+- B7. Deterministic photo-continuity short-circuit. Answer is
+  rag.image_analyzing_message. No model prompt. Record it on the re-run.
+  It is not an F2a file.
+
+Continuity results to record on the re-run and not to fix in F2a. This
+ledger does not authorize F2b.
+- A5–A14 code 18. Never stored. Cause: composition or reducer loss. The
+  correction rejected fault_code 8. QueryComposer then removed "8" as a
+  substring, so the A5 retrieval query shows "código 1".
+- A4 code 8 stayed in state and was outside the recent-message window.
+- Floor 1, nobody inside, and the door-guide check left by observation FIFO.
+  The door goal text remained. The click and floor 2 were still present at
+  A14.
+- B2 did not store a confirmed-absent fault code.
+- B5's canned answer did not contain the facts that were in state.
+- B10 lost "No aparece código de falla" to FIFO.
+- EpisodeThreadResolver on "¿Y ahora?" returned pass / not_followup_shape
+  and did not join. episode_rows still returned 8 replaced-episode user
+  rows inside EPISODE_WINDOW. Prior-marker rows in that read: 0. Do not
+  change the resolver.
+
+L1 baseline: A_no_focus FAIL, A_selected_elemont FAIL, B FAIL.
+L2 baseline: both A variants FAIL. Journey B has no L2 extension.
+L3 baseline: both variants PASS.
+First eviction: A11 user T1 text on both A variants. B10 user T1 text.
+Fixture: test/fixtures/files/field_companion/longitudinal_journeys.yml.
 
 ALLOWED FILES
 - app/services/query_orchestrator_service.rb (argument plumbing only)
@@ -1883,8 +2020,10 @@ bin/rails test <touched service tests>
 bin/rails test (full suite: shared RAG services changed)
 bundle exec rubocop
 git diff --check
-Known-path prompts for c18–c20 and Journey A must be byte-identical to
-<PRE_F2A_KNOWN_PROMPT_CAPTURE_HASH>.
+c18–c20 sections of the pre-F2a capture must be byte-identical to
+7348fb7319234aecf294038247330f9a207e4b466b94ed84c5fe74efda057723.
+Journey A must lose the chunk body and APPLICABILITY_BLOCK. Do not require
+the Journey A portion of that file to stay byte-identical.
 
 RE-RUN F1
 Run the F1 harness deterministically at the F2a HEAD, in owner mode.
@@ -1893,9 +2032,10 @@ tmp/mvp_continuity/f2a_rerun/. Report L1, L2, and L3 next to the F1 baseline.
 
 GATE
 PASS: the F2a PASS list holds, the sentinel is absent from every
-unknown-identity free-prose prompt, c18–c20 and Journey A known-path prompts
-are byte-identical, the model-call budget holds, and the F1 re-run is
-recorded.
+unknown-identity free-prose prompt, c18–c20 prompts are byte-identical,
+measured non-reference unknown turns including Journey A contain no chunk
+body and no APPLICABILITY_BLOCK, the model-call budget holds, and the F1
+re-run is recorded.
 FAIL: any item in the F2a FAIL list. Fix inside the F2a scope and rerun. If
 the fix needs an architecture change, do not implement it. Return
 `BLOCKED_FOR_PLAN_REVIEW` with the measured failing behavior, exact invariant,

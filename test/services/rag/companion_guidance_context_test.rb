@@ -128,16 +128,38 @@ class Rag::CompanionGuidanceContextTest < ActiveSupport::TestCase
     assert_not_includes prompt, "## Session Focus"
     assert_not_includes prompt, "Ground your answer"
     assert_not_includes prompt, "These facts identify the job"
-    assert_includes prompt, "same sentence"
+    assert_includes prompt, "Follow-up: yes."
+    assert_not context_for_unknown_fixture(session_context).context_truncated?
+    assert_includes prompt, "does not select the next objective"
     assert_includes prompt, "elevator field service"
-    assert_includes prompt, "do not reply by only asking which equipment this is."
+    assert_includes prompt, "in the same sentence"
+    assert_includes prompt, "One main question"
+    assert_includes prompt, "Do not make a questionnaire."
+    assert_includes prompt, "Do not instruct an operation that changes equipment state."
+    assert_includes prompt, "Do not ask which equipment this is unless identity is the blocker."
     assert_includes prompt, "already report an action as done"
     assert_includes prompt, "Do not stop at the refusal"
-    assert_includes prompt, "manufacturer and model in that same sentence"
+    assert_includes prompt, "read the nameplate and report manufacturer and model in one sentence"
+    assert_includes prompt, "without suggesting either"
+    assert_includes prompt, "Do not confirm a proposed identity."
+    assert_includes prompt, "Do not print DATA_NOT_AVAILABLE."
+    assert_includes prompt, "Do not cite manuals with [n]."
+    assert_includes prompt, "Write the entire answer in Spanish."
     assert_not_includes prompt, "SI-2"
     assert_not_includes prompt, "XQ7"
     assert_not_includes prompt, "Enviar la cabina"
     assert_not_includes prompt, "Procedimiento de rescate"
+  end
+
+  test "unknown guidance keeps the decision policy inside the prompt budget" do
+    prompt = unknown_prompt(question: "", session_context: "", locale: :es)
+    instruction = prompt.sub(/\n\nFollow-up: no\.\z/, "")
+
+    assert_operator instruction.length, :<, 1700
+    assert_includes prompt, "Write the entire answer in Spanish."
+    english = unknown_prompt(question: "the door will not close", session_context: "", locale: :en)
+    assert_includes english, "Write the entire answer in English."
+    assert_not_includes english, "Write the entire answer in Spanish."
   end
 
   test "known guidance keeps its instruction and does not take the unknown observation rule" do
@@ -154,7 +176,31 @@ class Rag::CompanionGuidanceContextTest < ActiveSupport::TestCase
     assert_not_includes prompt, "The equipment identity is not confirmed."
     assert_not_includes prompt, "elevator field service"
     assert_not_includes prompt, "already report an action as done"
+    assert_not_includes prompt, "does not select the next objective"
     assert_not_includes prompt, "SI-2"
     assert_not_includes prompt, "XQ7"
+  end
+
+  def unknown_prompt(question:, session_context:, locale:)
+    Rag::CompanionGuidanceContext.build(
+      question: question,
+      identity: nil,
+      session_context: session_context,
+      labels: [],
+      locale: locale,
+      mode: :unknown
+    ).to_s
+  end
+
+  def context_for_unknown_fixture(session_context)
+    Rag::CompanionGuidanceContext.build(
+      question: "¿Qué reviso?",
+      identity: nil,
+      session_context: session_context,
+      labels: [],
+      locale: :es,
+      mode: :unknown,
+      manuals: [ "Elemont Montacargas Hidraulico Modelo MH, p. 1" ]
+    )
   end
 end

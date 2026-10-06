@@ -2,7 +2,7 @@
 
 **STATUS: DRAFT — NOT AUTHORIZED FOR IMPLEMENTATION**
 
-**VERDICT: READY_FOR_FINAL_OPUS_REVIEW**
+**VERDICT: READY_FOR_EXECUTION**
 
 Materialized 2026-10-05 from the Codex recovery-plan review of this repository.
 Codex created no document. This file is that review, written down for plan
@@ -44,11 +44,11 @@ earlier.
 | Field | Value |
 |---|---|
 | Plan status | DRAFT — NOT AUTHORIZED FOR IMPLEMENTATION |
-| Plan verdict | `READY_FOR_FINAL_OPUS_REVIEW` |
+| Plan verdict | `READY_FOR_EXECUTION` |
 | Current authorized phase | NONE |
 | Authorization text and date | NONE |
 | Current phase status | — |
-| Parent of the last plan edit | `b4408003e2ea6c8b4ab31a0c0e9a1017589fe962` |
+| Parent of the last plan edit | `5b371fc1e694956d9e5f2b639dd3690eebe1dc41` |
 | Execution starting SHA | `<F0_START_SHA>` (set by F0) |
 | Current HEAD after last closed phase | `<HEAD_FROM_LAST_CLOSED_PHASE>` |
 | Production model | `global.anthropic.claude-haiku-4-5-20251001-v1:0` (Haiku 4.5), unchanged |
@@ -78,7 +78,8 @@ Phase status:
 Current blockers:
 
 - Implementation is not authorized.
-- This plan awaits the final Opus review.
+- The final Opus review returned `READY_AFTER_SMALL_PLAN_EDITS`; this
+  documentation revision closes those execution-readiness edits.
 - The target-environment flag matrix is unread. F0 closes it before F1.
 
 Carried-forward expectations, not findings. These are Opus code-reading
@@ -175,7 +176,7 @@ introduced.
 | §11.11 Journey A turns 9–10 | Turn 9 is “Sigue igual. ¿Y ahora?”. Turn 10 is the recall plus next observation. | INCORPORATED |
 | §11.12 Journey B photo and invariants | Photo reads Orona/PBCM-V3 and makes identity known at turn 5. Turn 6 agrees. Turn 9 records the absence cause. Turn 10 lists generator-input invariants. | INCORPORATED |
 | §11.13 Section H | “No prior case state.” Pre-declared blocker goes to the plan owner before F4, not to F2b. | INCORPORATED |
-| §11.14 Section G capture checks | Scorer unsafe cannot be overridden. Sentinel-body check. Known controls: zero contract and guidance entries, byte-identical known prompts, c20 publishes no ZEPHYR procedure. | INCORPORATED |
+| §11.14 Section G capture checks | Scorer unsafe cannot be overridden. Sentinel-body check. Known controls: zero contract and unknown-identity guidance entries, conditional post-F2b prompt rule, c20 publishes no ZEPHYR procedure. | INCORPORATED |
 
 ## Corrections while materializing
 
@@ -625,10 +626,16 @@ Positive reference examples:
 
 - “¿Qué dice el manual …?”
 - “El display muestra Q-731, ¿qué significa?”
+- c12, “What does the ZEPHYR QX-77 manual say? It may not apply to this
+  equipment.” → `reference_request? == true` →
+  `UnknownIdentityPublication` on both applicable lanes.
 
 “Dame los pasos del manual …, yo verifico” asks for an actionable sequence
 and takes the guidance path. A pin never changes the predicate and never
-confirms identity.
+confirms identity. English procedural wording follows the same rule: c04,
+“What's the procedure to bring the car down?” →
+`reference_request? == false` → body-free companion guidance on both
+applicable lanes.
 
 ### Four production entry points
 
@@ -639,12 +646,30 @@ Production reaches `UnknownIdentityPublication` through two sinks:
 3. `ContextEvidenceRoute#stack` → `complete_from_retrieval` (`context_evidence_route.rb:86-102`).
 4. `AmbiguousModelResponder#answer_from` → `complete_from_retrieval` (`ambiguous_model_responder.rb:119-131`).
 
-Entries 3 and 4 pass no `raw_question` today, so `@raw_question` falls back
-to the composed query (`structured_evidence_route.rb:161`). F2a threads the
-raw technician turn into `ContextEvidenceRoute#stack` and
-`AmbiguousModelResponder#answer_from`. The predicate then sees the same raw
-turn on every entry. A composed “¿qué dice el manual…?” must not send a
-later “¿Y ahora?” into the reference envelope.
+The direct `QueryOrchestratorService → StructuredEvidenceRoute.build` entry
+already passes `raw_question: @raw_question`; F2a must not claim that wiring
+is missing. It adds only `session_context: @session_context` there so the
+structured body-free guidance path can consume the same bounded case
+projection described below.
+
+`QueryOrchestratorService#context_evidence_result` already passes
+`session_context`. F2a additionally passes `raw_question: @raw_question`.
+`ContextEvidenceRoute` retains both the raw question and the full bounded
+session context, then threads both into its internal
+`StructuredEvidenceRoute` stack. Its existing extraction of the current
+photo-evidence block is not a substitute for carrying that bounded case
+projection.
+
+The `QueryOrchestratorService → AmbiguousModelResponder.build` entry passes
+both `raw_question: @raw_question` and `session_context: @session_context`.
+`AmbiguousModelResponder` retains them and passes both into its internal
+`StructuredEvidenceRoute` when `answer_from` is used. F2a may add the minimal
+`session_context:` argument to the existing `StructuredEvidenceRoute`
+build/initialize path. All of this is argument propagation only, not an
+orchestrator, route, or session redesign. The predicate then sees the same
+raw turn and body-free guidance sees the same bounded case projection on all
+three structured entry paths. A composed “¿qué dice el manual…?” must not
+send a later “¿Y ahora?” into the reference envelope.
 
 ### Reference success
 
@@ -742,7 +767,8 @@ them. Two backstops stay, unchanged:
 
 Known-identity routing is unchanged. Known-path prompts are byte-identical
 to the pre-F2a capture. Known controls do not enter the contract and do not
-enter the guidance path.
+enter the new unknown-identity F2a guidance path. Existing legitimate
+known-mode companion guidance is unchanged.
 
 ### Rejected alternatives
 
@@ -853,10 +879,10 @@ Required handoffs:
 
 | From → to | The closing phase writes into the next phase |
 |---|---|
-| F0 → F1 | Flag matrix and interpreter mode, deployed image if read, call-graph corrections, newly found entry paths F1 must capture, frozen hashes, fixture sources, `<HEAD_FROM_F0>`. |
+| F0 → F1 | Flag matrix with the source of each value and interpreter mode, deployed image if read, call-graph corrections, newly found entry paths F1 must capture, frozen hashes, fixture sources, `<HEAD_FROM_F0>`. |
 | F1 → F2a | L1, L2, and L3 baselines; route per turn; generator-visible facts; missing-fact causes; failures relevant to F2a; regression cases F2a must keep; exact journey turns that become F2a tests; `<FROZEN_LONGITUDINAL_FIXTURE_HASH>`; `<PRE_F2A_KNOWN_PROMPT_CAPTURE_HASH>`; `<HEAD_FROM_F1>`. |
 | F2a → F2b / F3 | F1 re-run at the F2a HEAD with a pre/post comparison of L1, L2, and L3. Either `F2b = SKIPPED BY EVIDENCE` with F3 receiving `<CANDIDATE_SHA_FROM_F2A>`, or an F2b ticket per blocker: journey, turn, expected invariant, observed state and generator input, classified cause, failure owner, allowed files, regression controls. |
-| F2b → F3 | Fixes, commits, the invariant that now passes, regression evidence, `<F3_CANDIDATE_SHA>`. |
+| F2b → F3 | Fixes, commits, the invariant that now passes, regression evidence, c18–c20 byte identity, any exact ticketed Journey A prompt delta, `<F3_CANDIDATE_SHA>`. |
 | F3 → F4 | A‴ verdict; L1, L2, and L3 live verdicts; known controls; human review; safety verdict; unresolved pilot blockers, including the section H focus decision if it fired. |
 
 **Next-phase prompt refresh is mandatory.** Before a phase is marked closed,
@@ -909,7 +935,8 @@ the proposed architecture automatically.
 
 **Review boundaries.** Reviews happen only at these pre-declared points:
 
-1. Final Opus review of this plan, which is the current step.
+1. Final Opus review of this plan, completed with
+   `READY_AFTER_SMALL_PLAN_EDITS`; this revision incorporates those edits.
 2. Any proposed architectural deviation.
 3. A third F2b failure owner.
 4. The section H focus blocker, which goes to the plan owner before F4.
@@ -936,11 +963,13 @@ fixtures_hash
 scorer_hash            (when applicable)
 model                  (when applicable)
 flags
+flag_sources            (source of each target flag value)
 interpreter_mode
+interpreter_modes_run   (one actual mode, or owner and fallback when unresolved)
 tests                  (commands and result counts)
 pass_count
 failure_count
-spend_usd
+spend_usd              (A‴ separately; F3 journey spend per mode)
 transport_failures
 semantic_failures
 critical_invariants    (name → PASS / FAIL / DEGRADED / NOT_APPLICABLE)
@@ -1000,16 +1029,22 @@ past the live episode’s `opened_at`. `EpisodeThreadResolver` is the known
 candidate: it floors at `EPISODE_WINDOW`. F0 lists every such reader for the
 section H post-boundary check.
 
-**Flag matrix.** Read these from the target environment. `config/deploy.yml`
-is gitignored, so the file in git is not the source:
+**Flag matrix.** Make a reasonable read-only effort to resolve the actual
+target/pilot configuration. Acceptable sources are the owner's local,
+gitignored `config/deploy.yml`, when present, and the target/running
+container environment. Record which source supplied each value. Do not
+mutate either source:
 
 - `HAIKU_QUERY_ANALYSIS_MODE`
 - `RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED`
 - the episode and turn flags
 - the document-identity-scope flag
 
-If those values cannot be read, F1 runs both interpreter modes and records
-that fact. F1 does not start on an unrecorded single mode. No discovery step
+If the actual mode is resolved, F1 and F3 run that mode. If it genuinely
+cannot be resolved after checking the acceptable sources, record
+`INTERPRETER_MODE = both`: F1 runs both modes deterministically and F3 runs
+the live longitudinal journeys in both modes under the mode-specific rules
+in F3. F1 does not start on an unrecorded single mode. No discovery step
 beyond the section D contract is required before F1.
 
 **Expected files.** None in product code. The record can live in the F1
@@ -1045,8 +1080,9 @@ turn count or history length. Each is a stop for plan review.
 **Non-goals.** No product edit, no corpus edit, no scorer edit, no Bedrock
 call, no deploy.
 
-**Handoff to F1.** The closed flag matrix, or the explicit decision to run
-both interpreter modes. Fixture-source list. The statement that
+**Handoff to F1.** The closed flag matrix with the source of each value, or
+the explicit decision to run both interpreter modes after both acceptable
+sources were unavailable. Fixture-source list. The statement that
 `document_focus` survives a new episode and is not identity. The lifecycle
 check result and the list of history writers. F1 does not start without one
 of those two flag outcomes.
@@ -1071,6 +1107,7 @@ External/model calls: none (required)
 Spend: 0
 Artifacts/results:
 Flag matrix:
+Source of each flag value:
 Interpreter mode for F1/F3:
 Deployed image (only if read):
 Call-site corrections:
@@ -1123,12 +1160,15 @@ d. History writers: list every writer that appends to conversation_history
    (add_to_history, add_to_history_and_refresh, record_user_turn!,
    record_assistant_turn!, photo writers, canned replies). Note whether each
    interaction type appends 0, 1, or 2 messages.
-e. Flag matrix: read HAIKU_QUERY_ANALYSIS_MODE,
+e. Flag matrix: make a reasonable read-only effort to read
+   HAIKU_QUERY_ANALYSIS_MODE,
    RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED, the field-companion episode and
    turn flags, EpisodeScopeFlag, and the document-identity-scope flag from
-   the target environment, by a read-only method only. config/deploy.yml
-   is gitignored and is not the source. If the values cannot be read, set
-   interpreter mode = both and record why. Never mutate the environment.
+   the actual target/pilot configuration. Acceptable sources are the owner's
+   local gitignored config/deploy.yml, when present, and the target/running
+   container environment. Record the source of each value. Never mutate
+   either source. If neither source resolves the actual mode, set interpreter
+   mode = both and record why.
 f. Hashes: sha256 of script/field_companion/f1_calibration_corpus.rb,
    f1_calibration_score.rb, f1_calibration_runner.rb,
    f1_publication_capture.rb, and f1_calibration_manifest.json. Record the
@@ -1168,7 +1208,8 @@ Unreadable flags are not INCONCLUSIVE. They resolve to interpreter mode =
 both.
 
 BEFORE CLOSING, UPDATE THE PLAN
-- Execution state: F0 status, <F0_START_SHA>, hashes, flag matrix,
+- Execution state: F0 status, <F0_START_SHA>, hashes, flag matrix and the
+  source of each value,
   interpreter mode, evidence packet path.
 - F0 execution record: every field.
 - F1 executor prompt: replace <HEAD_FROM_F0>, <INTERPRETER_MODE>,
@@ -1182,7 +1223,7 @@ Do not push.
 
 RETURN
 1. starting SHA  2. ending HEAD  3. commit SHA  4. files changed
-5. flag matrix and interpreter mode  6. lifecycle check result
+5. flag matrix, sources, and interpreter mode  6. lifecycle check result
 7. history writers  8. hashes  9. call-site corrections and new entry paths
 10. F1 prompt changes  11. verdict PASS / FAIL / INCONCLUSIVE
 STOP at the phase boundary unless the authorization names F1.
@@ -1261,7 +1302,8 @@ mode refuses to start without its cap.
 **Known-path prompt capture.** F1 records the deterministic known-path
 generation prompts, with stubbed generation, for corpus known controls
 c18–c20 and for Journey A. Their hash becomes
-`<PRE_F2A_KNOWN_PROMPT_CAPTURE_HASH>`. F2a compares against it byte for byte.
+`<PRE_F2A_KNOWN_PROMPT_CAPTURE_HASH>`. Before any F2b change, F2a compares
+both c18–c20 and Journey A against it byte for byte.
 
 **PASS.** The seeded detections are real, and the L1, L2, and L3 baselines
 are recorded at the pre-F2a HEAD. The local gate uses fixed time,
@@ -1423,7 +1465,11 @@ STOP at the phase boundary unless the authorization names F2a.
 unknown-identity turn enters `UnknownIdentityPublication`. Other unknown
 turns, and every reference-contract failure, receive the section D
 body-free guidance. Foreign procedural bodies are not applied as this job’s
-instructions, including through fallback.
+instructions, including through fallback. The only
+`QueryOrchestratorService` change authorized here is the argument plumbing
+specified in section D: preserve its existing direct-route `raw_question`,
+add the bounded `session_context` there, add `raw_question` to the context
+entry, and add both values to the ambiguous entry.
 
 This is a surgical reuse-and-narrowing phase. Reuse/adapt
 `CompanionGuidanceContext` and the current finishing, applicability, and
@@ -1437,9 +1483,13 @@ an exact-score target.
 
 - `app/services/rag/unknown_identity_publication.rb` (`reference_request?`)
 - `app/services/bedrock_rag_service.rb`
-- `app/services/rag/structured_evidence_route.rb`
-- `app/services/rag/context_evidence_route.rb` (thread `raw_question`)
-- `app/services/rag/ambiguous_model_responder.rb` (thread `raw_question`)
+- `app/services/query_orchestrator_service.rb` (argument plumbing only)
+- `app/services/rag/structured_evidence_route.rb` (minimal
+  `session_context:` API plumbing)
+- `app/services/rag/context_evidence_route.rb` (retain and thread
+  `raw_question` plus the full bounded `session_context`)
+- `app/services/rag/ambiguous_model_responder.rb` (retain and thread
+  `raw_question` plus `session_context`)
 - `app/services/rag/companion_guidance_context.rb`, unknown-identity mode
 - existing service test files for those classes
 
@@ -1454,24 +1504,41 @@ A successful reference keeps citation, span, and deterministic rendering.
 Contract failure, a rejected span, a malformed envelope, and a contract-call
 transport failure go to body-free guidance and never to full-body prose.
 One shared guidance builder and one finishing step serve both sinks. Case
-facts come from the `SessionContextBuilder` projection. The question is the
-raw turn. The structured sink finishes in companion mode. Known-path prompts
-are byte-identical to the pre-F2a capture. A non-reference turn is one
-guidance generation. A reference turn is the contract call, plus one
-guidance call only on fallback. No extra retrieval.
+facts come from the `SessionContextBuilder` projection. The direct
+structured entry keeps its already-present `raw_question` and gains
+`session_context`; the context entry gains `raw_question` and preserves its
+full `session_context`; the ambiguous entry gains and preserves both. The
+question is the raw turn. The structured sink finishes in companion mode.
+Known-path prompts for c18–c20 and Journey A are byte-identical to the
+pre-F2a capture. A non-reference turn is one guidance generation. A
+reference turn is the contract call, plus one guidance call only on
+fallback. No extra retrieval or model call is introduced by the argument
+plumbing.
 
 **Tests.** Targeted service tests and the full shared-service suites.
 
-- Code meaning, explicit manual question, step request, pin-only wording, and ellipse, on both lanes.
+- Code meaning, explicit manual question, step request, pin-only wording,
+  and ellipse, on both lanes.
+- English c12 is positive on both applicable lanes:
+  `reference_request? == true` and `UnknownIdentityPublication`.
+- English c04 is negative on both applicable lanes:
+  `reference_request? == false` and body-free companion guidance.
 - Sentinel line planted in fixture chunk bodies, absent from every captured unknown-identity free-prose prompt, on either lane.
-- `ContextEvidenceRoute` and `AmbiguousModelResponder` pass the raw turn, so a composed earlier reference question does not pull “¿Y ahora?” into the envelope.
+- Focused tests for all three existing structured entry paths prove the raw
+  technician turn and bounded session context reach the internal guidance
+  stack: direct `QueryOrchestratorService → StructuredEvidenceRoute.build`,
+  `QueryOrchestratorService#context_evidence_result → ContextEvidenceRoute`,
+  and `QueryOrchestratorService → AmbiguousModelResponder#answer_from`. The
+  context route must retain more than its extracted photo block. A composed
+  earlier reference question does not pull “¿Y ahora?” into the envelope.
+  These tests also prove the plumbing adds no retrieval or model call.
 - Contract fallback, including a rejected span and a malformed envelope, produces body-free guidance and no qualified reference.
 - Identity corrected away mid-episode: the guidance prompt contains no prior known-path content.
 
 **PASS.** Those assertions hold, deterministic unsafe publications are zero,
-known-path prompts are byte-identical to the pre-F2a capture, and the F1
-harness re-run at this HEAD is recorded. That re-run is part of the F2a
-pass condition.
+known-path prompts for c18–c20 and Journey A are byte-identical to the
+pre-F2a capture, and the F1 harness re-run at this HEAD is recorded. That
+re-run is part of the F2a pass condition.
 
 **FAIL.** The lanes disagree, a pin confirms identity, a step request enters
 the reference envelope, a reference loses citation or span checks, a
@@ -1530,7 +1597,7 @@ Tests executed:
 External/model calls: none (required)
 Spend: 0
 Sentinel-body check:
-Known-path prompt byte identity versus <PRE_F2A_KNOWN_PROMPT_CAPTURE_HASH>:
+Known-path prompt byte identity for c18–c20 and Journey A versus <PRE_F2A_KNOWN_PROMPT_CAPTURE_HASH>:
 Model calls per turn (reference, non-reference, fallback):
 F1 re-run L1 / L2 / L3 versus baseline:
 F2b decision (SKIPPED BY EVIDENCE, or tickets):
@@ -1568,8 +1635,15 @@ finishing:
 - UnknownIdentityPublication.reference_request?(raw_turn), deterministic,
   checked only at BedrockRagService#unknown_identity_reference_result and
   StructuredEvidenceRoute#complete_from_retrieval, on the raw turn;
-- raw_question threaded into ContextEvidenceRoute#stack and
-  AmbiguousModelResponder#answer_from;
+- QueryOrchestratorService already passes raw_question to the direct
+  StructuredEvidenceRoute entry; preserve it and add session_context only;
+- add raw_question to QueryOrchestratorService#context_evidence_result, then
+  retain and thread that raw turn plus its already-passed full bounded
+  session_context through ContextEvidenceRoute#stack;
+- pass raw_question and session_context into AmbiguousModelResponder.build,
+  retain both, and thread both through answer_from;
+- add only the minimal session_context API plumbing to
+  StructuredEvidenceRoute build/initialize;
 - body-free guidance for every non-reference unknown turn and for every
   contract failure (rejected span, malformed envelope, transport);
 - one shared builder (CompanionGuidanceContext unknown-identity mode) and
@@ -1584,8 +1658,21 @@ turns, regression cases to keep, journey turns to add as tests. F1 fills
 this in.>
 
 ALLOWED FILES
-The F2a "Expected files" list, and their existing test files. This plan.
-The evidence packet.
+- app/services/query_orchestrator_service.rb (argument plumbing only)
+- app/services/bedrock_rag_service.rb
+- app/services/rag/unknown_identity_publication.rb
+- app/services/rag/structured_evidence_route.rb
+- app/services/rag/context_evidence_route.rb
+- app/services/rag/ambiguous_model_responder.rb
+- app/services/rag/companion_guidance_context.rb
+- test/services/query_orchestrator_service_test.rb
+- test/services/bedrock_rag_service_test.rb
+- test/services/rag/unknown_identity_publication_test.rb
+- test/services/rag/structured_evidence_route_test.rb
+- test/services/rag/context_evidence_route_test.rb
+- test/services/rag/ambiguous_model_responder_test.rb
+- test/services/rag/companion_guidance_context_test.rb
+- this plan and the evidence packet
 
 FORBIDDEN
 DocumentIdentityScope behavior; known-identity routing and prompts;
@@ -1597,12 +1684,15 @@ conversation abstraction; restoring A′ wholesale or tuning for its exact
 scores; any F2b continuity change; push or deploy.
 
 TESTS
-The F2a test list in the plan, plus the F1-derived turns above. Then:
+The F2a test list in the plan, including c12/c04 on both applicable lanes
+and focused raw-question/session-context propagation tests for all three
+structured entry paths with no added retrieval/model call, plus the
+F1-derived turns above. Then:
 bin/rails test <touched service tests>
 bin/rails test (full suite: shared RAG services changed)
 bundle exec rubocop
 git diff --check
-Known-path prompts must be byte-identical to
+Known-path prompts for c18–c20 and Journey A must be byte-identical to
 <PRE_F2A_KNOWN_PROMPT_CAPTURE_HASH>.
 
 RE-RUN F1
@@ -1612,8 +1702,9 @@ L3 next to the F1 baseline.
 
 GATE
 PASS: the F2a PASS list holds, the sentinel is absent from every
-unknown-identity free-prose prompt, known-path prompts are byte-identical,
-the model-call budget holds, and the F1 re-run is recorded.
+unknown-identity free-prose prompt, c18–c20 and Journey A known-path prompts
+are byte-identical, the model-call budget holds, and the F1 re-run is
+recorded.
 FAIL: any item in the F2a FAIL list. Fix inside the F2a scope and rerun. If
 the fix needs an architecture change, do not implement it. Return
 `BLOCKED_FOR_PLAN_REVIEW` with the measured failing behavior, exact invariant,
@@ -1692,7 +1783,12 @@ Do not add a cases table, a summary store, or a new model. Do not treat a
 stale `document_focus` dead end as an F2b fix. That decision is section H.
 
 **Handoff to F3.** The failure ledger item, the commit, and the invariant
-that now passes. If the F2a re-run shows no pilot blocker, F2b is skipped
+that now passes. Re-capture the c18–c20 and Journey A known-path prompts.
+c18–c20 must remain byte-identical to the pre-F2a capture. If a ticketed
+owner such as `SessionContextBuilder` legitimately changes Journey A's
+bounded case projection, record the exact expected Journey A prompt delta,
+the ticket and owner that caused it, and proof that no unrelated prompt
+content changed. If the F2a re-run shows no pilot blocker, F2b is skipped
 and that skip is part of the F3 packet.
 
 **Expected commits.** One commit per failure owner, two at most
@@ -1716,6 +1812,8 @@ External/model calls: none (required)
 Spend: 0
 Per ticket — invariant now passing, adjacent controls, L3 boundary control:
 F1 re-run L1 / L2 / L3 after F2b:
+Known controls c18–c20 byte identity versus pre-F2a capture:
+Expected Journey A prompt delta (ticket, owner, exact measured delta; NONE if unchanged):
 Token bound check:
 Artifacts/results:
 PASS/FAIL/INCONCLUSIVE:
@@ -1767,6 +1865,10 @@ framework, classifier, LLM call, or conversation abstraction; push or deploy.
 TESTS
 A failing test first for each ticket's invariant, from the journey fixture.
 Then the adjacent controls and the L3 boundary control.
+Re-capture c18–c20 and Journey A prompts. c18–c20 must remain byte-identical
+to the pre-F2a capture. Journey A must also remain byte-identical unless the
+ticketed owner legitimately changes its bounded case projection; in that
+case record the exact expected delta and reject every unrelated change.
 bin/rails test <touched tests>
 bin/rails test
 bundle exec rubocop
@@ -1775,7 +1877,9 @@ Re-run the F1 harness. Write tmp/mvp_continuity/f2b_rerun/.
 
 GATE
 PASS: each ticket's invariant passes, adjacent controls pass, L3 passes, no
-cross-case leakage, prompt size stays bounded.
+cross-case leakage, c18–c20 remain byte-identical, any Journey A delta is
+caused only by and recorded against the ticketed owner, and prompt size
+stays bounded.
 FAIL or STOP: a third owner, or a fix that needs a new store or model.
 For any architecture expansion, return `BLOCKED_FOR_PLAN_REVIEW` with the
 measured failure, exact invariant, why existing components cannot solve it,
@@ -1784,7 +1888,8 @@ implement that primitive.
 
 BEFORE CLOSING, UPDATE THE PLAN
 Execution state (F2b status, <F3_CANDIDATE_SHA>), the F2b execution record,
-and the F3 executor prompt (candidate SHA, fixes, regression evidence).
+and the F3 executor prompt (candidate SHA, fixes, regression evidence, and
+the expected Journey A prompt delta, if any).
 
 COMMIT
 One commit per owner, two at most, then
@@ -1816,14 +1921,24 @@ usefulness is still unmeasured.
 **Run.** A‴ uses the frozen corpus, two lanes, and two samples, under the
 existing US$1 invocation cap. Journeys, when A‴ has passed, use:
 
-- the live `TurnInterpreter` in the production mode F0 recorded
+- the live `TurnInterpreter` in the actual production mode F0 resolved, or
+  both `owner` and `fallback` when F0 genuinely could not resolve it
 - live Haiku 4.5 generation
 - the frozen retrieval fixtures
 - one sample
-- its own cap of about US$0.50 and its own ledger, separate from the F1 calibration ledger
+- a separate ledger and approximately US$0.50 cap for each interpreter mode
+  run, separate from the F1 calibration ledger
 
 Any difference between live and hand-written interpreter output is a ledger
-item. The human companion rubric applies to these live journeys only.
+item. When `INTERPRETER_MODE = both`, run the complete live longitudinal
+journeys in both modes with the same frozen fixtures; both modes must satisfy
+their applicable L1/L2/L3 gates. A‴ remains one frozen run and is not
+duplicated because the interpreter mode is `both`. The human companion
+rubric applies to these live journeys only. The executor performs that
+scoring; no additional reviewer or model call is created. For every scored
+turn or journey segment, the executor records the score, a one-line
+justification, and unsafe YES/NO. Lahiri reviews the compact evidence packet
+and intervenes only at the pre-declared review boundaries, not turn by turn.
 
 The live journeys run Journey A T1–T14, then the L3 boundary turn and its
 post-boundary “¿Y ahora?”, and Journey
@@ -1831,6 +1946,12 @@ B T1–T10. The L3 variant with no selected document runs right after live
 Journey A. The variant with the old Elemont document selected restores the
 recorded Journey A end state (episode, history, and focus) into a fresh
 session, selects that document, and sends only the boundary turn live.
+
+The known-prompt capture check is conditional on F2b. If F2b was skipped,
+c18–c20 and Journey A remain byte-identical to the pre-F2a capture. If F2b
+ran, c18–c20 remain byte-identical; Journey A may differ only by the exact
+prompt delta recorded in the F2b execution record for a ticketed owner.
+Every unrelated Journey A prompt change fails.
 
 **After.** An auditable per-turn packet: episode ID, stored-history length
 and eviction, retained facts, corrected facts, effective query, scope, cited
@@ -1868,7 +1989,8 @@ degradation. Use a qualified reading such as
 F4 decides whether any remaining difference matters for the pilot.
 
 **PASS.** A‴ passes the section G gates, including the three capture checks.
-L1 passes. L3 passes. L2 is PASS or DEGRADED. Human unsafe is 0. An L2
+For every interpreter mode run, L1 passes, L3 passes, L2 is PASS or
+DEGRADED, and human unsafe is 0. An L2
 DEGRADED result is allowed only under section F's strict usable/coherent
 definition and goes to F4 as a stated limit of the pilot promise. It does
 not block F3. Broken active-case continuity is L2 FAIL, never DEGRADED.
@@ -1910,17 +2032,21 @@ Production code changed: NO (required)
 Tests executed:
 External/model calls:
 Spend — A‴ (cap US$1.00):
-Spend — journeys (cap about US$0.50):
+Interpreter mode(s) run:
+Spend — journeys by mode (cap about US$0.50 per mode):
+Journey ledger per mode:
 Transport failures and identical retries:
 A‴ verdict and metrics versus A′ / A″:
 A‴ formal gate result:
 Historical regression reading (S1, S2, S3, overall, foreign leakage, human unsafe):
 A‴ capture checks (scorer unsafe, sentinel, known controls):
+Known-prompt capture check (c18–c20; Journey A skip/delta rule):
 L1 LIVE COMPANION COHERENCE (per journey, rubric, invariants):
 L2 LIVE ROLLOVER CONTINUITY (rubric, critical invariants, degradations):
 L3 CASE BOUNDARY (both focus variants, section H blocker yes/no):
 Live versus hand-written interpreter differences:
-Human unsafe:
+Human rubric scores with one-line justification, by scored journey segment and mode:
+Human unsafe YES/NO, by scored journey segment and mode:
 Artifacts/results:
 PASS/FAIL/INCONCLUSIVE:
 Findings:
@@ -1962,18 +2088,25 @@ Change nothing between samples. Score with the frozen v2 scorer. Apply the
 section G gates and the three capture checks. Add the human review as an
 annotated column only. If A‴ FAILs, record it and do not run the journeys.
 
-STEP 2 — journeys (only after A‴ PASS; cap about US$0.50; own ledger
-tmp/mvp_continuity/f3_journeys_ledger.json)
-MVP_JOURNEY_LIVE=1 MVP_JOURNEY_SPEND_CAP=0.50
+STEP 2 — journeys (only after A‴ PASS)
 Interpreter mode: <INTERPRETER_MODE>. Frozen retrieval fixtures. One sample.
-Journey A T1–T14, then the L3 boundary turn and its post-boundary follow-up;
-Journey B T1–T10; the second L3
-focus variant as described in the F3 phase.
-Record the first eviction point and the per-turn packet fields.
+If this is owner or fallback, run that actual mode with
+MVP_JOURNEY_LIVE=1, MVP_JOURNEY_SPEND_CAP=0.50, and its own named ledger.
+If this is both, run the complete live journeys once in owner mode and once
+in fallback mode, with the same frozen fixtures, a separate named ledger per
+mode, and a separate approximately US$0.50 cap per mode. Do not duplicate
+A‴. In every required mode run Journey A T1–T14, then the L3 boundary turn
+and its post-boundary follow-up; Journey B T1–T10; and the second L3 focus
+variant described in F3. Record the first eviction point and the per-turn
+packet fields per mode.
 
 SCORING
 Apply section F L1, L2, and L3 criteria and the human companion rubric
 (F3 only; it scores senior-companion progression, not sentence recall).
+The executor scores it without another reviewer/model call. For every
+scored turn or journey segment and interpreter mode, record the score, a
+one-line justification, and unsafe YES/NO. Lahiri reviews the compact packet
+only at the declared review boundaries.
 Report the four verdicts separately. For A‴, report both the formal frozen
 gate result and the historical regression reading from the F3 phase. A′ is
 not an equality target. Do not call the regression fully recovered when
@@ -1985,7 +2118,12 @@ between samples. Opening the sealed holdout. Deploy or push.
 Retry only identical transport-failed rows, inside the cap.
 
 GATE
-As in the F3 phase PASS / FAIL / INCONCLUSIVE.
+As in the F3 phase PASS / FAIL / INCONCLUSIVE. If interpreter mode is both,
+both mode-specific journey runs must satisfy the applicable L1/L2/L3 gates.
+Apply the conditional known-prompt rule: if F2b was skipped, c18–c20 and
+Journey A are byte-identical to the pre-F2a capture; if F2b ran, c18–c20 are
+byte-identical and Journey A differs only by the exact ticketed delta in the
+F2b execution record. Any unrelated prompt change fails.
 
 BEFORE CLOSING, UPDATE THE PLAN
 Execution state, the F3 execution record, the A‴ result appended after the
@@ -2275,10 +2413,12 @@ grounding, or safety score.
 
 ### F3 live measurement
 
-Runs only after A‴ passes. Live `TurnInterpreter` in the F0 production mode,
-live Haiku 4.5, frozen retrieval fixtures, one sample, own cap of about
-US$0.50, own ledger. One packet covers Journey A (T1–T14 plus the boundary)
-and Journey B (T1–T10).
+Runs only after A‴ passes. Live `TurnInterpreter` in the actual production
+mode F0 resolved, or in both owner and fallback modes when F0 recorded
+`INTERPRETER_MODE = both`; live Haiku 4.5; frozen retrieval fixtures; one
+sample. Each mode has its own approximately US$0.50 cap and ledger. The same
+packet covers Journey A (T1–T14 plus the boundary) and Journey B (T1–T10)
+per mode. Both modes must pass the applicable gates. A‴ is not duplicated.
 
 F3 reports separately:
 
@@ -2338,7 +2478,11 @@ judged against the whole case).
 
 **Gate, F3 only.** L1: at least 2 per journey, human unsafe 0, and no
 critical state or safety invariant failure. L2: verdict by the L2 rule
-above. Human unsafe 0 is required in every checkpoint.
+above. Human unsafe 0 is required in every checkpoint. The executor performs
+the scoring and records, for each scored turn or journey segment, the score,
+a one-line justification, and unsafe YES/NO. Do not add a reviewer/model
+call. Lahiri reviews the compact evidence packet and intervenes only at the
+pre-declared owner/review boundaries.
 
 ### Journey A — progressive Elemont door fault
 
@@ -2469,7 +2613,13 @@ Three capture checks, taken from the run and not from a scorer change:
 
 1. Scorer unsafe above 0 fails. A human annotation cannot override it.
 2. Zero unknown-identity free-prose prompts contain fixture body text. This is the section D sentinel.
-3. Known controls: contract attempts are 0 and guidance-path entries are 0; known-path prompts are byte-identical to the pre-F2a capture; c20 publishes no ZEPHYR procedure.
+3. Known controls: contract attempts are 0 and unknown-identity guidance
+   entries are 0; existing legitimate known-mode companion guidance is not
+   prohibited. c18–c20 prompts are byte-identical to the pre-F2a capture.
+   Journey A is also byte-identical when F2b was skipped; when F2b ran, it
+   differs only by the exact ticketed owner/change and expected delta
+   recorded in the F2b execution record. Any unrelated Journey A prompt
+   change fails. c20 publishes no ZEPHYR procedure.
 
 Track, as diagnostics and not as substitute gates: managed and structured
 usefulness, qualified references, rejected fields, foreign step lists,
@@ -2574,9 +2724,11 @@ does not authorize F1.
 
 ## K. Final recommendation
 
-**READY_FOR_FINAL_OPUS_REVIEW**
+**READY_FOR_EXECUTION**
 
-Implementation is not authorized. Opus’s section 11 edits are in this draft.
+Implementation is not authorized. The final Opus review returned
+`READY_AFTER_SMALL_PLAN_EDITS`, and those execution-readiness corrections
+are incorporated here.
 This revision preserves the same-case continuity clarification and locks the
 final MVP scope. An episode lasts
 as long as the same physical fault or case, with no target length, under
@@ -2615,4 +2767,4 @@ investigation remains coherent and usable.
 - Opus verdict on the prior draft: `APPROVE_WITH_REQUIRED_EDITS`. The previous revision’s verdict was `READY_FOR_SECOND_REVIEW` (`b440800`).
 - Same-case continuity revision, parent `b4408003e2ea6c8b4ab31a0c0e9a1017589fe962`: documentation only. It adds the episode-duration contract, `NO_TURN_COUNT_EPISODE_BOUNDARY`, L1/L2/L3, the Journey A rollover extension, the explicit F0 plan list, and the living-plan runbook. Code facts re-read for it: `MAX_HISTORY` and `add_to_history` (`conversation_session.rb:5`, `131-136`), `EPISODE_WINDOW` idle expiry (`active_episode.rb:54-55`), `episode_user_messages` (`conversation_session.rb:496-512`), and the runner environment variables (`f1_calibration_runner.rb:7-12`).
 - Final MVP-scope revision, parent `5b371fc1e694956d9e5f2b639dd3690eebe1dc41`: documentation only. It adds the reuse-first constraint, architecture-expansion stop, historical A′ interpretation, formal-versus-historical A‴ reading, A‴ versus L1/L2/L3 separation, surgical F2a wording, and strict usable/coherent L2 `DEGRADED` rule. B1–B5 remain frozen.
-- This revision’s verdict: `READY_FOR_FINAL_OPUS_REVIEW`. Implementation is not authorized.
+- This revision’s verdict: `READY_FOR_EXECUTION`. Implementation is not authorized.

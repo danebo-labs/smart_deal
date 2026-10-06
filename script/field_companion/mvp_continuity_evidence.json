@@ -512,5 +512,43 @@
     "f3b_candidate_sha": null,
     "f3b": "not authorized",
     "f4": "not authorized"
+  },
+  "F3_post_repair": {
+    "phase": "F3",
+    "status": "FAIL",
+    "authorization": "explicit Lahiri authorization, 2026-10-06, one surgical post-F3 repair. Starting HEAD 6e35af683d20487b7831fff803c617996eee04d8.",
+    "starting_sha": "6e35af683d20487b7831fff803c617996eee04d8",
+    "repair_sha": "36d341335d2ecabba424b54b3d3dda53938b0e35",
+    "production_owner": "Rag::CompanionGuidanceContext#unknown_instruction",
+    "document_identity_scope_modified": false,
+    "unknown_identity_publication_modified": false,
+    "additional_production_owner_required": false,
+    "model": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "preflight": "one Haiku 4.5 call returned pong. Account 4 danebo-legacy.",
+    "spend_usd_atriple": 0.073271,
+    "spend_cap_usd_atriple": 1.0,
+    "ledger": "tmp/f1cal/atriple_repair_ledger.json",
+    "formal_gate": "FAIL",
+    "metrics": {
+      "useful": "27/68",
+      "unsafe": "0/68",
+      "guard": "1/68",
+      "s1": "8/12",
+      "s2": "12/12",
+      "s3": "7/44",
+      "foreign_step_lists": 0
+    },
+    "sample_1": { "useful": "14/34", "s1": "4/6", "s2": "6/6", "s3": "4/22", "guard": 0, "unsafe": 0, "usd": 0.028476 },
+    "sample_2": { "useful": "13/34", "s1": "4/6", "s2": "6/6", "s3": "3/22", "guard": 1, "unsafe": 0, "usd": 0.028771 },
+    "known_controls_usd": 0.016024,
+    "known_controls_hash": "54a0d0693712fe7ccb707c13b15779f6b55cf0de914e80832e5b7b12c8d85962",
+    "journey_a_prompt_hash": "eaad122531e41f92f707e5255b3cd6572829e9c5dfde6e7674613ce112d7f387",
+    "journey_a_prompt_hash_note": "Previous hash a364fadf921e13ed69d4f76250fdeeeb5f1c5127332344bcb1d319f392450a7a is restored by substituting the previous unknown instruction. Delta is that instruction only.",
+    "deterministic_gate": { "A_L1": "PASS", "A_L2": "PASS", "A_L3": "PASS", "B_L1": "PASS" },
+    "prompt_only_hypothesis": "This wording is not sufficient. The nameplate clause fired on situation and procedure turns. A different production owner is not evidenced.",
+    "guard_replacement": "One row, c04 structured sample 2. Raw asked to listen and also to press the down call button. Published is the withheld template.",
+    "live_journeys": "NOT RUN",
+    "f3b": "not authorized",
+    "f4": "not authorized"
   }
 }

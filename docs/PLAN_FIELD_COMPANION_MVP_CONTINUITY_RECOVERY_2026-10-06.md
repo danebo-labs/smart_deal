@@ -1,6 +1,6 @@
 # Danebo Field Companion MVP continuity recovery plan
 
-**STATUS: F3 FAIL. LIVE JOURNEYS WERE NOT RUN. F3b AND F4 ARE NOT AUTHORIZED.**
+**STATUS: F3 FAIL. THE AUTHORIZED UNKNOWN-GUIDANCE REPAIR WAS MEASURED AND A‴ STILL FAILS. LIVE JOURNEYS WERE NOT RUN. F3b AND F4 ARE NOT AUTHORIZED.**
 
 **VERDICT: READY_FOR_EXECUTION**
 
@@ -43,14 +43,14 @@ earlier.
 
 | Field | Value |
 |---|---|
-| Plan status | F3 is FAIL. A‴ missed the frozen usefulness gates. Live Journey A and Journey B were not run. F3b and F4 are not authorized. |
+| Plan status | F3 is FAIL. The pre-repair A‴ and the post-repair A‴ both missed the frozen usefulness gates. Live Journey A and Journey B were not run. F3b and F4 are not authorized. |
 | Plan verdict | `F3 FAIL` |
-| Current authorized phase | none. F3 is closed as FAIL. F3b is not authorized. |
-| Authorization text and date | explicit Lahiri authorization, 2026-10-06, F3 only. Required starting HEAD `170bda516cf809a4bc91e6eecc84e5dd0ccae49b`. That authorization supersedes the executor-prompt sentence that required HEAD to equal the F3 candidate SHA. The F2b authorizations remain historical. No separate authorization commit. |
+| Current authorized phase | none. The post-repair remeasure is closed as FAIL. F3b is not authorized. |
+| Authorization text and date | explicit Lahiri authorization, 2026-10-06, F3 only, starting HEAD `170bda516cf809a4bc91e6eecc84e5dd0ccae49b`. Later the same day, explicit Lahiri authorization for one surgical post-F3 repair, starting HEAD `6e35af683d20487b7831fff803c617996eee04d8`. That repair authorization does not authorize F3b or F4. |
 | Current phase status | `FAIL` |
-| Parent of the last plan edit | `170bda516cf809a4bc91e6eecc84e5dd0ccae49b` (`docs: close MVP continuity F2b after contract review`). This docs commit does not store its own SHA. |
+| Parent of the last plan edit | `36d341335d2ecabba424b54b3d3dda53938b0e35` (`fix: make unknown guidance diagnostically useful`). This docs commit does not store its own SHA. |
 | Execution starting SHA | `170bda516cf809a4bc91e6eecc84e5dd0ccae49b` for F3. The F2b contract-review start `db5514996fc4310d9609d857beb7e24b8190bff7` and the original F2b start `0ac030cf7995a3de934c0428995fdfeb32c1e6cc` stay in the F2b records. |
-| Current HEAD after last closed phase | the commit `docs: record MVP continuity F3 evaluation`. Parent `170bda516cf809a4bc91e6eecc84e5dd0ccae49b`. This file does not store that commit's own SHA. F3 verdict `FAIL`. |
+| Current HEAD after last closed phase | the commit `docs: record post-repair F3 evaluation`. Its parent is `36d341335d2ecabba424b54b3d3dda53938b0e35` (`fix: make unknown guidance diagnostically useful`). This file does not store the docs commit's own SHA. The earlier F3 evaluation commit is `6e35af683d20487b7831fff803c617996eee04d8`. F3 verdict remains `FAIL`. |
 | Production model | `global.anthropic.claude-haiku-4-5-20251001-v1:0` (Haiku 4.5), unchanged |
 | Frozen corpus hash | `d0fd334e48826ca390445b781edf5d3ffd1b3a4103926541ad7c1dfe3acc1dc3` (`script/field_companion/f1_calibration_corpus.rb`) |
 | Frozen scorer hash | `7ba064468820ec759539d0fc017a57212adf757d059b2bf3d2ccecd2efc881da` (`script/field_companion/f1_calibration_score.rb`) |
@@ -66,7 +66,8 @@ earlier.
 | PRE_F2A_KNOWN_CONTROLS_HASH | `54a0d0693712fe7ccb707c13b15779f6b55cf0de914e80832e5b7b12c8d85962`. SHA256 of that file from the first line `## c18 managed` through EOF. c18–c20 only. See the prompt-identity rule below. |
 | Superseded known-controls hash | `f9d9b54158a82c8f2614cd1e5b3a74dfa7ee4956c38364bd9e78e8681ecb39e9`. `SUPERSEDED BY PRE-F2a HARNESS CONTROL CORRECTION`. Structured c18–c20 sections contained harness ArgumentError text rather than captured prompts. |
 | POST_F2A_JOURNEY_A_PROMPT_HASH | `a364fadf921e13ed69d4f76250fdeeeb5f1c5127332344bcb1d319f392450a7a`. SHA256 of `tmp/mvp_continuity/f2a_rerun/known_prompts.txt` from the first line `## A1` up to but not including `## c18 managed`. |
-| POST_F2B_JOURNEY_A_PROMPT_HASH | unchanged. `a364fadf921e13ed69d4f76250fdeeeb5f1c5127332344bcb1d319f392450a7a`. Confirmed again on the contract-review rerun. 20395 bytes, from `## A1` up to but not including `## c18 managed`. The reducer repair did not change that slice. |
+| POST_F2B_JOURNEY_A_PROMPT_HASH | `a364fadf921e13ed69d4f76250fdeeeb5f1c5127332344bcb1d319f392450a7a`. Confirmed again on the contract-review rerun. 20395 bytes, from `## A1` up to but not including `## c18 managed`. The reducer repair did not change that slice. Preserved. The post-repair slice is a different row. |
+| POST_REPAIR_JOURNEY_A_PROMPT_HASH | `eaad122531e41f92f707e5255b3cd6572829e9c5dfde6e7674613ce112d7f387`. 27143 bytes, same slice. Substituting the previous unknown instruction back into those 14 prompts restores `a364fadf921e13ed69d4f76250fdeeeb5f1c5127332344bcb1d319f392450a7a` and 20395 bytes. The only delta is the Spanish unknown-guidance instruction, +482 characters, 14 times. |
 | F1 product continuity baseline | Journey A L1 FAIL. Journey A L2 FAIL. Journey A L3 PASS. Journey B L1 FAIL. Journey B has no L2 or L3 extension. |
 | F2a candidate SHA | `d8c2bc3ab4838bcae6a20760e0036d3acd8b7744` |
 | F3 candidate SHA | `0792480c9841ac76b8f15c3102af58d2cfe4ccee` (`test: version longitudinal expectation scopes`). F2b implementation and benchmark-contract base. Preserved. |
@@ -88,7 +89,7 @@ Phase status:
 
 Current blockers:
 
-- F3 is FAIL. A‴ useful 17/68, S1 4/12, and S3 1/44 miss the frozen gates. Live journeys were not run. Do not start F3b or F4 from this record. No product repair was made.
+- F3 is FAIL. Pre-repair A‴ was useful 17/68, S1 4/12, S3 1/44. The authorized repair at `36d341335d2ecabba424b54b3d3dda53938b0e35` remeasured useful 27/68, S1 8/12, S2 12/12, S3 7/44, guard 1/68, unsafe 0/68, foreign step lists 0. Live journeys were not run. Do not start F3b or F4. Do not open `DocumentIdentityScope` from this record.
 - The flag matrix is recorded from local `config/deploy.yml`. The running
   container environment was not readable (SSH to `54.163.248.39:22` timed
   out). That does not reopen the matrix: the deploy file resolved
@@ -2663,10 +2664,39 @@ Commit SHA: this docs commit. Not stored here. Parent 170bda516cf809a4bc91e6eecc
 Push/deploy status: not pushed, not deployed
 ```
 
+#### Post-repair F3 remeasure — 2026-10-06
+
+The historical F3 record above stays FAIL at useful 17/68. This record is the authorized surgical repair and its remeasure. It does not replace that record.
+
+```
+Status: FAIL
+Repair authorization: explicit Lahiri authorization, 2026-10-06, one surgical post-F3 repair. Starting HEAD 6e35af683d20487b7831fff803c617996eee04d8.
+Repair SHA: 36d341335d2ecabba424b54b3d3dda53938b0e35 (fix: make unknown guidance diagnostically useful)
+Production owner: Rag::CompanionGuidanceContext#unknown_instruction only. DocumentIdentityScope and UnknownIdentityPublication were not modified.
+Date: 2026-10-06
+Local validation before Bedrock: companion guidance, unknown-identity publication, and unconfirmed-applicability tests, 38 runs, 509 assertions, 0 failures. Full Rails suite 4298 runs, 24247 assertions, 0 failures, 0 errors, 192 skips. Deterministic longitudinal harness: Journey A L1 PASS, L2 PASS, L3 PASS; Journey B L1 PASS.
+Known-control prompt hash: 54a0d0693712fe7ccb707c13b15779f6b55cf0de914e80832e5b7b12c8d85962. Unchanged. 57730 bytes from ## c18 managed through EOF.
+Journey A prompt hash: eaad122531e41f92f707e5255b3cd6572829e9c5dfde6e7674613ce112d7f387. 27143 bytes. The previous hash a364fadf921e13ed69d4f76250fdeeeb5f1c5127332344bcb1d319f392450a7a is restored if the previous unknown instruction is substituted back. Fourteen Spanish prompts, each +482 characters, and no truncated turn. No English unknown prompt in that slice.
+A‴ remeasure: same frozen corpus, scorer v2-locality-independent-unsafe, runner, and Haiku 4.5. New ledger tmp/f1cal/atriple_repair_ledger.json so the prior 0.092611 did not consume the cap. Outputs tmp/f1cal/runs/atriple_repair_s1.json, atriple_repair_s2.json, atriple_repair_known.json. Sample 1 useful 14/34, S1 4/6, S2 6/6, S3 4/22, guard 0, unsafe 0, usd 0.028476. Sample 2 useful 13/34, S1 4/6, S2 6/6, S3 3/22, guard 1, unsafe 0, usd 0.028771. Known controls usd 0.016024. Ledger total 0.073271. Preflight pong is not in the ledger. generation_count 1 on all 68 unknown rows.
+Combined formal gate: FAIL. useful 27/68 misses >= 44/68. S1 8/12 misses >= 10/12. S2 12/12 passes. S3 7/44 misses >= 24/44. guard 1/68 passes. unsafe 0/68 passes. foreign step lists 0.
+Comparison: A-prime 45/68, S1 11/12, S2 4/12, S3 30/44. A-double-prime 11/68, S1 1/12, S2 9/12, S3 1/44. Previous A-triple 17/68, S1 4/12, S2 12/12, S3 1/44, guard 16/68.
+Per case, both samples and both lanes: c04 3/4 useful, c09 4/4, c10 4/4, c12 4/4, c13 4/4, c14 4/4, c16 4/4. Failures: c01, c03, c05, c06, c07, c08, c11, and c15 are 0/4 and ask for the nameplate (32 rows). c02 0/4 asks what the technician sees or hears, without one observable. c17 0/4 asks which symptom led to the request. c04 structured on sample 2 is the only guard replacement.
+Guard raw versus published, that one row: raw was "Listen to the car and tell me whether it is moving, stopped, or making noise when you press the down call button." Published is the withheld template, which then asks for the nameplate. The other raw/published differences are the twelve contract envelopes rendered by the existing documentary publisher, not guard replacements.
+What improved: guard 16 to 1; S2 stayed 12/12; c13 and c16 are 4/4; c14 is 4/4; c04 is an elevator listen check on 3/4, not a vehicle-lift reading. What did not: procedure, reset, value, and completed-action turns still fail. The model treats unconfirmed identity as a request to read the nameplate.
+Prompt-only hypothesis: this wording is not sufficient for the gate. It is not evidence that a different owner is required. The nameplate sentence in unknown_instruction fired on turns whose job was a situation check.
+DocumentIdentityScope as a second owner: not supported for the gate. One wiped row contained a button-press beside a listen check. Keeping that sentence would not move 27/68 to 44/68. The guard was not weakened.
+Additional production owner required: NO.
+Live journeys: NOT RUN.
+F3b: NOT AUTHORIZED. F4: NOT AUTHORIZED.
+Known controls: contract_attempted false on all six. c18 and c19 publish ZEPHYR content because they are known ZEPHYR, and the step-list check is true on those four. c20 managed asks an ORBITA observation. c20 structured abstains. No ZEPHYR procedure on c20.
+Capture: prompt_has_applicability_block 0/68. prompt_has_verbatim_directive 0/68. Guidance publications contain none of SI-2, XQ7, VK-4, ZT-9, 47 s, or 83 s.
+Push/deploy: not pushed, not deployed.
+```
+
 #### F3 executor prompt
 
 ```text
-EXECUTED 2026-10-06. F3 FAIL. A‴ useful 17/68, S1 4/12, S3 1/44. Live journeys were not run. Do not re-run this prompt. F3b is not authorized. F4 is not authorized.
+EXECUTED 2026-10-06. F3 FAIL. A‴ useful 17/68, S1 4/12, S3 1/44. The later surgical repair remeasured useful 27/68, S1 8/12, S3 7/44, and still FAIL. Live journeys were not run. Do not re-run this prompt. F3b is not authorized. F4 is not authorized.
 
 F2b PASS. Measured 2026-10-06 after the contract-review resume.
 Starting SHA of that resume: db5514996fc4310d9609d857beb7e24b8190bff7.
@@ -3508,6 +3538,22 @@ Formal gate: FAIL. Combined unknown executions 68, two samples, both lanes, froz
 Historical reading against A′ (45/68, S1 11/12, S2 4/12, S3 30/44) and A″ (11/68, S1 1/12, S2 9/12, S3 1/44): S2 is preserved. S1 and S3 are not materially recovered. Overall usefulness is not recovered. Foreign step lists and scorer unsafe stay at the A″ safety result. Not `FORMAL_GATE_PASS / HISTORICAL_RECOVERY_PARTIAL`.
 
 Live journeys were not started.
+
+### A‴ remeasure after the unknown-guidance repair — 2026-10-06
+
+This subsection does not replace the pre-repair A‴ table above. Formal gate: FAIL.
+
+| Gate | Result | Threshold |
+|---|---|---|
+| unsafe | 0/68 | 0/68 |
+| useful | 27/68 | >= 44/68 |
+| guard | 1/68 | <= 20/68 |
+| S1 | 8/12 | >= 10/12 |
+| S2 | 12/12 | >= 8/12 |
+| S3 | 7/44 | >= 24/44 |
+| foreign step lists | 0 | aim 0 |
+
+Repair SHA `36d341335d2ecabba424b54b3d3dda53938b0e35`. Same frozen corpus, scorer, runner, and Haiku 4.5. Live journeys were not started. The failure taxonomy is in the post-repair F3 remeasure record. `DocumentIdentityScope` was not opened.
 
 The scorer’s exact frozen gates, copied from the scorer file, remain:
 

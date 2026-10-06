@@ -1,7 +1,8 @@
 # frozen_string_literal: true
 
 # Live F1 calibration runner. Retrieve is stubbed with the frozen fixture.
-# One configured Haiku generation per case. Scoring is FieldCompanion::F1CalibrationScore.
+# Unknown identity now generates through AiProvider#converse. That call is
+# captured separately from AiProvider#query. Scoring is FieldCompanion::F1CalibrationScore.
 #
 #   DOCUMENT_IDENTITY_SCOPE_ENABLED=true BEDROCK_RERANKER_ENABLED=false \
 #     bin/rails runner script/field_companion/f1_calibration_runner.rb
@@ -19,6 +20,7 @@
 STDOUT.sync = true
 
 require_relative "f1_calibration_score"
+require_relative "f1_publication_capture"
 
 Corpus = FieldCompanion::F1CalibrationCorpus
 Score = FieldCompanion::F1CalibrationScore
@@ -100,6 +102,7 @@ retrieve_calls = []
 rag_calls = []
 F1CAL_PROMPTS = []
 F1CAL_MODEL = []
+F1CAL_CONVERSE = []
 jobs = []
 
 BedrockRagService.class_eval do
@@ -122,12 +125,43 @@ AiProvider.prepend(Module.new do
     F1CAL_MODEL << text.to_s
     text
   end
+
+  def converse(params)
+    response = nil
+    error = nil
+    begin
+      response = super
+    rescue StandardError => raised
+      error = raised
+    end
+    F1CAL_CONVERSE << FieldCompanion::F1PublicationCapture.observe(params, response, error: error)
+    raise error if error
+
+    response
+  end
 end)
 
 original_track = TrackBedrockQueryJob.method(:perform_later)
 TrackBedrockQueryJob.define_singleton_method(:perform_later) do |**kwargs|
   jobs << kwargs
   original_track.call(**kwargs)
+end
+
+def contract_summary(rows)
+  rejected = rows.sum { |row|
+    Array(row[:publication_rejected_fields]).count { |field| field.to_s.start_with?("observations[") }
+  }
+  {
+    n: rows.size,
+    attempted: rows.count { |row| row[:contract_attempted] },
+    accepted: rows.count { |row| row[:contract_accepted] },
+    fallback: rows.count { |row| row[:publication_mode] == FieldCompanion::F1PublicationCapture::FALLBACK_MODE },
+    reference_accepted: rows.count { |row| row[:publication_reference] == "accepted" },
+    reference_rejected: rows.count { |row| row[:publication_reference] == "rejected" },
+    reference_absent: rows.count { |row| row[:publication_reference] == "absent" },
+    rejected_observation_fields: rejected,
+    paths: rows.group_by { |row| row[:generation_path] }.transform_values(&:size)
+  }
 end
 
 def percentile(values, pct)
@@ -198,6 +232,7 @@ cases.each do |row|
   before_rag = rag_calls.size
   before_prompt = F1CAL_PROMPTS.size
   before_model = F1CAL_MODEL.size
+  before_converse = F1CAL_CONVERSE.size
   before_job = jobs.size
   before_grok = Array(Thread.current[:f1_grok_calls]).size
   before_sonnet = Array(Thread.current[:f1_sonnet_calls]).size
@@ -229,8 +264,14 @@ cases.each do |row|
   elapsed = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
   latencies << elapsed
   case_jobs = jobs[before_job..]
-  model_raw = F1CAL_MODEL[before_model..]&.last.to_s
-  raw = result.dig(:diagnostics, :raw_answer).presence || model_raw
+  captured = FieldCompanion::F1PublicationCapture.case_fields(
+    result: result,
+    converse_calls: F1CAL_CONVERSE[before_converse..],
+    query_prompts: F1CAL_PROMPTS[before_prompt..],
+    query_texts: F1CAL_MODEL[before_model..],
+    jobs: case_jobs
+  )
+  raw = captured[:raw]
   published = result[:answer].to_s
   prod_violation = result[:applicability_violation] || result.dig(:diagnostics, :applicability_violation)
   basis = result[:applicability_violation_basis] || result.dig(:diagnostics, :applicability_violation_basis)
@@ -252,10 +293,10 @@ cases.each do |row|
     "publish"
   end
   useful = outcome == "publish" && unknown && scored[:useful]
-  input_tokens = case_jobs.sum { |job| job[:input_tokens].to_i }
-  output_tokens = case_jobs.sum { |job| job[:output_tokens].to_i }
-  cache_read_tokens = case_jobs.sum { |job| job[:cache_read_tokens].to_i }
-  cache_creation_tokens = case_jobs.sum { |job| job[:cache_creation_tokens].to_i }
+  input_tokens = captured[:input_tokens]
+  output_tokens = captured[:output_tokens]
+  cache_read_tokens = captured[:cache_read_tokens]
+  cache_creation_tokens = captured[:cache_creation_tokens]
   grok_meta = Array(Thread.current[:f1_grok_calls])[before_grok..]
   sonnet_meta = Array(Thread.current[:f1_sonnet_calls])[before_sonnet..]
   usd = (input_tokens / 1000.0 * rates[:input].to_f) +
@@ -275,9 +316,32 @@ cases.each do |row|
     abstain: abstain, unsafe_publication: unsafe, formulaic: outcome == "publish" && unknown && scored[:formulaic],
     generic_withheld: withheld, identity_status: identity_status&.to_s,
     retrieves: retrieve_calls.size - before_retrieve, rag: rag_calls.size - before_rag,
-    generation_count: case_jobs.size, input_tokens: input_tokens, output_tokens: output_tokens,
+    generation_count: captured[:generation_count], input_tokens: input_tokens, output_tokens: output_tokens,
     cache_read_tokens: cache_read_tokens,
     cache_creation_tokens: cache_creation_tokens,
+    cost_basis: captured[:cost_basis],
+    generation_path: captured[:generation_path],
+    legacy_query_called: captured[:legacy_query_called],
+    converse_calls: captured[:converse_calls],
+    converse_input_tokens: captured[:converse_input_tokens],
+    converse_output_tokens: captured[:converse_output_tokens],
+    publication_mode: captured[:publication_mode],
+    publication_reference: captured[:publication_reference],
+    publication_rejected_fields: captured[:publication_rejected_fields],
+    publication_fallback_reason: captured[:publication_fallback_reason],
+    contract_attempted: captured[:contract_attempted],
+    contract_accepted: captured[:contract_accepted],
+    contract_tool: captured[:contract_tool],
+    contract_model: captured[:contract_model],
+    contract_schema_properties: captured[:contract_schema_properties],
+    contract_reference_properties: captured[:contract_reference_properties],
+    contract_has_current_job_actions: captured[:contract_has_current_job_actions],
+    contract_envelope: captured[:contract_envelope],
+    contract_system: captured[:contract_system],
+    contract_user_prompt: captured[:contract_user_prompt],
+    contract_observation_count: captured[:contract_observation_count],
+    contract_reference_requested: captured[:contract_reference_requested],
+    contract_reference_accepted: captured[:contract_reference_accepted],
     returned_model: sonnet_meta.last&.dig(:returned_model),
     reasoning_tokens: grok_meta.filter_map { |meta| meta[:reasoning_tokens] }.presence&.sum,
     reasoning_chars: grok_meta.sum { |meta| meta[:reasoning_chars].to_i },
@@ -289,7 +353,7 @@ cases.each do |row|
     prompt_has_verbatim_directive: sent_prompt.include?(verbatim_marker)
   }
   rows << record
-  puts "#{record[:id]} #{record[:lane]} #{record[:outcome]} useful=#{useful} guard=#{guard_held} unsafe=#{unsafe} formulaic=#{record[:formulaic]} #{elapsed}ms $#{format('%.4f', usd)} spent=#{format('%.4f', spent)}"
+  puts "#{record[:id]} #{record[:lane]} #{record[:outcome]} useful=#{useful} guard=#{guard_held} unsafe=#{unsafe} formulaic=#{record[:formulaic]} mode=#{record[:publication_mode]} ref=#{record[:publication_reference]} path=#{record[:generation_path]} basis=#{record[:cost_basis]} #{elapsed}ms $#{format('%.4f', usd)} spent=#{format('%.4f', spent)}"
 end
 
 unknown_ids = rows.select { |row| row[:identity] == "unknown" }.pluck(:id).uniq
@@ -335,9 +399,14 @@ summary = {
   unknown: bucket(rows, unknown_ids),
   managed: bucket(rows, unknown_ids, lane: "managed"),
   structured: bucket(rows, unknown_ids, lane: "structured"),
+  unknown_contract: contract_summary(rows.select { |row| row[:identity] == "unknown" }),
+  cost_basis: rows.group_by { |row| row[:cost_basis] }.transform_values(&:size),
+  generation_paths: rows.group_by { |row| row[:generation_path] }.transform_values(&:size),
   known: rows.select { |row| Corpus::KNOWN.include?(row[:id]) }.map { |row|
     { id: row[:id], lane: row[:lane], status: row[:identity_status], outcome: row[:outcome],
       block: row[:prompt_has_applicability_block], verbatim: row[:prompt_has_verbatim_directive],
+      publication_mode: row[:publication_mode], contract_attempted: row[:contract_attempted],
+      generation_path: row[:generation_path],
       step_list: Score.step_list?(row[:published]), published: row[:published].to_s.tr("\n", " ")[0, 240] }
   }
 }

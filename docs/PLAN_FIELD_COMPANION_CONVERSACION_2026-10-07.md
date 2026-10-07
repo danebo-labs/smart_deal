@@ -1,330 +1,200 @@
-# Field Companion: de la consulta a la respuesta
+# Field Companion: conversación técnica real
 
-**Estado:** VIGENTE. Revisión de principal engineer incorporada el 2026-10-07. Los dos bloqueantes de esa revisión quedan cerrados en este contrato. Etapa 1 no empezada. «Ejecuta la etapa 1» autoriza implementar y correr solo esa etapa.
+**Estado: PENDIENTE DE REVISIÓN OPUS Y VALIDACIÓN FINAL DEL FUNDADOR.**
 
-**Pregunta rectora:** ¿Este trabajo ayuda a Danebo a comprender la consulta, encontrar el manual pertinente y acompañar al técnico hasta una respuesta útil?
+Este documento es el único plan vigente del companion. Una revisión documental no lo deja listo para piloto. Este cambio no implementa producto, no llama a Bedrock y no despliega.
 
-Este documento es la cola de ejecución del companion. Sustituye, como trabajo siguiente, Section O del [plan de continuidad del 6 de octubre](PLAN_FIELD_COMPANION_MVP_CONTINUITY_RECOVERY_2026-10-06.md). Ese archivo conserva sus registros, SHA y conteos. O-P1 no se ejecutó: en `3ecd61c` no existen `architecture_faithful_s3.yml`, `architecture_faithful_s3.rb` ni `architecture_faithful_score.rb`.
+Pregunta rectora: ¿Danebo puede acompañar una conversación técnica real, encontrar documentación pertinente, incorporar lo comprobado y distinguir casos hasta llegar a una respuesta útil?
 
-Este commit no cambia producto, no despliega y no llama a Bedrock. La etapa 1 espera la frase «ejecuta la etapa 1».
+Ancestro de trabajo: `738b4c6`. Los planes anteriores conservan su historia. Sus encabezados apuntan aquí. Section O del [plan del 6 de octubre](PLAN_FIELD_COMPANION_MVP_CONTINUITY_RECOVERY_2026-10-06.md) queda como regresión secundaria del instrumento A‴. O-P2 a O-P5, F3b y F4 no se reanudan.
 
 ## Objetivo
 
-Danebo comprende una consulta técnica natural, conserva el caso, busca documentación con lo que ya sabe y acompaña al técnico hasta una respuesta o la aclaración mínima que distingue documentos o el siguiente paso.
+Danebo acompaña como el equipo de ingeniería en campo. Comprende la consulta y lo que ya se sabe del equipo, busca documentación pertinente, guía el diagnóstico o el procedimiento con esa evidencia, incorpora resultados, correcciones y comprobaciones, y sigue hasta una respuesta útil, una verificación o un escalamiento fundamentado. Distingue casos distintos dentro de la misma conversación.
 
-Fabricante, modelo, controlador, tarea, componente y código son dimensiones para comprender el problema y reducir la búsqueda. No son campos obligatorios ni una secuencia fija.
+No es un formulario ni una secuencia obligatoria de preguntas. Equipo, fabricante, modelo, controlador, operador, tarea, falla, componente, código y observaciones son dimensiones para comprender y acotar la búsqueda. Identificar el equipo temprano puede ser necesario. En una consulta de puertas, identificar el operador puede servir más que completar la identidad del ascensor. Si la sesión, el texto, la foto o la documentación ya traen el dato, se reutiliza.
 
-Si el primer mensaje ya dice a qué equipo se refiere y ese equipo coincide con un manual, se busca en ese turno. No se pide otra evidencia para poder consultar. La evidencia se pide cuando, sin ella, no se sabe qué manual consultar. Mientras esa evidencia no está, la respuesta no trae un procedimiento técnico. Con evidencia, un paso rudimentario y general puede entrar. El dato del manual entra cuando el manual coincide con el equipo y la respuesta de la consulta está ahí.
+Buscar puede ayudar a identificar el equipo. No se exige completar campos antes de buscar. Un manual recuperado no demuestra por sí solo que aplique a este equipo.
 
-El contrato ya está en [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md) y en [AGENTS.md](../AGENTS.md): evidencia recuperada, identidad desconocida que puede usar un manual como referencia con descargo, pin de sesión que no prueba aplicabilidad y que el sistema no suelta solo. El desvío estuvo en la cola de ejecución, no en ese contrato.
+La próxima respuesta puede ser directa, una búsqueda más precisa, una explicación o una aclaración. No hay una pregunta obligatoria en cada turno.
 
-## Dónde estamos
+Si el primer mensaje ya nombra el equipo y ese equipo coincide con un manual que contiene la respuesta, se busca en ese turno. Se pide evidencia solo cuando, sin ella, no se sabe qué manual consultar. Mientras esa evidencia no está, la respuesta no trae un procedimiento técnico. Con evidencia, puede entrar un paso general y rudimentario. El dato del manual entra cuando el manual coincide con el equipo y contiene la respuesta. La orientación y las hipótesis de Danebo pueden aparecer, identificadas como tales. No se inventan valores, terminales, códigos ni instrucciones específicas del fabricante.
 
-HEAD de la auditoría: `3ecd61c` (`docs: correct Section O benchmark contract`).
+Un pin de sesión orienta la búsqueda y no prueba aplicabilidad. El sistema no lo suelta en silencio (FC-D17).
 
-Camino owner, con `HAIKU_QUERY_ANALYSIS_MODE=owner` y los flags de episodio y turno:
+## Referencias industriales
 
-`RagController#ask` → `ConversationSession#record_owner_turn!` / `apply_owner_perception!` → `Rag::TurnInterpreter` → `Rag::RoutePolicy#call` → `Rag::WorkContextReducer#apply!` → `Rag::QueryComposer#call` → `SessionContextBuilder.build` → `RagQueryConcern#execute_rag_query` → `QueryOrchestratorService#execute`.
+Las páginas siguientes son evidencia publicada, citada por el fundador. Este cambio no las vuelve a descargar. Lo que sigue es el patrón que esas páginas describen, no una auditoría de su implementación. La conclusión de Danebo es una decisión propuesta, no algo que esas páginas ordenen.
 
-```mermaid
-flowchart TD
-  ask[RagController_ask] --> record[record_user_turn]
-  record --> interpreter[TurnInterpreter]
-  interpreter --> policy[RoutePolicy]
-  policy --> reducer[WorkContextReducer]
-  reducer --> composer[QueryComposer]
-  composer --> sessionCtx[SessionContextBuilder]
-  sessionCtx --> rag[execute_rag_query]
-  rag --> gate{clarify_first_o_meta}
-  gate -->|si| canned[Aclaracion_sin_Retrieve]
-  gate -->|no| orch[QueryOrchestratorService]
-  orch --> identity[DocumentIdentityScope]
-  identity --> gen[Generacion]
-```
+- ABB My Measurement Assistant+ / Genix Copilot: [página de servicio](https://new.abb.com/products/measurement-products/service/advanced-services/remote-support-services/my-measurement-assistant). Publica identificación por placa, AutoID y QR, documentación del dispositivo, interpretación de errores, asistencia específica y acceso a expertos. Patrón publicado: identidad accesible, conocimiento pertinente, asistencia fundamentada.
+- Siemens Maintenance Copilot / Asset Essentials: [documentación](https://help.assetmanagement.siemens.com/help/Content/Documentation/Maintenance/Asset%20Essentials/EnterpriseFeatures/AI-Driven%20Capabilities/Maintenance%20Copilot.htm). Trabaja sobre una orden asociada a un activo. Usa manuales e historial para diagnóstico, causas posibles y reparaciones, con documento y página. Patrón publicado: activo, problema, antecedentes y documentación.
+- Siemens Senseye: [nota de prensa](https://press.siemens.com/global/en/pressrelease/generative-artificial-intelligence-takes-siemens-predictive-maintenance-solution-next). Describe conversación de mantenimiento y contextualización con casos anteriores y sus soluciones.
+- Wittur ElevatorSense: [página del producto](https://www.wittur.com/elevatorsenseinfo/). Combina hardware y aplicación para pruebas, análisis de puertas y recomendaciones a partir de resultados. La fuente no demuestra que sea un chatbot RAG. Este plan no lo trata como uno.
+- Microsoft Dynamics 365 Contact Center: [Ask a question](https://learn.microsoft.com/en-us/dynamics365/contact-center/use/use-ask-a-question). Describe preguntas libres, seguimientos y cambio de contexto al seleccionar un caso. No demuestra detección automática de episodios dentro de una conversación libre.
 
-### Funciona y tiene evidencia
+Decisión propuesta para Danebo: esos productos reciben el activo por una orden, un QR o una conexión. Danebo tiene que adquirir o reutilizar ese contexto con lenguaje natural y evidencia. No se copia su arquitectura. IoT, órdenes de trabajo y módulos nuevos no son requisitos del MVP.
 
-- El lifecycle owner persiste identidad, goal, observaciones, pending y rechazos. Lo cubren los tests del reducer, de `RoutePolicy` y de `QueryComposer`. El harness longitudinal con percepción scriptada, sin Bedrock, quedó en PASS el 6 de octubre: Journey A L1, L2 y L3, Journey B L1, contrato `longitudinal-expectation-scope.1`. Eso demuestra adquisición cuando la percepción ya viene escrita.
-- `QueryComposer#observations` mete las observaciones aceptadas en la query de retrieval. Test: `retained observations stay in the retrieval string`.
-- Corrección en el reducer: `apply_negations`, `write_replacement_fault_code`, `supersede_retracted_observations`. Caso T-F en [test/fixtures/files/field_companion/cases.yml](../test/fixtures/files/field_companion/cases.yml): Fuji Yida pasa a KONE y el goal queda.
-- `DocumentIdentityScope.applicable?` exige identidad conocida. El pin acota URIs. Tests de scope y de preparación de piloto.
-- `clarify_first` y `meta` no llaman al orquestador. Si el turno trae observación, fact o identificador, `RoutePolicy#clarify_first?` no corta la búsqueda.
+## Puertas, como patrón publicado
 
-### Implementado y todavía no validado en conversación real
+El troubleshooting del operador LD-16 está publicado por TKE en el [manual de operador](https://shop-us.tkelevator.com/media/download_files/component_manuals/ld_16_door_operator_manual.pdf) y en [esta versión](https://shop-us.tkelevator.com/media/download_files/component_manuals/ld_16_udo.pdf). Documenta, para ese operador: puerta sin movimiento, no abre o no cierra, apertura o cierre parcial, no reabre, fallos por LED, rendimiento reducido y problemas de comunicación entre operador y controlador. Las ramas consideran alimentación, órdenes, fricción, motor o encoder, reapertura, aprendizaje, temperatura, referencia y comunicación.
 
-- `TurnInterpreter` real sobre los textos de Journey A y B. [script/field_companion/longitudinal_journeys.rb](../script/field_companion/longitudinal_journeys.rb) inyecta `ScriptedClient`.
-- Journeys en vivo de F3. El plan del 6 de octubre los deja sin correr.
-- Multimodal N1–N6: código local, sin verificación de producción. [PLAN_MULTIMODAL_COMPANION_SAFE_RETRIEVAL_2026-10-02.md](PLAN_MULTIMODAL_COMPANION_SAFE_RETRIEVAL_2026-10-02.md).
-- R1B: el boundary de sesión está en código. El smoke de producción no se hizo.
+Eso es el mapa documentado de ese operador. No es un ranking universal de frecuencia ni un procedimiento para cualquier ascensor. No hay un corpus representativo de conversaciones reales. Las frases de los journeys son ejemplos de aceptación, no transcripciones.
 
-### Falla o falta
+`config/document_identities.yml` no contiene el LD-16. Sí contiene el Elemont MH (`Montacargas 2N Temporizado`) y otros documentos de puerta (E-Shine YS-K01, variador Thyssen MCP7, puertas KES). Esos otros documentos no se enseñan como procedimiento del Elemont. La validación reutiliza el journey A de puertas del Elemont. No se agregan turnos, no se inyectan cuerpos de chunk y no se inventan códigos. Antes de la etapa 2 se comprueba que el manual del Elemont MH esté en el índice del entorno. Si no está, esa ejecución se detiene en `RETRIEVAL_EMPTY` y no se sustituye por el LD-16.
 
-La proyección de observaciones sigue abierta. `WorkContextReducer#write_observations` guarda hasta 12 textos de 180 caracteres. `QueryComposer` los usa para buscar. `SessionContextBuilder#render_field_problem` proyecta facts, identificadores, foto, conflictos y el `goal`. No recorre `episode.observations`. El goal se asigna una vez, en el primer turno que sí busca (`assign_goal_if_needed`).
+## Hallazgos confirmados en el código
 
-El efecto depende del carril:
+Ruta de producción, con `HAIKU_QUERY_ANALYSIS_MODE=owner` y los flags de episodio y turno: `RagController#ask` → `ConversationSession#record_owner_turn!` → `Rag::TurnInterpreter` → `Rag::RoutePolicy` → `Rag::WorkContextReducer` → `Rag::QueryComposer` → `SessionContextBuilder` → `RagQueryConcern#execute_rag_query` → `QueryOrchestratorService` → `BedrockRagService`.
 
-- Identidad desconocida: `BedrockRagService#unknown_identity_guidance` pone en `Question` el turno crudo (`raw_turn`). Las observaciones llegan a generación si caben en el goal o en los últimos 3 mensajes de usuario (`EPISODE_MAX_USER_MESSAGES`). `CompanionGuidanceContext#technician_turns` lee esas líneas `User:`, no el almacén del episodio.
-- Identidad conocida sin manual compatible: el guidance recibe la query compuesta como `question`. El texto de la observación puede aparecer mezclado con la búsqueda. El bloque de problema sigue sin listarlo.
-- `clarify_first` retorna antes de `write_observations`. Un primer turno clasificado así no guarda el síntoma.
-- `ask_controller?` busca y, con `ask_when: :always`, agrega «¿Qué controlador o modelo estás revisando?» cuando hay fabricante y síntoma y faltan modelo y controlador (`append_turn_clarification`).
+El intérprete usa `BedrockClient#converse`. `converse_message` es otro cliente. El harness longitudinal (`script/field_companion/longitudinal_journeys.rb`) niega `converse_message` y no niega `#converse`. `Runner#run` no es una sonda: ejecuta los journeys con percepción escrita en el fixture, KB `mvp-journey-stub` y un chunk congelado. Un PASS de ese harness demuestra que el estado se actualiza cuando la percepción ya viene escrita. No demuestra que Haiku comprenda la frase.
 
-Todavía no hay una conversación con el interpreter real que mida si la respuesta pierde una observación usada en la búsqueda, o si el controlador se pide por rutina.
+Límites de sesión, en `ConversationSession`: `MAX_HISTORY = 20` mensajes de usuario y asistente; `EPISODE_MAX_USER_MESSAGES = 3`; `EPISODE_WINDOW = 4.hours`. No son un máximo de consultas. El historial se recorta con `last(MAX_HISTORY - 1)`. El episodio vive en `active_episode` y no se borra por ese recorte. El último mensaje del asistente que entra al prompt se corta a 200 caracteres.
 
-### Problema del instrumento
+Observaciones:
 
-A‴ no mide esta conversación. [script/field_companion/f1_calibration_runner.rb](../script/field_companion/f1_calibration_runner.rb) llama `BedrockRagService#query` o la ruta estructurada con un hit congelado. No crea sesión y no corre interpreter, reducer ni `SessionContextBuilder`.
+- `QueryComposer#observations` las mete en la cadena de retrieval.
+- `SessionContextBuilder#render_field_problem` no las recorre. Arma hechos, identificadores, foto, conflictos y objetivo.
+- `MAX_PROBLEM_CHARS = 400`. El encabezado mide 79 caracteres y el pie 188. Con los dos saltos de línea ocupan 269. `fit_problem` acorta primero el objetivo y después descarta líneas. Encabezado y pie se conservan.
+- El guidance de identidad conocida (`CompanionGuidanceContext#turn_block`) lee objetivo, identidad y las dos últimas líneas `User:` (`TURN_CHARS = 160`, `MAX_TURNS = 2`). No lee el resto del bloque de problema.
+- El guidance de identidad desconocida lee `problem_projection_lines`. Con cero chunks y sin pin, `BedrockRagService#open_reference_no_results` responde el texto fijo «No se encontró información…» y no arma guidance. Reparar solo el builder no alcanza si el guidance no usa esas líneas, ni si la ruta de cero chunks no tiene prompt.
 
-El registro de Section N queda como historia: útil 28/68, S3 4/44, inseguro humano confirmado 0. Los registros 17, 27, 24 y 40 también quedan. Section N bajó el útil desde 40. Un FAIL de A‴ no declara roto al companion. Un PASS del longitudinal scriptado no lo declara listo.
+Pregunta de controlador:
 
-## Desvío
+- `RoutePolicy#ask_controller?` arma `search_and_clarify` cuando hay fabricante, no hay modelo ni controlador, y hay síntoma.
+- `ask_when: :always`. `RagQueryConcern#append_turn_clarification` agrega «¿Qué controlador o modelo estás revisando?» aunque la búsqueda ya pueda hacerse.
+- `clarify_first?` no busca y no escribe observaciones. Devuelve falso si la percepción ya trae observaciones, hechos o un identificador afirmado. El síntoma se pierde por `unclear`, por fallback o porque el intérprete no extrajo observaciones.
+- El fallback de un episodio vacío y sin foco también pregunta el controlador antes de buscar.
+- En el catálogo, `MH` es designador del Elemont y `CEA15+` es el designador del manual CEA15, no el token `CEA15`. Un designador que no queda como hecho `model` o `controller` no cancela `ask_controller?`.
 
-F0–F2b arreglaron continuidad bajo percepción scriptada. F3 y las secciones L, M y N convirtieron A‴ en la compuerta. Section O diseña otro benchmark de 18 fixtures, otro harness y otro scorer antes de mirar el lifecycle con el interpreter real. O-P4, la única reparación de producto de esa sección, queda detrás de O-P1–O-P3.
+Guidance:
 
-## Qué queda de Section O
+- `ADVANCE_FAULT` dice «Equipment identity is not the current objective» cuando el turno no pide identificar el equipo.
+- Si ese objetivo está activo y no hay estado reportado, `TASK_LEAD` pide una comprobación pasiva de una lista fija: ocupación, posición de cabina, estado de puertas, display o sonido.
+- `RESOLVE_IDENTITY` pide leer la placa. `nameplate_rule` en el otro caso dice que la identidad desconocida limita las afirmaciones del fabricante y no debe ser la pregunta principal.
+- Esas frases pueden sesgar el turno hacia una pregunta que la consulta no necesita. La reparación no consiste en preguntar siempre la identidad. Depende de la consulta, del contexto y de si la documentación ya se distingue.
 
-Se conserva en el plan del 6 de octubre, sin reescribir la historia:
+Correcciones, en dos capas distintas:
 
-- A‴ no recorre el lifecycle.
-- El pin no demuestra aplicabilidad.
-- `clarify_first` no busca y no guarda observaciones.
-- No se inventan cuerpos de manual. Cero chunks es `RETRIEVAL_EMPTY`. No demuestra que el manual falte en el índice. `CORPUS_GAP` exige un inventario local que muestre que ese documento no fue ingerido. Si ese inventario no está, el hueco queda sin clasificar y la corrida no es PASS.
-- SHA y conteos ya escritos.
+- Identidad o código: el prompt del intérprete dice «A correction has empty observations» y exige un span negado y uno afirmado para fabricante, modelo o controlador. `TurnPerception#adjust_move` convierte `correct` sin negación de slot en `unclear`, vacía identidades y vacía observaciones. El reducer adopta un código de reemplazo solo cuando el movimiento ya es `correct` y el slot negado es `fault_code`.
+- Observación («planta 1», «por arriba», «ya revisé eso»): no es un slot. Si el modelo emite `correct` sin negación de slot, `adjust_move` borra la observación antes de que el reducer escriba. El prompt empuja al modelo a dejar esas observaciones vacías. La capa responsable de esa pérdida es el intérprete y `adjust_move`, no el reducer. `QueryComposer#current_turn` solo recorta spans negados; el turno literal puede conservar «no de planta 1». Una línea `User:` anterior puede conservar un valor ya descartado. Eso es un hallazgo aparte: falla si la respuesta publicada lo trata como vigente.
 
-Se deja de ejecutar:
+Continuidad:
 
-- O-P1, el freeze de 18 fixtures. Los textos ya están en Journey A, Journey B y T-F.
-- O-P2 y O-P3, harness y scorer nuevos.
-- O-P5, la evaluación pagada de ese roster con retrieve stub.
-- La compuerta 44/68 y cualquier rerun de A‴ para perseguirla.
-- F3b y F4 de ese plan.
-- La prohibición de tocar `RoutePolicy` dentro de O-P1–O-P5. Si la sonda muestra la pregunta rutinaria de controlador, el arreglo entra en la etapa 2.
+- `new_work` evalúa la política sobre un `ActiveEpisode` vacío y abre otro con `ActiveEpisode.open`. El episodio nuevo no hereda identidad, síntomas, foto ni resultados del anterior.
+- `case_boundary_changes` limpia `current_procedure` y deja `pin_release_reason` en nil. El pin de sesión permanece. Persistirlo no prueba que aplique al caso nuevo.
+- El escritor tardío se rechaza con `expected_episode_id`.
+- No hay almacén de episodios anteriores ni una operación de la ruta owner que reabra un caso cerrado. `voice_dictation` reabre otra cosa y no cuenta como recuperación de episodio. Recuperar un caso anterior no está implementado.
 
-O-P4 no es una fase. Proyectar observaciones aceptadas sigue siendo un candidato de la etapa 2, sin columna nueva y sin otra llamada. La etapa 1 puede demostrar que una observación usada en retrieval falta en el prompt final. Eso autoriza reparar el contrato de contexto. No demuestra que la respuesta cambie. Ese efecto lo lee la etapa 3.
+Retrieval vacío no demuestra que el manual no exista. Una respuesta útil sin documentación compatible no es éxito documental. A‴ no recorre esta ruta: en Section N quedó useful 28/68, S3 4/44 y unsafe humano confirmado 0. Esos números se conservan. No son la puerta de esta validación.
+
+## Recomendaciones que no se copian
+
+- Conservar solo la observación más reciente. Borraría «ya revisé eso y está bien». La reparación mínima conserva comprobaciones y correcciones que cambian el paso siguiente, dentro del presupuesto existente.
+- Una sonda completa sin retrieval ni generación, y repetirla, como requisito general. Un defecto visible en el código se reproduce con un test local. No se paga una llamada para confirmar que existe.
+- Preguntar la identidad en todos los turnos para corregir el sesgo contrario. La identidad se pide cuando la consulta o la evidencia documental lo necesitan.
+- Tratar el LD-16 como corpus de prueba o como chatbot de referencia. No está en el catálogo local y la página de Wittur no demuestra un RAG.
+- Declarar implementada la recuperación de un caso anterior.
+- Cerrar O-P1 porque no hay archivos en git, o cerrarlo porque el fundador informó que terminó. Las dos afirmaciones conviven hasta que haya un artefacto.
+- Reanudar O-P2 a O-P5, agregar scorer, benchmark grande, ramas por fixture o una llamada de producto extra.
+- Una tabla o un módulo nuevo de episodios. Se reutilizan `active_episode`, `new_work` y la protección del escritor tardío.
 
 ## Inventario
 
-### Resuelto y verificado
+| Gap | Decisión |
+|---|---|
+| Discovery F0–F8, visual F1–F3, R1A, harness scripted scope.1 | Resuelto con evidencia en sus planes. |
+| Observaciones fuera del prompt de generación y presupuesto de 400 que prioriza encabezado y pie | Necesario. Etapa 1. |
+| `ask_controller?` con `ask_when: :always` y fallback que pregunta antes de buscar | Necesario. Etapa 1. |
+| `TASK_LEAD` y el objetivo de identidad como sesgo de pregunta | Necesario, acotado. Etapa 1 cambia la instrucción; no invierte el sesgo. |
+| Corrección de observación destruida por el prompt y `adjust_move` | Necesario. Etapa 1. La calidad del intérprete real se ve en la etapa 2. |
+| Corrección de identidad o código (8→18, Fuji Yida→KONE) | Parcial. El reducer ya adopta el código cuando el movimiento es `correct`. La etapa 2 comprueba el intérprete real. |
+| Hechos del episodio que sobreviven al recorte de 20 mensajes | Parcial. El JSON del episodio sobrevive; el prompt no. La etapa 1 proyecta lo necesario. La etapa 2 cruza el recorte. |
+| Episodio nuevo sin heredar el caso anterior; pin de sesión que no prueba aplicabilidad | Parcial, ya en código. La etapa 2 lo comprueba con el texto L3 existente. |
+| Recuperar un caso anterior dentro de la sesión | No implementado. Pospuesto. Separar hacia adelante alcanza para esta validación. Un archivo de casos sería una tabla nueva. |
+| R2 del 30 de septiembre (consulta KONE sobre un episodio Elemont vivo, pin MonoSpace, código 515) | Absorbido como mapa. Esos tres restos quedan pospuestos salvo que una traza de la etapa 2 los muestre. |
+| Hilo de consulta en la ruta web owner | Sustituido por `QueryComposer`. |
+| F9, soltar el pin | Retirado de esta cola. Contradice FC-D17. |
+| T3, R3, CG-D19, CS-P01 a CS-P03 | Retirados de esta validación. CG-D19 solo vuelve si la etapa 2 muestra una respuesta inutilizable por el formato. |
+| Smoke de producción R1B, verificación de producción N1–N6, G5 de foco, presentación | Pospuestos. No se cierran por quedar fuera. El smoke de la etapa 3 es el del companion, no esos pendientes. |
+| O-P1 | Incierto. Ver abajo. |
+| Si Haiku extrae movimiento, observaciones y correcciones; si el índice devuelve el Elemont MH; si cero chunks es índice frío o manual ausente | Incierto hasta la etapa 2. No se confirma con una sonda previa. |
 
-- Discovery F0–F8. [PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md](PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md). El pin lo pone el técnico.
-- Evidencia visual F1–F3. [PLAN_VISUAL_EVIDENCE_HARDENING_2026-10-02.md](PLAN_VISUAL_EVIDENCE_HARDENING_2026-10-02.md). Cerrado en producción.
-- R1A de corpus. Cerrado en el recovery del 30 de septiembre.
-- Continuidad con percepción scriptada, F2b, scope.1. PASS local. No se reabre.
-- Aplicabilidad por identidad conocida. El pin no autoriza el procedimiento. Código y tests actuales.
+## O-P1
 
-### Parcialmente resuelto
+El fundador informó que O-P1 terminó. En el repositorio, incluido el árbol de trabajo, no están `architecture_faithful_s3.yml`, `architecture_faithful_s3.rb` ni `architecture_faithful_score.rb`. La ausencia en un commit no descarta una ejecución local fuera de este árbol. El informe tampoco deja un artefacto visible aquí. O-P1 queda incierto. No se reanuda y no se da por cerrado. O-P2 a O-P5 no se reanudan.
 
-- Proyección de observaciones. Retrieval sí. `render_field_problem` no recorre el almacén. La etapa 1 mide si el prompt final de la ruta tomada las pierde. La etapa 3 mide el efecto en la respuesta. El bloque de 400 caracteres no garantiza conservarlas: cabecera y pie ocupan 269 caracteres (`PROBLEM_HEADER` 79, `PROBLEM_FOOTER` 188, más los dos saltos de `assemble_problem`). `fit_problem` recorta primero el goal. El guidance de identidad conocida (`CompanionGuidanceContext#turn_block`) no lee todas las líneas del bloque: usa el goal, la identidad y los dos últimos `User:`. El guidance desconocido sí lee `problem_projection_lines`. Verificar solo `SessionContextBuilder` no basta.
-- Precedencia del turno actual. `raw_question` ya entra al guidance de identidad desconocida. El guidance de identidad conocida sin manual compatible sigue recibiendo la query compuesta. La etapa 1 anota cuál string es `Question` en cada carril.
+De Section O se conserva, como regresión secundaria y sin volver a ejecutarla: A‴ no recorre el ciclo de vida; el pin no prueba aplicabilidad; `clarify_first` no busca ni guarda observaciones; no se inventan cuerpos de manual; los SHA y conteos históricos permanecen.
 
-### Duplicado o sustituido
+## Continuidad que debe sobrevivir
 
-- O-P1, O-P2, O-P3 y O-P5. Los sustituyen las etapas 1 y 3 de este plan.
-- R2 del [recovery del 30 de septiembre](PLAN_FIELD_COMPANION_RECOVERY_2026-09-30.md). Su objetivo lo absorbe esta sonda. Query KONE sobre un episodio Elemont, MonoSpace que no suelta el pin y `AM-01.01.046` → 515 no se reabren como fase. Si aparecen en la traza, se reparan. Si no aparecen, quedan pospuestos.
-- Hilo de consulta del 21 de septiembre en el camino web owner. `QueryComposer` compone la búsqueda. `FollowupQueryRewriter` sigue fuera de owner.
-- F9 del refactor de focus, en lo que pedía soltar pines. FC-D17 y el código actual conservan el pin. El cleanup de helpers muertos queda fuera de estas cuatro etapas.
+En el episodio vigente, después del recorte de historial: equipo vigente, problema, observaciones que cambian el paso, comprobaciones y resultados, correcciones, desconocimientos confirmados y pregunta pendiente.
 
-### Obsoleto para esta validación
+La etapa 2 distingue, sin una tabla nueva:
 
-- Perseguir A‴ 44/68, S3 24/44, otro scorer y el roster de 18.
-- T3 del Turn Interpreter. El camino bajo prueba es owner. Borrar el intérprete duplicado no es esta validación.
-- R3 de UX y rótulos, y CG-D19, salvo que la etapa 3 muestre una respuesta que el técnico no pueda usar por la forma.
-- CS-P01–P03 del plan asistente del 21 de septiembre. La disciplina de hipótesis ya está en AGENTS.md.
+- seguimiento del mismo caso;
+- corrección del mismo caso;
+- síntoma adicional relacionado;
+- problema independiente en el mismo equipo;
+- otro equipo u otra obra;
+- referencia a un caso anterior.
 
-### Incierto
+Un cambio de componente no abre un episodio por sí solo. Ante un cambio claro, se separan los casos. Ante ambigüedad real, una aclaración mínima. El episodio nuevo no hereda identidad, síntomas, fotos ni resultados. El pin de sesión, si existe, no se trata como aplicabilidad del caso nuevo.
 
-Lo decide la etapa 1:
+Abrir un caso nuevo está soportado con `new_work`. Recuperar uno anterior no está soportado. Queda pospuesto, con esa limitación escrita. No se declara implementado.
 
-- Si un primer mensaje con síntoma y sin identidad busca, o si `clarify_first` o el fallback piden el controlador antes. Textos: turno 1 de Journey B y el primer turno de T-F.
-- Si `ask_controller?` agrega la pregunta de controlador cuando la búsqueda ya puede avanzar.
-- Si la corrección de código 8→18 y la de fabricante Fuji Yida→KONE se sostienen, y el valor negado no vuelve.
-- Si la corrección de una observación se sostiene. Journey A turno 13 («planta 2, no de planta 1») y Journey B turno 9 («por debajo», no «por arriba») necesitan la observación nueva. El prompt del intérprete dice `A correction has empty observations` (`TurnInterpreter::PROMPT`). `TurnPerception#adjust_move` convierte `correct` sin una negación de slot reconocido en `unclear` y vacía las observaciones. Esas dos capas son dueños posibles. El reducer entra solo si la percepción normalizada ya traía el dato y el episodio lo perdió.
-- Si una observación fuera de la ventana de 3 mensajes sigue en la query y falta en el prompt final de la ruta tomada. Eso es pérdida de contexto. No es, por sí solo, un cambio de respuesta.
+## Tres etapas
 
-### Pospuesto
+Ninguna etapa empieza con este documento. Hace falta la revisión de Opus, la validación del fundador con ChatGPT y la frase que autoriza la etapa. «Ejecuta la etapa 1» autoriza solo la etapa 1. No autoriza la 2 ni la 3. La etapa 2 no arranca sola aunque la traza nombre un dueño: esa regla anterior queda retirada. La etapa 3 pide su propia frase.
 
-Siguen abiertos y no bloquean la etapa 1:
+No se promete éxito después de un número fijo de reparaciones. Cada etapa se detiene cuando se cumple su resultado o su condición de parada.
 
-- Smoke de producción de R1B.
-- Verificación de producción de N1–N6. En Journey B el turno 5 usa el payload de foto ya escrito. No hay llamada nueva a Vision.
-- G5 humano del refactor de focus (F9 y F10).
-- Presentación de la respuesta.
+### 1. Reparar los gaps confirmados
 
-## Contrato de ejecución
+Reproducciones locales y tests Minitest. Sin Bedrock.
 
-La sonda es un proceso local. No corre en el contenedor de producción: `script/` no está en la imagen desplegada. No declara validación de producción, ni de Vision, ni del pin. Estos escenarios no fijan un pin. Un pin ausente no prueba el comportamiento del pin.
+- Proyectar en el prompt final, de las dos rutas de guidance, el problema, las correcciones y las comprobaciones que cambian el paso. Acortar encabezado y pie para que el presupuesto de 400 no se los coma. No ampliar el presupuesto. No quedarse solo con la observación más reciente. Un test lee `turn_block` y el bloque de identidad desconocida, no solo `SessionContextBuilder`.
+- No agregar la pregunta de controlador cuando el turno ya trae síntoma y un token de equipo (fabricante, modelo, controlador o identificador) y la búsqueda puede seguir. Conservar la aclaración cuando distingue documentos o permite avanzar. El fallback de un episodio vacío no pregunta el controlador antes de poder buscar el síntoma.
+- Quitar el menú fijo de ocupación, posición, puertas, display y sonido cuando la consulta ya trae síntoma o una pregunta que se puede buscar. No sustituirlo por «pregunta siempre la identidad». La identidad sigue siendo el objetivo solo si el técnico pide identificar o confirmar el equipo.
+- Distinguir en el prompt y en `adjust_move` la corrección de identidad o código de la corrección de una observación. La segunda no se convierte en `unclear` ni se vacía.
 
-Arranque. El árbol git está limpio. El manifiesto escribe `git rev-parse HEAD`. El ancestro mínimo es `a218169`. Un árbol sucio detiene la corrida antes de cualquier llamada.
+Resultado: los tests de esos cuatro puntos pasan. No hay llamada de modelo.
 
-Comando, desde la raíz del repositorio, contra la base local de desarrollo:
+Parada: si la reparación exige una segunda llamada de producto, una tabla nueva o cambiar el presupuesto de 400, se detiene y vuelve al plan.
 
-```text
-PROBE_RUN_ID=<id> PROBE_STAGE=1 bin/rails runner script/field_companion/conversation_probe.rb
-```
+### 2. Validar conversaciones con búsqueda y respuesta reales
 
-`PROBE_STAGE` es `1` o `3`. `PROBE_SCENARIOS` vale `smoke,b,a,tf` si se omite. La etapa 2 y la etapa 4 pueden pasar un subconjunto. Cada `PROBE_RUN_ID` escribe en `tmp/field_companion_probe/<PROBE_RUN_ID>/` y no pisa otra corrida.
+Intérprete, sesión, retrieval y generación, en la base local, con el índice real. Una pasada de tres escenarios ya escritos. No se crea otro corpus.
 
-Entrada. El script nuevo elige los escenarios. No llama a `LongitudinalJourneys::Runner#run`. Ese `run` ejecuta Journey A dos veces, añade L3 y ejecuta B: 42 interpretaciones si el intérprete fuera real. También instala `BEDROCK_KNOWLEDGE_BASE_ID=mvp-journey-stub`, devuelve el chunk congelado de Elemont y crea documentos auxiliares. Reutilizar `record_user_turn!` y `execute_rag_query` es válido. Reutilizar `Runner#run` sin esa selección incumple este plan. El hash del fixture longitudinal y el harness F1 no se reescriben.
+- Puertas y continuidad: journey A, turnos 1 a 14, más el texto L3 ya escrito en el mismo archivo de fixtures, en la misma sesión. El primer turno busca. Con las respuestas del asistente, el historial supera 20 mensajes. L3 es otro ascensor: si el intérprete emite `new_work`, el episodio nuevo no hereda la falla de puerta, el código ni la identidad. Si duda, una aclaración mínima no es fallo. El pin no se setea en el escenario.
+- Equipo que al principio no se identifica: journey B, turnos 1 a 10. La primera búsqueda puede usar el síntoma. La identidad llega por el texto y por la foto ya guionada, sin Vision y sin formulario previo.
+- Corrección de fabricante: los cuatro textos del técnico en T-F. No se inyectan las preguntas del asistente que trae el fixture.
 
-Flags del proceso, restaurados al salir. Se toman de `LongitudinalJourneys::FLAGS` con estos cambios:
+Cada turno anota la decisión, si buscó, si el chunk es compatible con el equipo, si la respuesta usa ese chunk o se declara orientación de Danebo, y si conserva o descarta lo ya comprobado. `RETRIEVAL_EMPTY` no se anota como «el manual no existe». Una respuesta general sin documento compatible no se anota como éxito documental.
 
-- `HAIKU_QUERY_ANALYSIS_MODE=owner`
-- `FIELD_COMPANION_EPISODE_ENABLED=true`
-- `FIELD_COMPANION_TURN_ENABLED=true`
-- `DOCUMENT_IDENTITY_SCOPE_ENABLED=true`
-- `SHARED_SESSION_ENABLED=false`
-- `RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED=true`
-- `PHOTO_QUESTION_RAG_ENABLED=true`
-- `BEDROCK_MODEL_ID` sigue en el Haiku global ya usado por el intérprete
-- `RAG_EPISODE_SCOPE_ENABLED` y `RAG_THREAD_MENU_ENABLED` se quitan solo durante el proceso
-- Etapa 1: `BEDROCK_KNOWLEDGE_BASE_ID=probe-no-retrieve`, solo en el proceso. `BedrockRagService#query` lanza `MissingKnowledgeBaseError` si el id está vacío, antes de llegar al stub. Ese valor no es un knowledge base vivo y no es `mvp-journey-stub`. No se inyecta `chunk_p1_2_current.txt`.
-- Etapa 3: se usan el knowledge base y el modelo que el entorno local ya tiene. No se apuntan al stub. No se edita `deploy.yml`. Los reintentos internos de producción siguen activos.
+Se repara solo la falla observada y se repite solo el escenario que falló.
 
-Costura de la etapa 1. Se reutilizan `QueryHost`, `record_assistant_turn!(pending_question:)` y el patrón de `LongitudinalJourneys::Seams`, que rechaza por defecto. No se escriben costuras nuevas.
+Presupuesto: 16 + 10 + 4 = 30 turnos de intérprete en la pasada inicial, más generación en los turnos que buscan. Los reintentos internos de producción (`retrieve_with_retry`, arranque frío, segundo retrieve, publicación y guidance) siguen activos y cuentan dentro del turno, no como otro experimento. Tope de la pasada, reintentos incluidos: 90 llamadas de generación. Una repetición usa solo los turnos del escenario reparado.
 
-- `retrieve_with_retry` registra la petición y devuelve cero chunks.
-- `retrieve_and_generate_with_retry` se rechaza.
-- Se cortan `document_identity_generator` y `UnknownIdentityPublication`. Su texto no sale hacia el modelo.
-- El intérprete llama `BedrockClient#converse` por un `interpreter_client` que envuelve el cliente real y graba el tool input. Ese `#converse` no se sustituye. `TurnInterpreter::Result` no trae la salida cruda.
-- `AiProvider#converse`, `BedrockClient#query`, `BedrockClient#converse_message` y Vision se rechazan. Cualquier otra llamada a Bedrock también se rechaza, para que el ledger no deje una llamada sin contar.
+Parada: error de transporte en el primer turno de un escenario; el manual del Elemont no está en el índice; la misma falla vuelve después de una reparación; la reparación pide una tabla, un segundo modelo o un escenario nuevo. No se sigue para completar un cupo.
 
-Historial de la etapa 1. Se persiste la respuesta que esa ruta produjo: `clarify_first`, `meta` u `open_reference_no_results`. No se persiste el prompt contrafactual ni un placeholder de generación. Esta historia no es la línea base de la etapa 3. Tampoco lo es `document_identity_generation_prompt`, que la etapa 1 no llega a ver. `follow_up?` y la línea `Assistant:` de la etapa 1 corresponden a la ruta de cero chunks.
+Aceptación de la etapa: en el primer turno del journey A se busca sin pedir fabricante, modelo ni controlador. Cuando el índice devuelve documentación compatible, la respuesta la usa y cita documento y página. Cuando no la devuelve, no inventa valores, terminales, códigos ni un procedimiento de fabricante, y no se anota como éxito documental. A los 14 intercambios siguen el equipo, el problema, las comprobaciones, las correcciones y la pregunta pendiente. El caso nuevo no hereda el anterior. Una pregunta repetida o un valor ya corregido tratado como vigente es fallo. Timeout, throttle o error de transporte es inconcluso, no un fallback de producto.
 
-Aislamiento. Hace falta una cuenta local ya existente. Si no hay ninguna, la corrida se detiene. Se usa un usuario dedicado `conversation-probe@localhost` en esa cuenta. Cada escenario abre una sesión web con identificador `probe:<PROBE_RUN_ID>:<escenario>`. Al empezar, se borran solo las sesiones de ese usuario con ese prefijo de corrida. No se tocan otras sesiones. No se usa `accounts(:legacy)` fuera del entorno de test.
+### 3. Smoke de producción y cierre
 
-El turno 5 de Journey B puede aplicar el payload de foto ya escrito en el fixture. La traza lo marca `scripted_photo: true`. No hay llamada a Vision. Cualquier otra intervención que no sea el texto del técnico lleva `scripted: true`.
+Primera consulta, continuidad de un caso y el cambio de episodio, sobre los mismos tres escenarios, en producción. Una pasada. Sin sonda previa.
 
-### Presupuesto
+Resultado: la misma aceptación de la etapa 2 contra el índice de producción, más una reconciliación final de la tabla de gaps. Los inciertos que el smoke no toque siguen inciertos. El companion no queda listo para piloto por haber pasado el smoke.
 
-Una repetición del experimento es otra corrida autorizada. Un reintento interno de `BedrockRagService` (`retrieve_with_retry`, el segundo retrieve del corpus abierto, `UnknownIdentityPublication` y después el guidance) es comportamiento de producción. No se apaga para cumplir el techo. Se anota como intento dentro del turno.
+Parada: la misma de la etapa 2. Un fallo de producción no se repara en caliente dentro de esta etapa.
 
-Techos de llamadas al intérprete, una por turno de técnico, sin repetir el experimento dentro de la etapa:
+## Qué debe revisar Opus
 
-| Etapa | Qué corre | Techo de interpretaciones | Generación |
-|---|---|---|---|
-| 1 | smoke y, solo si su intérprete responde `ok`, B + A + T-F | 29 | 0 |
-| 2 | solo los escenarios cuya traza mostró la falla reparada. Si el arreglo está en prompt o contexto compartido, los cuatro | 29 | 0 |
-| 3 | los mismos cuatro, una vez, con Retrieve y generación | 29 | una ruta de respuesta por turno. Los intentos internos cuentan en el ledger y no suman otra corrida |
-| 4 | solo el escenario fallido | 14 | la misma regla, limitada a ese escenario |
-
-El techo de todo el plan es 101 interpretaciones (29+29+29+14). El antiguo tope de 35 queda retirado: no cubría una repetición ni las etapas 3 y 4.
-
-El ledger de cada corrida anota `interpreter_calls`, `generation_calls`, `retrieve_attempts`, `publication_attempts`, `input_tokens` y `output_tokens`. Si una llamada de intérprete supera el techo de la etapa, la corrida se detiene. Si los intentos internos de un turno de la etapa 3 o 4 superan tres llamadas de generación, ese turno queda `INCONCLUSIVE` y la corrida se detiene. No se lanza otra corrida para reemplazarlo.
-
-`smoke` es la compuerta. Si el `status` del intérprete en ese turno no es `ok`, la corrida se detiene y no gasta las otras 28 interpretaciones. `timeout`, `throttle` y `transport_error` son `INCONCLUSIVE`. En esos casos `fallback: true` es el camino de `RoutePolicy.fallback` después de un fallo de transporte. No se clasifica como fallback de producto.
-
-### Traza
-
-La percepción del YAML es `fixture_perception`. Sirve de referencia. No se copia a `interpreter_move`. El runner longitudinal hace eso en `finish_turn` y además guarda `recent_user` con `last(2)`. Esta sonda no hereda esos dos campos.
-
-Por turno se guardan por separado:
-
-- tool input crudo, grabado por el `interpreter_client` antes de `TurnPerception.build`
-- `status`, `fallback`, tokens y modelo de `TurnInterpreter::Result`
-- percepción normalizada y decisión que devuelve `record_user_turn!`
-- aclaración y pending
-- facts, goal, observations y rejected del episodio
-- query compuesta
-- bloque Active Field Problem, con `context_truncated` y las longitudes reales
-- `episode_user_messages`, hasta tres
-- `route_real` y `prompt_real` de la ruta que el turno tomó
-- si Retrieve se habría llamado (etapa 1) o cuántos chunks volvieron (etapa 3)
-
-Prompt que se mide. Con identidad desconocida, cero chunks y sin pin, `unknown_identity_reference_result` devuelve `open_reference_no_results` y no llama a `unknown_identity_guidance`. `prompt_real` queda null. La traza registra esa ruta. Aparte construye `unknown_identity_guidance` con el mismo `raw_turn` y el mismo `session_context`, marcado `counterfactual: true`, y no lo envía al modelo. La pérdida de contexto se mide sobre `prompt_real` cuando existe, y si no existe, sobre ese contrafactual. La ausencia de `prompt_real` no es pérdida y no arranca la etapa 2.
-
-Identidad conocida y cero chunks. Qué devuelve `DocumentIdentityScope.apply([])`, `:no_compatible` o `:unavailable`, no está verificado. No se inventa ese prompt. El turno queda `known_empty_scope: unverified` y no dispara la etapa 2 por un prompt que la ruta no armó.
-
-### Escenarios
-
-Textos existentes. No se agregan turnos.
-
-- `smoke`. Journey B turno 1, sesión propia. Equipo desconocido, desnivel en planta 3.
-- `b`. Journey B turnos 1–10, otra sesión. La identidad llega por el payload de foto marcado como scripted y por la frase de Orona PBCM-V3. Nadie elige un manual. El turno 3 pregunta por el manual BLT. Eso no crea un pin.
-- `a`. Journey A turnos 1–14, una sola vez, sin variante con focus y sin L3. Elemont MH CEA15 en el primer mensaje. Código 8 y luego 18. La ventana de tres mensajes se agota en el turno 11. El turno 13 corrige la planta.
-- `tf`. Los cuatro mensajes del técnico de T-F, en orden. No se insertan las preguntas de asistente escritas en el fixture («¿Qué marca y modelo es el equipo?», «¿Sabes el modelo?»). Se conservan la respuesta y el pending que el sistema produzca. En una nota aparte se registra si ese pending permite leer «el modelo no lo sé» como respuesta al slot. Si el sistema preguntó otra cosa, el hallazgo es ese pending, no una razón para inyectar la pregunta del fixture.
-
-Dos clases de corrección:
-
-- Identidad o código. `correct` exige el span que niega el valor guardado y el span que afirma el reemplazo. Las observaciones van vacías. Cubre el código 8→18 y Fuji Yida→KONE.
-- Observación. La frase nueva es la observación de reemplazo. El turno 13 de A y el turno 9 de B son de esta clase. El fixture ya los escribe como `report` con la observación nueva. Si el intérprete real los emite como `correct` con observaciones vacías, o si `adjust_move` los convierte en `unclear` y las borra, el dueño es esa capa.
-
-### Aceptación
-
-Cada turno lleva una clase, y pueden coexistir: `corpus`, `retrieval`, `product`, `instrument`.
-
-Invariantes obligatorios. Uno solo que falle impide el PASS de la corrida:
-
-- Sin excepción no capturada.
-- En un turno de corrección, el valor descartado no está en facts, goal ni observations del episodio. El reemplazo sí está.
-- El prompt se mira sin el texto literal del turno actual. Ese texto puede decir «no de planta 1» o «no es Fuji Yida». En un `report`, `QueryComposer#current_turn` no quita esa frase.
-- Una línea `User:` anterior que todavía contiene el valor descartado es el hallazgo `prior_user_line_retains_discarded`. No es FAIL en la etapa 1. En T-F turno 4, `technician_turns` puede traer «Fuji Yida» del turno 2 y queda en ese hallazgo. En las etapas 3 y 4 es FAIL si la respuesta publicada trata ese valor como vigente.
-- La respuesta no enseña un procedimiento de otro manual como instrucción de este equipo. Aplica cuando hay respuesta, en las etapas 3 y 4.
-- La respuesta no contiene un valor o un procedimiento que no esté en el turno, en el payload de foto marcado como scripted, o en el texto de un chunk recuperado. Aplica en las etapas 3 y 4.
-- No se repite una pregunta cuya respuesta ya está en el episodio.
-- Si el primer mensaje ya identifica el equipo y la decisión puede buscar, no se pide fabricante, modelo ni controlador antes de esa búsqueda. Pedir evidencia queda para cuando el equipo no alcanza para saber qué manual consultar. En las etapas 3 y 4, una respuesta con procedimiento técnico sin evidencia de equipo ni de manual es FAIL.
-
-`PASS`: todos los turnos evaluados cumplen los invariantes, ninguno está `INCONCLUSIVE`, y las clases `corpus` y `retrieval` no se usaron para tapar un invariante roto.
-
-`FAIL`: un invariante obligatorio no se cumple.
-
-`INCONCLUSIVE`: faltan credenciales, el `status` del intérprete es `timeout`, `throttle` o `transport_error`, o el turno se detuvo por el techo de intentos internos. Cero chunks es `RETRIEVAL_EMPTY`, no `CORPUS_GAP` y no PASS. No demuestra que el manual no esté en el índice. Si la respuesta dice que falta documentación, eso se lee como el texto publicado. La causa de los cero chunks queda en `retrieval`.
-
-Un fallo de A‴ no entra en estas clases.
-
-## Cuatro etapas
-
-Cada etapa usa el resultado de la anterior. No se agrega scorer, tabla, máquina de estados ni una segunda llamada de modelo de producto.
-
-### Etapa 1 — Observar el lifecycle real
-
-Resultado: la traza del contrato, sin cambio de producto, sin Retrieve vivo y sin generación. Una observación presente en la query y ausente del prompt medido (`prompt_real` o, si no existe, el contrafactual) es pérdida de contexto. No es evidencia de que la respuesta cambie. `open_reference_no_results` sin prompt no cuenta como esa pérdida.
-
-Condición para seguir: el manifiesto está completo dentro del techo, o una excepción de producto está registrada. Si no hay falla de producto con dueño identificado, la etapa 2 escribe «sin cambio». La etapa 3 sigue esperando su frase.
-
-### Etapa 2 — Reparar solo lo observado
-
-«Ejecuta la etapa 1» no autoriza esta etapa. Empieza sin otra frase solo si la traza nombra un dueño y el arreglo está en esta lista. Si el dueño es ambiguo, se detiene.
-
-- Pérdida de contexto, no efecto en la respuesta: el prompt medido no contiene una observación que sí está en la query. La ausencia de `prompt_real` en `open_reference_no_results` no entra. La reparación mantiene, dentro de los 400 caracteres, este orden: cabecera, pie y facts de identidad; la observación aceptada más reciente que no esté ya en el turno actual; después el goal. Una observación más vieja puede caer. La traza anota cuáles cayeron y `context_truncated`. El test mira el prompt final de `turn_block` y de `unknown_turn_block`, no solo el string de `SessionContextBuilder`. Una línea que el guidance no lee no cuenta como reparación.
-- El intérprete o `adjust_move` vacía una corrección de observación, o no niega el valor en una corrección de identidad o código. Se repara esa capa. El reducer no es el destino por defecto.
-- La percepción normalizada ya traía el dato y el episodio lo perdió: `WorkContextReducer`.
-- Síntoma explícito que no se guarda, o búsqueda que no ocurre. `clarify_first?` no corta cuando la percepción trae observaciones. Esa pérdida llega por `unclear`, por el fallback, o por observaciones vacías del intérprete. El dueño es la capa que la traza muestre: intérprete, `RoutePolicy#clarify_first?` o el fallback.
-- Pregunta de controlador agregada siempre tras un fabricante: `ask_when` de `ask_controller?`.
-
-Fuera de esta etapa: tablas, scorer, fixture de 18, rerun de A‴, rama por id de caso, otra llamada de modelo, apagar reintentos internos.
-
-Condición para seguir: los tests del comportamiento tocado pasan y la repetición autorizada de la etapa 1, todavía sin Retrieve ni generación, muestra el invariante de estado corregido. La frase «ejecuta la etapa 3» autoriza el gasto de generación.
-
-### Etapa 3 — Búsqueda y respuesta reales
-
-Resultado: una corrida de los cuatro escenarios con Retrieve y generación, dentro del presupuesto. El chunk de Elemont no se inyecta. Cero chunks quedan como `RETRIEVAL_EMPTY`. La respuesta puede decir que falta documentación y ofrecer un paso útil. Eso no convierte el vacío en prueba de que el manual no existe.
-
-Condición para seguir: el veredicto es `PASS`, `FAIL` o `INCONCLUSIVE` según las reglas de aceptación. Un `FAIL` de producto ya visto en la traza entra a una sola reparación. Un `INCONCLUSIVE` se detiene.
-
-### Etapa 4 — Una reparación si hace falta, y cierre
-
-Si la etapa 3 es `FAIL` por una causa de producto ya vista, un diff mínimo y una sola repetición del escenario fallido, dentro del techo de 14 interpretaciones. Si esa repetición cumple los invariantes, el plan registra `PASS` de los escenarios evaluados y se detiene. Si no los cumple, el cierre es `FAIL` o `BLOCKED`. No se escribe como validado.
-
-A‴, su corpus y su scorer quedan como regresión secundaria. No se vuelven a correr para aceptar el companion. Los tests locales de `CompanionGuidanceContext` y `DocumentIdentityScope` se corren solo si el diff los toca.
-
-El resultado cubre estas conversaciones locales. No cubre producción, Vision ni un pin que la corrida no haya fijado.
-
-## Primer paso
-
-Ejecutar la etapa 1 con el contrato de arriba. Los dos bloqueantes de la revisión ya están cerrados aquí. Hace falta la frase del fundador porque gasta Haiku de interpretación y escribe el script de la sonda. Hasta esa frase no hay llamada ni cambio de producto.
-
-## Intervenciones
-
-- «ejecuta la etapa 1». Autoriza una corrida de 29 interpretaciones. No autoriza la etapa 2 ni la 3.
-- La etapa 2 sigue sola cuando la traza nombra un dueño de la lista. Un dueño ambiguo, una tabla o una segunda llamada de modelo detienen el trabajo.
-- «ejecuta la etapa 3». Una corrida con Retrieve y generación.
-- La etapa 4 sigue sola para una reparación y una repetición del escenario fallido. Si sigue fallando, el cierre queda `FAIL` o `BLOCKED`.
-
-## Incertidumbres
-
-Las cierra la sonda, no otro documento:
-
-- Si el intérprete real extrae el síntoma y la identidad, y en qué capa se pierde una corrección.
-- Si el prompt medido, el real o el contrafactual, pierde observaciones que la query sí usó. El efecto sobre la respuesta queda para la etapa 3. La etapa 1 no mide la ruta con manual compatible.
-- Si el retrieve devuelve chunks para Elemont MH / CEA15 y para la nivelación. Cero chunks no cierran el hueco de corpus.
-- Si la pregunta de controlador aparece en un turno que ya puede buscar.
-- Si el pending real de T-F permite interpretar «el modelo no lo sé».
+- Si la etapa 1 cubre los huecos que el código confirma y no mete una sonda pagada para demostrarlos.
+- Si acortar encabezado y pie, sin subir el presupuesto de 400 y sin dejar solo la última observación, alcanza para conservar problema, corrección y comprobación en las dos rutas de guidance.
+- Si dejar de preguntar el controlador cuando ya hay síntoma y un token de equipo debilita un caso en el que dos manuales solo se separan por el controlador.
+- Si cambiar `TASK_LEAD` quita el sesgo sin abrir la puerta a un procedimiento de fabricante sin evidencia.
+- Si tratar la recuperación de un caso anterior como pospuesta es aceptable para el MVP.
+- Si los tres escenarios alcanzan para la pregunta rectora sin turnos redundantes.
+- Si el tope de 90 llamadas de generación, con los reintentos internos activos, es un límite de gasto y no una promesa de éxito.
+- La discrepancia de O-P1: sin artefacto en el repo y con el informe del fundador. No hace falta elegir un lado para aprobar este plan.
+- Las páginas industriales no se re-descargaron en este cambio. Si una frase atribuida no está en la página, se corrige el plan; no se copia la arquitectura de ese producto.

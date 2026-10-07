@@ -56,7 +56,7 @@ Spanish, only weekdays are planned, and `SAAS_COST_MODEL_2026-06-12.md` plus
 
 | Document | Status |
 |---|---|
-| [PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md) | **Current companion validation.** Natural consultation, case continuity, documentation search, and a useful answer or a minimal clarification. Stage 1 has not started. A‴ stays a secondary regression. |
+| [PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md) | **Current companion plan.** Pending Opus review and founder validation. Three stages, not started. A‴ stays a secondary regression. |
 | [PLAN_FIELD_COMPANION_RECOVERY_2026-09-30.md](PLAN_FIELD_COMPANION_RECOVERY_2026-09-30.md) | **Recovery record.** F0–F8 stay closed. Product smoke failed. R1A is `CLOSED — PASS`. R1B is implemented; its production smoke is postponed and does not block the 7 October plan. R2 is absorbed there and is not the next phase. R3 is postponed. Session contract: [SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md) and [ACTIVE_ARCHITECTURE.md](ACTIVE_ARCHITECTURE.md). |
 | [PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md](PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md) | **Closed.** Assisted document discovery through F8 `KEEP_B`. Not the recovery plan. Post-close fixes live in the 30-sep recovery document. |
 | [rag/plan_conocimiento_visual.md](rag/plan_conocimiento_visual.md) | Canonical handoff for phased visual-knowledge ingestion work. Phases 0-6 closed, Gate A-bis passed, **Gate B run: vision relations failed the bar and are switched off; vision keeps component identity** — Phase 7 now waits on human decision #6 |

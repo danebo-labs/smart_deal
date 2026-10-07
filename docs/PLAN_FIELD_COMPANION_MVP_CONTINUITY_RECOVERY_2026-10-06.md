@@ -1,6 +1,6 @@
 # Danebo Field Companion MVP continuity recovery plan
 
-**Ejecución vigente (2026-10-07):** [PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md). O-P1 a O-P5, F3b y F4 no se ejecutan. La tabla Execution state y Section O quedan como historia del 6 de octubre. O-P1 no produjo fixture, harness ni scorer.
+**Ejecución vigente (2026-10-07):** [PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md). Ese plan está pendiente de revisión Opus y de la validación final del fundador. O-P2 a O-P5, F3b y F4 no se reanudan. La tabla Execution state y Section O quedan como historia del 6 de octubre. O-P1 no dejó fixture, harness ni scorer en este repositorio; el informe de que se ejecutó en otro entorno queda sin artefacto visible y no cierra ni reabre la fase.
 
 **STATUS (histórico, 2026-10-06): F3 FAIL. SECTION N A‴ FAIL AT USEFUL 28/68. THE 17/68, 27/68, 24/68, AND 40/68 RECORDS STAY AS RECORDED. LIVE JOURNEYS, F3b, AND F4 ARE NOT AUTHORIZED. SECTION O DESIGN: READY_FOR_O_P1_AUTHORIZATION. O-P1 NOT YET EXECUTED.**
 

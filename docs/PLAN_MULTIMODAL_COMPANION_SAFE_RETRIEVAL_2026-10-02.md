@@ -1,6 +1,6 @@
 # Multimodal Companion Safe Retrieval (2026-10-02)
 
-**Ejecución vigente (2026-10-07):** [PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md). N1–N6 siguen en código local. Su verificación de producción queda pospuesta y no bloquea la etapa 1. Journey B usa el payload de foto ya escrito en el fixture.
+**Ejecución vigente (2026-10-07):** [PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md). El plan de conversación está pendiente de revisión Opus y de la validación del fundador. N1–N6 siguen en código local. Su verificación de producción queda pospuesta y no bloquea ese plan. Journey B usa el payload de foto ya escrito en el fixture.
 
 **Estado:** `N0 COMPLETE — N1 IMPLEMENTED LOCALLY — N2 IMPLEMENTED LOCALLY — N3 IMPLEMENTED LOCALLY — N4 IMPLEMENTED LOCALLY — N5 IMPLEMENTED LOCALLY — N6 IMPLEMENTED LOCALLY — NOT PRODUCTION VERIFIED`
 

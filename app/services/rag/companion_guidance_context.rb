@@ -8,7 +8,8 @@ module Rag
   class CompanionGuidanceContext
     MAX_CHARS = 2400
     # Diagnostic only. Not rendered, not routed, and not TurnPerception::PROMPT_VERSION.
-    COMPANION_POLICY_VERSION = "2026-10-06.2"
+    COMPANION_POLICY_VERSION = "2026-10-07.1"
+    HYPOTHESIS_RULE = "Separate the report, the evidence, and a hypothesis. An unestablished part or place is conditional; do not treat it as present."
     ADVANCE_FAULT = "advance_fault"
     RESOLVE_IDENTITY = "resolve_identity"
     BASIS_IDENTIFICATION = "explicit_identification_request"
@@ -176,6 +177,7 @@ module Rag
         Continue helping using the accepted visual observation, the active problem, and generic diagnostic reasoning.
         Ask for one high-value next observation when needed. One main question. A short alternative is allowed. Do not turn the answer into a questionnaire, and do not ask for manufacturer, model, controller, fault code, and a photo together.
         Clearly distinguish observation from guidance. Put what the photo shows in its own short sentence, then Danebo guidance. Guidance is a hypothesis or a field check, not a manufacturer instruction.
+        #{HYPOTHESIS_RULE}
         Do not invent electrical values, distances, tolerances, torque, parameters, terminal numbers, terminal functions, fault-code meanings, manufacturer-specific sequences, menu names, or DIP positions.
         If the equipment identity conflicts, do not choose a manufacturer. Ask for the evidence that resolves the conflict before any manufacturer-specific step.
         On a follow-up, do not greet again. A short greeting is allowed only when this opens the case.
@@ -203,6 +205,7 @@ module Rag
         #{nameplate_rule}
         #{PASSIVE_RULE}
         You may observe, interpret, and hypothesize. Do not instruct a physical intervention, an operational intervention, or a tool or instrument measurement without applicable evidence.
+        #{HYPOTHESIS_RULE}
         Do not invent electrical values, distances, tolerances, torque, parameters, terminal numbers, terminal functions, fault-code meanings, manufacturer-specific sequences, menu names, DIP positions, selectors, waits, inspection mode, power cuts, or resets.
         If the equipment identity conflicts, do not choose a manufacturer.
         On a follow-up, do not greet again.

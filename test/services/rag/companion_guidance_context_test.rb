@@ -160,6 +160,29 @@ class Rag::CompanionGuidanceContextTest < ActiveSupport::TestCase
     assert_not_includes prompt, "Procedimiento de rescate"
   end
 
+  test "guidance separates reported facts from a hypothesis about an unestablished part" do
+    unknown = unknown_prompt(question: "la puerta no cierra", session_context: "Goal: la puerta no cierra", locale: :es)
+    known = Rag::CompanionGuidanceContext.build(
+      question: "la puerta no cierra",
+      identity: Rag::EquipmentIdentity.new(manufacturer: nil, needles: [], facts: []),
+      session_context: "Goal: la puerta no cierra",
+      labels: [],
+      locale: :es
+    ).to_s
+    rule = Rag::CompanionGuidanceContext::HYPOTHESIS_RULE
+
+    assert_includes unknown, rule
+    assert_includes known, rule
+    assert_includes rule, "the report"
+    assert_includes rule, "the evidence"
+    assert_includes rule, "a hypothesis"
+    assert_includes rule, "unestablished part or place"
+    assert_not_includes unknown, "sensor de cierre"
+    assert_not_includes unknown, "jamba"
+    assert_includes unknown, "Do not make a questionnaire."
+    assert_includes unknown, "Do not ask equipment identity by routine."
+  end
+
   test "unknown guidance keeps locale follow-up and the prompt budget" do
     prompt = unknown_prompt(question: "", session_context: "", locale: :es)
     instruction = prompt.sub(/\n\nFollow-up: no\.\z/, "")

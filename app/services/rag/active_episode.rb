@@ -16,6 +16,9 @@ module Rag
     MAX_VALUE_CHARS = 60
     MAX_IDENTIFIERS = 5
     MAX_IDENTIFIER_CHARS = 30
+    # A catalog display_name is a retrieval term. The 30-character user cap
+    # would cut it before QueryComposer applies its own length budget.
+    MAX_CATALOG_IDENTIFIER_CHARS = 120
     MAX_CONFLICTS = 3
     MAX_OBSERVATIONS = 3
     MAX_STORED_OBSERVATIONS = 12
@@ -163,7 +166,7 @@ module Rag
     end
 
     def append_identifier!(value, correlation_id:, source: "user")
-      literal = value.to_s.squish.first(MAX_IDENTIFIER_CHARS)
+      literal = value.to_s.squish.first(self.class.identifier_limit(source))
       return if literal.blank?
 
       label = FollowupQueryRewriter.normalize_label(literal)
@@ -327,6 +330,10 @@ module Rag
     end
     private_class_method :sanitize_facts
 
+    def self.identifier_limit(source)
+      source.to_s == "catalog" ? MAX_CATALOG_IDENTIFIER_CHARS : MAX_IDENTIFIER_CHARS
+    end
+
     def self.sanitize_identifiers(raw)
       return [] unless raw.is_a?(Array)
 
@@ -336,7 +343,7 @@ module Rag
         next unless item.is_a?(Hash)
 
         item = item.stringify_keys
-        value = item["value"].to_s.squish.first(MAX_IDENTIFIER_CHARS)
+        value = item["value"].to_s.squish.first(identifier_limit(item["source"]))
         next if value.blank?
 
         label = FollowupQueryRewriter.normalize_label(value)

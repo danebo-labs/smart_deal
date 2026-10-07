@@ -1,6 +1,6 @@
 # Field Companion: conversación técnica real
 
-**Estado: ETAPA 2 BLOQUEADA.** No es `EPISODIO_VALIDADO`. La etapa 1 está en el código local. La etapa 2 sigue bloqueada: la corrección de planta quedó reparada en local sobre `66dd9e0` y no está revalidada. La etapa 3 no empieza. La revisión Opus del 2026-10-07 sobre `7076f05` sigue incorporada. Esta revisión no habilita un piloto.
+**Estado: ETAPA 2 BLOQUEADA.** No es `EPISODIO_VALIDADO`. La etapa 1 está en el código local. La etapa 2 sigue bloqueada: la corrección de planta quedó reparada en local sobre `66dd9e0` y no está revalidada. La comprobación web del 2026-10-07 reprodujo la consulta corta; la reparación del nombre canónico queda en local y no reabre la etapa. La etapa 3 no empieza. La revisión Opus del 2026-10-07 sobre `7076f05` sigue incorporada. Esta revisión no habilita un piloto.
 
 Este documento es el único plan vigente del companion. Una revisión documental no autoriza a empezar. La etapa 1 ya está en el código local. No llama a Bedrock y no despliega.
 
@@ -399,6 +399,26 @@ Consulta: `Elemont Montacargas Hidraulico Modelo MH Seguridad Puerta nivel 1`. K
 `chunk_p5_1.txt` del Elemont MH salió primero, página 5, aceptado por `viewer_account`. El texto es el diagrama de circuito 3: la línea de seguridad incluye la etiqueta «Seguridad Puerta nivel 1», y también está la botonera de pasillo del nivel 1. No menciona el código 18, el LED 7 ni el imán. `chunk_p6_1.txt` no entró en los ocho. Esta consulta no lo devolvió. Eso no dice que falte en el índice.
 
 El contrato del filtro, resuelto por slug y no por estos ids locales, está en [SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md#shared-corpus-current-contract).
+
+#### Comprobación web y reparación local (2026-10-07)
+
+La imagen web de producción seguía en `d5660d72a1e676ef9f054dd49ccc7e65511b9f2c`. Una sola solicitud autenticada en `https://elevator.danebo.ai`, con un usuario aislado de `danebo-legacy`. No usó la sesión 5. La pregunta fue la del turno 1 de la sesión 196, sin pin y sin agregar a mano el nombre del catálogo. Correlación `query:126c8fa5-5ccb-49e6-b92b-37534c8853e2`. HTTP 200. Ruta `identity_unknown_reference`, HYBRID, k=8. La cadena de retrieval fue el texto del técnico. Ocho chunks, ninguno del Elemont MH. Citas publicadas vacías. La respuesta dijo que la identidad no está confirmada y pidió observar si el imán de la puerta 1 está alineado con el sensor de cierre en la jamba. Ese sensor y esa jamba no estaban en la pregunta ni en una cita. La frase la escribió el modelo.
+
+Dos filas de `BedrockQuery`: análisis semántico US$0,00348 y generación `rag_global` US$0,000868. Total US$0,004348. Esas dos llamadas quedan aparte del histórico de la etapa 2, que sigue en 106 llamadas y US$0,214838. `Retrieve` y el embedding de la consulta no están en esa tabla. `PASS_CALL_CAP` sigue en 0. Los techos siguen en 126, 42, 168 y US$2,50.
+
+Límites de esa evidencia. La solicitud corrió en `rails runner` dentro del contenedor web, no en Puma, así que el log del rol web no tiene sus marcadores. La base guardó el turno y las dos filas de costo. El paquete está en `tmp/pilot_exports/trace-once/2026-10-07_2026-10-07_danebo-legacy/`. El reporte marca el rol web como ausente por esa razón. La sesión 5 no cambió. El usuario de la comprobación se borró al terminar. No hubo despliegue. Recuperar el dibujo no resuelve la falla: la página 5 no explica el código 18, el LED 7 ni el imán.
+
+`BedrockIngestionJob#persist_to_technician_documents` omite `account_id`. Queda registrado aparte. Esta reparación no lo toca y no es la causa de la consulta corta.
+
+Reparación local, sobre la misma base, sin llamadas a AWS y sin despliegue. Un span que es la marca y el designador exactos de una sola entrada confirmada y autorizada agrega el `display_name` a los identificadores del episodio, con origen `catalog`. `QueryComposer` ya compone esos identificadores y mantiene el tope de 442 caracteres. El span del técnico sigue con origen `user`. No se escribe un hecho de fabricante ni de modelo, así que la expansión sola no vuelve `EquipmentIdentity#known?` verdadero ni confirma aplicabilidad. No escribe pin ni cambia el filtro. Varios candidatos, una fila no autorizada o una vinculación ambigua no eligen uno. `CEA15` no selecciona `CEA15+`. Una corrección que niega ese span retira también el nombre canónico y no lo deja rechazado de forma global. El identificador de catálogo admite 120 caracteres; el del técnico sigue en 30.
+
+En un caso genérico, la consulta pasa de `Acme ZX no arranca` a esa frase más `Acme Freight Controller ZX Field Manual`. En el caso investigado, la consulta pasa del texto del técnico a ese mismo texto más `Elemont Montacargas Hidraulico Modelo MH`. Esos nombres son datos del catálogo de prueba y del manual ya publicado. No hay una rama de producto para ellos.
+
+El prompt de orientación, con identidad conocida y con identidad desconocida, separa el reporte, la evidencia y la hipótesis. Un componente o un lugar que no quedó establecido es condicional: no se trata como si ya estuviera. No se agregó un cuestionario ni una pregunta de identidad por rutina. El test comprueba que esa instrucción está en el prompt. No demuestra que el modelo la cumpla.
+
+Pendiente: el efecto de la consulta expandida sobre el retrieval y sobre la respuesta real. Esta reparación no lo ejecuta. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. `PASS_CALL_CAP` sigue en 0.
+
+Veredicto de este diff: `REPARACION_LOCAL_COMPLETADA`.
 
 ### 3. Verificar ese alcance en producción
 

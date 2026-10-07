@@ -182,6 +182,26 @@ module Rag
       entry.evidence_text.present?
     end
 
+    # The span is exactly one brand and one designator of one confirmed entry
+    # the viewer may see. The display_name is a retrieval term. It is not a
+    # declared model, a pin, or a prefix match. Several entries, or none,
+    # return nil.
+    def confirmed_retrieval_name(span, viewer_account:)
+      return nil if viewer_account.nil?
+
+      tokens = strict_tokens(span)
+      return nil if tokens.size < 2
+
+      matches = entries.select { |entry|
+        self.class.effectively_confirmed?(entry) && brand_and_designator_span?(tokens, entry)
+      }
+      allowed = authorized_entry_keys(matches, viewer_account)
+      chosen = matches.select { |entry| allowed.include?(entry_key(entry)) }
+      return nil unless chosen.one?
+
+      chosen.first.display_name.to_s.squish.presence
+    end
+
     def activatable?
       loaded? && entries.any? { |entry| self.class.effectively_confirmed?(entry) }
     end
@@ -312,6 +332,22 @@ module Rag
     def for_s3_key(s3_key)
       key = s3_key.to_s
       @by_s3_key[key] || @by_s3_key[KbDocument.object_key_for_match(key).to_s]
+    end
+
+    # Case and accents only. Punctuation stays, so a prefix or a dropped
+    # mark is not the same designator.
+    def strict_tokens(value)
+      value.to_s.unicode_normalize(:nfkd).gsub(/\p{Mn}/, "").downcase.split
+    end
+
+    def brand_and_designator_span?(tokens, entry)
+      brands = Array(entry.brands).filter_map { |brand| strict_tokens(brand).presence }
+      designators = Array(entry.designators).filter_map { |value| strict_tokens(value).presence }
+      return false if brands.empty? || designators.empty?
+
+      brands.product(designators).any? { |brand, designator|
+        [ brand + designator, designator + brand ].include?(tokens)
+      }
     end
 
     def evidence_page_of(value)

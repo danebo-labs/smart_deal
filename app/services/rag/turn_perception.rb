@@ -20,7 +20,16 @@ module Rag
     PROMPT_VERSION = "2026-10-07.2"
     SCHEMA_VERSION = "turn_perception.3"
 
-    Identity = Data.define(:span, :act, :kind, :slot, :value, :source, :manufacturer)
+    Identity = Data.define(
+      :span, :act, :kind, :slot, :value, :source, :manufacturer, :catalog_retrieval
+    ) do
+      def initialize(span:, act:, kind:, slot:, value:, source:, manufacturer:, catalog_retrieval: nil)
+        super(
+          span: span, act: act, kind: kind, slot: slot, value: value,
+          source: source, manufacturer: manufacturer, catalog_retrieval: catalog_retrieval
+        )
+      end
+    end
     Ambiguity = Data.define(:span, :candidates)
 
     Result = Data.define(
@@ -299,13 +308,14 @@ module Rag
       disagree(span, hint, nil) if IDENTITY_HINTS.include?(hint)
       return mention(span) if item["act"] == "mention"
 
-      identifier(span, item["act"])
+      identifier(span, item["act"], lookup_retrieval_name(span))
     end
 
     def negate_identity(item)
       Identity.new(
         span: item["span"], act: "negate", kind: "negate",
-        slot: matched_slot(item["span"]), value: item["span"], source: nil, manufacturer: nil
+        slot: matched_slot(item["span"]), value: item["span"], source: nil, manufacturer: nil,
+        catalog_retrieval: lookup_retrieval_name(item["span"])
       )
     end
 
@@ -316,8 +326,11 @@ module Rag
       )
     end
 
-    def identifier(span, act)
-      Identity.new(span: span, act: act, kind: "identifier", slot: nil, value: span, source: nil, manufacturer: nil)
+    def identifier(span, act, catalog_retrieval = nil)
+      Identity.new(
+        span: span, act: act, kind: "identifier", slot: nil, value: span,
+        source: nil, manufacturer: nil, catalog_retrieval: catalog_retrieval.presence
+      )
     end
 
     def mention(span)
@@ -347,6 +360,13 @@ module Rag
       return nil if @viewer_account.nil? || @catalog.nil?
 
       @catalog.resolve_brand(span, viewer_account: @viewer_account)
+    end
+
+    def lookup_retrieval_name(span)
+      return nil if @viewer_account.nil? || @catalog.nil?
+      return nil unless @catalog.respond_to?(:confirmed_retrieval_name)
+
+      @catalog.confirmed_retrieval_name(span, viewer_account: @viewer_account)
     end
 
     def pending_slot

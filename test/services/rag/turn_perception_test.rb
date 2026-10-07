@@ -293,6 +293,38 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_includes episode.observations.pluck("text"), "El LED 7 está apagado"
   end
 
+  test "a catalog controller named inside the plant correction stays a fact" do
+    episode = plant_episode
+    turn = "Corrijo algo de antes: la cabina NICE3000 está detenida cerca de planta 2, no de planta 1."
+    raw = session_196_turn_13_raw.merge(
+      "assertions" => [
+        { "span" => "cerca de planta 2", "act" => "assert", "slot_hint" => nil },
+        assert_span("NICE3000", "controller")
+      ]
+    )
+    result = perceive(raw, turn, episode: episode)
+    decision = settle(episode, result, turn)
+    explained = Rag::QueryComposer.explain(
+      state: episode, turn: turn, perception: result, decision: decision
+    )
+
+    assert_equal "correct", result.move
+    assert_nil result.clarification_target
+    assert_not_equal "clarify_first", decision.decision
+    assert_equal "NICE3000", result.facts.find { |item| item.slot == "controller" }&.value
+    assert_equal "catalog", episode.fact("controller")["source"]
+    assert_equal "NICE3000", episode.fact("controller")["value"]
+    assert_equal "MONARCH", episode.fact("manufacturer")["value"]
+    assert_includes episode.observations.pluck("text"), "la cabina NICE3000 está detenida cerca de planta 2"
+    assert episode.observations.none? { |item| item["text"].match?(/(?<![[:alnum:]])planta 1(?![[:alnum:]])/i) }
+    assert_includes episode.observations.pluck("text"), "El LED 7 está apagado"
+    assert_equal "18", episode.fact("fault_code")["value"]
+    assert_includes explained[:query], "NICE3000"
+    assert_includes explained[:query], "MONARCH"
+    assert_includes explained[:query], "planta 2"
+    assert_catalog_fact_in_prompt(episode)
+  end
+
   test "an explicit code replacement stays a correction when the model asks which datum" do
     episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
     episode.append_observation!("El display muestra código 8", correlation_id: "seed")
@@ -623,6 +655,35 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
       output_channel: :web
     ).dig(:generation_configuration, :prompt_template, :text_prompt_template)
 
+    assert_includes block, "planta 2"
+    assert_not_includes block, "planta 1"
+    assert_includes prompt, block
+  ensure
+    previous&.each { |key, old| old.nil? ? ENV.delete(key) : ENV[key] = old }
+  end
+
+  def assert_catalog_fact_in_prompt(episode)
+    session = ConversationSession.create!(
+      identifier: "web:plant_#{SecureRandom.hex(3)}",
+      channel: "web",
+      expires_at: 30.days.from_now,
+      active_episode: episode.to_h
+    )
+    keys = %w[FIELD_COMPANION_EPISODE_ENABLED FIELD_COMPANION_TURN_ENABLED]
+    previous = keys.index_with { |key| ENV[key] }
+    ENV["FIELD_COMPANION_EPISODE_ENABLED"] = "true"
+    ENV["FIELD_COMPANION_TURN_ENABLED"] = "true"
+    block = SessionContextBuilder.field_problem_block(session)
+    context = SessionContextBuilder.build(session)
+    prompt = BedrockRagService.new(account: @owner).build_complete_optimized_config(
+      question: "la cabina NICE3000 está detenida cerca de planta 2",
+      response_locale: :es,
+      session_context: context,
+      output_channel: :web
+    ).dig(:generation_configuration, :prompt_template, :text_prompt_template)
+
+    assert_includes block, "Controller: NICE3000 (catalog)"
+    assert_includes block, "Manufacturer: MONARCH (catalog)"
     assert_includes block, "planta 2"
     assert_not_includes block, "planta 1"
     assert_includes prompt, block

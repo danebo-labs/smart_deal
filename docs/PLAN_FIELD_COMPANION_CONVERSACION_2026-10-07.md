@@ -356,13 +356,21 @@ Veredicto de esta pasada: `BLOQUEADA`. No es `EPISODIO_VALIDADO`. La etapa 3 no 
 
 Sin Bedrock, sin Retrieve, sin otra pasada y sin despliegue. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. Esta reparación no autoriza una pasada.
 
-La salida cruda del turno 13 era `correct`, con la aserción «cerca de planta 2» y observaciones vacías. La recuperación armaba «la cabina está detenida cerca de planta 2» y conservaba el fragmento como identificador. `observation_correction?` lo rechazaba y el turno volvía a preguntar qué dato corregir. Un fragmento contenido en la observación recuperada ya no bloquea esa corrección ni se guarda como identidad del equipo. Otro identificador del mismo turno se conserva. Un hecho, una negación con slot o un par negar/afirmar siguen exigiendo el valor vigente y su reemplazo.
+La salida cruda del turno 13 era `correct`, con la aserción «cerca de planta 2» y observaciones vacías. La recuperación armaba «la cabina está detenida cerca de planta 2» y conservaba el fragmento como identificador. `observation_correction?` lo rechazaba y el turno volvía a preguntar qué dato corregir. Un fragmento contenido en la observación recuperada ya no bloquea esa corrección ni se guarda como identidad del equipo. Otro identificador del mismo turno se conserva. Una negación con slot o un par negar/afirmar siguen exigiendo el valor vigente y su reemplazo.
 
 El consumo histórico pasa a 106 llamadas y US$0,214838 registrados en `BedrockQuery`. Quedan 20 llamadas dentro de 126. La etapa 3 conserva 42 dentro del techo global de 168 y el tope sigue en US$2,50. El saldo no abre otra pasada: el tope de la pasada siguiente queda en 0. `Retrieve` y el embedding siguen fuera de esa cifra. No hay rollup de `bedrock_daily_costs`.
 
 Los cuerpos de los chunks no se guardaron. `availability.json` y `trace.json` guardan la consulta, el filtro, k y las citas: nombre, página, cuenta, marca `elemont` y URI truncada. No hay texto de página. Lo capturado del Elemont es la disponibilidad: «Elemont Montacargas Hidraulico Modelo MH», páginas 1 y 7, cuenta 1, `chunk_p1_1.txt` y `chunk_p7_2.txt`, más Crown en las páginas 99 y 383. El texto de esa consulta de disponibilidad es el título del manual. Ninguna cita del episodio tiene `elemont: true`. Esa metadata no dice si el manual habla de la puerta o del imán. Falta el texto de esas páginas para saber si puede responder al caso. No se atribuye el fallo al ranking y `manual-cea15p` no queda como compatible con la placa CEA15.
 
 Pendiente: otra pasada solo con autorización explícita. La corrección de planta está demostrada en local y no está revalidada contra el índice. El éxito documental del Elemont sigue abierto porque el cuerpo de las páginas 1 y 7 no está en la traza.
+
+#### Ajuste sobre 2faa7d0 (2026-10-07)
+
+Sin Bedrock, sin Retrieve, sin otra pasada y sin despliegue. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. Este ajuste no autoriza una pasada.
+
+Una corrección de observación ya no borra los `fact` del turno cuando el intérprete dejó las observaciones vacías. Se elimina solo el identificador que es la frase recuperada o un fragmento de ella. Un controlador que el catálogo reconoce, aunque su nombre aparezca dentro de esa frase, sigue vigente junto con la planta nueva. La planta anterior deja de estarlo. La consulta y el bloque de contexto conservan los dos. Un reemplazo de identidad o de código incompleto sigue pidiendo el dato: hace falta la negación con slot, o el par negar y afirmar.
+
+Con `PASS_CALL_CAP` en 0, `stage2_journey_a_main` consulta `Stage2RunBudget` y vuelve antes de crear la sesión de validación, de `Retrieve` y de la generación, aunque `STAGE2_JOURNEY_AUTHORIZED=1`. El control anterior a cada turno sigue en el recorrido. El histórico permanece en 106 llamadas y US$0,214838. Los techos siguen en 126, 42 reservadas para la etapa 3, 168 y US$2,50.
 
 ### 3. Verificar ese alcance en producción
 

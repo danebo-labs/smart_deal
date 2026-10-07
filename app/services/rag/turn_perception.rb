@@ -390,9 +390,6 @@ module Rag
       if phrase && %w[unclear correct].include?(move)
         merged = merge_phrase(observations, phrase)
         kept = identities.reject { |item| observation_fragment?(item, merged) }
-        if observations.empty?
-          kept = kept.reject { |item| item.act == "negate" || item.kind == "fact" }
-        end
         return [ "correct", nil, kept, merged, ambiguities, nil ]
       end
 
@@ -526,9 +523,10 @@ module Rag
 
     # An observation correction has no slot to negate. A fragment of the
     # recovered phrase is not equipment identity and does not block that
-    # correction. Another identifier from the same turn stays. A fact, a
-    # slotted negate, or a negate paired with an assert still needs the
-    # stored value and its replacement.
+    # correction. Another identifier, and a catalog fact from the same turn,
+    # stay. Sharing words with the observation does not make that fact a
+    # fragment. A slotted negate, or a negate paired with an assert, still
+    # needs the stored value and its replacement.
     def observation_correction?(identities, observations)
       return false if observations.empty?
       return false if identities.any? { |item| item.kind == "negate" && item.slot.present? }
@@ -538,13 +536,15 @@ module Rag
         item.act == "assert" && %w[fact identifier].include?(item.kind) &&
           !observation_fragment?(item, observations)
       }
-      return false if blocking.any? { |item| !explicit || item.kind == "fact" }
+      return false if blocking.any? && !explicit
       return false if identities.any? { |item| item.act == "negate" } &&
         identities.any? { |item| item.act == "assert" && !observation_fragment?(item, observations) }
 
       true
     end
 
+    # Only an identifier that is the recovered observation, or a piece of it.
+    # A catalog fact is equipment identity even when the observation names it.
     def observation_fragment?(item, observations)
       return false unless item.act == "assert" && item.kind == "identifier"
 

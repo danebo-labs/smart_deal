@@ -1,6 +1,6 @@
 # Field Companion: conversación técnica real
 
-**Estado: ETAPA 2 BLOQUEADA.** No es `EPISODIO_VALIDADO`. La etapa 1 está en el código local. La etapa 2 corrió el journey A contra la Knowledge Base de producción y se detuvo al agotar las dos repeticiones. La etapa 3 no empieza. La revisión Opus del 2026-10-07 sobre `7076f05` sigue incorporada. Esta revisión no habilita un piloto.
+**Estado: ETAPA 2 BLOQUEADA.** No es `EPISODIO_VALIDADO`. La etapa 1 está en el código local. La etapa 2 sigue bloqueada después de la pasada autorizada sobre `da8d32b`, sesión 196. La etapa 3 no empieza. La revisión Opus del 2026-10-07 sobre `7076f05` sigue incorporada. Esta revisión no habilita un piloto.
 
 Este documento es el único plan vigente del companion. Una revisión documental no autoriza a empezar. La etapa 1 ya está en el código local. No llama a Bedrock y no despliega.
 
@@ -333,6 +333,26 @@ Cada ejecución escribe en `tmp/stage2_journey_a/runs/<corrida>-session-<id>/`. 
 La captura, solo dentro del bloque, registra también el prompt que sale por generación directa: `BedrockClient#generate_text` (guidance y generación con identidad conocida) y `converse_message` (contrato de publicación). `max_tokens` se conserva. Las credenciales se quitan por nombre exacto (`access_key_id`, `session_token`, `secret_access_key`); una clave no se borra por contener la palabra token. No hay llamada extra.
 
 `merge_phrase` ya no descarta una frase porque otra esté contenida en ella. «La guía no tiene obstrucción, pero el rodillo está trabado» conserva la guía y el rodillo trabado, y no guarda al lado la frase corta. Dos comprobaciones que no se contienen siguen las dos.
+
+#### Pasada autorizada sobre da8d32b (2026-10-07)
+
+SHA `da8d32b38b8f9333fcdbb81936c07f2a21f6fad4`. Una sola pasada de los turnos 1 a 14. Sesión local 196. Trazas en `tmp/stage2_journey_a/runs/20261007T193541Z-session-196/`. Las trazas anteriores, en `tmp/stage2_journey_a/`, no se reescribieron. Sin pin, sin L3, sin despliegue y sin escritura en la base Rails de producción. No hubo segunda pasada ni reparación en caliente. Esta autorización no abre la etapa 3.
+
+Rails local, `smart_deal_development` en localhost, Knowledge Base `Y7RZWMFJSR`, región `us-east-1`. El proceso exportó el índice de producción y apagó la sesión compartida. Cuenta 1 y documento Elemont `dcc8e046-037d-48a6-8913-1992aed28507`. La disponibilidad prevista en el runner devolvió el Elemont MH, páginas 1 y 7, junto con un manual Crown. El filtro capturado es el mismo en esa disponibilidad y en los turnos del episodio: cuenta 1, o la cuenta 4 sin foto y sin `manual_corpus=account`, o `manual_corpus=general`. Híbrido. Disponibilidad con k=5; el episodio con k=8. Ningún retrieve del episodio devolvió el Elemont. Devolvieron `manual-cea15p`, `manual-cea51fb-das`, VF5, Monarch e IME01. El parecido del nombre no hace compatible a `manual-cea15p` con la placa CEA15. La diferencia observada es la consulta, no otro filtro. No se hicieron búsquedas adicionales.
+
+Presupuesto de esta pasada, leído de `BedrockQuery`: 26 llamadas nuevas y US$0,053276. 14 son el intérprete (`semantic_analysis`) y 12 son generación (`query`, ruta `rag_global`). Los turnos 10 y 13 no generaron. Con las 80 llamadas y US$0,161562 ya gastados: 106 llamadas y US$0,214838. Cabe en 42 nuevas, en 126 de la etapa y en 168 globales. `Retrieve` y el embedding de la consulta no están en esa cifra. No hay rollup de `bedrock_daily_costs`.
+
+El bloque del turno 14 mide 563 caracteres y no se recortó. El prompt enviado a generación lleva el objetivo, Elemont MH, CEA15, el código 18, `Not current: fault code 8`, el LED 7, la guía sin obstrucción y el clic. El turno 1 buscó sin pedir fabricante, modelo ni controlador. El turno 5 guardó el código 18, rechazó el 8, sacó «El display muestra código 8» y conservó la puerta, el imán, la planta, la ocupación y la reapertura. La consulta quedó en «era código 18», sin «no .». «Sigue igual» no reemplazó el estado.
+
+El turno 13 no aplicó la corrección. El técnico dijo planta 2, no planta 1. La salida cruda del intérprete fue `correct`, con la aserción «cerca de planta 2» y observaciones vacías. La respuesta fue «¿Qué dato del equipo quieres corregir?». La planta 1 siguió en el episodio y en el prompt del turno 14. Un `correct` sin negación ranurada se vacía si queda un assert de identificador, y la frase «la cabina está detenida cerca de planta 2» no se guardó.
+
+No se envió «No lo sé». El turno 11 pasó de «Hice esa revisión» a «Sigue el clic y la puerta no termina de cerrar» porque la respuesta anterior no nombraba esa revisión. El turno 7 tenía Elemont MH, CEA15 y el código 18 en el prompt, y la respuesta volvió a pedir la placa. Es orientación con identidad no confirmada, no éxito documental. El turno 10, sin retrieve, respondió «Puedes seguir con lo que ya me contaste.»
+
+Respuesta completa del turno 14: «Escucha el sonido del imán cuando la puerta llega al marco y dime si oyes un chasquido o un zumbido que se sostiene, o si el sonido se detiene apenas la puerta toca el marco.» No cita el Elemont. No declara la puerta reparada. No inventa un terminal ni un valor de fabricante. Repite una escucha y deja la planta 1 como vigente. No es una respuesta sustentada, ni una siguiente acción que use la corrección, ni un escalamiento fundamentado.
+
+Veredicto de esta pasada: `BLOQUEADA`. No es `EPISODIO_VALIDADO`. La etapa 3 no empieza. Este cierre no autoriza otra pasada.
+
+Próxima reparación, no hecha: cuando el turno ya dice «corrijo» y «no de», conservar la frase de reemplazo aunque el intérprete solo aserte un fragmento sin slot. En este caso, guardar «la cabina está detenida cerca de planta 2» y sacar la observación de planta 1, sin volver a preguntar qué dato se corrige.
 
 ### 3. Verificar ese alcance en producción
 

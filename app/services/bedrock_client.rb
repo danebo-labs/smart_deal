@@ -33,6 +33,13 @@ class BedrockClient
     }
 
     start_time = Time.current
+    Rag::ValidationCapture.record(
+      "generate_text",
+      "model_id" => model_id,
+      "max_tokens" => max_tokens,
+      "temperature" => temperature,
+      "prompt" => prompt.to_s
+    )
     response = @client.invoke_model(
       model_id: model_id,
       content_type: 'application/json',
@@ -70,6 +77,7 @@ class BedrockClient
   # Tool use on the primary runtime client. #converse stays the 8-second
   # shadow client used by perception. generate_text cannot send a tool schema.
   def converse_message(params)
+    Rag::ValidationCapture.record("converse", params)
     @client.converse(params)
   end
 

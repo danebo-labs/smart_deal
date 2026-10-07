@@ -5,7 +5,14 @@ module Rag
   # Inactive unless a local validation runner opens a capture block.
   # It does not call Bedrock and it does not reconstruct an earlier run.
   module ValidationCapture
-    SECRET_KEY = /access.?key|secret|password|token|authorization|credential/i
+    # Exact credential names. max_tokens, input_tokens, and token_source stay.
+    SECRET_KEYS = %w[
+      accesskey accesskeyid awsaccesskeyid
+      secret secretaccesskey awssecretaccesskey
+      password passwordconfirmation
+      token sessiontoken securitytoken
+      authorization credential credentials apikey
+    ].freeze
     SECRET_TEXT = /AKIA[A-Z0-9]{8,}/
 
     module_function
@@ -44,7 +51,7 @@ module Rag
       when Hash
         value.each_with_object({}) do |(key, item), out|
           name = key.to_s
-          next if name.match?(SECRET_KEY)
+          next if secret_key?(name)
 
           out[name] = sanitize(item)
         end
@@ -55,6 +62,10 @@ module Rag
       else
         value.to_s.gsub(SECRET_TEXT, "[redacted]")
       end
+    end
+
+    def secret_key?(name)
+      SECRET_KEYS.include?(name.to_s.downcase.gsub(/[^a-z0-9]/, ""))
     end
   end
 end

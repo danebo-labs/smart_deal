@@ -239,9 +239,10 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
 
     assert_equal "correct", result.move
     assert_nil result.clarification_target
-    assert_equal [ "detenida cerca de planta 2" ], result.observations
+    assert_equal [ "la cabina está detenida cerca de planta 2" ], result.observations
     texts = episode.observations.pluck("text")
-    assert_includes texts, "detenida cerca de planta 2"
+    assert_includes texts, "la cabina está detenida cerca de planta 2"
+    assert texts.none? { |text| text == "detenida cerca de planta 2" }
     assert texts.none? { |text| text.match?(/(?<![[:alnum:]])planta 1(?![[:alnum:]])/i) }
     assert_includes Rag::TurnInterpreter::PROMPT, "A correction of an observation keeps the replacement phrase"
     assert_not_includes Rag::TurnInterpreter::PROMPT, "A correction has empty observations."
@@ -301,6 +302,42 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_includes episode.identifiers.pluck("value"), "Elemont MH"
     assert_includes Rag::TurnInterpreter::PROMPT, "Keep every other symptom in that same turn as an observation."
     assert_not_includes Rag::TurnInterpreter::PROMPT, "has empty observations"
+  end
+
+  test "a phrase contained in another keeps the added condition without a duplicate" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    turn = "Era código 18, no 8. La guía no tiene obstrucción, pero el rodillo está trabado."
+    result = perceive(
+      {
+        "move" => "unclear",
+        "assertions" => [],
+        "observations" => [ "La guía no tiene obstrucción" ],
+        "pending_resolution" => nil,
+        "clarification_target" => "correction_target"
+      },
+      turn,
+      episode: episode
+    )
+
+    assert_equal [ "La guía no tiene obstrucción, pero el rodillo está trabado" ], result.observations
+  end
+
+  test "two checks that do not contain each other both stay" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    turn = "Era código 18, no 8. La guía no tiene obstrucción. El rodillo está trabado."
+    result = perceive(
+      {
+        "move" => "unclear",
+        "assertions" => [],
+        "observations" => [ "La guía no tiene obstrucción" ],
+        "pending_resolution" => nil,
+        "clarification_target" => "correction_target"
+      },
+      turn,
+      episode: episode
+    )
+
+    assert_equal [ "La guía no tiene obstrucción", "El rodillo está trabado" ], result.observations
   end
 
   test "an explicit observation replacement survives a correction_target reading" do

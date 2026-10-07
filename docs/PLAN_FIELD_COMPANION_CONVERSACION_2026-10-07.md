@@ -316,11 +316,23 @@ El armado de mensajes del journey A ya no antepone un hecho de otro turno. Si la
 
 `pending_question` sigue vacío. No se proyecta como pregunta pendiente algo inferido del texto de la respuesta: no hay un mecanismo que guarde la pregunta que Danebo acaba de hacer. Propuesta aparte, no implementada: al cerrar el turno, si la respuesta termina en una comprobación, guardarla como pregunta abierta y no repetirla cuando el técnico ya dijo que no la sabe. Eso queda fuera de este diff.
 
-La próxima corrida, solo si se autoriza, usa `script/field_companion/stage2_journey_a.rb` con `STAGE2_JOURNEY_AUTHORIZED=1`. El runner local `tmp/stage2_journey_a.rb` carga ese archivo. En esa corrida la traza guarda la consulta y el filtro enviados a Retrieve, la salida cruda del intérprete antes de `TurnPerception`, el prompt final de `retrieve_and_generate`, el `correlation_id`, el recorte y las citas. No añade llamadas. No guarda secretos. No recupera los requests de las sesiones 193, 194 y 195: esos cuerpos no se guardaron.
+La próxima corrida, solo si se autoriza, usa `script/field_companion/stage2_journey_a.rb` con `STAGE2_JOURNEY_AUTHORIZED=1`. El runner local `tmp/stage2_journey_a.rb` carga ese archivo. Esta sección no la autoriza. El presupuesto de esa corrida está en el ajuste siguiente: no se reabre contando solo filas posteriores al baseline.
 
 Sigue sin demostrarse, y este diff no lo cambia: el ranking que no devolvió el Elemont en las consultas del episodio, el cuerpo del filtro de la cuenta 1 de esas pasadas, si algún chunk del Elemont habla de la puerta o del imán, y si `manual-cea15p` aplica a la placa CEA15. No se tocó el pin ni el filtro de aplicabilidad.
 
 Condición para otra validación: revisión de este diff y una autorización explícita. El techo sigue en 126 llamadas de esta etapa, 168 globales y US$2,50. Lo ya gastado, 80 llamadas y US$0,161562, no se borra. La etapa 3 no empieza.
+
+#### Ajuste sobre 0ec8ba6 (2026-10-07)
+
+Sin Bedrock, sin Retrieve, sin otra pasada y sin despliegue. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. Este ajuste no autoriza la pasada que deja preparada.
+
+El runner suma siempre las 80 llamadas y US$0,161562 ya gastados. Un baseline nuevo, o una base sin esas filas, no devuelve el techo a 126. La pasada futura, si se autoriza, puede añadir como máximo 42 llamadas nuevas, reintentos de publicación y guidance incluidos. Antes de cada turno tiene que quedar margen para 3 llamadas de modelo: el intérprete y hasta dos de publicación o guidance. El segundo intento `retry_open` no entra, porque este journey no usa pin. Con eso, la etapa 2 sigue dentro de 126 y la etapa 3 conserva sus 42 dentro del techo global de 168. El costo histórico también entra en el tope de US$2,50; el margen de costo de un turno es el supuesto ya escrito, US$0,0045 más dos veces US$0,0115.
+
+Cada ejecución escribe en `tmp/stage2_journey_a/runs/<corrida>-session-<id>/`. No reescribe `trace.json` ni las pasadas anteriores. El manifiesto guarda el SHA y el consumo histórico. No reconstruye los requests que no se guardaron.
+
+La captura, solo dentro del bloque, registra también el prompt que sale por generación directa: `BedrockClient#generate_text` (guidance y generación con identidad conocida) y `converse_message` (contrato de publicación). `max_tokens` se conserva. Las credenciales se quitan por nombre exacto (`access_key_id`, `session_token`, `secret_access_key`); una clave no se borra por contener la palabra token. No hay llamada extra.
+
+`merge_phrase` ya no descarta una frase porque otra esté contenida en ella. «La guía no tiene obstrucción, pero el rodillo está trabado» conserva la guía y el rodillo trabado, y no guarda al lado la frase corta. Dos comprobaciones que no se contienen siguen las dos.
 
 ### 3. Verificar ese alcance en producción
 

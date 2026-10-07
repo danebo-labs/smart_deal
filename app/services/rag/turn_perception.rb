@@ -440,14 +440,34 @@ module Rag
       end
     end
 
+    # A shorter phrase inside a longer one is the same fact only when the
+    # longer one is kept. The extra qualifier, negation, condition, or result
+    # stays. The shorter copy is not stored beside it.
     def merge_phrase(observations, phrase)
       label = FollowupQueryRewriter.normalize_label(phrase)
-      return observations if observations.any? { |text|
-        current = FollowupQueryRewriter.normalize_label(text)
-        current == label || (current.split.size >= 3 && label.include?(current))
-      }
+      return observations if label.blank?
 
-      observations + [ phrase ]
+      rows = observations.dup
+      rows << phrase unless rows.any? { |text| FollowupQueryRewriter.normalize_label(text) == label }
+      drop_contained_phrases(rows)
+    end
+
+    def drop_contained_phrases(rows)
+      seen = []
+      rows.reject { |text|
+        inner = FollowupQueryRewriter.normalize_label(text)
+        next true if inner.blank? || seen.include?(inner)
+
+        contained = rows.any? { |other| contained_phrase?(inner, FollowupQueryRewriter.normalize_label(other)) }
+        seen << inner unless contained
+        contained
+      }
+    end
+
+    def contained_phrase?(inner, outer)
+      return false if inner.blank? || outer.blank? || inner == outer
+
+      outer.match?(/(?<![[:alnum:]])#{Regexp.escape(inner)}(?![[:alnum:]])/)
     end
 
     def asserts_fault?(item, code)

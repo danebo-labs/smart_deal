@@ -27,9 +27,7 @@ PROD_KB = "Y7RZWMFJSR"
 UID = "dcc8e046-037d-48a6-8913-1992aed28507"
 S3_KEY = "bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf"
 DISPLAY = "Elemont Montacargas Hidraulico Modelo MH"
-OUT = Rails.root.join("tmp/stage2_journey_a")
-CEILING = 126
-COST_CAP = 2.50
+TRACE_ROOT = Rails.root.join("tmp/stage2_journey_a")
 
 db = ActiveRecord::Base.connection_db_config
 abort("refuse #{db.database}@#{db.host}") unless Rails.env.development? &&
@@ -48,7 +46,6 @@ module InlineBedrockQueryTracking
 end
 TrackBedrockQueryJob.singleton_class.prepend(InlineBedrockQueryTracking)
 
-FileUtils.mkdir_p(OUT)
 Rails.logger.level = Logger::WARN
 
 
@@ -100,7 +97,10 @@ def history_view(session)
   }
 end
 
-def queries_since(baseline_id, session_id)
+# This run only. Stage2RunBudget adds the 80 calls and US$0.161562 already
+# spent. Counting rows after the baseline and comparing them with 126 would
+# reopen the ceiling.
+def this_run_queries(baseline_id, session_id)
   BedrockQuery.where("id > ?", baseline_id).where(
     "conversation_session_id = :sid OR correlation_id LIKE :prefix",
     sid: session_id,
@@ -117,6 +117,33 @@ def queries_since(baseline_id, session_id)
       "correlation_id" => row.correlation_id
     }
   end
+end
+
+def run_sha
+  value = IO.popen([ "git", "-C", Rails.root.to_s, "rev-parse", "HEAD" ], &:read).to_s.strip
+  value.match?(/\A[0-9a-f]{40}\z/) ? value : "unknown"
+rescue StandardError
+  "unknown"
+end
+
+def write_manifest(directory, sha:, session_id:, run_id:, rows:)
+  cost = rows.sum { |item| item["cost_usd"] }
+  File.write(
+    directory.join("manifest.json"),
+    JSON.pretty_generate(
+      Rag::Stage2RunBudget.manifest(
+        sha: sha, session_id: session_id, run_id: run_id,
+        new_calls: rows.size, new_cost_usd: cost
+      )
+    )
+  )
+end
+
+def spend_snapshot(rows)
+  Rag::Stage2RunBudget.snapshot(
+    new_calls: rows.size,
+    new_cost_usd: rows.sum { |item| item["cost_usd"] }
+  )
 end
 
 
@@ -156,6 +183,22 @@ if document.nil?
   )
 end
 
+run_id = Time.now.utc.strftime("%Y%m%dT%H%M%SZ")
+session = ConversationSession.create!(
+  account: account,
+  user: user,
+  identifier: "stage2:journey-a:#{run_id}",
+  channel: "web",
+  expires_at: 30.days.from_now,
+  conversation_history: [],
+  active_episode: {}
+)
+out = Rag::Stage2RunBudget.evidence_directory(TRACE_ROOT, run_id: run_id, session_id: session.id)
+FileUtils.mkdir_p(out)
+sha = run_sha
+File.write(out.join("session.txt"), "session_id=#{session.id} account_id=#{account.id} user_id=#{user.id} document_id=#{document.id} sha=#{sha}\n")
+write_manifest(out, sha: sha, session_id: session.id, run_id: run_id, rows: [])
+
 service = BedrockRagService.new(account: account, knowledge_base_id: PROD_KB)
 availability = nil
 availability_capture = Rag::ValidationCapture.capture do
@@ -170,7 +213,7 @@ availability_capture = Rag::ValidationCapture.capture do
   )
 end
 available = Array(availability[:chunks]).map { |chunk| citation_row(chunk) }
-File.write(OUT.join("availability.json"), JSON.pretty_generate(
+File.write(out.join("availability.json"), JSON.pretty_generate(
   "chunks" => available.size,
   "elemont" => available.any? { |row| row["elemont"] },
   "capture" => availability_capture,
@@ -184,26 +227,23 @@ end
 fixture = YAML.load_file(Rails.root.join("test/fixtures/files/field_companion/longitudinal_journeys.yml"))
 turns = fixture.dig("journeys", "A", "turns")
 host = Stage2QueryHost.new(account)
-identifier = "stage2:journey-a:#{Time.now.utc.strftime('%Y%m%d%H%M%S')}"
-session = ConversationSession.create!(
-  account: account,
-  user: user,
-  identifier: identifier,
-  channel: "web",
-  expires_at: 30.days.from_now,
-  conversation_history: [],
-  active_episode: {}
-)
 baseline_id = BedrockQuery.maximum(:id).to_i
 trace = []
 previous_answer = ""
-File.write(OUT.join("session.txt"), "session_id=#{session.id} account_id=#{account.id} user_id=#{user.id} document_id=#{document.id}\n")
 
 turns.each do |row|
-  spent = queries_since(baseline_id, session.id)
-  spent_cost = spent.sum { |item| item["cost_usd"] }
-  if spent.size >= CEILING || spent_cost >= COST_CAP
-    trace << { "n" => row["n"], "stopped" => "budget", "calls" => spent.size, "cost_usd" => spent_cost.round(6) }
+  rows = this_run_queries(baseline_id, session.id)
+  spent = spend_snapshot(rows)
+  unless spent.admit_turn
+    trace << {
+      "n" => row["n"],
+      "stopped" => "budget",
+      "calls" => spent.calls,
+      "new_calls" => spent.new_calls,
+      "historical_calls" => spent.historical_calls,
+      "cost_usd" => spent.cost_usd.to_s("F"),
+      "pass_calls_remaining" => spent.pass_calls_remaining
+    }
     break
   end
 
@@ -291,18 +331,23 @@ turns.each do |row|
   end
   end
   record["capture"] = capture
-  spent = queries_since(baseline_id, session.id)
-  record["calls_total"] = spent.size
-  record["cost_usd_total"] = spent.sum { |item| item["cost_usd"] }.round(6)
-  record["calls"] = spent.select { |item| item["correlation_id"].to_s.include?("t#{format('%02d', row['n'])}") }
+  rows = this_run_queries(baseline_id, session.id)
+  spent = spend_snapshot(rows)
+  record["calls_total"] = spent.calls
+  record["new_calls"] = spent.new_calls
+  record["historical_calls"] = spent.historical_calls
+  record["cost_usd_total"] = spent.cost_usd.to_s("F")
+  record["calls"] = rows.select { |item| item["correlation_id"].to_s.include?("t#{format('%02d', row['n'])}") }
   trace << record
-  File.write(OUT.join("trace.json"), JSON.pretty_generate(trace))
-  warn "turn=#{row['n']} success=#{record['success']} calls=#{record['calls_total']} cost=#{record['cost_usd_total']} elemont=#{record['citations']&.any? { |item| item['elemont'] }}"
+  File.write(out.join("trace.json"), JSON.pretty_generate(trace))
+  write_manifest(out, sha: sha, session_id: session.id, run_id: run_id, rows: rows)
+  warn "turn=#{row['n']} success=#{record['success']} calls=#{record['calls_total']} new=#{record['new_calls']} cost=#{record['cost_usd_total']} elemont=#{record['citations']&.any? { |item| item['elemont'] }}"
   if row["n"].to_i == 1 && record["success"] == false
     warn "INCONCLUSIVE turn 1"
     break
   end
 end
 
-File.write(OUT.join("trace.json"), JSON.pretty_generate(trace))
-warn "done turns=#{trace.size} session=#{session.id}"
+File.write(out.join("trace.json"), JSON.pretty_generate(trace))
+write_manifest(out, sha: sha, session_id: session.id, run_id: run_id, rows: this_run_queries(baseline_id, session.id))
+warn "done turns=#{trace.size} session=#{session.id} out=#{out}"

@@ -36,6 +36,61 @@ class Rag::ValidationCaptureTest < ActiveSupport::TestCase
     assert_not_includes event.to_s, "AKIATESTKEY12"
   end
 
+  test "max_tokens stays and a session token does not" do
+    payload = Rag::ValidationCapture.sanitize(
+      "max_tokens" => 3000,
+      "input_tokens" => 12,
+      "token_source" => "provider_usage",
+      "session_token" => "secret-session",
+      "access_key_id" => "AKIATESTKEY12",
+      "prompt" => "consulta AKIASECRETKEY1"
+    )
+
+    assert_equal 3000, payload["max_tokens"]
+    assert_equal 12, payload["input_tokens"]
+    assert_equal "provider_usage", payload["token_source"]
+    assert_nil payload["session_token"]
+    assert_nil payload["access_key_id"]
+    assert_equal "consulta [redacted]", payload["prompt"]
+  end
+
+  test "direct generation records the prompt and max_tokens only inside a capture" do
+    client = BedrockClient.new
+    calls = 0
+    runtime = Object.new
+    runtime.define_singleton_method(:invoke_model) do |_params|
+      calls += 1
+      Struct.new(:body).new(StringIO.new({ "content" => [ { "text" => "ok" } ], "usage" => { "input_tokens" => 0 } }.to_json))
+    end
+    runtime.define_singleton_method(:converse) { |params| params }
+    client.instance_variable_set(:@client, runtime)
+
+    client.generate_text("fuera de captura", max_tokens: 3000, temperature: 0)
+    assert_nil Thread.current[:rag_validation_capture]
+    assert_equal 1, calls
+
+    events = Rag::ValidationCapture.capture do
+      Rag::ValidationCapture.correlation = "stage2:a:t01:query"
+      client.generate_text("prompt de guidance", max_tokens: 3000, temperature: 0)
+      client.converse_message(
+        "model_id" => "global.anthropic.claude-haiku-4-5",
+        "inference_config" => { "max_tokens" => 3000, "temperature" => 0 },
+        "messages" => [ { "role" => "user", "content" => [ { "text" => "contrato de publicacion" } ] } ],
+        "session_token" => "secret-session"
+      )
+    end
+
+    generated = events.find { |row| row["kind"] == "generate_text" }
+    converse = events.find { |row| row["kind"] == "converse" }
+    assert_equal 2, calls
+    assert_equal "prompt de guidance", generated["prompt"]
+    assert_equal 3000, generated["max_tokens"]
+    assert_equal "stage2:a:t01:query", generated["correlation_id"]
+    assert_equal 3000, converse.dig("inference_config", "max_tokens")
+    assert_equal "contrato de publicacion", converse.dig("messages", 0, "content", 0, "text")
+    assert_nil converse["session_token"]
+  end
+
   test "the interpreter tool input is stored before perception changes it" do
     turn = "Era código 18, no 8. La guía no tiene obstrucción."
     client = Struct.new(:responses) do

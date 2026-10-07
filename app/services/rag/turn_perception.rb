@@ -105,6 +105,9 @@ module Rag
       move, resolution, identities, observations, ambiguities, target = adjust_move(
         move, resolution, identities, observations, ambiguities, data["clarification_target"]
       )
+      move, resolution, identities, observations, ambiguities, target = recover_stated_correction(
+        move, resolution, identities, observations, ambiguities, target
+      )
       resolution = nil unless move == "answer_pending"
       identities = apply_structured_slots(move, resolution, identities)
 
@@ -369,6 +372,59 @@ module Rag
       }
 
       nil
+    end
+
+    # The turn already names the rejected value and its replacement. A model
+    # reading of correction_target would ask which datum changed and drop both.
+    def recover_stated_correction(move, resolution, identities, observations, ambiguities, target)
+      codes = explicit_fault_codes
+      if codes
+        old_code, new_code = codes
+        identities = [
+          Identity.new(
+            span: old_code, act: "negate", kind: "negate", slot: "fault_code",
+            value: old_code, source: nil, manufacturer: nil
+          ),
+          fact(new_code, "assert", "fault_code", new_code, "user", nil)
+        ]
+        return [ "correct", nil, identities, [], ambiguities, nil ]
+      end
+
+      phrase = explicit_observation_replacement
+      if phrase && %w[unclear correct].include?(move) && observations.empty?
+        kept = identities.reject { |item| item.act == "negate" || item.kind == "fact" }
+        return [ "correct", nil, kept, [ phrase ], ambiguities, nil ]
+      end
+
+      [ move, resolution, identities, observations, ambiguities, target ]
+    end
+
+    def explicit_fault_codes
+      normalized = FollowupQueryRewriter.normalize_label(@turn)
+      match = normalized.match(/\bcodigo\s+(\d+)\b\W{0,12}\bno\s+(\d+)\b/)
+      old_code, new_code = if match
+        [ match[2], match[1] ]
+      else
+        reverse = normalized.match(/\bno\s+(?:es\s+)?codigo\s+(\d+)\b\W{0,24}\bcodigo\s+(\d+)\b/)
+        reverse ? [ reverse[1], reverse[2] ] : nil
+      end
+      return nil if old_code.blank? || new_code.blank? || old_code == new_code
+      return nil unless literal_span?(old_code) && literal_span?(new_code)
+
+      [ old_code, new_code ]
+    end
+
+    def explicit_observation_replacement
+      normalized = FollowupQueryRewriter.normalize_label(@turn)
+      return nil unless normalized.match?(/\bcorrijo\b/) && normalized.match?(/\bno de\b/)
+
+      match = @turn.match(/:\s*(.+?),\s*no\s+de\b/i)
+      return nil if match.nil?
+
+      phrase = match[1].to_s.squish
+      return nil unless literal_span?(phrase) && symptom_observation?(phrase)
+
+      phrase
     end
 
     def adjust_move(move, resolution, identities, observations, ambiguities, target)

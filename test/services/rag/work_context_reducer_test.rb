@@ -29,6 +29,31 @@ class Rag::WorkContextReducerTest < ActiveSupport::TestCase
     assert episode.observations.none? { |row| row["text"].match?(/(?<![[:alnum:]])8(?![[:alnum:]])/) }
   end
 
+  test "a symptom sentence does not take an identifier slot from the equipment" do
+    episode = open_episode
+    turn = "Elemont MH con placa CEA15; la puerta 1 no termina de cerrar y el imán no magnetiza."
+    with_owner do
+      settle(
+        episode,
+        report_payload(
+          [ "la puerta 1 no termina de cerrar", "el imán no magnetiza" ],
+          [
+            { "span" => "Elemont MH", "act" => "assert" },
+            { "span" => "CEA15", "act" => "assert" },
+            { "span" => "la puerta 1 no termina de cerrar", "act" => "assert" },
+            { "span" => "el imán no magnetiza", "act" => "assert" }
+          ]
+        ),
+        turn
+      )
+    end
+
+    values = episode.identifiers.pluck("value")
+    assert_includes values, "Elemont MH"
+    assert_includes values, "CEA15"
+    assert values.none? { |value| value.include?("puerta") || value.include?("imán") }
+  end
+
   test "a no-code report stores fault_code absent_confirmed" do
     episode = open_episode
     turn = "Solo lo he visto en planta 3; en otras plantas no lo observé. No aparece código de falla."

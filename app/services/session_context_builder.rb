@@ -357,7 +357,7 @@ class SessionContextBuilder
     end
     return nil if rows.empty?
 
-    "Corrected: #{rows.join('; ')}"
+    "Not current: #{rows.join('; ')}"
   end
   private_class_method :correction_line
 

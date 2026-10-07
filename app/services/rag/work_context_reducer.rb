@@ -83,6 +83,8 @@ module Rag
           end
           @episode.clear_fact!(item.slot)
           @episode.append_rejected!(item.slot, value)
+          remove_identifier(value)
+          remove_identifier("código #{value}") if item.slot == "fault_code"
           strip_value(value)
         end
       end
@@ -120,6 +122,8 @@ module Rag
         @episode.write_fact!("fault_code", status: "absent_confirmed", source: "user", correlation_id: @correlation_id, at: @now.iso8601)
       end
       @perception.identifiers.each do |item|
+        next unless durable_identifier?(item.value)
+
         @episode.delete_rejected!("identifier", item.value)
         @episode.append_identifier!(item.value, correlation_id: @correlation_id, source: "user")
       end
@@ -292,6 +296,27 @@ module Rag
       return type if type.present?
 
       @episode.pending_fact&.dig("subject")
+    end
+
+    # Symptom sentences are observations. Stored as identifiers they push the
+    # equipment tokens out of the fixed list, and the prompt loses the machine
+    # after the history trim.
+    def durable_identifier?(value)
+      words = value.to_s.squish.split
+      return false if words.size >= 4
+
+      label = FollowupQueryRewriter.normalize_label(value)
+      return false if label.blank?
+      return false if label.match?(/\A\d+\z/) && observation_mentions?(label)
+      return false if label.length >= 8 && observation_mentions?(label)
+
+      true
+    end
+
+    def observation_mentions?(label)
+      @perception.observations.any? { |text|
+        FollowupQueryRewriter.normalize_label(text).match?(/(?<![[:alnum:]])#{Regexp.escape(label)}(?![[:alnum:]])/)
+      }
     end
 
     def remove_identifier(value)

@@ -247,6 +247,57 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_not_includes Rag::TurnInterpreter::PROMPT, "A correction has empty observations."
   end
 
+  test "an explicit code replacement stays a correction when the model asks which datum" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    episode.append_observation!("El display muestra código 8", correlation_id: "seed")
+    episode.append_identifier!("código 8", correlation_id: "seed")
+    turn = "No, leí mal: era código 18, no 8."
+    result = perceive(
+      {
+        "move" => "unclear",
+        "assertions" => [],
+        "observations" => [],
+        "pending_resolution" => nil,
+        "clarification_target" => "correction_target"
+      },
+      turn,
+      episode: episode
+    )
+    decision = settle(episode, result, turn)
+
+    assert_equal "correct", result.move
+    assert_nil result.clarification_target
+    assert_equal "18", episode.fact("fault_code")["value"]
+    assert_includes episode.rejected.pluck("value"), "8"
+    assert episode.observations.none? { |row| row["text"].match?(/(?<![[:alnum:]])8(?![[:alnum:]])/) }
+    assert episode.identifiers.none? { |row| row["value"].to_s.match?(/c[oó]digo\s+8/i) }
+    assert_not_equal "clarify_first", decision.decision
+  end
+
+  test "an explicit observation replacement survives a correction_target reading" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    episode.append_observation!("detenida cerca de planta 1", correlation_id: "seed")
+    turn = "Corrijo algo de antes: la cabina está detenida cerca de planta 2, no de planta 1."
+    result = perceive(
+      {
+        "move" => "unclear",
+        "assertions" => [],
+        "observations" => [],
+        "pending_resolution" => nil,
+        "clarification_target" => "correction_target"
+      },
+      turn,
+      episode: episode
+    )
+    settle(episode, result, turn)
+
+    assert_equal "correct", result.move
+    assert_nil result.clarification_target
+    texts = episode.observations.pluck("text")
+    assert_includes texts, "la cabina está detenida cerca de planta 2"
+    assert texts.none? { |text| text.match?(/(?<![[:alnum:]])planta 1(?![[:alnum:]])/i) }
+  end
+
   test "a short multi-word symptom is kept and a lone technical token is not" do
     symptoms = perceive(
       observation_report([ "no abre", "no frena", "se traba" ]),

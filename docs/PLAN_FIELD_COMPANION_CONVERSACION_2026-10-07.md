@@ -1,6 +1,6 @@
 # Field Companion: conversación técnica real
 
-**Estado: ETAPA 1 LOCAL COMPLETA — PENDIENTE DE REVISIÓN ANTES DE LA ETAPA 2.** No es `EPISODIO_VALIDADO`. La etapa 1 se ejecutó con una instrucción que la autoriza sola. Las etapas 2 y 3 siguen sin empezar. La revisión Opus del 2026-10-07 sobre `7076f05` sigue incorporada. Esta revisión no habilita un piloto.
+**Estado: ETAPA 2 BLOQUEADA.** No es `EPISODIO_VALIDADO`. La etapa 1 está en el código local. La etapa 2 corrió el journey A contra la Knowledge Base de producción y se detuvo al agotar las dos repeticiones. La etapa 3 no empieza. La revisión Opus del 2026-10-07 sobre `7076f05` sigue incorporada. Esta revisión no habilita un piloto.
 
 Este documento es el único plan vigente del companion. Una revisión documental no autoriza a empezar. La etapa 1 ya está en el código local. No llama a Bedrock y no despliega.
 
@@ -233,7 +233,7 @@ Evidencia local, con dependencias externas stubbeadas: `session_context_builder_
 
 Corrección de revisión, sobre `e62a4ab`. `stale_observation?` ya no descarta una observación por compartir el número rechazado. «El display muestra código 8» deja de salir como vigente cuando el código pasa a 18. «El LED 8 está apagado», «la puerta 8 no cierra» y «detenida en planta 8» se conservan. Un identificador numérico tampoco arrastra esas frases. `distinct_retrieved_manuals?` salió: dos manuales del mismo equipo, o dos títulos sin datos de equipo, no piden la placa. Siguen la duda explícita de aplicabilidad y el código cuyo significado depende del equipo. Evidencia de esta corrección: `session_context_builder_test`, `companion_guidance_context_test`, `turn_perception_test`, `work_context_reducer_test` y `conversation_session_turn_interpreter_test`, 136 pruebas, 1199 aserciones, cero fallos y cero skips. Incluyen el journey A, la corrección de código, `new_work` y `expected_episode_id`. Sin Bedrock y sin despliegue. El veredicto de la etapa sigue siendo local: no es `EPISODIO_VALIDADO`.
 
-Pendiente para la etapa 2: el journey A con el intérprete real, ejecutado como se describe abajo. Esta etapa no demuestra que el retrieve devuelva el manual del Elemont ni que la conclusión use un chunk compatible. `TechnicalUnderstanding` no es la ruta owner y no se tocó. La planta 1 no es un slot rechazado: el reducer la saca de las observaciones cuando el turno dice «no de», y el prompt muestra la observación de reemplazo. La preparación y la ejecución real de la etapa 2 siguen pendientes.
+Pendiente para la etapa 2: el journey A con el intérprete real, ejecutado como se describe abajo. Esta etapa no demuestra que el retrieve devuelva el manual del Elemont ni que la conclusión use un chunk compatible. `TechnicalUnderstanding` no es la ruta owner y no se tocó. La planta 1 no es un slot rechazado: el reducer la saca de las observaciones cuando el turno dice «no de», y el prompt muestra la observación de reemplazo. La preparación y la ejecución real de la etapa 2 siguen pendientes en este cierre de la etapa 1. El resultado está en el cierre de la etapa 2.
 
 Condición para iniciar la etapa 2: revisión de este diff. El presupuesto y las paradas de la etapa 2 no cambian. No se empieza la etapa 2 ni la 3 desde este cierre.
 
@@ -241,7 +241,7 @@ Condición para iniciar la etapa 2: revisión de este diff. El presupuesto y las
 
 La etapa 2 ejecuta el código de Rails local contra la Knowledge Base real de producción mediante Bedrock. Requiere configurar credenciales AWS autorizadas, región y Knowledge Base, y disponer en la base Rails local de registros documentales y de cuenta coherentes con el corpus remoto para aplicar las políticas existentes. Sesiones, mensajes y trazas se guardan localmente. No requiere desplegar ni escribir en la base Rails de producción.
 
-AWS CLI Retrieve puede comprobar acceso y retrieval, pero no sustituye Journey A. Una búsqueda vacía no demuestra que el manual no exista. Se distinguen la falta de acceso o de configuración, los registros locales ausentes o incompatibles, y una búsqueda sin resultados. No se copian secretos al repositorio ni se muestran en la entrega. La preparación y la ejecución real de la etapa 2 siguen pendientes.
+AWS CLI Retrieve puede comprobar acceso y retrieval, pero no sustituye Journey A. Una búsqueda vacía no demuestra que el manual no exista. Se distinguen la falta de acceso o de configuración, los registros locales ausentes o incompatibles, y una búsqueda sin resultados. No se copian secretos al repositorio ni se muestran en la entrega. El cierre de esta etapa está más abajo.
 
 Journey A de puertas, turnos 1 a 14, sin L3. Intérprete, sesión, retrieval y generación, con el código Rails local y la Knowledge Base de producción. No se crea otro corpus.
 
@@ -266,6 +266,39 @@ Aceptación:
 - Memoria: después del recorte siguen el equipo, el problema, las correcciones y las comprobaciones relevantes nombradas arriba.
 - Documentación: si el retrieve devuelve un chunk compatible, la conclusión lo usa y cita documento y página. Si no lo devuelve, la respuesta no inventa valores, terminales, códigos ni un procedimiento de fabricante. Eso no es éxito documental. Con el manual recuperable en la Knowledge Base de producción, un episodio que nunca usa documentación compatible no llega a `EPISODIO_VALIDADO`.
 - Una pregunta repetida, un valor ya corregido tratado como vigente o una pregunta de identidad sin función documental ni diagnóstica es fallo. Timeout, throttle o error de transporte es inconcluso, no un fallback de producto.
+
+#### Cierre (2026-10-07)
+
+Base `322ea00`, rama `main`. Rails local, base `smart_deal_development` en localhost, Knowledge Base `Y7RZWMFJSR`, región `us-east-1`. El `.env` apunta al índice de desarrollo; el proceso exportó el id de producción y dejó la sesión compartida apagada. Las credentials cifradas no tienen access key y su id de índice no es el de producción. Las access keys del `.env` sí llamaron a `Y7RZWMFJSR`. No se escribió la base Rails de producción y no se desplegó.
+
+La cuenta local `danebo-legacy` es el id 4. Los chunks del índice están en `account_id` 1. Con el filtro de la cuenta 4 el retrieve devolvió cero. Se creó en local la cuenta id 1 (`index-account-1`), un usuario local y la fila `KbDocument` del Elemont (`dcc8e046-037d-48a6-8913-1992aed28507`, clave del PDF `Montacargas 2N`). La base local no tenía la columna `document_focus` que el código ya espera; se aplicó solo ahí la migración `20261001160000`. Con la cuenta 1, una búsqueda sin generación devolvió el manual Elemont MH, páginas 1 y 7, junto con un manual Crown. El manual es recuperable. Una búsqueda del síntoma no lo devuelve: el ranking trae `manual-cea15p`, VF5 y Monarch.
+
+Tres pasadas del journey A, turnos 1 a 14, sin pin y sin L3. Intérprete, retrieve y generación reales. Sesiones locales 193, 194 y 195. Trazas en `tmp/stage2_journey_a/`, fuera del repositorio.
+
+| Pasada | Llamadas | Costo `BedrockQuery` | Qué mostró |
+|---|---:|---:|---|
+| 1 | 25 | US$0,052129 | Buscó en el turno 1. El código 18 y la planta 2 se preguntaron como dato a corregir y no se guardaron. El turno 12 trató el código 8 y la planta 1 como vigentes. Los síntomas ocuparon los cinco identificadores y Elemont salió del prompt. |
+| 2 | 27 | US$0,054390 | El estado guardó el código 18, rechazó el 8, reemplazó la planta y conservó Elemont, MH y CEA15 después del recorte. La conclusión dijo que el código había pasado de 18 a 8. La línea `Corrected: fault code 8` se leía como el valor nuevo. |
+| 3 | 28 | US$0,055043 | La conclusión ya no invierte el código ni declara la planta 1. Sigue pidiendo de dónde sale el clic. El bloque del turno 14, al pasar de 600 caracteres, soltó el objetivo, el código 18 y los identificadores, y conservó las observaciones. |
+
+Total de llamadas de modelo: 80, de las 126 de esta etapa. Costo atribuido en `BedrockQuery`: US$0,161562. 42 filas son el intérprete (`semantic_analysis`) y 38 son generación (`query`). `Retrieve` y el embedding de la consulta no están en esa tabla. El tope de US$2,50 no se acercó. No hay rollup de `bedrock_daily_costs` de esta corrida. La etapa 3 no se ejecutó.
+
+Aceptación de la pasada 3:
+
+- Primer turno: buscó, sin pedir fabricante, modelo ni controlador. Dijo que la identidad no está confirmada y pidió mirar el imán.
+- Memoria: el episodio conserva Elemont, MH, CEA15, el código 18, la planta 2, la guía sin obstrucción, el LED 7, el clic y que no había personas. El prompt de la conclusión no: `fit_problem` suelta primero identificadores y hechos, y la lista de observaciones ya no cabía con ellos.
+- Código 8: queda rechazado. La respuesta del turno 14 no lo trata como vigente. El turno 7 vuelve a pedir la placa aunque el turno 1 ya dijo Elemont MH y CEA15.
+- Planta 1: sale de las observaciones en el turno 13. El turno 10, anterior a esa corrección, todavía la nombra.
+- Conclusión: no cita el manual del Elemont. Pide otra vez de dónde viene el clic, comprobación ya entregada. No declara la puerta reparada y no inventa un terminal ni un valor de fabricante. Tampoco es una respuesta sustentada en documentación compatible.
+- Documentación: ninguna de las 14 búsquedas del episodio devolvió el Elemont MH. Devolvieron CEA15P, VF5 y Monarch. Eso no se anotó como éxito documental ni como ausencia del manual.
+
+Reparaciones, con test local antes de repetir. No se hizo una tercera. La misma comprobación del clic volvió después de la segunda.
+
+- Una corrección que ya nombra el código viejo y el nuevo, o una observación con «corrijo» y «no de», deja de convertirse en `correction_target`.
+- Una frase de síntoma no ocupa un cupo de identificador. Un código rechazado sale también de esa lista.
+- La línea del valor rechazado dice `Not current:`, no `Corrected:`.
+
+Veredicto de la etapa: `BLOQUEADA`. No es `EPISODIO_VALIDADO`. La etapa 3 no empieza.
 
 ### 3. Verificar ese alcance en producción
 

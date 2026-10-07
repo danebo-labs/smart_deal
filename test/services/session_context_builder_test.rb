@@ -610,6 +610,8 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
 
         assert_not_includes block, "código 8"
         assert_not_includes prompt, "código 8"
+        assert_includes block, "Not current: fault code 8"
+        assert_not_includes block, "Corrected:"
         [ "El LED 8 está apagado", "la puerta 8 no cierra", "detenida en planta 8", "Fault code: 18", "fault code 8" ].each do |phrase|
           assert_includes block, phrase, phrase
           assert_includes prompt, phrase, phrase

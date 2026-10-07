@@ -1,6 +1,6 @@
 # R1B SESSION CORRECTNESS AUDIT
 
-**Ejecución vigente (2026-10-07):** [PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md). El plan de conversación está pendiente de la validación final del fundador. El código de boundary está implementado. El smoke de producción queda pospuesto y no bloquea ese plan.
+**Ejecución vigente (2026-10-07):** [PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md). El plan de conversación está pendiente de la validación final del fundador — alcance: un episodio completo. El código de boundary está implementado. La separación de casos no se valida en esa ejecución. El smoke de producción queda pospuesto y no bloquea ese plan.
 
 **Estado:** auditoría y plan de implementación. No autoriza código.
 

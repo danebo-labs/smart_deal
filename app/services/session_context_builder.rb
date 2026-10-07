@@ -361,24 +361,33 @@ class SessionContextBuilder
   end
   private_class_method :correction_line
 
-  # A rejected slot value is not a current observation when the replacement
-  # is a different value. The episode already stores the rejection.
+  # Drop an observation only when it states the rejected value as that slot.
+  # A shared number is not enough: "LED 8" is not the rejected fault code 8.
   def self.stale_observation?(text, episode)
-    tokens = observation_tokens(text)
+    normalized = Rag::FollowupQueryRewriter.normalize_label(text)
     episode.rejected.any? do |item|
-      rejected = observation_tokens(item["value"])
-      next false if rejected.empty? || (tokens & rejected).empty?
-
-      current = episode.fact(item["slot"])&.dig("value")
-      (tokens & observation_tokens(current)).empty?
+      rejected = item["value"].to_s
+      current = episode.fact(item["slot"])&.dig("value").to_s
+      attributable_rejection?(normalized, item["slot"], rejected) &&
+        !attributable_rejection?(normalized, item["slot"], current)
     end
   end
   private_class_method :stale_observation?
 
-  def self.observation_tokens(text)
-    Rag::FollowupQueryRewriter.normalize_label(text.to_s).split
+  def self.attributable_rejection?(normalized, slot, value)
+    label = Rag::FollowupQueryRewriter.normalize_label(value)
+    return false if label.blank?
+    return code_statement?(normalized, label) if slot == "fault_code"
+    return false if label.match?(/\A\d+\z/)
+
+    normalized.match?(/(?<![[:alnum:]])#{Regexp.escape(label)}(?![[:alnum:]])/)
   end
-  private_class_method :observation_tokens
+  private_class_method :attributable_rejection?
+
+  def self.code_statement?(normalized, label)
+    normalized.match?(/\b(?:codigo|code|error|fault)\s+(?:n\s+)?#{Regexp.escape(label)}\b/)
+  end
+  private_class_method :code_statement?
 
   def self.conflict_lines(episode)
     episode.conflicts.filter_map do |row|

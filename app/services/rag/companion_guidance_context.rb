@@ -261,18 +261,10 @@ module Rag
       identity_confirmation_request? || identification_request?
     end
 
-    # Deterministic signals already on this turn. No extra model call.
-    # Distinct retrieved manuals, a manual the technician doubts, or a code
-    # whose meaning is being asked while identity is still unknown.
+    # Signals already on the turn. Titles do not show that two manuals
+    # belong to different equipment. No extra model call.
     def identity_decides_documentation?
-      distinct_retrieved_manuals? || applicability_depends_on_model? || code_meaning_depends_on_equipment?
-    end
-
-    def distinct_retrieved_manuals?
-      names = @manuals.filter_map { |item|
-        item.to_s.sub(/,\s*p\.\s*.+\z/, "").squish.presence
-      }
-      names.uniq.size > 1
+      applicability_depends_on_model? || code_meaning_depends_on_equipment?
     end
 
     def applicability_depends_on_model?

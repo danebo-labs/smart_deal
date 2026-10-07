@@ -248,21 +248,25 @@ class Rag::CompanionGuidanceContextTest < ActiveSupport::TestCase
     end
   end
 
-  test "distinct retrieved manuals make identity the objective and two pages of one manual do not" do
-    distinct = unknown_context(
+  test "manual titles do not force an identity question" do
+    same_equipment = unknown_context(
+      "la puerta no cierra",
+      manuals: [ "Elemont MH operador, p. 1", "Elemont MH controlador, p. 2" ]
+    )
+    titles_only = unknown_context(
       "la puerta no cierra",
       manuals: [ "Elemont MH, p. 1", "Manual CEA15, p. 2" ]
     )
-    same = unknown_context(
+    pages = unknown_context(
       "la puerta no cierra",
       manuals: [ "Elemont MH, p. 1", "Elemont MH, p. 4" ]
     )
 
-    assert_equal "resolve_identity", distinct.turn_objective
-    assert_equal "documentation_applicability", distinct.turn_objective_basis
-    assert_equal "advance_fault", same.turn_objective
-    assert_equal "default_fault_progress", same.turn_objective_basis
-    assert_not_includes same.to_s, "Ask them to read the nameplate"
+    [ same_equipment, titles_only, pages ].each do |context|
+      assert_equal "advance_fault", context.turn_objective
+      assert_equal "default_fault_progress", context.turn_objective_basis
+      assert_not_includes context.to_s, "Ask them to read the nameplate"
+    end
   end
 
   test "the objective line survives context truncation" do
@@ -381,6 +385,7 @@ class Rag::CompanionGuidanceContextTest < ActiveSupport::TestCase
     )
     prompt = context.to_s
 
+    assert_equal "advance_fault", context.turn_objective
     assert_operator prompt.length, :<=, Rag::CompanionGuidanceContext::MAX_CHARS
     assert_equal true, context.reported_state_present
     if context.context_truncated?

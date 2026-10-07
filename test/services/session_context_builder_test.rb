@@ -577,6 +577,49 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
     end
   end
 
+  test "a corrected fault code drops only the observation that states that code" do
+    observations = [
+      "El display muestra código 8",
+      "El LED 8 está apagado",
+      "la puerta 8 no cierra",
+      "detenida en planta 8"
+    ].map { |text| { "text" => text, "correlation_id" => "q" } }
+    session = episode_session(
+      goal: "la puerta no termina de cerrar",
+      facts: { "fault_code" => known_fact("18") },
+      observations: observations,
+      rejected: [ { "slot" => "fault_code", "value" => "8" } ]
+    )
+    identifier = episode_session(
+      goal: "la puerta no termina de cerrar",
+      observations: [ { "text" => "El LED 8 está apagado", "correlation_id" => "q" } ],
+      rejected: [ { "slot" => "identifier", "value" => "8" } ]
+    )
+
+    travel_to FIELD_PROBLEM_NOW do
+      with_companion_flags do
+        block = SessionContextBuilder.field_problem_block(session)
+        prompt = Rag::CompanionGuidanceContext.build(
+          question: "¿Y ahora?",
+          identity: nil,
+          session_context: block,
+          labels: [],
+          locale: :es,
+          mode: :unknown
+        ).to_s
+
+        assert_not_includes block, "código 8"
+        assert_not_includes prompt, "código 8"
+        [ "El LED 8 está apagado", "la puerta 8 no cierra", "detenida en planta 8", "Fault code: 18", "fault code 8" ].each do |phrase|
+          assert_includes block, phrase, phrase
+          assert_includes prompt, phrase, phrase
+        end
+        kept = SessionContextBuilder.field_problem_block(identifier)
+        assert_includes kept, "El LED 8 está apagado"
+      end
+    end
+  end
+
   test "journey A turn 14 projects the episode into both guidance prompts" do
     observations = [
       "la puerta 1 no termina de cerrar",

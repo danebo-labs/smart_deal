@@ -50,7 +50,7 @@ El troubleshooting del operador LD-16 está publicado por TKE en el [manual de o
 
 Eso es el mapa documentado de ese operador. No es un ranking universal de frecuencia ni un procedimiento para cualquier ascensor. No hay un corpus representativo de conversaciones reales. Las frases del journey son ejemplos de aceptación, no transcripciones.
 
-`config/document_identities.yml` no contiene el LD-16. Sí contiene el Elemont MH (`Montacargas 2N Temporizado`) y otros documentos de puerta (E-Shine YS-K01, variador Thyssen MCP7, puertas KES). Esos otros documentos no se enseñan como procedimiento del Elemont. La validación reutiliza el journey A de puertas del Elemont, turnos 1 a 14, sin L3. No se agregan turnos, no se inyectan cuerpos de chunk y no se inventan códigos. Antes de la etapa 2 se comprueba que el manual del Elemont MH esté en el índice del entorno. Si no está, esa ejecución se detiene en `RETRIEVAL_EMPTY` y no se sustituye por el LD-16.
+`config/document_identities.yml` no contiene el LD-16. Sí contiene el Elemont MH (`Montacargas 2N Temporizado`) y otros documentos de puerta (E-Shine YS-K01, variador Thyssen MCP7, puertas KES). Esos otros documentos no se enseñan como procedimiento del Elemont. La validación reutiliza el journey A de puertas del Elemont, turnos 1 a 14, sin L3. No se agregan turnos, no se inyectan cuerpos de chunk y no se inventan códigos. Antes de la etapa 2 se comprueba el acceso a la Knowledge Base de producción y que el retrieve devuelve el manual del Elemont MH. Una búsqueda vacía no demuestra que el manual no exista. Si el retrieve no lo devuelve, esa ejecución se detiene en `RETRIEVAL_EMPTY` y no se sustituye por el LD-16.
 
 ## Hallazgos confirmados en el código
 
@@ -226,20 +226,26 @@ Las seis reparaciones quedaron en las rutas que ya existían:
 - `MAX_PROBLEM_CHARS` pasó a 600. El encabezado, el pie y la línea de identificadores se acortaron antes.
 - Cero chunks e identidad desconocida generan una vez con el guidance existente, sin otro `Retrieve`. La respuesta antepone el aviso de búsqueda vacía. Con pin forzado, un solo retrieve conserva el aviso de foco vacío. Si la generación sale vacía o es el rechazo de Bedrock, queda el texto de reintento.
 - `RoutePolicy` ya no pregunta el controlador por rutina cuando hay síntoma y un token de equipo. El designador ambiguo y la mención dentro del foco siguen aclarando. El fallback de un episodio vacío busca el síntoma; un saludo sigue aclarando.
-- El menú fijo salió de `TASK_LEAD`. `ADVANCE_FAULT` dice que la identidad no se pregunta por rutina. Pasa a objetivo cuando el turno ya trae manuales distintos, una duda de aplicabilidad o un código cuyo significado se pregunta. Un procedimiento, un reset o un valor siguen en `advance_fault`.
+- El menú fijo salió de `TASK_LEAD`. `ADVANCE_FAULT` dice que la identidad no se pregunta por rutina. Pasa a objetivo con una duda explícita de aplicabilidad o con un código cuyo significado se pregunta. Dos títulos no se leen como equipos distintos. Un procedimiento, un reset o un valor siguen en `advance_fault`.
 - Una corrección de observación permanece `correct` y conserva la frase de reemplazo. Una corrección de fabricante, modelo, controlador o código sin la negación ranurada sigue yéndose a `unclear`.
 
 Evidencia local, con dependencias externas stubbeadas: `session_context_builder_test`, `companion_guidance_context_test`, `route_policy_test`, `turn_perception_test` y `work_context_reducer_test`, 106 pruebas, 943 aserciones. `bedrock_rag_service_test` y `document_identity_scope_test`, 177 pruebas, 1399 aserciones, 6 skips previos. `conversation_session_turn_interpreter_test` junto con `turn_perception_test`, incluidas las de `new_work`, `expected_episode_id`, NICE3000 a NICE1000 y el código 8 a 18. Cero fallos en esas corridas.
 
-Pendiente para la etapa 2: el journey A contra el índice local, con el intérprete real. Esta etapa no demuestra que el manual del Elemont esté indexado ni que la conclusión use un chunk compatible. `TechnicalUnderstanding` no es la ruta owner y no se tocó. La planta 1 no es un slot rechazado: el reducer la saca de las observaciones cuando el turno dice «no de», y el prompt muestra la observación de reemplazo.
+Corrección de revisión, sobre `e62a4ab`. `stale_observation?` ya no descarta una observación por compartir el número rechazado. «El display muestra código 8» deja de salir como vigente cuando el código pasa a 18. «El LED 8 está apagado», «la puerta 8 no cierra» y «detenida en planta 8» se conservan. Un identificador numérico tampoco arrastra esas frases. `distinct_retrieved_manuals?` salió: dos manuales del mismo equipo, o dos títulos sin datos de equipo, no piden la placa. Siguen la duda explícita de aplicabilidad y el código cuyo significado depende del equipo. Evidencia de esta corrección: `session_context_builder_test`, `companion_guidance_context_test`, `turn_perception_test`, `work_context_reducer_test` y `conversation_session_turn_interpreter_test`, 136 pruebas, 1199 aserciones, cero fallos y cero skips. Incluyen el journey A, la corrección de código, `new_work` y `expected_episode_id`. Sin Bedrock y sin despliegue. El veredicto de la etapa sigue siendo local: no es `EPISODIO_VALIDADO`.
 
-Condición para iniciar la etapa 2: revisión de este diff. El manual del Elemont MH tiene que estar en el índice local; si no está, la parada sigue siendo `RETRIEVAL_EMPTY`. El presupuesto y las paradas de la etapa 2 no cambian. No se empieza la etapa 2 ni la 3 desde este cierre.
+Pendiente para la etapa 2: el journey A con el intérprete real, ejecutado como se describe abajo. Esta etapa no demuestra que el retrieve devuelva el manual del Elemont ni que la conclusión use un chunk compatible. `TechnicalUnderstanding` no es la ruta owner y no se tocó. La planta 1 no es un slot rechazado: el reducer la saca de las observaciones cuando el turno dice «no de», y el prompt muestra la observación de reemplazo. La preparación y la ejecución real de la etapa 2 siguen pendientes.
+
+Condición para iniciar la etapa 2: revisión de este diff. El presupuesto y las paradas de la etapa 2 no cambian. No se empieza la etapa 2 ni la 3 desde este cierre.
 
 ### 2. Validar un episodio real
 
-Journey A de puertas, turnos 1 a 14, sin L3. Intérprete, sesión, retrieval y generación, en la base local, con el índice real. No se crea otro corpus.
+La etapa 2 ejecuta el código de Rails local contra la Knowledge Base real de producción mediante Bedrock. Requiere configurar credenciales AWS autorizadas, región y Knowledge Base, y disponer en la base Rails local de registros documentales y de cuenta coherentes con el corpus remoto para aplicar las políticas existentes. Sesiones, mensajes y trazas se guardan localmente. No requiere desplegar ni escribir en la base Rails de producción.
 
-El manual del Elemont MH tiene que estar en el índice antes de empezar. Si no está, parada en `RETRIEVAL_EMPTY`. No se sustituye por el LD-16 y no se aprueba el episodio con orientación general.
+AWS CLI Retrieve puede comprobar acceso y retrieval, pero no sustituye Journey A. Una búsqueda vacía no demuestra que el manual no exista. Se distinguen la falta de acceso o de configuración, los registros locales ausentes o incompatibles, y una búsqueda sin resultados. No se copian secretos al repositorio ni se muestran en la entrega. La preparación y la ejecución real de la etapa 2 siguen pendientes.
+
+Journey A de puertas, turnos 1 a 14, sin L3. Intérprete, sesión, retrieval y generación, con el código Rails local y la Knowledge Base de producción. No se crea otro corpus.
+
+El manual del Elemont MH tiene que devolverse en el retrieve antes de empezar. Si la búsqueda, con acceso y registros locales coherentes, no lo devuelve, parada en `RETRIEVAL_EMPTY`. No se sustituye por el LD-16 y no se aprueba el episodio con orientación general.
 
 Los textos del técnico son los del fixture. Los hechos de cada turno son fijos: código 8 y después 18, planta 1 y después 2, la guía sin obstrucción, el LED 7 apagado y el clic al pedir cierre. La redacción se adapta a la respuesta real anterior cuando el texto presupone algo que Danebo no dijo. A3 responde a una pregunta sobre ocupación o posición. A11 dice «esa revisión». Si Danebo no lo preguntó o no lo mostró, el turno entrega el mismo hecho como dato espontáneo, o se refiere a la comprobación que Danebo sí mostró. Si Danebo pregunta algo que el caso responde, el técnico responde con el hecho del fixture. Si el caso no lo sabe, responde «no lo sé». La traza guarda el texto original y el enviado. Un turno adaptado no es un turno nuevo ni otro escenario.
 
@@ -251,14 +257,14 @@ Cada turno anota la decisión, si buscó, si el chunk es compatible con el equip
 
 Se repara solo la falla observada y se repite solo lo necesario. Como máximo dos repeticiones, siempre dentro del presupuesto de la etapa. Una repetición no es un pretexto para completar un cupo ni para agregar turnos.
 
-Parada: error de transporte en el primer turno; el manual del Elemont no está en el índice; la misma falla vuelve después de una reparación; la reparación pide una tabla, un segundo modelo, L3 u otro escenario; se agota el presupuesto de la etapa.
+Parada: error de transporte en el primer turno; el retrieve, con acceso y registros locales coherentes, no devuelve el manual del Elemont; la misma falla vuelve después de una reparación; la reparación pide una tabla, un segundo modelo, L3 u otro escenario; se agota el presupuesto de la etapa.
 
 Aceptación:
 
 - En el primer turno se busca sin pedir fabricante, modelo ni controlador.
 - Utilidad y avance, en el turno 14: una respuesta sustentada, una siguiente acción verificable o un escalamiento fundamentado. La respuesta usa lo ya comprobado. No repite una comprobación descartada ni trata como vigente el código 8 o la planta 1. No se exige que la puerta quede reparada.
 - Memoria: después del recorte siguen el equipo, el problema, las correcciones y las comprobaciones relevantes nombradas arriba.
-- Documentación: si el retrieve devuelve un chunk compatible, la conclusión lo usa y cita documento y página. Si no lo devuelve, la respuesta no inventa valores, terminales, códigos ni un procedimiento de fabricante. Eso no es éxito documental. Con el manual en el índice, un episodio que nunca usa documentación compatible no llega a `EPISODIO_VALIDADO`.
+- Documentación: si el retrieve devuelve un chunk compatible, la conclusión lo usa y cita documento y página. Si no lo devuelve, la respuesta no inventa valores, terminales, códigos ni un procedimiento de fabricante. Eso no es éxito documental. Con el manual recuperable en la Knowledge Base de producción, un episodio que nunca usa documentación compatible no llega a `EPISODIO_VALIDADO`.
 - Una pregunta repetida, un valor ya corregido tratado como vigente o una pregunta de identidad sin función documental ni diagnóstica es fallo. Timeout, throttle o error de transporte es inconcluso, no un fallback de producto.
 
 ### 3. Verificar ese alcance en producción
@@ -272,7 +278,7 @@ Parada: la misma de la etapa 2, con el presupuesto de 42 llamadas. Un fallo de p
 Veredicto, sobre la evidencia de las etapas 2 y 3 juntas. El smoke solo no decide. El veredicto no declara habilitado un piloto de consultas libres. Eso queda para después de validar la separación mínima entre casos.
 
 - `EPISODIO_VALIDADO`: la aceptación de la etapa 2 se cumplió en local y en producción para este episodio; la conclusión usó documentación compatible cuando el retrieve la devolvió; ninguna respuesta inventó un valor, terminal, código o procedimiento de fabricante; el gasto quedó dentro del presupuesto. El veredicto nombra lo que sigue abierto: el backlog, la recuperación de un caso anterior, O-P1, el smoke R1B y N1–N6.
-- `PENDIENTE`: alguna aceptación quedó inconclusa por transporte, índice vacío o presupuesto agotado, sin una falla de producto confirmada. También si el manual está en el índice y el episodio no llegó a usar documentación compatible.
+- `PENDIENTE`: alguna aceptación quedó inconclusa por transporte, falta de acceso o configuración, registros locales ausentes o incompatibles, búsqueda sin resultados, o presupuesto agotado, sin una falla de producto confirmada. También si el manual es recuperable en la Knowledge Base de producción y el episodio no llegó a usar documentación compatible.
 - `BLOQUEADO`: una falla de producto confirmada y no reparada (valor corregido tratado como vigente, pregunta repetida, pérdida de lo comprobado, o documentación compatible ignorada) o una respuesta insegura.
 
 ## Backlog posterior

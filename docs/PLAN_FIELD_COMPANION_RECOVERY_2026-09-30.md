@@ -1,6 +1,6 @@
 # Plan Field Companion Recovery (30-sep-2026)
 
-**Ejecución vigente (2026-10-07):** [PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md). El plan de conversación está pendiente de revisión Opus y de la validación del fundador. Este archivo conserva el registro de R1A y R1B. R1A sigue `CLOSED — PASS`. El smoke de producción de R1B queda pospuesto y no bloquea ese plan. R2 está absorbido por ese plan y no es la fase siguiente. R3 queda pospuesto.
+**Ejecución vigente (2026-10-07):** [PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md). El plan de conversación está pendiente de la validación final del fundador. Este archivo conserva el registro de R1A y R1B. R1A sigue `CLOSED — PASS`. El smoke de producción de R1B queda pospuesto y no bloquea ese plan. R2 está absorbido por ese plan y no es la fase siguiente. R3 queda pospuesto.
 
 El ciclo F0–F8 permanece cerrado en [PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md](PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md). Este documento no reabre ese ciclo y no autoriza código.
 

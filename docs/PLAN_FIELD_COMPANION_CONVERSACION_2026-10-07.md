@@ -1,6 +1,6 @@
 # Field Companion: conversación técnica real
 
-**Estado: PENDIENTE DE REVISIÓN OPUS Y VALIDACIÓN FINAL DEL FUNDADOR.**
+**Estado: PENDIENTE DE VALIDACIÓN FINAL DEL FUNDADOR.** Revisión Opus hecha el 2026-10-07 sobre `7076f05`; sus correcciones están incorporadas en este texto.
 
 Este documento es el único plan vigente del companion. Una revisión documental no lo deja listo para piloto. Este cambio no implementa producto, no llama a Bedrock y no despliega.
 
@@ -18,7 +18,7 @@ Buscar puede ayudar a identificar el equipo. No se exige completar campos antes 
 
 La próxima respuesta puede ser directa, una búsqueda más precisa, una explicación o una aclaración. No hay una pregunta obligatoria en cada turno.
 
-Si el primer mensaje ya nombra el equipo y ese equipo coincide con un manual que contiene la respuesta, se busca en ese turno. Se pide evidencia solo cuando, sin ella, no se sabe qué manual consultar. Mientras esa evidencia no está, la respuesta no trae un procedimiento técnico. Con evidencia, puede entrar un paso general y rudimentario. El dato del manual entra cuando el manual coincide con el equipo y contiene la respuesta. La orientación y las hipótesis de Danebo pueden aparecer, identificadas como tales. No se inventan valores, terminales, códigos ni instrucciones específicas del fabricante.
+Si el primer mensaje ya nombra el equipo y ese equipo coincide con un manual que contiene la respuesta, se busca en ese turno. Danebo pide un dato o una comprobación cuando permite avanzar: elegir qué manual consultar, establecer si un manual recuperado aplica, distinguir entre causas posibles, interpretar un resultado o decidir el siguiente paso. Identificar el equipo entra en esa misma regla: se pide cuando hace falta para alguna de esas cosas, aunque el técnico no haya pedido identificarlo, y no se pide por rutina. Sin manual compatible, la respuesta no trae un procedimiento del fabricante; puede traer orientación general de campo y la seguridad que esa secuencia exige. El dato del manual entra cuando el manual coincide con el equipo y contiene la respuesta. La orientación y las hipótesis de Danebo pueden aparecer, identificadas como tales. No se inventan valores, terminales, códigos ni instrucciones específicas del fabricante.
 
 Un pin de sesión orienta la búsqueda y no prueba aplicabilidad. El sistema no lo suelta en silencio (FC-D17).
 
@@ -56,7 +56,7 @@ Observaciones:
 - `SessionContextBuilder#render_field_problem` no las recorre. Arma hechos, identificadores, foto, conflictos y objetivo.
 - `MAX_PROBLEM_CHARS = 400`. El encabezado mide 79 caracteres y el pie 188. Con los dos saltos de línea ocupan 269. `fit_problem` acorta primero el objetivo y después descarta líneas. Encabezado y pie se conservan.
 - El guidance de identidad conocida (`CompanionGuidanceContext#turn_block`) lee objetivo, identidad y las dos últimas líneas `User:` (`TURN_CHARS = 160`, `MAX_TURNS = 2`). No lee el resto del bloque de problema.
-- El guidance de identidad desconocida lee `problem_projection_lines`. Con cero chunks y sin pin, `BedrockRagService#open_reference_no_results` responde el texto fijo «No se encontró información…» y no arma guidance. Reparar solo el builder no alcanza si el guidance no usa esas líneas, ni si la ruta de cero chunks no tiene prompt.
+- El guidance de identidad desconocida lee `problem_projection_lines`. Con cero chunks, después del segundo retrieve que ya hace `retry_open`, `BedrockRagService#open_reference_no_results` responde el texto fijo «No se encontró información…» (o el aviso de pin vacío) y no arma guidance ni llama a generación. El técnico recibe una negativa documental sin aclaración ni orientación, lo que contradice la regla de AGENTS.md de no detenerse en una negativa de búsqueda. Reparar solo el builder no alcanza si el guidance no usa esas líneas, ni si la ruta de cero chunks no tiene prompt.
 
 Pregunta de controlador:
 
@@ -71,7 +71,8 @@ Guidance:
 - `ADVANCE_FAULT` dice «Equipment identity is not the current objective» cuando el turno no pide identificar el equipo.
 - Si ese objetivo está activo y no hay estado reportado, `TASK_LEAD` pide una comprobación pasiva de una lista fija: ocupación, posición de cabina, estado de puertas, display o sonido.
 - `RESOLVE_IDENTITY` pide leer la placa. `nameplate_rule` en el otro caso dice que la identidad desconocida limita las afirmaciones del fabricante y no debe ser la pregunta principal.
-- Esas frases pueden sesgar el turno hacia una pregunta que la consulta no necesita. La reparación no consiste en preguntar siempre la identidad. Depende de la consulta, del contexto y de si la documentación ya se distingue.
+- `RESOLVE_IDENTITY` solo se activa con una petición explícita del técnico (`explicit_identification_request` o `explicit_identity_confirmation_request`). No hay otra base para que la identidad sea el objetivo del turno, aunque la documentación la necesite.
+- Esas frases pueden sesgar el turno hacia una pregunta que la consulta no necesita, o impedir la que sí necesita. La reparación no consiste en preguntar siempre la identidad. Depende de la consulta, del contexto y de si la documentación ya se distingue.
 
 Correcciones, en dos capas distintas:
 
@@ -89,9 +90,9 @@ Retrieval vacío no demuestra que el manual no exista. Una respuesta útil sin d
 
 ## Recomendaciones que no se copian
 
-- Conservar solo la observación más reciente. Borraría «ya revisé eso y está bien». La reparación mínima conserva comprobaciones y correcciones que cambian el paso siguiente, dentro del presupuesto existente.
+- Conservar solo la observación más reciente. Borraría «ya revisé eso y está bien». La reparación mínima conserva comprobaciones y correcciones que cambian el paso siguiente, dentro del presupuesto del bloque de problema.
 - Una sonda completa sin retrieval ni generación, y repetirla, como requisito general. Un defecto visible en el código se reproduce con un test local. No se paga una llamada para confirmar que existe.
-- Preguntar la identidad en todos los turnos para corregir el sesgo contrario. La identidad se pide cuando la consulta o la evidencia documental lo necesitan.
+- Preguntar la identidad en todos los turnos para corregir el sesgo contrario. La identidad se pide cuando la consulta, la evidencia documental o el diagnóstico lo necesitan.
 - Tratar el LD-16 como corpus de prueba o como chatbot de referencia. No está en el catálogo local y la página de Wittur no demuestra un RAG.
 - Declarar implementada la recuperación de un caso anterior.
 - Cerrar O-P1 porque no hay archivos en git, o cerrarlo porque el fundador informó que terminó. Las dos afirmaciones conviven hasta que haya un artefacto.
@@ -104,8 +105,9 @@ Retrieval vacío no demuestra que el manual no exista. Una respuesta útil sin d
 |---|---|
 | Discovery F0–F8, visual F1–F3, R1A, harness scripted scope.1 | Resuelto con evidencia en sus planes. |
 | Observaciones fuera del prompt de generación y presupuesto de 400 que prioriza encabezado y pie | Necesario. Etapa 1. |
+| Cero chunks con identidad desconocida: texto fijo, sin guidance ni aclaración | Necesario. Etapa 1. |
 | `ask_controller?` con `ask_when: :always` y fallback que pregunta antes de buscar | Necesario. Etapa 1. |
-| `TASK_LEAD` y el objetivo de identidad como sesgo de pregunta | Necesario, acotado. Etapa 1 cambia la instrucción; no invierte el sesgo. |
+| `TASK_LEAD` y el objetivo de identidad como sesgo de pregunta; identidad como objetivo solo por petición explícita | Necesario, acotado. Etapa 1 cambia la instrucción; no invierte el sesgo. |
 | Corrección de observación destruida por el prompt y `adjust_move` | Necesario. Etapa 1. La calidad del intérprete real se ve en la etapa 2. |
 | Corrección de identidad o código (8→18, Fuji Yida→KONE) | Parcial. El reducer ya adopta el código cuando el movimiento es `correct`. La etapa 2 comprueba el intérprete real. |
 | Hechos del episodio que sobreviven al recorte de 20 mensajes | Parcial. El JSON del episodio sobrevive; el prompt no. La etapa 1 proyecta lo necesario. La etapa 2 cruza el recorte. |
@@ -114,7 +116,7 @@ Retrieval vacío no demuestra que el manual no exista. Una respuesta útil sin d
 | R2 del 30 de septiembre (consulta KONE sobre un episodio Elemont vivo, pin MonoSpace, código 515) | Absorbido como mapa. Esos tres restos quedan pospuestos salvo que una traza de la etapa 2 los muestre. |
 | Hilo de consulta en la ruta web owner | Sustituido por `QueryComposer`. |
 | F9, soltar el pin | Retirado de esta cola. Contradice FC-D17. |
-| T3, R3, CG-D19, CS-P01 a CS-P03 | Retirados de esta validación. CG-D19 solo vuelve si la etapa 2 muestra una respuesta inutilizable por el formato. |
+| T3, R3, CG-D19, CS-P01 a CS-P03 | Retirados de esta validación. CG-D19 solo vuelve si la etapa 2 o la 3 muestra una respuesta inutilizable por el formato. |
 | Smoke de producción R1B, verificación de producción N1–N6, G5 de foco, presentación | Pospuestos. No se cierran por quedar fuera. El smoke de la etapa 3 es el del companion, no esos pendientes. |
 | O-P1 | Incierto. Ver abajo. |
 | Si Haiku extrae movimiento, observaciones y correcciones; si el índice devuelve el Elemont MH; si cero chunks es índice frío o manual ausente | Incierto hasta la etapa 2. No se confirma con una sonda previa. |
@@ -138,63 +140,73 @@ La etapa 2 distingue, sin una tabla nueva:
 - otro equipo u otra obra;
 - referencia a un caso anterior.
 
-Un cambio de componente no abre un episodio por sí solo. Ante un cambio claro, se separan los casos. Ante ambigüedad real, una aclaración mínima. El episodio nuevo no hereda identidad, síntomas, fotos ni resultados. El pin de sesión, si existe, no se trata como aplicabilidad del caso nuevo.
+Un cambio de componente no abre un episodio por sí solo. Ante un cambio claro, se separan los casos. Ante ambigüedad real, una aclaración mínima; cuando el técnico la responde, el caso queda separado o continuado según esa respuesta. Una aclaración sin separación posterior no resuelve el cambio de caso. El episodio nuevo no hereda identidad, síntomas, fotos ni resultados. El pin de sesión, si existe, no se trata como aplicabilidad del caso nuevo.
 
 Abrir un caso nuevo está soportado con `new_work`. Recuperar uno anterior no está soportado. Queda pospuesto, con esa limitación escrita. No se declara implementado.
 
 ## Tres etapas
 
-Ninguna etapa empieza con este documento. Hace falta la revisión de Opus, la validación del fundador con ChatGPT y la frase que autoriza la etapa. «Ejecuta la etapa 1» autoriza solo la etapa 1. No autoriza la 2 ni la 3. La etapa 2 no arranca sola aunque la traza nombre un dueño: esa regla anterior queda retirada. La etapa 3 pide su propia frase.
+Ninguna etapa empieza con este documento. Hace falta la luz verde final del fundador sobre este texto. Esa luz verde autoriza ejecutar las etapas 1, 2 y 3 en orden, sin una frase nueva por etapa, dentro del alcance y del presupuesto escritos aquí. Incluye desplegar los commits de las etapas 1 y 2 con el procedimiento habitual antes de la etapa 3. Una etapa empieza solo si la anterior cumplió su resultado.
+
+La ejecución se detiene y vuelve al fundador ante cualquiera de estas condiciones: una condición de parada de la etapa en curso; la aceptación de la etapa 2 no se cumple después de las repeticiones permitidas; se alcanza el presupuesto global; el despliegue falla o pide migración, variable de entorno nueva o cambio de infraestructura; una respuesta inventa un valor, terminal, código o procedimiento de fabricante.
 
 No se promete éxito después de un número fijo de reparaciones. Cada etapa se detiene cuando se cumple su resultado o su condición de parada.
+
+Presupuesto global de las etapas 2 y 3, reintentos internos y repeticiones incluidos: 360 llamadas de modelo (intérprete, generación, publicación y guidance) y US$5 de costo estimado. La etapa 2 dispone de hasta 240 llamadas: dos pasadas completas equivalentes. La etapa 3 dispone de hasta 120: una pasada. El conteo y el costo se leen de las filas `BedrockQuery` del periodo de ejecución. El cierre los reconcilia con `bedrock_daily_costs` cuando esa rollup esté disponible. Los 90 de cada pasada son un techo de llamadas de generación, no un presupuesto en dinero.
+
+Estimación con los datos disponibles. Precio de `global.anthropic.claude-haiku-4-5` en `BedrockQuery::BEDROCK_PRICING`: US$0,001 por 1K tokens de entrada y US$0,005 por 1K de salida. Supuesto por llamada: intérprete, 3K de entrada y 0,3K de salida, unos US$0,0045; generación, 8K de entrada y 0,7K de salida, unos US$0,0115. Una pasada en el peor caso (30 intérpretes y 90 generaciones) cuesta unos US$1,2. Tres pasadas, unos US$3,6. Referencia histórica: US$0,0073 por consulta respondida, medido el 6 de agosto con otros prompts. Se desconoce: los tokens reales con los prompts reparados, cuántos reintentos internos se disparan y el costo de `Retrieve` y del embedding de la consulta, que no quedan en `bedrock_queries`. Por eso el tope en dinero queda por encima de la estimación.
 
 ### 1. Reparar los gaps confirmados
 
 Reproducciones locales y tests Minitest. Sin Bedrock.
 
-- Proyectar en el prompt final, de las dos rutas de guidance, el problema, las correcciones y las comprobaciones que cambian el paso. Acortar encabezado y pie para que el presupuesto de 400 no se los coma. No ampliar el presupuesto. No quedarse solo con la observación más reciente. Un test lee `turn_block` y el bloque de identidad desconocida, no solo `SessionContextBuilder`.
+- Proyectar en el prompt final, de las dos rutas de guidance, el problema, las correcciones y las comprobaciones que cambian el paso. Primero compactar encabezado, pie y redacción de líneas. Si con eso no caben, en el estado del journey A al turno 14, el equipo, el problema, la corrección vigente y las comprobaciones que cambian el paso, se permite subir `MAX_PROBLEM_CHARS` hasta 600, con un test que mida el bloque. Doscientos caracteres más son unos 50 tokens por llamada. No se sacrifica una comprobación o una corrección para cumplir el número. No quedarse solo con la observación más reciente. Un test lee `turn_block` y el bloque de identidad desconocida, no solo `SessionContextBuilder`.
+- Cero chunks con identidad desconocida: en lugar del texto fijo, usar el mismo guidance de identidad desconocida que ya existe para la ruta con chunks, con cero manuales y las líneas del problema. La respuesta dice que la búsqueda no devolvió documentación (no que el manual no exista) y ofrece una aclaración que permita una búsqueda mejor o una orientación general de Danebo identificada como tal, sin procedimiento, valores ni terminales de fabricante. Con pin, conserva el aviso de que el foco no devolvió evidencia y no suelta el pin (FC-D17). Es una generación en una ruta que hoy no genera; no agrega retrieve, porque `retry_open` ya hizo el segundo. Si la generación falla, se conserva el mensaje actual de reintento. Un test cubre la ruta con y sin pin.
 - No agregar la pregunta de controlador cuando el turno ya trae síntoma y un token de equipo (fabricante, modelo, controlador o identificador) y la búsqueda puede seguir. Conservar la aclaración cuando distingue documentos o permite avanzar. El fallback de un episodio vacío no pregunta el controlador antes de poder buscar el síntoma.
-- Quitar el menú fijo de ocupación, posición, puertas, display y sonido cuando la consulta ya trae síntoma o una pregunta que se puede buscar. No sustituirlo por «pregunta siempre la identidad». La identidad sigue siendo el objetivo solo si el técnico pide identificar o confirmar el equipo.
+- Quitar el menú fijo de ocupación, posición, puertas, display y sonido cuando la consulta ya trae síntoma o una pregunta que se puede buscar. La comprobación que se pida debe distinguir causas, interpretar un resultado o decidir el siguiente paso de esta consulta. No sustituir el menú por «pregunta siempre la identidad».
+- Identidad como objetivo del turno: además de la petición explícita, cuando una señal determinista ya presente en el turno muestra que la identidad decide la documentación o la aplicabilidad. Ejemplos: manuales recuperados o retenidos de equipos distintos, un manual cuya aplicabilidad depende del modelo, o un código cuyo significado depende del equipo. `ADVANCE_FAULT` deja de afirmar que la identidad no es el objetivo; dice que no se pregunta por rutina. Sin llamada nueva.
 - Distinguir en el prompt y en `adjust_move` la corrección de identidad o código de la corrección de una observación. La segunda no se convierte en `unclear` ni se vacía.
 
-Resultado: los tests de esos cuatro puntos pasan. No hay llamada de modelo.
+Resultado: los tests de esos seis puntos pasan. No hay llamada de modelo.
 
-Parada: si la reparación exige una segunda llamada de producto, una tabla nueva o cambiar el presupuesto de 400, se detiene y vuelve al plan.
+Parada: si la reparación exige una llamada adicional en un turno que ya genera, una tabla nueva o subir `MAX_PROBLEM_CHARS` por encima de 600, se detiene y vuelve al plan.
 
 ### 2. Validar conversaciones con búsqueda y respuesta reales
 
 Intérprete, sesión, retrieval y generación, en la base local, con el índice real. Una pasada de tres escenarios ya escritos. No se crea otro corpus.
 
-- Puertas y continuidad: journey A, turnos 1 a 14, más el texto L3 ya escrito en el mismo archivo de fixtures, en la misma sesión. El primer turno busca. Con las respuestas del asistente, el historial supera 20 mensajes. L3 es otro ascensor: si el intérprete emite `new_work`, el episodio nuevo no hereda la falla de puerta, el código ni la identidad. Si duda, una aclaración mínima no es fallo. El pin no se setea en el escenario.
+- Puertas y continuidad: journey A, turnos 1 a 14, más los dos turnos L3 ya escritos en el mismo archivo de fixtures, en la misma sesión. El primer turno busca. Con las respuestas del asistente, el historial supera 20 mensajes antes de L3; esa condición se mantiene en toda repetición. L3 es otro ascensor. Resultado válido: `new_work` directo, o una aclaración mínima que el técnico responde con «Sí, es otro ascensor, no el Elemont» y que termina en un episodio nuevo. En los dos casos, el seguimiento de L3 queda en el episodio nuevo y su respuesta no usa la falla de puerta, el código 18, la planta 2 ni la identidad Elemont. El pin no se setea en el escenario.
 - Equipo que al principio no se identifica: journey B, turnos 1 a 10. La primera búsqueda puede usar el síntoma. La identidad llega por el texto y por la foto ya guionada, sin Vision y sin formulario previo.
 - Corrección de fabricante: los cuatro textos del técnico en T-F. No se inyectan las preguntas del asistente que trae el fixture.
 
+Los textos del técnico son hechos del caso, no un guion rígido. Los hechos, las comprobaciones y las correcciones de cada turno son fijos: código 8 y después 18, planta 1 y después 2, «por arriba» y después «por debajo», Fuji Yida y después KONE. La redacción se adapta a la respuesta real anterior cuando el texto presupone algo que Danebo no dijo. Ejemplos: A3 responde a una pregunta sobre ocupación o posición; A11 dice «esa revisión»; B3 nombra «el manual BLT que apareció»; T-F2 y T-F3 responden «¿qué marca?» y «¿sabes el modelo?». Si Danebo no lo preguntó o no lo mostró, el turno entrega el mismo hecho como dato espontáneo, o se refiere al manual o a la comprobación que Danebo sí mostró. Si no hay referente, B3 se omite y se anota. Si Danebo pregunta algo que el caso responde, el técnico responde con el hecho del fixture; si el caso no lo sabe, responde «no lo sé». La traza guarda el texto original y el enviado. Un turno adaptado no es un turno nuevo ni otro escenario.
+
 Cada turno anota la decisión, si buscó, si el chunk es compatible con el equipo, si la respuesta usa ese chunk o se declara orientación de Danebo, y si conserva o descarta lo ya comprobado. `RETRIEVAL_EMPTY` no se anota como «el manual no existe». Una respuesta general sin documento compatible no se anota como éxito documental.
 
-Se repara solo la falla observada y se repite solo el escenario que falló.
+Se repara solo la falla observada y se repite solo el escenario que falló. Cada escenario admite como máximo dos repeticiones, siempre dentro del presupuesto global de la etapa.
 
-Presupuesto: 16 + 10 + 4 = 30 turnos de intérprete en la pasada inicial, más generación en los turnos que buscan. Los reintentos internos de producción (`retrieve_with_retry`, arranque frío, segundo retrieve, publicación y guidance) siguen activos y cuentan dentro del turno, no como otro experimento. Tope de la pasada, reintentos incluidos: 90 llamadas de generación. Una repetición usa solo los turnos del escenario reparado.
+Presupuesto: 16 + 10 + 4 = 30 turnos de intérprete en la pasada inicial, más uno si L3 pide aclaración, más generación en los turnos que buscan. Los reintentos internos de producción (`retrieve_with_retry`, arranque frío, segundo retrieve, publicación y guidance) siguen activos y cuentan dentro del turno, no como otro experimento. Tope de la pasada inicial, reintentos incluidos: 90 llamadas de generación. Una repetición usa solo los turnos del escenario reparado. Todo cuenta contra las 240 llamadas de la etapa.
 
-Parada: error de transporte en el primer turno de un escenario; el manual del Elemont no está en el índice; la misma falla vuelve después de una reparación; la reparación pide una tabla, un segundo modelo o un escenario nuevo. No se sigue para completar un cupo.
+Parada: error de transporte en el primer turno de un escenario; el manual del Elemont no está en el índice; la misma falla vuelve después de una reparación; la reparación pide una tabla, un segundo modelo o un escenario nuevo; se agota el presupuesto de la etapa. No se sigue para completar un cupo.
 
-Aceptación de la etapa: en el primer turno del journey A se busca sin pedir fabricante, modelo ni controlador. Cuando el índice devuelve documentación compatible, la respuesta la usa y cita documento y página. Cuando no la devuelve, no inventa valores, terminales, códigos ni un procedimiento de fabricante, y no se anota como éxito documental. A los 14 intercambios siguen el equipo, el problema, las comprobaciones, las correcciones y la pregunta pendiente. El caso nuevo no hereda el anterior. Una pregunta repetida o un valor ya corregido tratado como vigente es fallo. Timeout, throttle o error de transporte es inconcluso, no un fallback de producto.
+Aceptación de la etapa: en el primer turno del journey A se busca sin pedir fabricante, modelo ni controlador. Cuando el índice devuelve documentación compatible, la respuesta la usa y cita documento y página. Cuando no la devuelve, no inventa valores, terminales, códigos ni un procedimiento de fabricante, ofrece una aclaración útil u orientación de Danebo identificada como tal, y no se anota como éxito documental. A los 14 intercambios siguen el equipo, el problema, las comprobaciones, las correcciones y la pregunta pendiente. El cambio de caso de L3 queda resuelto como se describe arriba, sin contaminación. Una pregunta repetida, un valor ya corregido tratado como vigente o una pregunta de identidad sin función documental ni diagnóstica es fallo. Timeout, throttle o error de transporte es inconcluso, no un fallback de producto.
 
 ### 3. Smoke de producción y cierre
 
 Primera consulta, continuidad de un caso y el cambio de episodio, sobre los mismos tres escenarios, en producción. Una pasada. Sin sonda previa.
 
-Resultado: la misma aceptación de la etapa 2 contra el índice de producción, más una reconciliación final de la tabla de gaps. Los inciertos que el smoke no toque siguen inciertos. El companion no queda listo para piloto por haber pasado el smoke.
+Resultado: la misma aceptación de la etapa 2 contra el índice de producción, más una reconciliación final de la tabla de gaps y del costo. Los inciertos que el smoke no toque siguen inciertos.
 
-Parada: la misma de la etapa 2. Un fallo de producción no se repara en caliente dentro de esta etapa.
+Parada: la misma de la etapa 2, con el presupuesto de 120 llamadas. Un fallo de producción no se repara en caliente dentro de esta etapa.
 
-## Qué debe revisar Opus
+Veredicto de cierre, sobre la evidencia de las etapas 2 y 3 juntas. El smoke solo no decide.
 
-- Si la etapa 1 cubre los huecos que el código confirma y no mete una sonda pagada para demostrarlos.
-- Si acortar encabezado y pie, sin subir el presupuesto de 400 y sin dejar solo la última observación, alcanza para conservar problema, corrección y comprobación en las dos rutas de guidance.
-- Si dejar de preguntar el controlador cuando ya hay síntoma y un token de equipo debilita un caso en el que dos manuales solo se separan por el controlador.
-- Si cambiar `TASK_LEAD` quita el sesgo sin abrir la puerta a un procedimiento de fabricante sin evidencia.
-- Si tratar la recuperación de un caso anterior como pospuesta es aceptable para el MVP.
-- Si los tres escenarios alcanzan para la pregunta rectora sin turnos redundantes.
-- Si el tope de 90 llamadas de generación, con los reintentos internos activos, es un límite de gasto y no una promesa de éxito.
-- La discrepancia de O-P1: sin artefacto en el repo y con el informe del fundador. No hace falta elegir un lado para aprobar este plan.
-- Las páginas industriales no se re-descargaron en este cambio. Si una frase atribuida no está en la página, se corrige el plan; no se copia la arquitectura de ese producto.
+- `RECOMENDAR_PILOTO_CONTROLADO`: la aceptación de la etapa 2 se cumplió en local y en producción, en los tres escenarios; ninguna respuesta inventó un valor, terminal, código o procedimiento de fabricante; el gasto quedó dentro del presupuesto. El veredicto nombra los inciertos y los pospuestos que siguen abiertos (recuperar un caso anterior, R1B, N1–N6) como límites del piloto.
+- `PENDIENTE`: alguna aceptación quedó inconclusa por transporte, índice vacío o presupuesto agotado, sin una falla de producto confirmada.
+- `BLOQUEADO`: una falla de producto confirmada y no reparada (contaminación entre casos, valor corregido tratado como vigente, pregunta repetida o pérdida de lo comprobado) o una respuesta insegura.
+
+## Revisión Opus (2026-10-07)
+
+Incorporado en este texto: la identidad puede ser objetivo cuando decide la documentación, la aplicabilidad o el diagnóstico; las aclaraciones sirven también para distinguir causas, interpretar resultados y decidir el paso; la ruta de cero chunks recibe guidance en la etapa 1; el límite de 400 admite un ajuste acotado hasta 600; los textos del técnico se adaptan a la respuesta real y conservan sus hechos; el cambio de caso termina en separación; presupuesto global y estimación de costo; ejecución autónoma tras la luz verde final; veredicto de cierre con tres salidas.
+
+Se sostienen sin cambio: la aritmética 16 + 10 + 4 (L3 son dos turnos); no preguntar el controlador cuando hay síntoma y token de equipo, porque la aclaración se conserva cuando distingue documentos; la recuperación de un caso anterior como pospuesta; la discrepancia de O-P1 sin elegir un lado. Las páginas industriales no se re-descargaron.

@@ -47,6 +47,26 @@ module Rag
       Thread.current[:rag_validation_correlation] = value
     end
 
+    # One turn inside an open capture. Restores the previous correlation and
+    # attempt on the way out, including when the block raises. Scope labels
+    # such as correlation_root stay in place.
+    def with_turn(correlation_id)
+      unless active?
+        yield
+      else
+        previous_correlation = Thread.current[:rag_validation_correlation]
+        previous_attempt = Thread.current[:rag_validation_attempt]
+        self.correlation = correlation_id if correlation_id.present?
+        Thread.current[:rag_validation_attempt] = nil
+        begin
+          yield
+        ensure
+          Thread.current[:rag_validation_correlation] = previous_correlation
+          Thread.current[:rag_validation_attempt] = previous_attempt
+        end
+      end
+    end
+
     # Labels the activator already knows. Unknown keys are ignored.
     def bind(fields)
       return unless active?

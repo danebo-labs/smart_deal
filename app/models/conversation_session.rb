@@ -822,6 +822,19 @@ class ConversationSession < ApplicationRecord
   end
 
   def record_owner_turn!(content, user_id:, correlation_id:, now:, locale:, interpreter_client:)
+    Rag::ValidationCapture.with_turn(correlation_id) do
+      apply_recorded_owner_turn!(
+        content,
+        user_id: user_id,
+        correlation_id: correlation_id,
+        now: now,
+        locale: locale,
+        interpreter_client: interpreter_client
+      )
+    end
+  end
+
+  def apply_recorded_owner_turn!(content, user_id:, correlation_id:, now:, locale:, interpreter_client:)
     self.turn_causal = nil
     turn = Rag::TurnText.truncate(content)
     if duplicate_user_correlation?(correlation_id)

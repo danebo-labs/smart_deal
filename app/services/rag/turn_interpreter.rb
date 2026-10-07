@@ -68,35 +68,7 @@ module Rag
     end
 
     def call
-      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      response = converse_client.converse(converse_params)
-      latency_ms = elapsed_since(started)
-      usage = response.usage
-      raw = extract_tool_input(response.output&.message&.content)
-      record_interpreter_raw(raw)
-      perception = TurnPerception.build(
-        raw, turn: @turn, episode: @episode, catalog: @catalog, viewer_account: @viewer_account
-      )
-      track_paid_call(usage, latency_ms)
-      Result.new(
-        perception: perception,
-        fallback: !perception.valid,
-        status: perception.valid ? "ok" : perception.invalid_reason,
-        latency_ms: latency_ms,
-        input_tokens: usage_token(usage, :input_tokens),
-        output_tokens: usage_token(usage, :output_tokens),
-        model_id: MODEL_ID
-      )
-    rescue StandardError => error
-      Result.new(
-        perception: nil,
-        fallback: true,
-        status: transport_status(error),
-        latency_ms: elapsed_since(started),
-        input_tokens: 0,
-        output_tokens: 0,
-        model_id: MODEL_ID
-      )
+      ValidationCapture.with_turn(@correlation_id) { interpret_turn }
     end
 
     private
@@ -157,10 +129,41 @@ module Rag
       payload
     end
 
+    def interpret_turn
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      response = converse_client.converse(converse_params)
+      latency_ms = elapsed_since(started)
+      usage = response.usage
+      raw = extract_tool_input(response.output&.message&.content)
+      record_interpreter_raw(raw)
+      perception = TurnPerception.build(
+        raw, turn: @turn, episode: @episode, catalog: @catalog, viewer_account: @viewer_account
+      )
+      track_paid_call(usage, latency_ms)
+      Result.new(
+        perception: perception,
+        fallback: !perception.valid,
+        status: perception.valid ? "ok" : perception.invalid_reason,
+        latency_ms: latency_ms,
+        input_tokens: usage_token(usage, :input_tokens),
+        output_tokens: usage_token(usage, :output_tokens),
+        model_id: MODEL_ID
+      )
+    rescue StandardError => error
+      Result.new(
+        perception: nil,
+        fallback: true,
+        status: transport_status(error),
+        latency_ms: elapsed_since(started),
+        input_tokens: 0,
+        output_tokens: 0,
+        model_id: MODEL_ID
+      )
+    end
+
     def record_interpreter_raw(raw)
       return unless ValidationCapture.active?
 
-      ValidationCapture.correlation = @correlation_id if Thread.current[:rag_validation_correlation].blank? && @correlation_id.present?
       payload = { "tool_input" => raw }
       payload["correlation_id"] = @correlation_id if @correlation_id.present?
       ValidationCapture.record("interpreter_raw", payload)

@@ -382,6 +382,10 @@ Limitaciones: un score ausente queda `unavailable`; `RetrieveAndGenerate` no exp
 
 Veredicto de esta pieza: `INSTRUMENTACION_LOCAL_COMPLETADA`. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. No autoriza otra pasada. El presupuesto no cambia: 106 llamadas, US$0,214838, techos 126, 42, 168 y US$2,50, `PASS_CALL_CAP` en 0.
 
+Cada turno abre un contexto en `ValidationCapture` y, al salir, restaura la correlación y el intento anteriores, también si el bloque falla. Así la solicitud del intérprete, la salida cruda, la percepción y los eventos siguientes de ese turno comparten su correlación. `correlation_root` y el resto de identificadores se mantienen. Un retrieve o `RetrieveAndGenerate` que falla de forma terminal, incluidos los reintentos de Aurora ya agotados, deja operación, correlación, intento de producto, intento de transporte, clase y motivo sanitizado, y vuelve a lanzar la excepción original. La captura detallada sigue apagada por defecto.
+
+Veredicto de estas dos correcciones: `CORRECCIONES_INSTRUMENTACION_COMPLETADAS`. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. No autoriza otra pasada ni una comprobación documental. El presupuesto no cambia.
+
 ### 3. Verificar ese alcance en producción
 
 Primera consulta y continuidad del mismo episodio, sobre el journey A ya aceptado en local. Una pasada. Sin sonda previa. Sin L3, sin journey B y sin T-F. Las reparaciones de las etapas 1 y 2 entran por el procedimiento de despliegue vigente.

@@ -1633,11 +1633,18 @@ class BedrockRagService
   # Delegates to Bedrock::AuroraColdStartRetry (shared with KbSyncService).
   def retrieve_and_generate_with_retry(params)
     record_retrieve_and_generate_request(params)
-    response =     Bedrock::AuroraColdStartRetry.with_retry(
-      error_classes: [ Aws::BedrockAgentRuntime::Errors::ServiceError ],
-      on_retry: (Rag::ValidationCapture.active? ? method(:note_cold_start_retry) : nil)
-    ) do
-      @client.retrieve_and_generate(params)
+    transport_attempt = 0
+    response = begin
+      Bedrock::AuroraColdStartRetry.with_retry(
+        error_classes: [ Aws::BedrockAgentRuntime::Errors::ServiceError ],
+        on_retry: (Rag::ValidationCapture.active? ? method(:note_cold_start_retry) : nil)
+      ) do
+        transport_attempt += 1
+        @client.retrieve_and_generate(params)
+      end
+    rescue StandardError => error
+      record_terminal_remote_error("retrieve_and_generate", error, transport_attempt)
+      raise
     end
     record_retrieve_and_generate_response(response)
     response
@@ -1645,11 +1652,18 @@ class BedrockRagService
 
   def retrieve_with_retry(params)
     Rag::ValidationCapture.record("retrieve", params) if Rag::ValidationCapture.active?
-    Bedrock::AuroraColdStartRetry.with_retry(
-      error_classes: [ Aws::BedrockAgentRuntime::Errors::ServiceError ],
-      on_retry: (Rag::ValidationCapture.active? ? method(:note_cold_start_retry) : nil)
-    ) do
-      @client.retrieve(params)
+    transport_attempt = 0
+    begin
+      Bedrock::AuroraColdStartRetry.with_retry(
+        error_classes: [ Aws::BedrockAgentRuntime::Errors::ServiceError ],
+        on_retry: (Rag::ValidationCapture.active? ? method(:note_cold_start_retry) : nil)
+      ) do
+        transport_attempt += 1
+        @client.retrieve(params)
+      end
+    rescue StandardError => error
+      record_terminal_remote_error("retrieve", error, transport_attempt)
+      raise
     end
   end
 
@@ -1701,6 +1715,19 @@ class BedrockRagService
       "reason" => "aurora_cold_start",
       "attempt" => attempt,
       "delay_seconds" => delay
+    )
+  end
+
+  def record_terminal_remote_error(operation, error, transport_attempt)
+    return unless Rag::ValidationCapture.active?
+
+    reason = error.respond_to?(:message) ? error.message.to_s : ""
+    Rag::ValidationCapture.record(
+      "terminal_error",
+      "operation" => operation,
+      "error_class" => error.class.name,
+      "reason" => reason.presence || "unavailable",
+      "transport_attempt" => transport_attempt.to_i
     )
   end
 

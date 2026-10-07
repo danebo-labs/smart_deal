@@ -443,7 +443,173 @@ class Rag::ValidationCaptureTest < ActiveSupport::TestCase
     assert_nil Thread.current[:rag_validation_capture]
   end
 
+  test "two turns in one capture keep their correlation and do not leak attempt" do
+    events = Rag::ValidationCapture.capture do
+      Rag::ValidationCapture.bind(correlation_root: "root", session_id: 3)
+      Rag::ValidationCapture.correlation = "outer"
+      Rag::ValidationCapture.attempt = 9
+      Rag::ValidationCapture.with_turn("turn-a") do
+        Rag::TurnInterpreter.call(
+          turn: "hola",
+          episode: Rag::ActiveEpisode.new,
+          viewer_account: nil,
+          correlation_id: "turn-a",
+          client: meta_perception_client(attempt: 1)
+        )
+        Rag::ValidationCapture.record("later-a", {})
+      end
+      Rag::ValidationCapture.record("between", {})
+      assert_raises(RuntimeError) do
+        Rag::ValidationCapture.with_turn("turn-lost") do
+          Rag::ValidationCapture.attempt = 4
+          raise "corte"
+        end
+      end
+      Rag::ValidationCapture.with_turn("turn-b") do
+        Rag::TurnInterpreter.call(
+          turn: "sigo",
+          episode: Rag::ActiveEpisode.new,
+          viewer_account: nil,
+          correlation_id: "turn-b",
+          client: meta_perception_client
+        )
+        Rag::ValidationCapture.record("later-b", {})
+      end
+      Rag::ValidationCapture.record("after", {})
+    end
+
+    raw_a = events.find { |row| row["kind"] == "interpreter_raw" && row["correlation_id"] == "turn-a" }
+    applied_a = events.find { |row| row["kind"] == "perception_applied" && row["correlation_id"] == "turn-a" }
+    raw_b = events.find { |row| row["kind"] == "interpreter_raw" && row["correlation_id"] == "turn-b" }
+    applied_b = events.find { |row| row["kind"] == "perception_applied" && row["correlation_id"] == "turn-b" }
+    assert_equal "meta", raw_a.dig("tool_input", "move")
+    assert_equal "meta", applied_a["move"]
+    assert_equal 1, applied_a["attempt"]
+    assert_equal "root", applied_a["correlation_root"]
+    assert_equal 3, applied_a["session_id"]
+    assert_equal "turn-a", events.find { |row| row["kind"] == "later-a" }["correlation_id"]
+    assert_nil events.find { |row| row["kind"] == "later-a" }["attempt"]
+    assert_equal "meta", applied_b["move"]
+    assert_nil applied_b["attempt"]
+    assert_nil raw_b["attempt"]
+    assert_equal "root", applied_b["correlation_root"]
+    assert_equal "turn-b", events.find { |row| row["kind"] == "later-b" }["correlation_id"]
+    %w[between after].each do |kind|
+      marker = events.find { |row| row["kind"] == kind }
+      assert_equal "outer", marker["correlation_id"]
+      assert_equal 9, marker["attempt"]
+      assert_equal "root", marker["correlation_root"]
+    end
+    assert_nil events.find { |row| row["correlation_id"] == "turn-lost" }
+    assert_nil Thread.current[:rag_validation_correlation]
+    assert_nil Thread.current[:rag_validation_attempt]
+  end
+
+  test "a remote failure without retry records the terminal error and keeps the exception" do
+    service = BedrockRagService.new(account: accounts(:legacy))
+    calls = 0
+    message = "denied https://bucket.s3.amazonaws.com/manual.pdf?X-Amz-Algorithm=AWS4&X-Amz-Credential=AKIATESTKEY12"
+    client = Object.new
+    client.define_singleton_method(:retrieve) do |_params|
+      calls += 1
+      raise Aws::BedrockAgentRuntime::Errors::ServiceError.new(nil, message)
+    end
+    service.instance_variable_set(:@client, client)
+
+    assert_raises(Aws::BedrockAgentRuntime::Errors::ServiceError) do
+      service.send(:retrieve_with_retry, { retrieval_query: { text: "consulta" } })
+    end
+    assert_equal 1, calls
+    assert_nil Thread.current[:rag_validation_capture]
+
+    error = nil
+    events = Rag::ValidationCapture.capture do
+      Rag::ValidationCapture.correlation = "cid-fail"
+      Rag::ValidationCapture.attempt = 2
+      error = assert_raises(Aws::BedrockAgentRuntime::Errors::ServiceError) do
+        service.send(:retrieve_with_retry, { retrieval_query: { text: "consulta" } })
+      end
+    end
+
+    terminal = events.find { |row| row["kind"] == "terminal_error" }
+    assert_equal 2, calls
+    assert_equal Aws::BedrockAgentRuntime::Errors::ServiceError, error.class
+    assert_equal message, error.message
+    assert_includes error.backtrace.first, "validation_capture_test"
+    assert_equal "retrieve", terminal["operation"]
+    assert_equal "cid-fail", terminal["correlation_id"]
+    assert_equal 2, terminal["attempt"]
+    assert_equal 1, terminal["transport_attempt"]
+    assert_equal error.class.name, terminal["error_class"]
+    assert_not_includes terminal["reason"], "AKIA"
+    assert_not_includes terminal["reason"], "X-Amz-"
+    assert_nil Thread.current[:rag_validation_capture]
+  end
+
+  test "exhausted aurora retries record the terminal transport attempt without extra calls" do
+    service = BedrockRagService.new(account: accounts(:legacy))
+    calls = 0
+    message = "The Aurora DB instance db-X is resuming after being auto-paused."
+    client = Object.new
+    client.define_singleton_method(:retrieve_and_generate) do |_params|
+      calls += 1
+      raise Aws::BedrockAgentRuntime::Errors::ServiceError.new(nil, message)
+    end
+    service.instance_variable_set(:@client, client)
+    original = Bedrock::AuroraColdStartRetry.method(:sleep_for)
+    Bedrock::AuroraColdStartRetry.define_singleton_method(:sleep_for) { |_seconds| }
+
+    assert_raises(Aws::BedrockAgentRuntime::Errors::ServiceError) do
+      service.send(:retrieve_and_generate_with_retry, { input: { text: "q" }, max_tokens: 20 })
+    end
+    assert_equal 4, calls
+    assert_nil Thread.current[:rag_validation_capture]
+
+    error = nil
+    events = Rag::ValidationCapture.capture do
+      Rag::ValidationCapture.correlation = "cid-aurora"
+      Rag::ValidationCapture.attempt = 1
+      error = assert_raises(Aws::BedrockAgentRuntime::Errors::ServiceError) do
+        service.send(:retrieve_and_generate_with_retry, { input: { text: "q" }, max_tokens: 20 })
+      end
+    end
+
+    terminal = events.find { |row| row["kind"] == "terminal_error" }
+    assert_equal 8, calls
+    assert_equal Aws::BedrockAgentRuntime::Errors::ServiceError, error.class
+    assert_equal message, error.message
+    assert_includes error.backtrace.first, "validation_capture_test"
+    assert_equal "retrieve_and_generate", terminal["operation"]
+    assert_equal "cid-aurora", terminal["correlation_id"]
+    assert_equal 1, terminal["attempt"]
+    assert_equal 4, terminal["transport_attempt"]
+    assert_equal 3, events.count { |row| row["kind"] == "retry" }
+    assert_nil Thread.current[:rag_validation_capture]
+  ensure
+    Bedrock::AuroraColdStartRetry.define_singleton_method(:sleep_for, original) if original
+  end
+
   private
+
+  def meta_perception_client(attempt: nil)
+    Struct.new(:marked_attempt) do
+      def converse(_params)
+        Rag::ValidationCapture.attempt = marked_attempt if marked_attempt
+        tool = Struct.new(:name, :input).new("turn_perception", {
+          "move" => "meta",
+          "assertions" => [],
+          "observations" => [],
+          "pending_resolution" => nil,
+          "clarification_target" => nil
+        })
+        block = Struct.new(:tool_use).new(tool)
+        message = Struct.new(:content).new([ block ])
+        output = Struct.new(:message).new(message)
+        usage = Struct.new(:input_tokens, :output_tokens).new(0, 0)
+        Struct.new(:output, :usage).new(output, usage)
+      end
+    end.new(attempt)
+  end
 
   def perception_result(move)
     Rag::TurnPerception::Result.new(

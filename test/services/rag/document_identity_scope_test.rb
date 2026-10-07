@@ -470,7 +470,6 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
   end
 
   test "foreign manufacturer chunks cannot create manual fact" do
-    n0_contract!("N4")
     yida_body = "Paso 11. Ajusta el interruptor de zona de nivelación Yida a 2,5 mm."
     blt_body = "E18 fallo de nivelación. Compruebe el encoder BLT."
     chunks = [

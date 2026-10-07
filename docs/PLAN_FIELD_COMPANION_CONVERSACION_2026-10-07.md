@@ -1,6 +1,6 @@
 # Field Companion: conversación técnica real
 
-**Estado: ETAPA 2 BLOQUEADA.** No es `EPISODIO_VALIDADO`. La etapa 1 está en el código local. La etapa 2 sigue bloqueada: la corrección de planta quedó reparada en local sobre `66dd9e0` y no está revalidada. La comprobación web del 2026-10-07 reprodujo la consulta corta; la reparación del nombre canónico y las tres correcciones de su review quedan en local y no reabren la etapa. La etapa 3 no empieza. La revisión Opus del 2026-10-07 sobre `7076f05` sigue incorporada. Esta revisión no habilita un piloto.
+**Estado: ETAPA 2 BLOQUEADA.** No es `EPISODIO_VALIDADO`. La etapa 1 está en el código local. La etapa 2 sigue bloqueada: la corrección de planta quedó reparada en local sobre `66dd9e0` y no está revalidada. La comprobación web del 2026-10-07 reprodujo la consulta corta; la reparación del nombre canónico y las tres correcciones de su review quedan en local y no reabren la etapa. El contrato N4 de citas ajenas pasó en local y tampoco la reabre. La etapa 3 no empieza. La revisión Opus del 2026-10-07 sobre `7076f05` sigue incorporada. Esta revisión no habilita un piloto.
 
 Este documento es el único plan vigente del companion. Una revisión documental no autoriza a empezar. La etapa 1 ya está en el código local. No llama a Bedrock y no despliega.
 
@@ -435,6 +435,16 @@ La regla de hipótesis del guidance se conserva. Para que el prompt de identidad
 Pendiente: el efecto de la consulta expandida sobre el retrieval y sobre la respuesta real. Esta corrección no lo ejecuta.
 
 Veredicto de este diff: `CORRECCIONES_LOCALES_COMPLETADAS`.
+
+#### Contrato N4 de citas ajenas (2026-10-07)
+
+Sobre `12af56c`. El test `foreign manufacturer chunks cannot create manual fact` seguía omitido por `n0_contract!("N4")`. Con `N0_CONTRACTS=1` se ejecutó de verdad: 1 corrida, 3 aserciones, 0 fallos, 0 skips. `retrieve_chunks` y el generador están stubbeados. No hubo llamada a AWS, Retrieve ni modelo.
+
+El contrato ya se cumple: un chunk de otro fabricante no queda citable y la respuesta no forma un `MANUAL_FACT`. Se retiró solo ese `n0_contract!("N4")`. Las aserciones siguen. El helper global y los demás contratos N0 no se tocaron. No hubo cambio de producto.
+
+La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. `PASS_CALL_CAP` sigue en 0. Los techos y el histórico no cambian.
+
+Veredicto de este diff: `VALIDACION_LOCAL_COMPLETADA`.
 
 ### 3. Verificar ese alcance en producción
 

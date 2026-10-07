@@ -1,8 +1,8 @@
 # Plan Field Companion Recovery (30-sep-2026)
 
-**Este archivo es la única fuente de verdad del recovery posterior al Field Companion.** El ciclo F0–F8 permanece cerrado en [PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md](PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md). Este documento no reabre ese ciclo y no autoriza código.
+**Ejecución vigente (2026-10-07):** [PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md). Este archivo conserva el registro de R1A y R1B. R1A sigue `CLOSED — PASS`. El smoke de producción de R1B queda pospuesto y no bloquea la etapa 1. R2 está absorbido por ese plan y no es la fase siguiente. R3 queda pospuesto.
 
-Un chat nuevo empieza aquí. No hereda memoria del chat que cerró R1A.
+El ciclo F0–F8 permanece cerrado en [PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md](PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md). Este documento no reabre ese ciclo y no autoriza código.
 
 Etiquetas usadas abajo:
 
@@ -21,9 +21,9 @@ Etiquetas usadas abajo:
 | Field Companion F0–F8 | `CLOSED` (`KEEP_B`) |
 | Product smoke original, post Field Companion | `FAILED` |
 | R1A — corpus / retrieval correctness | `CLOSED — PASS` |
-| R1B — session correctness | `IMPLEMENTED — AWAITING PRODUCTION SMOKE` |
-| R2 — conversational continuity + retrieval targeting | `NEXT` después del smoke de R1B |
-| R3 — UX + provenance consistency | `PENDING` |
+| R1B — session correctness | `IMPLEMENTED — PRODUCTION SMOKE POSTPONED` |
+| R2 — conversational continuity + retrieval targeting | `ABSORBED` por el plan del 7 de octubre. No es la fase siguiente |
+| R3 — UX + provenance consistency | `POSTPONED` |
 | Pilot readiness | `NOT YET` |
 
 No hay más fases. R1A no se reabre por sesión, targeting ni UI.
@@ -337,7 +337,7 @@ Suite local citada después de `343f579`: los archivos de boundary, ownership, s
 
 ## R2 — Conversational continuity + retrieval targeting
 
-`NEXT` después del smoke de R1B. No empieza antes de esa compuerta. El scope no se movió.
+`ABSORBED` el 2026-10-07 por [PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md). El texto siguiente es el alcance histórico. No se ejecuta como fase.
 
 Objetivo: continuidad natural y targeting exacto.
 

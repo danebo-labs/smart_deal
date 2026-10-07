@@ -1,8 +1,10 @@
 # Master Plan — Field Companion: applicability, conversational intent and epistemic discipline
 
+**Ejecución vigente (2026-10-07):** evidencia histórica. La cola del companion es [PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md). F0–F5 de este archivo no se ejecutan desde aquí. El faltante de proyección de observaciones y la precedencia del turno actual quedaron en la etapa 1 de ese plan.
+
 Date: 2026-10-05
 
-Status: execution plan, reconciled with the Opus review (`APPROVE WITH CHANGES`). Phase contracts are frozen. Later implementation detail is refined only from verified findings of the previous phase. No implementation has been performed. F0 is not authorized.
+Status: historical evidence, reconciled with the Opus review (`APPROVE WITH CHANGES`). Phase contracts below stay as written on 2026-10-05. They are not the execution queue.
 
 Baseline investigated: `104bb55d0f1a6c42c6a1745eae0331ecce83dff0`
 

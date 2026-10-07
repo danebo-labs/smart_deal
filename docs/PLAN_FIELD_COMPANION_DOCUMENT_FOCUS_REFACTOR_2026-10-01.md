@@ -1,5 +1,7 @@
 # Field Companion — Document Focus refactor (2026-10-01)
 
+**Ejecución vigente (2026-10-07):** [PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md). G1–G4 quedan hechos. G5, F9 y F10 no son la cola del companion. El pin de sesión se conserva (FC-D17).
+
 **Estado:** G1 PASS — G2 PASS — G3 PASS — G4 PASS — F6 HECHA — F7 HECHA — F8 HECHA
 
 **Validación:** contrastado con el repositorio. Los hallazgos materiales de esa revisión quedaron incorporados aquí. No hay un segundo documento vivo del focus.

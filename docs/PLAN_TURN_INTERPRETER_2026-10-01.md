@@ -1,5 +1,7 @@
 # Turn Interpreter V2 (2026-10-01)
 
+**Ejecución vigente (2026-10-07):** [PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md). El camino bajo prueba es owner. T3 queda pospuesto: borrar el intérprete duplicado no es esta validación.
+
 **Estado:** `OWNER LIVE — MULTIMODAL SAFE RETRIEVAL PENDING`. T0, T1 y T1.1 siguen en producción con `HAIKU_QUERY_ANALYSIS_MODE=owner`. F1–F3 están `PRODUCTION VERIFIED — CLOSED`. El blocker de Accepted Visual Observation quedó cerrado. T3 sigue sin empezar.
 
 El flow Orona expuso gaps posteriores a esa observación: VisualTaskContext, equipment-aware retrieval y cross-manufacturer procedural safety. La continuación está en [PLAN_MULTIMODAL_COMPANION_SAFE_RETRIEVAL_2026-10-02.md](PLAN_MULTIMODAL_COMPANION_SAFE_RETRIEVAL_2026-10-02.md). El registro de F1–F3 está en [PLAN_VISUAL_EVIDENCE_HARDENING_2026-10-02.md](PLAN_VISUAL_EVIDENCE_HARDENING_2026-10-02.md). Este master no absorbe esos planes.

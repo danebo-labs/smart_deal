@@ -56,7 +56,7 @@ Without a pin, `BedrockRagService#account_filter` is an `orAll` of:
   `ingestion_path != field_photo_v1` AND `manual_corpus != account`;
 - `manual_corpus=general`.
 
-An ordinary tenant's `account_id` is not in that OR.
+The technician's account always enters that OR. Other ordinary accounts are not added by the shared-corpus rule.
 `KnowledgeScopePolicy.open_corpus` is not this filter. Retrieve does not
 call it.
 
@@ -141,7 +141,7 @@ add session pins.
 
 A **case** is the current `ActiveEpisode`: an `episode_id` whose stored `updated_at` is inside `ConversationSession::EPISODE_WINDOW` (**4 hours**). Several cases follow one another on the same row. `conversation_history` and `FieldPhoto` rows stay on the workspace. Prompt readers (`recent_user_turns`, `episode_user_messages`, `last_assistant_message`, `FollowupQueryRewriter#episode_rows`) use `max(now - 4 hours, episode.opened_at)` once a case is live. That floor does not replace writer ownership.
 
-The request that opens a case, crosses expiry, corrects the manufacturer, or replaces an invalid stored episode persists that cleanup before `SessionContextBuilder.entity_s3_uris` is read. The old URI is not sent on that request.
+The request that opens a case, crosses expiry, corrects the manufacturer, or replaces an invalid stored episode persists that case cleanup before `SessionContextBuilder.entity_s3_uris` is read. That cleanup does not remove the web focus. The URIs already in `document_focus` are the ones sent on that request.
 
 ### Pins
 
@@ -192,7 +192,7 @@ product stage; see [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md).
    only. That filter is the [shared corpus](#shared-corpus-current-contract),
    not a list of `danebo_general` URIs. There is no source-uri filter from
    the focus.
-2. **At least one pin** → web path sets **`force_entity_filter: true`** so retrieval stays on that case's pinned URIs regardless of question shape. If the filtered call returns nothing, the response is `DATA_NOT_AVAILABLE`. The miss does not reopen the unpinned corpus for this case, and it does not change `danebo_general` or any other workspace's pins. The user can still add, remove, or replace those pins. The system does not drop them because the retrieve was empty. Widening the corpus inside the case requires an explicit user action. A new case, an expired stored episode, or an invalid stored episode releases pins by the case rules above, before this filter is built.
+2. **At least one pin** → web path sets **`force_entity_filter: true`** so retrieval stays on that case's pinned URIs regardless of question shape. If the filtered call returns nothing, the response is `DATA_NOT_AVAILABLE`. The miss does not reopen the unpinned corpus for this case, and it does not change `danebo_general` or any other workspace's pins. The user can still add, remove, or replace those pins. The system does not drop them because the retrieve was empty. Widening the corpus inside the case requires an explicit user action. A new case, an expired stored episode, or an invalid stored episode does not release `document_focus`. The filter is still those URIs.
 3. **Multiple pins + explicit identity** → `Rag::PinnedEntityScopeResolver`
    narrows the allowed URI set only when there is one confident source match.
    It matches canonical names, filenames, aliases, and literal codes; understands

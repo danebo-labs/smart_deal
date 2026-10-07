@@ -54,7 +54,7 @@ are rejected by `KnowledgeScopeEligibility`. `knowledge_scope_changes` is
 append-only in the application: `apply!` inserts, and update or delete
 through the model is rejected. Direct SQL is outside this phase.
 
-Open retrieval is the pre-F3B2 compatibility filter, not the `danebo_general` URI list. Without a pin, `BedrockRagService#account_filter` is an `orAll` of the viewer's `account_id`, each other `Rag::SharedManualCorpus` account as `account_id` AND `ingestion_path != field_photo_v1` AND `manual_corpus != account`, and `manual_corpus=general`. An ordinary tenant's `account_id` is not in that OR. `knowledge_scope` does not add or remove a clause. `BatchResultsParserService#sidecar_metadata` writes `manual_corpus` through `Rag::SharedManualCorpus.chunk_attribute`.
+Open retrieval is the pre-F3B2 compatibility filter, not the `danebo_general` URI list. Without a pin, `BedrockRagService#account_filter` is an `orAll` of the viewer's `account_id`, each other `Rag::SharedManualCorpus` account as `account_id` AND `ingestion_path != field_photo_v1` AND `manual_corpus != account`, and `manual_corpus=general`. The technician's account always enters that OR. Other ordinary accounts are not added by the shared-corpus rule. `knowledge_scope` does not add or remove a clause. `BatchResultsParserService#sidecar_metadata` writes `manual_corpus` through `Rag::SharedManualCorpus.chunk_attribute`.
 
 `KnowledgeScopePolicy.open_corpus` and its 100-URI budget remain on the policy. Open retrieval does not call them. Bedrock's published limits stay one embedded logical operator, five clauses, and depth 2.
 

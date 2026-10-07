@@ -97,9 +97,10 @@ def history_view(session)
   }
 end
 
-# This run only. Stage2RunBudget adds the 80 calls and US$0.161562 already
+# This run only. Stage2RunBudget adds the 106 calls and US$0.214838 already
 # spent. Counting rows after the baseline and comparing them with 126 would
-# reopen the ceiling.
+# reopen the ceiling. The calls left inside that ceiling do not authorize
+# another pass.
 def this_run_queries(baseline_id, session_id)
   BedrockQuery.where("id > ?", baseline_id).where(
     "conversation_session_id = :sid OR correlation_id LIKE :prefix",

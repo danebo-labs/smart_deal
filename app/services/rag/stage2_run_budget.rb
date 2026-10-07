@@ -1,16 +1,17 @@
 # frozen_string_literal: true
 
 module Rag
-  # Stage 2 spend already closed, plus the room for one future pass.
-  # A fresh BedrockQuery baseline does not reopen the ceiling: the 80 calls
-  # and US$0.161562 stay in the total even when this run has no rows yet.
+  # Stage 2 spend already closed. The authorized pass is inside the 106
+  # calls and US$0.214838. Twenty calls remain inside 126, and 42 stay
+  # reserved for stage 3. That remainder does not open another pass.
+  # A fresh BedrockQuery baseline does not reopen the ceiling.
   class Stage2RunBudget
-    HISTORICAL_CALLS = 80
-    HISTORICAL_COST_USD = BigDecimal("0.161562")
+    HISTORICAL_CALLS = 106
+    HISTORICAL_COST_USD = BigDecimal("0.214838")
     STAGE2_CALL_CEILING = 126
     STAGE3_CALL_RESERVE = 42
     GLOBAL_CALL_CEILING = 168
-    PASS_CALL_CAP = 42
+    PASS_CALL_CAP = 0
     COST_CAP_USD = BigDecimal("2.50")
     INTERPRETER_CALL_USD = BigDecimal("0.0045")
     GENERATION_CALL_USD = BigDecimal("0.0115")

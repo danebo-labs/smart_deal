@@ -389,10 +389,9 @@ module Rag
       phrase = explicit_observation_replacement
       if phrase && %w[unclear correct].include?(move)
         merged = merge_phrase(observations, phrase)
-        kept = if observations.empty?
-          identities.reject { |item| item.act == "negate" || item.kind == "fact" }
-        else
-          identities
+        kept = identities.reject { |item| observation_fragment?(item, merged) }
+        if observations.empty?
+          kept = kept.reject { |item| item.act == "negate" || item.kind == "fact" }
         end
         return [ "correct", nil, kept, merged, ambiguities, nil ]
       end
@@ -525,15 +524,37 @@ module Rag
       [ move, resolution, identities, observations, ambiguities, target ]
     end
 
-    # An observation correction has no slot to negate. An identity or code
-    # correction still needs the stored value and its replacement.
+    # An observation correction has no slot to negate. A fragment of the
+    # recovered phrase is not equipment identity and does not block that
+    # correction. Another identifier from the same turn stays. A fact, a
+    # slotted negate, or a negate paired with an assert still needs the
+    # stored value and its replacement.
     def observation_correction?(identities, observations)
       return false if observations.empty?
       return false if identities.any? { |item| item.kind == "negate" && item.slot.present? }
-      return false if identities.any? { |item| item.act == "assert" && %w[fact identifier].include?(item.kind) }
-      return false if identities.any? { |item| item.act == "negate" } && identities.any? { |item| item.act == "assert" }
+
+      explicit = explicit_observation_replacement.present?
+      blocking = identities.select { |item|
+        item.act == "assert" && %w[fact identifier].include?(item.kind) &&
+          !observation_fragment?(item, observations)
+      }
+      return false if blocking.any? { |item| !explicit || item.kind == "fact" }
+      return false if identities.any? { |item| item.act == "negate" } &&
+        identities.any? { |item| item.act == "assert" && !observation_fragment?(item, observations) }
 
       true
+    end
+
+    def observation_fragment?(item, observations)
+      return false unless item.act == "assert" && item.kind == "identifier"
+
+      label = FollowupQueryRewriter.normalize_label(item.value.presence || item.span)
+      return false if label.blank?
+
+      observations.any? { |text|
+        normalized = FollowupQueryRewriter.normalize_label(text)
+        normalized == label || contained_phrase?(label, normalized)
+      }
     end
 
     def self.technical_payload?(identities, observations, ambiguities)

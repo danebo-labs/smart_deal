@@ -248,6 +248,51 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_not_includes Rag::TurnInterpreter::PROMPT, "A correction has empty observations."
   end
 
+  test "the session 196 raw reading stores plant 2 and drops plant 1" do
+    episode = plant_episode
+    result = perceive(session_196_turn_13_raw, PLANT_CORRECTION, episode: episode)
+    decision = settle(episode, result, PLANT_CORRECTION)
+    explained = Rag::QueryComposer.explain(
+      state: episode, turn: PLANT_CORRECTION, perception: result, decision: decision
+    )
+
+    assert_equal "correct", result.move
+    assert_nil result.clarification_target
+    assert_not_equal "clarify_first", decision.decision
+    assert_not_equal "¿Qué dato del equipo quieres corregir?", decision.clarification.to_s
+    assert_equal [ "la cabina está detenida cerca de planta 2" ], result.observations
+    assert result.identities.none? { |item| item.span == "cerca de planta 2" }
+    assert_includes episode.observations.pluck("text"), "la cabina está detenida cerca de planta 2"
+    assert episode.observations.none? { |item| item["text"].match?(/(?<![[:alnum:]])planta 1(?![[:alnum:]])/i) }
+    assert_includes episode.observations.pluck("text"), "El LED 7 está apagado"
+    assert_equal "18", episode.fact("fault_code")["value"]
+    assert_includes explained[:query], "planta 2"
+    assert_includes explained[:query], "LED 7"
+    assert_includes explained[:query], "código 18"
+    assert_plant_correction_in_prompt(episode)
+  end
+
+  test "a real identifier beside the recovered observation stays" do
+    episode = plant_episode
+    turn = "La placa dice Elemont MH. #{PLANT_CORRECTION}"
+    raw = session_196_turn_13_raw.merge(
+      "assertions" => [
+        { "span" => "cerca de planta 2", "act" => "assert", "slot_hint" => nil },
+        assert_span("Elemont MH")
+      ]
+    )
+    result = perceive(raw, turn, episode: episode)
+    settle(episode, result, turn)
+
+    assert_equal "correct", result.move
+    assert_nil result.clarification_target
+    assert_includes episode.identifiers.pluck("value"), "Elemont MH"
+    assert episode.identifiers.none? { |item| item["value"] == "cerca de planta 2" }
+    assert_includes episode.observations.pluck("text"), "la cabina está detenida cerca de planta 2"
+    assert episode.observations.none? { |item| item["text"].match?(/(?<![[:alnum:]])planta 1(?![[:alnum:]])/i) }
+    assert_includes episode.observations.pluck("text"), "El LED 7 está apagado"
+  end
+
   test "an explicit code replacement stays a correction when the model asks which datum" do
     episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
     episode.append_observation!("El display muestra código 8", correlation_id: "seed")
@@ -534,6 +579,56 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
   end
 
   private
+
+  PLANT_CORRECTION = "Corrijo algo de antes: la cabina está detenida cerca de planta 2, no de planta 1."
+
+  def session_196_turn_13_raw
+    {
+      "move" => "correct",
+      "assertions" => [ { "span" => "cerca de planta 2", "act" => "assert", "slot_hint" => nil } ],
+      "observations" => [],
+      "pending_resolution" => nil,
+      "clarification_target" => nil
+    }
+  end
+
+  def plant_episode
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    episode.write_fact!(
+      "fault_code", status: "known", value: "18", source: "user",
+      correlation_id: "seed", at: Time.current.iso8601
+    )
+    episode.append_observation!("La cabina está detenida cerca de planta 1", correlation_id: "seed")
+    episode.append_observation!("El LED 7 está apagado", correlation_id: "seed")
+    episode
+  end
+
+  def assert_plant_correction_in_prompt(episode)
+    session = ConversationSession.create!(
+      identifier: "web:plant_#{SecureRandom.hex(3)}",
+      channel: "web",
+      expires_at: 30.days.from_now,
+      active_episode: episode.to_h
+    )
+    keys = %w[FIELD_COMPANION_EPISODE_ENABLED FIELD_COMPANION_TURN_ENABLED]
+    previous = keys.index_with { |key| ENV[key] }
+    ENV["FIELD_COMPANION_EPISODE_ENABLED"] = "true"
+    ENV["FIELD_COMPANION_TURN_ENABLED"] = "true"
+    block = SessionContextBuilder.field_problem_block(session)
+    context = SessionContextBuilder.build(session)
+    prompt = BedrockRagService.new(account: @owner).build_complete_optimized_config(
+      question: PLANT_CORRECTION,
+      response_locale: :es,
+      session_context: context,
+      output_channel: :web
+    ).dig(:generation_configuration, :prompt_template, :text_prompt_template)
+
+    assert_includes block, "planta 2"
+    assert_not_includes block, "planta 1"
+    assert_includes prompt, block
+  ensure
+    previous&.each { |key, old| old.nil? ? ENV.delete(key) : ENV[key] = old }
+  end
 
   def correct_payload(assertions)
     { "move" => "correct", "assertions" => assertions, "observations" => [], "pending_resolution" => nil, "clarification_target" => nil }

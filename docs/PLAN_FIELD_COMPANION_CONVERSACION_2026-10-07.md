@@ -1,6 +1,6 @@
 # Field Companion: conversación técnica real
 
-**Estado: ETAPA 2 BLOQUEADA.** No es `EPISODIO_VALIDADO`. La etapa 1 está en el código local. La etapa 2 sigue bloqueada después de la pasada autorizada sobre `da8d32b`, sesión 196. La etapa 3 no empieza. La revisión Opus del 2026-10-07 sobre `7076f05` sigue incorporada. Esta revisión no habilita un piloto.
+**Estado: ETAPA 2 BLOQUEADA.** No es `EPISODIO_VALIDADO`. La etapa 1 está en el código local. La etapa 2 sigue bloqueada: la corrección de planta quedó reparada en local sobre `66dd9e0` y no está revalidada. La etapa 3 no empieza. La revisión Opus del 2026-10-07 sobre `7076f05` sigue incorporada. Esta revisión no habilita un piloto.
 
 Este documento es el único plan vigente del companion. Una revisión documental no autoriza a empezar. La etapa 1 ya está en el código local. No llama a Bedrock y no despliega.
 
@@ -348,11 +348,21 @@ El turno 13 no aplicó la corrección. El técnico dijo planta 2, no planta 1. L
 
 No se envió «No lo sé». El turno 11 pasó de «Hice esa revisión» a «Sigue el clic y la puerta no termina de cerrar» porque la respuesta anterior no nombraba esa revisión. El turno 7 tenía Elemont MH, CEA15 y el código 18 en el prompt, y la respuesta volvió a pedir la placa. Es orientación con identidad no confirmada, no éxito documental. El turno 10, sin retrieve, respondió «Puedes seguir con lo que ya me contaste.»
 
-Respuesta completa del turno 14: «Escucha el sonido del imán cuando la puerta llega al marco y dime si oyes un chasquido o un zumbido que se sostiene, o si el sonido se detiene apenas la puerta toca el marco.» No cita el Elemont. No declara la puerta reparada. No inventa un terminal ni un valor de fabricante. Repite una escucha y deja la planta 1 como vigente. No es una respuesta sustentada, ni una siguiente acción que use la corrección, ni un escalamiento fundamentado.
+Respuesta completa del turno 14: «Escucha el sonido del imán cuando la puerta llega al marco y dime si oyes un chasquido o un zumbido que se sostiene, o si el sonido se detiene apenas la puerta toca el marco.» No cita el Elemont. No declara la puerta reparada. No inventa un terminal ni un valor de fabricante. Esa pregunta distingue chasquido, zumbido sostenido y si el sonido se detiene al tocar el marco. «Se oye un clic» no la responde: es una precisión nueva, no una escucha ya contestada. La pasada queda bloqueada porque la corrección de planta no se aplicó y no hubo éxito documental. Deja la planta 1 como vigente. No es una respuesta sustentada, ni una siguiente acción que use la corrección, ni un escalamiento fundamentado.
 
 Veredicto de esta pasada: `BLOQUEADA`. No es `EPISODIO_VALIDADO`. La etapa 3 no empieza. Este cierre no autoriza otra pasada.
 
-Próxima reparación, no hecha: cuando el turno ya dice «corrijo» y «no de», conservar la frase de reemplazo aunque el intérprete solo aserte un fragmento sin slot. En este caso, guardar «la cabina está detenida cerca de planta 2» y sacar la observación de planta 1, sin volver a preguntar qué dato se corrige.
+#### Reparación local sobre 66dd9e0 (2026-10-07)
+
+Sin Bedrock, sin Retrieve, sin otra pasada y sin despliegue. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. Esta reparación no autoriza una pasada.
+
+La salida cruda del turno 13 era `correct`, con la aserción «cerca de planta 2» y observaciones vacías. La recuperación armaba «la cabina está detenida cerca de planta 2» y conservaba el fragmento como identificador. `observation_correction?` lo rechazaba y el turno volvía a preguntar qué dato corregir. Un fragmento contenido en la observación recuperada ya no bloquea esa corrección ni se guarda como identidad del equipo. Otro identificador del mismo turno se conserva. Un hecho, una negación con slot o un par negar/afirmar siguen exigiendo el valor vigente y su reemplazo.
+
+El consumo histórico pasa a 106 llamadas y US$0,214838 registrados en `BedrockQuery`. Quedan 20 llamadas dentro de 126. La etapa 3 conserva 42 dentro del techo global de 168 y el tope sigue en US$2,50. El saldo no abre otra pasada: el tope de la pasada siguiente queda en 0. `Retrieve` y el embedding siguen fuera de esa cifra. No hay rollup de `bedrock_daily_costs`.
+
+Los cuerpos de los chunks no se guardaron. `availability.json` y `trace.json` guardan la consulta, el filtro, k y las citas: nombre, página, cuenta, marca `elemont` y URI truncada. No hay texto de página. Lo capturado del Elemont es la disponibilidad: «Elemont Montacargas Hidraulico Modelo MH», páginas 1 y 7, cuenta 1, `chunk_p1_1.txt` y `chunk_p7_2.txt`, más Crown en las páginas 99 y 383. El texto de esa consulta de disponibilidad es el título del manual. Ninguna cita del episodio tiene `elemont: true`. Esa metadata no dice si el manual habla de la puerta o del imán. Falta el texto de esas páginas para saber si puede responder al caso. No se atribuye el fallo al ranking y `manual-cea15p` no queda como compatible con la placa CEA15.
+
+Pendiente: otra pasada solo con autorización explícita. La corrección de planta está demostrada en local y no está revalidada contra el índice. El éxito documental del Elemont sigue abierto porque el cuerpo de las páginas 1 y 7 no está en la traza.
 
 ### 3. Verificar ese alcance en producción
 

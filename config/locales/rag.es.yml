@@ -34,6 +34,8 @@ es:
     manual_urgent_triage_failed: "No pude preparar páginas urgentes de este manual, pero el manual completo sigue procesándose en segundo plano."
     image_indexing_stall: "Sigue tardando un poco. Si no ves novedades, recarga la página; cuando vuelvas, seguimos."
     no_results_found: "No se encontró información sobre tu consulta. Sube un archivo para ampliar la base de conocimiento y, una vez sincronizado, podrás hacer consultas sobre ese archivo."
+    empty_search_notice: "La búsqueda no devolvió documentación. Eso no significa que el manual no exista."
+    pinned_focus_empty: "El foco de esta sesión no devolvió evidencia y se mantiene."
     pinned_no_results: "DATA_NOT_AVAILABLE: los documentos pineados no contienen evidencia suficiente para responder esta consulta."
     pin_unavailable: "DATA_NOT_AVAILABLE: un documento seleccionado ya no está disponible. Quitalo o elegí otro para continuar."
     generation_retry: "No pude redactar la respuesta a esta consulta. Reenviarla igual suele fallar: indica fabricante, modelo y el código exacto del display o de la placa, o adjunta una foto de la placa."

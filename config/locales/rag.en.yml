@@ -34,6 +34,8 @@ en:
     manual_urgent_triage_failed: "I couldn't prepare urgent pages from this manual, but the full manual is still processing in the background."
     image_indexing_stall: "Still taking a while. If nothing updates, refresh the page — when you're back, we'll continue."
     no_results_found: "No information was found in the Knowledge Base to answer your query. You can ask questions about the indexed documents, or upload a new document to expand the knowledge base."
+    empty_search_notice: "The search returned no documentation. That does not mean the manual does not exist."
+    pinned_focus_empty: "This session's focus returned no evidence and stays in place."
     pinned_no_results: "DATA_NOT_AVAILABLE: the pinned documents do not contain enough evidence to answer this query."
     pin_unavailable: "DATA_NOT_AVAILABLE: a selected document is no longer available. Remove it or choose another one to continue."
     generation_retry: "I could not compose an answer to this query. Sending the same wording again usually fails: name the manufacturer, model, and the exact display or nameplate code, or attach a photo of the nameplate."

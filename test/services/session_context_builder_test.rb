@@ -495,11 +495,11 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
         block = SessionContextBuilder.field_problem_block(session)
 
         assert_equal <<~BLOCK.strip, block
-          ## Active Field Problem (technician-stated job state, not documentary evidence)
+          ## Active Field Problem
           Goal: Puerta 1
           Manufacturer: Elemont (technician)
           Fault code: technician confirmed no code is shown; do not ask for it again.
-          These facts identify the job. Procedures, values, terminals and code meanings still come only from retrieved evidence. If the current question names different equipment, ignore this block.
+          Not a manual. Procedures, values, terminals, and code meanings come from retrieved evidence. Ignore for other equipment.
         BLOCK
         assert_not_includes block, "absent_confirmed"
         assert_not_includes block, "\n\n"
@@ -520,7 +520,7 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
     travel_to FIELD_PROBLEM_NOW do
       with_companion_flags do
         block = SessionContextBuilder.field_problem_block(session)
-        assert_includes block, "Identifiers typed by the technician: MH, CEA15"
+        assert_includes block, "Identifiers: MH, CEA15"
         assert_operator block.length, :<=, SessionContextBuilder::MAX_PROBLEM_CHARS
       end
     end
@@ -573,6 +573,80 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
         assert_includes block, "do not ask for it again"
         assert_includes block, "Manufacturer: Fuji Yida (technician)"
         assert_includes block, SessionContextBuilder::PROBLEM_FOOTER
+      end
+    end
+  end
+
+  test "journey A turn 14 projects the episode into both guidance prompts" do
+    observations = [
+      "la puerta 1 no termina de cerrar",
+      "el imán no magnetiza",
+      "El display muestra código 8",
+      "no hay personas dentro",
+      "llega al marco, pero vuelve a abrir",
+      "comprobé visualmente la guía de la puerta",
+      "no veo una obstrucción",
+      "El LED 7 está apagado",
+      "se oye un clic, pero no termina de cerrar",
+      "sigue el clic y la puerta no termina de cerrar",
+      "detenida cerca de planta 2"
+    ].map { |text| { "text" => text, "correlation_id" => "q" } }
+    session = episode_session(
+      goal: "la puerta 1 no termina de cerrar el imán no magnetiza",
+      facts: {
+        "manufacturer" => known_fact("Elemont", source: "catalog"),
+        "fault_code" => known_fact("18")
+      },
+      identifiers: [
+        { "value" => "MH", "source" => "user", "correlation_id" => "q" },
+        { "value" => "CEA15", "source" => "user", "correlation_id" => "q" }
+      ],
+      observations: observations,
+      rejected: [ { "slot" => "fault_code", "value" => "8" } ]
+    )
+
+    travel_to FIELD_PROBLEM_NOW do
+      with_companion_flags do
+        block = SessionContextBuilder.field_problem_block(session)
+        known = Rag::CompanionGuidanceContext.build(
+          question: "¿Y ahora?",
+          identity: Rag::EquipmentIdentity.new(
+            manufacturer: "Elemont",
+            needles: [ "Elemont" ],
+            facts: [ { "slot" => "manufacturer", "value" => "Elemont", "source" => "catalog", "correlation_id" => "q" } ]
+          ),
+          session_context: block,
+          labels: [],
+          locale: :es
+        ).to_s
+        unknown = Rag::CompanionGuidanceContext.build(
+          question: "¿Y ahora?",
+          identity: nil,
+          session_context: block,
+          labels: [],
+          locale: :es,
+          mode: :unknown
+        ).to_s
+
+        assert_operator block.length, :>, 400, block
+        assert_operator block.length, :<=, 600, block
+        assert_operator SessionContextBuilder::MAX_PROBLEM_CHARS, :<=, 600
+        [
+          "Elemont", "MH", "CEA15",
+          "la puerta 1 no termina de cerrar", "el imán no magnetiza",
+          "18", "fault code 8",
+          "detenida cerca de planta 2",
+          "guía de la puerta", "obstrucción",
+          "LED 7", "clic", "no hay personas dentro"
+        ].each do |phrase|
+          assert_includes block, phrase, phrase
+          assert_includes known, phrase, phrase
+          assert_includes unknown, phrase, phrase
+        end
+        assert_not_includes block, "planta 1"
+        assert_not_includes block, "código 8"
+        assert_not_includes known, "planta 1"
+        assert_not_includes unknown, "planta 1"
       end
     end
   end
@@ -832,7 +906,7 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
     Rag::ActivePhotoContext.resolve(episode: episode, viewer_account: accounts(:legacy))
   end
 
-  def episode_session(goal: "Resortes", facts: {}, identifiers: [], conflicts: [], updated_at: nil, channel: "web")
+  def episode_session(goal: "Resortes", facts: {}, identifiers: [], conflicts: [], observations: [], rejected: [], updated_at: nil, channel: "web")
     ConversationSession.create!(
       identifier: "#{channel}:field_problem_#{SecureRandom.hex(4)}",
       channel: channel,
@@ -846,8 +920,10 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
         "goal" => { "text" => goal, "correlation_id" => "query:1", "truncated" => false },
         "facts" => facts,
         "identifiers" => identifiers,
-        "conflicts" => conflicts
-      }
+        "conflicts" => conflicts,
+        "observations" => observations.presence,
+        "rejected" => rejected.presence
+      }.compact
     )
   end
 

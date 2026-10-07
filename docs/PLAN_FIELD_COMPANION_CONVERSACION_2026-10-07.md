@@ -1,8 +1,8 @@
 # Field Companion: conversación técnica real
 
-**Estado: PENDIENTE DE VALIDACIÓN FINAL DEL FUNDADOR — ALCANCE: UN EPISODIO COMPLETO.** La revisión Opus del 2026-10-07 sobre `7076f05` sigue incorporada. Esta revisión acota la ejecución. No la deja lista para piloto.
+**Estado: ETAPA 1 LOCAL COMPLETA — PENDIENTE DE REVISIÓN ANTES DE LA ETAPA 2.** No es `EPISODIO_VALIDADO`. La etapa 1 se ejecutó con una instrucción que la autoriza sola. Las etapas 2 y 3 siguen sin empezar. La revisión Opus del 2026-10-07 sobre `7076f05` sigue incorporada. Esta revisión no habilita un piloto.
 
-Este documento es el único plan vigente del companion. Una revisión documental no autoriza a empezar. Este cambio no implementa producto, no llama a Bedrock y no despliega.
+Este documento es el único plan vigente del companion. Una revisión documental no autoriza a empezar. La etapa 1 ya está en el código local. No llama a Bedrock y no despliega.
 
 Pregunta rectora: ¿Danebo sostiene un solo episodio técnico completo hasta una conclusión útil?
 
@@ -213,6 +213,27 @@ Siguen siendo parte de esta etapa, y tienen que pasar, las pruebas locales ya ex
 Resultado: los tests de las reparaciones y esas pruebas locales pasan. No hay llamada de modelo.
 
 Parada: si la reparación exige una llamada adicional en un turno que ya genera, una tabla nueva o subir `MAX_PROBLEM_CHARS` por encima de 600, se detiene y vuelve al plan. La generación de la ruta de cero chunks, que hoy no genera, es la excepción ya escrita arriba.
+
+#### Cierre local (2026-10-07)
+
+Base `78df58a`, rama `main`, árbol limpio al empezar. Sin llamadas a Bedrock, sin journeys reales y sin despliegue. Veredicto de esta etapa: `ETAPA_1_COMPLETADA`. No declara `EPISODIO_VALIDADO`.
+
+El bloque del estado del journey A en el turno 14 mide 585 caracteres, por encima de 400 y dentro de 600. Con el pie anterior el mismo estado quedaba en 603 y `fit_problem` recortaba el final del problema. El pie quedó en «Ignore for other equipment.» y el objetivo completo cabe, junto con Elemont, MH, CEA15, el código 18, la corrección del código 8 y las comprobaciones que cambian el paso. El código 8 y la planta 1 no salen como hechos vigentes. La puerta y el imán siguen en la línea de objetivo; no se duplican en observaciones.
+
+Las seis reparaciones quedaron en las rutas que ya existían:
+
+- `SessionContextBuilder` proyecta observaciones y correcciones. Las dos rutas de guidance leen ese bloque en el prompt final.
+- `MAX_PROBLEM_CHARS` pasó a 600. El encabezado, el pie y la línea de identificadores se acortaron antes.
+- Cero chunks e identidad desconocida generan una vez con el guidance existente, sin otro `Retrieve`. La respuesta antepone el aviso de búsqueda vacía. Con pin forzado, un solo retrieve conserva el aviso de foco vacío. Si la generación sale vacía o es el rechazo de Bedrock, queda el texto de reintento.
+- `RoutePolicy` ya no pregunta el controlador por rutina cuando hay síntoma y un token de equipo. El designador ambiguo y la mención dentro del foco siguen aclarando. El fallback de un episodio vacío busca el síntoma; un saludo sigue aclarando.
+- El menú fijo salió de `TASK_LEAD`. `ADVANCE_FAULT` dice que la identidad no se pregunta por rutina. Pasa a objetivo cuando el turno ya trae manuales distintos, una duda de aplicabilidad o un código cuyo significado se pregunta. Un procedimiento, un reset o un valor siguen en `advance_fault`.
+- Una corrección de observación permanece `correct` y conserva la frase de reemplazo. Una corrección de fabricante, modelo, controlador o código sin la negación ranurada sigue yéndose a `unclear`.
+
+Evidencia local, con dependencias externas stubbeadas: `session_context_builder_test`, `companion_guidance_context_test`, `route_policy_test`, `turn_perception_test` y `work_context_reducer_test`, 106 pruebas, 943 aserciones. `bedrock_rag_service_test` y `document_identity_scope_test`, 177 pruebas, 1399 aserciones, 6 skips previos. `conversation_session_turn_interpreter_test` junto con `turn_perception_test`, incluidas las de `new_work`, `expected_episode_id`, NICE3000 a NICE1000 y el código 8 a 18. Cero fallos en esas corridas.
+
+Pendiente para la etapa 2: el journey A contra el índice local, con el intérprete real. Esta etapa no demuestra que el manual del Elemont esté indexado ni que la conclusión use un chunk compatible. `TechnicalUnderstanding` no es la ruta owner y no se tocó. La planta 1 no es un slot rechazado: el reducer la saca de las observaciones cuando el turno dice «no de», y el prompt muestra la observación de reemplazo.
+
+Condición para iniciar la etapa 2: revisión de este diff. El manual del Elemont MH tiene que estar en el índice local; si no está, la parada sigue siendo `RETRIEVAL_EMPTY`. El presupuesto y las paradas de la etapa 2 no cambian. No se empieza la etapa 2 ni la 3 desde este cierre.
 
 ### 2. Validar un episodio real
 

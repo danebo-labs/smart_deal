@@ -17,7 +17,7 @@ module Rag
     MAX_TOOL_BYTES = 4096
     MIN_OBSERVATION_CHARS = 13
     FAULT_RE = /\A[a-z]?\d{1,4}[a-z]?\z/
-    PROMPT_VERSION = "2026-10-02.7"
+    PROMPT_VERSION = "2026-10-07.1"
     SCHEMA_VERSION = "turn_perception.3"
 
     Identity = Data.define(:span, :act, :kind, :slot, :value, :source, :manufacturer)
@@ -376,16 +376,29 @@ module Rag
         move = identities.any? || observations.any? || ambiguities.any? ? "report" : "follow_up"
         resolution = nil
       elsif move == "correct" && identities.none? { |item| item.kind == "negate" && item.slot.present? }
-        move = "unclear"
-        target = "correction_target"
-        resolution = nil
-        identities = []
-        observations = []
+        unless observation_correction?(identities, observations)
+          move = "unclear"
+          target = "correction_target"
+          resolution = nil
+          identities = []
+          observations = []
+        end
       elsif move == "new_work" && !self.class.technical_payload?(identities, observations, ambiguities) && prior_context? && !work_relation_pending?
         move = "follow_up"
       end
       target = nil unless move == "unclear"
       [ move, resolution, identities, observations, ambiguities, target ]
+    end
+
+    # An observation correction has no slot to negate. An identity or code
+    # correction still needs the stored value and its replacement.
+    def observation_correction?(identities, observations)
+      return false if observations.empty?
+      return false if identities.any? { |item| item.kind == "negate" && item.slot.present? }
+      return false if identities.any? { |item| item.act == "assert" && %w[fact identifier].include?(item.kind) }
+      return false if identities.any? { |item| item.act == "negate" } && identities.any? { |item| item.act == "assert" }
+
+      true
     end
 
     def self.technical_payload?(identities, observations, ambiguities)

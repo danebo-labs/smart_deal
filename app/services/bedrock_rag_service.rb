@@ -616,7 +616,8 @@ class BedrockRagService
     enforce_account_filter(enforce_query_contractual_limits(deep_merge_configs(base_config, custom_config)))
   end
 
-  def unknown_identity_guidance(raw_turn:, session_context:, chunks:, response_locale:, question:)
+  def unknown_identity_guidance(raw_turn:, session_context:, chunks:, response_locale:, question:,
+                                 empty_retrieval: false, pinned_focus_empty: false)
     Rag::CompanionGuidanceContext.build(
       question: raw_turn,
       identity: nil,
@@ -624,7 +625,9 @@ class BedrockRagService
       labels: [],
       locale: effective_response_locale(question, response_locale: response_locale),
       mode: :unknown,
-      manuals: Rag::CompanionGuidanceContext.withheld_manuals(chunks)
+      manuals: Rag::CompanionGuidanceContext.withheld_manuals(chunks),
+      empty_retrieval: empty_retrieval,
+      pinned_focus_empty: pinned_focus_empty
     )
   end
 
@@ -662,10 +665,10 @@ class BedrockRagService
     marked = []
     prompt = nil
     raw_answer = nil
-    pinned_empty = false
     raw_turn = raw_question.presence || question
     reference_turn = Rag::UnknownIdentityPublication.reference_request?(raw_turn)
     guidance = nil
+    focus_empty = false
 
     2.times do |index|
       if index == 1
@@ -708,29 +711,18 @@ class BedrockRagService
 
       chunks = Array(retrieval[:chunks])
       if chunks.empty?
-        pinned_empty = apply_filter && force_entity_filter && index.zero?
+        focus_empty = true if apply_filter && index.zero?
         next if retry_open && index.zero?
 
         log_open_retrieval(query_correlation_id, outcome_reason: @open_retrieval_outcome_reason)
-        return attach_generation_trace!(
-          observe_unknown_reference!(
-            open_reference_no_results(
-              question: question,
-              response_locale: response_locale,
-              retrieval: retrieval,
-              session_id: session_id,
-              pinned: pinned_empty
-            ),
-            question: question, raw_answer: nil, chunks: [], config: config, prompt: nil,
-            correlation_id: query_correlation_id, attribution: attribution,
-            response_locale: response_locale, session_context: session_context,
-            output_channel: output_channel, start_time: start_time,
-            include_diagnostics: include_diagnostics
-          ),
-          nil,
-          raw_turn: raw_question,
-          sent_question: question,
-          truncated: context_truncated
+        return unknown_empty_guidance_result(
+          question: question, raw_turn: raw_turn, session_id: session_id,
+          response_locale: response_locale, session_context: session_context,
+          output_channel: output_channel, retrieval: retrieval, config: config,
+          attribution: attribution, correlation_id: query_correlation_id,
+          include_diagnostics: include_diagnostics, raw_question: raw_question,
+          context_truncated: context_truncated, start_time: start_time,
+          focus_empty: focus_empty
         )
       end
 
@@ -910,6 +902,147 @@ class BedrockRagService
       end
     end
     result
+  end
+
+  # Zero chunks reuse the retrieves already done in this turn. Guidance is the
+  # one generation this path did not have. A failed generation keeps the retry
+  # copy. The session pin is not cleared.
+  def unknown_empty_guidance_result(question:, raw_turn:, session_id:, response_locale:, session_context:,
+                                     output_channel:, retrieval:, config:, attribution:, correlation_id:,
+                                     include_diagnostics:, raw_question:, context_truncated:, start_time:,
+                                     focus_empty:)
+    guidance = unknown_identity_guidance(
+      raw_turn: raw_turn,
+      session_context: session_context,
+      chunks: [],
+      response_locale: response_locale,
+      question: question,
+      empty_retrieval: true,
+      pinned_focus_empty: focus_empty
+    )
+    prompt = guidance.to_s
+    raw_answer = generate_empty_guidance(prompt, attribution, correlation_id)
+    locale = effective_response_locale(question, response_locale: response_locale)
+    if raw_answer.blank? || bedrock_no_results?(raw_answer)
+      return empty_guidance_retry(
+        question: question, response_locale: response_locale, retrieval: retrieval,
+        session_id: session_id, prompt: prompt, config: config, attribution: attribution,
+        correlation_id: correlation_id, include_diagnostics: include_diagnostics,
+        raw_question: raw_question, context_truncated: context_truncated,
+        start_time: start_time, session_context: session_context, output_channel: output_channel,
+        locale: locale
+      )
+    end
+
+    result = finish_document_identity_generation(
+      question: question,
+      raw_answer: raw_answer,
+      chunks: [],
+      response_locale: response_locale,
+      retrieval: retrieval,
+      companion: true,
+      safety_evidence: guidance&.safety_evidence
+    )
+    if result[:answer].blank?
+      return empty_guidance_retry(
+        question: question, response_locale: response_locale, retrieval: retrieval,
+        session_id: session_id, prompt: prompt, config: config, attribution: attribution,
+        correlation_id: correlation_id, include_diagnostics: include_diagnostics,
+        raw_question: raw_question, context_truncated: context_truncated,
+        start_time: start_time, session_context: session_context, output_channel: output_channel,
+        locale: locale
+      )
+    end
+
+    notice = empty_retrieval_notice(locale, focus_empty: focus_empty)
+    result[:answer] = [ notice, result[:answer] ].compact_blank.join("\n\n")
+    result.delete(:generation_mode)
+    result.delete(:document_identity)
+    result.delete(:route_outcome)
+    result.delete(:model_invoked)
+    result[:session_id] = session_id
+    result[:rag_ms] = ((Time.current - start_time) * 1000).to_i
+    result[:publication_mode] = "unknown_identity_guidance"
+    withhold_unconfirmed_identity!(
+      result,
+      raw_answer: raw_answer,
+      chunks: [],
+      question: question,
+      response_locale: response_locale,
+      check_raw: true
+    )
+    unless result[:answer].to_s.include?(I18n.t("rag.empty_search_notice", locale: locale))
+      result[:answer] = [ notice, result[:answer] ].compact_blank.join("\n\n")
+    end
+    attach_generation_trace!(
+      observe_unknown_reference!(
+        result,
+        question: question, raw_answer: raw_answer, chunks: [], config: config, prompt: prompt,
+        correlation_id: correlation_id, attribution: attribution,
+        response_locale: response_locale, session_context: session_context,
+        output_channel: output_channel, start_time: start_time,
+        include_diagnostics: include_diagnostics
+      ),
+      prompt,
+      raw_turn: raw_question,
+      sent_question: question,
+      truncated: context_truncated == true || guidance.context_truncated?
+    )
+  end
+
+  def generate_empty_guidance(prompt, attribution, correlation_id)
+    document_identity_generator.query(
+      prompt,
+      max_tokens: @rag_config[:generation_max_tokens],
+      temperature: @rag_config[:generation_temperature],
+      tracking: {
+        account_id: attribution[:account_id],
+        user_id: attribution[:user_id],
+        conversation_session_id: attribution[:conversation_session_id],
+        correlation_id: correlation_id,
+        route: Array(@applied_pin_uris).any? ? "rag_filtered" : "rag_global",
+        attempt: 1
+      }
+    )
+  rescue Timeout::Error, Net::ReadTimeout, Net::OpenTimeout, BedrockServiceError
+    nil
+  rescue StandardError => error
+    raise unless error.class.name.start_with?("Aws::", "Seahorse::")
+
+    nil
+  end
+
+  def empty_guidance_retry(question:, response_locale:, retrieval:, session_id:, prompt:, config:,
+                            attribution:, correlation_id:, include_diagnostics:, raw_question:,
+                            context_truncated:, start_time:, session_context:, output_channel:, locale:)
+    failed = open_reference_no_results(
+      question: question,
+      response_locale: response_locale,
+      retrieval: retrieval,
+      session_id: session_id,
+      pinned: false
+    ).merge(answer: localized_generation_retry(locale))
+    attach_generation_trace!(
+      observe_unknown_reference!(
+        failed,
+        question: question, raw_answer: nil, chunks: [], config: config, prompt: prompt,
+        correlation_id: correlation_id, attribution: attribution,
+        response_locale: response_locale, session_context: session_context,
+        output_channel: output_channel, start_time: start_time,
+        include_diagnostics: include_diagnostics
+      ),
+      prompt,
+      raw_turn: raw_question,
+      sent_question: question,
+      truncated: context_truncated
+    )
+  end
+
+  def empty_retrieval_notice(locale, focus_empty:)
+    parts = []
+    parts << I18n.t("rag.pinned_focus_empty", locale: locale) if focus_empty
+    parts << I18n.t("rag.empty_search_notice", locale: locale)
+    parts.join(" ")
   end
 
   def open_reference_no_results(question:, response_locale:, retrieval:, session_id:, pinned:)

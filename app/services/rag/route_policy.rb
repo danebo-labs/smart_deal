@@ -106,17 +106,6 @@ module Rag
           pending_question: { "type" => "controller" }
         )
       end
-      if ask_controller?(previous)
-        return finish(
-          "search_and_clarify",
-          outside_discovery: true,
-          owns_query: true,
-          clarification: I18n.t("rag.clarify_controller", locale: @locale),
-          pending_subject: "controller",
-          ask_when: :always,
-          pending_question: { "type" => "controller" }
-        )
-      end
       if focus_mention?
         token = short_mention.span
         return finish(
@@ -139,6 +128,17 @@ module Rag
       return repeated if repeated
 
       if thin?(@previous) && @focus_count.zero?
+        if searchable_symptom?(turn)
+          query = fallback_query(turn, catalog, viewer_account)
+          return finish(
+            "ready",
+            outside_discovery: false,
+            owns_query: query.present?,
+            retrieval_query: query,
+            fallback: true
+          )
+        end
+
         return finish(
           "clarify_first",
           outside_discovery: false,
@@ -250,19 +250,13 @@ module Rag
       fact.is_a?(Hash) && fact["status"] == "unknown_confirmed"
     end
 
-    def ask_controller?(previous)
-      manufacturer = known_fact?(previous, "manufacturer") || @perception.facts.any? { |item| item.slot == "manufacturer" }
-      return false unless manufacturer
-      return false if known_fact?(previous, "model") || known_fact?(previous, "controller")
-      return false if @perception.facts.any? { |item| %w[model controller].include?(item.slot) }
-      return false if previous.fact("controller")&.dig("status") == "unknown_confirmed"
+    GREETING_TOKEN = /\A(?:hola|buenas|buen|dia|dias|gracias|ok|vale|hello|hi|hey|thanks)\z/i
 
-      symptom?(previous)
-    end
+    def searchable_symptom?(turn)
+      tokens = turn.to_s.scan(/[\p{L}\d][\p{L}\d-]*/)
+      return false if tokens.size < 2
 
-    def symptom?(previous)
-      previous.goal.present? || previous.observations.any? || previous.fact("fault_code").present? ||
-        @perception.observations.any? || @perception.facts.any? { |item| item.slot == "fault_code" }
+      tokens.any? { |token| !token.match?(GREETING_TOKEN) }
     end
 
     def focus_mention?

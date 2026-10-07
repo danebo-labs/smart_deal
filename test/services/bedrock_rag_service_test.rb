@@ -341,7 +341,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       result = service.query('que es EC2')
 
       # Spanish question -> Spanish response (detected from question text)
-      assert_includes result[:answer], 'No se encontró información'
+      assert_includes result[:answer], "No pude redactar la respuesta"
       assert_equal [], result[:citations]
     end
   end
@@ -352,7 +352,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       service = BedrockRagService.new(account: @account)
       result = service.query('What is S3?')
 
-      assert_includes result[:answer], 'No information was found'
+      assert_includes result[:answer], "I could not compose an answer"
       assert_equal [], result[:citations]
     end
   end
@@ -363,7 +363,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       service = BedrockRagService.new(account: @account)
       result = service.query('modernización', response_locale: :en)
 
-      assert_includes result[:answer], 'No information was found'
+      assert_includes result[:answer], "I could not compose an answer"
       assert_equal [], result[:citations]
     end
   end
@@ -1033,6 +1033,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     call_count = 0
 
     with_mock_bedrock_client do |client|
+      client.generation_script = [ "Orientación de Danebo: sin manual aplicable en este foco." ]
       client.define_singleton_method(:retrieve) do |_params|
         call_count += 1
         ::OpenStruct.new(retrieval_results: [])
@@ -1048,9 +1049,11 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
       )
 
       assert_equal 1, call_count
+      assert_includes client.generation_prompts.last, "Do not release the pin."
+      assert_includes result[:answer], I18n.t("rag.pinned_focus_empty", locale: :es)
+      assert_includes result[:answer], I18n.t("rag.empty_search_notice", locale: :es)
+      assert_includes result[:answer], "Orientación de Danebo"
       assert_not_includes result[:answer], "DATA_NOT_AVAILABLE"
-      assert_includes result[:answer], I18n.t("rag.data_not_available", locale: :es)
-      assert_includes result[:answer], "documentos pineados"
     end
   end
 
@@ -1219,7 +1222,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
         assert_not result[:diagnostics][:canned_no_results]
         assert_not result[:diagnostics][:canned_with_retrieval]
         assert_empty result[:diagnostics][:safety_evidence_chunks]
-        assert_includes result[:answer], 'No se encontró información'
+        assert_includes result[:answer], "No pude redactar la respuesta"
       end
     end
 

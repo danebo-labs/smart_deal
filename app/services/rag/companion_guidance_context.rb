@@ -13,15 +13,16 @@ module Rag
     RESOLVE_IDENTITY = "resolve_identity"
     BASIS_IDENTIFICATION = "explicit_identification_request"
     BASIS_CONFIRMATION = "explicit_identity_confirmation_request"
+    BASIS_DOCUMENTATION = "documentation_applicability"
     BASIS_DEFAULT = "default_fault_progress"
     OBJECTIVE_LINES = {
-      ADVANCE_FAULT => "Current objective: advance the reported fault. Equipment identity is not the current objective.",
+      ADVANCE_FAULT => "Current objective: advance the reported fault. Do not ask equipment identity by routine.",
       RESOLVE_IDENTITY => "Current objective: resolve equipment identity."
     }.freeze
     # Used only when the turn is advance_fault and no concrete state was reported.
-    NO_STATE_OBJECTIVE = "Current objective: advance the current request. No fault or symptom was reported. Equipment identity is not the current objective."
+    NO_STATE_OBJECTIVE = "Current objective: advance the current request. No fault or symptom was reported. Do not ask equipment identity by routine."
     SYMPTOM_LEAD = "Ask for one safe look, read, or listen check tied to the reported symptom. Put the observational verb and the thing observed in the same sentence. One main question. Do not make a questionnaire."
-    TASK_LEAD = "This request is the anchor. Do not ask them to describe the fault, restate the symptom, or explain the abnormal behavior. Ask one passive look, read, or listen check: anyone inside, car position relative to the floor, door state, the literal display or indicator, or a sound already present. One sentence. Not a checklist. If too ambiguous, one narrow question, not which fault it is."
+    TASK_LEAD = "This request is the anchor. Do not ask them to describe the fault, restate the symptom, or explain the abnormal behavior. If a check is needed, ask one that distinguishes causes, interprets a result already reported, or decides the next step of this request. One sentence. Not a checklist. Do not ask equipment identity by routine."
     PASSIVE_RULE = "Passive means a state that already exists. Do not have them press, activate, call, send, move, power, reset, or measure to create it."
     # Concrete equipment state already reported. Not a request, a manual, or an identity.
     STATE_CUE = /
@@ -45,6 +46,10 @@ module Rag
     CONFIRM_WHETHER = /\bconfirm\p{L}*\s+(?:si|que|whether|if)\b.{0,80}\b(?:equipo|ascensor|controlador|elevator|equipment|controller|marca|modelo|fabricante)\b/i
     PROPOSED_IDENTITY_COPULA = /(?:\A|[[:space:]¿])(?:[Ee]s|[Ss]era|[Ss]eria|[Ii]s)\s+(?:este[[:space:]]+|esta[[:space:]]+|this[[:space:]]+)?(?:un|una|el|la|a|an)\s+\p{Lu}[\p{L}\d-]{1,}/
     PART_ATTRIBUTE = /\b(?:marca|modelo|fabricante|model|brand|make|manufacturer)\s+(?:de|del|of)\s+(?:este|esta|el|la|un|una|mi|tu|this|my|our|the|a|an)?\s*(\p{L}+)/i
+    CODE_MEANING = /\b(?:que significa|que indica|what does|what do|means)\b/
+    CODE_TOKEN = /\b(?:codigo|code|fault|error|led)\s+\d{1,4}\b|\b[a-z]\d{2,4}\b|\b[a-z]\s+\d{2,4}\b/
+    MANUAL_WORD = /\bmanual\b/
+    APPLICABILITY_DOUBT = /\b(?:puede no|no se si|may not|not apply|no es mi|not this equipment|not be my)\b/
     QUESTION_CHARS = 400
     TURN_CHARS = 160
     MAX_TURNS = 2
@@ -60,7 +65,8 @@ module Rag
       "Condition" => "condition"
     }.freeze
 
-    def self.build(question:, identity:, session_context:, labels:, locale:, mode: :known, manuals: nil)
+    def self.build(question:, identity:, session_context:, labels:, locale:, mode: :known, manuals: nil,
+                   empty_retrieval: false, pinned_focus_empty: false)
       new(
         question: question,
         identity: identity,
@@ -68,7 +74,9 @@ module Rag
         labels: labels,
         locale: locale,
         mode: mode,
-        manuals: manuals
+        manuals: manuals,
+        empty_retrieval: empty_retrieval,
+        pinned_focus_empty: pinned_focus_empty
       )
     end
 
@@ -84,7 +92,8 @@ module Rag
       }.uniq.first(MAX_MANUALS)
     end
 
-    def initialize(question:, identity:, session_context:, labels:, locale:, mode: :known, manuals: nil)
+    def initialize(question:, identity:, session_context:, labels:, locale:, mode: :known, manuals: nil,
+                   empty_retrieval: false, pinned_focus_empty: false)
       @question = question.to_s.squish.truncate(QUESTION_CHARS, omission: "")
       @identity = identity
       @session_context = session_context.to_s
@@ -92,6 +101,8 @@ module Rag
       @locale = locale
       @mode = mode.to_sym
       @manuals = Array(manuals).compact_blank.first(MAX_MANUALS)
+      @empty_retrieval = empty_retrieval == true
+      @pinned_focus_empty = pinned_focus_empty == true
     end
 
     def to_s
@@ -109,13 +120,14 @@ module Rag
     def turn_objective
       return nil unless unknown?
 
-      identity_resolution_request? ? RESOLVE_IDENTITY : ADVANCE_FAULT
+      identity_resolution_request? || identity_decides_documentation? ? RESOLVE_IDENTITY : ADVANCE_FAULT
     end
 
     def turn_objective_basis
       return nil unless unknown?
       return BASIS_CONFIRMATION if identity_confirmation_request?
       return BASIS_IDENTIFICATION if identification_request?
+      return BASIS_DOCUMENTATION if identity_decides_documentation?
 
       BASIS_DEFAULT
     end
@@ -178,10 +190,19 @@ module Rag
         Do not invent electrical values, distances, tolerances, torque, parameters, terminal numbers, terminal functions, fault-code meanings, manufacturer-specific sequences, menu names, DIP positions, selectors, waits, inspection mode, power cuts, or resets.
         If the equipment identity conflicts, do not choose a manufacturer.
         On a follow-up, do not greet again.
+        #{empty_retrieval_rule}
         Do not stop after saying there is no manual. Do not print DATA_NOT_AVAILABLE.
         Do not cite manuals with [n].
         Write the entire answer in #{language_name}.
       TEXT
+    end
+
+    def empty_retrieval_rule
+      return "" unless @empty_retrieval
+
+      rule = "The search returned no documentation. Do not say the manual does not exist. Offer one clarification that would narrow the next search, or Danebo field guidance labeled as Danebo guidance. No manufacturer procedure, value, or terminal."
+      rule += " The pinned focus returned no evidence. Do not release the pin." if @pinned_focus_empty
+      rule
     end
 
     def objective_line
@@ -240,6 +261,28 @@ module Rag
       identity_confirmation_request? || identification_request?
     end
 
+    # Deterministic signals already on this turn. No extra model call.
+    # Distinct retrieved manuals, a manual the technician doubts, or a code
+    # whose meaning is being asked while identity is still unknown.
+    def identity_decides_documentation?
+      distinct_retrieved_manuals? || applicability_depends_on_model? || code_meaning_depends_on_equipment?
+    end
+
+    def distinct_retrieved_manuals?
+      names = @manuals.filter_map { |item|
+        item.to_s.sub(/,\s*p\.\s*.+\z/, "").squish.presence
+      }
+      names.uniq.size > 1
+    end
+
+    def applicability_depends_on_model?
+      folded_question.match?(MANUAL_WORD) && folded_question.match?(APPLICABILITY_DOUBT)
+    end
+
+    def code_meaning_depends_on_equipment?
+      folded_question.match?(CODE_MEANING) && folded_question.match?(CODE_TOKEN)
+    end
+
     def identity_confirmation_request?
       folded = folded_question
       return true if folded.match?(EQUIPMENT_COPULA)
@@ -290,6 +333,7 @@ module Rag
       lines = []
       lines << "Question: #{@question}" if @question.present?
       lines << "Active problem: #{goal}" if goal.present?
+      episode_lines.each { |line| lines << line }
       identity_lines.each { |line| lines << line }
       if conflict.present?
         lines << "Identity conflict: #{conflict}. Do not choose either manufacturer."
@@ -332,10 +376,15 @@ module Rag
       lines.join("\n")
     end
 
+    def episode_lines
+      problem_projection_lines.reject { |line| line.start_with?("Goal:") }
+    end
+
     def problem_projection_lines
       section(PROBLEM_HEADING).lines.filter_map { |line|
         text = line.strip
-        next if text.blank? || text.start_with?("(") || text.start_with?("These facts identify")
+        next if text.blank? || text.start_with?("(")
+        next if text.start_with?("These facts identify", "Not a manual.", "Procedures, values, terminals")
 
         text
       }

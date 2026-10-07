@@ -218,14 +218,11 @@ class Rag::CompanionGuidanceContextTest < ActiveSupport::TestCase
     assert_includes prompt, "Ask them to read the nameplate and report the manufacturer and model"
   end
 
-  test "manual reset value and code requests stay on advance_fault" do
+  test "manual reset and value requests stay on advance_fault" do
     questions = [
       "Dame el procedimiento de rescate numerado",
       "No sé qué maniobra es, ¿cómo la reseteo?",
       "¿Qué tensión debe haber en la borna de seguridad?",
-      "El display muestra Q-731, ¿qué significa?",
-      "¿Qué dice el manual ZEPHYR QX-77 en la página 12? Puede no ser mi equipo.",
-      "What does the ZEPHYR QX-77 manual say? It may not apply to this equipment.",
       "What's the procedure to bring the car down?",
       "Tengo el manual seleccionado. Dame el procedimiento de rescate."
     ]
@@ -235,7 +232,37 @@ class Rag::CompanionGuidanceContextTest < ActiveSupport::TestCase
       assert_equal "advance_fault", context.turn_objective, question
       assert_equal "default_fault_progress", context.turn_objective_basis, question
       assert_not_includes context.to_s, "Ask them to read the nameplate", question
+      assert_not_includes context.to_s, "anyone inside", question
     end
+  end
+
+  test "a code meaning or an unconfirmed manual makes identity the objective" do
+    code = unknown_context("El display muestra Q-731, ¿qué significa?")
+    spanish = unknown_context("¿Qué dice el manual ZEPHYR QX-77 en la página 12? Puede no ser mi equipo.")
+    english = unknown_context("What does the ZEPHYR QX-77 manual say? It may not apply to this equipment.")
+
+    [ code, spanish, english ].each do |context|
+      assert_equal "resolve_identity", context.turn_objective
+      assert_equal "documentation_applicability", context.turn_objective_basis
+      assert_includes context.to_s, "Ask them to read the nameplate and report the manufacturer and model"
+    end
+  end
+
+  test "distinct retrieved manuals make identity the objective and two pages of one manual do not" do
+    distinct = unknown_context(
+      "la puerta no cierra",
+      manuals: [ "Elemont MH, p. 1", "Manual CEA15, p. 2" ]
+    )
+    same = unknown_context(
+      "la puerta no cierra",
+      manuals: [ "Elemont MH, p. 1", "Elemont MH, p. 4" ]
+    )
+
+    assert_equal "resolve_identity", distinct.turn_objective
+    assert_equal "documentation_applicability", distinct.turn_objective_basis
+    assert_equal "advance_fault", same.turn_objective
+    assert_equal "default_fault_progress", same.turn_objective_basis
+    assert_not_includes same.to_s, "Ask them to read the nameplate"
   end
 
   test "the objective line survives context truncation" do
@@ -281,10 +308,12 @@ class Rag::CompanionGuidanceContextTest < ActiveSupport::TestCase
       assert_not_includes prompt, "reported symptom", question
       assert_includes prompt, "Do not ask them to describe the fault", question
       assert_includes prompt, "restate the symptom", question
-      assert_includes prompt, "one passive look, read, or listen check", question
+      assert_includes prompt, "distinguishes causes", question
+      assert_includes prompt, "interprets a result already reported", question
+      assert_includes prompt, "next step of this request", question
       assert_includes prompt, "Not a checklist.", question
-      assert_includes prompt, "not which fault it is", question
-      assert_includes prompt, "anyone inside", question
+      assert_includes prompt, "Do not ask equipment identity by routine.", question
+      assert_not_includes prompt, "anyone inside", question
       assert_includes prompt, "Passive means a state that already exists.", question
       assert_includes prompt, "Do not have them press, activate, call, send, move", question
       assert_includes prompt, "Say it is not confirmed", question
@@ -356,7 +385,8 @@ class Rag::CompanionGuidanceContextTest < ActiveSupport::TestCase
     assert_equal true, context.reported_state_present
     if context.context_truncated?
       assert_equal Rag::CompanionGuidanceContext::MAX_CHARS, prompt.length
-      assert prompt.start_with?("# FIELD COMPANION\n#{Rag::CompanionGuidanceContext::OBJECTIVE_LINES.fetch('advance_fault')}")
+      line = Rag::CompanionGuidanceContext::OBJECTIVE_LINES.fetch(context.turn_objective)
+      assert prompt.start_with?("# FIELD COMPANION\n#{line}")
     else
       assert_includes prompt, "Se quedó entre pisos"
       assert_includes prompt, "Follow-up:"
@@ -386,14 +416,15 @@ class Rag::CompanionGuidanceContextTest < ActiveSupport::TestCase
     unknown_context(question, session_context: session_context, locale: locale).to_s
   end
 
-  def unknown_context(question, session_context: "", locale: :es, mode: :unknown)
+  def unknown_context(question, session_context: "", locale: :es, mode: :unknown, manuals: nil)
     Rag::CompanionGuidanceContext.build(
       question: question,
       identity: nil,
       session_context: session_context,
       labels: [],
       locale: locale,
-      mode: mode
+      mode: mode,
+      manuals: manuals
     )
   end
 

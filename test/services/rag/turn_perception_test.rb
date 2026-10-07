@@ -220,6 +220,33 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_nil episode.fact("model")
   end
 
+  test "an observation correction stays correct and keeps the replacement" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    episode.append_observation!("detenida cerca de planta 1", correlation_id: "seed")
+    turn = "Corrijo algo de antes: la cabina está detenida cerca de planta 2, no de planta 1."
+    result = perceive(
+      {
+        "move" => "correct",
+        "assertions" => [],
+        "observations" => [ "detenida cerca de planta 2" ],
+        "pending_resolution" => nil,
+        "clarification_target" => nil
+      },
+      turn,
+      episode: episode
+    )
+    settle(episode, result, turn)
+
+    assert_equal "correct", result.move
+    assert_nil result.clarification_target
+    assert_equal [ "detenida cerca de planta 2" ], result.observations
+    texts = episode.observations.pluck("text")
+    assert_includes texts, "detenida cerca de planta 2"
+    assert texts.none? { |text| text.match?(/(?<![[:alnum:]])planta 1(?![[:alnum:]])/i) }
+    assert_includes Rag::TurnInterpreter::PROMPT, "A correction of an observation keeps the replacement phrase"
+    assert_not_includes Rag::TurnInterpreter::PROMPT, "A correction has empty observations."
+  end
+
   test "a short multi-word symptom is kept and a lone technical token is not" do
     symptoms = perceive(
       observation_report([ "no abre", "no frena", "se traba" ]),

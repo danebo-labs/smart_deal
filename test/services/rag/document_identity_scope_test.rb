@@ -1115,6 +1115,111 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_nil result[:generation_mode]
   end
 
+  test "zero chunks and unknown identity generate once from the problem" do
+    service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
+    retrieve_calls = 0
+    prompts = []
+    orientation = "Orientación de Danebo: el síntoma queda abierto hasta contar con un manual aplicable."
+    service.define_singleton_method(:retrieve_chunks) do |*, **|
+      retrieve_calls += 1
+      { chunks: [], retrieval_trace: {} }
+    end
+    service.define_singleton_method(:retrieve_and_generate_with_retry) { |_params| flunk "empty retrieval must not retrieve_and_generate" }
+    generator = Object.new
+    generator.define_singleton_method(:query) do |prompt, **|
+      prompts << prompt
+      orientation
+    end
+    service.define_singleton_method(:document_identity_generator) { generator }
+    context = <<~TEXT
+      ## Active Field Problem
+      Goal: la puerta no cierra
+      Manufacturer: Elemont (catalog)
+    TEXT
+
+    result = service.query(
+      "la puerta no cierra",
+      equipment_identity: nil,
+      session_context: context,
+      output_channel: :web,
+      response_locale: :es
+    )
+
+    assert_equal 1, retrieve_calls
+    assert_equal 1, prompts.size
+    assert_includes prompts.sole, "The search returned no documentation."
+    assert_includes prompts.sole, "Do not say the manual does not exist."
+    assert_includes prompts.sole, "Goal: la puerta no cierra"
+    assert_includes prompts.sole, "Manufacturer: Elemont (catalog)"
+    assert_includes result[:answer], I18n.t("rag.empty_search_notice", locale: :es)
+    assert_includes result[:answer], orientation
+    assert_not_includes result[:answer], "Sube un archivo"
+    assert_equal "unknown_identity_guidance", result[:publication_mode]
+    assert_not_includes result[:answer], I18n.t("rag.pinned_focus_empty", locale: :es)
+  end
+
+  test "a forced pin with zero chunks keeps the focus notice and does not retrieve again" do
+    uri = "s3://bucket/elemont-empty.pdf"
+    KbDocument.create!(account: accounts(:legacy), s3_key: uri, display_name: "Elemont", aliases: [])
+    service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
+    retrieves = []
+    prompts = []
+    service.define_singleton_method(:retrieve_chunks) do |*, **kwargs|
+      retrieves << kwargs
+      { chunks: [], retrieval_trace: {} }
+    end
+    service.define_singleton_method(:retrieve_and_generate_with_retry) { |_params| flunk "empty retrieval must not retrieve_and_generate" }
+    generator = Object.new
+    generator.define_singleton_method(:query) do |prompt, **|
+      prompts << prompt
+      "Orientación de Danebo: sin manual aplicable, el siguiente dato útil es el texto de la placa."
+    end
+    service.define_singleton_method(:document_identity_generator) { generator }
+
+    result = service.query(
+      "la puerta no cierra",
+      equipment_identity: nil,
+      entity_s3_uris: [ uri ],
+      force_entity_filter: true,
+      output_channel: :web,
+      response_locale: :es
+    )
+
+    assert_equal 1, retrieves.size
+    assert_equal [ uri ], Array(retrieves.first[:entity_s3_uris])
+    assert_includes prompts.sole, "The pinned focus returned no evidence. Do not release the pin."
+    assert_includes result[:answer], I18n.t("rag.pinned_focus_empty", locale: :es)
+    assert_includes result[:answer], I18n.t("rag.empty_search_notice", locale: :es)
+    assert_includes result[:answer], "Orientación de Danebo"
+  end
+
+  test "a failed empty-retrieval generation returns the retry copy and does not retrieve again" do
+    [ "", "Sorry, I am unable to assist you with this request." ].each do |generated|
+      service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
+      retrieve_calls = 0
+      service.define_singleton_method(:retrieve_chunks) do |*, **|
+        retrieve_calls += 1
+        { chunks: [], retrieval_trace: {} }
+      end
+      generator = Object.new
+      generator.define_singleton_method(:query) { |_prompt, **| generated }
+      service.define_singleton_method(:document_identity_generator) { generator }
+
+      result = service.query(
+        "la puerta no cierra",
+        equipment_identity: nil,
+        include_diagnostics: true,
+        output_channel: :web,
+        response_locale: :es
+      )
+
+      assert_equal 1, retrieve_calls, generated
+      assert_includes result[:answer], I18n.t("rag.generation_retry", locale: :es)
+      assert_not result[:diagnostics][:canned_no_results], generated
+      assert_equal "", result[:diagnostics][:raw_answer].to_s
+    end
+  end
+
   test "a pinned foreign manual stays selected and is not a citation" do
     original_authorize = nil
     fuji_uri = "s3://bucket/fuji.pdf"

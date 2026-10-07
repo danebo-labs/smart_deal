@@ -112,6 +112,87 @@ class Rag::RoutePolicyTest < ActiveSupport::TestCase
     assert_equal I18n.t("rag.clarify_controller", locale: :es), decision.clarification
   end
 
+  test "a symptom with an equipment token searches without asking the controller" do
+    episode = open_episode
+    episode.write_fact!("manufacturer", status: "known", value: "Elemont", source: "catalog", correlation_id: "seed", at: @now.iso8601)
+    episode.append_identifier!("MH", correlation_id: "seed")
+    observed = perception("report", observations: [ "la puerta 1 no termina de cerrar" ])
+
+    decision = Rag::RoutePolicy.call(previous: episode, perception: observed, focus_count: 0, locale: :es)
+
+    assert_equal "ready", decision.decision
+    assert_nil decision.clarification
+    assert decision.performs_retrieval?
+  end
+
+  test "an ambiguous designator still asks which document it is" do
+    episode = open_episode
+    decision = Rag::RoutePolicy.call(
+      previous: episode,
+      perception: perception(
+        "report",
+        ambiguities: [ Rag::TurnPerception::Ambiguity.new(span: "nice300", candidates: [ "NICE3000", "NICE3000new" ]) ]
+      ),
+      focus_count: 0,
+      locale: :es
+    )
+
+    assert_equal "search_and_clarify", decision.decision
+    assert_includes decision.clarification, "NICE3000"
+    assert_equal :always, decision.ask_when
+  end
+
+  test "a short token inside a focused manual still asks only if the manual does not define it" do
+    mention = Rag::TurnPerception::Identity.new(
+      span: "Q2", act: "mention", kind: "mention", slot: nil, value: "Q2", source: nil, manufacturer: nil
+    )
+    decision = Rag::RoutePolicy.call(
+      previous: open_episode,
+      perception: perception("report", identities: [ mention ]),
+      focus_count: 1,
+      locale: :es
+    )
+
+    assert_equal "search_and_clarify", decision.decision
+    assert_equal :absence, decision.ask_when
+    assert_includes decision.clarification, "Q2"
+  end
+
+  test "an empty episode fallback searches a symptom and does not ask the controller first" do
+    decision = Rag::RoutePolicy.fallback(
+      episode: Rag::ActiveEpisode.new,
+      turn: "la puerta no cierra",
+      focus_count: 0,
+      focus_document_ids: [],
+      focus_uris: [],
+      catalog: nil,
+      viewer_account: nil,
+      locale: :es
+    )
+
+    assert_equal "ready", decision.decision
+    assert_nil decision.clarification
+    assert_includes decision.retrieval_query, "puerta"
+    assert decision.performs_retrieval?
+  end
+
+  test "an empty episode fallback still clarifies a greeting" do
+    decision = Rag::RoutePolicy.fallback(
+      episode: Rag::ActiveEpisode.new,
+      turn: "hola",
+      focus_count: 0,
+      focus_document_ids: [],
+      focus_uris: [],
+      catalog: nil,
+      viewer_account: nil,
+      locale: :es
+    )
+
+    assert_equal "clarify_first", decision.decision
+    assert_equal I18n.t("rag.clarify_controller", locale: :es), decision.clarification
+    assert_not decision.performs_retrieval?
+  end
+
   test "meta still wins over unclear" do
     decision = Rag::RoutePolicy.call(
       previous: open_episode,
@@ -140,15 +221,15 @@ class Rag::RoutePolicyTest < ActiveSupport::TestCase
     )
   end
 
-  def perception(move, target: nil, observations: [])
+  def perception(move, target: nil, observations: [], identities: [], ambiguities: [])
     Rag::TurnPerception::Result.new(
       valid: true,
       move: move,
       observations: observations,
       pending_resolution: nil,
       clarification_target: target,
-      identities: [],
-      ambiguities: [],
+      identities: identities,
+      ambiguities: ambiguities,
       field_rejections: [],
       catalog_disagreements: [],
       invalid_reason: nil

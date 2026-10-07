@@ -15,9 +15,9 @@ class SessionContextBuilder
   # ~500 tokens at Haiku tokenization rates; covers ~3 pinned docs + 3 turns comfortably.
   MAX_CONTEXT_CHARS = 2000
   MAX_ALIASES_PER_ENTITY = 5
-  MAX_PROBLEM_CHARS = 400
-  PROBLEM_HEADER = "## Active Field Problem (technician-stated job state, not documentary evidence)"
-  PROBLEM_FOOTER = "These facts identify the job. Procedures, values, terminals and code meanings still come only from retrieved evidence. If the current question names different equipment, ignore this block."
+  MAX_PROBLEM_CHARS = 600
+  PROBLEM_HEADER = "## Active Field Problem"
+  PROBLEM_FOOTER = "Not a manual. Procedures, values, terminals, and code meanings come from retrieved evidence. Ignore for other equipment."
   UNKNOWN_FACT_LINE = {
     "manufacturer" => "Manufacturer: technician confirmed it is unknown; do not ask for it again.",
     "model" => "Model: technician confirmed it is unknown; do not ask for it again.",
@@ -270,6 +270,10 @@ class SessionContextBuilder
     photo = photo_line(episode)
     lines << { rank: 2, text: photo } if photo
     conflict_lines(episode).each { |line| lines << { rank: 3, text: line } }
+    observed = observation_line(episode)
+    lines << { rank: 5, text: observed } if observed
+    corrected = correction_line(episode)
+    lines << { rank: 6, text: corrected } if corrected
     fit_problem(episode.goal&.[]("text").to_s.squish, lines, trace)
   end
   private_class_method :render_field_problem
@@ -306,7 +310,7 @@ class SessionContextBuilder
     end
     return nil if values.empty?
 
-    "Identifiers typed by the technician: #{values.join(', ')}"
+    "Identifiers: #{values.join(', ')}"
   end
   private_class_method :identifier_line
 
@@ -326,6 +330,56 @@ class SessionContextBuilder
   end
   private_class_method :photo_line
 
+  def self.observation_line(episode)
+    goal = Rag::FollowupQueryRewriter.normalize_label(episode.goal&.dig("text").to_s)
+    texts = episode.observations.filter_map do |item|
+      text = item["text"].to_s.squish
+      next if text.empty? || stale_observation?(text, episode)
+
+      phrase = Rag::FollowupQueryRewriter.normalize_label(text)
+      next if phrase.present? && goal.include?(phrase)
+
+      text
+    end
+    return nil if texts.empty?
+
+    "Obs: #{texts.join('; ')}"
+  end
+  private_class_method :observation_line
+
+  def self.correction_line(episode)
+    rows = episode.rejected.filter_map do |item|
+      value = item["value"].to_s.squish
+      next if value.empty?
+
+      label = FACT_LABEL[item["slot"]] || item["slot"].to_s.tr("_", " ")
+      "#{label.downcase} #{value}"
+    end
+    return nil if rows.empty?
+
+    "Corrected: #{rows.join('; ')}"
+  end
+  private_class_method :correction_line
+
+  # A rejected slot value is not a current observation when the replacement
+  # is a different value. The episode already stores the rejection.
+  def self.stale_observation?(text, episode)
+    tokens = observation_tokens(text)
+    episode.rejected.any? do |item|
+      rejected = observation_tokens(item["value"])
+      next false if rejected.empty? || (tokens & rejected).empty?
+
+      current = episode.fact(item["slot"])&.dig("value")
+      (tokens & observation_tokens(current)).empty?
+    end
+  end
+  private_class_method :stale_observation?
+
+  def self.observation_tokens(text)
+    Rag::FollowupQueryRewriter.normalize_label(text.to_s).split
+  end
+  private_class_method :observation_tokens
+
   def self.conflict_lines(episode)
     episode.conflicts.filter_map do |row|
       user = row["user"].to_s.squish
@@ -338,8 +392,8 @@ class SessionContextBuilder
   private_class_method :conflict_lines
 
   # Shorten the goal first. Then drop identifiers, photo reads, conflicts, and
-  # known facts. Confirmation lines, the header, and the footer stay until
-  # nothing else can move. The result is never longer than 400 characters.
+  # known facts. Observations and corrections drop after those. Confirmation
+  # lines, the header, and the footer stay until nothing else can move.
   def self.fit_problem(goal, lines, trace = nil)
     goal = goal.to_s
     working = lines.reject { |line| line[:text].blank? }

@@ -1,6 +1,6 @@
 # Field Companion: conversación técnica real
 
-**Estado: ETAPA 2 BLOQUEADA.** No es `EPISODIO_VALIDADO`. La etapa 1 está en el código local. La etapa 2 sigue bloqueada: la corrección de planta quedó reparada en local sobre `66dd9e0` y no está revalidada. La comprobación web del 2026-10-07 reprodujo la consulta corta; la reparación del nombre canónico y las tres correcciones de su review quedan en local y no reabren la etapa. El contrato N4 de citas ajenas pasó en local y tampoco la reabre. La etapa 3 no empieza. La revisión Opus del 2026-10-07 sobre `7076f05` sigue incorporada. Esta revisión no habilita un piloto.
+**Estado: ETAPA 2 BLOQUEADA.** No es `EPISODIO_VALIDADO`. La etapa 1 está en el código local. La etapa 2 sigue bloqueada: la corrección de planta quedó reparada en local sobre `66dd9e0` y no está revalidada. La comprobación web del 2026-10-07 reprodujo la consulta corta; la reparación del nombre canónico y las tres correcciones de su review quedan en local y no reabren la etapa. El contrato N4 de citas ajenas pasó en local y tampoco la reabre. La comparación de retrieval del 2026-10-07, con la consulta expandida compuesta en `71b83a4` y ejecutada sobre la imagen `d5660d72`, no trajo el plano Elemont y no reabre la etapa. La etapa 3 no empieza. La revisión Opus del 2026-10-07 sobre `7076f05` sigue incorporada. Esta revisión no habilita un piloto.
 
 Este documento es el único plan vigente del companion. Una revisión documental no autoriza a empezar. La etapa 1 ya está en el código local. No llama a Bedrock y no despliega.
 
@@ -445,6 +445,22 @@ El contrato ya se cumple: un chunk de otro fabricante no queda citable y la resp
 La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. `PASS_CALL_CAP` sigue en 0. Los techos y el histórico no cambian.
 
 Veredicto de este diff: `VALIDACION_LOCAL_COMPLETADA`.
+
+#### Comparación de retrieval (2026-10-07)
+
+Autorizada sobre `71b83a467dad8f94a820c85d6c2054b0b65df578`. Mide si la expansión de catálogo cambia el top 8. No valida el episodio ni la respuesta del modelo. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. `PASS_CALL_CAP` sigue en 0. El histórico sigue en 106 llamadas y US$0,214838. Los techos siguen en 126, 42, 168 y US$2,50. Las dos llamadas de la comprobación web, US$0,004348, siguen aparte. Esta comparación no creó filas de `BedrockQuery`. El costo de `Retrieve` y del embedding de la consulta no está en esa tabla y queda sin cifra.
+
+La consulta expandida salió del código local, reusando la percepción ya capturada del turno 1 de la sesión 196 (`stage2:a:t01`). No hubo una llamada nueva al intérprete. El span `Elemont MH` quedó con origen `user`. El nombre `Elemont Montacargas Hidraulico Modelo MH` entró con origen `catalog`. `CEA15` siguió con origen `user` y sin expansión a `CEA15+`. Los hechos quedaron vacíos, así que `known?` sigue falso. No hubo pin. La consulta tiene 138 caracteres, dentro del tope de 442. El visor de esa composición fue la cuenta local dueña de la fila del Elemont. El slug `danebo-legacy` de la base local es otra cuenta y no se usó para armar el filtro.
+
+El servicio que recuperó es la imagen web `d5660d72a1e676ef9f054dd49ccc7e65511b9f2c`. Ese SHA no contiene la expansión. `BedrockRagService` no cambió entre esa imagen y `71b83a4`. Las dos llamadas fueron `retrieve_chunks` dentro del contenedor web, con la cuenta `danebo-legacy` de producción, sin URIs de foco. El filtro, la Knowledge Base `Y7RZWMFJSR`, la región `us-east-1`, HYBRID y k=8 son los de ese servicio. El filtro de las dos operaciones es el mismo. No se afirma que el compositor nuevo esté desplegado.
+
+Hubo dos recuperaciones lógicas. La original reintentó una vez el transporte por la pausa de Aurora, espera de 15 segundos, y después respondió. La expandida no reintentó. No hubo repetición manual ni cambio de la configuración de reintentos. Ocho resultados en cada una, todos aceptados, ninguno rechazado. Duración 20542 ms y 548 ms. `PILOT_EVENTS_PERSIST=false` solo en ese proceso, para no insertar `pilot_events`. No se modificaron cuentas, documentos, sesiones ni configuración.
+
+Elemont no aparece en ningún documento, URI ni texto de los dieciséis chunks. El rank 1 sigue siendo KONE MonoSpace, página 375, score 0,5, en las dos consultas. La expandida sube `manual-cea15p` página 84 del puesto 4 al 2, reordena páginas KONE, KOYO y VF5, saca KONE página 374 y mete el manual de ayuda técnica página 55. Esas páginas hablan de puertas de otros equipos. El único imán del texto es de zona de puertas KONE, página 444, presente en las dos consultas. No hay código 18 ni LED 7. La cifra 18 que aparece está dentro de un identificador de registro del chunk CEA15+, no es un código de falla. Un score no dice que el chunk aplique ni que un plano resuelva la falla. Este par no se generaliza a otros equipos ni a la estabilidad del ranking.
+
+Evidencia: `tmp/documentary_retrieve/20261007T233903Z/`.
+
+Veredicto de esta comparación: `SIN_MEJORA_OBSERVADA`.
 
 ### 3. Verificar ese alcance en producción
 

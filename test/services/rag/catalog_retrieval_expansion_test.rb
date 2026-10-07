@@ -182,6 +182,61 @@ class Rag::CatalogRetrievalExpansionTest < ActiveSupport::TestCase
     assert_includes compose(episode, "Sigue igual", follow, decision_for), DISPLAY
   end
 
+  test "a full list of declared identifiers is not displaced by the expansion" do
+    episode = open_episode
+    declared = (1..4).map { |index| "User #{index}" }
+    declared.each { |value| episode.append_identifier!(value, correlation_id: "seed", source: "user") }
+    episode.append_identifier!("Acme ZX", correlation_id: "seed", source: "user")
+    result = perceive(report([ assert_span("Acme ZX") ]), "Acme ZX no arranca", episode)
+    settle(episode, result, "Acme ZX no arranca")
+
+    assert_equal declared + [ "Acme ZX" ], episode.identifiers.pluck("value")
+    assert episode.identifiers.none? { |item| item["source"] == "catalog" }
+    assert_not_includes compose(episode, "Acme ZX no arranca", result, decision_for).to_s, DISPLAY
+  end
+
+  test "negating the span removes a canonical name that was stored truncated" do
+    long_name = "Manual de campo " * 12
+    assert_operator long_name.length, :>, Rag::ActiveEpisode::MAX_CATALOG_IDENTIFIER_CHARS
+    manual = document_for(@owner, long_name)
+    catalog = catalog_with(row(manual, long_name, [ "Largo" ], [ "QX" ]))
+    episode = open_episode
+    episode.append_identifier!("Placa 9", correlation_id: "seed", source: "user")
+    result = perceive(report([ assert_span("Largo QX") ]), "Largo QX no cierra", episode, catalog)
+    settle(episode, result, "Largo QX no cierra")
+    stored = episode.identifiers.find { |item| item["source"] == "catalog" }
+    assert_equal Rag::ActiveEpisode::MAX_CATALOG_IDENTIFIER_CHARS, stored["value"].length
+    assert long_name.start_with?(stored["value"])
+
+    reloaded = Rag::ActiveEpisode.parse(episode.to_h, now: @now)
+    assert_equal stored["value"], reloaded.identifiers.find { |item| item["source"] == "catalog" }["value"]
+    correction = perceive(
+      correct_payload([ negate_span("Largo QX") ]),
+      "No es Largo QX",
+      reloaded,
+      catalog
+    )
+    settle(reloaded, correction, "No es Largo QX")
+    query = compose(reloaded, "¿Qué reviso ahora?", correction, decision_for).to_s
+    session = ConversationSession.create!(
+      identifier: "web:expansion_#{SecureRandom.hex(3)}",
+      channel: "web",
+      expires_at: 30.days.from_now,
+      active_episode: reloaded.to_h
+    )
+    block = field_problem(session)
+
+    assert_not_includes query, stored["value"]
+    assert_not_includes block, stored["value"]
+    assert_includes query, "Placa 9"
+    assert_includes block, "Placa 9"
+    assert reloaded.identifiers.none? { |item| item["source"] == "catalog" }
+    assert reloaded.identifiers.none? { |item| item["value"] == "Largo QX" }
+    assert_equal [ "Placa 9" ], reloaded.identifiers.pluck("value")
+    assert reloaded.rejected.none? { |item| item["value"] == stored["value"] || item["value"] == long_name }
+    assert_includes reloaded.rejected.pluck("value"), "Largo QX"
+  end
+
   test "the composed query stays inside the retrieval budget" do
     episode = open_episode
     episode.append_identifier!("Q" * 200, correlation_id: "seed", source: "catalog")
@@ -273,5 +328,17 @@ class Rag::CatalogRetrievalExpansionTest < ActiveSupport::TestCase
 
   def negate_span(span)
     { "span" => span, "act" => "negate", "slot_hint" => nil }
+  end
+
+  def field_problem(session)
+    keys = %w[FIELD_COMPANION_EPISODE_ENABLED FIELD_COMPANION_TURN_ENABLED]
+    previous = keys.index_with { |key| ENV[key] }
+    ENV["FIELD_COMPANION_EPISODE_ENABLED"] = "true"
+    ENV["FIELD_COMPANION_TURN_ENABLED"] = "true"
+    SessionContextBuilder.field_problem_block(session)
+  ensure
+    previous.each do |key, old|
+      old.nil? ? ENV.delete(key) : ENV[key] = old
+    end
   end
 end

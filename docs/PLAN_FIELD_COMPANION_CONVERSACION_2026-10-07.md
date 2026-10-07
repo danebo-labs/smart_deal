@@ -1,6 +1,6 @@
 # Field Companion: conversación técnica real
 
-**Estado: ETAPA 2 BLOQUEADA.** No es `EPISODIO_VALIDADO`. La etapa 1 está en el código local. La etapa 2 sigue bloqueada: la corrección de planta quedó reparada en local sobre `66dd9e0` y no está revalidada. La comprobación web del 2026-10-07 reprodujo la consulta corta; la reparación del nombre canónico queda en local y no reabre la etapa. La etapa 3 no empieza. La revisión Opus del 2026-10-07 sobre `7076f05` sigue incorporada. Esta revisión no habilita un piloto.
+**Estado: ETAPA 2 BLOQUEADA.** No es `EPISODIO_VALIDADO`. La etapa 1 está en el código local. La etapa 2 sigue bloqueada: la corrección de planta quedó reparada en local sobre `66dd9e0` y no está revalidada. La comprobación web del 2026-10-07 reprodujo la consulta corta; la reparación del nombre canónico y las tres correcciones de su review quedan en local y no reabren la etapa. La etapa 3 no empieza. La revisión Opus del 2026-10-07 sobre `7076f05` sigue incorporada. Esta revisión no habilita un piloto.
 
 Este documento es el único plan vigente del companion. Una revisión documental no autoriza a empezar. La etapa 1 ya está en el código local. No llama a Bedrock y no despliega.
 
@@ -419,6 +419,22 @@ El prompt de orientación, con identidad conocida y con identidad desconocida, s
 Pendiente: el efecto de la consulta expandida sobre el retrieval y sobre la respuesta real. Esta reparación no lo ejecuta. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. `PASS_CALL_CAP` sigue en 0.
 
 Veredicto de este diff: `REPARACION_LOCAL_COMPLETADA`.
+
+#### Correcciones del review (2026-10-07)
+
+Sobre `77b3de6`. Sin llamadas a AWS, sin Retrieve, sin journeys, sin despliegue y sin cambios en datos de producción. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. `PASS_CALL_CAP` sigue en 0. Los techos y el histórico de 106 llamadas y US$0,214838 no cambian. Las dos llamadas de la comprobación web siguen aparte.
+
+Una expansión de catálogo ya no ocupa una plaza que expulse un identificador del técnico o de una foto. El tope sigue en 5. Entre identificadores originales se conserva el FIFO. Si no queda una plaza libre, la expansión no se escribe. La misma prioridad vale al guardar y al releer. Si el JSON pasa el tope de bytes, también sale primero una expansión de catálogo.
+
+El nombre canónico se guarda, se compara y se retira con el mismo literal, incluido el corte a 120 caracteres. Negar el span después de persistir y releer saca esa expansión de la consulta y del contexto. No se rechaza el nombre canónico de forma global y no se borra un identificador independiente.
+
+La consulta compuesta puede ser igual al texto del técnico cuando ese texto ya trae lo necesario. Un identificador del episodio que el texto no trae sí cambia la consulta. El hash se calcula sobre esos textos. La ruta, la correlación, el Retrieve, la generación directa y la separación entre la consulta de recuperación y el prompt de generación siguen cubiertos. No se cambió el producto para forzar hashes distintos.
+
+La regla de hipótesis del guidance se conserva. Para que el prompt de identidad desconocida del turno 14 siguiera mostrando el código rechazado, se acortaron dos frases de esa instrucción. El tope sigue en 2400.
+
+Pendiente: el efecto de la consulta expandida sobre el retrieval y sobre la respuesta real. Esta corrección no lo ejecuta.
+
+Veredicto de este diff: `CORRECCIONES_LOCALES_COMPLETADAS`.
 
 ### 3. Verificar ese alcance en producción
 

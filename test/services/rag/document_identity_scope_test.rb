@@ -1700,9 +1700,10 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_includes delta, "observations"
     assert_includes explained[:query], "No nivela en planta 3"
     assert_includes explained[:components], "current_turn:full"
-    assert_equal 64, original_sha.length
-    assert_equal 64, effective_sha.length
-    assert_not_equal original_sha, effective_sha
+    assert_equal raw, explained[:query]
+    assert_equal Digest::SHA256.hexdigest(raw), original_sha
+    assert_equal Digest::SHA256.hexdigest(explained[:query].to_s), effective_sha
+    assert_equal original_sha, effective_sha
     assert_includes prompt, raw
     assert_not_includes prompt, explained[:query] unless explained[:query] == raw
     assert_equal explained[:query], Rag::QueryComposer.call(
@@ -1735,6 +1736,91 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_includes result[:answer], "No está confirmado"
     assert_not_includes result[:answer], "Ajusta"
     assert_not_includes result[:answer], "terminal"
+  end
+
+  test "episode context changes the retrieval query without entering the generation prompt" do
+    raw = "No nivela en planta 3. Todavía no sé fabricante ni modelo."
+    extra = "TABLERO-9"
+    episode = Rag::ActiveEpisode.open(correlation_id: "query:trace", now: Time.current)
+    episode.append_identifier!(extra, correlation_id: "query:trace", source: "user")
+    perception = Rag::TurnPerception.build(
+      {
+        "move" => "report",
+        "assertions" => [],
+        "observations" => [ "No nivela en planta 3" ],
+        "pending_resolution" => nil,
+        "clarification_target" => nil
+      },
+      turn: raw,
+      episode: Rag::ActiveEpisode.new,
+      catalog: nil,
+      viewer_account: nil
+    )
+    decision = Rag::RoutePolicy.call(previous: episode, perception: perception, focus_count: 0, locale: :es)
+    Rag::WorkContextReducer.apply!(
+      episode: episode, perception: perception, decision: decision,
+      turn: raw, correlation_id: "query:trace", now: Time.current
+    )
+    explained = Rag::QueryComposer.explain(
+      state: episode, turn: raw, perception: perception, decision: decision
+    )
+    answer = "Referencia del manual Código de Avería BLT Ascensor, página 4. No está confirmado que aplique al equipo actual. [1]"
+    blt = chunk("blt", "E18 fallo de nivelación.", canonical_name: "Código de Avería BLT Ascensor", page: 4)
+    blt[:metadata]["original_source_uri"] = "s3://bucket/blt.pdf"
+    service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
+    rag_calls = 0
+    retrieve_calls = []
+    prompts = []
+    service.define_singleton_method(:retrieve_and_generate_with_retry) { |_params| rag_calls += 1 }
+    service.define_singleton_method(:retrieve_chunks) do |question, **kwargs|
+      retrieve_calls << kwargs.merge("question" => question)
+      { chunks: [ blt ], retrieval_trace: {} }
+    end
+    service.define_singleton_method(:fallback_retrieve) { |*, **| flunk "direct generation must not open a fallback retrieve" }
+    generator = Object.new
+    generator.define_singleton_method(:query) do |prompt, **|
+      prompts << prompt
+      answer
+    end
+    service.define_singleton_method(:document_identity_generator) { generator }
+
+    result = nil
+    events = capture_pilot_events do
+      result = service.query(
+        explained[:query],
+        raw_question: raw,
+        equipment_identity: nil,
+        user_id: 9,
+        conversation_session_id: 11,
+        correlation_id: "query:trace",
+        output_channel: :web,
+        response_locale: :es
+      )
+    end
+
+    prompt = prompts.sole
+    open = events.find { |event| event["event"] == "open_retrieval" }
+    original_sha = Digest::SHA256.hexdigest(raw)
+    effective_sha = Digest::SHA256.hexdigest(explained[:query].to_s)
+
+    assert_includes explained[:query], raw
+    assert_includes explained[:query], extra
+    assert_equal Digest::SHA256.hexdigest(raw), original_sha
+    assert_equal Digest::SHA256.hexdigest(explained[:query].to_s), effective_sha
+    assert_not_equal original_sha, effective_sha
+    assert_equal explained[:query], retrieve_calls.sole["question"]
+    assert_includes prompt, raw
+    assert_not_includes prompt, explained[:query]
+    assert_equal 0, rag_calls
+    assert_equal 1, prompts.size
+    assert_equal 9, retrieve_calls.sole[:user_id]
+    assert_equal 11, retrieve_calls.sole[:conversation_session_id]
+    assert_equal "query:trace", retrieve_calls.sole[:correlation_id]
+    assert_equal "identity_unknown_reference", retrieve_calls.sole[:route_taken]
+    assert_equal "identity_unknown_reference", open["evidence_applicability"]
+    assert_nil result[:generation_mode]
+    assert_equal "generative", Rag::CausalTrace.resolved_generation_mode(nil, success: true)
+    assert_not_includes result[:answer], "Ajusta"
   end
 
   test "unconfirmed identity assertion is read from chunk metadata" do

@@ -73,7 +73,7 @@ module Rag
       @perception.identities.select { |item| item.kind == "negate" && item.slot.present? }.each do |item|
         if item.slot == "identifier"
           remove_identifier(item.span)
-          remove_identifier(item.catalog_retrieval) if item.catalog_retrieval.present?
+          remove_identifier(item.catalog_retrieval, source: "catalog") if item.catalog_retrieval.present?
           @episode.append_rejected!("identifier", item.span)
         elsif ActiveEpisode::FACT_KEYS.include?(item.slot)
           fact = @episode.fact(item.slot)
@@ -326,8 +326,11 @@ module Rag
       }
     end
 
-    def remove_identifier(value)
-      label = FollowupQueryRewriter.normalize_label(value)
+    def remove_identifier(value, source: "user")
+      literal = Rag::ActiveEpisode.identifier_literal(value, source)
+      label = FollowupQueryRewriter.normalize_label(literal)
+      return if label.blank?
+
       @episode.identifiers.reject! { |item| FollowupQueryRewriter.normalize_label(item["value"]) == label }
     end
 

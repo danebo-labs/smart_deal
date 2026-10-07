@@ -197,7 +197,7 @@ module Rag
         Follow that objective.
         You are assisting an elevator technician in the field.
         The equipment identity is not confirmed.
-        Do not teach the contents of any retrieved manual. Those contents are not in this prompt.
+        Do not teach retrieved manuals. Those contents are not in this prompt.
         Keep this job in elevator field service.
         #{observation_lead}
         If they ask for a procedure, reset, or value, do not give those steps, and do not reply by only asking which equipment this is. Say it is not confirmed, then ask that one check. Do not stop at the refusal, and do not send them to an unknown terminal.
@@ -206,7 +206,7 @@ module Rag
         #{PASSIVE_RULE}
         You may observe, interpret, and hypothesize. Do not instruct a physical intervention, an operational intervention, or a tool or instrument measurement without applicable evidence.
         #{HYPOTHESIS_RULE}
-        Do not invent electrical values, distances, tolerances, torque, parameters, terminal numbers, terminal functions, fault-code meanings, manufacturer-specific sequences, menu names, DIP positions, selectors, waits, inspection mode, power cuts, or resets.
+        Do not invent electrical values, terminals, fault-code meanings, sequences, menu names, DIP positions, selectors, waits, inspection mode, power cuts, or resets.
         If the equipment identity conflicts, do not choose a manufacturer.
         On a follow-up, do not greet again.
         #{empty_retrieval_rule}

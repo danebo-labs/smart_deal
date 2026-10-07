@@ -166,14 +166,14 @@ module Rag
     end
 
     def append_identifier!(value, correlation_id:, source: "user")
-      literal = value.to_s.squish.first(self.class.identifier_limit(source))
+      literal = self.class.identifier_literal(value, source)
       return if literal.blank?
 
       label = FollowupQueryRewriter.normalize_label(literal)
       return if identifiers.any? { |item| FollowupQueryRewriter.normalize_label(item["value"]) == label }
 
-      identifiers << { "value" => literal, "source" => source, "correlation_id" => correlation_id.to_s }
-      identifiers.shift while identifiers.size > MAX_IDENTIFIERS
+      identifiers << { "value" => literal, "source" => source.to_s, "correlation_id" => correlation_id.to_s }
+      self.identifiers = self.class.fit_identifiers(identifiers)
     end
 
     def append_observation!(text, correlation_id:)
@@ -334,6 +334,26 @@ module Rag
       source.to_s == "catalog" ? MAX_CATALOG_IDENTIFIER_CHARS : MAX_IDENTIFIER_CHARS
     end
 
+    # Stored form for one identifier. Append, reread, and removal all use it.
+    def self.identifier_literal(value, source)
+      value.to_s.squish.first(identifier_limit(source))
+    end
+
+    # User and photo identifiers keep their previous order and FIFO cap.
+    # A catalog expansion fills only a free slot. It never displaces them.
+    def self.fit_identifiers(items)
+      originals = []
+      catalogs = []
+      items.each do |item|
+        (item["source"].to_s == "catalog" ? catalogs : originals) << item
+      end
+      kept_originals = originals.last(MAX_IDENTIFIERS)
+      room = MAX_IDENTIFIERS - kept_originals.size
+      kept_catalogs = room.positive? ? catalogs.last(room) : []
+      chosen = (kept_originals + kept_catalogs).each_with_object({}) { |item, map| map[item.object_id] = true }
+      items.select { |item| chosen[item.object_id] }
+    end
+
     def self.sanitize_identifiers(raw)
       return [] unless raw.is_a?(Array)
 
@@ -343,16 +363,17 @@ module Rag
         next unless item.is_a?(Hash)
 
         item = item.stringify_keys
-        value = item["value"].to_s.squish.first(identifier_limit(item["source"]))
+        source = item["source"].to_s.presence || "user"
+        value = identifier_literal(item["value"], source)
         next if value.blank?
 
         label = FollowupQueryRewriter.normalize_label(value)
         next if seen[label]
 
         seen[label] = true
-        kept << { "value" => value, "source" => item["source"].to_s.presence || "user", "correlation_id" => item["correlation_id"].to_s }
+        kept << { "value" => value, "source" => source, "correlation_id" => item["correlation_id"].to_s }
       end
-      kept.last(MAX_IDENTIFIERS)
+      fit_identifiers(kept)
     end
     private_class_method :sanitize_identifiers
 
@@ -451,6 +472,12 @@ module Rag
       identifiers = payload["identifiers"]
       return unless identifiers.is_a?(Array)
 
+      while identifiers.any? && json_bytes(payload) > MAX_BYTES
+        index = identifiers.index { |item| item.is_a?(Hash) && item["source"].to_s == "catalog" }
+        break unless index
+
+        identifiers.delete_at(index)
+      end
       identifiers.shift while identifiers.any? && json_bytes(payload) > MAX_BYTES
     end
 

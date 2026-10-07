@@ -1,11 +1,13 @@
 # Session, pins, and KB retrieval (web)
 
 Three account-scoped layers: **`kb_documents`** catalog,
-**`technician_documents`** audit trail, and **`active_entities`** pins that scope
-retrieval.
+**`technician_documents`** audit trail, and the session focus that scopes
+retrieval. On the web that focus is **`document_focus`**. WhatsApp still
+uses **`active_entities`**.
 
-**Related:** [Web home UI](WEB_HOME.md). Knowledge model:
+**Related:** [Web home UI](WEB_HOME.md). Catalog and pin vocabulary:
 [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md#knowledge-model-29-sep-2026).
+Unpinned retrieval: [Shared corpus](#shared-corpus-current-contract).
 
 ### Knowledge scopes
 
@@ -16,17 +18,93 @@ Two scopes, and no synonyms:
 - `danebo_general` — a document Danebo has explicitly approved for shared
   use. Shared means eligibility and visibility, not a shared focus. One
   physical `KbDocument`, one index. Authorized tenants can list it and
-  retrieve it. A pin is `user_pin` on that session's `active_entities` only.
+  retrieve it. A pin is `user_pin` on that session's focus only. On the
+  web the column is `document_focus`. WhatsApp still uses `active_entities`.
   Account A pinning it does not change Account B's catalog or pins. Each
   session may pin a different general document, several of them, or mix them
   with its own `tenant_private` documents, and may clear those pins.
 
 Account id, filename, manufacturer, folder, the Legacy or Pilot slug, and
-`manual_corpus=general` do not grant `danebo_general`. Open retrieval is the
-viewer's own documents plus rows whose `knowledge_scope` is `danebo_general`.
-`BedrockRagService#account_filter` builds that set from the database. The
-home list still shows `current_account.kb_documents`. A pin of a foreign
-`danebo_general` row uses the existing `KbDocument` and does not copy it.
+`manual_corpus=general` do not grant `danebo_general`. That scope still
+governs catalog listing, suggestions, and whether another account may pin
+the row. It is not the unpinned retrieve filter. The home list still shows
+`current_account.kb_documents`. A pin of a foreign `danebo_general` row uses
+the existing `KbDocument` and does not copy it.
+
+## Shared corpus (current contract)
+
+This section is the contract for unpinned retrieval. Other documents link
+here instead of restating the filter.
+
+The founder confirmed the product intent on 2026-10-07: Danebo keeps an
+intentional shared corpus that comes from the accounts `danebo-legacy` and
+`danebo-pilot-elevator`. Without a pin, a technician searches their
+authorized knowledge and that shared corpus. Sharing knowledge does not
+share pins and does not confirm that a manual applies to the equipment on
+the job.
+
+The last functional change is `3d07feb` (2026-09-30), on top of `66f0d16`.
+`66f0d16` restored the pre-F3B2 shared-account filter. `3d07feb` drops a
+chunk without a readable `account_id` and stops publishing a new manual
+only because the uploader's slug is one of those two. `Rag::SharedManualCorpus`
+resolves the accounts by slug. A numeric id is not part of the contract.
+
+Without a pin, `BedrockRagService#account_filter` is an `orAll` of:
+
+- the viewer's `account_id`;
+- each other shared-corpus account as `account_id` AND
+  `ingestion_path != field_photo_v1` AND `manual_corpus != account`;
+- `manual_corpus=general`.
+
+An ordinary tenant's `account_id` is not in that OR.
+`KnowledgeScopePolicy.open_corpus` is not this filter. Retrieve does not
+call it.
+
+The publication gate mirrors the filter. `viewer_account` means the chunk's
+`account_id` is the viewer: the viewer may read it. It does not mean the
+manual matches the equipment. `shared_corpus` means a historical chunk of
+one of those two accounts. A chunk with no readable metadata is dropped. A
+photo of the other shared account is dropped. The viewer's own photo is
+kept. Chunk `document_id` is not compared with `KbDocument.document_uid`.
+
+What the open filter includes:
+
+- Historical manuals of those two accounts indexed without `manual_corpus`,
+  or with a value other than `account`. Bedrock `notEquals` matches a
+  missing key.
+- Chunks explicitly tagged `manual_corpus=general`.
+
+What living on those accounts does not publish:
+
+- A new manual writes `manual_corpus=account` unless the ingest passes
+  `corpus_scope: "general"` and `accounts.danebo_controlled` is true.
+  The slug is not that mark and is not `danebo_general`.
+- A field photo (`ingestion_path=field_photo_v1`) never receives
+  `manual_corpus`. Another account's photos stay out.
+- Another tenant's private manuals stay out.
+
+With a pin, the filter is those URIs alone. The whole set must pass
+`KnowledgeScopePolicy`, or the call is `DENY_RETRIEVAL` and does not fall
+through to the open corpus. On the web the selection is
+`conversation_sessions.document_focus`. WhatsApp still uses
+`active_entities`. A question that names a manual does not write the focus.
+One account's pin does not change another account's catalog or focus. A
+case boundary does not clear `document_focus`.
+
+Pending decision, not an approval: the founder describes the shared corpus
+as coming from those two accounts. The code does not put every new upload
+on those accounts into the open filter. A new manual stays
+`manual_corpus=account` until an explicit `corpus_scope: "general"` on an
+account with `danebo_controlled`. Whether a future upload on those slugs
+should enter the shared corpus without that mark is undecided.
+
+Account correspondence:
+
+- Local development, read on 2026-10-07: `danebo-legacy` is id 4 and
+  `danebo_controlled` is false. `danebo-pilot-elevator` is not in that
+  database.
+- Production ids were not re-read for this alignment. Notes that name
+  account 1 or 3 are observations from those dates, not this contract.
 
 ---
 
@@ -37,7 +115,8 @@ Three layers describe the **catalog**, an **ingestion audit trail**, and what ac
 ```
 kb_documents         → "What exists in S3?"              (account catalog; home list)
 technician_documents → "Ingestion / usage audit rows"  (still written from jobs; not preloaded into pins)
-active_entities      → "Pins for the current case" (stored on the workspace row)
+document_focus       → "Web pins for this session" (workspace row; not the case)
+active_entities      → "WhatsApp pins" (workspace row)
 ```
 
 **`kb_documents`** — Account-scoped S3 catalog. One row per account and S3
@@ -54,7 +133,7 @@ add session pins.
 
 **`technician_documents`** — Still populated from ingestion (`BedrockIngestionJob` and related paths) for **audit / future ranking** (`interaction_count`, FIFO cap). It is **not** used to seed `active_entities` when a new `ConversationSession` is created (`preload_recent_entities` was removed).
 
-**`conversation_sessions.active_entities`** — JSONB, capped at **`ConversationSession::MAX_ENTITIES`** (default **10**, overridable with `SESSION_MAX_ENTITIES`). The hash is where pins are stored. The pin contract is the current case, described below. **Sources of truth:** (1) user pins from the KB list or from a suggestion-card tap (`PinnedDocumentsController` → `pin_kb_document!` / `unpin_kb_document!`), and (2) **auto-pin** when indexing finishes and episode ownership matches. A suggestion does not pin until the technician taps. The tap checks the exact row again and writes `user_pin` only on that workspace row. **`SessionContextBuilder.entity_s3_uris`** turns these entries into Bedrock **`x-amz-bedrock-kb-source-uri`** filters. It reads `active_entities`. It does not read `active_episode`.
+**`conversation_sessions.document_focus`** — JSONB array, capped at **`ConversationSession::MAX_ENTITIES`** (default **10**, overridable with `SESSION_MAX_ENTITIES`). This is the web pin store. **`active_entities`** remains the WhatsApp store. **Sources of truth:** (1) user pins from the KB list or from a suggestion-card tap (`PinnedDocumentsController` → `pin_kb_document!` / `unpin_kb_document!`), and (2) **auto-pin** when indexing finishes and episode ownership matches. A suggestion does not pin until the technician taps. The tap checks the exact row again and writes `user_pin` only on that workspace row. **`SessionContextBuilder.entity_s3_uris`** turns the session focus into Bedrock **`x-amz-bedrock-kb-source-uri`** filters. On the web it reads `document_focus`. On WhatsApp it reads `active_entities`. It does not read `active_episode`.
 
 ### Workspace and case
 
@@ -66,14 +145,9 @@ The request that opens a case, crosses expiry, corrects the manufacturer, or rep
 
 ### Pins
 
-Pins are case state. They remain physically in `active_entities`. There is no `episode_id` on the pin and no extra column.
+On the web, the session focus is `document_focus`. WhatsApp still stores pins in `active_entities`. A pin is that session's selected documents. A retrieve miss does not drop it and does not reopen the unpinned corpus for that session. A case boundary clears `current_procedure` and does not clear `document_focus`. Naming a manual in the question does not write the focus. The filter rules are in [Shared corpus](#shared-corpus-current-contract).
 
-- Same case: the pin stays, including across a retrieve miss. A miss does not reopen the unpinned corpus and does not drop the pin.
-- `:new_episode` while the stored case is still live: pins from the previous case are cleared.
-- Expiry (`ActiveEpisode.parse` reason `expired` on the stored JSON): pins that belong to the expired case are cleared. A pin is cleared when `added_at` is missing, unparseable, or `added_at <= updated_at + EPISODE_WINDOW`. A pin strictly after that cutoff stays. This does not depend on the turn decision being `:opened`.
-- Invalid stored episode (`reason == "invalid_state"`): every case-scoped pin is cleared. There is no time cutoff. A normal blank episode (`active_episode == {}`) does not clear an explicit pin.
-- Explicit re-pin, including a suggestion card that still answers `already_focused`, renews `added_at`.
-- Manufacturer correction stays on the same `episode_id` and removes only a pin whose labels contain the old manufacturer as a whole word and contain none of the new. Pins that name neither, or both, stay. A model-only correction does not use this release.
+Earlier notes that a new case, expiry, or an invalid episode released pins described `active_entities` before the web focus moved to `document_focus` (`8c28284`, `89972d1`). They are not the web retrieve scope.
 
 `current_procedure` is cleared on a case boundary, on expiry, and on `invalid_state`. It stays on a blank episode's first turn.
 
@@ -96,7 +170,8 @@ Upload (web chat; same job shape for other channels)
   └─ BedrockIngestionJob (polls until COMPLETE)
        ├─ kb_documents           ← display_name + aliases (web_v1_metadata or chunk pipeline)
        ├─ technician_documents   ← persist_to_technician_documents (audit)
-       ├─ active_entities        ← auto-pin only with a matching episode owner when the episode flag is on; legacy pin when it is off
+       ├─ document_focus         ← web auto-pin only with a matching episode owner when the episode flag is on; legacy pin when it is off
+       ├─ active_entities        ← WhatsApp pin store
        └─ KbSyncBroadcaster → Turbo (indexing / retrying / indexed / failed)
 
 Follow-up RAG (web)
@@ -114,9 +189,9 @@ product stage; see [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md).
 #### Session-scoped retrieval filter logic
 
 1. **No pinned S3 URIs** in the session → Bedrock runs with `account_filter`
-   only: the session account, plus canonical URIs of foreign `danebo_general`
-   rows. There is no source-uri filter from pins. Legacy, Pilot, and
-   `manual_corpus=general` are not clauses.
+   only. That filter is the [shared corpus](#shared-corpus-current-contract),
+   not a list of `danebo_general` URIs. There is no source-uri filter from
+   the focus.
 2. **At least one pin** → web path sets **`force_entity_filter: true`** so retrieval stays on that case's pinned URIs regardless of question shape. If the filtered call returns nothing, the response is `DATA_NOT_AVAILABLE`. The miss does not reopen the unpinned corpus for this case, and it does not change `danebo_general` or any other workspace's pins. The user can still add, remove, or replace those pins. The system does not drop them because the retrieve was empty. Widening the corpus inside the case requires an explicit user action. A new case, an expired stored episode, or an invalid stored episode releases pins by the case rules above, before this filter is built.
 3. **Multiple pins + explicit identity** → `Rag::PinnedEntityScopeResolver`
    narrows the allowed URI set only when there is one confident source match.
@@ -172,6 +247,6 @@ included, even if their name matches the question.
 |---|---|---|---|
 | `kb_documents` | Per account | — | Upload, ingestion, `KbDocumentEnrichmentService` |
 | `technician_documents` | Per account | FIFO max 20 | Ingestion (audit) |
-| `active_entities` | Case state on the workspace row. A shared demo session is one workspace row, not a pin stored on the document | `MAX_ENTITIES`. The workspace row TTL is 30 days. Pins follow the case, not that TTL | User pin, re-pin, and auto-pin when episode ownership matches |
+| `document_focus` (web) / `active_entities` (WhatsApp) | Session focus on the workspace row. A shared demo session is one workspace row, not a pin stored on the document. A case boundary does not clear `document_focus` | `MAX_ENTITIES`. The workspace row TTL is 30 days | User pin, re-pin, and auto-pin when episode ownership matches |
 
 A pin, including a future pin of a `danebo_general` document, is written only on that session. It is not a column on `kb_documents`. Account A pinning a general document does not change Account B's catalog or Account B's pins. Each session may pin a different general document, several of them, or mix them with its own private documents, and may clear those pins.

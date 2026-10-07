@@ -66,13 +66,11 @@ Not active: WhatsApp-first workflows, Twilio conversational UX as primary channe
   `(account_id, identifier, channel)`, sliding TTL 30 days. It is not a case.
   A case is the live `ActiveEpisode` (`episode_id`, 4-hour window). Several
   cases follow each other on that row. Login and logout do not write the row.
-- Pins live in `active_entities` and belong to the current case. They stay
-  for that case, including when a pinned retrieve misses (`DATA_NOT_AVAILABLE`;
-  the unpinned corpus stays closed). A new case, an expired stored episode,
-  or an invalid stored episode releases the previous case's pins before
-  retrieval. An explicit re-pin renews `added_at`. A blank `{}` episode keeps
-  an explicit pin. A manufacturer correction removes only a pin whose labels
-  contain the old manufacturer as a whole word and contain none of the new.
+- On the web, pins live in `document_focus`. WhatsApp still uses
+  `active_entities`. A pinned retrieve miss stays on that focus
+  (`DATA_NOT_AVAILABLE`; the unpinned corpus stays closed for that session).
+  A case boundary does not clear `document_focus`. See
+  [SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md#shared-corpus-current-contract).
 - `expected_episode_id`, captured when the work starts, is the guard for a
   later assistant reply, photo, or auto-pin. A mismatch does not write the
   later case. With the episode flag on, auto-pin requires that id; a long
@@ -82,24 +80,13 @@ Not active: WhatsApp-first workflows, Twilio conversational UX as primary channe
   The floor does not admit a stale writer into `conversation_history`.
   The technician can add, remove, or replace pins. A miss does not narrow
   `danebo_general` for any other account.
-- The authorized corpus for a tenant is that tenant's `tenant_private`
-  documents plus documents Danebo has explicitly marked `danebo_general`.
-  `danebo_general` is shared visibility. `user_pin` is focus on the current
-  case, stored on that workspace row only. One account's pin does not narrow
-  the general catalog for anyone else. Another tenant's private or unclassified documents stay out.
-  Pins and suggestions read `kb_documents.knowledge_scope`. Without a pin,
-  `BedrockRagService#account_filter` is the pre-F3B2 compatibility filter:
-  the viewer's `account_id`, the other `SharedManualCorpus` account with
-  photos and `manual_corpus=account` excluded, and `manual_corpus=general`.
-  An ordinary tenant is not in that OR. A new manual is
-  `manual_corpus=account` unless the account is `danebo_controlled` and
-  the ingest passes `corpus_scope: "general"`. Chunks already indexed
-  without that key stay in the historical corpus. A returned chunk without
-  a readable `account_id` is dropped. `document_id` is not compared with
-  `document_uid`. `Rag::KnowledgeScopePolicy` still authorizes suggestions
-  and pins. An explicit URI set that is not fully authorized is
-  `DENY_RETRIEVAL`: no Bedrock call and no open retry. See
-  [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md#knowledge-model-29-sep-2026).
+- Unpinned retrieval is the shared corpus of `danebo-legacy` and
+  `danebo-pilot-elevator`, plus the viewer's own chunks and explicit
+  `manual_corpus=general`. `knowledge_scope` authorizes pins and suggestions.
+  It does not build the unpinned filter. A new upload on those slugs is not
+  shared unless `corpus_scope` is `general` and the account is
+  `danebo_controlled`. The contract, including that pending decision, is
+  [SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md#shared-corpus-current-contract).
   `RagRetrievalProfile` is unchanged.
 - Multiple pins may be narrowed deterministically when the question explicitly
   names one source or excludes another. Ambiguous questions retain all pins.

@@ -1,6 +1,6 @@
 # Ingesta piloto Jesús → `danebo-legacy` (2026-08-31)
 
-**Estado: CERRADA.** Dos tandas `complete`, 16/16 assets, chunks bajo
+**Estado: CERRADA.** El id 1 de abajo es el de esta ingesta, no un id universal del slug. Una carga posterior no entra al corpus compartido solo por vivir en `danebo-legacy`. Contrato: [SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md#shared-corpus-current-contract). Dos tandas `complete`, 16/16 assets, chunks bajo
 `bulk_chunks/1/`, gasto all-in **US$14,11** (techos US$0,060/pág y US$50
 acumulados respetados). Corpus paralelo en legacy respecto al piloto de
 Gonzalo — ver

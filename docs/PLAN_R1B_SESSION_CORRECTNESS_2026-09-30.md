@@ -505,6 +505,8 @@ R1B no arregla:
 ## Documentation contradictions
 
 - [SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md): el lifecycle del pin, el TTL de 30 días y “un miss no suelta el pin” siguen vigentes. El párrafo de corpus abierto (sólo `tenant_private` + `danebo_general`) quedó atrás. El filtro vigente es el de [ACTIVE_ARCHITECTURE.md](ACTIVE_ARCHITECTURE.md): cuenta del viewer, la otra cuenta de `SharedManualCorpus`, y `manual_corpus=general`, con el gate de R1A.
+
+  Nota (2026-10-07): el contrato pasó a [SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md#shared-corpus-current-contract). El párrafo de `tenant_private` + `danebo_general` como retrieve abierto ya no está en ese archivo. Esta nota no reabre R1B.
 - [PLAN_CONTINUIDAD_SESION_FOLLOWUP_2026-09-21.md](PLAN_CONTINUIDAD_SESION_FOLLOWUP_2026-09-21.md) describe `pin_kept`, `pin_extended`, `pin_overridden` e `inherit_episode_scope` como caminos de retrieve. El código actual de `resolve_retrieval_scope` sólo devuelve `open` o `pin_only`. `inherit_episode_scope` devuelve vacío.
 - El comentario de `FieldCompanionEpisodeFlag` (“nadie lee la columna”) es falso para el prompt. Sigue siendo cierto para las URIs de retrieve.
 

@@ -222,13 +222,14 @@ Never rely on model assumptions when evidence is available.
 
 ### Multi-Tenant Ready
 
-Current MVP may contain shared resources. Shared here means infrastructure,
-not a license to read another tenant's manuals. Documentary sharing is only
-`danebo_general`, and only by an explicit Danebo mark. That mark is visibility.
-A `user_pin` is the current session's focus and never a global lock on the
-general catalog. The user can change that pin. The system does not drop it
-when a retrieve returns no evidence. See
-[docs/PRODUCT_ROADMAP.md](docs/PRODUCT_ROADMAP.md).
+Current MVP may contain shared resources. Shared infrastructure is not a
+license to read another tenant's private manuals. Unpinned retrieval also
+includes the historical shared corpus of `danebo-legacy` and
+`danebo-pilot-elevator`. A new manual is not shared by slug. `danebo_general`
+is a catalog and pin mark, not that filter. A `user_pin` is the current
+session's focus and never a global lock. The user can change that pin. The
+system does not drop it when a retrieve returns no evidence. Contract:
+[docs/SESSION_AND_RETRIEVAL.md](docs/SESSION_AND_RETRIEVAL.md#shared-corpus-current-contract).
 
 New implementations must:
 

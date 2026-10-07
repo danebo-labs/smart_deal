@@ -122,14 +122,10 @@ A pin replaces the open filter for that session only. It does not rewrite
 `WarmBedrockKbJob` is the exception: an Aurora ping that discards the
 response and does not serve a tenant.
 
-Without a pin the filter is the pre-F3B2 compatibility corpus.
-`BedrockRagService#account_filter` is an `orAll` of the viewer's
-`account_id`, each other `Rag::SharedManualCorpus` account as `account_id`
-AND `ingestion_path != field_photo_v1` AND `manual_corpus != account`,
-and `manual_corpus=general`. An ordinary tenant's `account_id` is not a
-clause. `KnowledgeScopePolicy.open_corpus` is not this filter. A new
-manual sidecar writes `manual_corpus=account` unless `corpus_scope` is
-`general` and the account is `danebo_controlled`. A returned chunk
+Without a pin the filter is the shared corpus. The clauses, the publication
+gate, and the pending decision about new uploads are in
+[SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md#shared-corpus-current-contract).
+`KnowledgeScopePolicy.open_corpus` is not this filter. A returned chunk
 without a readable `account_id` is dropped. `document_id` is not compared
 with `KbDocument.document_uid`.
 
@@ -327,9 +323,13 @@ document ownership, aliases, visibility, or source URIs across accounts.
 Do not enable a second customer account until all of these pass:
 
 1. Tenant A cannot retrieve Tenant B private or unclassified chunks with
-   unpinned, pinned, fallback, or deterministic retrieval paths. A
-   `danebo_general` document is the only shared class, and only after an
-   explicit Danebo mark. Owning the legacy or pilot account is not that mark.
+   unpinned, pinned, fallback, or deterministic retrieval paths. The
+   unpinned exception is the shared corpus in
+   [SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md#shared-corpus-current-contract):
+   historical manuals of `danebo-legacy` and `danebo-pilot-elevator`, and
+   chunks tagged `manual_corpus=general`. A new manual is not shared by
+   slug. `danebo_general` remains the catalog mark for pinning another
+   account's row. Owning the legacy or pilot account is not that mark.
 2. Tenant A cannot list, resolve, pin, download, presign, update, or delete
    Tenant B documents by guessing IDs or S3 keys.
 3. Jobs, cache entries, Turbo streams, and dashboards are account-scoped.

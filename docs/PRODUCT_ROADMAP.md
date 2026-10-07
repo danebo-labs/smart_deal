@@ -30,14 +30,21 @@ over the manuals a customer uploaded.
    that owns it. This is the default.
 
 `UNCLASSIFIED` behaves as `tenant_private`. Living in `danebo-legacy` or
-`danebo-pilot-elevator` does not make a document general. A file contributed
+`danebo-pilot-elevator` does not set `danebo_general`. A file contributed
 by a customer or a third party stays private until Danebo marks that document.
+Historical chunks already indexed on those two accounts stay in the unpinned
+filter; that is not a new approval.
 
-The authorization semantic is `tenant private + Danebo shared`. It is not
-cross-account access between tenants. `kb_documents.knowledge_scope` is the
-read authority. Open retrieval uses the viewer's own rows plus
-`danebo_general`. `Rag::SharedManualCorpus` may still write
-`manual_corpus=general` at ingest. That metadata does not grant access.
+The authorization semantic for a catalog row is `tenant private + Danebo shared`.
+It is not cross-account access between ordinary tenants.
+`kb_documents.knowledge_scope` authorizes listing, suggestions, and pins.
+It does not build the unpinned retrieve filter. That filter is the shared
+corpus in
+[SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md#shared-corpus-current-contract).
+`manual_corpus=general` is an ingest tag. It is not a `danebo_general` mark.
+A new manual on `danebo-legacy` or `danebo-pilot-elevator` is not shared by
+slug. Whether every future upload on those accounts should enter the shared
+corpus without `corpus_scope: "general"` and `danebo_controlled` is undecided.
 Listing, retrieving, and pinning an approved document uses the existing
 `KbDocument` and its canonical URI. It does not copy the object or reindex
 it per tenant. See
@@ -75,8 +82,11 @@ Consequence for this document: voice moves out of "stretch goal" and becomes
 the central deliverable of September 2026. Everything in the MVP section below
 remains valid as the retrieval and traceability substrate underneath it.
 The 29-sep-2026 knowledge model above does not reopen this channel finding.
-A curated general library shortens cold start. It does not replace voice, and
-it does not publish every legacy or pilot file.
+A curated general library shortens cold start. It does not replace voice.
+The 29-sep vocabulary above does not publish every new file on the legacy or
+pilot account. Historical chunks of those accounts remain in the unpinned
+filter described in
+[SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md#shared-corpus-current-contract).
 
 ## Current MVP: prove the operational loop
 

@@ -379,6 +379,8 @@ has accounts `[4, 5]`; no account 1 exists, which is why no `KbDocument` row was
 ever found and the benchmark had to resolve the document through its
 `external_document` path (`document.id` recorded as `null`).
 
+Nota (2026-10-07): esa descripción del filtro es la del 26-jul. El retrieve sin pin ya no es solo `@account.id`. El contrato vigente está en [SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md#shared-corpus-current-contract). Los ids de este párrafo no se reescribieron. El gate de precisión no se reabre.
+
 `account_id = 1` was a hardcoded literal in
 `script/reingest_seguridades_2026-07-25.rb`, not a real tenant. Two ways out, both
 needing a decision:

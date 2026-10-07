@@ -9,7 +9,7 @@ evidence and are not descriptions of the active product.
 | Need | Canonical document |
 |---|---|
 | Product stage, MVP boundaries, and next stage | [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md) |
-| Knowledge model: `tenant_private` and `danebo_general`; pins stay on the session and are user-editable | [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md#knowledge-model-29-sep-2026) and [PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md](PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md). Shared visibility is not a shared pin (FC-D16). The system does not silently drop a pin set (FC-D17). Contract recorded 29-sep-2026. The discovery cycle F0–F8 is closed. Recovery after the failed product smoke is [PLAN_FIELD_COMPANION_RECOVERY_2026-09-30.md](PLAN_FIELD_COMPANION_RECOVERY_2026-09-30.md). Current companion validation, pending founder sign-off for one complete episode: [PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md). |
+| Knowledge model and unpinned retrieval | Catalog and pin vocabulary: [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md#knowledge-model-29-sep-2026). Unpinned filter: [SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md#shared-corpus-current-contract). The discovery cycle F0–F8 is closed in [PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md](PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md). Recovery after the failed product smoke is [PLAN_FIELD_COMPANION_RECOVERY_2026-09-30.md](PLAN_FIELD_COMPANION_RECOVERY_2026-09-30.md). Current companion validation: [PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md). Stage 2 remains blocked. |
 | Active architecture and engineering priorities | [ACTIVE_ARCHITECTURE.md](ACTIVE_ARCHITECTURE.md) |
 | Local setup and configuration | [README.md](../README.md) |
 | Production deployment and AWS operations | [PRODUCTION.md](PRODUCTION.md) |
@@ -28,8 +28,8 @@ older dated versions are historical evidence, not the current plan.
 | Operations: the September build month | [PLAN_SEPTIEMBRE_2026.md](PLAN_SEPTIEMBRE_2026.md) | **Current / active.** Certifier module, voice capture, descope ladder; absorbs August open items |
 | Market sizing, billing unit, unit economics | [PRICING_Y_MERCADO_2026-08-07.md](PRICING_Y_MERCADO_2026-08-07.md) | **Current.** Reads against [SAAS_COST_MODEL_2026-06-12.md](SAAS_COST_MODEL_2026-06-12.md) as the cost authority |
 | Demo and pilot tracking | [MATRIZ_DEMOS_PILOTOS_2026-08-07.md](MATRIZ_DEMOS_PILOTOS_2026-08-07.md) | **Current.** Unifies the two identical August XLSX matrices; the July interview matrix is closed |
-| Gonzalo pilot ingestion: scope, budget, corpus findings, console runbook | [INGESTA_PILOTO_GONZALO_2026-08-20.md](INGESTA_PILOTO_GONZALO_2026-08-20.md) | **Closed (24-ago).** Nine batches complete on `danebo-pilot-elevator` (account 3). See also Jesús corpus on legacy below. |
-| Jesús manuals ingestion → `danebo-legacy` | [INGESTA_PILOTO_JESUS_2026-08-31.md](INGESTA_PILOTO_JESUS_2026-08-31.md) | **Closed (31-ago).** 16 PDFs / 613 pages (Monarch near-dupe excluded) on account 1; BU 13+14 complete; US$14,11 all-in |
+| Gonzalo pilot ingestion: scope, budget, corpus findings, console runbook | [INGESTA_PILOTO_GONZALO_2026-08-20.md](INGESTA_PILOTO_GONZALO_2026-08-20.md) | **Closed (24-ago).** Nine batches complete on `danebo-pilot-elevator` (account 3 observed then, not a universal id). See also Jesús corpus on legacy below. |
+| Jesús manuals ingestion → `danebo-legacy` | [INGESTA_PILOTO_JESUS_2026-08-31.md](INGESTA_PILOTO_JESUS_2026-08-31.md) | **Closed (31-ago).** 16 PDFs / 613 pages (Monarch near-dupe excluded) on account 1 observed then; BU 13+14 complete; US$14,11 all-in |
 
 Conventions that hold across all of them: business planning is written in
 Spanish, only weekdays are planned, and `SAAS_COST_MODEL_2026-06-12.md` plus

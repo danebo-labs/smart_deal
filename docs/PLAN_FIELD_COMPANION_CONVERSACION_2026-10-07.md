@@ -380,11 +380,25 @@ Con la captura abierta, el flujo anota la percepción aplicada y la regla que ca
 
 Limitaciones: un score ausente queda `unavailable`; `RetrieveAndGenerate` no expone el top-k completo ni el score de la cita; un prompt con `$search_results$` o `$output_format_instructions$` se marca como plantilla, no como contexto resuelto. La membresía de las páginas 5 y 6 el 2026-10-07 no se volvió a consultar.
 
+Esa última frase es el estado de la instrumentación. La comprobación documental posterior está en la sección siguiente. No reabre esta pieza.
+
 Veredicto de esta pieza: `INSTRUMENTACION_LOCAL_COMPLETADA`. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. No autoriza otra pasada. El presupuesto no cambia: 106 llamadas, US$0,214838, techos 126, 42, 168 y US$2,50, `PASS_CALL_CAP` en 0.
 
 Cada turno abre un contexto en `ValidationCapture` y, al salir, restaura la correlación y el intento anteriores, también si el bloque falla. Así la solicitud del intérprete, la salida cruda, la percepción y los eventos siguientes de ese turno comparten su correlación. `correlation_root` y el resto de identificadores se mantienen. Un retrieve o `RetrieveAndGenerate` que falla de forma terminal, incluidos los reintentos de Aurora ya agotados, deja operación, correlación, intento de producto, intento de transporte, clase y motivo sanitizado, y vuelve a lanzar la excepción original. La captura detallada sigue apagada por defecto.
 
 Veredicto de estas dos correcciones: `CORRECCIONES_INSTRUMENTACION_COMPLETADAS`. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. No autoriza otra pasada ni una comprobación documental. El presupuesto no cambia.
+
+#### Comprobación documental (2026-10-07)
+
+Autorizada después, sobre `bb672e7`, como una sola Retrieve y sin generación. No es una pasada del journey A. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. El presupuesto de modelos no cambia: 106 llamadas y US$0,214838. `PASS_CALL_CAP` sigue en 0. Estas dos Retrieve no entran en `BedrockQuery`.
+
+La sesión 196 y esta comprobación fueron sin pin. Escribir «Elemont» en la consulta no pinea. El foco web vive en `document_focus`. El corpus compartido explica que el filtro abierto también devuelva manuales de otras marcas. No demuestra la causa del fallo de retrieval de la sesión 196. `viewer_account` es autorización de acceso del chunk, no compatibilidad técnica con el equipo.
+
+Consulta: `Elemont Montacargas Hidraulico Modelo MH Seguridad Puerta nivel 1`. Knowledge Base `Y7RZWMFJSR`, HYBRID, k=8, cuenta local 1, con el filtro capturado en la sesión 196. Hubo dos invocaciones. La primera, `tmp/documentary_retrieve/20261007T212004Z/`, falló porque Aurora se estaba reanudando tras la pausa. La segunda, `tmp/documentary_retrieve/20261007T212124Z/`, devolvió ocho resultados y ninguno fue rechazado.
+
+`chunk_p5_1.txt` del Elemont MH salió primero, página 5, aceptado por `viewer_account`. El texto es el diagrama de circuito 3: la línea de seguridad incluye la etiqueta «Seguridad Puerta nivel 1», y también está la botonera de pasillo del nivel 1. No menciona el código 18, el LED 7 ni el imán. `chunk_p6_1.txt` no entró en los ocho. Esta consulta no lo devolvió. Eso no dice que falte en el índice.
+
+El contrato del filtro, resuelto por slug y no por estos ids locales, está en [SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md#shared-corpus-current-contract).
 
 ### 3. Verificar ese alcance en producción
 

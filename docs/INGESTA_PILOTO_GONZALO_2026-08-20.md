@@ -1,7 +1,7 @@
 # Ingesta piloto Gonzalo (2026-08-20)
 
 **Estado: NUEVE tandas cerradas, CERO ZIPs pendientes — la ingesta del piloto
-queda completa (24-ago).** Alcance cerrado en seis marcas, tenant piloto
+queda completa (24-ago).** El account 3 citado en el índice de documentación es el id observado en esta ingesta, no un id universal del slug `danebo-pilot-elevator`. Una carga posterior no se comparte solo por ese slug. Contrato: [SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md#shared-corpus-current-contract). Alcance cerrado en seis marcas, tenant piloto
 desplegado, y `00`, `02`, `03`, `04a`, `04b`, `05`, `06`, `01` y `07` en
 `complete` sobre el deploy `bc3bf7d`. Los tres incidentes que bloquearon la
 ingesta —OOM del worker en la submission, explosión de disco por página, OOM al

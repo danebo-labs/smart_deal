@@ -19,6 +19,10 @@
 
 ## Manual corpus scope
 
+Narrative contract:
+[docs/SESSION_AND_RETRIEVAL.md](../../../docs/SESSION_AND_RETRIEVAL.md#shared-corpus-current-contract).
+The rules below are the implementation.
+
 Product contract: a tenant may use its own `tenant_private` documents and
 documents whose `kb_documents.knowledge_scope` is `danebo_general`.
 `KbDocument::KNOWLEDGE_SCOPE_*` is the vocabulary. `Rag::KnowledgeScopePolicy`

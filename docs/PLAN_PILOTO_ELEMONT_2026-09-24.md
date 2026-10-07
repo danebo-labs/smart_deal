@@ -2,6 +2,8 @@
 
 > **Documento vivo.** Escrito la noche del 23-sep-2026 contra `main 2d937df` (producción: imagen `2d456f8`) y la rama `fc/pr2` (`6c46aa5`, sin desplegar). Verificado contra S3 (`bulk_chunks/1/121bfffe0827f6bc681ba9bdc91050390055/`), sin Bedrock y sin cambios de código.
 > Alcance: el piloto de mañana con Jesús Graterol (Elemont), cuenta `danebo-legacy` (`account_id` 1 en el índice), host `elevator.danebo.ai`, plano «Montacargas 2N Temporizado-1», 7 hojas, 9 chunks, `kb_document_id` 213.
+
+Nota (2026-10-07): el `account_id` 1 de este plan es el id observado en el índice ese día, no un id universal. El código resuelve `danebo-legacy` y `danebo-pilot-elevator` por slug. El filtro vigente está en [SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md#shared-corpus-current-contract). La decisión de que una pregunta no pinea un manual sigue. Este plan no se reabre.
 > Este plan **no reabre** el [Plan maestro Field Companion](Plan%20maestro%20de%20implementaci%C3%B3n%20%E2%80%94%20Danebo%20.md) (parado en Fase 2b por FC-D10) ni el [plan copiloto](PLAN_COPILOTO_GENERACION_2026-09-22.md) (dueño de FC-D10 / CG-D19). Registra qué ya cubren y qué no.
 
 ---

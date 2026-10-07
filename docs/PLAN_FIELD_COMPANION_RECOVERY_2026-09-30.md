@@ -141,6 +141,8 @@ Un upload normal nuevo escribe `manual_corpus=account`.
 
 Pertenecer a Legacy o Pilot ya no basta. El corpus histórico 1/3 sigue legible porque esos chunks no tienen la clave, o ya traen `general`, y el brazo compartido usa `notEquals` sobre `manual_corpus=account`. El brazo del viewer sigue siendo `account_id` pelado, así que el dueño sigue viendo su manual nuevo y su foto.
 
+Nota (2026-10-07): los ids 1 y 3 son los observados en esta traza. El código resuelve las cuentas por slug. Esos números no son el contrato. El texto vigente está en [SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md#shared-corpus-current-contract).
+
 Evolución respecto de R1A original: el primer alcance decía no implementar todavía la frontera con `danebo_controlled`. Codex bloqueó el deploy y exigió esa frontera para contenido nuevo. La decisión cerrada usa `danebo_controlled` sólo como permiso para marcar `general` en uploads nuevos. No es la biblioteca Danebo independiente, y no reescribe el histórico.
 
 ## Fuente 5 — Code review 3 de Codex

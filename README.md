@@ -6,10 +6,12 @@ RAG platform for **field elevator technicians**, delivered today through the **s
 
 - **Active MVP:** authenticated web home (RAG chat, KB list, pins,
   thumbnails, document uploads, and direct field-photo diagnosis).
-- **Knowledge model (contract, not shipped):** `danebo_general` is shared
-  document visibility. `user_pin` is focus on the current session only.
-  One account's pin does not change another account's catalog. See
-  [docs/PRODUCT_ROADMAP.md](docs/PRODUCT_ROADMAP.md#knowledge-model-29-sep-2026).
+- **Shared corpus:** without a pin, retrieval includes the technician's
+  own chunks and the historical manuals of `danebo-legacy` and
+  `danebo-pilot-elevator`. A new upload is not shared by slug.
+  `danebo_general` is the catalog and pin mark. A pin is focus on the
+  current session only. Contract:
+  [docs/SESSION_AND_RETRIEVAL.md](docs/SESSION_AND_RETRIEVAL.md#shared-corpus-current-contract).
 - **Disabled for the pilot:** bulk ZIP and dashboard routes; code is preserved.
 - **Dormant:** WhatsApp / Twilio (webhook unmounted; code preserved). See
   [docs/WHATSAPP.md](docs/WHATSAPP.md).

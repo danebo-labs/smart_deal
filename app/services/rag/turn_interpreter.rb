@@ -73,7 +73,7 @@ module Rag
       latency_ms = elapsed_since(started)
       usage = response.usage
       raw = extract_tool_input(response.output&.message&.content)
-      ValidationCapture.record("interpreter_raw", { "tool_input" => raw })
+      record_interpreter_raw(raw)
       perception = TurnPerception.build(
         raw, turn: @turn, episode: @episode, catalog: @catalog, viewer_account: @viewer_account
       )
@@ -155,6 +155,15 @@ module Rag
       carry = @episode.pending_question&.dig("carry")
       payload["carry"] = carry if carry.is_a?(Array) && carry.any?
       payload
+    end
+
+    def record_interpreter_raw(raw)
+      return unless ValidationCapture.active?
+
+      ValidationCapture.correlation = @correlation_id if Thread.current[:rag_validation_correlation].blank? && @correlation_id.present?
+      payload = { "tool_input" => raw }
+      payload["correlation_id"] = @correlation_id if @correlation_id.present?
+      ValidationCapture.record("interpreter_raw", payload)
     end
 
     def extract_tool_input(content)

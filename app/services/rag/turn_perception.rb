@@ -90,6 +90,7 @@ module Rag
       @viewer_account = viewer_account
       @field_rejections = []
       @catalog_disagreements = []
+      @adjustments = []
     end
 
     def build
@@ -111,7 +112,7 @@ module Rag
       resolution = nil unless move == "answer_pending"
       identities = apply_structured_slots(move, resolution, identities)
 
-      Result.new(
+      result = Result.new(
         valid: true,
         move: move,
         observations: observations,
@@ -123,6 +124,8 @@ module Rag
         catalog_disagreements: @catalog_disagreements,
         invalid_reason: nil
       )
+      record_perception(result)
+      result
     end
 
     private
@@ -383,6 +386,10 @@ module Rag
         old_code, new_code = codes
         identities = merged_fault_identities(identities, old_code, new_code)
         observations = merged_fault_observations(observations, old_code)
+        note_rule(
+          "recover_stated_correction", "fault_code", "explicit_fault_codes",
+          { "rejected" => old_code, "asserted" => new_code }
+        )
         return [ "correct", nil, identities, observations, ambiguities, nil ]
       end
 
@@ -390,6 +397,7 @@ module Rag
       if phrase && %w[unclear correct].include?(move)
         merged = merge_phrase(observations, phrase)
         kept = identities.reject { |item| observation_fragment?(item, merged) }
+        note_rule("recover_stated_correction", phrase, "explicit_observation_replacement")
         return [ "correct", nil, kept, merged, ambiguities, nil ]
       end
 
@@ -414,7 +422,9 @@ module Rag
 
     def merged_fault_observations(observations, old_code)
       kept = observations.reject { |text|
-        SlotRejection.code_statement?(FollowupQueryRewriter.normalize_label(text), old_code)
+        stale = SlotRejection.code_statement?(FollowupQueryRewriter.normalize_label(text), old_code)
+        note_rule("merged_fault_observations", text, "stale_fault_observation") if stale
+        stale
       }
       symptom_sentences_outside_correction(old_code).each do |phrase|
         kept = merge_phrase(kept, phrase)
@@ -455,6 +465,7 @@ module Rag
         next true if inner.blank? || seen.include?(inner)
 
         contained = rows.any? { |other| contained_phrase?(inner, FollowupQueryRewriter.normalize_label(other)) }
+        note_rule("drop_contained_phrases", text, "contained_phrase") if contained
         seen << inner unless contained
         contained
       }
@@ -504,10 +515,14 @@ module Rag
 
     def adjust_move(move, resolution, identities, observations, ambiguities, target)
       if move == "answer_pending" && !pending_answer?(resolution, identities)
+        note_rule("adjust_move", move, "pending_answer_incomplete")
         move = identities.any? || observations.any? || ambiguities.any? ? "report" : "follow_up"
         resolution = nil
       elsif move == "correct" && identities.none? { |item| item.kind == "negate" && item.slot.present? }
         unless observation_correction?(identities, observations)
+          note_rule("adjust_move", "move", "correct_without_slot_negation", { "from" => move, "to" => "unclear" })
+          note_rule("adjust_move", identities.map(&:span).join(", "), "correct_without_slot_negation") if identities.any?
+          note_rule("adjust_move", observations.join(" | "), "correct_without_slot_negation") if observations.any?
           move = "unclear"
           target = "correction_target"
           resolution = nil
@@ -515,6 +530,7 @@ module Rag
           observations = []
         end
       elsif move == "new_work" && !self.class.technical_payload?(identities, observations, ambiguities) && prior_context? && !work_relation_pending?
+        note_rule("adjust_move", move, "new_work_without_technical_payload")
         move = "follow_up"
       end
       target = nil unless move == "unclear"
@@ -611,6 +627,7 @@ module Rag
         next item if typed || item.kind != "identifier" || item.act != "assert"
 
         typed = true
+        note_rule("apply_structured_slots", item.span, "typed_pending_value", { "slot" => slot })
         fact(item.span, "assert", slot, item.span, "user", nil)
       }
     end
@@ -624,6 +641,7 @@ module Rag
         next item unless !replaced && item.kind == "identifier" && item.act == "assert"
 
         replaced = true
+        note_rule("apply_structured_slots", item.span, "typed_correction", { "slot" => negated.slot })
         fact(item.span, "assert", negated.slot, item.span, "user", nil)
       }
     end
@@ -637,14 +655,52 @@ module Rag
 
     def reject_field(field, reason)
       @field_rejections << { "field" => field, "reason" => reason }
+      note_rule("reject_field", field, reason)
     end
 
     def invalid(reason)
-      Result.new(
+      result = Result.new(
         valid: false, move: nil, observations: [], pending_resolution: nil, clarification_target: nil,
         identities: [], ambiguities: [], field_rejections: @field_rejections,
         catalog_disagreements: [], invalid_reason: reason
       )
+      record_perception(result)
+      result
+    end
+
+    def note_rule(rule, datum, reason, detail = nil)
+      return unless ValidationCapture.active?
+
+      row = { "rule" => rule, "datum" => datum.to_s, "reason" => reason.to_s }
+      row["detail"] = detail if detail.present?
+      @adjustments << row
+    end
+
+    def record_perception(result)
+      return unless ValidationCapture.active?
+
+      ValidationCapture.record(
+        "perception_applied",
+        "links" => "interpreter_raw",
+        "valid" => result.valid,
+        "move" => result.move,
+        "invalid_reason" => result.invalid_reason,
+        "clarification_target" => result.clarification_target,
+        "identities" => result.identities.map { |item| compact_identity(item) },
+        "observations" => result.observations,
+        "adjustments" => @adjustments,
+        "field_rejections" => @field_rejections
+      )
+    end
+
+    def compact_identity(item)
+      {
+        "span" => item.span,
+        "act" => item.act,
+        "kind" => item.kind,
+        "slot" => item.slot,
+        "value" => item.value
+      }
     end
   end
 end

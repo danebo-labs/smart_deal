@@ -59,7 +59,7 @@ module Rag
     def call
       previous = @perception.move == "new_work" ? ActiveEpisode.new : @previous
       if @perception.move == "meta"
-        return finish("meta", outside_discovery: false, owns_query: false, clarification: I18n.t("rag.meta_continue", locale: @locale))
+        return finish("meta", outside_discovery: false, owns_query: false, clarification: I18n.t("rag.meta_continue", locale: @locale), capture: true, condition: "move_meta")
       end
       if @perception.move == "unclear" && @perception.clarification_target.present?
         target = @perception.clarification_target
@@ -69,7 +69,9 @@ module Rag
           owns_query: false,
           clarification: I18n.t("rag.clarify_#{target}", locale: @locale),
           pending_subject: target,
-          pending_question: conversational_pending(target)
+          pending_question: conversational_pending(target),
+          capture: true,
+          condition: "unclear_with_target"
         )
       end
       if thin_new_work?
@@ -77,7 +79,9 @@ module Rag
           "clarify_first",
           outside_discovery: false,
           owns_query: false,
-          clarification: I18n.t("rag.clarify_new_work", locale: @locale)
+          clarification: I18n.t("rag.clarify_new_work", locale: @locale),
+          capture: true,
+          condition: "thin_new_work"
         )
       end
       if clarify_first?(previous)
@@ -88,11 +92,13 @@ module Rag
           clarification: clarify_text,
           pending_subject: "controller",
           ask_when: :instead,
-          pending_question: pending_with_carry("controller")
+          pending_question: pending_with_carry("controller"),
+          capture: true,
+          condition: "clarify_first"
         )
       end
       if best_effort?
-        return finish("best_effort", outside_discovery: true, owns_query: true)
+        return finish("best_effort", outside_discovery: true, owns_query: true, capture: true, condition: "best_effort")
       end
       ambiguous = @perception.ambiguities.first
       if ambiguous
@@ -103,7 +109,9 @@ module Rag
           clarification: I18n.t("rag.clarify_ambiguous_designator", token: ambiguous.candidates.join(" / "), locale: @locale),
           pending_subject: "controller",
           ask_when: :always,
-          pending_question: { "type" => "controller" }
+          pending_question: { "type" => "controller" },
+          capture: true,
+          condition: "ambiguous_designator"
         )
       end
       if focus_mention?
@@ -116,11 +124,13 @@ module Rag
           pending_subject: "controller",
           ask_when: :absence,
           bare_identifier: token,
-          pending_question: { "type" => "controller" }
+          pending_question: { "type" => "controller" },
+          capture: true,
+          condition: "focus_mention"
         )
       end
 
-      finish("ready", outside_discovery: true, owns_query: true)
+      finish("ready", outside_discovery: true, owns_query: true, capture: true, condition: "ready")
     end
 
     def fallback(turn, catalog, viewer_account)
@@ -135,7 +145,9 @@ module Rag
             outside_discovery: false,
             owns_query: query.present?,
             retrieval_query: query,
-            fallback: true
+            fallback: true,
+            capture: true,
+            condition: "fallback_searchable_symptom"
           )
         end
 
@@ -147,7 +159,9 @@ module Rag
           pending_subject: "controller",
           ask_when: :instead,
           pending_question: { "type" => "controller" },
-          fallback: true
+          fallback: true,
+          capture: true,
+          condition: "fallback_thin_clarify"
         )
       end
 
@@ -162,7 +176,9 @@ module Rag
         pending_subject: pending && pending["type"],
         ask_when: pending ? :always : nil,
         pending_question: pending,
-        fallback: true
+        fallback: true,
+        capture: true,
+        condition: "fallback_ready"
       )
     end
 
@@ -186,7 +202,9 @@ module Rag
         clarification: I18n.t("rag.clarify_#{type}", locale: @locale),
         pending_subject: type,
         pending_question: question,
-        fallback: true
+        fallback: true,
+        capture: true,
+        condition: "fallback_conversational_pending"
       )
     end
 
@@ -349,8 +367,8 @@ module Rag
       found.presence&.join(" ")
     end
 
-    def finish(name, outside_discovery:, owns_query:, clarification: nil, pending_subject: nil, ask_when: nil, pending_question: nil, retrieval_query: nil, bare_identifier: nil, fallback: false)
-      Decision.new(
+    def finish(name, outside_discovery:, owns_query:, clarification: nil, pending_subject: nil, ask_when: nil, pending_question: nil, retrieval_query: nil, bare_identifier: nil, fallback: false, capture: false, condition: nil)
+      decision = Decision.new(
         decision: name,
         retrieval_query: retrieval_query,
         clarification: clarification,
@@ -367,6 +385,21 @@ module Rag
         pending_question: pending_question,
         fallback: fallback
       )
+      record_route(decision, condition) if capture
+      decision
+    end
+
+    def record_route(decision, condition)
+      return unless ValidationCapture.active?
+
+      payload = {
+        "route" => decision.decision,
+        "condition" => condition.to_s,
+        "fallback" => decision.fallback,
+        "retrieval" => decision.performs_retrieval?
+      }
+      payload["episode_id"] = @previous.episode_id if @previous.episode_id.present?
+      ValidationCapture.record("route_decision", payload)
     end
   end
 end

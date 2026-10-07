@@ -372,6 +372,16 @@ Una corrección de observación ya no borra los `fact` del turno cuando el inté
 
 Con `PASS_CALL_CAP` en 0, `stage2_journey_a_main` consulta `Stage2RunBudget` y vuelve antes de crear la sesión de validación, de `Retrieve` y de la generación, aunque `STAGE2_JOURNEY_AUTHORIZED=1`. El control anterior a cada turno sigue en el recorrido. El histórico permanece en 106 llamadas y US$0,214838. Los techos siguen en 126, 42 reservadas para la etapa 3, 168 y US$2,50.
 
+#### Instrumentación local
+
+`Rag::ValidationCapture` queda como capacidad permanente del flujo. No pertenece a un journey ni a una sesión. La captura detallada sigue apagada: solo existe dentro de un bloque `capture` abierto a propósito. Cualquier validación o diagnóstico futuro reutiliza la misma implementación y puede etiquetar el bloque con los identificadores que ya tiene (`sha`, sesión, episodio, cuenta, usuario, `correlation_root`). El producto no ramifica por el texto de un fixture.
+
+Con la captura abierta, el flujo anota la percepción aplicada y la regla que cambió un dato, el delta del episodio, la ruta y la condición que la eligió, las salidas tempranas y el reintento de Aurora, la consulta efectiva con filtro, modalidad y k, cada chunk recibido con documento, página, id, URI y score —o `unavailable` si la API no lo trae—, la decisión de la compuerta y de la política de identidad, el prompt realmente enviado y si todavía es una plantilla, y la respuesta con sus citas. El texto de chunk y los prompts quedan solo en ese bloque local. `PilotUsageLog` no sube sus límites y no guarda cuerpos. No se reconstruyen solicitudes viejas que no se guardaron.
+
+Limitaciones: un score ausente queda `unavailable`; `RetrieveAndGenerate` no expone el top-k completo ni el score de la cita; un prompt con `$search_results$` o `$output_format_instructions$` se marca como plantilla, no como contexto resuelto. La membresía de las páginas 5 y 6 el 2026-10-07 no se volvió a consultar.
+
+Veredicto de esta pieza: `INSTRUMENTACION_LOCAL_COMPLETADA`. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. No autoriza otra pasada. El presupuesto no cambia: 106 llamadas, US$0,214838, techos 126, 42, 168 y US$2,50, `PASS_CALL_CAP` en 0.
+
 ### 3. Verificar ese alcance en producción
 
 Primera consulta y continuidad del mismo episodio, sobre el journey A ya aceptado en local. Una pasada. Sin sonda previa. Sin L3, sin journey B y sin T-F. Las reparaciones de las etapas 1 y 2 entran por el procedimiento de despliegue vigente.

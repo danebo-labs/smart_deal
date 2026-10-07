@@ -202,6 +202,13 @@ def stage2_journey_a_execute
   service = BedrockRagService.new(account: account, knowledge_base_id: PROD_KB)
   availability = nil
   availability_capture = Rag::ValidationCapture.capture do
+    Rag::ValidationCapture.bind(
+      sha: sha,
+      session_id: session.id,
+      account_id: account.id,
+      user_id: user.id,
+      correlation_root: "stage2:a:availability"
+    )
     Rag::ValidationCapture.correlation = "stage2:a:availability"
     availability = service.retrieve_chunks(
       "Elemont Montacargas Hidraulico Modelo MH",
@@ -259,6 +266,13 @@ def stage2_journey_a_execute
     }
     capture = Rag::ValidationCapture.capture do
     begin
+      Rag::ValidationCapture.bind(
+        sha: sha,
+        session_id: session.id,
+        account_id: account.id,
+        user_id: user.id,
+        correlation_root: correlation_id
+      )
       Rag::ValidationCapture.correlation = correlation_id
       episode_turn = session.record_user_turn!(
         sent,
@@ -267,6 +281,7 @@ def stage2_journey_a_execute
         locale: :es,
         interpreter_client: nil
       )
+      Rag::ValidationCapture.bind(episode_id: session.live_episode_id)
       expected_episode_id = session.live_episode_id
       context = SessionContextBuilder.build(session).to_s
       uris = SessionContextBuilder.entity_s3_uris(session)

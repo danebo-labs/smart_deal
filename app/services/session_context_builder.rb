@@ -39,6 +39,7 @@ class SessionContextBuilder
     trace = { truncated: false }
     text = assemble_context(session, active_photo_context, trace)
     mark_context_truncated(session, trace[:truncated])
+    record_context_fit(text, trace)
     text
   end
 
@@ -85,6 +86,7 @@ class SessionContextBuilder
       if problem.empty?
         if result.length > MAX_CONTEXT_CHARS
           trace[:truncated] = true
+          note_omission(trace, "session_context", result[MAX_CONTEXT_CHARS..])
           result[0, MAX_CONTEXT_CHARS]
         else
           result
@@ -229,18 +231,22 @@ class SessionContextBuilder
     head = [ problem, photo ].compact_blank.join("\n\n")
     if rest.empty?
       trace[:truncated] = true if trace && head.length > MAX_CONTEXT_CHARS
+      note_omission(trace, "hard_cap", head[MAX_CONTEXT_CHARS..]) if head.length > MAX_CONTEXT_CHARS
       return head[0, MAX_CONTEXT_CHARS]
     end
 
     budget = MAX_CONTEXT_CHARS - head.length - 2
     if budget <= 0
       trace[:truncated] = true if trace && (rest.present? || head.length > MAX_CONTEXT_CHARS)
+      note_omission(trace, "session_context", rest) if rest.present?
+      note_omission(trace, "hard_cap", head[MAX_CONTEXT_CHARS..]) if head.length > MAX_CONTEXT_CHARS
       return head[0, MAX_CONTEXT_CHARS]
     end
 
     if rest.length > budget
       trace[:truncated] = true if trace
       trimmed = rest[0, budget]
+      note_omission(trace, "session_context", rest[trimmed.to_s.length..])
     else
       trimmed = rest
     end
@@ -255,6 +261,7 @@ class SessionContextBuilder
     if rest.length > budget
       trace[:truncated] = true if trace
       trimmed = rest[0, budget]
+      note_omission(trace, "session_context", rest[trimmed.to_s.length..])
     else
       trimmed = rest
     end
@@ -407,35 +414,86 @@ class SessionContextBuilder
     loop do
       visible = visible_observations(goal, observations)
       text = assemble_problem(goal, leading, optional, visible, trailing)
-      return text if text.length <= MAX_PROBLEM_CHARS
+      return finish_problem_fit(text, trace) if text.length <= MAX_PROBLEM_CHARS
 
       trace[:truncated] = true if trace
       if (index = oldest_visible_observation(goal, observations))
+        note_omission(trace, "observation", observations[index])
         observations.delete_at(index)
         next
       end
       if optional.any?
+        note_omission(trace, "optional", optional.first)
         optional.shift
         next
       end
       if goal.present?
         overflow = text.length - MAX_PROBLEM_CHARS
-        goal = overflow >= goal.length ? "" : goal[0, goal.length - overflow].rstrip
+        if overflow >= goal.length
+          note_omission(trace, "goal", goal)
+          goal = ""
+        else
+          note_omission(trace, "goal", goal[(goal.length - overflow)..])
+          goal = goal[0, goal.length - overflow].rstrip
+        end
         next
       end
       if trailing.any?
+        note_omission(trace, "trailing", trailing.last)
         trailing.pop
         next
       end
       if leading.any?
+        note_omission(trace, "leading", leading.last)
         leading.pop
         next
       end
 
-      return text[0, MAX_PROBLEM_CHARS]
+      note_omission(trace, "hard_cap", text[MAX_PROBLEM_CHARS..])
+      return finish_problem_fit(text[0, MAX_PROBLEM_CHARS], trace)
     end
   end
   private_class_method :fit_problem
+
+  def self.finish_problem_fit(text, trace)
+    return text unless Rag::ValidationCapture.active?
+
+    Rag::ValidationCapture.record(
+      "context_fit",
+      "part" => "problem",
+      "chars" => text.to_s.length,
+      "truncated" => trace&.[](:truncated) == true,
+      "omitted" => Array(trace && trace[:omitted]),
+      "problem_cap" => MAX_PROBLEM_CHARS
+    )
+    text
+  end
+  private_class_method :finish_problem_fit
+
+  def self.note_omission(trace, part, text)
+    return unless trace && Rag::ValidationCapture.active?
+
+    body = text.to_s
+    return if body.empty?
+
+    (trace[:omitted] ||= []) << { "part" => part, "text" => body }
+  end
+  private_class_method :note_omission
+
+  def self.record_context_fit(text, trace)
+    return unless Rag::ValidationCapture.active?
+
+    Rag::ValidationCapture.record(
+      "context_fit",
+      "part" => "session_context",
+      "chars" => text.to_s.length,
+      "truncated" => trace[:truncated] == true,
+      "omitted" => Array(trace[:omitted]),
+      "problem_cap" => MAX_PROBLEM_CHARS,
+      "context_cap" => MAX_CONTEXT_CHARS
+    )
+  end
+  private_class_method :record_context_fit
 
   def self.visible_observations(goal, observations)
     observations.reject { |text| goal.present? && Rag::ObservationText.covered_by?(goal, text) }

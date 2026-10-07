@@ -62,6 +62,14 @@ module RagQueryConcern
     )
   end
 
+  def note_rag_exit(exit_name, condition, correlation_id)
+    return unless Rag::ValidationCapture.active?
+
+    payload = { "exit" => exit_name, "condition" => condition }
+    payload["correlation_id"] = correlation_id if correlation_id.present?
+    Rag::ValidationCapture.record("route_exit", payload)
+  end
+
   def meta_result(question, understanding, correlation_id, locale)
     RagResult.new(
       success?: true,
@@ -149,6 +157,7 @@ module RagQueryConcern
     ignore_shadow_analysis(conversational_turn_analysis)
 
     if question.blank? && images.empty? && documents.empty?
+      note_rag_exit("blank_question", "blank_question", correlation_id)
       return RagResult.new(success?: false, error_type: :blank_question)
     end
 
@@ -167,9 +176,11 @@ module RagQueryConcern
     pin_label_turn = images.empty? && documents.empty? && selection_turn?(question, conv_session)
     understanding = turn_understanding_for(question, conv_session, episode_turn, retrieval_question, images, documents, pin_label_turn)
     if understanding.respond_to?(:meta?) && understanding.meta?
+      note_rag_exit("meta", "move_meta", correlation_id)
       return meta_result(question, understanding, correlation_id, resolved_response_locale)
     end
     if understanding&.clarify_first?
+      note_rag_exit("clarify_first", understanding.decision.to_s, correlation_id)
       return clarify_first_result(question, understanding, correlation_id, resolved_response_locale)
     end
     if retrieval_question.present?

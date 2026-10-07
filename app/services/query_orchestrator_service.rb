@@ -320,6 +320,7 @@ class QueryOrchestratorService
       )
       if overview && (rendered_overview = overview.execute)
         Rails.logger.info("QueryOrchestrator: Routing to deterministic_document_overview for: '#{@query}'")
+        note_route_exit("document_overview", "deterministic_document_overview")
         return rendered_overview
       end
     end
@@ -344,6 +345,7 @@ class QueryOrchestratorService
     outcome = structured&.execute
     if outcome&.status == :answered || outcome&.status == :abstained
       Rails.logger.info("QueryOrchestrator: structured_evidence_route outcome=#{outcome.status}")
+      note_route_exit("structured_evidence", outcome.status.to_s)
       return outcome.result
     end
 
@@ -367,6 +369,7 @@ class QueryOrchestratorService
       )
       if disambiguation && (disambiguated = disambiguation.execute)
         Rails.logger.info("QueryOrchestrator: Routing to deterministic_model_disambiguation for: '#{@query}'")
+        note_route_exit("model_disambiguation", "deterministic_model_disambiguation")
         return disambiguated
       end
 
@@ -380,15 +383,18 @@ class QueryOrchestratorService
       )
       if deterministic
         Rails.logger.info("QueryOrchestrator: Routing to #{deterministic.generation_mode} for: '#{@query}'")
+        note_route_exit("deterministic_renderer", deterministic.generation_mode.to_s)
         return deterministic.execute
       end
     end
 
     Rails.logger.info("QueryOrchestrator: Routing to KNOWLEDGE_BASE_QUERY for: '#{@query}'")
     if (context_result = context_evidence_result)
+      note_route_exit("context_evidence", "context_evidence")
       return context_result
     end
 
+    note_route_exit("knowledge_base", "delegate_query")
     BedrockRagService.new(account: @account).query(
       @query,
       session_id: @session_id,
@@ -412,6 +418,14 @@ class QueryOrchestratorService
   # as malformed and stays closed. Terminals that do not apply
   # DocumentIdentityScope stay off that path: overview, model disambiguation,
   # deterministic renderers, and hybrid synthesis.
+  def note_route_exit(exit_name, condition)
+    return unless Rag::ValidationCapture.active?
+
+    payload = { "exit" => exit_name, "condition" => condition }
+    payload["correlation_id"] = @correlation_id if @correlation_id.present?
+    Rag::ValidationCapture.record("route_exit", payload)
+  end
+
   def equipment_identity_required?
     identity = resolved_equipment_identity
     identity == :malformed || (identity.is_a?(Rag::EquipmentIdentity) && identity.known?)

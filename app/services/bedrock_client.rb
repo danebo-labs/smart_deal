@@ -33,13 +33,8 @@ class BedrockClient
     }
 
     start_time = Time.current
-    Rag::ValidationCapture.record(
-      "generate_text",
-      "model_id" => model_id,
-      "max_tokens" => max_tokens,
-      "temperature" => temperature,
-      "prompt" => prompt.to_s
-    )
+    capture_fields = generation_capture_fields(tracking)
+    record_generation_request(model_id, max_tokens, temperature, prompt)
     response = @client.invoke_model(
       model_id: model_id,
       content_type: 'application/json',
@@ -50,9 +45,11 @@ class BedrockClient
     text = result.dig('content', 0, 'text') || result.to_s
 
     track_usage(result, model_id, prompt, start_time, max_tokens: max_tokens, tracking: tracking)
+    record_generation_result(result, text, prompt, capture_fields)
 
     text
   rescue StandardError => e
+    record_generation_error(e, prompt, capture_fields)
     Rails.logger.error("Bedrock error: #{e.message}")
     Rails.logger.error(e.backtrace.join("\n"))
     nil
@@ -77,11 +74,67 @@ class BedrockClient
   # Tool use on the primary runtime client. #converse stays the 8-second
   # shadow client used by perception. generate_text cannot send a tool schema.
   def converse_message(params)
-    Rag::ValidationCapture.record("converse", params)
+    Rag::ValidationCapture.record("converse", params) if Rag::ValidationCapture.active?
     @client.converse(params)
   end
 
   private
+
+  def record_generation_request(model_id, max_tokens, temperature, prompt)
+    return unless Rag::ValidationCapture.active?
+
+    Rag::ValidationCapture.record(
+      "generate_text",
+      "model_id" => model_id,
+      "max_tokens" => max_tokens,
+      "temperature" => temperature,
+      "prompt" => prompt.to_s,
+      "documentary_context" => Rag::ValidationCapture.documentary_context(prompt)
+    )
+  end
+
+  def record_generation_result(result, text, prompt, capture_fields)
+    return unless Rag::ValidationCapture.active?
+
+    usage = result.is_a?(Hash) && result["usage"].is_a?(Hash) ? result["usage"] : {}
+    input_tokens = usage["input_tokens"] || usage["inputTokens"]
+    output_tokens = usage["output_tokens"] || usage["outputTokens"]
+    Rag::ValidationCapture.record(
+      "generation_result",
+      {
+        "answer" => text,
+        "input_tokens" => input_tokens.nil? ? "unavailable" : input_tokens,
+        "output_tokens" => output_tokens.nil? ? "unavailable" : output_tokens,
+        "error_class" => nil,
+        "documentary_context" => Rag::ValidationCapture.documentary_context(prompt)
+      }.merge(capture_fields)
+    )
+  end
+
+  def record_generation_error(error, prompt, capture_fields)
+    return unless Rag::ValidationCapture.active?
+
+    Rag::ValidationCapture.record(
+      "generation_result",
+      {
+        "answer" => nil,
+        "error_class" => error.class.name,
+        "documentary_context" => Rag::ValidationCapture.documentary_context(prompt)
+      }.merge(capture_fields || {})
+    )
+  end
+
+  def generation_capture_fields(tracking)
+    return {} unless tracking.respond_to?(:to_h)
+
+    fields = tracking.to_h.dup
+    extra = {}
+    correlation_id = fields[:correlation_id] || fields["correlation_id"]
+    attempt = fields[:attempt] || fields["attempt"]
+    extra["correlation_id"] = correlation_id if correlation_id.present?
+    extra["attempt"] = attempt unless attempt.nil?
+    extra
+  end
 
   def converse_client
     @converse_client ||= Aws::BedrockRuntime::Client.new(

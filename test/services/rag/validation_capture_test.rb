@@ -128,4 +128,353 @@ class Rag::ValidationCaptureTest < ActiveSupport::TestCase
     assert_equal "stage2:a:t05", raw["correlation_id"]
     assert_includes result.perception.observations, "La guía no tiene obstrucción"
   end
+
+  test "scope labels are generic and a nested capture does not leak them" do
+    inner = nil
+    outer = Rag::ValidationCapture.capture do
+      Rag::ValidationCapture.bind(sha: "abc", session_id: 7, episode_id: "ep-1", correlation_root: "root", fixture: "journey-a")
+      Rag::ValidationCapture.record("outer", { "correlation_id" => "root:query" })
+      inner = Rag::ValidationCapture.capture do
+        Rag::ValidationCapture.record("inner", {})
+      end
+      Rag::ValidationCapture.record("after", {})
+    end
+
+    stamped = outer.find { |row| row["kind"] == "outer" }
+    assert_equal "abc", stamped["sha"]
+    assert_equal 7, stamped["session_id"]
+    assert_equal "ep-1", stamped["episode_id"]
+    assert_equal "root", stamped["correlation_root"]
+    assert_equal "root:query", stamped["correlation_id"]
+    assert_nil stamped["fixture"]
+    assert_nil outer.find { |row| row["kind"] == "inner" }
+    assert_nil inner.first["episode_id"]
+    assert_equal "inner", inner.first["kind"]
+    assert_equal "ep-1", outer.find { |row| row["kind"] == "after" }["episode_id"]
+    assert_nil Thread.current[:rag_validation_capture]
+  end
+
+  test "a signed url is reduced to its path and max_tokens stays" do
+    payload = Rag::ValidationCapture.sanitize(
+      "uri" => "https://bucket.s3.amazonaws.com/manuals/sheet.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIATESTKEY12",
+      "max_tokens" => 3000
+    )
+
+    assert_equal "https://bucket.s3.amazonaws.com/manuals/sheet.pdf", payload["uri"]
+    assert_equal 3000, payload["max_tokens"]
+    assert_not_includes payload.to_s, "AKIATESTKEY12"
+  end
+
+  test "inactive perception stores nothing and stays equal to a second pass" do
+    first = build_correction_perception
+    second = build_correction_perception
+
+    assert_equal first, second
+    assert_nil Thread.current[:rag_validation_capture]
+  end
+
+  test "an open capture records the rule that rewrites a stated fault code" do
+    events = Rag::ValidationCapture.capture do
+      Rag::ValidationCapture.correlation = "turn-1"
+      build_correction_perception
+    end
+
+    applied = events.find { |row| row["kind"] == "perception_applied" }
+    assert_equal "interpreter_raw", applied["links"]
+    assert_equal "turn-1", applied["correlation_id"]
+    assert_equal "correct", applied["move"]
+    assert applied["adjustments"].any? { |row| row["reason"] == "explicit_fault_codes" && row["datum"] == "fault_code" }
+    assert_nil applied["tool_input"]
+    assert_nil Thread.current[:rag_validation_capture]
+  end
+
+  test "a route decision names its condition and an internal finish does not" do
+    perception = perception_result("meta")
+    idle = Rag::RoutePolicy.call(previous: Rag::ActiveEpisode.new, perception: perception, focus_count: 0)
+    events = Rag::ValidationCapture.capture do
+      active = Rag::RoutePolicy.call(previous: Rag::ActiveEpisode.new, perception: perception, focus_count: 0)
+      assert_equal idle, active
+      policy = Rag::RoutePolicy.new(
+        previous: Rag::ActiveEpisode.new, perception: nil, focus_count: 0,
+        focus_document_ids: [], focus_uris: [], locale: :es
+      )
+      policy.send(:fallback_query, "la puerta no cierra", nil, nil)
+    end
+
+    decision = events.find { |row| row["kind"] == "route_decision" }
+    assert_equal "meta", decision["route"]
+    assert_equal "move_meta", decision["condition"]
+    assert_equal false, decision["retrieval"]
+    assert_equal 1, events.count { |row| row["kind"] == "route_decision" }
+  end
+
+  test "a meta understanding returns before any retrieve" do
+    understanding = Rag::RoutePolicy.call(
+      previous: Rag::ActiveEpisode.new,
+      perception: perception_result("meta"),
+      focus_count: 0
+    )
+    episode_turn = Struct.new(:understanding).new(understanding)
+    result = nil
+    events = Rag::ValidationCapture.capture do
+      result = RagValidationCaptureHost.new(accounts(:legacy)).send(
+        :execute_rag_query,
+        "hola",
+        episode_turn: episode_turn,
+        correlation_id: "cid-meta",
+        response_locale: :es
+      )
+    end
+
+    exit_event = events.find { |row| row["kind"] == "route_exit" && row["exit"] == "meta" }
+    assert_equal "move_meta", exit_event["condition"]
+    assert_equal "cid-meta", exit_event["correlation_id"]
+    assert_equal "meta", result.generation_mode
+    assert_equal false, result.model_invoked
+    assert_nil events.find { |row| row["kind"] == "retrieve" }
+  end
+
+  test "retrieval rows keep accepted text and mark a missing score unavailable" do
+    service = BedrockRagService.new(account: accounts(:legacy))
+    account_id = accounts(:legacy).id.to_s
+    chunks = [
+      {
+        content: "Seguridad Puerta nivel 1",
+        score: 0.42,
+        location_uri: "s3://bucket/bulk_chunks/1/abc/chunk_p5_1.txt",
+        metadata: {
+          "account_id" => account_id,
+          "canonical_name" => "Elemont MH",
+          "page_number" => "5",
+          "document_id" => "doc-5"
+        }
+      },
+      { content: "sin metadata", score: nil, location_uri: "s3://bucket/a.txt", metadata: nil }
+    ]
+
+    kept, rejected = service.send(:select_publishable_chunks, chunks, probe: { query: "puerta", stage: "publication_gate" })
+    assert_equal 1, kept.size
+    assert_equal 1, rejected
+    assert_nil Thread.current[:rag_validation_capture]
+
+    events = Rag::ValidationCapture.capture do
+      service.send(:select_publishable_chunks, chunks, probe: { query: "puerta", correlation_id: "cid-r", stage: "publication_gate" })
+    end
+    result = events.find { |row| row["kind"] == "retrieval_results" }
+    accepted = result["rows"].find { |row| row["decision"] == "accepted" }
+    refused = result["rows"].find { |row| row["decision"] == "rejected" }
+    assert_equal "retrieved", result["role"]
+    assert_equal "puerta", result["query"]
+    assert_equal "cid-r", result["correlation_id"]
+    assert_equal "Elemont MH", accepted["document"]
+    assert_equal "5", accepted["page"]
+    assert_equal "doc-5", accepted["document_id"]
+    assert_equal 0.42, accepted["score"]
+    assert_equal "Seguridad Puerta nivel 1", accepted["text"]
+    assert_equal "viewer_account", accepted["reason"]
+    assert_equal "metadata_unreadable", refused["reason"]
+    assert_equal "unavailable", refused["score"]
+    assert_equal "unavailable", refused["document"]
+  end
+
+  test "an aurora retry is identified and does not add a retrieve" do
+    service = BedrockRagService.new(account: accounts(:legacy))
+    calls = 0
+    client = Object.new
+    client.define_singleton_method(:retrieve) do |_params|
+      calls += 1
+      if calls.odd?
+        raise Aws::BedrockAgentRuntime::Errors::ServiceError.new(
+          nil,
+          "The Aurora DB instance db-X is resuming after being auto-paused."
+        )
+      end
+      Struct.new(:retrieval_results).new([])
+    end
+    service.instance_variable_set(:@client, client)
+    original = Bedrock::AuroraColdStartRetry.method(:sleep_for)
+    Bedrock::AuroraColdStartRetry.define_singleton_method(:sleep_for) { |_seconds| }
+
+    service.send(:retrieve_with_retry, { retrieval_query: { text: "consulta" } })
+    assert_nil Thread.current[:rag_validation_capture]
+    assert_equal 2, calls
+
+    events = Rag::ValidationCapture.capture do
+      service.send(:retrieve_with_retry, { retrieval_query: { text: "consulta" } })
+    end
+    retry_event = events.find { |row| row["kind"] == "retry" }
+    assert_equal "aurora_cold_start", retry_event["reason"]
+    assert_equal 1, retry_event["attempt"]
+    assert_equal 15, retry_event["delay_seconds"]
+    assert_equal 4, calls
+  ensure
+    Bedrock::AuroraColdStartRetry.define_singleton_method(:sleep_for, original) if original
+  end
+
+  test "retrieve and generate records the template without sending that label" do
+    service = BedrockRagService.new(account: accounts(:legacy))
+    received = nil
+    calls = 0
+    client = Object.new
+    client.define_singleton_method(:retrieve_and_generate) do |params|
+      calls += 1
+      received = params
+      Struct.new(:citations, :output).new(nil, nil)
+    end
+    service.instance_variable_set(:@client, client)
+    params = { input: { text: "q $search_results$" }, max_tokens: 200 }
+
+    events = Rag::ValidationCapture.capture do
+      service.send(:retrieve_and_generate_with_retry, params)
+    end
+
+    request = events.find { |row| row["kind"] == "retrieve_and_generate" }
+    result = events.find { |row| row["kind"] == "generation_result" }
+    assert_equal 1, calls
+    assert_nil received[:documentary_context]
+    assert_nil received["documentary_context"]
+    assert_equal 200, received[:max_tokens]
+    assert_equal "template", request["documentary_context"]
+    assert_equal "placeholders_are_not_resolved_chunks", request["documentary_context_note"]
+    assert_equal "unavailable", result["full_result_set"]
+    assert_equal "unavailable", result["answer"]
+  end
+
+  test "generation marks a template prompt and a resolved prompt without another invoke" do
+    client = BedrockClient.new
+    calls = 0
+    runtime = Object.new
+    runtime.define_singleton_method(:invoke_model) do |_params|
+      calls += 1
+      Struct.new(:body).new(StringIO.new({ "content" => [ { "text" => "respuesta" } ], "usage" => { "input_tokens" => 4 } }.to_json))
+    end
+    client.instance_variable_set(:@client, runtime)
+
+    events = Rag::ValidationCapture.capture do
+      client.generate_text("prompt con $search_results$", max_tokens: 300, temperature: 0, tracking: { attempt: 2, correlation_id: "cid-g" })
+      client.generate_text("prompt resuelto", max_tokens: 300, temperature: 0)
+    end
+
+    generated = events.select { |row| row["kind"] == "generate_text" }
+    results = events.select { |row| row["kind"] == "generation_result" }
+    assert_equal 2, calls
+    assert_equal "template", generated[0]["documentary_context"]
+    assert_equal "resolved", generated[1]["documentary_context"]
+    assert_equal 300, generated[0]["max_tokens"]
+    assert_equal "respuesta", results[0]["answer"]
+    assert_equal 4, results[0]["input_tokens"]
+    assert_equal "unavailable", results[0]["output_tokens"]
+    assert_nil results[0]["error_class"]
+    assert_equal 2, results[0]["attempt"]
+    assert_equal "cid-g", results[0]["correlation_id"]
+    assert_equal "resolved", results[1]["documentary_context"]
+  end
+
+  test "a problem that exceeds the cap records the omitted observation" do
+    trace = { truncated: false }
+    text = nil
+    events = Rag::ValidationCapture.capture do
+      text = SessionContextBuilder.send(:fit_problem, "", [], [], [ "x" * 700 ], [], trace)
+    end
+    idle_trace = { truncated: false }
+    idle = SessionContextBuilder.send(:fit_problem, "", [], [], [ "x" * 700 ], [], idle_trace)
+
+    fit = events.find { |row| row["kind"] == "context_fit" }
+    assert_equal text, idle
+    assert_equal "problem", fit["part"]
+    assert_equal true, fit["truncated"]
+    assert fit["omitted"].any? { |row| row["part"] == "observation" }
+    assert_nil idle_trace[:omitted]
+    assert_operator text.length, :<=, SessionContextBuilder::MAX_PROBLEM_CHARS
+  end
+
+  test "guidance truncation records the omitted tail and returns the same text" do
+    context = "## Active Field Problem\nGoal: #{'x' * 3000}\n"
+    args = { question: "la puerta no cierra", identity: nil, session_context: context, labels: [], locale: :es }
+    idle = Rag::CompanionGuidanceContext.new(**args).to_s
+    events = Rag::ValidationCapture.capture do
+      active = Rag::CompanionGuidanceContext.new(**args).to_s
+      assert_equal idle, active
+    end
+
+    fit = events.find { |row| row["kind"] == "context_fit" }
+    assert_equal "guidance", fit["part"]
+    assert_equal true, fit["truncated"]
+    assert_equal Rag::CompanionGuidanceContext::MAX_CHARS, fit["chars"]
+    assert fit["omitted"].any? { |row| row["part"] == "tail" && row["text"].present? }
+  end
+
+  test "episode delta records changed fields and skips an unchanged episode" do
+    before = Rag::ActiveEpisode.new
+    before.episode_id = "ep-1"
+    before.goal = { "text" => "puerta" }
+    before.facts = { "fault_code" => { "status" => "known", "value" => "8" } }
+    before.observations = [ { "text" => "no cierra" } ]
+    before.rejected = [ { "slot" => "fault_code", "value" => "8" } ]
+    before.pending_question = { "type" => "controller" }
+    after = before.fork
+    after.goal = { "text" => "imán" }
+    after.facts = { "fault_code" => { "status" => "known", "value" => "18" } }
+    after.observations = [ { "text" => "no magnetiza" } ]
+    after.rejected = []
+    after.pending_question = { "type" => "fault_code" }
+
+    events = Rag::ValidationCapture.capture do
+      Rag::EpisodeDelta.record(before, after, correlation_id: "cid-e")
+      Rag::EpisodeDelta.record(after, after.fork, correlation_id: "cid-e")
+    end
+    changed = events.find { |row| row["changed"] == true }
+    unchanged = events.find { |row| row["changed"] == false }
+
+    assert_equal "imán", changed.dig("goal", "after")
+    assert_equal [ "fault_code:known:18" ], changed.dig("facts", "added")
+    assert_equal [ "fault_code:known:8" ], changed.dig("facts", "removed")
+    assert_equal [ "no magnetiza" ], changed.dig("observations", "added")
+    assert_equal [ "no cierra" ], changed.dig("observations", "removed")
+    assert_equal [ "fault_code:8" ], changed.dig("rejected", "removed")
+    assert changed["pending_question"]["before"] != changed["pending_question"]["after"]
+    assert_nil changed["state"]
+    assert_nil changed["v"]
+    assert_equal "cid-e", changed["correlation_id"]
+    assert_equal false, unchanged["changed"]
+    assert_nil unchanged["goal"]
+    assert_nil unchanged["observations"]
+    Rag::EpisodeDelta.record(before, after)
+    assert_nil Thread.current[:rag_validation_capture]
+  end
+
+  private
+
+  def perception_result(move)
+    Rag::TurnPerception::Result.new(
+      valid: true, move: move, observations: [], pending_resolution: nil, clarification_target: nil,
+      identities: [], ambiguities: [], field_rejections: [], catalog_disagreements: [], invalid_reason: nil
+    )
+  end
+
+  def build_correction_perception
+    Rag::TurnPerception.build(
+      {
+        "move" => "report",
+        "assertions" => [],
+        "observations" => [ "La puerta no cierra" ],
+        "pending_resolution" => nil,
+        "clarification_target" => nil
+      },
+      turn: "Era código 18, no 8. La puerta no cierra.",
+      episode: Rag::ActiveEpisode.new,
+      catalog: nil,
+      viewer_account: accounts(:legacy)
+    )
+  end
+end
+
+class RagValidationCaptureHost
+  include RagQueryConcern
+
+  def initialize(account)
+    @current_account = account
+  end
+
+  attr_reader :current_account
 end

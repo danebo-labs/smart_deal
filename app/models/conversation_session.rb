@@ -825,12 +825,19 @@ class ConversationSession < ApplicationRecord
     self.turn_causal = nil
     turn = Rag::TurnText.truncate(content)
     if duplicate_user_correlation?(correlation_id)
+      note_owner_exit("duplicate_correlation", "duplicate_user_correlation", correlation_id)
       return duplicate_owner_result(turn)
     end
 
     snapshot = active_episode
     parsed = Rag::ActiveEpisode.parse(snapshot, now: now)
     context_episode = stale_episode?(parsed) ? Rag::ActiveEpisode.new : parsed
+    Rag::ValidationCapture.bind(
+      session_id: id,
+      account_id: account_id,
+      user_id: user_id,
+      episode_id: context_episode.episode_id
+    )
     photo_context = Rag::ActivePhotoContext.resolve(episode: context_episode, viewer_account: account)
     photo_status = photo_context.status
     interpreted = Rag::TurnInterpreter.call(
@@ -846,6 +853,7 @@ class ConversationSession < ApplicationRecord
     result = nil
     with_lock do
       if duplicate_user_correlation?(correlation_id)
+        note_owner_exit("duplicate_correlation", "duplicate_user_correlation", correlation_id)
         result = duplicate_owner_result(turn)
         next
       end
@@ -901,6 +909,9 @@ class ConversationSession < ApplicationRecord
       return apply_owner_fallback!(turn, correlation_id, user_id, now, locale, focus, "episode_budget_refused")
     end
 
+    Rag::ValidationCapture.bind(episode_id: working.episode_id)
+    Rag::EpisodeDelta.record(before_episode, working, correlation_id: correlation_id)
+
     explained = Rag::QueryComposer.explain(
       state: working, turn: turn, perception: perception, decision: decision,
       active_photo_context: photo_context
@@ -928,6 +939,14 @@ class ConversationSession < ApplicationRecord
     stored = active_episode
     parsed = Rag::ActiveEpisode.parse(stored, now: now)
     episode = stale_episode?(parsed) ? Rag::ActiveEpisode.new : parsed
+    Rag::ValidationCapture.bind(
+      session_id: id,
+      account_id: account_id,
+      user_id: user_id,
+      episode_id: episode.episode_id
+    )
+    note_owner_exit("fallback", status.to_s, correlation_id)
+    Rag::EpisodeDelta.record(episode, episode, correlation_id: correlation_id)
     decision = Rag::RoutePolicy.fallback(
       episode: episode,
       turn: turn,
@@ -950,6 +969,17 @@ class ConversationSession < ApplicationRecord
     )
     persist_user_turn!(stored, result, turn, user_id, correlation_id, now, keep_episode: true)
     result
+  end
+
+  def note_owner_exit(exit_name, condition, correlation_id)
+    return unless Rag::ValidationCapture.active?
+
+    Rag::ValidationCapture.record(
+      "route_exit",
+      "exit" => exit_name,
+      "condition" => condition,
+      "correlation_id" => correlation_id
+    )
   end
 
   def duplicate_owner_result(turn)

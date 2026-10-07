@@ -108,12 +108,28 @@ module Rag
     def to_s
       text = [ instruction, turn_block ].compact_blank.join("\n\n")
       @context_truncated = text.length > MAX_CHARS
-      @context_truncated ? text[0, MAX_CHARS] : text
+      rendered = @context_truncated ? text[0, MAX_CHARS] : text
+      record_guidance_fit(text, rendered) if @context_truncated
+      rendered
     end
 
     def context_truncated?
       @context_truncated == true
     end
+
+    def record_guidance_fit(text, rendered)
+      return unless ValidationCapture.active?
+
+      ValidationCapture.record(
+        "context_fit",
+        "part" => "guidance",
+        "chars" => rendered.length,
+        "truncated" => true,
+        "omitted" => [ { "part" => "tail", "text" => text[MAX_CHARS..] } ],
+        "context_cap" => MAX_CHARS
+      )
+    end
+    private :record_guidance_fit
 
     # The line in to_s is the generator-visible objective. These readers are
     # the same derivation, for diagnostics only.

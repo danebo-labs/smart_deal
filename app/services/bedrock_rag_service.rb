@@ -383,6 +383,11 @@ class BedrockRagService
   end
 
   def self.deny_retrieval_result(question:, session_id: nil, response_locale: nil)
+    Rag::ValidationCapture.record(
+      "route_exit",
+      "exit" => "deny_retrieval",
+      "condition" => "pin_denied"
+    )
     locale = response_locale.presence || I18n.locale
     {
       answer: I18n.with_locale(locale) { I18n.t("rag.pin_unavailable") },
@@ -503,6 +508,7 @@ class BedrockRagService
     end
     generation_truncated = context_truncated == true || (companion && guidance.context_truncated?)
     raw_answer = begin
+      Rag::ValidationCapture.attempt_unless_set(1)
       document_identity_generator.query(
         prompt,
         max_tokens: @rag_config[:generation_max_tokens],
@@ -671,6 +677,7 @@ class BedrockRagService
     focus_empty = false
 
     2.times do |index|
+      Rag::ValidationCapture.attempt = index + 1
       if index == 1
         config = unknown_identity_retrieval_config(
           question: question,
@@ -712,8 +719,24 @@ class BedrockRagService
       chunks = Array(retrieval[:chunks])
       if chunks.empty?
         focus_empty = true if apply_filter && index.zero?
-        next if retry_open && index.zero?
+        if retry_open && index.zero?
+          Rag::ValidationCapture.record(
+            "route_exit",
+            "exit" => "retry_open",
+            "condition" => "empty_retrieval",
+            "attempt" => index + 1,
+            "correlation_id" => query_correlation_id
+          )
+          next
+        end
 
+        Rag::ValidationCapture.record(
+          "route_exit",
+          "exit" => "empty_guidance",
+          "condition" => "empty_retrieval",
+          "attempt" => index + 1,
+          "correlation_id" => query_correlation_id
+        )
         log_open_retrieval(query_correlation_id, outcome_reason: @open_retrieval_outcome_reason)
         return unknown_empty_guidance_result(
           question: question, raw_turn: raw_turn, session_id: session_id,
@@ -1097,6 +1120,7 @@ class BedrockRagService
     }
     Thread.current[:document_identity_scope] = stats
     Rails.logger.info("[DOCUMENT_IDENTITY] #{stats.to_json}")
+    capture_identity_policy(original, applied)
   end
 
   def resolved_equipment_identity(episode, equipment_identity)
@@ -1111,6 +1135,12 @@ class BedrockRagService
   end
 
   def identity_closed_result(status:, reason:, question:, response_locale:, retrieval: nil, model_invoked: false)
+    Rag::ValidationCapture.record(
+      "route_exit",
+      "exit" => "identity_closed",
+      "condition" => reason&.to_s.presence || "unavailable",
+      "status" => status.to_s
+    )
     seal_identity_outcome(status: status, reason: reason, fallback: false)
     locale = effective_response_locale(question, response_locale: response_locale)
     answer = Rag::AnswerSafetyProcessor.new(locale: locale).call("DATA_NOT_AVAILABLE", evidence: [])
@@ -1149,6 +1179,7 @@ class BedrockRagService
       sent_question: sent_question,
       truncated: truncated
     ))
+    record_published_answer(result, prompt, truncated)
     result
   rescue StandardError => error
     Rails.logger.warn("generation trace failed #{error.class}")
@@ -1209,7 +1240,7 @@ class BedrockRagService
       :answered
     end
 
-    {
+    result = {
       answer: answer_text,
       citations: @citation_processor.build_numbered_references(citations, answer_text, question: question),
       retrieved_citations: citations.compact,
@@ -1221,6 +1252,8 @@ class BedrockRagService
       route_outcome: route_outcome,
       document_identity: Thread.current[:document_identity_scope]
     }
+    capture_cited_sources(result[:citations])
+    result
   end
 
   def document_identity_citation_records(chunks)
@@ -1599,21 +1632,76 @@ class BedrockRagService
   # Retries the retrieve_and_generate call when Aurora Serverless is cold-starting.
   # Delegates to Bedrock::AuroraColdStartRetry (shared with KbSyncService).
   def retrieve_and_generate_with_retry(params)
-    Rag::ValidationCapture.record("retrieve_and_generate", params)
-    Bedrock::AuroraColdStartRetry.with_retry(
-      error_classes: [ Aws::BedrockAgentRuntime::Errors::ServiceError ]
+    record_retrieve_and_generate_request(params)
+    response =     Bedrock::AuroraColdStartRetry.with_retry(
+      error_classes: [ Aws::BedrockAgentRuntime::Errors::ServiceError ],
+      on_retry: (Rag::ValidationCapture.active? ? method(:note_cold_start_retry) : nil)
     ) do
       @client.retrieve_and_generate(params)
     end
+    record_retrieve_and_generate_response(response)
+    response
   end
 
   def retrieve_with_retry(params)
-    Rag::ValidationCapture.record("retrieve", params)
+    Rag::ValidationCapture.record("retrieve", params) if Rag::ValidationCapture.active?
     Bedrock::AuroraColdStartRetry.with_retry(
-      error_classes: [ Aws::BedrockAgentRuntime::Errors::ServiceError ]
+      error_classes: [ Aws::BedrockAgentRuntime::Errors::ServiceError ],
+      on_retry: (Rag::ValidationCapture.active? ? method(:note_cold_start_retry) : nil)
     ) do
       @client.retrieve(params)
     end
+  end
+
+  def record_retrieve_and_generate_request(params)
+    return unless Rag::ValidationCapture.active?
+
+    recorded = params.is_a?(Hash) ? params.dup : { "params" => "unavailable" }
+    recorded = recorded.merge(
+      "documentary_context" => "template",
+      "documentary_context_note" => "placeholders_are_not_resolved_chunks"
+    )
+    Rag::ValidationCapture.record("retrieve_and_generate", recorded)
+  end
+
+  def record_retrieve_and_generate_response(response)
+    return unless Rag::ValidationCapture.active?
+
+    output = response.respond_to?(:output) ? response.output : nil
+    answer = output.respond_to?(:text) ? output.text : "unavailable"
+    citations = response.respond_to?(:citations) ? response.citations : nil
+    rows = []
+    Array(citations).each do |citation|
+      refs = citation.respond_to?(:retrieved_references) ? Array(citation.retrieved_references) : []
+      refs.each do |ref|
+        chunk = reference_to_chunk(ref)
+        publishable, reason = publication_gate(chunk)
+        score = ref.respond_to?(:score) ? ref.score : nil
+        rows << retrieved_capture_row(chunk, publishable, reason).merge(
+          "score" => score.nil? ? "unavailable" : score,
+          "decision" => publishable ? "cited" : "rejected"
+        )
+      end
+    end
+    Rag::ValidationCapture.record(
+      "generation_result",
+      "source" => "retrieve_and_generate",
+      "answer" => answer,
+      "full_result_set" => "unavailable",
+      "error_class" => nil,
+      "rows" => rows
+    )
+  end
+
+  def note_cold_start_retry(attempt, delay)
+    return unless Rag::ValidationCapture.active?
+
+    Rag::ValidationCapture.record(
+      "retry",
+      "reason" => "aurora_cold_start",
+      "attempt" => attempt,
+      "delay_seconds" => delay
+    )
   end
 
   # Exhaustive queries retrieve broadly, then rerank down before generation.
@@ -2571,6 +2659,8 @@ class BedrockRagService
     rejected = 0
     seen = 0
     rank = 0
+    capture = Rag::ValidationCapture.active?
+    rows = [] if capture
     Array(raw).each do |citation|
       refs = Array(citation.respond_to?(:retrieved_references) ? citation.retrieved_references : nil)
       seen += refs.size
@@ -2578,7 +2668,8 @@ class BedrockRagService
       refs.each do |ref|
         rank += 1
         chunk = reference_to_chunk(ref)
-        publishable = publishable_retrieved_chunk?(chunk)
+        publishable, reason = publication_gate(chunk)
+        rows << retrieved_capture_row(chunk, publishable, reason) if capture
         r1a_probe_chunk(correlation_id, query, chunk, publishable, rank, "bedrock_raw_result")
         r1a_probe_chunk(correlation_id, query, chunk, publishable, rank, "publication_gate")
         if publishable
@@ -2593,6 +2684,16 @@ class BedrockRagService
         generated_response_part: citation.respond_to?(:generated_response_part) ? citation.generated_response_part : nil,
         retrieved_references: kept
       )
+    end
+    if capture
+      payload = {
+        "role" => "cited",
+        "source" => "authorize_raw_citations",
+        "query" => query.presence || "unavailable",
+        "rows" => rows
+      }
+      payload["correlation_id"] = correlation_id if correlation_id.present?
+      Rag::ValidationCapture.record("retrieval_results", payload)
     end
     CitationGate.new(groups: groups, rejected: rejected, seen: seen)
   end
@@ -2644,28 +2745,35 @@ class BedrockRagService
   # Missing or unreadable metadata fails closed. Pin authorization stays
   # on KnowledgeScopePolicy and is not this method.
   def publishable_retrieved_chunk?(chunk)
+    publication_gate(chunk).first
+  end
+
+  def publication_gate(chunk)
     metadata = retrieval_chunk_metadata(chunk)
-    return false if metadata.nil?
+    return [ false, "metadata_unreadable" ] if metadata.nil?
 
     account_id = metadata["account_id"].to_s.presence
-    return false if account_id.blank?
+    return [ false, "account_missing" ] if account_id.blank?
 
     photo = metadata["ingestion_path"].to_s == Rag::SharedManualCorpus::PHOTO_INGESTION_PATH
     corpus = metadata[Rag::SharedManualCorpus::ATTRIBUTE].to_s
-    return true if account_id == @account&.id.to_s
-    return false if photo
-    return false if corpus == Rag::SharedManualCorpus::ACCOUNT
-    return true if corpus == Rag::SharedManualCorpus::GENERAL
-    return true if Rag::SharedManualCorpus.member_id?(account_id)
+    return [ true, "viewer_account" ] if account_id == @account&.id.to_s
+    return [ false, "other_account_photo" ] if photo
+    return [ false, "manual_corpus_account" ] if corpus == Rag::SharedManualCorpus::ACCOUNT
+    return [ true, "manual_corpus_general" ] if corpus == Rag::SharedManualCorpus::GENERAL
+    return [ true, "shared_corpus" ] if Rag::SharedManualCorpus.member_id?(account_id)
 
-    false
+    [ false, "foreign_account" ]
   end
 
   def select_publishable_chunks(chunks, probe: nil)
     kept = []
     rejected = 0
+    capture = Rag::ValidationCapture.active?
+    rows = [] if capture
     Array(chunks).each_with_index do |chunk, index|
-      publishable = publishable_retrieved_chunk?(chunk)
+      publishable, reason = publication_gate(chunk)
+      rows << retrieved_capture_row(chunk, publishable, reason) if capture
       if probe
         score = chunk.is_a?(Hash) ? (chunk[:score] || chunk["score"]) : nil
         %w[bedrock_raw_result publication_gate].each do |stage|
@@ -2682,7 +2790,156 @@ class BedrockRagService
         rejected += 1
       end
     end
+    record_retrieval_results(rows, probe) if capture
     [ kept, rejected ]
+  end
+
+  def record_retrieval_results(rows, probe)
+    query = probe.is_a?(Hash) ? probe[:query] : nil
+    source = probe.is_a?(Hash) ? probe[:stage].to_s.presence : nil
+    payload = {
+      "role" => "retrieved",
+      "source" => source || "publication_gate",
+      "query" => query.presence || "unavailable",
+      "rows" => rows
+    }
+    correlation_id = probe[:correlation_id] if probe.is_a?(Hash)
+    payload["correlation_id"] = correlation_id if correlation_id.present?
+    Rag::ValidationCapture.record("retrieval_results", payload)
+  end
+
+  def retrieved_capture_row(chunk, publishable, reason)
+    metadata = retrieval_chunk_metadata(chunk) || {}
+    {
+      "document" => metadata["canonical_name"].presence || metadata["original_filename"].presence || "unavailable",
+      "page" => metadata["page_number"].presence || "unavailable",
+      "document_id" => metadata["document_id"].presence || "unavailable",
+      "uri" => captured_chunk_uri(chunk),
+      "score" => captured_chunk_score(chunk),
+      "text" => captured_chunk_text(chunk),
+      "decision" => publishable ? "accepted" : "rejected",
+      "reason" => reason
+    }
+  end
+
+  def captured_chunk_score(chunk)
+    return "unavailable" unless chunk.is_a?(Hash)
+
+    score = chunk.key?(:score) ? chunk[:score] : chunk["score"]
+    score.nil? ? "unavailable" : score
+  end
+
+  def captured_chunk_text(chunk)
+    return "unavailable" unless chunk.is_a?(Hash)
+
+    text = chunk.key?(:content) ? chunk[:content] : chunk["content"]
+    text = text.text if text.respond_to?(:text)
+    text.to_s.presence || "unavailable"
+  end
+
+  def captured_chunk_uri(chunk)
+    return "unavailable" unless chunk.is_a?(Hash)
+
+    uri = chunk[:location_uri] || chunk["location_uri"]
+    if uri.blank?
+      location = chunk[:location] || chunk["location"]
+      if location.is_a?(Hash)
+        uri = location[:uri] || location["uri"]
+      elsif location.respond_to?(:s3_location)
+        uri = location.s3_location&.uri
+      end
+    end
+    uri.presence || "unavailable"
+  end
+
+  def capture_cited_sources(citations)
+    return unless Rag::ValidationCapture.active?
+
+    Rag::ValidationCapture.record(
+      "retrieval_results",
+      "role" => "cited",
+      "rows" => Array(citations).map { |citation| cited_capture_row(citation) }
+    )
+  end
+
+  def cited_capture_row(citation)
+    data = citation.is_a?(Hash) ? citation.deep_stringify_keys : {}
+    metadata = data["metadata"].is_a?(Hash) ? data["metadata"].stringify_keys : {}
+    location = data["location"].is_a?(Hash) ? data["location"].stringify_keys : {}
+    {
+      "document" => data["canonical_name"].presence || data["title"].presence || metadata["canonical_name"].presence || "unavailable",
+      "page" => data["page"].presence || data["page_number"].presence || metadata["page_number"].presence || "unavailable",
+      "uri" => data["uri"].presence || location["uri"].presence || metadata["original_source_uri"].presence || "unavailable",
+      "document_id" => data["document_id"].presence || metadata["document_id"].presence || "unavailable",
+      "score" => data.key?("score") && !data["score"].nil? ? data["score"] : "unavailable",
+      "text" => data["content"].presence || "unavailable",
+      "decision" => "cited"
+    }
+  end
+
+  def capture_identity_policy(original, applied)
+    return unless Rag::ValidationCapture.active?
+
+    chunks = Array(original)
+    labels = Array(applied.labels)
+    applicability = Array(applied.applicability)
+    aligned = labels.size == chunks.size && (applicability.empty? || applicability.size == chunks.size)
+    rows = if aligned
+      chunks.each_with_index.map { |chunk, index|
+        identity_policy_row(chunk, applicability[index], applied)
+      }
+    else
+      [ { "alignment" => "unavailable" } ]
+    end
+    Rag::ValidationCapture.record(
+      "retrieval_policy",
+      "role" => "policy",
+      "status" => applied.status&.to_s || "unavailable",
+      "reason" => applied.reason&.to_s,
+      "rows" => rows
+    )
+  end
+
+  def identity_policy_row(chunk, applicability, applied)
+    metadata = retrieval_chunk_metadata(chunk) || {}
+    decision, reason = identity_policy_decision(applicability, applied)
+    {
+      "document" => metadata["canonical_name"].presence || metadata["original_filename"].presence || "unavailable",
+      "page" => metadata["page_number"].presence || "unavailable",
+      "uri" => captured_chunk_uri(chunk),
+      "document_id" => metadata["document_id"].presence || "unavailable",
+      "decision" => decision,
+      "reason" => reason,
+      "body_replaced" => applicability == "reference_only"
+    }
+  end
+
+  def identity_policy_decision(applicability, applied)
+    case applicability
+    when "compatible", "neutral"
+      [ "accepted", "this_job" ]
+    when "reference_only"
+      [ "reference_only", "other_equipment" ]
+    when nil
+      applied.reason.to_s == "not_required" ? [ "not_required", "not_required" ] : [ "rejected", "applicability_nil" ]
+    else
+      [ "unavailable", "unavailable" ]
+    end
+  end
+
+  def record_published_answer(result, prompt, truncated)
+    return unless Rag::ValidationCapture.active?
+
+    Rag::ValidationCapture.record(
+      "published_answer",
+      "answer" => result[:answer],
+      "generation_mode" => result[:generation_mode],
+      "route_outcome" => result[:route_outcome],
+      "truncated" => truncated == true,
+      "prompt_chars" => prompt.to_s.length,
+      "documentary_context" => Rag::ValidationCapture.documentary_context(prompt),
+      "error_class" => nil
+    )
   end
 
   def r1a_probe_filter(correlation_id, question, params, reason: nil, attempt: nil)

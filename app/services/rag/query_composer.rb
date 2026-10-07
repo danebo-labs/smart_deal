@@ -76,12 +76,33 @@ module Rag
 
       text = @turn.dup
       Array(@perception&.identities).select { |item| item.kind == "negate" }.each do |item|
-        text = excise(text, item.span)
+        text = excise_negation(text, item)
       end
-      rejected_values.each do |value|
-        text = excise(text, value)
+      text = strip_rejected_phrases(text)
+      tidy(text).presence
+    end
+
+    def excise_negation(text, item)
+      value = item.value.presence || item.span
+      return SlotRejection.excise_text(text, "fault_code", value) if item.slot == "fault_code"
+      return text if value.to_s.match?(/\A\d+\z/)
+
+      excise(text, item.span.presence || value)
+    end
+
+    def strip_rejected_phrases(text)
+      Array(@state.rejected).each do |item|
+        text = SlotRejection.excise_text(text, item["slot"], item["value"])
       end
-      text.squish.presence
+      text
+    end
+
+    def tidy(text)
+      cleaned = text.to_s
+      cleaned = cleaned.gsub(/[ \t]+([,.;:])/, '\1')
+      cleaned = cleaned.gsub(/[,:;]\s*\./, ".")
+      cleaned = cleaned.gsub(/\s+/, " ")
+      cleaned.sub(/\A\s*[,.;:]+\s*/, "").sub(/\s*[,:;]\s*\z/, "").strip
     end
 
     # A numeric fault code is invisible to the harness unless the retrieval
@@ -124,12 +145,36 @@ module Rag
     end
 
     def observations
-      Array(@state.observations).reverse.filter_map { |item|
+      rows = Array(@state.observations)
+      labels = rows.map { |item| ObservationText.normalize(item["text"]) }
+      seen = []
+      rows.reverse.filter_map { |item|
         text = item["text"].to_s
-        next if text.blank? || rejected_values.any? { |value| text.match?(token_pattern(value)) }
+        next if text.blank? || rejected_observation?(text)
+        next if ObservationText.continuity_echo?(text) || ObservationText.trailing_echo?(text, labels)
 
+        label = ObservationText.normalize(text)
+        next if seen.include?(label) || covered_by_goal_or_turn?(text)
+
+        seen << label
         text
       }.first(ActiveEpisode::MAX_STORED_OBSERVATIONS)
+    end
+
+    def rejected_observation?(text)
+      Array(@state.rejected).any? { |item| SlotRejection.attributable?(text, item["slot"], item["value"]) }
+    end
+
+    def covered_by_goal_or_turn?(text)
+      ObservationText.covered_by?(goal_source, text) || ObservationText.covered_by?(cleaned_turn, text)
+    end
+
+    def goal_source
+      @state.goal&.dig("text").to_s
+    end
+
+    def cleaned_turn
+      @cleaned_turn ||= current_turn.to_s
     end
 
     def photo_terms
@@ -141,14 +186,23 @@ module Rag
     end
 
     def goal_text
-      text = @state.goal&.dig("text").to_s
-      return nil if text.blank? || rejected_values.any? { |value| text.match?(token_pattern(value)) }
+      text = goal_source
+      return nil if text.blank?
+
+      Array(@state.rejected).each do |item|
+        text = SlotRejection.excise_text(text, item["slot"], item["value"])
+      end
+      return nil if text.blank? || said_in_turn?(text)
 
       text
     end
 
-    def rejected_values
-      @rejected_values ||= Array(@state.respond_to?(:rejected) ? @state.rejected : []).filter_map { |item| item["value"].presence }
+    def said_in_turn?(text)
+      return true if ObservationText.covered_by?(cleaned_turn, text)
+
+      holder = ObservationText.normalize(cleaned_turn).gsub(" y ", " ")
+      phrase = ObservationText.normalize(text).gsub(" y ", " ")
+      phrase.present? && holder.match?(/(?<![[:alnum:]])#{Regexp.escape(phrase)}(?![[:alnum:]])/)
     end
 
     def rejected?(slot, value)
@@ -165,7 +219,9 @@ module Rag
     def push(parts, text)
       label = FollowupQueryRewriter.normalize_label(text)
       return if label.blank?
-      return if parts.any? { |part| FollowupQueryRewriter.normalize_label(part) == label }
+
+      joined = FollowupQueryRewriter.normalize_label(parts.join(" "))
+      return if joined.match?(/(?<![[:alnum:]])#{Regexp.escape(label)}(?![[:alnum:]])/)
 
       parts << text.to_s.squish
     end
@@ -178,13 +234,24 @@ module Rag
 
     def fit(parts, roles)
       @truncated = false
-      while parts.any? && parts.join(" ").length > FollowupQueryRewriter::MAX_COMPOSED_CHARS
+      while over_budget?(parts)
+        index = roles.rindex(:observation) || roles.rindex(:photo)
+        break unless index
+
+        parts.delete_at(index)
+        roles.delete_at(index)
+        @truncated = true
+      end
+      while over_budget?(parts)
         parts.pop
         roles.pop
         @truncated = true
       end
-      joined = parts.join(" ").squish
-      joined.presence
+      parts.join(" ").squish.presence
+    end
+
+    def over_budget?(parts)
+      parts.any? && parts.join(" ").length > FollowupQueryRewriter::MAX_COMPOSED_CHARS
     end
 
     def component_tokens(parts, roles, identity_values:, identifier_values:, observation_values:, photo_values:, goal_value:, truncated:)

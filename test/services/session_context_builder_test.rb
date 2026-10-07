@@ -696,6 +696,48 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
     end
   end
 
+  test "session 195 keeps the goal and the code inside 600 and in the rag prompt" do
+    [ "12", "14" ].each do |turn|
+      session = session_195(turn)
+      travel_to FIELD_PROBLEM_NOW do
+        session.add_to_history("user", "¿Y ahora?")
+        with_companion_flags do
+          block = SessionContextBuilder.field_problem_block(session)
+          context = SessionContextBuilder.build(session)
+          measured = context.split("## Recent Conversation", 2).first
+          prompt = BedrockRagService.new(account: accounts(:legacy)).build_complete_optimized_config(
+            question: "¿Y ahora?",
+            response_locale: :es,
+            session_context: context,
+            output_channel: :web
+          ).dig(:generation_configuration, :prompt_template, :text_prompt_template)
+
+          assert_operator block.length, :<=, 600, block
+          assert_equal block.length + 2, measured.length
+          assert measured.end_with?("\n\n")
+          [
+            "Goal: la puerta 1 no termina de cerrar el imán no magnetiza",
+            "Identifiers: Elemont MH, CEA15",
+            "Fault code: 18",
+            "Not current: fault code 8",
+            "El LED 7 está apagado",
+            "no veo una obstrucción",
+            "planta 2"
+          ].each do |phrase|
+            next if turn == "12" && phrase == "planta 2"
+
+            assert_includes block, phrase, "#{turn} #{phrase}"
+            assert_includes prompt, phrase, "#{turn} #{phrase}"
+          end
+          assert_includes block, "clic"
+          assert_not_includes block, "Sigue igual"
+          assert_not_includes block, "código 8"
+          assert_not_includes prompt, "código 8"
+        end
+      end
+    end
+  end
+
   test "active field problem is absent unless both flags are on" do
     session = episode_session(facts: { "manufacturer" => known_fact("Fuji Yida") })
 
@@ -949,6 +991,27 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
     episode = Rag::ActiveEpisode.open(correlation_id: "photo", now: FIELD_PROBLEM_NOW)
     episode.active_photo = { "field_photo_id" => photo.id }
     Rag::ActivePhotoContext.resolve(episode: episode, viewer_account: accounts(:legacy))
+  end
+
+  def session_195(turn)
+    episode = JSON.parse(Rails.root.join("test/fixtures/files/field_companion/stage2_session_195.json").read).fetch(turn)
+    ConversationSession.create!(
+      identifier: "web:s195_#{turn}_#{SecureRandom.hex(3)}",
+      channel: "web",
+      expires_at: 30.days.from_now,
+      active_episode: {
+        "v" => 1,
+        "episode_id" => "ep_195",
+        "status" => "active",
+        "opened_at" => (FIELD_PROBLEM_NOW - 1.hour).iso8601,
+        "updated_at" => (FIELD_PROBLEM_NOW - 5.minutes).iso8601,
+        "goal" => episode["goal"],
+        "facts" => episode["facts"],
+        "identifiers" => episode["identifiers"],
+        "observations" => episode["observations"],
+        "rejected" => episode["rejected"]
+      }
+    )
   end
 
   def episode_session(goal: "Resortes", facts: {}, identifiers: [], conflicts: [], observations: [], rejected: [], updated_at: nil, channel: "web")

@@ -1599,6 +1599,7 @@ class BedrockRagService
   # Retries the retrieve_and_generate call when Aurora Serverless is cold-starting.
   # Delegates to Bedrock::AuroraColdStartRetry (shared with KbSyncService).
   def retrieve_and_generate_with_retry(params)
+    Rag::ValidationCapture.record("retrieve_and_generate", params)
     Bedrock::AuroraColdStartRetry.with_retry(
       error_classes: [ Aws::BedrockAgentRuntime::Errors::ServiceError ]
     ) do
@@ -1607,6 +1608,7 @@ class BedrockRagService
   end
 
   def retrieve_with_retry(params)
+    Rag::ValidationCapture.record("retrieve", params)
     Bedrock::AuroraColdStartRetry.with_retry(
       error_classes: [ Aws::BedrockAgentRuntime::Errors::ServiceError ]
     ) do

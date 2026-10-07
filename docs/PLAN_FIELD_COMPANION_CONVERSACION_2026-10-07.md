@@ -300,6 +300,28 @@ Reparaciones, con test local antes de repetir. No se hizo una tercera. La misma 
 
 Veredicto de la etapa: `BLOQUEADA`. No es `EPISODIO_VALIDADO`. La etapa 3 no empieza.
 
+#### Reparaciones locales posteriores (2026-10-07)
+
+Sobre `9dbc655`. Sin Bedrock, sin Retrieve, sin otra pasada y sin despliegue. La etapa 2 sigue `BLOQUEADA`. Estas reparaciones no reinician el presupuesto ni autorizan otra corrida. Veredicto de este diff: `REPARACIONES_LOCALES_COMPLETADAS`. No es `EPISODIO_VALIDADO`.
+
+La medición de 601 caracteres del turno 12 y del 14 era el bloque de 599 más los dos saltos de línea que lo separan de `## Recent Conversation`. Esos dos caracteres no entran en `MAX_PROBLEM_CHARS`. El límite sigue en 600.
+
+Con el estado guardado de la sesión 195, turnos 12 y 14, el bloque reserva el objetivo, Elemont MH, CEA15, el código 18 y `Not current: fault code 8`. Una observación cubierta por el objetivo sale del bloque solo si ese objetivo se imprime. Los ecos exactos y «Sigue igual» no ocupan cupo. El mismo bloque entra en `text_prompt_template` de `build_complete_optimized_config`, que es el prompt de la ruta `rag_global`. No se subió el límite y no se escribieron Elemont, CEA15 ni los hechos del fixture en las reglas de producto.
+
+Una corrección de código ya no vacía el resto del turno. La instrucción del intérprete deja de pedir observaciones vacías y `recover_stated_correction` combina. «Era código 18, no 8. La guía no tiene obstrucción» guarda 18, rechaza 8 y conserva la guía. El rechazo es por slot: LED 8, puerta 8 y planta 8 siguen. El mensaje del técnico no se reescribe. La consulta no deja «no .» ni vuelve a poner el código 8 como vigente. La redundancia entre el turno, el objetivo y las observaciones se quita sin soltar la identidad ni el código cuando la lista llena el tope.
+
+`append_observation!` no guarda una copia normalizada ni un eco de continuidad. No une dos frases por compartir tokens: «no cierra» y «cierra», o el clic con «pero», siguen siendo comprobaciones distintas. Un «Sigue igual» no borra el objetivo ni las comprobaciones. Al llegar al tope de 12, la observación contenida en el objetivo no es la que sale.
+
+El armado de mensajes del journey A ya no antepone un hecho de otro turno. Si la pregunta pide el origen del clic, el significado de un código o de un LED, o un terminal, y el fixture no lo trae, la respuesta añadida es «No lo sé.». No se inventa ese origen. Una comprobación ya dicha no se vuelve a pegar como si faltara.
+
+`pending_question` sigue vacío. No se proyecta como pregunta pendiente algo inferido del texto de la respuesta: no hay un mecanismo que guarde la pregunta que Danebo acaba de hacer. Propuesta aparte, no implementada: al cerrar el turno, si la respuesta termina en una comprobación, guardarla como pregunta abierta y no repetirla cuando el técnico ya dijo que no la sabe. Eso queda fuera de este diff.
+
+La próxima corrida, solo si se autoriza, usa `script/field_companion/stage2_journey_a.rb` con `STAGE2_JOURNEY_AUTHORIZED=1`. El runner local `tmp/stage2_journey_a.rb` carga ese archivo. En esa corrida la traza guarda la consulta y el filtro enviados a Retrieve, la salida cruda del intérprete antes de `TurnPerception`, el prompt final de `retrieve_and_generate`, el `correlation_id`, el recorte y las citas. No añade llamadas. No guarda secretos. No recupera los requests de las sesiones 193, 194 y 195: esos cuerpos no se guardaron.
+
+Sigue sin demostrarse, y este diff no lo cambia: el ranking que no devolvió el Elemont en las consultas del episodio, el cuerpo del filtro de la cuenta 1 de esas pasadas, si algún chunk del Elemont habla de la puerta o del imán, y si `manual-cea15p` aplica a la placa CEA15. No se tocó el pin ni el filtro de aplicabilidad.
+
+Condición para otra validación: revisión de este diff y una autorización explícita. El techo sigue en 126 llamadas de esta etapa, 168 globales y US$2,50. Lo ya gastado, 80 llamadas y US$0,161562, no se borra. La etapa 3 no empieza.
+
 ### 3. Verificar ese alcance en producción
 
 Primera consulta y continuidad del mismo episodio, sobre el journey A ya aceptado en local. Una pasada. Sin sonda previa. Sin L3, sin journey B y sin T-F. Las reparaciones de las etapas 1 y 2 entran por el procedimiento de despliegue vigente.

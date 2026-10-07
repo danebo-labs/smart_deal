@@ -220,6 +220,43 @@ class Rag::ActiveEpisodeTest < ActiveSupport::TestCase
     assert_equal texts.second, reloaded.observations.first["text"]
   end
 
+  test "a repeated click and a continuity echo do not grow the list" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: NOW)
+    episode.assign_goal!("la puerta 1 no termina de cerrar el imán no magnetiza", correlation_id: "seed")
+    episode.append_observation!("Al pedir cierre se oye un clic y la puerta no termina de cerrar", correlation_id: "seed")
+    episode.append_observation!("la puerta no cierra", correlation_id: "seed")
+    before = episode.observations.pluck("text")
+
+    episode.append_observation!("Sigue igual", correlation_id: "seed")
+    episode.append_observation!("Al pedir cierre se oye un clic y la puerta no termina de cerrar. Sigue igual.", correlation_id: "seed")
+    episode.append_observation!("Al pedir cierre se oye un clic, pero no termina de cerrar", correlation_id: "seed")
+    episode.append_observation!("la puerta cierra", correlation_id: "seed")
+
+    texts = episode.observations.pluck("text")
+    assert_equal before + [
+      "Al pedir cierre se oye un clic, pero no termina de cerrar",
+      "la puerta cierra"
+    ], texts
+  end
+
+  test "the observation that originated the goal survives the store cap" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: NOW)
+    episode.assign_goal!("la puerta 1 no termina de cerrar el imán no magnetiza", correlation_id: "seed")
+    episode.append_observation!("la puerta 1 no termina de cerrar", correlation_id: "seed")
+    episode.append_observation!("el imán no magnetiza", correlation_id: "seed")
+    filler = Array.new(Rag::ActiveEpisode::MAX_STORED_OBSERVATIONS - 2) { |index| "comprobacion distinta #{index}" }
+    filler.each { |text| episode.append_observation!(text, correlation_id: "seed") }
+
+    episode.append_observation!("la cabina está detenida cerca de planta 2", correlation_id: "seed")
+
+    texts = episode.observations.pluck("text")
+    assert_equal Rag::ActiveEpisode::MAX_STORED_OBSERVATIONS, texts.size
+    assert_includes texts, "la puerta 1 no termina de cerrar"
+    assert_includes texts, "el imán no magnetiza"
+    assert_includes texts, "la cabina está detenida cerca de planta 2"
+    assert_not_includes texts, filler.first
+  end
+
   test "field companion flags are off unless the env value is the string true" do
     with_flags(nil) do
       assert_not Rag::FieldCompanionEpisodeFlag.enabled?

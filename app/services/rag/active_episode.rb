@@ -177,11 +177,21 @@ module Rag
       literal = text.to_s.squish.first(MAX_OBSERVATION_CHARS)
       return if literal.blank?
 
-      label = FollowupQueryRewriter.normalize_label(literal)
-      return if observations.any? { |item| FollowupQueryRewriter.normalize_label(item["text"]) == label }
+      labels = observations.map { |item| ObservationText.normalize(item["text"]) }
+      return if ObservationText.redundant?(literal, labels)
 
       observations << { "text" => literal, "correlation_id" => correlation_id.to_s }
-      observations.shift while observations.size > MAX_STORED_OBSERVATIONS
+      while observations.size > MAX_STORED_OBSERVATIONS
+        index = observation_eviction_index || 0
+        observations.delete_at(index)
+      end
+    end
+
+    def observation_eviction_index
+      goal_text = goal.is_a?(Hash) ? goal["text"].to_s : ""
+      observations.each_index.find { |index|
+        !ObservationText.covered_by?(goal_text, observations[index]["text"])
+      }
     end
 
     def clear_observations!

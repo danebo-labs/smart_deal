@@ -78,14 +78,14 @@ module Rag
           fact = @episode.fact(item.slot)
           value = fact&.dig("value").presence || item.span
           if item.slot == "controller" && @episode.fact("manufacturer")&.dig("source") == "catalog"
-            strip_value(@episode.fact("manufacturer")["value"])
+            strip_value(@episode.fact("manufacturer")["value"], slot: "manufacturer")
             @episode.clear_fact!("manufacturer")
           end
           @episode.clear_fact!(item.slot)
           @episode.append_rejected!(item.slot, value)
           remove_identifier(value)
           remove_identifier("código #{value}") if item.slot == "fault_code"
-          strip_value(value)
+          strip_value(value, slot: item.slot)
         end
       end
     end
@@ -255,7 +255,7 @@ module Rag
       seen = {}
       phrases = Array(@perception.observations).filter_map { |text|
         phrase = text.to_s.squish
-        next if phrase.blank?
+        next if phrase.blank? || ObservationText.continuity_echo?(phrase)
 
         label = FollowupQueryRewriter.normalize_label(phrase)
         next if label.blank? || seen[label]
@@ -324,19 +324,20 @@ module Rag
       @episode.identifiers.reject! { |item| FollowupQueryRewriter.normalize_label(item["value"]) == label }
     end
 
-    def strip_value(value)
+    def strip_value(value, slot:)
       return if value.blank?
 
-      pattern = token_pattern(value)
       if @episode.goal.is_a?(Hash)
-        text = @episode.goal["text"].to_s.gsub(pattern, " ").squish
+        text = SlotRejection.excise_text(@episode.goal["text"], slot, value)
         if text.blank?
           @episode.clear_goal!
-        else
+        elsif text != @episode.goal["text"].to_s.squish
           @episode.goal["text"] = text
         end
       end
-      @episode.observations.reject! { |item| item["text"].to_s.match?(pattern) }
+      @episode.observations.reject! { |item|
+        SlotRejection.attributable?(item["text"], slot, value)
+      }
     end
 
     def token_pattern(value)

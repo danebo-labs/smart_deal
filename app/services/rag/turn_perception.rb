@@ -17,7 +17,7 @@ module Rag
     MAX_TOOL_BYTES = 4096
     MIN_OBSERVATION_CHARS = 13
     FAULT_RE = /\A[a-z]?\d{1,4}[a-z]?\z/
-    PROMPT_VERSION = "2026-10-07.1"
+    PROMPT_VERSION = "2026-10-07.2"
     SCHEMA_VERSION = "turn_perception.3"
 
     Identity = Data.define(:span, :act, :kind, :slot, :value, :source, :manufacturer)
@@ -102,10 +102,10 @@ module Rag
       identities, ambiguities = resolve_assertions(assertions, observations)
       move = data["move"]
       resolution = data["pending_resolution"]
-      move, resolution, identities, observations, ambiguities, target = adjust_move(
+      move, resolution, identities, observations, ambiguities, target = recover_stated_correction(
         move, resolution, identities, observations, ambiguities, data["clarification_target"]
       )
-      move, resolution, identities, observations, ambiguities, target = recover_stated_correction(
+      move, resolution, identities, observations, ambiguities, target = adjust_move(
         move, resolution, identities, observations, ambiguities, target
       )
       resolution = nil unless move == "answer_pending"
@@ -374,29 +374,88 @@ module Rag
       nil
     end
 
-    # The turn already names the rejected value and its replacement. A model
+    # The turn already names the rejected value and its replacement. Keep the
+    # other identities and the other checks from that same turn. A model
     # reading of correction_target would ask which datum changed and drop both.
     def recover_stated_correction(move, resolution, identities, observations, ambiguities, target)
       codes = explicit_fault_codes
       if codes
         old_code, new_code = codes
-        identities = [
-          Identity.new(
-            span: old_code, act: "negate", kind: "negate", slot: "fault_code",
-            value: old_code, source: nil, manufacturer: nil
-          ),
-          fact(new_code, "assert", "fault_code", new_code, "user", nil)
-        ]
-        return [ "correct", nil, identities, [], ambiguities, nil ]
+        identities = merged_fault_identities(identities, old_code, new_code)
+        observations = merged_fault_observations(observations, old_code)
+        return [ "correct", nil, identities, observations, ambiguities, nil ]
       end
 
       phrase = explicit_observation_replacement
-      if phrase && %w[unclear correct].include?(move) && observations.empty?
-        kept = identities.reject { |item| item.act == "negate" || item.kind == "fact" }
-        return [ "correct", nil, kept, [ phrase ], ambiguities, nil ]
+      if phrase && %w[unclear correct].include?(move)
+        merged = merge_phrase(observations, phrase)
+        kept = if observations.empty?
+          identities.reject { |item| item.act == "negate" || item.kind == "fact" }
+        else
+          identities
+        end
+        return [ "correct", nil, kept, merged, ambiguities, nil ]
       end
 
       [ move, resolution, identities, observations, ambiguities, target ]
+    end
+
+    def merged_fault_identities(identities, old_code, new_code)
+      kept = identities.reject { |item| asserts_fault?(item, old_code) }
+      unless kept.any? { |item| item.kind == "negate" && item.slot == "fault_code" && fault_label(item) == old_code }
+        kept = [
+          Identity.new(
+            span: old_code, act: "negate", kind: "negate", slot: "fault_code",
+            value: old_code, source: nil, manufacturer: nil
+          )
+        ] + kept
+      end
+      unless kept.any? { |item| item.act == "assert" && item.slot == "fault_code" && fault_label(item) == new_code }
+        kept << fact(new_code, "assert", "fault_code", new_code, "user", nil)
+      end
+      kept
+    end
+
+    def merged_fault_observations(observations, old_code)
+      kept = observations.reject { |text|
+        SlotRejection.code_statement?(FollowupQueryRewriter.normalize_label(text), old_code)
+      }
+      symptom_sentences_outside_correction(old_code).each do |phrase|
+        kept = merge_phrase(kept, phrase)
+      end
+      kept
+    end
+
+    def symptom_sentences_outside_correction(old_code)
+      @turn.split(/(?<=[.!?])\s+/).filter_map do |sentence|
+        phrase = sentence.to_s.squish.sub(/[.!?]+\z/, "")
+        next if phrase.blank?
+
+        normalized = FollowupQueryRewriter.normalize_label(phrase)
+        next if normalized.match?(/\bcodigo\s+\d+\b/) || normalized.match?(/\bno\s+#{Regexp.escape(old_code)}\b/)
+        next unless symptom_observation?(phrase) && literal_span?(phrase)
+        next if ObservationText.continuity_echo?(phrase)
+
+        phrase
+      end
+    end
+
+    def merge_phrase(observations, phrase)
+      label = FollowupQueryRewriter.normalize_label(phrase)
+      return observations if observations.any? { |text|
+        current = FollowupQueryRewriter.normalize_label(text)
+        current == label || (current.split.size >= 3 && label.include?(current))
+      }
+
+      observations + [ phrase ]
+    end
+
+    def asserts_fault?(item, code)
+      item.act == "assert" && item.slot == "fault_code" && fault_label(item) == code
+    end
+
+    def fault_label(item)
+      FollowupQueryRewriter.normalize_label(item.value.presence || item.span)
     end
 
     def explicit_fault_codes

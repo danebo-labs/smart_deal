@@ -274,6 +274,35 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_not_equal "clarify_first", decision.decision
   end
 
+  test "a code correction keeps another check from the same turn" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    episode.append_observation!("El LED 8 está apagado", correlation_id: "seed")
+    episode.append_identifier!("Elemont MH", correlation_id: "seed")
+    turn = "Era código 18, no 8. La guía no tiene obstrucción."
+    result = perceive(
+      {
+        "move" => "unclear",
+        "assertions" => [],
+        "observations" => [],
+        "pending_resolution" => nil,
+        "clarification_target" => "correction_target"
+      },
+      turn,
+      episode: episode
+    )
+    settle(episode, result, turn)
+
+    assert_equal "correct", result.move
+    assert_includes result.observations, "La guía no tiene obstrucción"
+    assert_equal "18", episode.fact("fault_code")["value"]
+    assert_includes episode.rejected.pluck("value"), "8"
+    assert_includes episode.observations.pluck("text"), "La guía no tiene obstrucción"
+    assert_includes episode.observations.pluck("text"), "El LED 8 está apagado"
+    assert_includes episode.identifiers.pluck("value"), "Elemont MH"
+    assert_includes Rag::TurnInterpreter::PROMPT, "Keep every other symptom in that same turn as an observation."
+    assert_not_includes Rag::TurnInterpreter::PROMPT, "has empty observations"
+  end
+
   test "an explicit observation replacement survives a correction_target reading" do
     episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
     episode.append_observation!("detenida cerca de planta 1", correlation_id: "seed")

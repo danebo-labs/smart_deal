@@ -29,6 +29,44 @@ class Rag::WorkContextReducerTest < ActiveSupport::TestCase
     assert episode.observations.none? { |row| row["text"].match?(/(?<![[:alnum:]])8(?![[:alnum:]])/) }
   end
 
+  test "rejecting fault code 8 keeps an independent 8 and the goal" do
+    episode = open_episode
+    episode.assign_goal!("la puerta 8 no cierra", correlation_id: "seed")
+    episode.write_fact!(
+      "fault_code", status: "known", value: "8", source: "user",
+      correlation_id: "seed", at: @now.iso8601
+    )
+    [
+      "El display muestra código 8",
+      "El LED 8 está apagado",
+      "la puerta 8 no cierra",
+      "detenida en planta 8"
+    ].each { |text| episode.append_observation!(text, correlation_id: "seed") }
+    turn = "No, leí mal: era código 18, no 8."
+
+    with_owner { settle(episode, correction_payload, turn) }
+
+    texts = episode.observations.pluck("text")
+    assert_equal "18", episode.fact("fault_code")["value"]
+    assert_equal "la puerta 8 no cierra", episode.goal["text"]
+    assert_includes texts, "El LED 8 está apagado"
+    assert_includes texts, "la puerta 8 no cierra"
+    assert_includes texts, "detenida en planta 8"
+    assert texts.none? { |text| text.match?(/\bc[oó]digo\s+8\b/i) }
+  end
+
+  test "a continuity echo does not replace the open checks" do
+    episode = open_episode
+    episode.assign_goal!("la puerta no termina de cerrar", correlation_id: "seed")
+    episode.append_observation!("El LED 7 está apagado", correlation_id: "seed")
+    turn = "Sigue igual."
+
+    with_owner { settle(episode, report_payload([ "Sigue igual" ]), turn) }
+
+    assert_equal "la puerta no termina de cerrar", episode.goal["text"]
+    assert_equal [ "El LED 7 está apagado" ], episode.observations.pluck("text")
+  end
+
   test "a symptom sentence does not take an identifier slot from the equipment" do
     episode = open_episode
     turn = "Elemont MH con placa CEA15; la puerta 1 no termina de cerrar y el imán no magnetiza."

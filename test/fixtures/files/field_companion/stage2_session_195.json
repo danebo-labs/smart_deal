@@ -1,0 +1,166 @@
+{
+  "12": {
+    "goal": {
+      "text": "la puerta 1 no termina de cerrar el imán no magnetiza",
+      "correlation_id": "stage2:a:t01",
+      "truncated": false
+    },
+    "facts": {
+      "fault_code": {
+        "status": "known",
+        "source": "user",
+        "correlation_id": "stage2:a:t05",
+        "at": "2026-10-07T15:10:18-03:00",
+        "value": "18"
+      }
+    },
+    "identifiers": [
+      {
+        "value": "Elemont MH",
+        "source": "user",
+        "correlation_id": "stage2:a:t01"
+      },
+      {
+        "value": "CEA15",
+        "source": "user",
+        "correlation_id": "stage2:a:t01"
+      }
+    ],
+    "observations": [
+      {
+        "text": "la puerta 1 no termina de cerrar",
+        "correlation_id": "stage2:a:t01"
+      },
+      {
+        "text": "el imán no magnetiza",
+        "correlation_id": "stage2:a:t01"
+      },
+      {
+        "text": "La cabina está detenida cerca de planta 1",
+        "correlation_id": "stage2:a:t03"
+      },
+      {
+        "text": "no hay personas dentro",
+        "correlation_id": "stage2:a:t03"
+      },
+      {
+        "text": "La puerta llega al marco, pero vuelve a abrir",
+        "correlation_id": "stage2:a:t04"
+      },
+      {
+        "text": "Al pedir cierre se oye un clic y la puerta no termina de cerrar",
+        "correlation_id": "stage2:a:t06"
+      },
+      {
+        "text": "no veo una obstrucción",
+        "correlation_id": "stage2:a:t06"
+      },
+      {
+        "text": "El LED 7 está apagado",
+        "correlation_id": "stage2:a:t07"
+      },
+      {
+        "text": "Al pedir cierre se oye un clic, pero no termina de cerrar",
+        "correlation_id": "stage2:a:t08"
+      },
+      {
+        "text": "Sigue igual",
+        "correlation_id": "stage2:a:t09"
+      },
+      {
+        "text": "sigue el clic y la puerta no termina de cerrar",
+        "correlation_id": "stage2:a:t11"
+      },
+      {
+        "text": "Al pedir cierre se oye un clic y la puerta no termina de cerrar. Sigue igual.",
+        "correlation_id": "stage2:a:t12"
+      }
+    ],
+    "rejected": [
+      {
+        "slot": "fault_code",
+        "value": "8"
+      }
+    ]
+  },
+  "14": {
+    "goal": {
+      "text": "la puerta 1 no termina de cerrar el imán no magnetiza",
+      "correlation_id": "stage2:a:t01",
+      "truncated": false
+    },
+    "facts": {
+      "fault_code": {
+        "status": "known",
+        "source": "user",
+        "correlation_id": "stage2:a:t05",
+        "at": "2026-10-07T15:10:18-03:00",
+        "value": "18"
+      }
+    },
+    "identifiers": [
+      {
+        "value": "Elemont MH",
+        "source": "user",
+        "correlation_id": "stage2:a:t01"
+      },
+      {
+        "value": "CEA15",
+        "source": "user",
+        "correlation_id": "stage2:a:t01"
+      }
+    ],
+    "observations": [
+      {
+        "text": "el imán no magnetiza",
+        "correlation_id": "stage2:a:t01"
+      },
+      {
+        "text": "no hay personas dentro",
+        "correlation_id": "stage2:a:t03"
+      },
+      {
+        "text": "La puerta llega al marco, pero vuelve a abrir",
+        "correlation_id": "stage2:a:t04"
+      },
+      {
+        "text": "Al pedir cierre se oye un clic y la puerta no termina de cerrar",
+        "correlation_id": "stage2:a:t06"
+      },
+      {
+        "text": "no veo una obstrucción",
+        "correlation_id": "stage2:a:t06"
+      },
+      {
+        "text": "El LED 7 está apagado",
+        "correlation_id": "stage2:a:t07"
+      },
+      {
+        "text": "Al pedir cierre se oye un clic, pero no termina de cerrar",
+        "correlation_id": "stage2:a:t08"
+      },
+      {
+        "text": "Sigue igual",
+        "correlation_id": "stage2:a:t09"
+      },
+      {
+        "text": "sigue el clic y la puerta no termina de cerrar",
+        "correlation_id": "stage2:a:t11"
+      },
+      {
+        "text": "Al pedir cierre se oye un clic y la puerta no termina de cerrar. Sigue igual.",
+        "correlation_id": "stage2:a:t12"
+      },
+      {
+        "text": "la cabina está detenida cerca de planta 2",
+        "correlation_id": "stage2:a:t13"
+      }
+    ],
+    "rejected": [
+      {
+        "slot": "fault_code",
+        "value": "8"
+      }
+    ]
+  }
+}

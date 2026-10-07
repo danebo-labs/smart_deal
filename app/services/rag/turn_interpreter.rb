@@ -35,7 +35,7 @@ module Rag
       slot_hint may only be manufacturer, model, controller, fault_code, or designator. Omit it when unsure. Never put slot_hint on a symptom.
       pending_resolution is null unless move is answer_pending. Then it is only unknown, absent, value, or seek. Never referent. value needs an assert span of that value. seek means search with what is already known. unknown means the technician does not know the pending slot.
 
-      Every span is the shortest literal substring of turn, not the sentence. An observation is one contiguous symptom phrase copied from the turn, or empty. Keep every word between its ends. Do not drop words. Do not paraphrase. Do not invent an observation. Do not describe the photo. A correction of manufacturer, model, controller, or fault code has empty observations. A correction of an observation keeps the replacement phrase as the observation and does not need a slot negate or an assert span.
+      Every span is the shortest literal substring of turn, not the sentence. An observation is one contiguous symptom phrase copied from the turn, or empty. Keep every word between its ends. Do not drop words. Do not paraphrase. Do not invent an observation. Do not describe the photo. A correction of manufacturer, model, controller, or fault code still negates the stored value and asserts the replacement. Keep every other symptom in that same turn as an observation. A correction of an observation keeps the replacement phrase as the observation and does not need a slot negate or an assert span.
     PROMPT
 
     Result = Data.define(
@@ -73,6 +73,7 @@ module Rag
       latency_ms = elapsed_since(started)
       usage = response.usage
       raw = extract_tool_input(response.output&.message&.content)
+      ValidationCapture.record("interpreter_raw", { "tool_input" => raw })
       perception = TurnPerception.build(
         raw, turn: @turn, episode: @episode, catalog: @catalog, viewer_account: @viewer_account
       )

@@ -137,9 +137,74 @@ class Rag::QueryComposerTest < ActiveSupport::TestCase
     )
 
     assert_includes corrected, "código 18"
+    assert_not_includes corrected, "no ."
+    assert_no_match(/(?<![[:alnum:]])código 8(?![[:alnum:]])/i, corrected)
     assert_no_match(/(?<![[:alnum:]])código 1(?![[:alnum:]])/i, corrected)
     assert_includes later, "código 18"
     assert_no_match(/(?<![[:alnum:]])código 1(?![[:alnum:]])/i, later)
+  end
+
+  test "a rejected fault code keeps LED 8 and a goal that mentions 8" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: @now)
+    episode.assign_goal!("la puerta 8 no cierra", correlation_id: "seed")
+    episode.write_fact!(
+      "fault_code", status: "known", value: "18", source: "user",
+      correlation_id: "seed", at: @now.iso8601
+    )
+    episode.append_rejected!("fault_code", "8")
+    episode.append_observation!("El LED 8 está apagado", correlation_id: "seed")
+    episode.append_observation!("El display muestra código 8", correlation_id: "seed")
+
+    query = Rag::QueryComposer.call(
+      state: episode,
+      turn: "Era código 18, no 8. La guía no tiene obstrucción.",
+      perception: report,
+      decision: decision_for("ready")
+    )
+
+    assert_includes query, "código 18"
+    assert_includes query, "El LED 8 está apagado"
+    assert_includes query, "la puerta 8 no cierra"
+    assert_includes query, "La guía no tiene obstrucción"
+    assert_not_includes query, "no ."
+    assert_not_includes query, "código 8"
+  end
+
+  test "the first turn does not repeat a phrase already said in that turn" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: @now)
+    turn = "Elemont MH con placa CEA15; la puerta 1 no termina de cerrar y el imán no magnetiza. ¿Qué reviso?"
+    episode.assign_goal!("la puerta 1 no termina de cerrar el imán no magnetiza", correlation_id: "seed")
+    episode.append_identifier!("Elemont MH", correlation_id: "seed")
+    episode.append_identifier!("CEA15", correlation_id: "seed")
+    episode.append_observation!("la puerta 1 no termina de cerrar", correlation_id: "seed")
+    episode.append_observation!("el imán no magnetiza", correlation_id: "seed")
+
+    query = Rag::QueryComposer.call(
+      state: episode, turn: turn, perception: report, decision: decision_for("ready")
+    )
+
+    assert_equal 1, query.scan("la puerta 1 no termina de cerrar").size
+    assert_equal 1, query.scan("el imán no magnetiza").size
+    assert_equal 1, query.scan("Elemont MH").size
+    assert_includes query, "CEA15"
+  end
+
+  test "session 195 still retrieves the code and the equipment when observations fill the cap" do
+    raw = JSON.parse(Rails.root.join("test/fixtures/files/field_companion/stage2_session_195.json").read)
+    [ "12", "14" ].each do |turn|
+      episode = episode_from_trace(raw.fetch(turn))
+      query = Rag::QueryComposer.call(
+        state: episode, turn: "¿Y ahora?", perception: report, decision: decision_for("ready")
+      )
+
+      assert_operator query.length, :<=, Rag::FollowupQueryRewriter::MAX_COMPOSED_CHARS
+      assert_includes query, "código 18"
+      assert_includes query, "Elemont MH"
+      assert_includes query, "CEA15"
+      assert_includes query, "la puerta 1 no termina de cerrar"
+      assert_not_includes query, "Sigue igual"
+      assert_not_includes query, "código 8"
+    end
   end
 
   test "retained observations stay in the retrieval string" do
@@ -173,6 +238,24 @@ class Rag::QueryComposerTest < ActiveSupport::TestCase
   end
 
   private
+
+  def episode_from_trace(raw)
+    Rag::ActiveEpisode.parse(
+      {
+        "v" => 1,
+        "episode_id" => "ep_195",
+        "status" => "active",
+        "opened_at" => @now.iso8601,
+        "updated_at" => @now.iso8601,
+        "goal" => raw["goal"],
+        "facts" => raw["facts"],
+        "identifiers" => raw["identifiers"],
+        "observations" => raw["observations"],
+        "rejected" => raw["rejected"]
+      },
+      now: @now
+    )
+  end
 
   def episode_for(photo)
     episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: @now)

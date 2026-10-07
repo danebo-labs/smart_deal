@@ -263,18 +263,25 @@ class SessionContextBuilder
   private_class_method :compose_with_problem
 
   def self.render_field_problem(episode, trace = nil)
-    lines = []
-    %w[manufacturer model controller fault_code].each { |key| append_user_fact(lines, episode, key) }
+    leading = []
+    %w[manufacturer model controller fault_code].each { |key| append_user_fact(leading, episode, key) }
     identifiers = identifier_line(episode)
-    lines << { rank: 1, text: identifiers } if identifiers
+    leading << identifiers if identifiers
+    optional = []
     photo = photo_line(episode)
-    lines << { rank: 2, text: photo } if photo
-    conflict_lines(episode).each { |line| lines << { rank: 3, text: line } }
-    observed = observation_line(episode)
-    lines << { rank: 5, text: observed } if observed
+    optional << photo if photo
+    optional.concat(conflict_lines(episode))
+    trailing = []
     corrected = correction_line(episode)
-    lines << { rank: 6, text: corrected } if corrected
-    fit_problem(episode.goal&.[]("text").to_s.squish, lines, trace)
+    trailing << corrected if corrected
+    fit_problem(
+      episode.goal&.[]("text").to_s.squish,
+      leading,
+      optional,
+      compact_observations(episode),
+      trailing,
+      trace
+    )
   end
   private_class_method :render_field_problem
 
@@ -285,9 +292,9 @@ class SessionContextBuilder
     case fact["status"]
     when "unknown_confirmed"
       line = UNKNOWN_FACT_LINE[key]
-      lines << { rank: nil, text: line } if line
+      lines << line if line
     when "absent_confirmed"
-      lines << { rank: nil, text: ABSENT_FAULT_LINE } if key == "fault_code"
+      lines << ABSENT_FAULT_LINE if key == "fault_code"
     when "known"
       source = fact["source"].to_s
       return unless %w[user catalog].include?(source)
@@ -296,7 +303,7 @@ class SessionContextBuilder
       return if value.empty?
 
       marker = source == "catalog" ? "catalog" : "technician"
-      lines << { rank: 4, text: "#{FACT_LABEL[key]}: #{value} (#{marker})" }
+      lines << "#{FACT_LABEL[key]}: #{value} (#{marker})"
     end
   end
   private_class_method :append_user_fact
@@ -330,22 +337,18 @@ class SessionContextBuilder
   end
   private_class_method :photo_line
 
-  def self.observation_line(episode)
-    goal = Rag::FollowupQueryRewriter.normalize_label(episode.goal&.dig("text").to_s)
-    texts = episode.observations.filter_map do |item|
+  def self.compact_observations(episode)
+    seen = []
+    episode.observations.filter_map do |item|
       text = item["text"].to_s.squish
       next if text.empty? || stale_observation?(text, episode)
+      next if Rag::ObservationText.redundant?(text, seen)
 
-      phrase = Rag::FollowupQueryRewriter.normalize_label(text)
-      next if phrase.present? && goal.include?(phrase)
-
+      seen << Rag::ObservationText.normalize(text)
       text
     end
-    return nil if texts.empty?
-
-    "Obs: #{texts.join('; ')}"
   end
-  private_class_method :observation_line
+  private_class_method :compact_observations
 
   def self.correction_line(episode)
     rows = episode.rejected.filter_map do |item|
@@ -375,19 +378,9 @@ class SessionContextBuilder
   private_class_method :stale_observation?
 
   def self.attributable_rejection?(normalized, slot, value)
-    label = Rag::FollowupQueryRewriter.normalize_label(value)
-    return false if label.blank?
-    return code_statement?(normalized, label) if slot == "fault_code"
-    return false if label.match?(/\A\d+\z/)
-
-    normalized.match?(/(?<![[:alnum:]])#{Regexp.escape(label)}(?![[:alnum:]])/)
+    Rag::SlotRejection.attributable?(normalized, slot, value)
   end
   private_class_method :attributable_rejection?
-
-  def self.code_statement?(normalized, label)
-    normalized.match?(/\b(?:codigo|code|error|fault)\s+(?:n\s+)?#{Regexp.escape(label)}\b/)
-  end
-  private_class_method :code_statement?
 
   def self.conflict_lines(episode)
     episode.conflicts.filter_map do |row|
@@ -400,32 +393,42 @@ class SessionContextBuilder
   end
   private_class_method :conflict_lines
 
-  # Shorten the goal first. Then drop identifiers, photo reads, conflicts, and
-  # known facts. Observations and corrections drop after those. Confirmation
-  # lines, the header, and the footer stay until nothing else can move.
-  def self.fit_problem(goal, lines, trace = nil)
+  # Keep the goal, the identity, the current code, and the rejected values.
+  # Exact copies and continuity echoes leave first. Then the oldest remaining
+  # observation. An observation covered by the goal is omitted only while that
+  # goal is still printed. The header and the footer stay inside the cap.
+  def self.fit_problem(goal, leading, optional, observations, trailing, trace = nil)
     goal = goal.to_s
-    working = lines.reject { |line| line[:text].blank? }
+    leading = leading.compact
+    optional = optional.compact
+    observations = observations.dup
+    trailing = trailing.compact
 
     loop do
-      text = assemble_problem(goal, working)
+      visible = visible_observations(goal, observations)
+      text = assemble_problem(goal, leading, optional, visible, trailing)
       return text if text.length <= MAX_PROBLEM_CHARS
 
       trace[:truncated] = true if trace
+      if (index = oldest_visible_observation(goal, observations))
+        observations.delete_at(index)
+        next
+      end
+      if optional.any?
+        optional.shift
+        next
+      end
       if goal.present?
         overflow = text.length - MAX_PROBLEM_CHARS
         goal = overflow >= goal.length ? "" : goal[0, goal.length - overflow].rstrip
         next
       end
-
-      late = drop_index(working) { |line| line[:rank] }
-      if late
-        working.delete_at(late)
+      if trailing.any?
+        trailing.pop
         next
       end
-
-      if working.any?
-        working.pop
+      if leading.any?
+        leading.pop
         next
       end
 
@@ -434,19 +437,26 @@ class SessionContextBuilder
   end
   private_class_method :fit_problem
 
-  def self.drop_index(working)
-    indexes = working.each_index.select { |index| yield working[index] }
-    return nil if indexes.empty?
-
-    min_rank = indexes.map { |index| working[index][:rank] }.min
-    indexes.reverse.find { |index| working[index][:rank] == min_rank }
+  def self.visible_observations(goal, observations)
+    observations.reject { |text| goal.present? && Rag::ObservationText.covered_by?(goal, text) }
   end
-  private_class_method :drop_index
+  private_class_method :visible_observations
 
-  def self.assemble_problem(goal, lines)
+  def self.oldest_visible_observation(goal, observations)
+    observations.each_index.find { |index|
+      text = observations[index]
+      goal.blank? || !Rag::ObservationText.covered_by?(goal, text)
+    }
+  end
+  private_class_method :oldest_visible_observation
+
+  def self.assemble_problem(goal, leading, optional, observations, trailing)
     body = []
     body << "Goal: #{goal}" if goal.present?
-    lines.each { |line| body << line[:text] }
+    leading.each { |line| body << line }
+    optional.each { |line| body << line }
+    body << "Obs: #{observations.join('; ')}" if observations.any?
+    trailing.each { |line| body << line }
     ([ PROBLEM_HEADER ] + body + [ PROBLEM_FOOTER ]).join("\n")
   end
   private_class_method :assemble_problem

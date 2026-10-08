@@ -1,20 +1,26 @@
 # frozen_string_literal: true
 
 module Rag
-  # Stage 2 spend already closed. The authorized pass is inside the 106
-  # calls and US$0.214838. Twenty calls remain inside 126, and 42 stay
-  # reserved for stage 3. That remainder does not open another pass.
-  # A fresh BedrockQuery baseline does not reopen the ceiling.
+  # The authorized text pass is closed. It added 26 model calls and
+  # US$0.060975 to the previous 106 calls and US$0.214838. History is now
+  # 132 calls and US$0.275813. The stage 2 ceiling stays 148. Stage 3 keeps
+  # 42 inside the global ceiling of 190. PASS_CALL_CAP is 0, so the 16 calls
+  # left inside 148 do not open another pass. An empty BedrockQuery table
+  # does not reopen this history.
   class Stage2RunBudget
-    HISTORICAL_CALLS = 106
-    HISTORICAL_COST_USD = BigDecimal("0.214838")
-    STAGE2_CALL_CEILING = 126
+    HISTORICAL_CALLS = 132
+    HISTORICAL_COST_USD = BigDecimal("0.275813")
+    STAGE2_CALL_CEILING = 148
     STAGE3_CALL_RESERVE = 42
-    GLOBAL_CALL_CEILING = 168
+    GLOBAL_CALL_CEILING = 190
     PASS_CALL_CAP = 0
     COST_CAP_USD = BigDecimal("2.50")
     INTERPRETER_CALL_USD = BigDecimal("0.0045")
     GENERATION_CALL_USD = BigDecimal("0.0115")
+    # One no-pin turn tracks one interpreter call plus at most two generation
+    # calls: publication and, when that contract is not accepted, guidance.
+    # The validation process sets AWS_MAX_ATTEMPTS=1, so a tracked row is one
+    # attempt. Retrieve retries stay outside BedrockQuery.
     TURN_GENERATION_CALLS = 2
     TURN_CALL_MARGIN = 1 + TURN_GENERATION_CALLS
     TURN_COST_MARGIN_USD = INTERPRETER_CALL_USD + (TURN_GENERATION_CALLS * GENERATION_CALL_USD)

@@ -8,7 +8,7 @@ class Stage2JourneyARunnerTest < ActiveSupport::TestCase
     @require_only = ENV["STAGE2_JOURNEY_A_REQUIRE"]
     ENV["STAGE2_JOURNEY_A_REQUIRE"] = "1"
     ENV.delete("STAGE2_JOURNEY_AUTHORIZED")
-    %w[PROD_KB STAGE2_ISOLATED_DATABASE STAGE2_ISOLATED_CACHE_DATABASE STAGE2_ISOLATED_CABLE_DATABASE UID S3_KEY CEA_UID CEA_KEY DISPLAY TRACE_ROOT].each do |name|
+    %w[PROD_KB STAGE2_ISOLATED_DATABASE STAGE2_ISOLATED_CACHE_DATABASE STAGE2_ISOLATED_CABLE_DATABASE UID S3_KEY CEA_UID CEA_KEY DISPLAY STAGE2_EXPECTED_FILTER TRACE_ROOT].each do |name|
       Object.send(:remove_const, name) if Object.const_defined?(name, false)
     end
     load Rails.root.join("script/field_companion/stage2_journey_a.rb")
@@ -34,12 +34,19 @@ class Stage2JourneyARunnerTest < ActiveSupport::TestCase
     BedrockRagService.define_singleton_method(:new) { |*| calls << :service; remote }
     ConversationSession.define_singleton_method(:create!) { |*| calls << :session }
     Stage2QueryHost.define_singleton_method(:new) { |*| calls << :host; remote }
+    original_admit = Rag::Stage2RunBudget.method(:admit_turn?)
+    Rag::Stage2RunBudget.define_singleton_method(:admit_turn?) { |**| false }
 
     assert_equal :budget, stage2_journey_a_main
     assert_empty calls
     assert_equal 0, Rag::Stage2RunBudget::PASS_CALL_CAP
-    assert_not Rag::Stage2RunBudget.admit_turn?(new_calls: 0, new_cost_usd: 0)
+    assert_equal 3, Rag::Stage2RunBudget::TURN_CALL_MARGIN
+    assert_equal 132, Rag::Stage2RunBudget::HISTORICAL_CALLS
+    assert_equal BigDecimal("0.275813"), Rag::Stage2RunBudget::HISTORICAL_COST_USD
   ensure
+    if defined?(original_admit) && original_admit
+      Rag::Stage2RunBudget.define_singleton_method(:admit_turn?) { |**kwargs| original_admit.call(**kwargs) }
+    end
     originals&.each do |klass, method|
       klass.define_singleton_method(method.name) { |*args, **kwargs, &block| method.call(*args, **kwargs, &block) }
     end

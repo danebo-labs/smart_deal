@@ -8,7 +8,8 @@
 # Refuses to start unless STAGE2_JOURNEY_AUTHORIZED=1 and Stage2RunBudget
 # admits a pass. A refused budget returns before a session or a remote call.
 # It does not create accounts or manuals. Those rows come from the isolated
-# preparation. PASS_CALL_CAP stays 0 until a later authorization.
+# preparation. This process requires AWS_MAX_ATTEMPTS=1 so a tracked model
+# call is one attempt. Retrieve retries stay outside the model cap.
 require "json"
 require "fileutils"
 
@@ -35,6 +36,7 @@ S3_KEY = "bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf"
 CEA_UID = "9a4fa817-b9e8-4a9e-ae83-526c0731e603"
 CEA_KEY = "bulk_uploads/1/2026-08-31/manual-cea15p.pdf"
 DISPLAY = "Elemont Montacargas Hidraulico Modelo MH"
+STAGE2_EXPECTED_FILTER = "orAll[account_id=1; andAll[account_id=3, ingestion_path!=field_photo_v1, manual_corpus!=account]; manual_corpus=general]"
 TRACE_ROOT = Rails.root.join("tmp/stage2_journey_a")
 
 module InlineBedrockQueryTracking
@@ -99,10 +101,8 @@ def history_view(session)
   }
 end
 
-# This run only. Stage2RunBudget adds the 106 calls and US$0.214838 already
-# spent. Counting rows after the baseline and comparing them with 126 would
-# reopen the ceiling. The calls left inside that ceiling do not authorize
-# another pass.
+# This run only. Stage2RunBudget adds the closed history. Counting rows
+# after the baseline does not reopen the ceiling. PASS_CALL_CAP is 0.
 def this_run_queries(baseline_id, session_id)
   BedrockQuery.where("id > ?", baseline_id).where(
     "conversation_session_id = :sid OR correlation_id LIKE :prefix",
@@ -306,6 +306,17 @@ def stage2_journey_a_execute
   write_manifest(out, sha: sha, session_id: session.id, run_id: run_id, rows: [])
 
   service = BedrockRagService.new(account: account, knowledge_base_id: PROD_KB)
+  built_filter = stage2_logical_filter(service.send(:account_filter))
+  File.write(out.join("filter.json"), JSON.pretty_generate(
+    "filter" => built_filter,
+    "primary" => ActiveRecord::Base.connection.current_database,
+    "cache" => SolidCache::Record.connection.current_database,
+    "cable" => SolidCable::Record.connection.current_database,
+    "queue" => SolidQueue::Record.connection_db_config.database,
+    "aws_max_attempts" => ENV["AWS_MAX_ATTEMPTS"]
+  ))
+  abort("filter #{built_filter}") unless built_filter == STAGE2_EXPECTED_FILTER
+
   availability = nil
   availability_capture = Rag::ValidationCapture.capture do
     Rag::ValidationCapture.bind(
@@ -474,12 +485,31 @@ def stage2_journey_a_execute
   warn "done turns=#{trace.size} session=#{session.id} out=#{out}"
 end
 
+def stage2_logical_filter(node)
+  data = node.deep_stringify_keys
+  if data["or_all"] || data["orAll"]
+    list = data["or_all"] || data["orAll"]
+    "orAll[#{list.map { |item| stage2_logical_filter(item) }.join("; ")}]"
+  elsif data["and_all"] || data["andAll"]
+    list = data["and_all"] || data["andAll"]
+    "andAll[#{list.map { |item| stage2_logical_filter(item) }.join(", ")}]"
+  elsif data["equals"]
+    "#{data.dig("equals", "key")}=#{data.dig("equals", "value")}"
+  elsif data["not_equals"] || data["notEquals"]
+    clause = data["not_equals"] || data["notEquals"]
+    "#{clause["key"]}!=#{clause["value"]}"
+  else
+    data.to_json
+  end
+end
+
 def stage2_journey_a_main
   abort("stage 2 runner refused without STAGE2_JOURNEY_AUTHORIZED=1") unless ENV["STAGE2_JOURNEY_AUTHORIZED"] == "1"
   unless Rag::Stage2RunBudget.admit_turn?(new_calls: 0, new_cost_usd: 0)
     warn "stage 2 runner refused: budget does not admit a pass"
     return :budget
   end
+  abort("aws max attempts #{ENV.fetch('AWS_MAX_ATTEMPTS', nil).inspect}") unless ENV["AWS_MAX_ATTEMPTS"] == "1"
 
   stage2_journey_a_execute
 end

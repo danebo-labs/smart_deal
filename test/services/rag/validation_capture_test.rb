@@ -408,6 +408,50 @@ class Rag::ValidationCaptureTest < ActiveSupport::TestCase
     assert_not fit["omitted"].any? { |row| row["part"] == "tail" }
   end
 
+  test "a prior cut is recorded apart from an omitted unit and is not treated as intact" do
+    question = "#{('revisar el marco ' * 30).strip} COLA_UNICA_PREGUNTA"
+    turn = "#{('el ruido sigue en el operador ' * 12).strip} COLA_UNICA_TURNO"
+    assert_operator question.length, :>, Rag::CompanionGuidanceContext::QUESTION_CHARS
+    assert_operator turn.length, :>, Rag::CompanionGuidanceContext::TURN_CHARS
+    session = <<~TEXT
+      ## Active Field Problem
+      Goal: la puerta no cierra
+      ## Recent Conversation
+      User: #{turn}
+      Assistant: Sigo.
+    TEXT
+    prompt = nil
+    events = Rag::ValidationCapture.capture do
+      prompt = Rag::CompanionGuidanceContext.new(
+        question: question,
+        identity: nil,
+        session_context: session,
+        labels: [],
+        locale: :es,
+        mode: :unknown
+      ).to_s
+    end
+
+    fit = events.find { |row| row["kind"] == "context_fit" }
+    question_cut = fit["omitted"].find { |row| row["prior_cut"] == true && row["part"] == "question" }
+    turn_cut = fit["omitted"].find { |row| row["prior_cut"] == true && row["part"] == "turn" }
+    kept_question = prompt[/^Question: (.+)$/, 1]
+    kept_turn = prompt[/^- (.+)$/, 1]
+
+    assert_equal true, fit["truncated"]
+    assert_operator kept_question.length, :<=, Rag::CompanionGuidanceContext::QUESTION_CHARS
+    assert_operator kept_turn.length, :<=, Rag::CompanionGuidanceContext::TURN_CHARS
+    assert_equal question, "#{kept_question} #{question_cut['text']}".squish
+    assert_equal turn, "#{kept_turn} #{turn_cut['text']}".squish
+    assert_not_includes prompt, "COLA_UNICA_PREGUNTA"
+    assert_not_includes prompt, "COLA_UNICA_TURNO"
+    assert_includes question_cut["text"], "COLA_UNICA_PREGUNTA"
+    assert_includes turn_cut["text"], "COLA_UNICA_TURNO"
+    assert_not fit["omitted"].any? { |row|
+      row["prior_cut"] != true && (row["text"].include?("COLA_UNICA_PREGUNTA") || row["text"].include?("COLA_UNICA_TURNO"))
+    }
+  end
+
   test "episode delta records changed fields and skips an unchanged episode" do
     before = Rag::ActiveEpisode.new
     before.episode_id = "ep-1"

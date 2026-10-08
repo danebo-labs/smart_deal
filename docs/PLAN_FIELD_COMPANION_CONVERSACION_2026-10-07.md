@@ -1,6 +1,6 @@
 # Field Companion: conversación técnica real
 
-**Estado: ETAPA 2 BLOQUEADA.** No es `EPISODIO_VALIDADO`. La última evidencia de producción registrada en este plan es la imagen `6ca7788`: web y worker, `https://elevator.danebo.ai/up` en 200, y un POST real. Esa imagen contiene la etapa 1 (`78df58a`), el código de la corrección de planta que llega hasta ella desde `66dd9e0`, la regla de hipótesis y el contrato N4 (`71b83a4`). La corrección de planta no está revalidada. La expansión del nombre canónico quedó fuera de esa imagen. Un turno real no trajo el plano Elemont y no reabre la etapa. `47c43e2` es la base de la reparación de designadores; `700d9d0` la contiene, está en `main` y no forma parte de la imagen evidenciada. La reparación del recorte de guidance tampoco está en esa imagen. La etapa 3 no empieza. La revisión Opus del 2026-10-07 sobre `7076f05` sigue incorporada. Esta revisión no habilita un piloto.
+**Estado: ETAPA 2 BLOQUEADA.** No es `EPISODIO_VALIDADO`. La última evidencia de producción registrada en este plan es la imagen `6ca7788`: web y worker, `https://elevator.danebo.ai/up` en 200, y un POST real. Esa imagen contiene la etapa 1 (`78df58a`), el código de la corrección de planta que llega hasta ella desde `66dd9e0`, la regla de hipótesis y el contrato N4 (`71b83a4`). La corrección de planta no está revalidada. La expansión del nombre canónico quedó fuera de esa imagen. Un turno real no trajo el plano Elemont y no reabre la etapa. `47c43e2` es la base de la reparación de designadores; `700d9d0` la contiene, está en `main` y no forma parte de la imagen evidenciada. La composición por unidades del guidance quedó en `085969c`, en `main`, y tampoco está en esa imagen. Bajo presión podía expulsar el episodio. La reparación de continuidad está implementada en local sobre esa base: no está desplegada y no está revalidada. La etapa 3 no empieza. La revisión Opus del 2026-10-07 sobre `7076f05` sigue incorporada. Esta revisión no habilita un piloto.
 
 Este documento es el único plan vigente del companion. Una revisión documental no autoriza a empezar. La etapa 1 está en la imagen evidenciada `6ca7788`. Este documento no llama a Bedrock y no despliega.
 
@@ -430,7 +430,7 @@ El nombre canónico se guarda, se compara y se retira con el mismo literal, incl
 
 La consulta compuesta puede ser igual al texto del técnico cuando ese texto ya trae lo necesario. Un identificador del episodio que el texto no trae sí cambia la consulta. El hash se calcula sobre esos textos. La ruta, la correlación, el Retrieve, la generación directa y la separación entre la consulta de recuperación y el prompt de generación siguen cubiertos. No se cambió el producto para forzar hashes distintos.
 
-La regla de hipótesis del guidance se conserva. Para que el prompt de identidad desconocida del turno 14 siguiera mostrando el código rechazado, se acortaron dos frases de esa instrucción. El tope de este diff sigue en 2400. La reparación del recorte, más abajo, lo deja en 2472.
+La regla de hipótesis del guidance se conserva. Para que el prompt de identidad desconocida del turno 14 siguiera mostrando el código rechazado, se acortaron dos frases de esa instrucción. El tope de este diff sigue en 2400. La reparación del recorte, más abajo, lo sube a 2472. La reparación de continuidad lo devuelve a 2400.
 
 Pendiente: el efecto de la consulta expandida sobre el retrieval y sobre la respuesta real. Esta corrección no lo ejecuta.
 
@@ -534,7 +534,38 @@ No cambió la percepción, el reducer, `EquipmentIdentity#known?`, el retrieval,
 
 Evidencia, con `PASS_CALL_CAP=0`: `companion_guidance_context_test`, `validation_capture_test` y `session_context_builder_test`. 92 corridas, 1126 aserciones, 0 fallos, 0 errores y 0 skips. Dos pruebas de guidance con búsqueda vacía en `document_identity_scope_test`: 2 corridas, 29 aserciones, 0 fallos.
 
-Pendiente: el efecto sobre una pasada real y sobre la respuesta del modelo. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. La etapa 3 no empieza. Este commit queda en `main` para revisión y no se despliega. No hay una comprobación nueva de la imagen en ejecución.
+Esas pérdidas bajo pregunta larga y búsqueda vacía, y el tope 2472 calculado sobre el turno 14, quedan cerradas por la reparación de continuidad. Esta sección describe el commit de unidades, no el compositor vigente.
+
+Pendiente de ese commit: el efecto sobre una pasada real y sobre la respuesta del modelo. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. La etapa 3 no empieza. Ese commit quedó en `main` para revisión y no se desplegó. No hay una comprobación nueva de la imagen en ejecución.
+
+#### Continuidad del episodio bajo presión (2026-10-08)
+
+Sobre `085969c`. Sin AWS, sin Retrieve, sin modelos, sin embeddings, sin journeys, sin despliegue y sin cambios de infraestructura. `PASS_CALL_CAP` sigue en 0. Los techos y el histórico de 106 llamadas y US$0,214838 no cambian. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. Esta reparación no autoriza una pasada y no revalida el episodio.
+
+La composición por unidades se conserva. No vuelve el corte ciego del prompt final. El tope vuelve a 2400: la compactación cabe y 2472 era el resto exacto del turno 14, no un presupuesto general. No se sube el tope.
+
+La instrucción se parte en reglas que no salen antes que el episodio y en frases de estilo que sí pueden salir enteras. Se conservan el objetivo del turno, la separación entre reporte, evidencia e hipótesis, el límite de procedimientos sin evidencia, el componente no confirmado como condicional, la búsqueda vacía que no significa que el manual no exista, el idioma y la continuidad. No se borró una restricción del compositor para hacer caber un fixture. La frase media de la búsqueda vacía se acortó; siguen «Do not say the manual does not exist.» y, con foco fijado, «Do not release the pin.»
+
+El orden de descarte es: manuales candidatos sin contenido aplicable, historial redundante o duplicado de forma comprobable, turnos viejos, el indicador Follow-up y después las frases de estilo. El Follow-up no sustituye al caso. Una observación no se funde con otra por compartir tokens: solo sale si es un eco de continuidad o si la frase completa ya está en el objetivo o en una observación anterior. Si aún no cabe, salen unidades enteras. Una corrección no se parte en 160 caracteres. Una pregunta de más de 400, o un turno que no es corrección y pasa de 160, se corta en el último espacio útil y el resto queda como recorte previo.
+
+`context_fit` distingue la unidad omitida del recorte previo. El recorte lleva `prior_cut`. No se anota como intacto el texto que ya se cortó.
+
+Antes de cambiar las expectativas, la pregunta larga, la búsqueda vacía, el foco fijado, la corrección de más de 160 caracteres y el caso genérico perdían el episodio o partían la corrección. Con el tope en 2400:
+
+- Turno 14 de la sesión 196: 2359 caracteres. Conserva la pregunta, el objetivo, el código 18, los identificadores, las observaciones y sus comprobaciones, el código 8 solo como no vigente y la corrección completa. Salen los manuales candidatos, «Sigue igual.» y el Follow-up.
+- La misma sesión con la planta ya corregida conserva planta 2 en `Obs:` y planta 1 solo en la corrección.
+- Pregunta natural cercana al máximo, sobre ese episodio: 2359 caracteres. Conserva objetivo, identidad, código, corrección y comprobaciones. El Follow-up sale.
+- Búsqueda vacía sobre ese episodio: 2341 caracteres. Conserva el episodio y la regla de búsqueda vacía.
+- Búsqueda vacía con foco fijado: 2219 caracteres. Conserva el episodio y la regla del pin.
+- Corrección relevante por encima de 160 caracteres: queda entera.
+- Caso genérico, distinto de Elemont, con pregunta larga y búsqueda vacía: 2393 caracteres. Conserva el objetivo, Nortec, el código 41, el código 7 solo como no vigente, la planta 4 vigente, la corrección que deja atrás la planta 3 y la comprobación del indicador. En ese caso, ya sin manuales en el prompt, también sale la frase de no enseñar manuales recuperados. Las reglas de procedimiento, hipótesis, invención y búsqueda vacía siguen.
+- Un contexto corto no omite unidades. Identidad conocida y desconocida, en español y en inglés, usan el mismo presupuesto. La instrucción conocida, más corta, sigue pudiendo incluir manuales de referencia, historial y Follow-up.
+
+No hay rama por sesión, fixture, fabricante ni texto del journey. No hay otra llamada de modelo, tabla, agente ni sistema de memoria. No cambió la percepción, el reducer, `EquipmentIdentity#known?`, el retrieval, los pins ni el fixture del journey A.
+
+Evidencia local, con dependencias externas stubbeadas y `PASS_CALL_CAP=0`: `companion_guidance_context_test`, `validation_capture_test` y `session_context_builder_test`, 98 corridas, 1243 aserciones, 0 fallos, 0 errores y 0 skips. Rutas de guidance con búsqueda vacía, pin vacío, identidad conocida sin manual y conflicto de fabricante, en `document_identity_scope_test` y `field_companion_pilot_readiness_test`: 8 corridas, 179 aserciones, 0 fallos, 0 errores y 0 skips. RuboCop sobre el compositor y esas pruebas no reportó ofensas. `git diff --check` quedó limpio.
+
+Implementado: la continuidad local del compositor. Desplegado: no. La imagen evidenciada sigue siendo `6ca7788`. Revalidado: no. Pendiente: el efecto sobre una pasada real y sobre la respuesta del modelo. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. La etapa 3 no empieza. Este diff queda en `main` para revisión y no se despliega.
 
 ### 3. Verificar ese alcance en producción
 

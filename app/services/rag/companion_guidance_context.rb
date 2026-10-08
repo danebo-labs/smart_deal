@@ -6,10 +6,9 @@ module Rag
   # step. This object only bounds the facts that generation and answer
   # safety are allowed to see.
   class CompanionGuidanceContext
-    # Session 196 turn 14, after the candidate manuals and the older turn are
-    # dropped whole: instruction, question, current problem, correction, and
-    # follow-up render as 2472 characters. 2400 cut that remainder mid-phrase.
-    MAX_CHARS = 2472
+    # Prompt budget. Episode facts outrank manuals, redundant history, and the
+    # follow-up flag. Units that do not fit are omitted whole.
+    MAX_CHARS = 2400
     # Diagnostic only. Not rendered, not routed, and not TurnPerception::PROMPT_VERSION.
     COMPANION_POLICY_VERSION = "2026-10-07.1"
     HYPOTHESIS_RULE = "Separate the report, the evidence, and a hypothesis. An unestablished part or place is conditional; do not treat it as present."
@@ -56,6 +55,25 @@ module Rag
     APPLICABILITY_DOUBT = /\b(?:puede no|no se si|may not|not apply|no es mi|not this equipment|not be my)\b/
     QUESTION_CHARS = 400
     TURN_CHARS = 160
+    PROCEDURE_LIMIT = "If they ask for a procedure, reset, or value, do not give those steps, and do not reply by only asking which equipment this is. Say it is not confirmed, then ask that one check. Do not stop at the refusal, and do not send them to an unknown terminal."
+    DONE_ACTION = "If they already report an action as done, use it as context and do not instruct it again."
+    INTERVENTION_LIMIT = "You may observe, interpret, and hypothesize. Do not instruct a physical intervention, an operational intervention, or a tool or instrument measurement without applicable evidence."
+    UNKNOWN_INVENT = "Do not invent electrical values, terminals, fault-code meanings, sequences, menu names, DIP positions, selectors, waits, inspection mode, power cuts, or resets."
+    KNOWN_INVENT = "Do not invent electrical values, distances, tolerances, torque, parameters, terminal numbers, terminal functions, fault-code meanings, manufacturer-specific sequences, menu names, or DIP positions."
+    EMPTY_SEARCH = "The search returned no documentation. Do not say the manual does not exist. Offer one narrowing clarification or Danebo guidance. No manufacturer procedure, value, or terminal."
+    PIN_EMPTY = "The pinned focus returned no evidence. Do not release the pin."
+    RANK_RULE = 2
+    RANK_QUESTION = 3
+    RANK_FACT = 4
+    RANK_CHECK = 8
+    RANK_FOLLOW_UP = 60
+    RANK_OLD_TURN = 70
+    RANK_REDUNDANT = 80
+    RANK_MANUAL = 90
+    CORRECTION_CUE = /
+      \b(?:corrijo|correcci\p{L}*|me\s+equivoqu\p{L}*|en\s+realidad|lei\s+mal|instead|actually)\b |
+      \bno\s+(?:es|era|de)\b
+    /ix
     MAX_TURNS = 2
     MAX_MANUALS = 3
     PHOTO_HEADING = "## Photo Evidence (this turn)"
@@ -104,7 +122,10 @@ module Rag
 
     def initialize(question:, identity:, session_context:, labels:, locale:, mode: :known, manuals: nil,
                    empty_retrieval: false, pinned_focus_empty: false)
-      @question = question.to_s.squish.truncate(QUESTION_CHARS, omission: "")
+      raw_question = question.to_s.squish
+      @question, question_rest = bound_words(raw_question, QUESTION_CHARS)
+      @prior_cuts = []
+      @prior_cuts << { "part" => "question", "text" => question_rest } if question_rest.present?
       @identity = identity
       @session_context = session_context.to_s
       @labels = Array(labels)
@@ -118,7 +139,7 @@ module Rag
     def to_s
       kept, omitted = fit_guidance(guidance_pieces)
       rendered = render_guidance(kept)
-      @context_truncated = omitted.any? || rendered.length > MAX_CHARS
+      @context_truncated = omitted.any? || prior_cuts.any? || rendered.length > MAX_CHARS
       record_guidance_fit(rendered, omitted) if @context_truncated
       rendered
     end
@@ -135,7 +156,7 @@ module Rag
         "part" => "guidance",
         "chars" => rendered.length,
         "truncated" => true,
-        "omitted" => omitted.map { |item| { "part" => item.role, "text" => item.text } },
+        "omitted" => omission_rows(omitted),
         "context_cap" => MAX_CHARS
       )
     end
@@ -175,62 +196,79 @@ module Rag
 
     private
 
-    def instruction
-      return unknown_instruction if unknown?
-
-      <<~TEXT.strip
-        # FIELD COMPANION
-        You are assisting the technician in the field.
-        There is no compatible manufacturer procedure available.
-        Do not borrow procedures from reference-only manuals.
-        Continue helping using the accepted visual observation, the active problem, and generic diagnostic reasoning.
-        Ask for one high-value next observation when needed. One main question. A short alternative is allowed. Do not turn the answer into a questionnaire, and do not ask for manufacturer, model, controller, fault code, and a photo together.
-        Clearly distinguish observation from guidance. Put what the photo shows in its own short sentence, then Danebo guidance. Guidance is a hypothesis or a field check, not a manufacturer instruction.
-        #{HYPOTHESIS_RULE}
-        Do not invent electrical values, distances, tolerances, torque, parameters, terminal numbers, terminal functions, fault-code meanings, manufacturer-specific sequences, menu names, or DIP positions.
-        If the equipment identity conflicts, do not choose a manufacturer. Ask for the evidence that resolves the conflict before any manufacturer-specific step.
-        On a follow-up, do not greet again. A short greeting is allowed only when this opens the case.
-        Do not stop after saying there is no manual. Do not print DATA_NOT_AVAILABLE.
-        Write the entire answer in #{language_name}.
-      TEXT
-    end
-
     def unknown?
       @mode == :unknown
     end
 
-    def unknown_instruction
-      <<~TEXT.strip
-        # FIELD COMPANION
-        #{objective_line}
-        Follow that objective.
-        You are assisting an elevator technician in the field.
-        The equipment identity is not confirmed.
-        Do not teach retrieved manuals. Those contents are not in this prompt.
-        Keep this job in elevator field service.
-        #{observation_lead}
-        If they ask for a procedure, reset, or value, do not give those steps, and do not reply by only asking which equipment this is. Say it is not confirmed, then ask that one check. Do not stop at the refusal, and do not send them to an unknown terminal.
-        If they already report an action as done, use it as context and do not instruct it again.
-        #{nameplate_rule}
-        #{PASSIVE_RULE}
-        You may observe, interpret, and hypothesize. Do not instruct a physical intervention, an operational intervention, or a tool or instrument measurement without applicable evidence.
-        #{HYPOTHESIS_RULE}
-        Do not invent electrical values, terminals, fault-code meanings, sequences, menu names, DIP positions, selectors, waits, inspection mode, power cuts, or resets.
-        If the equipment identity conflicts, do not choose a manufacturer.
-        On a follow-up, do not greet again.
-        #{empty_retrieval_rule}
-        Do not stop after saying there is no manual. Do not print DATA_NOT_AVAILABLE.
-        Do not cite manuals with [n].
-        Write the entire answer in #{language_name}.
-      TEXT
+    def instruction_pieces
+      unknown? ? unknown_instruction_pieces : known_instruction_pieces
     end
 
-    def empty_retrieval_rule
-      return "" unless @empty_retrieval
+    def unknown_instruction_pieces
+      pieces = [
+        rule_piece("# FIELD COMPANION"),
+        rule_piece(objective_line),
+        rule_piece("Follow that objective."),
+        rule_piece("The equipment identity is not confirmed."),
+        rule_piece(HYPOTHESIS_RULE),
+        rule_piece(PROCEDURE_LIMIT),
+        rule_piece(DONE_ACTION),
+        rule_piece(PASSIVE_RULE),
+        rule_piece(INTERVENTION_LIMIT),
+        rule_piece(UNKNOWN_INVENT),
+        rule_piece("If the equipment identity conflicts, do not choose a manufacturer."),
+        rule_piece("On a follow-up, do not greet again.")
+      ]
+      pieces << rule_piece(EMPTY_SEARCH) if @empty_retrieval
+      pieces << rule_piece(PIN_EMPTY) if @pinned_focus_empty
+      pieces << rule_piece("Write the entire answer in #{language_name}.")
+      pieces.concat(unknown_detail_pieces)
+      pieces
+    end
 
-      rule = "The search returned no documentation. Do not say the manual does not exist. Offer one clarification that would narrow the next search, or Danebo field guidance labeled as Danebo guidance. No manufacturer procedure, value, or terminal."
-      rule += " The pinned focus returned no evidence. Do not release the pin." if @pinned_focus_empty
-      rule
+    def unknown_detail_pieces
+      [
+        detail_piece("You are assisting an elevator technician in the field.", 48),
+        detail_piece("Do not teach retrieved manuals. Those contents are not in this prompt.", 42),
+        detail_piece("Keep this job in elevator field service.", 49),
+        detail_piece(observation_lead, 46),
+        detail_piece(nameplate_rule, 44),
+        detail_piece("Do not stop after saying there is no manual. Do not print DATA_NOT_AVAILABLE.", 41),
+        detail_piece("Do not cite manuals with [n].", 41)
+      ]
+    end
+
+    def known_instruction_pieces
+      pieces = [
+        rule_piece("# FIELD COMPANION"),
+        rule_piece("You are assisting the technician in the field."),
+        rule_piece("There is no compatible manufacturer procedure available."),
+        rule_piece("Do not borrow procedures from reference-only manuals."),
+        rule_piece(HYPOTHESIS_RULE),
+        rule_piece(KNOWN_INVENT),
+        rule_piece("If the equipment identity conflicts, do not choose a manufacturer. Ask for the evidence that resolves the conflict before any manufacturer-specific step."),
+        rule_piece("Write the entire answer in #{language_name}.")
+      ]
+      pieces.concat(known_detail_pieces)
+      pieces
+    end
+
+    def known_detail_pieces
+      [
+        detail_piece("Continue helping using the accepted visual observation, the active problem, and generic diagnostic reasoning.", 44),
+        detail_piece("Ask for one high-value next observation when needed. One main question. A short alternative is allowed. Do not turn the answer into a questionnaire, and do not ask for manufacturer, model, controller, fault code, and a photo together.", 42),
+        detail_piece("Clearly distinguish observation from guidance. Put what the photo shows in its own short sentence, then Danebo guidance. Guidance is a hypothesis or a field check, not a manufacturer instruction.", 45),
+        detail_piece("On a follow-up, do not greet again. A short greeting is allowed only when this opens the case.", 48),
+        detail_piece("Do not stop after saying there is no manual. Do not print DATA_NOT_AVAILABLE.", 41)
+      ]
+    end
+
+    def rule_piece(text)
+      piece("instruction", text, RANK_RULE, text.length)
+    end
+
+    def detail_piece(text, rank)
+      piece("instruction_detail", text, rank, text.length)
     end
 
     def objective_line
@@ -348,7 +386,7 @@ module Rag
     end
 
     def guidance_pieces
-      [ piece("instruction", instruction, 0, 0) ] + body_pieces
+      instruction_pieces + body_pieces
     end
 
     def body_pieces
@@ -357,7 +395,7 @@ module Rag
 
     def unknown_pieces
       pieces = []
-      pieces << piece("question", "Question: #{@question}", 5, 0) if @question.present?
+      pieces << piece("question", "Question: #{@question}", RANK_QUESTION, 0) if @question.present?
       problem_projection_lines.each { |line| append_problem_piece(pieces, line) }
       append_visual_pieces(pieces)
       append_turn_pieces(pieces)
@@ -368,20 +406,20 @@ module Rag
 
     def known_pieces
       pieces = []
-      pieces << piece("question", "Question: #{@question}", 5, 0) if @question.present?
-      pieces << piece("problem", "Active problem: #{goal}", 15, goal.length) if goal.present?
+      pieces << piece("question", "Question: #{@question}", RANK_QUESTION, 0) if @question.present?
+      pieces << piece("problem", "Active problem: #{goal}", RANK_FACT, goal.length) if goal.present?
       episode_lines.each { |line| append_problem_piece(pieces, line) }
-      identity_lines.each { |line| pieces << piece("problem", line, 15, line.length) }
+      identity_lines.each { |line| pieces << piece("problem", line, RANK_FACT, line.length) }
       if conflict.present?
         text = "Identity conflict: #{conflict}. Do not choose either manufacturer."
-        pieces << piece("problem", text, 15, text.length)
+        pieces << piece("problem", text, RANK_FACT, text.length)
       end
       append_visual_pieces(pieces)
       append_turn_pieces(pieces)
-      pieces << piece("status", "No compatible manufacturer manual was found.", 8, 0)
+      pieces << piece("status", "No compatible manufacturer manual was found.", RANK_FACT, 0)
       if manual_names.any?
         text = "Reference-only manuals, names only: #{manual_names.join('; ')}. Do not teach their contents."
-        pieces << piece("manual", text, 60, manual_names.length)
+        pieces << piece("manual", text, RANK_MANUAL, manual_names.length)
       end
       pieces << follow_up_piece
       pieces
@@ -389,13 +427,14 @@ module Rag
 
     def append_problem_piece(pieces, line)
       unless line.start_with?("Obs:")
-        pieces << piece("problem", line, 15, line.length)
+        pieces << piece("problem", line, RANK_FACT, line.length)
         return
       end
 
       clauses = line.sub(/\AObs:\s*/, "").split("; ").filter_map { |clause| clause.squish.presence }
       clauses.each_with_index do |clause, index|
-        pieces << piece("observation", clause, 30, clauses.length - index)
+        rank = duplicate_observation?(clause, clauses[0...index]) ? RANK_REDUNDANT : RANK_FACT
+        pieces << piece("observation", clause, rank, clauses.length - index)
       end
     end
 
@@ -405,7 +444,7 @@ module Rag
       pieces << piece("visual_heading", "Accepted visual observation:", 1, 0)
       visual_fields.each do |label, value|
         text = "- #{label}: #{value}"
-        pieces << piece("visual", text, 16, text.length)
+        pieces << piece("visual", text, RANK_FACT, text.length)
       end
     end
 
@@ -415,8 +454,7 @@ module Rag
 
       pieces << piece("turns_heading", "Technician observations:", 1, 0)
       turns.each_with_index do |turn, index|
-        newest = index == turns.length - 1
-        pieces << piece("turn", "- #{turn}", newest ? 22 : 40, turns.length - index)
+        pieces << piece("turn", "- #{turn}", turn_rank(turn, index, turns.length), turns.length - index)
       end
     end
 
@@ -430,12 +468,12 @@ module Rag
         0
       )
       @manuals.each_with_index do |name, index|
-        pieces << piece("manual", "- #{name}", 60, @manuals.length - index)
+        pieces << piece("manual", "- #{name}", RANK_MANUAL, @manuals.length - index)
       end
     end
 
     def follow_up_piece
-      piece("follow_up", follow_up? ? "Follow-up: yes." : "Follow-up: no.", 10, 0)
+      piece("follow_up", follow_up? ? "Follow-up: yes." : "Follow-up: no.", RANK_FOLLOW_UP, 0)
     end
 
     def piece(role, text, rank, seq)
@@ -469,9 +507,9 @@ module Rag
     end
 
     def render_guidance(pieces)
-      instruction_piece = pieces.find { |item| item.role == "instruction" }
-      body = render_body(pieces.reject { |item| item.role == "instruction" })
-      [ instruction_piece&.text, body ].compact_blank.join("\n\n")
+      head = pieces.select { |item| item.role.start_with?("instruction") }.map(&:text).join("\n")
+      body = render_body(pieces.reject { |item| item.role.start_with?("instruction") })
+      [ head.presence, body.presence ].compact.join("\n\n")
     end
 
     def render_body(pieces)
@@ -554,6 +592,10 @@ module Rag
     end
 
     def technician_turns
+      @technician_turns ||= selected_history(raw_user_turns).filter_map { |text| present_turn(text) }
+    end
+
+    def raw_user_turns
       current = @question.squish
       section("## Recent Conversation").lines.filter_map { |line|
         stripped = line.strip
@@ -562,8 +604,85 @@ module Rag
         text = stripped.sub(/\AUser:\s*/, "").squish
         next if text.blank? || text == current
 
-        text.truncate(TURN_CHARS, omission: "")
-      }.last(MAX_TURNS)
+        text
+      }
+    end
+
+    def selected_history(texts)
+      window = texts.last(MAX_TURNS)
+      correction = texts.reverse.find { |text| correction_text?(text) }
+      return window if correction.nil? || window.include?(correction)
+
+      ordered = texts.select { |text| text.equal?(correction) || window.include?(text) }
+      while ordered.size > MAX_TURNS
+        index = ordered.index { |text| !text.equal?(correction) && redundant_history?(text) }
+        index ||= ordered.index { |text| !text.equal?(correction) }
+        break unless index
+
+        ordered.delete_at(index)
+      end
+      ordered
+    end
+
+    def present_turn(text)
+      return text if text.length <= TURN_CHARS || correction_text?(text)
+
+      kept, rest = bound_words(text, TURN_CHARS)
+      prior_cuts << { "part" => "turn", "text" => rest } if rest.present?
+      kept.presence
+    end
+
+    def correction_text?(text)
+      fold_text(text).match?(CORRECTION_CUE)
+    end
+
+    def turn_rank(turn, index, count)
+      return RANK_REDUNDANT if redundant_history?(turn)
+      return RANK_FACT if correction_text?(turn)
+
+      index == count - 1 ? RANK_CHECK : RANK_OLD_TURN
+    end
+
+    def redundant_history?(text)
+      return true if ObservationText.continuity_echo?(text)
+
+      holders = [ goal, *observation_clauses ].compact
+      holders.any? { |holder| ObservationText.covered_by?(holder, text) }
+    end
+
+    def duplicate_observation?(clause, earlier)
+      return true if ObservationText.continuity_echo?(clause)
+      return true if goal.present? && ObservationText.covered_by?(goal, clause)
+
+      earlier.any? { |other| ObservationText.covered_by?(other, clause) }
+    end
+
+    def observation_clauses
+      problem_projection_lines.flat_map { |line|
+        next [] unless line.start_with?("Obs:")
+
+        line.sub(/\AObs:\s*/, "").split("; ").filter_map { |clause| clause.squish.presence }
+      }
+    end
+
+    def bound_words(text, limit)
+      return [ text, nil ] if text.length <= limit
+
+      window = text[0, limit]
+      space = window.rindex(" ")
+      kept = space && space >= (limit / 2) ? window[0, space] : window
+      rest = text[kept.length..].to_s.squish
+      [ kept.squish, rest.presence ]
+    end
+
+    def prior_cuts
+      @prior_cuts ||= []
+    end
+
+    def omission_rows(omitted)
+      rows = omitted.map { |item| { "part" => item.role, "text" => item.text } }
+      prior_cuts.each { |cut| rows << cut.merge("prior_cut" => true) }
+      rows
     end
 
     def manual_names

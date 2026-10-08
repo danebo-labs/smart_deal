@@ -440,6 +440,23 @@ class Rag::CompanionGuidanceContextTest < ActiveSupport::TestCase
     assert_not_includes prompt, "XQ7"
   end
 
+  test "unknown guidance keeps a catalog manufacturer and still says identity is not confirmed" do
+    session = <<~TEXT
+      ## Active Field Problem
+      Goal: la puerta 1 no termina de cerrar el imán no magnetiza
+      Manufacturer: Elemont (catalog)
+      Identifiers: Elemont MH, CEA15
+    TEXT
+    prompt = unknown_context(
+      "Elemont MH con placa CEA15; la puerta 1 no termina de cerrar y el imán no magnetiza. ¿Qué reviso?",
+      session_context: session
+    ).to_s
+
+    assert_includes prompt, "Manufacturer: Elemont (catalog)"
+    assert_includes prompt, "The equipment identity is not confirmed."
+    assert_not_includes prompt, "There is no compatible manufacturer procedure available."
+  end
+
   def unknown_prompt(question:, session_context:, locale:)
     unknown_context(question, session_context: session_context, locale: locale).to_s
   end

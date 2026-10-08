@@ -125,6 +125,28 @@ class Rag::RoutePolicyTest < ActiveSupport::TestCase
     assert decision.performs_retrieval?
   end
 
+  test "a compound brand fact beside the symptom searches and does not ask the controller" do
+    fact = Rag::TurnPerception::Identity.new(
+      span: "Elemont MH", act: "assert", kind: "fact", slot: "manufacturer",
+      value: "Elemont", source: "catalog", manufacturer: "Elemont"
+    )
+    identifier = Rag::TurnPerception::Identity.new(
+      span: "Elemont MH", act: "assert", kind: "identifier", slot: nil,
+      value: "Elemont MH", source: nil, manufacturer: nil
+    )
+    observed = perception(
+      "report",
+      observations: [ "la puerta 1 no termina de cerrar" ],
+      identities: [ fact, identifier ]
+    )
+
+    decision = Rag::RoutePolicy.call(previous: open_episode, perception: observed, focus_count: 0, locale: :es)
+
+    assert_equal "ready", decision.decision
+    assert_nil decision.clarification
+    assert decision.performs_retrieval?
+  end
+
   test "an ambiguous designator still asks which document it is" do
     episode = open_episode
     decision = Rag::RoutePolicy.call(

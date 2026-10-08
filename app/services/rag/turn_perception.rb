@@ -248,6 +248,12 @@ module Rag
       identities = []
       ambiguities = []
       assertions.each_with_index do |item, index|
+        compound = compound_identities(item)
+        if compound
+          identities.concat(compound)
+          next
+        end
+
         found = draft[index] || remainder_identity(item, context)
         if found.is_a?(Ambiguity)
           ambiguities << found
@@ -256,6 +262,57 @@ module Rag
         end
       end
       [ identities, ambiguities ]
+    end
+
+    # The span stays an identifier. A matching brand and designator also
+    # record the manufacturer the way a lone brand does. Negating that span
+    # drops this manufacturer only when it is the one stored.
+    def compound_identities(item)
+      return nil unless %w[assert negate].include?(item["act"])
+
+      match = lookup_compound(item["span"])
+      return nil if match.nil?
+
+      if item["act"] == "negate"
+        note_rule("compound_brand", item["span"], "negated_same_entry", { "brand" => match.brand })
+        rows = [ identifier_negation(item["span"]) ]
+        rows.unshift(manufacturer_negation(item["span"], match.brand)) if stored_brand?(match.brand)
+        return rows
+      end
+
+      disagree(item["span"], item["slot_hint"], "manufacturer")
+      note_rule("compound_brand", item["span"], "same_entry", { "brand" => match.brand })
+      [
+        fact(item["span"], "assert", "manufacturer", match.brand, "catalog", match.brand),
+        identifier(item["span"], "assert")
+      ]
+    end
+
+    def manufacturer_negation(span, brand)
+      Identity.new(
+        span: span, act: "negate", kind: "negate", slot: "manufacturer",
+        value: brand, source: nil, manufacturer: brand
+      )
+    end
+
+    def identifier_negation(span)
+      Identity.new(
+        span: span, act: "negate", kind: "negate", slot: "identifier",
+        value: span, source: nil, manufacturer: nil
+      )
+    end
+
+    def stored_brand?(brand)
+      fact = @episode.respond_to?(:fact) ? @episode.fact("manufacturer") : nil
+      return false unless fact.is_a?(Hash) && fact["value"].present?
+
+      FollowupQueryRewriter.normalize_label(fact["value"]) == FollowupQueryRewriter.normalize_label(brand)
+    end
+
+    def lookup_compound(span)
+      return nil if @viewer_account.nil? || @catalog.nil? || !@catalog.respond_to?(:resolve_compound_brand)
+
+      @catalog.resolve_compound_brand(span, viewer_account: @viewer_account)
     end
 
     def catalog_identity(item)

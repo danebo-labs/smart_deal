@@ -82,6 +82,33 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     assert_nil session.active_episode["pending_question"]
   end
 
+  test "the session 196 Elemont MH reading stores the catalog brand and not CEA15+" do
+    session = web_session
+    elemont = manual("elemont.pdf")
+    turn = "Elemont MH con placa CEA15; la puerta 1 no termina de cerrar y el imán no magnetiza. ¿Qué reviso?"
+    result = with_owner do
+      Rag::DocumentIdentityCatalog.with_catalog(elemont_catalog(elemont)) do
+        ask(session, turn, client(door_reading))
+      end
+    end
+
+    facts = session.reload.active_episode["facts"]
+    identifiers = session.active_episode["identifiers"].pluck("value")
+    identity = Rag::EquipmentIdentity.from_episode(session.active_episode)
+
+    assert_equal "ready", result.understanding.decision
+    assert_not result.understanding.clarify_first?
+    assert_nil session.active_episode["pending_question"]
+    assert_equal "Elemont", facts.dig("manufacturer", "value")
+    assert_equal "catalog", facts.dig("manufacturer", "source")
+    assert_includes identifiers, "Elemont MH"
+    assert_includes identifiers, "CEA15"
+    assert_not_includes identifiers, "CEA15+"
+    assert_not_includes result.composed.to_s, "Elemont Montacargas Hidraulico Modelo MH"
+    assert_not_includes result.composed.to_s, "CEA15+"
+    assert_not identity.known?
+  end
+
   test "Q2 seek keeps the token and does not ask again" do
     session = web_session
     result = with_owner do
@@ -883,6 +910,38 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
       aliases: [],
       account: @account
     )
+  end
+
+  def elemont_catalog(elemont)
+    Rag::DocumentIdentityCatalog.new({
+      "documents" => [
+        {
+          "account_id" => @account.id.to_s,
+          "document_id" => elemont.document_uid,
+          "s3_key" => elemont.s3_key,
+          "display_name" => "Elemont Montacargas Hidraulico Modelo MH",
+          "brands" => [ "Elemont" ],
+          "designators" => [ "MH" ],
+          "generic" => false,
+          "confirmed" => true
+        }
+      ]
+    })
+  end
+
+  def door_reading
+    {
+      "move" => "report",
+      "assertions" => [
+        { "span" => "Elemont MH", "act" => "assert", "slot_hint" => "manufacturer" },
+        { "span" => "CEA15", "act" => "assert", "slot_hint" => "controller" },
+        { "span" => "la puerta 1 no termina de cerrar", "act" => "assert", "slot_hint" => nil },
+        { "span" => "el imán no magnetiza", "act" => "assert", "slot_hint" => nil }
+      ],
+      "observations" => [ "la puerta 1 no termina de cerrar", "el imán no magnetiza" ],
+      "pending_resolution" => nil,
+      "clarification_target" => nil
+    }
   end
 
   def monarch_catalog(doc)

@@ -691,14 +691,121 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     previous&.each { |key, old| old.nil? ? ENV.delete(key) : ENV[key] = old }
   end
 
+  DOOR_TURN = "Elemont MH con placa CEA15; la puerta 1 no termina de cerrar y el imán no magnetiza. ¿Qué reviso?"
+  DOOR_DISPLAY = "Elemont Montacargas Hidraulico Modelo MH"
+
+  test "the session 196 reading of Elemont MH records the brand and keeps the span" do
+    catalog = equipment_catalog([
+      equipment_row(brand: "Elemont", designators: [ "MH" ], display_name: DOOR_DISPLAY)
+    ])
+    result = perceive_with(catalog, door_turn_raw, DOOR_TURN)
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    decision = settle(episode, result, DOOR_TURN)
+    explained = Rag::QueryComposer.explain(state: episode, turn: DOOR_TURN, perception: result, decision: decision)
+    identity = Rag::EquipmentIdentity.from_episode(episode)
+
+    fact = result.facts.find { |item| item.slot == "manufacturer" }
+    assert_equal "Elemont", fact.value
+    assert_equal "catalog", fact.source
+    assert_equal "Elemont MH", fact.span
+    assert result.identifiers.any? { |item| item.value == "Elemont MH" }
+    assert result.catalog_disagreements.none? { |row| row["span"] == "Elemont MH" }
+    assert result.facts.none? { |item| item.value == "CEA15+" }
+    assert_equal "Elemont", episode.fact("manufacturer")["value"]
+    assert_equal "catalog", episode.fact("manufacturer")["source"]
+    assert_includes episode.identifiers.pluck("value"), "Elemont MH"
+    assert_includes episode.identifiers.pluck("value"), "CEA15"
+    assert_not identity.known?
+    assert_equal "ready", decision.decision
+    assert_nil decision.clarification
+    assert_not_includes explained[:query], DOOR_DISPLAY
+    assert_not_includes explained[:query], "CEA15+"
+    assert_includes field_problem(episode), "Manufacturer: Elemont (catalog)"
+  end
+
+  test "Elemont CEA15 does not select CEA15+ or write a manufacturer" do
+    catalog = equipment_catalog([
+      equipment_row(brand: "Elemont", designators: [ "MH" ]),
+      equipment_row(brand: "Controles S.A.", designators: [ { "value" => "CEA15+", "type" => "controller" } ])
+    ])
+    result = perceive_with(catalog, report([ assert_span("Elemont CEA15", "manufacturer") ]), "Elemont CEA15")
+
+    assert_empty result.facts
+    assert_equal [ "identifier" ], result.identities.map(&:kind)
+  end
+
+  test "an ambiguous brand in a compound span writes no manufacturer" do
+    catalog = equipment_catalog([
+      equipment_row(brand: "Elemont", designators: [ "MH" ]),
+      equipment_row(brand: "Élemont", designators: [ "MH" ])
+    ])
+    result = perceive_with(catalog, report([ assert_span("Elemont MH", "manufacturer") ]), "Elemont MH")
+
+    assert_empty result.facts
+    assert_equal [ "identifier" ], result.identities.map(&:kind)
+  end
+
+  test "two entries with the same brand and designator write no manufacturer" do
+    catalog = equipment_catalog([
+      equipment_row(brand: "Elemont", designators: [ "MH" ]),
+      equipment_row(brand: "Elemont", designators: [ "MH" ])
+    ])
+    result = perceive_with(catalog, report([ assert_span("Elemont MH", "manufacturer") ]), "Elemont MH")
+
+    assert_empty result.facts
+    assert_equal [ "identifier" ], result.identities.map(&:kind)
+  end
+
+  test "a compound brand from another tenant stays an identifier" do
+    catalog = equipment_catalog([ equipment_row(brand: "Elemont", designators: [ "MH" ]) ])
+    result = perceive_with(catalog, report([ assert_span("Elemont MH", "manufacturer") ]), "Elemont MH", viewer: @other)
+
+    assert_empty result.facts
+    assert_equal [ "identifier" ], result.identities.map(&:kind)
+  end
+
+  test "negating Elemont MH removes that manufacturer and the span" do
+    catalog = equipment_catalog([ equipment_row(brand: "Elemont", designators: [ "MH" ]) ])
+    episode = fact_episode("manufacturer", "Elemont", source: "catalog")
+    episode.append_identifier!("Elemont MH", correlation_id: "seed")
+    result = perceive_with(
+      catalog,
+      correct_payload([ negate_span("Elemont MH") ]),
+      "No, no es Elemont MH.",
+      episode: episode
+    )
+    settle(episode, result, "No, no es Elemont MH.")
+
+    assert_equal "correct", result.move
+    assert_nil episode.fact("manufacturer")
+    assert_not_includes episode.identifiers.pluck("value"), "Elemont MH"
+    assert_includes episode.rejected.pluck("value"), "Elemont"
+  end
+
+  test "negating Elemont MH leaves a different stored manufacturer" do
+    catalog = equipment_catalog([ equipment_row(brand: "Elemont", designators: [ "MH" ]) ])
+    episode = fact_episode("manufacturer", "KONE")
+    episode.append_identifier!("Elemont MH", correlation_id: "seed")
+    result = perceive_with(
+      catalog,
+      correct_payload([ negate_span("Elemont MH") ]),
+      "No, no es Elemont MH.",
+      episode: episode
+    )
+    settle(episode, result, "No, no es Elemont MH.")
+
+    assert_equal "KONE", episode.fact("manufacturer")["value"]
+    assert_not_includes episode.identifiers.pluck("value"), "Elemont MH"
+  end
+
   def correct_payload(assertions)
     { "move" => "correct", "assertions" => assertions, "observations" => [], "pending_resolution" => nil, "clarification_target" => nil }
   end
 
-  def fact_episode(slot, value)
+  def fact_episode(slot, value, source: "user")
     episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
     episode.write_fact!(
-      slot, status: "known", value: value, source: "user",
+      slot, status: "known", value: value, source: source,
       correlation_id: "seed", at: Time.current.iso8601
     )
     episode
@@ -742,5 +849,62 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
 
   def negate_span(span)
     { "span" => span, "act" => "negate", "slot_hint" => nil }
+  end
+
+  def door_turn_raw
+    {
+      "move" => "report",
+      "assertions" => [
+        { "span" => "Elemont MH", "act" => "assert", "slot_hint" => "manufacturer" },
+        { "span" => "CEA15", "act" => "assert", "slot_hint" => "controller" },
+        { "span" => "la puerta 1 no termina de cerrar", "act" => "assert", "slot_hint" => nil },
+        { "span" => "el imán no magnetiza", "act" => "assert", "slot_hint" => nil }
+      ],
+      "observations" => [ "la puerta 1 no termina de cerrar", "el imán no magnetiza" ],
+      "pending_resolution" => nil,
+      "clarification_target" => nil
+    }
+  end
+
+  def perceive_with(catalog, raw, turn, episode: Rag::ActiveEpisode.new, viewer: @owner)
+    Rag::TurnPerception.build(raw, turn: turn, episode: episode, catalog: catalog, viewer_account: viewer)
+  end
+
+  def equipment_catalog(rows)
+    Rag::DocumentIdentityCatalog.new({ "documents" => rows })
+  end
+
+  def equipment_row(brand:, designators:, confirmed: true, display_name: brand)
+    uid = SecureRandom.uuid
+    key = "manuals/#{uid}.pdf"
+    KbDocument.create!(
+      account: @owner, s3_key: key, display_name: display_name, document_uid: uid, aliases: []
+    )
+    {
+      "account_id" => @owner.id.to_s,
+      "document_id" => uid,
+      "s3_key" => key,
+      "display_name" => display_name,
+      "brands" => [ brand ],
+      "designators" => designators,
+      "generic" => false,
+      "confirmed" => confirmed
+    }
+  end
+
+  def field_problem(episode)
+    session = ConversationSession.create!(
+      identifier: "web:compound_#{SecureRandom.hex(3)}",
+      channel: "web",
+      expires_at: 30.days.from_now,
+      active_episode: episode.to_h
+    )
+    keys = %w[FIELD_COMPANION_EPISODE_ENABLED FIELD_COMPANION_TURN_ENABLED]
+    previous = keys.index_with { |key| ENV[key] }
+    ENV["FIELD_COMPANION_EPISODE_ENABLED"] = "true"
+    ENV["FIELD_COMPANION_TURN_ENABLED"] = "true"
+    SessionContextBuilder.field_problem_block(session)
+  ensure
+    previous&.each { |key, old| old.nil? ? ENV.delete(key) : ENV[key] = old }
   end
 end

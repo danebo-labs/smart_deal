@@ -1,6 +1,6 @@
 # Field Companion: conversación técnica real
 
-**Estado: ETAPA 2 BLOQUEADA.** No es `EPISODIO_VALIDADO`. La etapa 1 está en el código local. La etapa 2 sigue bloqueada: la corrección de planta quedó reparada en local sobre `66dd9e0` y no está revalidada. La comprobación web del 2026-10-07 reprodujo la consulta corta; la reparación del nombre canónico y las tres correcciones de su review quedan en local y no reabren la etapa. El contrato N4 de citas ajenas pasó en local y tampoco la reabre. Producción ejecuta `6ca7788`. La expansión del nombre canónico no va en esa imagen. Un turno real no trajo el plano Elemont y no reabre la etapa. La etapa 3 no empieza. La revisión Opus del 2026-10-07 sobre `7076f05` sigue incorporada. Esta revisión no habilita un piloto.
+**Estado: ETAPA 2 BLOQUEADA.** No es `EPISODIO_VALIDADO`. La etapa 1 está en el código local. La etapa 2 sigue bloqueada: la corrección de planta quedó reparada en local sobre `66dd9e0` y no está revalidada. La comprobación web del 2026-10-07 reprodujo la consulta corta; la reparación del nombre canónico y las tres correcciones de su review quedan en local y no reabren la etapa. El contrato N4 de citas ajenas pasó en local y tampoco la reabre. Producción ejecuta `6ca7788`. La expansión del nombre canónico no va en esa imagen. Un turno real no trajo el plano Elemont y no reabre la etapa. La reparación de designadores con signo queda en local sobre `47c43e2` y no está desplegada. No reabre la etapa. La etapa 3 no empieza. La revisión Opus del 2026-10-07 sobre `7076f05` sigue incorporada. Esta revisión no habilita un piloto.
 
 Este documento es el único plan vigente del companion. Una revisión documental no autoriza a empezar. La etapa 1 ya está en el código local. No llama a Bedrock y no despliega.
 
@@ -487,6 +487,28 @@ Dos filas de `BedrockQuery`: intérprete US$0,00348 y generación `rag_global` U
 Evidencia: `tmp/documentary_retrieve/20261008T002051Z/evidence.json`.
 
 La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`.
+
+#### Reparación de designadores con signo (2026-10-07)
+
+Sobre `47c43e24bd8dd561f696fe095feae14fa46ec487`. Sin AWS, sin Retrieve, sin modelos, sin embeddings, sin journeys, sin despliegue y sin cambios de infraestructura. `PASS_CALL_CAP` sigue en 0. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. Esta reparación no autoriza una pasada ni revalida el episodio.
+
+Producción sigue en la imagen `6ca7788`. Esa imagen no contiene la resolución de marca compuesta ni esta reparación. `47c43e2` está en `main` y tampoco es la imagen desplegada. Este diff se empuja para revisión y no se despliega.
+
+Antes de corregir, cinco pruebas nuevas fallaban. El control positivo no fallaba: «Elemont MH+» ya resolvía la entrada Elemont / MH+.
+
+- `resolve_compound_brand` comparaba el designador con `normalize_label`, que elimina «+». La entrada confirmada y visible Elemont / MH+ resolvía el span «Elemont MH» y escribía el fabricante.
+- Con Elemont / MH y Controles S.A. / CEA15+, ambos confirmados, vinculados a `KbDocument` y autorizados para el mismo visor, el turno «Elemont MH con placa CEA15; la puerta 1 no termina de cerrar y el imán no magnetiza. ¿Qué reviso?» resolvía CEA15 como CEA15+. El reducer sustituía el fabricante del equipo por Controles S.A. El intérprete de sesión hacía lo mismo.
+- El span explícito CEA15+ sí resolvía el controlador, y su fabricante sustituía al Elemont ya establecido.
+
+`FollowupQueryRewriter.normalize_label` no cambió. La comparación de designadores conserva «+». No hay coincidencia difusa. MH no selecciona MH+. CEA15 no selecciona CEA15+. MH+ y CEA15+ siguen resolviendo su entrada. El prefijo que ya existía, como NICE3000n, sigue. VF5 deja de seleccionar VF5+ por la misma comparación; VF5+ sigue siendo exacto. Un designador sin tipo, MH, sigue sin escribir controlador ni modelo.
+
+La marca del controlador llena el fabricante del equipo solo cuando ese hecho está vacío. No sustituye uno ya guardado. NICE3000 sigue pudiendo escribir MONARCH cuando no hay fabricante. No se tocó `EquipmentIdentity#known?`, `NEEDLE_SOURCES` ni el origen `catalog`. No hay pin ni expansión del nombre canónico. Siguen los controles de ambigüedad, de otro tenant, de entradas duplicadas, de negación y de conservación de otro fabricante. No se modificó el fixture del journey A.
+
+Evidencia local, con `PASS_CALL_CAP=0`: `turn_perception_test`, `conversation_session_turn_interpreter_test`, `technical_understanding_test`, `document_identity_catalog_tenant_test`, `route_policy_test`, `companion_guidance_context_test` y `work_context_reducer_test`. 154 corridas, 1322 aserciones, 0 fallos, 0 errores y 0 skips.
+
+Pendiente, y este diff no lo ejecuta: el efecto sobre el retrieval y sobre la respuesta real. El ranking que no devolvió el Elemont sigue abierto. La etapa 3 no empieza.
+
+Veredicto de este diff: `REPARACION_LOCAL_COMPLETADA`.
 
 ### 3. Verificar ese alcance en producción
 

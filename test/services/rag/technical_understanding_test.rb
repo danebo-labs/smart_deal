@@ -142,9 +142,14 @@ class Rag::TechnicalUnderstandingTest < ActiveSupport::TestCase
   end
 
   test "an untyped designator is only a query signal" do
-    resolution = @catalog.resolve_designator("VF5")
+    resolution = @catalog.resolve_designator("MH")
     assert_equal :exact, resolution.status
     assert_nil resolution.type
+    assert_equal :none, @catalog.resolve_designator("VF5").status
+    plus = @catalog.resolve_designator("VF5+")
+    assert_equal :exact, plus.status
+    assert_equal "VF5+", plus.value
+    assert_nil plus.type
 
     result = Rag::ActiveEpisodeTurn.call(
       state: {},

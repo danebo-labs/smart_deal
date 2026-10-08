@@ -102,6 +102,7 @@ module Rag
           at: @now.iso8601
         )
         next if item.manufacturer.blank? || item.slot == "manufacturer"
+        next if controller_brand_replaces_equipment?(item)
 
         @episode.delete_rejected!("manufacturer", item.manufacturer)
         @episode.write_fact!(
@@ -127,6 +128,17 @@ module Rag
         @episode.delete_rejected!("identifier", item.value)
         @episode.append_identifier!(item.value, correlation_id: @correlation_id, source: "user")
       end
+    end
+
+    # A controller brand fills an empty equipment manufacturer. It does not
+    # replace one already stored.
+    def controller_brand_replaces_equipment?(item)
+      return false unless item.slot == "controller"
+
+      current = @episode.fact("manufacturer")&.dig("value")
+      return false if current.blank?
+
+      FollowupQueryRewriter.normalize_label(current) != FollowupQueryRewriter.normalize_label(item.manufacturer)
     end
 
     def write_observations

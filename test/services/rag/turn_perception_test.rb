@@ -798,6 +798,72 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_not_includes episode.identifiers.pluck("value"), "Elemont MH"
   end
 
+  test "Elemont MH does not resolve the MH+ designator or write its manufacturer" do
+    catalog = equipment_catalog([
+      equipment_row(brand: "Elemont", designators: [ "MH+" ], display_name: DOOR_DISPLAY)
+    ])
+    result = perceive_with(catalog, report([ assert_span("Elemont MH", "manufacturer") ]), "Elemont MH")
+
+    assert_empty result.facts
+    assert_equal [ "identifier" ], result.identities.map(&:kind)
+    assert result.identities.none? { |item| item.value == "MH+" }
+  end
+
+  test "Elemont MH+ resolves that same confirmed entry" do
+    catalog = equipment_catalog([
+      equipment_row(brand: "Elemont", designators: [ "MH+" ], display_name: DOOR_DISPLAY)
+    ])
+    result = perceive_with(catalog, report([ assert_span("Elemont MH+", "manufacturer") ]), "Elemont MH+")
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    settle(episode, result, "Elemont MH+")
+
+    fact = result.facts.find { |item| item.slot == "manufacturer" }
+    assert_equal "Elemont", fact.value
+    assert_equal "catalog", fact.source
+    assert_equal "Elemont MH+", fact.span
+    assert result.identifiers.any? { |item| item.value == "Elemont MH+" }
+    assert_equal "Elemont", episode.fact("manufacturer")["value"]
+    assert_equal "catalog", episode.fact("manufacturer")["source"]
+  end
+
+  test "both visible manuals keep Elemont and do not read CEA15 as CEA15+" do
+    result = perceive_with(door_catalog, door_turn_raw, DOOR_TURN)
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    decision = settle(episode, result, DOOR_TURN)
+    explained = Rag::QueryComposer.explain(state: episode, turn: DOOR_TURN, perception: result, decision: decision)
+    identity = Rag::EquipmentIdentity.from_episode(episode)
+    values = episode.identifiers.pluck("value")
+
+    assert_equal "Elemont", episode.fact("manufacturer")["value"]
+    assert_equal "catalog", episode.fact("manufacturer")["source"]
+    assert_includes values, "Elemont MH"
+    assert_includes values, "CEA15"
+    assert_not_includes values, "CEA15+"
+    assert_nil episode.fact("controller")
+    assert result.facts.none? { |item| item.value == "CEA15+" || item.manufacturer == "Controles S.A." }
+    assert_not identity.known?
+    assert_equal "ready", decision.decision
+    assert_nil decision.clarification
+    assert_not_includes explained[:query].to_s, DOOR_DISPLAY
+    assert_not_includes explained[:query].to_s, "CEA15+"
+    assert_not_includes explained[:query].to_s, "Manual CEA15+"
+  end
+
+  test "an explicit CEA15+ resolves the controller without replacing Elemont" do
+    episode = fact_episode("manufacturer", "Elemont", source: "catalog")
+    episode.append_identifier!("Elemont MH", correlation_id: "seed")
+    turn = "La placa es CEA15+"
+    result = perceive_with(door_catalog, report([ assert_span("CEA15+", "controller") ]), turn, episode: episode)
+    settle(episode, result, turn)
+
+    assert_equal "CEA15+", episode.fact("controller")["value"]
+    assert_equal "catalog", episode.fact("controller")["source"]
+    assert_equal "Elemont", episode.fact("manufacturer")["value"]
+    assert_equal "catalog", episode.fact("manufacturer")["source"]
+    assert_includes episode.identifiers.pluck("value"), "Elemont MH"
+    assert_not Rag::EquipmentIdentity.from_episode(episode).known?
+  end
+
   def correct_payload(assertions)
     { "move" => "correct", "assertions" => assertions, "observations" => [], "pending_resolution" => nil, "clarification_target" => nil }
   end
@@ -872,6 +938,17 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
 
   def equipment_catalog(rows)
     Rag::DocumentIdentityCatalog.new({ "documents" => rows })
+  end
+
+  def door_catalog
+    equipment_catalog([
+      equipment_row(brand: "Elemont", designators: [ "MH" ], display_name: DOOR_DISPLAY),
+      equipment_row(
+        brand: "Controles S.A.",
+        designators: [ { "value" => "CEA15+", "type" => "controller" } ],
+        display_name: "Manual CEA15+"
+      )
+    ])
   end
 
   def equipment_row(brand:, designators:, confirmed: true, display_name: brand)

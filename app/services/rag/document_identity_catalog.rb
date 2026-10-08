@@ -72,7 +72,7 @@ module Rag
     # is not authorization. Unauthorized matches contribute nothing: no
     # canonical value, manufacturer, candidates, or alias.
     def resolve_designator(token, viewer_account: nil)
-      norm = FollowupQueryRewriter.normalize_label(token)
+      norm = designator_label(token)
       return unresolved if norm.blank?
 
       exact = visible_rows(designator_rows.select { |row| row[:norm] == norm }, viewer_account)
@@ -98,7 +98,7 @@ module Rag
       return nil if tokens.size < 2
 
       brand_norm = FollowupQueryRewriter.normalize_label(tokens.first)
-      rest_norm = FollowupQueryRewriter.normalize_label(tokens.drop(1).join(" "))
+      rest_norm = designator_label(tokens.drop(1).join(" "))
       return nil if brand_norm.blank? || rest_norm.blank?
 
       brand_matches = entries.filter_map { |entry|
@@ -247,7 +247,7 @@ module Rag
       end
       @designator_rows = entries.flat_map { |entry|
         Array(entry.designators).filter_map { |value|
-          norm = FollowupQueryRewriter.normalize_label(value)
+          norm = designator_label(value)
           next if norm.blank?
 
           {
@@ -279,9 +279,20 @@ module Rag
         type = item["type"].to_s
         next if value.blank? || %w[controller model family].exclude?(type)
 
-        norm = FollowupQueryRewriter.normalize_label(value)
+        norm = designator_label(value)
         @designator_types[[ entry.account_id, entry.document_id, norm ]] = type
       end
+    end
+
+    # "+" stays on the designator. normalize_label drops it, so MH would
+    # equal MH+ and CEA15 would equal CEA15+. Brands still use that method.
+    def designator_label(value)
+      value.to_s
+           .unicode_normalize(:nfkd)
+           .gsub(/\p{Mn}/, "")
+           .downcase
+           .gsub(/[^\p{L}\d+]+/, " ")
+           .squish
     end
 
     def unresolved
@@ -335,7 +346,7 @@ module Rag
     end
 
     def designator_resolution(rows, status)
-      values = rows.map { |row| row[:value] }.uniq { |value| FollowupQueryRewriter.normalize_label(value) }
+      values = rows.map { |row| row[:value] }.uniq { |value| designator_label(value) }
       return ambiguous_resolution(rows) if values.size > 1
 
       types = rows.filter_map { |row| row[:type] }.uniq

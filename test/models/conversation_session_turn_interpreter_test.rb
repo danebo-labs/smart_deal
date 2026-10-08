@@ -109,6 +109,65 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     assert_not identity.known?
   end
 
+  test "both visible door manuals keep Elemont and leave CEA15 unresolved" do
+    session = web_session
+    elemont = manual("elemont.pdf", "Elemont Montacargas Hidraulico Modelo MH")
+    controller = manual("cea15.pdf", "Manual CEA15+")
+    turn = "Elemont MH con placa CEA15; la puerta 1 no termina de cerrar y el imán no magnetiza. ¿Qué reviso?"
+    result = with_owner do
+      Rag::DocumentIdentityCatalog.with_catalog(door_catalog(elemont, controller)) do
+        ask(session, turn, client(door_reading))
+      end
+    end
+
+    facts = session.reload.active_episode["facts"]
+    identifiers = session.active_episode["identifiers"].pluck("value")
+    identity = Rag::EquipmentIdentity.from_episode(session.active_episode)
+
+    assert_equal "ready", result.understanding.decision
+    assert_not result.understanding.clarify_first?
+    assert_empty session.document_focus_entries
+    assert_equal "Elemont", facts.dig("manufacturer", "value")
+    assert_equal "catalog", facts.dig("manufacturer", "source")
+    assert_nil facts["controller"]
+    assert_includes identifiers, "Elemont MH"
+    assert_includes identifiers, "CEA15"
+    assert_not_includes identifiers, "CEA15+"
+    assert_not_includes result.composed.to_s, "Elemont Montacargas Hidraulico Modelo MH"
+    assert_not_includes result.composed.to_s, "Manual CEA15+"
+    assert_not_includes result.composed.to_s, "CEA15+"
+    assert_not_includes result.composed.to_s, "Controles S.A."
+    assert_not identity.known?
+  end
+
+  test "an explicit CEA15+ stores the controller and keeps the equipment manufacturer" do
+    session = web_session
+    elemont = manual("elemont.pdf", "Elemont Montacargas Hidraulico Modelo MH")
+    controller = manual("cea15.pdf", "Manual CEA15+")
+    seed_episode(session, facts: { "manufacturer" => known("Elemont", source: "catalog") })
+    episode = session.active_episode
+    episode["identifiers"] = [ { "value" => "Elemont MH", "source" => "user", "correlation_id" => "seed" } ]
+    session.update!(active_episode: episode)
+    turn = "La placa es CEA15+"
+    result = with_owner do
+      Rag::DocumentIdentityCatalog.with_catalog(door_catalog(elemont, controller)) do
+        ask(session, turn, client(perception("report", assertions: [ assertion("CEA15+", "assert", "controller") ])))
+      end
+    end
+
+    facts = session.reload.active_episode["facts"]
+
+    assert_equal "ready", result.understanding.decision
+    assert_empty session.document_focus_entries
+    assert_equal "CEA15+", facts.dig("controller", "value")
+    assert_equal "catalog", facts.dig("controller", "source")
+    assert_equal "Elemont", facts.dig("manufacturer", "value")
+    assert_equal "catalog", facts.dig("manufacturer", "source")
+    assert_not_includes result.composed.to_s, "Controles S.A."
+    assert_not_includes result.composed.to_s, "Elemont Montacargas Hidraulico Modelo MH"
+    assert_not Rag::EquipmentIdentity.from_episode(session.active_episode).known?
+  end
+
   test "Q2 seek keeps the token and does not ask again" do
     session = web_session
     result = with_owner do
@@ -902,14 +961,41 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     )
   end
 
-  def manual(key)
+  def manual(key, display_name = key)
     KbDocument.create!(
       s3_key: "uploads/2026/owner/#{key}",
-      display_name: key,
+      display_name: display_name,
       document_uid: SecureRandom.uuid,
       aliases: [],
       account: @account
     )
+  end
+
+  def door_catalog(elemont, controller)
+    Rag::DocumentIdentityCatalog.new({
+      "documents" => [
+        {
+          "account_id" => @account.id.to_s,
+          "document_id" => elemont.document_uid,
+          "s3_key" => elemont.s3_key,
+          "display_name" => elemont.display_name,
+          "brands" => [ "Elemont" ],
+          "designators" => [ "MH" ],
+          "generic" => false,
+          "confirmed" => true
+        },
+        {
+          "account_id" => @account.id.to_s,
+          "document_id" => controller.document_uid,
+          "s3_key" => controller.s3_key,
+          "display_name" => controller.display_name,
+          "brands" => [ "Controles S.A." ],
+          "designators" => [ { "value" => "CEA15+", "type" => "controller" } ],
+          "generic" => false,
+          "confirmed" => true
+        }
+      ]
+    })
   end
 
   def elemont_catalog(elemont)

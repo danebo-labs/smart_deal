@@ -6,7 +6,10 @@ module Rag
   # step. This object only bounds the facts that generation and answer
   # safety are allowed to see.
   class CompanionGuidanceContext
-    MAX_CHARS = 2400
+    # Session 196 turn 14, after the candidate manuals and the older turn are
+    # dropped whole: instruction, question, current problem, correction, and
+    # follow-up render as 2472 characters. 2400 cut that remainder mid-phrase.
+    MAX_CHARS = 2472
     # Diagnostic only. Not rendered, not routed, and not TurnPerception::PROMPT_VERSION.
     COMPANION_POLICY_VERSION = "2026-10-07.1"
     HYPOTHESIS_RULE = "Separate the report, the evidence, and a hypothesis. An unestablished part or place is conditional; do not treat it as present."
@@ -65,6 +68,12 @@ module Rag
       "Visible text/codes" => "visible_text",
       "Condition" => "condition"
     }.freeze
+    ORPHAN_HEADINGS = {
+      "manuals_heading" => "manual",
+      "turns_heading" => "turn",
+      "visual_heading" => "visual"
+    }.freeze
+    GuidancePiece = Struct.new(:role, :text, :rank, :seq, keyword_init: true)
 
     def self.build(question:, identity:, session_context:, labels:, locale:, mode: :known, manuals: nil,
                    empty_retrieval: false, pinned_focus_empty: false)
@@ -107,10 +116,10 @@ module Rag
     end
 
     def to_s
-      text = [ instruction, turn_block ].compact_blank.join("\n\n")
-      @context_truncated = text.length > MAX_CHARS
-      rendered = @context_truncated ? text[0, MAX_CHARS] : text
-      record_guidance_fit(text, rendered) if @context_truncated
+      kept, omitted = fit_guidance(guidance_pieces)
+      rendered = render_guidance(kept)
+      @context_truncated = omitted.any? || rendered.length > MAX_CHARS
+      record_guidance_fit(rendered, omitted) if @context_truncated
       rendered
     end
 
@@ -118,7 +127,7 @@ module Rag
       @context_truncated == true
     end
 
-    def record_guidance_fit(text, rendered)
+    def record_guidance_fit(rendered, omitted)
       return unless ValidationCapture.active?
 
       ValidationCapture.record(
@@ -126,7 +135,7 @@ module Rag
         "part" => "guidance",
         "chars" => rendered.length,
         "truncated" => true,
-        "omitted" => [ { "part" => "tail", "text" => text[MAX_CHARS..] } ],
+        "omitted" => omitted.map { |item| { "part" => item.role, "text" => item.text } },
         "context_cap" => MAX_CHARS
       )
     end
@@ -338,53 +347,153 @@ module Rag
       @folded_question ||= fold_text(@question)
     end
 
-    def turn_block
-      return unknown_turn_block if unknown?
+    def guidance_pieces
+      [ piece("instruction", instruction, 0, 0) ] + body_pieces
+    end
 
-      lines = []
-      lines << "Question: #{@question}" if @question.present?
-      lines << "Active problem: #{goal}" if goal.present?
-      episode_lines.each { |line| lines << line }
-      identity_lines.each { |line| lines << line }
+    def body_pieces
+      unknown? ? unknown_pieces : known_pieces
+    end
+
+    def unknown_pieces
+      pieces = []
+      pieces << piece("question", "Question: #{@question}", 5, 0) if @question.present?
+      problem_projection_lines.each { |line| append_problem_piece(pieces, line) }
+      append_visual_pieces(pieces)
+      append_turn_pieces(pieces)
+      append_unknown_manual_pieces(pieces)
+      pieces << follow_up_piece
+      pieces
+    end
+
+    def known_pieces
+      pieces = []
+      pieces << piece("question", "Question: #{@question}", 5, 0) if @question.present?
+      pieces << piece("problem", "Active problem: #{goal}", 15, goal.length) if goal.present?
+      episode_lines.each { |line| append_problem_piece(pieces, line) }
+      identity_lines.each { |line| pieces << piece("problem", line, 15, line.length) }
       if conflict.present?
-        lines << "Identity conflict: #{conflict}. Do not choose either manufacturer."
+        text = "Identity conflict: #{conflict}. Do not choose either manufacturer."
+        pieces << piece("problem", text, 15, text.length)
       end
-      if visual_fields.any?
-        lines << "Accepted visual observation:"
-        visual_fields.each { |label, value| lines << "- #{label}: #{value}" }
-      end
-      turns = technician_turns
-      if turns.any?
-        lines << "Technician observations:"
-        turns.each { |turn| lines << "- #{turn}" }
-      end
-      lines << "No compatible manufacturer manual was found."
+      append_visual_pieces(pieces)
+      append_turn_pieces(pieces)
+      pieces << piece("status", "No compatible manufacturer manual was found.", 8, 0)
       if manual_names.any?
-        lines << "Reference-only manuals, names only: #{manual_names.join('; ')}. Do not teach their contents."
+        text = "Reference-only manuals, names only: #{manual_names.join('; ')}. Do not teach their contents."
+        pieces << piece("manual", text, 60, manual_names.length)
       end
-      lines << (follow_up? ? "Follow-up: yes." : "Follow-up: no.")
+      pieces << follow_up_piece
+      pieces
+    end
+
+    def append_problem_piece(pieces, line)
+      unless line.start_with?("Obs:")
+        pieces << piece("problem", line, 15, line.length)
+        return
+      end
+
+      clauses = line.sub(/\AObs:\s*/, "").split("; ").filter_map { |clause| clause.squish.presence }
+      clauses.each_with_index do |clause, index|
+        pieces << piece("observation", clause, 30, clauses.length - index)
+      end
+    end
+
+    def append_visual_pieces(pieces)
+      return if visual_fields.empty?
+
+      pieces << piece("visual_heading", "Accepted visual observation:", 1, 0)
+      visual_fields.each do |label, value|
+        text = "- #{label}: #{value}"
+        pieces << piece("visual", text, 16, text.length)
+      end
+    end
+
+    def append_turn_pieces(pieces)
+      turns = technician_turns
+      return if turns.empty?
+
+      pieces << piece("turns_heading", "Technician observations:", 1, 0)
+      turns.each_with_index do |turn, index|
+        newest = index == turns.length - 1
+        pieces << piece("turn", "- #{turn}", newest ? 22 : 40, turns.length - index)
+      end
+    end
+
+    def append_unknown_manual_pieces(pieces)
+      return if @manuals.empty?
+
+      pieces << piece(
+        "manuals_heading",
+        "Retrieved manuals, not confirmed for this equipment. Contents withheld. Available on explicit request:",
+        1,
+        0
+      )
+      @manuals.each_with_index do |name, index|
+        pieces << piece("manual", "- #{name}", 60, @manuals.length - index)
+      end
+    end
+
+    def follow_up_piece
+      piece("follow_up", follow_up? ? "Follow-up: yes." : "Follow-up: no.", 10, 0)
+    end
+
+    def piece(role, text, rank, seq)
+      GuidancePiece.new(role: role, text: text, rank: rank, seq: seq)
+    end
+
+    def fit_guidance(pieces)
+      chosen = pieces.dup
+      omitted = []
+      strip_orphan_headings(chosen, omitted)
+      while render_guidance(chosen).length > MAX_CHARS
+        victim = chosen.select { |item| item.rank > 1 }.max_by { |item| [ item.rank, item.seq ] }
+        break unless victim
+
+        chosen.delete(victim)
+        omitted << victim
+        strip_orphan_headings(chosen, omitted)
+      end
+      [ chosen, omitted ]
+    end
+
+    def strip_orphan_headings(chosen, omitted)
+      ORPHAN_HEADINGS.each do |heading, child|
+        next if chosen.any? { |item| item.role == child }
+
+        chosen.select { |item| item.role == heading }.each do |item|
+          chosen.delete(item)
+          omitted << item
+        end
+      end
+    end
+
+    def render_guidance(pieces)
+      instruction_piece = pieces.find { |item| item.role == "instruction" }
+      body = render_body(pieces.reject { |item| item.role == "instruction" })
+      [ instruction_piece&.text, body ].compact_blank.join("\n\n")
+    end
+
+    def render_body(pieces)
+      lines = []
+      observations = []
+      pieces.each do |item|
+        if item.role == "observation"
+          observations << item.text
+        else
+          flush_observations(lines, observations)
+          lines << item.text
+        end
+      end
+      flush_observations(lines, observations)
       lines.join("\n")
     end
 
-    def unknown_turn_block
-      lines = []
-      lines << "Question: #{@question}" if @question.present?
-      problem_projection_lines.each { |line| lines << line }
-      if visual_fields.any?
-        lines << "Accepted visual observation:"
-        visual_fields.each { |label, value| lines << "- #{label}: #{value}" }
-      end
-      turns = technician_turns
-      if turns.any?
-        lines << "Technician observations:"
-        turns.each { |turn| lines << "- #{turn}" }
-      end
-      if @manuals.any?
-        lines << "Retrieved manuals, not confirmed for this equipment. Contents withheld. Available on explicit request:"
-        @manuals.each { |name| lines << "- #{name}" }
-      end
-      lines << (follow_up? ? "Follow-up: yes." : "Follow-up: no.")
-      lines.join("\n")
+    def flush_observations(lines, observations)
+      return if observations.empty?
+
+      lines << "Obs: #{observations.join('; ')}"
+      observations.clear
     end
 
     def episode_lines

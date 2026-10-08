@@ -292,7 +292,7 @@ class Rag::CompanionGuidanceContextTest < ActiveSupport::TestCase
     end
   end
 
-  test "the objective line survives context truncation" do
+  test "an oversized goal is omitted whole and the objective line stays" do
     context = unknown_context(
       "la puerta no cierra",
       session_context: "## Active Field Problem\nGoal: #{"detalle " * 800}\n"
@@ -300,8 +300,13 @@ class Rag::CompanionGuidanceContextTest < ActiveSupport::TestCase
     prompt = context.to_s
 
     assert context.context_truncated?
-    assert_equal Rag::CompanionGuidanceContext::MAX_CHARS, prompt.length
+    assert_operator prompt.length, :<=, Rag::CompanionGuidanceContext::MAX_CHARS
     assert prompt.start_with?("# FIELD COMPANION\n#{Rag::CompanionGuidanceContext::OBJECTIVE_LINES.fetch("advance_fault")}")
+    assert_not_includes prompt, "detalle"
+    assert_not_includes prompt, "Goal:"
+    assert_includes prompt, "Question: la puerta no cierra"
+    assert_includes prompt, "Follow-up: no."
+    assert_includes prompt, Rag::CompanionGuidanceContext::HYPOTHESIS_RULE
   end
 
   test "a question that states an equipment condition uses the symptom branch" do
@@ -411,14 +416,149 @@ class Rag::CompanionGuidanceContextTest < ActiveSupport::TestCase
     assert_equal "advance_fault", context.turn_objective
     assert_operator prompt.length, :<=, Rag::CompanionGuidanceContext::MAX_CHARS
     assert_equal true, context.reported_state_present
-    if context.context_truncated?
-      assert_equal Rag::CompanionGuidanceContext::MAX_CHARS, prompt.length
-      line = Rag::CompanionGuidanceContext::OBJECTIVE_LINES.fetch(context.turn_objective)
-      assert prompt.start_with?("# FIELD COMPANION\n#{line}")
-    else
-      assert_includes prompt, "Se quedó entre pisos"
-      assert_includes prompt, "Follow-up:"
-    end
+    line = Rag::CompanionGuidanceContext::OBJECTIVE_LINES.fetch(context.turn_objective)
+    assert prompt.start_with?("# FIELD COMPANION\n#{line}")
+    question = prompt.lines.find { |row| row.start_with?("Question:") }
+    assert_equal "Question: Se quedó entre pisos, ¿qué hago? #{'detalle ' * 40}".rstrip, question.strip
+    assert_includes prompt, "Follow-up: yes."
+    assert_not_includes prompt, "la puerta no cierra la puerta"
+    assert_not_includes prompt, "Manual largo de referencia"
+  end
+
+  test "session 196 turn 14 keeps the correction sentence and the follow-up" do
+    context = unknown_context(
+      "¿Y ahora?",
+      session_context: session_196_turn_14_context,
+      manuals: session_196_manuals
+    )
+    prompt = context.to_s
+    correction = "Corrijo algo de antes: la cabina está detenida cerca de planta 2, no de planta 1."
+
+    assert context.context_truncated?
+    assert_equal Rag::CompanionGuidanceContext::MAX_CHARS, prompt.length
+    assert_includes prompt, "Question: ¿Y ahora?"
+    assert_includes prompt, correction
+    assert_includes prompt, "Follow-up: yes."
+    assert_includes prompt, Rag::CompanionGuidanceContext::HYPOTHESIS_RULE
+    assert_includes prompt, "Do not teach retrieved manuals. Those contents are not in this prompt."
+    assert_includes prompt, "Do not invent electrical values, terminals, fault-code meanings"
+    assert_includes prompt, "Fault code: 18 (technician)"
+    assert_includes prompt, "Not current: fault code 8"
+    assert_not prompt.match?(/^Fault code: 8\b/)
+    assert_includes prompt, "Obs: La cabina está detenida cerca de planta 1;"
+    assert_not_includes prompt, "Sigue igual."
+    assert_not_includes prompt, "Retrieved manuals"
+    session_196_manuals.each { |name| assert_not_includes prompt, name }
+  end
+
+  test "a corrected plant stays current and a rejected fault code stays rejected" do
+    session = session_196_turn_14_context.sub(
+      "La cabina está detenida cerca de planta 1",
+      "La cabina está detenida cerca de planta 2"
+    )
+    prompt = unknown_context(
+      "¿Y ahora?",
+      session_context: session,
+      manuals: session_196_manuals
+    ).to_s
+    observation = prompt.lines.grep(/\AObs:/).join
+
+    assert_includes observation, "cerca de planta 2"
+    assert_not_includes observation, "planta 1"
+    assert_includes prompt, "Fault code: 18 (technician)"
+    assert_includes prompt, "Not current: fault code 8"
+    assert_not prompt.match?(/^Fault code: 8\b/)
+    assert_includes prompt, "no de planta 1."
+    assert_includes prompt, Rag::CompanionGuidanceContext::HYPOTHESIS_RULE
+    assert_operator prompt.length, :<=, Rag::CompanionGuidanceContext::MAX_CHARS
+  end
+
+  test "known and english guidance use the same unit budget" do
+    labels = session_196_manuals.map { |name| "REFERENCE ONLY — OTHER EQUIPMENT: #{name}" }
+    known = Rag::CompanionGuidanceContext.build(
+      question: "¿Y ahora?",
+      identity: nil,
+      session_context: session_196_turn_14_context,
+      labels: labels,
+      locale: :es,
+      mode: :known
+    )
+    known_prompt = known.to_s
+
+    assert_not known.context_truncated?
+    assert_includes known_prompt, "Sigue igual."
+    assert_includes known_prompt, "manual-cea15p, p. 84.0"
+    assert_includes known_prompt, "Follow-up: yes."
+    assert_includes known_prompt, Rag::CompanionGuidanceContext::HYPOTHESIS_RULE
+    assert_includes known_prompt, "There is no compatible manufacturer procedure available."
+    assert_operator known_prompt.length, :<=, Rag::CompanionGuidanceContext::MAX_CHARS
+
+    english = unknown_context(
+      "¿Y ahora?",
+      session_context: session_196_turn_14_context,
+      manuals: session_196_manuals,
+      locale: :en
+    )
+    spanish = unknown_context(
+      "¿Y ahora?",
+      session_context: session_196_turn_14_context,
+      manuals: session_196_manuals
+    )
+
+    assert_includes english.to_s, "Write the entire answer in English."
+    assert_not_includes english.to_s, "Write the entire answer in Spanish."
+    assert_equal spanish.to_s.length, english.to_s.length
+    assert_equal spanish.context_truncated?, english.context_truncated?
+    assert_includes english.to_s, "Corrijo algo de antes: la cabina está detenida cerca de planta 2, no de planta 1."
+    assert_not_includes english.to_s, "Retrieved manuals"
+  end
+
+  test "a short prompt keeps manuals, history, and the hypothesis rule" do
+    session = <<~TEXT
+      ## Active Field Problem
+      Goal: la puerta no cierra
+      ## Recent Conversation
+      User: Ya comprobé la guía.
+      Assistant: Sigo.
+    TEXT
+    context = unknown_context("¿Qué reviso?", session_context: session, manuals: [ "Elemont MH, p. 1" ])
+    prompt = context.to_s
+
+    assert_not context.context_truncated?
+    assert_includes prompt, "Ya comprobé la guía."
+    assert_includes prompt, "Elemont MH, p. 1"
+    assert_includes prompt, "Retrieved manuals, not confirmed for this equipment."
+    assert_includes prompt, "Follow-up: yes."
+    assert_includes prompt, "Question: ¿Qué reviso?"
+    assert_includes prompt, "Goal: la puerta no cierra"
+    assert_includes prompt, Rag::CompanionGuidanceContext::HYPOTHESIS_RULE
+    assert_operator prompt.length, :<, Rag::CompanionGuidanceContext::MAX_CHARS
+  end
+
+  test "the empty-retrieval rule omits current observations whole when they no longer fit" do
+    context = Rag::CompanionGuidanceContext.build(
+      question: "¿Y ahora?",
+      identity: nil,
+      session_context: session_196_turn_14_context,
+      labels: [],
+      locale: :es,
+      mode: :unknown,
+      manuals: session_196_manuals,
+      empty_retrieval: true
+    )
+    prompt = context.to_s
+
+    assert context.context_truncated?
+    assert_operator prompt.length, :<=, Rag::CompanionGuidanceContext::MAX_CHARS
+    assert_not_includes prompt, "Obs:"
+    assert_not_includes prompt, "no hay personas dentro"
+    assert_not_includes prompt, "cerca de planta 1;"
+    assert_includes prompt, "The search returned no documentation."
+    assert_includes prompt, "Corrijo algo de antes: la cabina está detenida cerca de planta 2, no de planta 1."
+    assert_includes prompt, "Follow-up: yes."
+    assert_includes prompt, "Question: ¿Y ahora?"
+    assert_includes prompt, "Fault code: 18 (technician)"
+    assert_includes prompt, "Not current: fault code 8"
   end
 
   test "known guidance keeps its instruction and does not take the unknown observation rule" do
@@ -471,6 +611,26 @@ class Rag::CompanionGuidanceContextTest < ActiveSupport::TestCase
       mode: mode,
       manuals: manuals
     )
+  end
+
+  def session_196_manuals
+    [ "manual-cea15p, p. 84.0", "manual-cea51fb-das, p. 82.0", "manual-cea15p, p. 65.0" ]
+  end
+
+  def session_196_turn_14_context
+    <<~TEXT
+      ## Active Field Problem
+      Goal: la puerta 1 no termina de cerrar el imán no magnetiza
+      Fault code: 18 (technician)
+      Identifiers: Elemont MH, CEA15
+      Obs: La cabina está detenida cerca de planta 1; no hay personas dentro; La puerta llega al marco, pero vuelve a abrir; no veo una obstrucción; El LED 7 está apagado; Al pedir cierre se oye un clic, pero no termina de cerrar; Sigue el clic y la puerta no termina de cerrar
+      Not current: fault code 8
+      Not a manual. Procedures, values, terminals, and code meanings come from retrieved evidence. Ignore for other equipment.
+      ## Recent Conversation
+      User: Sigue igual.
+      Assistant: Escucha el sonido del imán cuando la puerta llega al marco.
+      User: Corrijo algo de antes: la cabina está detenida cerca de planta 2, no de planta 1.
+    TEXT
   end
 
   def context_for_unknown_fixture(session_context)

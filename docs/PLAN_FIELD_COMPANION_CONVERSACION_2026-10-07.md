@@ -1,8 +1,8 @@
 # Field Companion: conversación técnica real
 
-**Estado: ETAPA 2 BLOQUEADA.** No es `EPISODIO_VALIDADO`. La etapa 1 está en el código local. La etapa 2 sigue bloqueada: la corrección de planta quedó reparada en local sobre `66dd9e0` y no está revalidada. La comprobación web del 2026-10-07 reprodujo la consulta corta; la reparación del nombre canónico y las tres correcciones de su review quedan en local y no reabren la etapa. El contrato N4 de citas ajenas pasó en local y tampoco la reabre. Producción ejecuta `6ca7788`. La expansión del nombre canónico no va en esa imagen. Un turno real no trajo el plano Elemont y no reabre la etapa. La reparación de designadores con signo queda en local sobre `47c43e2` y no está desplegada. No reabre la etapa. La etapa 3 no empieza. La revisión Opus del 2026-10-07 sobre `7076f05` sigue incorporada. Esta revisión no habilita un piloto.
+**Estado: ETAPA 2 BLOQUEADA.** No es `EPISODIO_VALIDADO`. La última evidencia de producción registrada en este plan es la imagen `6ca7788`: web y worker, `https://elevator.danebo.ai/up` en 200, y un POST real. Esa imagen contiene la etapa 1 (`78df58a`), el código de la corrección de planta que llega hasta ella desde `66dd9e0`, la regla de hipótesis y el contrato N4 (`71b83a4`). La corrección de planta no está revalidada. La expansión del nombre canónico quedó fuera de esa imagen. Un turno real no trajo el plano Elemont y no reabre la etapa. `47c43e2` es la base de la reparación de designadores; `700d9d0` la contiene, está en `main` y no forma parte de la imagen evidenciada. La reparación del recorte de guidance tampoco está en esa imagen. La etapa 3 no empieza. La revisión Opus del 2026-10-07 sobre `7076f05` sigue incorporada. Esta revisión no habilita un piloto.
 
-Este documento es el único plan vigente del companion. Una revisión documental no autoriza a empezar. La etapa 1 ya está en el código local. No llama a Bedrock y no despliega.
+Este documento es el único plan vigente del companion. Una revisión documental no autoriza a empezar. La etapa 1 está en la imagen evidenciada `6ca7788`. Este documento no llama a Bedrock y no despliega.
 
 Pregunta rectora: ¿Danebo sostiene un solo episodio técnico completo hasta una conclusión útil?
 
@@ -430,7 +430,7 @@ El nombre canónico se guarda, se compara y se retira con el mismo literal, incl
 
 La consulta compuesta puede ser igual al texto del técnico cuando ese texto ya trae lo necesario. Un identificador del episodio que el texto no trae sí cambia la consulta. El hash se calcula sobre esos textos. La ruta, la correlación, el Retrieve, la generación directa y la separación entre la consulta de recuperación y el prompt de generación siguen cubiertos. No se cambió el producto para forzar hashes distintos.
 
-La regla de hipótesis del guidance se conserva. Para que el prompt de identidad desconocida del turno 14 siguiera mostrando el código rechazado, se acortaron dos frases de esa instrucción. El tope sigue en 2400.
+La regla de hipótesis del guidance se conserva. Para que el prompt de identidad desconocida del turno 14 siguiera mostrando el código rechazado, se acortaron dos frases de esa instrucción. El tope de este diff sigue en 2400. La reparación del recorte, más abajo, lo deja en 2472.
 
 Pendiente: el efecto de la consulta expandida sobre el retrieval y sobre la respuesta real. Esta corrección no lo ejecuta.
 
@@ -492,7 +492,7 @@ La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`.
 
 Sobre `47c43e24bd8dd561f696fe095feae14fa46ec487`. Sin AWS, sin Retrieve, sin modelos, sin embeddings, sin journeys, sin despliegue y sin cambios de infraestructura. `PASS_CALL_CAP` sigue en 0. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. Esta reparación no autoriza una pasada ni revalida el episodio.
 
-Producción sigue en la imagen `6ca7788`. Esa imagen no contiene la resolución de marca compuesta ni esta reparación. `47c43e2` está en `main` y tampoco es la imagen desplegada. Este diff se empuja para revisión y no se despliega.
+La última evidencia de imagen es `6ca7788`. Esa imagen no contiene la resolución de marca compuesta ni esta reparación. `47c43e2` es la base. La comparación que conserva el signo quedó en `700d9d0`, en `main`, y no es la imagen evidenciada.
 
 Antes de corregir, cinco pruebas nuevas fallaban. El control positivo no fallaba: «Elemont MH+» ya resolvía la entrada Elemont / MH+.
 
@@ -509,6 +509,32 @@ Evidencia local, con `PASS_CALL_CAP=0`: `turn_perception_test`, `conversation_se
 Pendiente, y este diff no lo ejecuta: el efecto sobre el retrieval y sobre la respuesta real. El ranking que no devolvió el Elemont sigue abierto. La etapa 3 no empieza.
 
 Veredicto de este diff: `REPARACION_LOCAL_COMPLETADA`.
+
+#### Reparación del recorte de guidance (2026-10-08)
+
+Sobre `700d9d0`. Sin AWS, sin Retrieve, sin modelos, sin embeddings, sin journeys, sin despliegue y sin cambios de infraestructura. `PASS_CALL_CAP` sigue en 0. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. Esta reparación no autoriza una pasada y no revalida el episodio.
+
+`CompanionGuidanceContext#to_s` terminaba en `text[0, MAX_CHARS]`. En `tmp/stage2_journey_a/runs/20261007T193541Z-session-196/` hay 12 prompts de `generate_text`. Diez miden 2400 caracteres. El turno 14 termina en «Corrijo al». La frase completa está en `history.user_texts`: «Corrijo algo de antes: la cabina está detenida cerca de planta 2, no de planta 1.» Ese corte también se lleva el Follow-up y la lista de manuales. El turno 2 mide 2380 y sí cierra con `manual-cea15p` p. 84.0, `manual-cea51fb-das` p. 82.0, `manual-cea15p` p. 65.0 y `Follow-up: yes.` Los turnos 10 y 13 no tienen prompt de generación. Esos prompts son del código de `da8d32b`. La reproducción usa el compositor actual y los textos capturados. No reconstruye el cuerpo que el corte ya había eliminado.
+
+Ese recorte es distinto de la planta. El episodio capturado del turno 14 sigue con la observación «cerca de planta 1», porque el turno 13 no aplicó la corrección. El código que después la aplica está en la imagen evidenciada `6ca7788` y no fue revalidado. Esta reparación no reescribe esa observación.
+
+Antes del cambio, la prueba con el bloque capturado del turno 14 y los tres manuales del turno 2 falló: el prompt medía 2400 y no contenía la corrección completa. El visible terminaba en «Corrijo al».
+
+Con la instrucción actual, el resto obligatorio mide 2472 caracteres después de sacar enteros los manuales candidatos y el turno «Sigue igual.»: la instrucción, «¿Y ahora?», el objetivo, el código 18, los identificadores, las observaciones, `Not current: fault code 8`, la corrección y el Follow-up. 2400 no lo contiene. El tope pasa a 2472, que es ese resto. No hay margen añadido para que la prueba pase.
+
+Bajo esa presión se conserva la instrucción, incluida la regla de hipótesis, la prohibición de enseñar manuales recuperados y la de inventar valores, terminales y significados de código. Se conserva la pregunta, el problema vigente, la corrección completa y el Follow-up. Se descartan las tres líneas de manual y su encabezado, y el turno anterior «Sigue igual.». Un objetivo que no cabe, como ochocientas repeticiones de «detalle», sale entero. La línea de objetivo de la instrucción permanece.
+
+Si el bloque de problema ya trae planta 2 en lugar de planta 1, la línea `Obs:` conserva planta 2 y no contiene planta 1. El código 18 sigue vigente. El código 8 aparece solo en `Not current: fault code 8`. La frase de corrección puede nombrar planta 1 como el valor que se dejó atrás. Identidad conocida, con la instrucción más corta, cabe con los manuales de referencia y los dos turnos. Español e inglés comparten la composición; «English» y «Spanish» ocupan los mismos caracteres. Un contexto corto no omite unidades.
+
+Una pregunta que ya usa casi el tope de entrada de 400 caracteres deja el episodio fuera: se omiten enteros el objetivo, la foto, el historial y los manuales, y se conservan la pregunta y el Follow-up. La frase de búsqueda vacía, sumada a este episodio, tampoco deja sitio a las observaciones: salen enteras. Quedan la corrección, el código 18, el Follow-up y la pregunta. Conservar además esas observaciones mediría 2706. No se sube el tope hasta ahí.
+
+La captura `context_fit` anota cada unidad omitida con su rol y su texto. Ya no guarda un sufijo cortado a 2400.
+
+No cambió la percepción, el reducer, `EquipmentIdentity#known?`, el retrieval, los pins, la aceptación del journey A ni su fixture. No hay `pending_question` conversacional ni respuesta meta. No hay otro agente ni otra llamada.
+
+Evidencia, con `PASS_CALL_CAP=0`: `companion_guidance_context_test`, `validation_capture_test` y `session_context_builder_test`. 92 corridas, 1126 aserciones, 0 fallos, 0 errores y 0 skips. Dos pruebas de guidance con búsqueda vacía en `document_identity_scope_test`: 2 corridas, 29 aserciones, 0 fallos.
+
+Pendiente: el efecto sobre una pasada real y sobre la respuesta del modelo. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. La etapa 3 no empieza. Este commit queda en `main` para revisión y no se despliega. No hay una comprobación nueva de la imagen en ejecución.
 
 ### 3. Verificar ese alcance en producción
 

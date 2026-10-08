@@ -388,7 +388,7 @@ class Rag::ValidationCaptureTest < ActiveSupport::TestCase
     assert_operator text.length, :<=, SessionContextBuilder::MAX_PROBLEM_CHARS
   end
 
-  test "guidance truncation records the omitted tail and returns the same text" do
+  test "guidance truncation records each omitted unit and returns the same text" do
     context = "## Active Field Problem\nGoal: #{'x' * 3000}\n"
     args = { question: "la puerta no cierra", identity: nil, session_context: context, labels: [], locale: :es }
     idle = Rag::CompanionGuidanceContext.new(**args).to_s
@@ -398,10 +398,14 @@ class Rag::ValidationCaptureTest < ActiveSupport::TestCase
     end
 
     fit = events.find { |row| row["kind"] == "context_fit" }
+    goal = fit["omitted"].find { |row| row["part"] == "problem" }
     assert_equal "guidance", fit["part"]
     assert_equal true, fit["truncated"]
-    assert_equal Rag::CompanionGuidanceContext::MAX_CHARS, fit["chars"]
-    assert fit["omitted"].any? { |row| row["part"] == "tail" && row["text"].present? }
+    assert_equal idle.length, fit["chars"]
+    assert_operator fit["chars"], :<=, Rag::CompanionGuidanceContext::MAX_CHARS
+    assert_equal "Active problem: #{'x' * 3000}", goal["text"]
+    assert_not_includes idle, "Active problem:"
+    assert_not fit["omitted"].any? { |row| row["part"] == "tail" }
   end
 
   test "episode delta records changed fields and skips an unchanged episode" do

@@ -3,6 +3,8 @@
 require "test_helper"
 
 class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
+  include ActiveJob::TestHelper
+
   setup do
     @now = Time.current
     @user = users(:one)
@@ -450,7 +452,11 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     traced = logs.find { |row| row["event"] == "turn_interpreter" }
     assert_equal "StandardError", traced["error_class"]
     assert_equal "converse", traced["stage"]
+    assert_equal "transport_error", traced["turn_interpreter_status"]
+    assert_equal 0, traced["input_tokens"]
+    assert_equal 0, traced["output_tokens"]
     assert_not_includes traced["interpreter_error_reason"].to_s, "AKIA"
+    assert_no_enqueued_jobs only: TrackBedrockQueryJob
 
     with_owner do
       ask(
@@ -465,6 +471,113 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     assert_equal episode["episode_id"], followed["episode_id"]
     assert_equal turn, followed.dig("goal", "text")
     assert_nil followed.dig("facts", "manufacturer")
+  end
+
+  test "a converse timeout is transport and does not record usage" do
+    session = web_session
+    turn = "la puerta no termina de cerrar y el imán no magnetiza"
+    error = Timeout::Error.new("timeout talking Authorization: Bearer secret AKIAIOSFODNN7EXAMPLE")
+    events = []
+    logs = []
+    assert_no_enqueued_jobs only: TrackBedrockQueryJob do
+      with_owner do
+        events = Rag::ValidationCapture.capture do
+          logs = pilot_events_from do
+            ask(session, turn, RaisingInterpreterClient.new(error), correlation: "stage:timeout")
+          end
+        end
+      end
+    end
+
+    failure = events.find { |row| row["kind"] == "interpreter_failure" }
+    assert_equal "converse", failure["stage"]
+    assert_equal "Timeout::Error", failure["error_class"]
+    assert_equal 1, failure["attempt"]
+    assert_not_includes failure["reason"], "AKIA"
+    assert_not_includes failure["reason"], "Bearer"
+    traced = logs.find { |row| row["event"] == "turn_interpreter" }
+    assert_equal "converse", traced["stage"]
+    assert_equal "timeout", traced["turn_interpreter_status"]
+    assert_equal 0, traced["input_tokens"]
+    assert_equal 0, traced["output_tokens"]
+    assert_not_includes traced.to_json, "AKIA"
+    assert_equal 0, BedrockQuery.where(correlation_id: "stage:timeout").count
+    assert_equal turn, session.reload.active_episode.dig("goal", "text")
+    assert_empty Array(session.active_episode["identifiers"])
+  end
+
+  test "a local failure after a paid response records that stage and the usage once" do
+    session = web_session
+    turn = "Elemont MH con placa CEA15; la puerta 1 no termina de cerrar y el imán no magnetiza. ¿Qué reviso?"
+    error = RuntimeError.new("perception build Authorization: Bearer secret AKIAIOSFODNN7EXAMPLE")
+    original = Rag::TurnPerception.method(:build)
+    events = []
+    logs = []
+    Rag::TurnPerception.define_singleton_method(:build) { |*, **| raise error }
+    perform_enqueued_jobs only: TrackBedrockQueryJob do
+      with_owner do
+        events = Rag::ValidationCapture.capture do
+          logs = pilot_events_from do
+            ask(session, turn, client(perception("report", observations: [ "la puerta no cierra" ])), correlation: "stage:local")
+          end
+        end
+      end
+    end
+
+    failure = events.find { |row| row["kind"] == "interpreter_failure" }
+    assert_equal "perception", failure["stage"]
+    assert_equal "RuntimeError", failure["error_class"]
+    assert_equal "stage:local", failure["correlation_id"]
+    assert_equal 1, failure["attempt"]
+    assert_not_includes failure["reason"], "AKIA"
+    assert_not_includes failure["reason"], "Bearer"
+    assert_not_includes failure.to_json, "secret"
+    traced = logs.find { |row| row["event"] == "turn_interpreter" }
+    assert_equal "perception", traced["stage"]
+    assert_equal "local_error", traced["turn_interpreter_status"]
+    assert_not_equal "converse", traced["stage"]
+    assert_not_equal "transport_error", traced["turn_interpreter_status"]
+    assert_equal 4, traced["input_tokens"]
+    assert_equal 2, traced["output_tokens"]
+    assert_not_includes traced.to_json, "AKIA"
+    rows = BedrockQuery.where(correlation_id: "stage:local")
+    assert_equal 1, rows.count
+    assert_equal 4, rows.sole.input_tokens
+    assert_equal 2, rows.sole.output_tokens
+    assert_equal rows.sole.cost, BedrockQuery.new(model_id: rows.sole.model_id, input_tokens: 4, output_tokens: 2).cost
+    episode = session.reload.active_episode
+    assert_equal turn, episode.dig("goal", "text")
+    assert_empty Array(episode["identifiers"])
+    assert_nil episode.dig("facts", "manufacturer")
+  ensure
+    Rag::TurnPerception.define_singleton_method(:build) { |*args, **kwargs| original.call(*args, **kwargs) } if original
+  end
+
+  test "an invalid tool payload stays a contract failure and not an interpreter exception" do
+    session = web_session
+    turn = "la puerta no cierra del todo"
+    bad = perception("report", observations: [ "la puerta no cierra" ]).merge("route" => "ready")
+    events = []
+    logs = []
+    perform_enqueued_jobs only: TrackBedrockQueryJob do
+      with_owner do
+        events = Rag::ValidationCapture.capture do
+          logs = pilot_events_from do
+            ask(session, turn, client(bad), correlation: "stage:invalid")
+          end
+        end
+      end
+    end
+
+    assert events.none? { |row| row["kind"] == "interpreter_failure" }
+    traced = logs.find { |row| row["event"] == "turn_interpreter" }
+    assert_nil traced["stage"]
+    assert_nil traced["error_class"]
+    assert_equal "invalid_schema", traced["turn_interpreter_status"]
+    assert_not_equal "transport_error", traced["turn_interpreter_status"]
+    assert_equal 1, BedrockQuery.where(correlation_id: "stage:invalid").count
+    assert_equal turn, session.reload.active_episode.dig("goal", "text")
+    assert_empty Array(session.active_episode["identifiers"])
   end
 
   test "an episode that changes before the lock is not rewritten from the model" do

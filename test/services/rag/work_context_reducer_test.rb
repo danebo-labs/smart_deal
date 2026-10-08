@@ -240,6 +240,84 @@ class Rag::WorkContextReducerTest < ActiveSupport::TestCase
     assert_equal "la puerta no termina de cerrar", episode.goal["text"]
   end
 
+  test "a floor and an indicator state stay observations when asserted without a slot" do
+    episode = open_episode
+    turn = "planta 2. LED 7 apagado."
+    raw = report_payload(
+      [ "planta 2", "LED 7 apagado" ],
+      [
+        { "span" => "planta 2", "act" => "assert" },
+        { "span" => "LED 7 apagado", "act" => "assert" }
+      ]
+    )
+
+    with_owner { settle(episode, raw, turn) }
+
+    texts = episode.observations.pluck("text")
+    assert_includes texts, "planta 2"
+    assert_includes texts, "LED 7 apagado"
+    assert_empty episode.identifiers
+    assert_nil episode.fact("manufacturer")
+    assert_nil episode.fact("model")
+    assert_nil episode.fact("controller")
+    assert_not Rag::EquipmentIdentity.from_episode(episode)&.known?
+  end
+
+  test "a designator inside an observation stays identity and a reread keeps it out of the symptom slots" do
+    episode = open_episode
+    turn = "El Elemont MH con placa CEA15 y controlador NICE3000 no cierra y se oye un clic. planta 2. LED 7 apagado."
+    raw = report_payload(
+      [
+        "El Elemont MH con placa CEA15 y controlador NICE3000 no cierra y se oye un clic",
+        "planta 2",
+        "LED 7 apagado"
+      ],
+      [
+        { "span" => "Elemont MH", "act" => "assert" },
+        { "span" => "CEA15", "act" => "assert" },
+        { "span" => "NICE3000", "act" => "assert" },
+        { "span" => "clic", "act" => "assert" },
+        { "span" => "planta 2", "act" => "assert" },
+        { "span" => "LED 7 apagado", "act" => "assert" }
+      ]
+    )
+
+    with_owner { settle(episode, raw, turn) }
+
+    assert_equal [ "Elemont MH", "CEA15", "NICE3000" ], episode.identifiers.pluck("value")
+    texts = episode.observations.pluck("text")
+    assert_includes texts, "El Elemont MH con placa CEA15 y controlador NICE3000 no cierra y se oye un clic"
+    assert_includes texts, "planta 2"
+    assert_includes texts, "LED 7 apagado"
+    assert_nil episode.fact("manufacturer")
+    assert_nil episode.fact("model")
+    assert_nil episode.fact("controller")
+    identity = Rag::EquipmentIdentity.from_episode(episode)
+    assert identity
+    assert_not identity.known?
+    assert_not_includes episode.to_json, "CEA15+"
+
+    travel_to @now do
+      stored = Rag::ActiveEpisode.parse(episode.to_h, now: @now)
+      assert_equal [ "Elemont MH", "CEA15", "NICE3000" ], stored.identifiers.pluck("value")
+      assert_includes stored.observations.pluck("text"), "planta 2"
+      assert_includes stored.observations.pluck("text"), "LED 7 apagado"
+      with_owner do
+        session = ConversationSession.create!(
+          identifier: "web:identity:#{SecureRandom.hex(4)}",
+          channel: "web",
+          expires_at: 30.days.from_now,
+          active_episode: stored.to_h
+        )
+        reread = Rag::ActiveEpisode.parse(session.reload.active_episode, now: @now)
+        assert_equal [ "Elemont MH", "CEA15", "NICE3000" ], reread.identifiers.pluck("value")
+        assert_includes reread.observations.pluck("text"), "planta 2"
+        assert_includes reread.observations.pluck("text"), "LED 7 apagado"
+        assert reread.observations.any? { |item| item["text"].include?("clic") }
+      end
+    end
+  end
+
   test "a valid opening keeps identity and the problem when a code is corrected" do
     episode = open_episode
     opening = "Elemont MH con placa CEA15; la puerta 1 no termina de cerrar y el imán no magnetiza."

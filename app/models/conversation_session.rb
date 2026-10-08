@@ -1112,7 +1112,7 @@ class ConversationSession < ApplicationRecord
       turn_interpreter_status: interpreted.status,
       turn_interpreter_fallback: interpreted.fallback || result&.understanding&.fallback || false,
       error_class: interpreted.error_class,
-      stage: interpreted.error_class.present? ? "converse" : nil,
+      stage: interpreted.stage,
       interpreter_error_reason: interpreted.error_reason,
       prompt_version: Rag::TurnPerception::PROMPT_VERSION,
       schema_version: Rag::TurnPerception::SCHEMA_VERSION,

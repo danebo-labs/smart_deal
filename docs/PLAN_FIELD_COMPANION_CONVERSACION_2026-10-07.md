@@ -645,6 +645,19 @@ Evidencia local, con dependencias externas stubbeadas y `PASS_CALL_CAP=0`: `work
 
 Veredicto de este diff: `REPARACIONES_LOCALES_COMPLETADAS`. Implementado: las correcciones locales de arriba. Desplegado: no. La imagen evidenciada sigue siendo `6ca7788`. Revalidado: no. Pendiente: la causa del `transport_error` del turno 1, el cumplimiento del modelo en una pasada real y la búsqueda documental del Elemont. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. La etapa 3 no empieza. Este diff queda en `main` para revisión y no se despliega.
 
+#### Correcciones de la revisión local (2026-10-08)
+
+Sobre `337ea91e843b46983c36c0e5bcf9265c8ec14e48`. Sin AWS, sin Retrieve, sin intérprete real, sin generación real, sin journey y sin despliegue. `PASS_CALL_CAP` sigue en 0. El histórico sigue en 132 llamadas y US$0,275813. No se abre otra pasada. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. La etapa 3 no empieza.
+
+Dos puntos de la reparación anterior quedaron mal cerrados. No cambian filtros, modelos ni presupuesto.
+
+- Observaciones numéricas. `WorkContextReducer#durable_identifier?` guardaba como identificador una frase de la observación si contenía un dígito. «planta 2» y «LED 7 apagado», devueltos a la vez como observación y como assert sin slot, ocupaban plazas de identidad. Un dígito separado no es un designador. La frase sigue en las observaciones. Se conserva el identificador cuando el catálogo o un slot de fabricante, modelo o controlador ya lo registró, o cuando el token es un designador (`CEA15`, `NICE3000`, `Elemont MH`), también si la observación nombra ese equipo. No se escribe fabricante ni modelo si el catálogo no lo confirmó. `known?` no cambia. La ambigüedad y la autorización del catálogo no cambian. `CEA15` no pasa a `CEA15+`. Al guardar y releer, planta, LED y clic no entran en los identificadores.
+- Etapa del intérprete. `interpret_turn` rescataba también lo que ocurre después de `converse`, y `interpreter_failure` y `PilotUsageLog` decían siempre etapa `converse` y fallo de transporte. La etapa queda en `prepare`, `converse`, `extract` o `perception`. Solo `converse` clasifica transporte (`timeout`, `throttle`, `transport_error`). Un error local posterior usa `local_error`. El contrato de una herramienta inválida sigue en `invalid_schema`, sin `interpreter_failure`. El motivo se sanitiza igual. La correlación y el intento se conservan. Los reintentos no cambian. Si ya había usage válido, `TrackBedrockQueryJob` se encola una vez y el fallo queda en otro evento. Sin usage no se inventan tokens ni costo.
+
+Evidencia local, con dependencias externas stubbeadas y `PASS_CALL_CAP=0`: `work_context_reducer_test`, `turn_perception_test`, `turn_interpreter_failure_test` y `conversation_session_turn_interpreter_test`. 117 corridas, 1017 aserciones, 0 fallos, 0 errores y 0 skips. RuboCop no reportó ofensas en los archivos tocados. `git diff --check` quedó limpio.
+
+Veredicto de este diff: `CORRECCIONES_LOCALES_COMPLETADAS`. Implementado: las dos correcciones de arriba. Desplegado: no. La imagen evidenciada sigue siendo `6ca7788`. Revalidado: no. Pendiente: la causa del `transport_error` del turno 1, el cumplimiento del modelo en una pasada real y la búsqueda documental del Elemont. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. La etapa 3 no empieza. Este diff queda en `main` para revisión y no se despliega.
+
 ### 3. Verificar ese alcance en producción
 
 Primera consulta y continuidad del mismo episodio, sobre el journey A ya aceptado en local. Una pasada. Sin sonda previa. Sin L3, sin journey B y sin T-F. Las reparaciones de las etapas 1 y 2 entran por el procedimiento de despliegue vigente.

@@ -7,6 +7,11 @@ module Rag
     MODEL_ID = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
     TOOL_NAME = "turn_perception"
     MAX_TOKENS = 512
+    STAGE_PREPARE = "prepare"
+    STAGE_CONVERSE = "converse"
+    STAGE_EXTRACT = "extract"
+    STAGE_PERCEPTION = "perception"
+    LOCAL_FAILURE = "local_error"
     PROMPT = <<~PROMPT.freeze
       You classify one technician turn. You do not answer the procedure, invent measurements, or choose a manual.
 
@@ -40,7 +45,7 @@ module Rag
 
     Result = Data.define(
       :perception, :fallback, :status, :latency_ms, :input_tokens, :output_tokens, :model_id,
-      :error_class, :error_reason
+      :error_class, :error_reason, :stage
     )
 
     def self.call(turn:, episode:, viewer_account:, correlation_id:, attribution: nil, client: nil, catalog: nil, active_photo_context: nil)
@@ -132,15 +137,22 @@ module Rag
 
     def interpret_turn
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      response = converse_client.converse(converse_params)
+      stage = STAGE_PREPARE
+      usage = nil
+      client = converse_client
+      params = converse_params
+      stage = STAGE_CONVERSE
+      response = client.converse(params)
       latency_ms = elapsed_since(started)
+      stage = STAGE_EXTRACT
       usage = response.usage
+      track_paid_call(usage, latency_ms)
       raw = extract_tool_input(response.output&.message&.content)
       record_interpreter_raw(raw)
+      stage = STAGE_PERCEPTION
       perception = TurnPerception.build(
         raw, turn: @turn, episode: @episode, catalog: @catalog, viewer_account: @viewer_account
       )
-      track_paid_call(usage, latency_ms)
       Result.new(
         perception: perception,
         fallback: !perception.valid,
@@ -150,39 +162,47 @@ module Rag
         output_tokens: usage_token(usage, :output_tokens),
         model_id: MODEL_ID,
         error_class: nil,
-        error_reason: nil
+        error_reason: nil,
+        stage: nil
       )
     rescue StandardError => error
       reason = failure_reason(error)
-      record_interpreter_failure(error, reason)
+      record_interpreter_failure(error, reason, stage)
       Result.new(
         perception: nil,
         fallback: true,
-        status: transport_status(error),
+        status: failure_status(error, stage),
         latency_ms: elapsed_since(started),
-        input_tokens: 0,
-        output_tokens: 0,
+        input_tokens: usage_token(usage, :input_tokens),
+        output_tokens: usage_token(usage, :output_tokens),
         model_id: MODEL_ID,
         error_class: error.class.name,
-        error_reason: reason
+        error_reason: reason,
+        stage: stage
       )
     end
 
-    # The rescue does not know whether the request left this process.
-    # AWS_MAX_ATTEMPTS limits later retries. It does not prove a failure
-    # happened before the request was sent. The reason is the exception
-    # message with credentials and header assignments removed.
-    def record_interpreter_failure(error, reason)
+    # The rescue records the step that raised. It does not retry and it does
+    # not decide whether the request left this process. AWS_MAX_ATTEMPTS
+    # limits later retries. A local error after a response is not transport.
+    # The reason is the exception message with credentials removed.
+    def record_interpreter_failure(error, reason, stage)
       return unless ValidationCapture.active?
 
       ValidationCapture.attempt_unless_set(1)
       ValidationCapture.record(
         "interpreter_failure",
-        "stage" => "converse",
+        "stage" => stage,
         "error_class" => error.class.name.to_s,
         "reason" => reason,
         "correlation_id" => @correlation_id
       )
+    end
+
+    def failure_status(error, stage)
+      return transport_status(error) if stage == STAGE_CONVERSE
+
+      LOCAL_FAILURE
     end
 
     def failure_reason(error)

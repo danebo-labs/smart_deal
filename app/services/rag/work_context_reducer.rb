@@ -364,17 +364,47 @@ module Rag
 
     # Symptom sentences are observations. Stored as identifiers they push the
     # equipment tokens out of the fixed list, and the prompt loses the machine
-    # after the history trim.
+    # after the history trim. A digit inside the sentence is not a designator.
+    # A catalog fact, an identity slot, or a designator token still stays when
+    # the observation names that equipment.
     def durable_identifier?(value)
       words = value.to_s.squish.split
       return false if words.size >= 4
 
       label = FollowupQueryRewriter.normalize_label(value)
       return false if label.blank?
-      return false if label.match?(/\A\d+\z/) && observation_mentions?(label)
-      return false if observation_mentions?(label) && !label.match?(/\d/)
+      return true unless observation_mentions?(label)
 
-      true
+      equipment_identity?(value, label)
+    end
+
+    def equipment_identity?(value, label)
+      return true if catalog_or_slot_span?(label)
+
+      designator_token?(value)
+    end
+
+    def catalog_or_slot_span?(label)
+      @perception.identities.any? { |item|
+        item.act == "assert" && recorded_identity?(item) && span_label?(item, label)
+      }
+    end
+
+    def recorded_identity?(item)
+      item.source == "catalog" || %w[manufacturer model controller].include?(item.slot)
+    end
+
+    def span_label?(item, label)
+      [ item.span, item.value ].any? { |text| FollowupQueryRewriter.normalize_label(text) == label }
+    end
+
+    # TechnicalReferentResolver.designator_only? treats a bare number as a
+    # specific token. A separated digit is a floor or an indicator state.
+    def designator_token?(value)
+      tokens = value.to_s.scan(/[\p{L}\d][\p{L}\d\-]*/)
+      return false if tokens.empty? || tokens.any? { |token| token.match?(/\A\d+\z/) }
+
+      TechnicalReferentResolver.designator_only?(value)
     end
 
     def observation_mentions?(label)

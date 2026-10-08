@@ -723,6 +723,55 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_includes field_problem(episode), "Manufacturer: Elemont (catalog)"
   end
 
+  test "an observation that names the equipment does not store the floor or the indicator" do
+    catalog = equipment_catalog([
+      equipment_row(brand: "Elemont", designators: [ "MH" ], display_name: DOOR_DISPLAY),
+      equipment_row(
+        brand: "MONARCH",
+        designators: [ { "value" => "NICE3000", "type" => "controller" } ]
+      ),
+      equipment_row(
+        brand: "Controles S.A.",
+        designators: [ { "value" => "CEA15+", "type" => "controller" } ]
+      )
+    ])
+    turn = "El Elemont MH con placa CEA15 y controlador NICE3000 no cierra y se oye un clic. planta 2. LED 7 apagado."
+    raw = {
+      "move" => "report",
+      "assertions" => [
+        assert_span("Elemont MH"),
+        assert_span("CEA15"),
+        assert_span("NICE3000"),
+        assert_span("clic"),
+        assert_span("planta 2"),
+        assert_span("LED 7 apagado")
+      ],
+      "observations" => [
+        "El Elemont MH con placa CEA15 y controlador NICE3000 no cierra y se oye un clic",
+        "planta 2",
+        "LED 7 apagado"
+      ],
+      "pending_resolution" => nil,
+      "clarification_target" => nil
+    }
+    result = perceive_with(catalog, raw, turn)
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    settle(episode, result, turn)
+
+    assert_equal "Elemont", episode.fact("manufacturer")["value"]
+    assert_equal "catalog", episode.fact("manufacturer")["source"]
+    assert_equal "NICE3000", episode.fact("controller")["value"]
+    assert_equal "catalog", episode.fact("controller")["source"]
+    assert_not_equal "CEA15+", episode.fact("controller")["value"]
+    assert_nil episode.fact("model")
+    assert_equal [ "Elemont MH", "CEA15" ], episode.identifiers.pluck("value")
+    assert_includes episode.observations.pluck("text"), "planta 2"
+    assert_includes episode.observations.pluck("text"), "LED 7 apagado"
+    assert episode.observations.any? { |item| item["text"].include?("clic") }
+    assert_empty result.ambiguities
+    assert_not Rag::EquipmentIdentity.from_episode(episode).known?
+  end
+
   test "Elemont CEA15 does not select CEA15+ or write a manufacturer" do
     catalog = equipment_catalog([
       equipment_row(brand: "Elemont", designators: [ "MH" ]),

@@ -101,8 +101,9 @@ def history_view(session)
   }
 end
 
-# This run only. Stage2RunBudget adds the closed history. Counting rows
-# after the baseline does not reopen the ceiling. PASS_CALL_CAP is 0.
+# This run only. Stage2RunBudget adds the closed history. Registered rows
+# and unbilled model attempts share the attempt cap. A row is not a failed
+# attempt, and a failed attempt does not invent a cost. Retrieve stays out.
 def this_run_queries(baseline_id, session_id)
   BedrockQuery.where("id > ?", baseline_id).where(
     "conversation_session_id = :sid OR correlation_id LIKE :prefix",
@@ -129,24 +130,106 @@ rescue StandardError
   "unknown"
 end
 
-def write_manifest(directory, sha:, session_id:, run_id:, rows:)
-  cost = rows.sum { |item| item["cost_usd"] }
+def write_manifest(directory, sha:, session_id:, run_id:, rows:, captures: [])
+  spent = spend_snapshot(rows, captures)
   File.write(
     directory.join("manifest.json"),
     JSON.pretty_generate(
       Rag::Stage2RunBudget.manifest(
         sha: sha, session_id: session_id, run_id: run_id,
-        new_calls: rows.size, new_cost_usd: cost
+        new_calls: spent.new_calls, new_cost_usd: spent.new_cost_usd,
+        unbilled_attempts: spent.unbilled_attempts
       )
     )
   )
 end
 
-def spend_snapshot(rows)
+def spend_snapshot(rows, captures = [])
   Rag::Stage2RunBudget.snapshot(
-    new_calls: rows.size,
-    new_cost_usd: rows.sum { |item| item["cost_usd"] }
+    new_calls: Array(rows).size,
+    new_cost_usd: Array(rows).sum { |item| item["cost_usd"].to_f },
+    unbilled_attempts: stage2_unbilled_attempts(captures, rows)
   )
+end
+
+def stage2_unbilled_attempts(captures, rows)
+  grouped_events = Hash.new { |hash, key| hash[key] = [] }
+  Array(captures).each do |capture|
+    Array(capture).each do |event|
+      next unless event.is_a?(Hash)
+
+      grouped_events[event["correlation_id"].to_s] << event
+    end
+  end
+  grouped_rows = Array(rows).group_by { |row| row["correlation_id"].to_s }
+  (grouped_events.keys | grouped_rows.keys).sum do |correlation|
+    stage2_unbilled_for(grouped_events[correlation], grouped_rows[correlation])
+  end
+end
+
+def stage2_unbilled_for(events, rows)
+  events = Array(events)
+  semantic_rows, query_rows = Array(rows).partition { |row| stage2_semantic_row?(row) }
+  interpreter = events.any? { |event| stage2_interpreter_attempt?(event) } ? 1 : 0
+  publication = events.count { |event| event["kind"] == "converse" }
+  query_signals = publication + stage2_generation_attempts(events) + stage2_rag_attempts(events)
+  [ interpreter - semantic_rows.size, 0 ].max + [ query_signals - query_rows.size, 0 ].max
+end
+
+def stage2_semantic_row?(row)
+  row["source"].to_s == "semantic_analysis" || row["route"].to_s == "semantic_analysis"
+end
+
+def stage2_interpreter_attempt?(event)
+  event["kind"] == "interpreter_failure" && %w[converse extract perception].include?(event["stage"].to_s)
+end
+
+def stage2_generation_attempts(events)
+  requests = events.count { |event| event["kind"] == "generate_text" }
+  return requests if requests.positive?
+
+  events.count do |event|
+    event["kind"] == "generation_result" &&
+      event["error_class"].present? &&
+      event["source"].to_s != "retrieve_and_generate"
+  end
+end
+
+def stage2_rag_attempts(events)
+  requests = events.count { |event| event["kind"] == "retrieve_and_generate" }
+  tries = events.sum do |event|
+    next 0 unless event["kind"] == "terminal_error" && event["operation"].to_s == "retrieve_and_generate"
+
+    [ event["transport_attempt"].to_i, 1 ].max
+  end
+  [ requests, tries ].max
+end
+
+def stage2_opening_failed?(record)
+  return true if record["success"] == false
+
+  Array(record["capture"]).any? { |event| stage2_opening_failure_event?(event) }
+end
+
+def stage2_opening_failure_event?(event)
+  return false unless event.is_a?(Hash)
+
+  kind = event["kind"].to_s
+  kind == "interpreter_failure" ||
+    (kind == "route_exit" && event["exit"].to_s == "fallback") ||
+    (kind == "generation_result" && event["error_class"].present?) ||
+    (kind == "terminal_error" && event["operation"].to_s != "retrieve")
+end
+
+def stage2_opening_stop(record)
+  failure = Array(record["capture"]).find { |event| event.is_a?(Hash) && event["kind"] == "interpreter_failure" }
+  if failure
+    return failure["stage"].to_s == "converse" ? "PENDIENTE" : "BLOQUEADA"
+  end
+
+  transport = record["error_class"].to_s.match?(/Timeout|Aws::|Seahorse/) ||
+    Array(record["capture"]).any? { |event| event.is_a?(Hash) && event["kind"] == "generation_result" && event["error_class"].present? }
+  transport ? "PENDIENTE" : "BLOQUEADA"
 end
 
 def stage2_database_refusal(db = ActiveRecord::Base.connection_db_config, env = Rails.env)
@@ -303,6 +386,7 @@ def stage2_journey_a_execute
   FileUtils.mkdir_p(out)
   sha = run_sha
   File.write(out.join("session.txt"), "session_id=#{session.id} account_id=#{account.id} user_id=#{user.id} document_id=#{document.id} sha=#{sha}\n")
+  File.write(out.join("budget_diff.patch"), stage2_budget_diff)
   write_manifest(out, sha: sha, session_id: session.id, run_id: run_id, rows: [])
 
   service = BedrockRagService.new(account: account, knowledge_base_id: PROD_KB)
@@ -313,7 +397,14 @@ def stage2_journey_a_execute
     "cache" => SolidCache::Record.connection.current_database,
     "cable" => SolidCable::Record.connection.current_database,
     "queue" => SolidQueue::Record.connection_db_config.database,
-    "aws_max_attempts" => ENV["AWS_MAX_ATTEMPTS"]
+    "aws_max_attempts" => ENV["AWS_MAX_ATTEMPTS"],
+    "knowledge_base_id" => ENV["BEDROCK_KNOWLEDGE_BASE_ID"],
+    "aws_region" => ENV["AWS_REGION"].presence || ENV["AWS_DEFAULT_REGION"],
+    "model_id" => ENV["BEDROCK_MODEL_ID"].presence || BedrockClient::QUERY_MODEL_ID,
+    "haiku_mode" => ENV["HAIKU_QUERY_ANALYSIS_MODE"],
+    "episode_enabled" => ENV["FIELD_COMPANION_EPISODE_ENABLED"],
+    "turn_enabled" => ENV["FIELD_COMPANION_TURN_ENABLED"],
+    "shared_session" => ENV["SHARED_SESSION_ENABLED"]
   ))
   abort("filter #{built_filter}") unless built_filter == STAGE2_EXPECTED_FILTER
 
@@ -353,17 +444,20 @@ def stage2_journey_a_execute
   host = Stage2QueryHost.new(account)
   baseline_id = BedrockQuery.maximum(:id).to_i
   trace = []
+  captures = []
   previous_answer = ""
 
   turns.each do |row|
     rows = this_run_queries(baseline_id, session.id)
-    spent = spend_snapshot(rows)
+    spent = spend_snapshot(rows, captures)
     unless spent.admit_turn
       trace << {
         "n" => row["n"],
         "stopped" => "budget",
         "calls" => spent.calls,
         "new_calls" => spent.new_calls,
+        "attempts" => spent.new_attempts,
+        "unbilled_attempts" => spent.unbilled_attempts,
         "historical_calls" => spent.historical_calls,
         "cost_usd" => spent.cost_usd.to_s("F"),
         "pass_calls_remaining" => spent.pass_calls_remaining
@@ -463,26 +557,87 @@ def stage2_journey_a_execute
     end
     end
     record["capture"] = capture
+    captures << capture
     rows = this_run_queries(baseline_id, session.id)
-    spent = spend_snapshot(rows)
+    spent = spend_snapshot(rows, captures)
     record["calls_total"] = spent.calls
     record["new_calls"] = spent.new_calls
+    record["attempts"] = spent.new_attempts
+    record["unbilled_attempts"] = spent.unbilled_attempts
     record["historical_calls"] = spent.historical_calls
     record["cost_usd_total"] = spent.cost_usd.to_s("F")
     record["calls"] = rows.select { |item| item["correlation_id"].to_s.include?("t#{format('%02d', row['n'])}") }
     trace << record
     File.write(out.join("trace.json"), JSON.pretty_generate(trace))
-    write_manifest(out, sha: sha, session_id: session.id, run_id: run_id, rows: rows)
-    warn "turn=#{row['n']} success=#{record['success']} calls=#{record['calls_total']} new=#{record['new_calls']} cost=#{record['cost_usd_total']} elemont=#{record['citations']&.any? { |item| item['elemont'] }}"
-    if row["n"].to_i == 1 && record["success"] == false
-      warn "INCONCLUSIVE turn 1"
+    write_manifest(out, sha: sha, session_id: session.id, run_id: run_id, rows: rows, captures: captures)
+    warn "turn=#{row['n']} success=#{record['success']} calls=#{record['calls_total']} attempts=#{record['attempts']} unbilled=#{record['unbilled_attempts']} cost=#{record['cost_usd_total']} elemont=#{record['citations']&.any? { |item| item['elemont'] }}"
+    if row["n"].to_i == 1 && stage2_opening_failed?(record)
+      record["stop"] = stage2_opening_stop(record)
+      warn "turn 1 #{record['stop']}"
+      File.write(out.join("trace.json"), JSON.pretty_generate(trace))
       break
     end
   end
 
   File.write(out.join("trace.json"), JSON.pretty_generate(trace))
-  write_manifest(out, sha: sha, session_id: session.id, run_id: run_id, rows: this_run_queries(baseline_id, session.id))
-  warn "done turns=#{trace.size} session=#{session.id} out=#{out}"
+  final_rows = this_run_queries(baseline_id, session.id)
+  write_manifest(out, sha: sha, session_id: session.id, run_id: run_id, rows: final_rows, captures: captures)
+  export_dir = stage2_export_session!(session, run_id)
+  warn "done turns=#{trace.size} session=#{session.id} out=#{out} export=#{export_dir}"
+end
+
+def stage2_budget_diff
+  IO.popen(
+    [ "git", "-C", Rails.root.to_s, "diff", "--", "app/services/rag/stage2_run_budget.rb", "script/field_companion/stage2_journey_a.rb" ],
+    &:read
+  ).to_s
+rescue StandardError
+  ""
+end
+
+def stage2_export_session!(session, run_id)
+  stamp = Time.now.utc.strftime("%Y%m%dT%H%M%SZ")
+  directory = TRACE_ROOT.join("exports", stamp)
+  FileUtils.mkdir_p(directory)
+  events = PilotEvent.where(conversation_session_id: session.id).order(:id).map { |row| stage2_export_event(row) }
+  queries = BedrockQuery.where(conversation_session_id: session.id).order(:id).map { |row| stage2_export_query(row) }
+  File.write(directory.join("pilot_events.json"), JSON.pretty_generate(events))
+  File.write(directory.join("bedrock_queries.json"), JSON.pretty_generate(queries))
+  File.write(directory.join("session.txt"), "session_id=#{session.id} run_id=#{run_id} events=#{events.size} queries=#{queries.size}\n")
+  directory
+end
+
+def stage2_export_event(row)
+  payload = row.payload.is_a?(Hash) ? Rag::ValidationCapture.sanitize(row.payload) : Rag::ValidationCapture.scrub_text(row.payload.to_s)
+  {
+    "id" => row.id,
+    "event" => row.event,
+    "correlation_id" => row.correlation_id,
+    "account_id" => row.account_id,
+    "user_id" => row.user_id,
+    "conversation_session_id" => row.conversation_session_id,
+    "occurred_at" => row.occurred_at&.iso8601,
+    "payload" => payload
+  }
+end
+
+def stage2_export_query(row)
+  {
+    "id" => row.id,
+    "source" => row.source,
+    "route" => row.route,
+    "model_id" => row.model_id,
+    "input_tokens" => row.input_tokens,
+    "output_tokens" => row.output_tokens,
+    "cache_read_tokens" => row.cache_read_tokens,
+    "cache_creation_tokens" => row.cache_creation_tokens,
+    "cost_usd" => row.cost.to_f,
+    "correlation_id" => row.correlation_id,
+    "attempt" => row.attempt,
+    "token_source" => row.token_source,
+    "conversation_session_id" => row.conversation_session_id,
+    "user_query" => Rag::ValidationCapture.scrub_text(row.user_query.to_s).slice(0, 500)
+  }
 end
 
 def stage2_logical_filter(node)

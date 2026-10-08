@@ -40,9 +40,11 @@ class Stage2JourneyARunnerTest < ActiveSupport::TestCase
     assert_equal :budget, stage2_journey_a_main
     assert_empty calls
     assert_equal 0, Rag::Stage2RunBudget::PASS_CALL_CAP
+    assert_equal 174, Rag::Stage2RunBudget::STAGE2_CALL_CEILING
+    assert_equal 216, Rag::Stage2RunBudget::GLOBAL_CALL_CEILING
     assert_equal 3, Rag::Stage2RunBudget::TURN_CALL_MARGIN
-    assert_equal 132, Rag::Stage2RunBudget::HISTORICAL_CALLS
-    assert_equal BigDecimal("0.275813"), Rag::Stage2RunBudget::HISTORICAL_COST_USD
+    assert_equal 160, Rag::Stage2RunBudget::HISTORICAL_CALLS
+    assert_equal BigDecimal("0.343774"), Rag::Stage2RunBudget::HISTORICAL_COST_USD
   ensure
     if defined?(original_admit) && original_admit
       Rag::Stage2RunBudget.define_singleton_method(:admit_turn?) { |**kwargs| original_admit.call(**kwargs) }
@@ -99,6 +101,101 @@ class Stage2JourneyARunnerTest < ActiveSupport::TestCase
     assert_equal "refuse smart_deal_development_cache@localhost",
       stage2_role_refusal(endpoint.new("smart_deal_development_cache", "localhost", "postgresql"), STAGE2_ISOLATED_CACHE_DATABASE)
     assert_nil stage2_role_refusal(endpoint.new(STAGE2_ISOLATED_CABLE_DATABASE, "127.0.0.1", "postgresql"), STAGE2_ISOLATED_CABLE_DATABASE)
+  end
+
+  test "a failed model attempt consumes the cap and a registered row does not count twice" do
+    converse_failure = [ [ {
+      "kind" => "interpreter_failure",
+      "stage" => "converse",
+      "correlation_id" => "stage2:a:t01",
+      "error_class" => "Timeout::Error"
+    } ] ]
+    prepare_failure = [ [ {
+      "kind" => "interpreter_failure",
+      "stage" => "prepare",
+      "correlation_id" => "stage2:a:t00"
+    } ] ]
+    retrieve_failure = [ [ {
+      "kind" => "terminal_error",
+      "operation" => "retrieve",
+      "correlation_id" => "stage2:a:availability",
+      "transport_attempt" => 2
+    } ] ]
+    paid_local = [ [ {
+      "kind" => "interpreter_failure",
+      "stage" => "extract",
+      "correlation_id" => "stage2:a:t02"
+    } ] ]
+    paid_row = [ {
+      "correlation_id" => "stage2:a:t02",
+      "source" => "semantic_analysis",
+      "route" => "semantic_analysis",
+      "cost_usd" => 0.004
+    } ]
+    mixed = [ [ {
+      "kind" => "converse",
+      "correlation_id" => "stage2:a:t03:query"
+    }, {
+      "kind" => "generate_text",
+      "correlation_id" => "stage2:a:t03:query"
+    }, {
+      "kind" => "generation_result",
+      "correlation_id" => "stage2:a:t03:query",
+      "error_class" => "Timeout::Error"
+    } ] ]
+    mixed_row = [ {
+      "correlation_id" => "stage2:a:t03:query",
+      "source" => "query",
+      "route" => "rag_global",
+      "cost_usd" => 0.01
+    } ]
+    both_failed = [ [ {
+      "kind" => "converse",
+      "correlation_id" => "stage2:a:t04:query"
+    }, {
+      "kind" => "generate_text",
+      "correlation_id" => "stage2:a:t04:query"
+    }, {
+      "kind" => "generation_result",
+      "correlation_id" => "stage2:a:t04:query",
+      "error_class" => "Seahorse::Client::NetworkingError"
+    } ] ]
+
+    assert_equal 1, stage2_unbilled_attempts(converse_failure, [])
+    assert_equal 0, stage2_unbilled_attempts(prepare_failure, [])
+    assert_equal 0, stage2_unbilled_attempts(retrieve_failure, [])
+    assert_equal 0, stage2_unbilled_attempts(paid_local, paid_row)
+    assert_equal 1, stage2_unbilled_attempts(mixed, mixed_row)
+    assert_equal 2, stage2_unbilled_attempts(both_failed, [])
+
+    spent = spend_snapshot([], converse_failure)
+    assert_equal 0, spent.new_calls
+    assert_equal 1, spent.unbilled_attempts
+    assert_equal BigDecimal("0.343774"), spent.cost_usd
+
+    hidden = spend_snapshot(mixed_row, mixed)
+    assert_equal 1, hidden.new_calls
+    assert_equal 1, hidden.unbilled_attempts
+    assert_equal 2, hidden.new_attempts
+    assert_equal BigDecimal("0.353774"), hidden.cost_usd
+  end
+
+  test "turn 1 stops when interpretation fails and keeps a transport failure pending" do
+    failed = {
+      "success" => true,
+      "capture" => [ { "kind" => "interpreter_failure", "stage" => "converse", "error_class" => "Timeout::Error" } ]
+    }
+    local = {
+      "success" => false,
+      "capture" => [ { "kind" => "interpreter_failure", "stage" => "perception", "error_class" => "RuntimeError" } ]
+    }
+    opened = { "success" => true, "capture" => [ { "kind" => "interpreter_raw", "stage" => nil } ] }
+
+    assert stage2_opening_failed?(failed)
+    assert_equal "PENDIENTE", stage2_opening_stop(failed)
+    assert stage2_opening_failed?(local)
+    assert_equal "BLOQUEADA", stage2_opening_stop(local)
+    assert_not stage2_opening_failed?(opened)
   end
 
   test "only the inlined tracker bypasses the Solid Queue refusal" do

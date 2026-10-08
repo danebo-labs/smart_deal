@@ -73,7 +73,6 @@ module Rag
       @perception.identities.select { |item| item.kind == "negate" && item.slot.present? }.each do |item|
         if item.slot == "identifier"
           remove_identifier(item.span)
-          remove_identifier(item.catalog_retrieval, source: "catalog") if item.catalog_retrieval.present?
           @episode.append_rejected!("identifier", item.span)
         elsif ActiveEpisode::FACT_KEYS.include?(item.slot)
           fact = @episode.fact(item.slot)
@@ -127,12 +126,6 @@ module Rag
 
         @episode.delete_rejected!("identifier", item.value)
         @episode.append_identifier!(item.value, correlation_id: @correlation_id, source: "user")
-        # The display name can be four or more words. That gate keeps a symptom
-        # sentence out of the identifier list. This term is the catalog name of
-        # a span already stored, not a new user fact.
-        next if item.catalog_retrieval.blank?
-
-        @episode.append_identifier!(item.catalog_retrieval, correlation_id: @correlation_id, source: "catalog")
       end
     end
 
@@ -326,11 +319,8 @@ module Rag
       }
     end
 
-    def remove_identifier(value, source: "user")
-      literal = Rag::ActiveEpisode.identifier_literal(value, source)
-      label = FollowupQueryRewriter.normalize_label(literal)
-      return if label.blank?
-
+    def remove_identifier(value)
+      label = FollowupQueryRewriter.normalize_label(value)
       @episode.identifiers.reject! { |item| FollowupQueryRewriter.normalize_label(item["value"]) == label }
     end
 

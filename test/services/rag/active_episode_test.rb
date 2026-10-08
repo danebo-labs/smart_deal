@@ -99,53 +99,6 @@ class Rag::ActiveEpisodeTest < ActiveSupport::TestCase
     assert_equal "ID6-#{'Z' * 26}", values.last
   end
 
-  test "a catalog expansion does not displace declared or photo identifiers" do
-    episode = Rag::ActiveEpisode.open(correlation_id: "query:1", now: NOW)
-    declared = (1..5).map { |index| "User #{index}" }
-    declared.each { |value| episode.append_identifier!(value, correlation_id: "query:1", source: "user") }
-    episode.append_identifier!("Catalog Manual Name", correlation_id: "query:1", source: "catalog")
-
-    assert_equal declared, episode.identifiers.pluck("value")
-    assert episode.identifiers.none? { |item| item["source"] == "catalog" }
-
-    mixed = [
-      { "value" => "User A", "source" => "user", "correlation_id" => "query:1" },
-      { "value" => "Photo B", "source" => "photo", "correlation_id" => "photo:1" },
-      { "value" => "Older Catalog", "source" => "catalog", "correlation_id" => "query:1" },
-      { "value" => "User C", "source" => "user", "correlation_id" => "query:1" },
-      { "value" => "Newer Catalog", "source" => "catalog", "correlation_id" => "query:1" },
-      { "value" => "Photo D", "source" => "photo", "correlation_id" => "photo:1" }
-    ]
-    parsed = Rag::ActiveEpisode.parse(valid_payload("identifiers" => mixed), now: NOW)
-    parsed.append_identifier!("User E", correlation_id: "query:2", source: "user")
-
-    assert_equal [ "User A", "Photo B", "User C", "Photo D", "User E" ], parsed.identifiers.pluck("value")
-    assert parsed.identifiers.none? { |item| item["source"] == "catalog" }
-
-    reloaded = Rag::ActiveEpisode.parse(parsed.to_h, now: NOW)
-    assert_equal parsed.identifiers.pluck("value"), reloaded.identifiers.pluck("value")
-    assert_equal parsed.identifiers.pluck("source"), reloaded.identifiers.pluck("source")
-    assert_equal Rag::ActiveEpisode::MAX_IDENTIFIERS, reloaded.identifiers.size
-  end
-
-  test "a catalog expansion is kept when a declared slot is free" do
-    raw = [
-      { "value" => "User A", "source" => "user", "correlation_id" => "query:1" },
-      { "value" => "Photo B", "source" => "photo", "correlation_id" => "photo:1" },
-      { "value" => "User C", "source" => "user", "correlation_id" => "query:1" },
-      { "value" => "Older Catalog", "source" => "catalog", "correlation_id" => "query:1" },
-      { "value" => "Newer Catalog", "source" => "catalog", "correlation_id" => "query:1" },
-      { "value" => "Photo D", "source" => "photo", "correlation_id" => "photo:1" }
-    ]
-    episode = Rag::ActiveEpisode.parse(valid_payload("identifiers" => raw), now: NOW)
-
-    assert_equal [ "User A", "Photo B", "User C", "Newer Catalog", "Photo D" ], episode.identifiers.pluck("value")
-    assert_equal "catalog", episode.identifiers[3]["source"]
-
-    reloaded = Rag::ActiveEpisode.parse(episode.to_h, now: NOW)
-    assert_equal episode.identifiers.pluck("value"), reloaded.identifiers.pluck("value")
-  end
-
   test "conflicts are capped at 3 and drop the oldest" do
     raw = (1..4).map { |index|
       { "fact" => "manufacturer", "user" => "User#{index}", "photo" => "Photo#{index}", "correlation_id" => "photo:#{index}" }

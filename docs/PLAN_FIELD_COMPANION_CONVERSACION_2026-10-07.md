@@ -1,6 +1,6 @@
 # Field Companion: conversación técnica real
 
-**Estado: ETAPA 2 BLOQUEADA.** No es `EPISODIO_VALIDADO`. La etapa 1 está en el código local. La etapa 2 sigue bloqueada: la corrección de planta quedó reparada en local sobre `66dd9e0` y no está revalidada. La comprobación web del 2026-10-07 reprodujo la consulta corta; la reparación del nombre canónico y las tres correcciones de su review quedan en local y no reabren la etapa. El contrato N4 de citas ajenas pasó en local y tampoco la reabre. La comparación de retrieval del 2026-10-07, con la consulta expandida compuesta en `71b83a4` y ejecutada sobre la imagen `d5660d72`, no trajo el plano Elemont y no reabre la etapa. La etapa 3 no empieza. La revisión Opus del 2026-10-07 sobre `7076f05` sigue incorporada. Esta revisión no habilita un piloto.
+**Estado: ETAPA 2 BLOQUEADA.** No es `EPISODIO_VALIDADO`. La etapa 1 está en el código local. La etapa 2 sigue bloqueada: la corrección de planta quedó reparada en local sobre `66dd9e0` y no está revalidada. La comprobación web del 2026-10-07 reprodujo la consulta corta; la reparación del nombre canónico y las tres correcciones de su review quedan en local y no reabren la etapa. El contrato N4 de citas ajenas pasó en local y tampoco la reabre. La comparación de retrieval del 2026-10-07 no trajo el plano Elemont. La expansión del nombre canónico queda fuera del candidato a desplegar y no reabre la etapa. La etapa 3 no empieza. La revisión Opus del 2026-10-07 sobre `7076f05` sigue incorporada. Esta revisión no habilita un piloto.
 
 Este documento es el único plan vigente del companion. Una revisión documental no autoriza a empezar. La etapa 1 ya está en el código local. No llama a Bedrock y no despliega.
 
@@ -461,6 +461,16 @@ Elemont no aparece en ningún documento, URI ni texto de los dieciséis chunks. 
 Evidencia: `tmp/documentary_retrieve/20261007T233903Z/`.
 
 Veredicto de esta comparación: `SIN_MEJORA_OBSERVADA`.
+
+#### Candidato a desplegar (2026-10-07)
+
+La comparación anterior mezcló el compositor local con el servicio de `d5660d72`. No valida el companion con el código nuevo desplegado. El diff `d5660d72..2b7cbc4` tiene cuatro commits de producto y de plan. La revisión separa tres piezas:
+
+- La expansión del nombre canónico. Queda fuera de este despliegue. En la comparación no metió el Elemont en el top 8 y cambió el orden de manuales de otros equipos. No se declara como reparación de ese fallo.
+- La regla de hipótesis del guidance y el acortamiento que la mantiene dentro de 2400 caracteres. Entra. Está cubierta por test. No demuestra que el modelo la cumpla. La siguiente prueba del flujo real es la que puede observarlo.
+- El contrato N4, ya sin el skip, y el test que acepta hashes iguales cuando la consulta no cambia. Entran. No cambian la consulta ni el filtro.
+
+Salen con la expansión el tope de 120 caracteres, la plaza de identificador `catalog` y los tests de esa expansión. Nada más escribe ese origen. 156 corridas de guidance, episodio, alcance, percepción y reducer: 1693 aserciones, 0 fallos. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. `PASS_CALL_CAP` sigue en 0.
 
 ### 3. Verificar ese alcance en producción
 

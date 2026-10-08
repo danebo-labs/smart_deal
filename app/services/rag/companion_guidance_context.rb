@@ -55,12 +55,13 @@ module Rag
     APPLICABILITY_DOUBT = /\b(?:puede no|no se si|may not|not apply|no es mi|not this equipment|not be my)\b/
     QUESTION_CHARS = 400
     TURN_CHARS = 160
-    PROCEDURE_LIMIT = "If they ask for a procedure, reset, or value, do not give those steps, and do not reply by only asking which equipment this is. Say it is not confirmed, then ask that one check. Do not stop at the refusal, and do not send them to an unknown terminal."
+    PROCEDURE_LIMIT = "If they ask for a procedure, reset, or value, do not give those steps, and do not reply by only asking which equipment this is. Say it is not confirmed. Do not stop at the refusal. Do not send them to an unknown terminal."
     DONE_ACTION = "If they already report an action as done, use it as context and do not instruct it again."
-    INTERVENTION_LIMIT = "You may observe, interpret, and hypothesize. Do not instruct a physical intervention, an operational intervention, or a tool or instrument measurement without applicable evidence."
+    INTERVENTION_LIMIT = "You may observe, interpret, and hypothesize. Do not instruct a physical or operational intervention, or a tool or instrument measurement without applicable evidence."
+    QUESTION_RULE = "One useful question when needed. Not a questionnaire."
     UNKNOWN_INVENT = "Do not invent electrical values, terminals, fault-code meanings, sequences, menu names, DIP positions, selectors, waits, inspection mode, power cuts, or resets."
     KNOWN_INVENT = "Do not invent electrical values, distances, tolerances, torque, parameters, terminal numbers, terminal functions, fault-code meanings, manufacturer-specific sequences, menu names, or DIP positions."
-    EMPTY_SEARCH = "The search returned no documentation. Do not say the manual does not exist. Offer one narrowing clarification or Danebo guidance. No manufacturer procedure, value, or terminal."
+    EMPTY_SEARCH = "The search returned no documentation. Do not say the manual does not exist."
     PIN_EMPTY = "The pinned focus returned no evidence. Do not release the pin."
     RANK_RULE = 2
     RANK_QUESTION = 3
@@ -209,6 +210,7 @@ module Rag
         rule_piece("# FIELD COMPANION"),
         rule_piece(objective_line),
         rule_piece("Follow that objective."),
+        rule_piece(QUESTION_RULE),
         rule_piece("The equipment identity is not confirmed."),
         rule_piece(HYPOTHESIS_RULE),
         rule_piece(PROCEDURE_LIMIT),
@@ -407,12 +409,12 @@ module Rag
     def known_pieces
       pieces = []
       pieces << piece("question", "Question: #{@question}", RANK_QUESTION, 0) if @question.present?
-      pieces << piece("problem", "Active problem: #{goal}", RANK_FACT, goal.length) if goal.present?
+      pieces << piece("problem", "Active problem: #{goal}", RANK_FACT, 0) if goal.present?
       episode_lines.each { |line| append_problem_piece(pieces, line) }
-      identity_lines.each { |line| pieces << piece("problem", line, RANK_FACT, line.length) }
+      identity_lines.each { |line| pieces << piece("problem", line, RANK_FACT, 1) }
       if conflict.present?
         text = "Identity conflict: #{conflict}. Do not choose either manufacturer."
-        pieces << piece("problem", text, RANK_FACT, text.length)
+        pieces << piece("problem", text, RANK_FACT, 1)
       end
       append_visual_pieces(pieces)
       append_turn_pieces(pieces)
@@ -427,7 +429,7 @@ module Rag
 
     def append_problem_piece(pieces, line)
       unless line.start_with?("Obs:")
-        pieces << piece("problem", line, RANK_FACT, line.length)
+        pieces << piece("problem", line, RANK_FACT, line.start_with?("Goal:") ? 0 : 1)
         return
       end
 
@@ -444,7 +446,7 @@ module Rag
       pieces << piece("visual_heading", "Accepted visual observation:", 1, 0)
       visual_fields.each do |label, value|
         text = "- #{label}: #{value}"
-        pieces << piece("visual", text, RANK_FACT, text.length)
+        pieces << piece("visual", text, RANK_FACT, 1)
       end
     end
 

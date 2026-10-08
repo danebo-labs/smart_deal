@@ -642,6 +642,83 @@ class Rag::CompanionGuidanceContextTest < ActiveSupport::TestCase
     assert_not prompt.match?(/^Fault code: 7\b/)
   end
 
+  test "a long correction on a generic empty search keeps the goal" do
+    correction = long_correction
+    session = generic_episode_context.sub(
+      "Corrijo algo de antes: la cabina está detenida cerca de planta 4, no de planta 3.",
+      correction
+    )
+    prompt = Rag::CompanionGuidanceContext.build(
+      question: long_field_question,
+      identity: nil,
+      session_context: session,
+      labels: [],
+      locale: :es,
+      mode: :unknown,
+      manuals: [ "Manual ajeno, p. 9", "Otro plano, p. 2" ],
+      empty_retrieval: true
+    ).to_s
+
+    assert_operator correction.length, :>, Rag::CompanionGuidanceContext::TURN_CHARS
+    assert_includes prompt, "Question: #{long_field_question}"
+    assert_includes prompt, "Goal: la puerta del montacargas no termina de cerrar"
+    assert_includes prompt, "Manufacturer: Nortec (catalog)"
+    assert_includes prompt, "Identifiers: Nortec QX-4"
+    assert_includes prompt, "Fault code: 41 (technician)"
+    assert_includes prompt, "Not current: fault code 7"
+    assert_includes prompt, correction
+    assert_includes prompt, "cerca de planta 4"
+    assert_includes prompt, "no hay personas dentro"
+    assert_includes prompt, "la hoja llega al marco y vuelve a abrir"
+    assert_includes prompt, "la guía no tiene una obstrucción"
+    assert_includes prompt, "el indicador 2 está encendido fijo"
+    assert_includes prompt, "The search returned no documentation."
+    assert_includes prompt, "Do not say the manual does not exist."
+    assert_includes prompt, Rag::CompanionGuidanceContext::QUESTION_RULE
+    assert_includes prompt, Rag::CompanionGuidanceContext::HYPOTHESIS_RULE
+    assert_operator prompt.length, :<=, Rag::CompanionGuidanceContext::MAX_CHARS
+    assert_not prompt.match?(/^Fault code: 7\b/)
+  end
+
+  test "a pinned generic empty search keeps the goal with a long correction" do
+    correction = long_correction
+    session = generic_episode_context.sub(
+      "Corrijo algo de antes: la cabina está detenida cerca de planta 4, no de planta 3.",
+      correction
+    )
+    prompt = Rag::CompanionGuidanceContext.build(
+      question: long_field_question,
+      identity: nil,
+      session_context: session,
+      labels: [],
+      locale: :es,
+      mode: :unknown,
+      manuals: [ "Manual ajeno, p. 9", "Otro plano, p. 2" ],
+      empty_retrieval: true,
+      pinned_focus_empty: true
+    ).to_s
+
+    assert_includes prompt, "Question: #{long_field_question}"
+    assert_includes prompt, "Goal: la puerta del montacargas no termina de cerrar"
+    assert_includes prompt, "Manufacturer: Nortec (catalog)"
+    assert_includes prompt, "Identifiers: Nortec QX-4"
+    assert_includes prompt, "Fault code: 41 (technician)"
+    assert_includes prompt, "Not current: fault code 7"
+    assert_includes prompt, correction
+    assert_includes prompt, "cerca de planta 4"
+    assert_includes prompt, "no hay personas dentro"
+    assert_includes prompt, "la hoja llega al marco y vuelve a abrir"
+    assert_includes prompt, "la guía no tiene una obstrucción"
+    assert_includes prompt, "el indicador 2 está encendido fijo"
+    assert_includes prompt, "The search returned no documentation."
+    assert_includes prompt, "Do not say the manual does not exist."
+    assert_includes prompt, "The pinned focus returned no evidence. Do not release the pin."
+    assert_includes prompt, Rag::CompanionGuidanceContext::QUESTION_RULE
+    assert_includes prompt, Rag::CompanionGuidanceContext::HYPOTHESIS_RULE
+    assert_operator prompt.length, :<=, Rag::CompanionGuidanceContext::MAX_CHARS
+    assert_not prompt.match?(/^Fault code: 7\b/)
+  end
+
   test "a generic episode keeps its checks when the question is long and the search is empty" do
     prompt = Rag::CompanionGuidanceContext.build(
       question: long_field_question,

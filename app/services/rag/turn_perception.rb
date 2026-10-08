@@ -571,6 +571,10 @@ module Rag
     end
 
     def adjust_move(move, resolution, identities, observations, ambiguities, target)
+      if move == "meta" && technical_recap?(@turn)
+        note_rule("adjust_move", "meta", "technical_recap", { "to" => "follow_up" })
+        move = "follow_up"
+      end
       if move == "answer_pending" && !pending_answer?(resolution, identities)
         note_rule("adjust_move", move, "pending_answer_incomplete")
         move = identities.any? || observations.any? || ambiguities.any? ? "report" : "follow_up"
@@ -655,6 +659,25 @@ module Rag
       return false if asserts.empty?
 
       asserts.any? { |item| item.kind == "identifier" || (item.kind == "fact" && item.slot == slot) }
+    end
+
+    # A summary of the open job, or the next observation, is the technical
+    # route. A greeting, a question about what Danebo needs, or an offer to
+    # send evidence stays meta. This is not a list of fixture sentences.
+    def technical_recap?(text)
+      normalized = FollowupQueryRewriter.normalize_label(text)
+      return false if normalized.blank?
+      return false if normalized.match?(/\bnecesita/)
+      return false if normalized.split.all? { |word| word.match?(RoutePolicy::GREETING_TOKEN) }
+      return false if evidence_offer?(normalized)
+
+      normalized.match?(/\bresum/) ||
+        (normalized.match?(/\bobservacion/) && normalized.match?(/\b(?:sigue|siguiente)/))
+    end
+
+    def evidence_offer?(normalized)
+      normalized.match?(/\b(?:foto|imagen|video)\b/) &&
+        !normalized.match?(/\b(?:resum|observacion|falla|codigo|puerta|sintoma)/)
     end
 
     def prior_context?

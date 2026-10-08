@@ -128,6 +128,59 @@ class Rag::WorkContextReducerTest < ActiveSupport::TestCase
     assert_includes texts, "la puerta de planta 2 está abierta"
   end
 
+  test "a retracted floor inside a longer observation keeps the independent fact" do
+    episode = seeded_turn_episode
+    turn = "Corrijo algo de antes: la cabina está detenida cerca de planta 2, no de planta 1. No lo sé."
+    raw = {
+      "move" => "correct",
+      "assertions" => [ { "span" => "planta 2", "act" => "assert", "slot_hint" => nil } ],
+      "observations" => [],
+      "pending_resolution" => nil,
+      "clarification_target" => nil
+    }
+
+    decision = nil
+    with_owner { decision = settle(episode, raw, turn) }
+    stored = travel_to(@now) { Rag::ActiveEpisode.parse(episode.to_h, now: @now) }
+    texts = stored.observations.pluck("text")
+    explained = Rag::QueryComposer.explain(
+      state: stored, turn: turn, perception: perception_for(stored, raw, turn), decision: decision
+    )
+
+    assert_includes texts, "la cabina está detenida cerca de planta 2"
+    assert_includes texts, "no hay personas dentro"
+    assert texts.none? { |text| text.match?(/(?<![[:alnum:]])planta 1(?![[:alnum:]])/i) }
+    assert_includes texts, "La puerta llega al marco, pero vuelve a abrir"
+    assert_includes texts, "no veo una obstrucción"
+    assert_includes texts, "El LED 7 está apagado"
+    assert_includes texts, "Al pedir cierre se oye un clic, pero no termina de cerrar"
+    assert_equal "18", stored.fact("fault_code")["value"]
+    assert_includes stored.rejected.pluck("value"), "8"
+    assert stored.goal["text"].match?(/(?<![[:alnum:]])planta 2(?![[:alnum:]])/i)
+    assert_not stored.goal["text"].match?(/(?<![[:alnum:]])planta 1(?![[:alnum:]])/i)
+    assert_includes explained[:query], "planta 2"
+    assert_includes explained[:query], "no hay personas dentro"
+    assert_not_includes explained[:query], "planta 1 y no hay personas dentro"
+
+    travel_to @now do
+      with_owner do
+        session = ConversationSession.create!(
+          identifier: "web:plant:#{SecureRandom.hex(4)}",
+          channel: "web",
+          expires_at: 30.days.from_now,
+          active_episode: stored.to_h
+        )
+        block = SessionContextBuilder.field_problem_block(session)
+        obs = block.lines.grep(/\AObs:/).join
+        assert_match(/Goal:.*planta 2/i, block)
+        assert_includes obs, "no hay personas dentro"
+        assert_not block.match?(/(?<![[:alnum:]])planta 1(?![[:alnum:]])/i)
+        assert_includes block, "Fault code: 18"
+        assert_includes block, "El LED 7 está apagado"
+      end
+    end
+  end
+
   test "a retracted floor drops that observation and keeps the replacement" do
     episode = open_episode
     episode.append_observation!("detenida cerca de planta 1", correlation_id: "seed")
@@ -140,6 +193,86 @@ class Rag::WorkContextReducerTest < ActiveSupport::TestCase
     assert_includes texts, "detenida cerca de planta 2"
     assert_includes texts, "no hay personas dentro"
     assert texts.none? { |text| text.match?(/(?<![[:alnum:]])planta 1(?![[:alnum:]])/i) }
+  end
+
+  test "correcting a code does not leave a residual phrase as the goal" do
+    episode = open_episode
+    episode.assign_goal!("El display muestra código 8", correlation_id: "seed")
+    [
+      "El display muestra código 8",
+      "La cabina está detenida cerca de planta 1 y no hay personas dentro",
+      "La puerta llega al marco, pero vuelve a abrir",
+      "El LED 7 está apagado"
+    ].each { |text| episode.append_observation!(text, correlation_id: "seed") }
+    turn = "No, leí mal: era código 18, no 8."
+
+    with_owner { settle(episode, correction_payload, turn) }
+
+    assert_equal "18", episode.fact("fault_code")["value"]
+    assert_not_equal "El display muestra", episode.goal["text"]
+    assert episode.goal["text"].match?(/puerta|planta/i)
+    assert_includes episode.observations.pluck("text"), "El LED 7 está apagado"
+    assert_includes episode.observations.pluck("text"), "La puerta llega al marco, pero vuelve a abrir"
+
+    kept = episode.goal["text"]
+    with_owner { settle(episode, { "move" => "follow_up", "assertions" => [], "observations" => [], "pending_resolution" => nil, "clarification_target" => nil }, "¿Y ahora?") }
+    with_owner { settle(episode, report_payload([ "Sigue igual" ]), "Sigue igual.") }
+
+    assert_equal kept, episode.goal["text"]
+  end
+
+  test "a click inside an observation is not equipment identity" do
+    episode = open_episode
+    episode.assign_goal!("la puerta no termina de cerrar", correlation_id: "seed")
+    turn = "Al pedir cierre se oye un clic, pero no termina de cerrar."
+    raw = report_payload(
+      [ turn.delete_suffix(".") ],
+      [
+        { "span" => "clic", "act" => "assert" },
+        { "span" => "no termina de cerrar", "act" => "assert" }
+      ]
+    )
+
+    with_owner { settle(episode, raw, turn) }
+
+    assert_includes episode.observations.pluck("text"), "Al pedir cierre se oye un clic, pero no termina de cerrar"
+    assert_empty episode.identifiers
+    assert_equal "la puerta no termina de cerrar", episode.goal["text"]
+  end
+
+  test "a valid opening keeps identity and the problem when a code is corrected" do
+    episode = open_episode
+    opening = "Elemont MH con placa CEA15; la puerta 1 no termina de cerrar y el imán no magnetiza."
+    with_owner do
+      settle(
+        episode,
+        report_payload(
+          [ "la puerta 1 no termina de cerrar", "el imán no magnetiza" ],
+          [
+            { "span" => "Elemont MH", "act" => "assert" },
+            { "span" => "CEA15", "act" => "assert" }
+          ]
+        ),
+        opening
+      )
+    end
+    goal = episode.goal["text"]
+    with_owner { settle(episode, correction_payload, "No, leí mal: era código 18, no 8.") }
+
+    assert_equal goal, episode.goal["text"]
+    assert_includes episode.identifiers.pluck("value"), "Elemont MH"
+    assert_includes episode.identifiers.pluck("value"), "CEA15"
+    assert_equal "18", episode.fact("fault_code")["value"]
+    assert_nil episode.fact("manufacturer")
+    assert_not_equal "El display muestra", episode.goal["text"]
+  end
+
+  test "new work on a fresh episode replaces the goal" do
+    episode = open_episode
+    turn = "otra falla: la puerta no abre"
+    with_owner { settle(episode, report_payload([ "la puerta no abre" ]).merge("move" => "new_work"), turn) }
+
+    assert_includes episode.goal["text"], "la puerta no abre"
   end
 
   test "a level correction replaces por arriba and keeps the no-code observation" do
@@ -167,10 +300,34 @@ class Rag::WorkContextReducerTest < ActiveSupport::TestCase
       episode: episode, perception: perception, decision: decision,
       turn: turn, correlation_id: "seed", now: @now
     )
+    decision
   end
 
   def open_episode
     Rag::ActiveEpisode.open(correlation_id: "seed", now: @now)
+  end
+
+  def seeded_turn_episode
+    episode = open_episode
+    episode.assign_goal!("El display muestra", correlation_id: "seed")
+    episode.write_fact!(
+      "fault_code", status: "known", value: "18", source: "user",
+      correlation_id: "seed", at: @now.iso8601
+    )
+    episode.append_rejected!("fault_code", "8")
+    episode.append_identifier!("clic", correlation_id: "seed", source: "user")
+    [
+      "La cabina está detenida cerca de planta 1 y no hay personas dentro",
+      "La puerta llega al marco, pero vuelve a abrir",
+      "no veo una obstrucción",
+      "El LED 7 está apagado",
+      "Al pedir cierre se oye un clic, pero no termina de cerrar"
+    ].each { |text| episode.append_observation!(text, correlation_id: "seed") }
+    episode
+  end
+
+  def perception_for(episode, raw, turn)
+    Rag::TurnPerception.build(raw, turn: turn, episode: episode, catalog: nil, viewer_account: nil)
   end
 
   def correction_payload

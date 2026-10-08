@@ -959,7 +959,13 @@ class ConversationSession < ApplicationRecord
       episode_id: episode.episode_id
     )
     note_owner_exit("fallback", status.to_s, correlation_id)
-    Rag::EpisodeDelta.record(episode, episode, correlation_id: correlation_id)
+    before_episode = episode.fork
+    if retain_failed_report?(status)
+      episode = Rag::WorkContextReducer.retain_uninterpreted_report!(
+        episode: episode, turn: turn, correlation_id: correlation_id, now: now
+      )
+    end
+    Rag::EpisodeDelta.record(before_episode, episode, correlation_id: correlation_id)
     decision = Rag::RoutePolicy.fallback(
       episode: episode,
       turn: turn,
@@ -971,17 +977,25 @@ class ConversationSession < ApplicationRecord
       locale: locale
     )
     decision = decision.with(fallback: true)
-    remember_turn_causal!(stored, stored)
+    remember_turn_causal!(before_episode.to_h, episode.to_h)
+    opened = before_episode.blank? && episode.present?
     result = Rag::ActiveEpisodeTurn::Result.new(
-      decision: :continued,
+      decision: opened ? :opened : :continued,
       reason: status.to_s,
-      state: stored.is_a?(Hash) ? stored : {},
+      state: episode.to_h,
       composed: decision.retrieval_query,
-      fields_changed: [],
+      fields_changed: Rag::ActiveEpisodeTurn.changed_fields(before_episode, episode),
       understanding: decision
     )
-    persist_user_turn!(stored, result, turn, user_id, correlation_id, now, keep_episode: true)
+    persist_user_turn!(
+      stored, result, turn, user_id, correlation_id, now,
+      keep_episode: episode.to_h == before_episode.to_h
+    )
     result
+  end
+
+  def retain_failed_report?(status)
+    %w[snapshot_changed episode_budget_refused].exclude?(status.to_s)
   end
 
   def note_owner_exit(exit_name, condition, correlation_id)
@@ -1097,6 +1111,9 @@ class ConversationSession < ApplicationRecord
       route: result&.understanding&.decision,
       turn_interpreter_status: interpreted.status,
       turn_interpreter_fallback: interpreted.fallback || result&.understanding&.fallback || false,
+      error_class: interpreted.error_class,
+      stage: interpreted.error_class.present? ? "converse" : nil,
+      interpreter_error_reason: interpreted.error_reason,
       prompt_version: Rag::TurnPerception::PROMPT_VERSION,
       schema_version: Rag::TurnPerception::SCHEMA_VERSION,
       catalog_fingerprint: Rag::TurnInterpreter.catalog_fingerprint,

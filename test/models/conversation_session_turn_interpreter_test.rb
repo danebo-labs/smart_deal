@@ -420,6 +420,53 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     assert_equal 1, session.reload.conversation_history.count { |row| row["role"] == "user" }
   end
 
+  test "an interpreter transport failure keeps the literal report without confirming identity" do
+    session = web_session
+    turn = "Elemont MH con placa CEA15; la puerta 1 no termina de cerrar y el imán no magnetiza. ¿Qué reviso?"
+    error = StandardError.new("timeout talking Authorization: Bearer secret AKIAIOSFODNN7EXAMPLE")
+    events = []
+    logs = []
+    with_owner do
+      events = Rag::ValidationCapture.capture do
+        logs = pilot_events_from do
+          ask(session, turn, RaisingInterpreterClient.new(error), correlation: "stage2:a:t01")
+        end
+      end
+    end
+
+    episode = session.reload.active_episode
+    assert_equal turn, episode.dig("goal", "text")
+    assert_includes episode["observations"].pluck("text"), turn
+    assert_nil episode.dig("facts", "manufacturer")
+    assert_nil episode.dig("facts", "model")
+    assert_empty Array(episode["identifiers"])
+    failure = events.find { |row| row["kind"] == "interpreter_failure" }
+    assert_equal "StandardError", failure["error_class"]
+    assert_equal "converse", failure["stage"]
+    assert_equal "stage2:a:t01", failure["correlation_id"]
+    assert_equal 1, failure["attempt"]
+    assert_not_includes failure["reason"], "AKIA"
+    assert_not_includes failure["reason"], "Bearer"
+    traced = logs.find { |row| row["event"] == "turn_interpreter" }
+    assert_equal "StandardError", traced["error_class"]
+    assert_equal "converse", traced["stage"]
+    assert_not_includes traced["interpreter_error_reason"].to_s, "AKIA"
+
+    with_owner do
+      ask(
+        session,
+        "El display muestra código 8.",
+        client(perception("report", observations: [ "El display muestra código 8" ], assertions: [ assertion("código 8", "assert", "fault_code") ])),
+        correlation: "stage2:a:t02"
+      )
+    end
+
+    followed = session.reload.active_episode
+    assert_equal episode["episode_id"], followed["episode_id"]
+    assert_equal turn, followed.dig("goal", "text")
+    assert_nil followed.dig("facts", "manufacturer")
+  end
+
   test "an episode that changes before the lock is not rewritten from the model" do
     session = web_session
     interpreter = SnapshotMutatingClient.new(session, perception("report", assertions: [ assertion("ABC900", "assert") ]))
@@ -1156,6 +1203,16 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     io.string
   ensure
     Rails.logger.stop_broadcasting_to(logger) if logger
+  end
+
+  class RaisingInterpreterClient
+    def initialize(error)
+      @error = error
+    end
+
+    def converse(*)
+      raise @error
+    end
   end
 
   class ScriptedInterpreterClient

@@ -270,11 +270,15 @@ module Rag
 
     GREETING_TOKEN = /\A(?:hola|buenas|buen|dia|dias|gracias|ok|vale|hello|hi|hey|thanks)\z/i
 
-    def searchable_symptom?(turn)
+    def self.searchable_symptom?(turn)
       tokens = turn.to_s.scan(/[\p{L}\d][\p{L}\d-]*/)
       return false if tokens.size < 2
 
       tokens.any? { |token| !token.match?(GREETING_TOKEN) }
+    end
+
+    def searchable_symptom?(turn)
+      self.class.searchable_symptom?(turn)
     end
 
     def focus_mention?

@@ -19,8 +19,10 @@ module Rag
     GENERATION_CALL_USD = BigDecimal("0.0115")
     # One no-pin turn tracks one interpreter call plus at most two generation
     # calls: publication and, when that contract is not accepted, guidance.
-    # The validation process sets AWS_MAX_ATTEMPTS=1, so a tracked row is one
-    # attempt. Retrieve retries stay outside BedrockQuery.
+    # AWS_MAX_ATTEMPTS=1 limits retries. It does not prove a failure happened
+    # before the request was sent. A BedrockQuery row is a registered call,
+    # not every remote attempt that failed before a row existed. Retrieve
+    # retries stay outside BedrockQuery.
     TURN_GENERATION_CALLS = 2
     TURN_CALL_MARGIN = 1 + TURN_GENERATION_CALLS
     TURN_COST_MARGIN_USD = INTERPRETER_CALL_USD + (TURN_GENERATION_CALLS * GENERATION_CALL_USD)

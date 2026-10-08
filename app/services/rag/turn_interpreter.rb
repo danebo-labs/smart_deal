@@ -39,7 +39,8 @@ module Rag
     PROMPT
 
     Result = Data.define(
-      :perception, :fallback, :status, :latency_ms, :input_tokens, :output_tokens, :model_id
+      :perception, :fallback, :status, :latency_ms, :input_tokens, :output_tokens, :model_id,
+      :error_class, :error_reason
     )
 
     def self.call(turn:, episode:, viewer_account:, correlation_id:, attribution: nil, client: nil, catalog: nil, active_photo_context: nil)
@@ -147,9 +148,13 @@ module Rag
         latency_ms: latency_ms,
         input_tokens: usage_token(usage, :input_tokens),
         output_tokens: usage_token(usage, :output_tokens),
-        model_id: MODEL_ID
+        model_id: MODEL_ID,
+        error_class: nil,
+        error_reason: nil
       )
     rescue StandardError => error
+      reason = failure_reason(error)
+      record_interpreter_failure(error, reason)
       Result.new(
         perception: nil,
         fallback: true,
@@ -157,8 +162,35 @@ module Rag
         latency_ms: elapsed_since(started),
         input_tokens: 0,
         output_tokens: 0,
-        model_id: MODEL_ID
+        model_id: MODEL_ID,
+        error_class: error.class.name,
+        error_reason: reason
       )
+    end
+
+    # The rescue does not know whether the request left this process.
+    # AWS_MAX_ATTEMPTS limits later retries. It does not prove a failure
+    # happened before the request was sent. The reason is the exception
+    # message with credentials and header assignments removed.
+    def record_interpreter_failure(error, reason)
+      return unless ValidationCapture.active?
+
+      ValidationCapture.attempt_unless_set(1)
+      ValidationCapture.record(
+        "interpreter_failure",
+        "stage" => "converse",
+        "error_class" => error.class.name.to_s,
+        "reason" => reason,
+        "correlation_id" => @correlation_id
+      )
+    end
+
+    def failure_reason(error)
+      text = error.message.to_s.gsub(
+        /[^\n]*(?:authorization|x-api-key|x-amz-security-token|aws_secret_access_key|secret_access_key)[^\n]*/i,
+        "[redacted]"
+      )
+      ValidationCapture.scrub_text(text).squish.truncate(180)
     end
 
     def record_interpreter_raw(raw)

@@ -4,6 +4,20 @@ module Rag
   # The only linguistic writer of the episode in owner mode. It does not write
   # Document Focus.
   class WorkContextReducer
+    # A failed interpretation did not classify the turn. Keep the literal
+    # report so the next turn still has this job. Do not write manufacturer,
+    # model, controller, or any other extracted identity.
+    def self.retain_uninterpreted_report!(episode:, turn:, correlation_id:, now:)
+      return episode unless RoutePolicy.searchable_symptom?(turn)
+
+      working = episode.presence || ActiveEpisode.open(correlation_id: correlation_id, now: now)
+      working.touch!(now)
+      literal = turn.to_s.squish
+      working.assign_goal!(literal, correlation_id: correlation_id) if working.goal.blank?
+      working.append_observation!(literal, correlation_id: correlation_id)
+      working
+    end
+
     def self.apply!(episode:, perception:, decision:, turn:, correlation_id:, now:)
       new(
         episode: episode, perception: perception, decision: decision,
@@ -200,7 +214,7 @@ module Rag
     end
 
     def supersede_retracted_observations
-      retracted_phrases.each { |phrase| drop_observations_matching(phrase) }
+      retracted_phrases.each { |phrase| excise_retracted_phrase(phrase) }
       return unless @turn.match?(/\bcorrijo\b/i)
 
       fresh = Array(@perception.observations).map { |text| text.to_s.squish }
@@ -210,15 +224,53 @@ module Rag
 
         fresh.any? { |phrase| observation_replaced?(text, phrase) }
       }
+      adopt_problem_goal!(fresh)
     end
 
+    # Sentence punctuation stops the retraction. "No lo sé" after the period
+    # is not part of the replaced datum. A bare number is a shared digit, not
+    # an observation to delete.
     def retracted_phrases
-      FollowupQueryRewriter.normalize_label(@turn).scan(/\bno de\s+([a-z0-9]+(?:\s+[a-z0-9]+){0,2})/).flatten
+      @turn.to_s.scan(/\bno de\s+([^.;!?\n]+)/i).flatten.filter_map { |raw|
+        tokens = FollowupQueryRewriter.normalize_label(raw).split.first(3)
+        next if tokens.empty? || tokens.join(" ").match?(/\A\d+\z/)
+
+        tokens.join(" ")
+      }.uniq
     end
 
-    def drop_observations_matching(phrase)
+    def excise_retracted_phrase(phrase)
       pattern = token_pattern(phrase)
-      @episode.observations.reject! { |item| FollowupQueryRewriter.normalize_label(item["text"]).match?(pattern) }
+      @episode.observations.map! { |item|
+        kept = independent_clauses(item["text"]).reject { |clause|
+          FollowupQueryRewriter.normalize_label(clause).match?(pattern)
+        }
+        next if kept.empty?
+
+        item.merge("text" => kept.join(" y "))
+      }
+      @episode.observations.compact!
+      excise_retracted_goal(pattern)
+    end
+
+    def excise_retracted_goal(pattern)
+      return unless @episode.goal.is_a?(Hash)
+
+      text = @episode.goal["text"].to_s
+      return unless FollowupQueryRewriter.normalize_label(text).match?(pattern)
+
+      kept = independent_clauses(text).reject { |clause|
+        FollowupQueryRewriter.normalize_label(clause).match?(pattern)
+      }
+      if kept.empty? || kept.none? { |clause| problem_statement?(clause) }
+        @episode.clear_goal!
+      else
+        @episode.goal["text"] = kept.select { |clause| problem_statement?(clause) }.join(" y ")
+      end
+    end
+
+    def independent_clauses(text)
+      text.to_s.split(/\s+y\s+/i).map(&:squish).compact_blank
     end
 
     def same_label?(left, right)
@@ -320,7 +372,7 @@ module Rag
       label = FollowupQueryRewriter.normalize_label(value)
       return false if label.blank?
       return false if label.match?(/\A\d+\z/) && observation_mentions?(label)
-      return false if label.length >= 8 && observation_mentions?(label)
+      return false if observation_mentions?(label) && !label.match?(/\d/)
 
       true
     end
@@ -350,6 +402,43 @@ module Rag
       @episode.observations.reject! { |item|
         SlotRejection.attributable?(item["text"], slot, value)
       }
+      adopt_problem_goal! if slot.to_s == "fault_code"
+    end
+
+    # "El display muestra" is what remains after the code is removed. It is
+    # not the job. A stored check becomes the goal only when the episode
+    # already has one. A later explicit new job still opens its own episode.
+    def adopt_problem_goal!(preferred = [])
+      clear_residual_goal!
+      return if problem_goal?
+
+      phrase = Array(preferred).find { |text| problem_statement?(text) }
+      row = if phrase
+        { "text" => phrase, "correlation_id" => @correlation_id }
+      else
+        @episode.observations.find { |item| problem_statement?(item["text"]) }
+      end
+      return if row.nil?
+
+      @episode.assign_goal!(row["text"], correlation_id: row["correlation_id"].presence || @correlation_id)
+    end
+
+    def clear_residual_goal!
+      return unless @episode.goal.is_a?(Hash)
+      return if problem_statement?(@episode.goal["text"])
+
+      @episode.clear_goal!
+    end
+
+    def problem_goal?
+      @episode.goal.is_a?(Hash) && problem_statement?(@episode.goal["text"])
+    end
+
+    def problem_statement?(text)
+      normalized = FollowupQueryRewriter.normalize_label(text)
+      return false if normalized.blank?
+
+      TechnicalUnderstanding::SIGNAL_RE.match?(normalized)
     end
 
     def token_pattern(value)

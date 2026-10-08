@@ -38,6 +38,7 @@ class PilotUsageLog
     writer expected_episode_id current_episode_id dropped
     identity_before identity_after scope_needles identity_conflict
     goal_text goal_source_correlation_id
+    interpreter_error_reason
   ].freeze
 
   class << self

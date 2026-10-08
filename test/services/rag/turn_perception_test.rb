@@ -868,6 +868,85 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     { "move" => "correct", "assertions" => assertions, "observations" => [], "pending_resolution" => nil, "clarification_target" => nil }
   end
 
+  test "a technical summary is a follow-up and an administrative turn stays meta" do
+    summary = "Resúmeme lo que llevamos y dime qué observación segura sigue."
+    paraphrase = "Resume el problema y dime la siguiente observación."
+    [ summary, paraphrase ].each do |turn|
+      result = nil
+      events = Rag::ValidationCapture.capture { result = perceive(meta_payload, turn) }
+      applied = events.find { |row| row["kind"] == "perception_applied" }
+      assert_equal "follow_up", result.move, turn
+      assert applied["adjustments"].any? { |row| row["reason"] == "technical_recap" }
+    end
+
+    assert_equal "meta", perceive(meta_payload, "hola").move
+    assert_equal "meta", perceive(meta_payload, "¿Qué necesitas de mí?").move
+    assert_equal "meta", perceive(meta_payload, "Te mando una foto.").move
+  end
+
+  test "a technical summary keeps the episode and reaches the generator with both intents" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    episode.assign_goal!("la puerta no termina de cerrar", correlation_id: "seed")
+    episode.write_fact!(
+      "fault_code", status: "known", value: "18", source: "user",
+      correlation_id: "seed", at: Time.current.iso8601
+    )
+    episode.append_rejected!("fault_code", "8")
+    episode.append_observation!("El LED 7 está apagado", correlation_id: "seed")
+    episode.append_observation!("no veo una obstrucción", correlation_id: "seed")
+    episode_id = episode.episode_id
+    turn = "Resume el problema y dime la siguiente observación."
+
+    result = perceive(meta_payload, turn, episode: episode)
+    decision = settle(episode, result, turn)
+
+    assert_equal episode_id, episode.episode_id
+    assert_equal "ready", decision.decision
+    assert_nil decision.clarification
+    assert_equal "18", episode.fact("fault_code")["value"]
+    assert_includes episode.observations.pluck("text"), "El LED 7 está apagado"
+
+    freeze_time do
+      isolate_env("FIELD_COMPANION_EPISODE_ENABLED", "true") do
+        isolate_env("FIELD_COMPANION_TURN_ENABLED", "true") do
+          session = ConversationSession.create!(
+            identifier: "web:summary:#{SecureRandom.hex(4)}",
+            channel: "web",
+            expires_at: 30.days.from_now,
+            active_episode: episode.to_h
+          )
+          block = SessionContextBuilder.field_problem_block(session)
+          prompt = Rag::CompanionGuidanceContext.build(
+            question: turn,
+            identity: nil,
+            session_context: block,
+            labels: [],
+            locale: :es,
+            mode: :unknown
+          ).to_s
+
+          assert_includes block, "la puerta no termina de cerrar"
+          assert_includes block, "El LED 7 está apagado"
+          assert_includes block, "Fault code: 18"
+          assert_includes block, "Not current: fault code 8"
+          assert_includes prompt, "Resume el problema"
+          assert_includes prompt, "siguiente observación"
+          assert_not_includes prompt, "Puedes seguir con lo que ya me contaste"
+        end
+      end
+    end
+  end
+
+  def meta_payload
+    {
+      "move" => "meta",
+      "assertions" => [],
+      "observations" => [],
+      "pending_resolution" => nil,
+      "clarification_target" => nil
+    }
+  end
+
   def fact_episode(slot, value, source: "user")
     episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
     episode.write_fact!(

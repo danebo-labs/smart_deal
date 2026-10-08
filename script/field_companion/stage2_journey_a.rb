@@ -1,10 +1,14 @@
 # frozen_string_literal: true
 
 # Stage 2 Journey A. Local Rails, production Knowledge Base, no pin, no L3.
-# Sessions stay on the development database. This file is not product code.
+# Sessions stay on smart_deal_stage2_isolated. Cache and cable use their own
+# local databases. Solid Queue is not retargeted: this text journey inlines
+# TrackBedrockQueryJob and refuses every other enqueue. This file is not product code.
 # It records the request of THIS run. It does not reconstruct an earlier pass.
 # Refuses to start unless STAGE2_JOURNEY_AUTHORIZED=1 and Stage2RunBudget
 # admits a pass. A refused budget returns before a session or a remote call.
+# It does not create accounts or manuals. Those rows come from the isolated
+# preparation. PASS_CALL_CAP stays 0 until a later authorization.
 require "json"
 require "fileutils"
 
@@ -23,14 +27,27 @@ class Stage2QueryHost
 end
 
 PROD_KB = "Y7RZWMFJSR"
+STAGE2_ISOLATED_DATABASE = "smart_deal_stage2_isolated"
+STAGE2_ISOLATED_CACHE_DATABASE = "smart_deal_stage2_isolated_cache"
+STAGE2_ISOLATED_CABLE_DATABASE = "smart_deal_stage2_isolated_cable"
 UID = "dcc8e046-037d-48a6-8913-1992aed28507"
 S3_KEY = "bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf"
+CEA_UID = "9a4fa817-b9e8-4a9e-ae83-526c0731e603"
+CEA_KEY = "bulk_uploads/1/2026-08-31/manual-cea15p.pdf"
 DISPLAY = "Elemont Montacargas Hidraulico Modelo MH"
 TRACE_ROOT = Rails.root.join("tmp/stage2_journey_a")
 
 module InlineBedrockQueryTracking
   def perform_later(...)
     perform_now(...)
+  end
+end
+
+# Last prepend wins. The tracker is prepended after this module, so its
+# perform_later runs inline. Every other job aborts before Solid Queue.
+module Stage2QueueRefusal
+  def perform_later(...)
+    abort("stage 2 text journey refused Solid Queue enqueue #{name}")
   end
 end
 
@@ -132,32 +149,126 @@ def spend_snapshot(rows)
   )
 end
 
+def stage2_database_refusal(db = ActiveRecord::Base.connection_db_config, env = Rails.env)
+  host = db.host.to_s
+  name = db.database.to_s
+  adapter = db.respond_to?(:adapter) ? db.adapter.to_s : ""
+  return "refuse #{name}@#{host}" unless env.development? &&
+    adapter == "postgresql" &&
+    name == STAGE2_ISOLATED_DATABASE &&
+    %w[localhost 127.0.0.1].include?(host)
+
+  nil
+end
+
+def stage2_isolated_config
+  current = ActiveRecord::Base.connection_db_config.configuration_hash.dup
+  if current.key?("database")
+    current["database"] = STAGE2_ISOLATED_DATABASE
+  else
+    current[:database] = STAGE2_ISOLATED_DATABASE
+  end
+  current
+end
+
+def stage2_named_config(role, database)
+  source = ActiveRecord::Base.configurations.configs_for(env_name: "development", name: role)
+  abort("missing #{role} database configuration") if source.nil?
+
+  hash = source.configuration_hash.dup
+  if hash.key?("database")
+    hash["database"] = database
+  else
+    hash[:database] = database
+  end
+  hash
+end
+
+def stage2_role_refusal(config, expected_database)
+  host = config.host.to_s
+  name = config.database.to_s
+  adapter = config.respond_to?(:adapter) ? config.adapter.to_s : ""
+  return "refuse #{name}@#{host}" unless adapter == "postgresql" &&
+    name == expected_database &&
+    %w[localhost 127.0.0.1].include?(host)
+
+  nil
+end
+
+def stage2_connect_role!(model, role, database)
+  model.establish_connection(stage2_named_config(role, database))
+  refusal = stage2_role_refusal(model.connection_db_config, database)
+  abort(refusal) if refusal
+  current = model.connection.current_database
+  abort("refuse connected #{current}") unless current == database
+end
+
+# Process-local. database.yml, cache.yml, and cable.yml are not edited.
+# ActiveRecord::Base does not carry Solid Cache or Solid Cable, so each
+# record class is connected on its own. Solid Queue stays on its configured
+# database and this journey refuses to enqueue.
+def stage2_connect_isolated_database!
+  abort("refuse env #{Rails.env}") unless Rails.env.development?
+  ActiveRecord::Base.establish_connection(stage2_isolated_config)
+  refusal = stage2_database_refusal
+  abort(refusal) if refusal
+  current = ActiveRecord::Base.connection.current_database
+  abort("refuse connected #{current}") unless current == STAGE2_ISOLATED_DATABASE
+  stage2_connect_role!(SolidCache::Record, "cache", STAGE2_ISOLATED_CACHE_DATABASE)
+  stage2_connect_role!(SolidCable::Record, "cable", STAGE2_ISOLATED_CABLE_DATABASE)
+  Rag::SharedManualCorpus.reset_account_ids!
+  ApplicationJob.singleton_class.prepend(Stage2QueueRefusal)
+  TrackBedrockQueryJob.singleton_class.prepend(InlineBedrockQueryTracking)
+end
+
+def stage2_account_refusal(account)
+  return "account 1 missing" if account.nil? || account.id != 1
+  return "account 1 slug #{account.slug}" unless account.slug == "danebo-legacy"
+
+  nil
+end
+
+def stage2_pilot_account_refusal(account)
+  return "account 3 missing" if account.nil? || account.id != 3
+  return "account 3 slug #{account.slug}" unless account.slug == "danebo-pilot-elevator"
+
+  nil
+end
+
+def stage2_document_refusal(document)
+  return "elemont document missing" if document.nil?
+  return "elemont uid #{document.document_uid}" unless document.document_uid.to_s == UID
+  return "elemont key" unless document.s3_key == S3_KEY
+  return "elemont scope #{document.knowledge_scope}" unless document.knowledge_scope == "tenant_private"
+
+  nil
+end
+
+def stage2_cea_refusal(document)
+  return "cea15 document missing" if document.nil?
+  return "cea15 uid #{document.document_uid}" unless document.document_uid.to_s == CEA_UID
+  return "cea15 key" unless document.s3_key == CEA_KEY
+  return "cea15 scope #{document.knowledge_scope}" unless document.knowledge_scope == "tenant_private"
+
+  nil
+end
+
 def stage2_journey_a_execute
-  db = ActiveRecord::Base.connection_db_config
-  abort("refuse #{db.database}@#{db.host}") unless Rails.env.development? &&
-    db.database == "smart_deal_development" &&
-    %w[localhost 127.0.0.1].include?(db.host.to_s)
+  stage2_connect_isolated_database!
   abort("kb #{ENV['BEDROCK_KNOWLEDGE_BASE_ID']}") unless ENV["BEDROCK_KNOWLEDGE_BASE_ID"] == PROD_KB
   abort("shared session on") if SharedSession::ENABLED
   abort("owner off") unless Rag::HaikuQueryAnalysisFlag.owner?
   abort("episode off") unless Rag::FieldCompanionEpisodeFlag.enabled?
   abort("turn off") unless Rag::FieldCompanionTurnFlag.enabled?
 
-  TrackBedrockQueryJob.singleton_class.prepend(InlineBedrockQueryTracking)
-
   Rails.logger.level = Logger::WARN
 
   account = Account.find_by(id: 1)
-  if account.nil?
-    account = Account.create!(
-      id: 1,
-      slug: "index-account-1",
-      display_name: "Index account 1",
-      danebo_controlled: false,
-      branded: false
-    )
-  end
-  abort("account 1 slug collision #{account.slug}") if account.id != 1
+  refusal = stage2_account_refusal(account)
+  abort(refusal) if refusal
+  pilot = Account.find_by(id: 3)
+  refusal = stage2_pilot_account_refusal(pilot)
+  abort(refusal) if refusal
 
   user = User.find_by(email: "stage2-journey-a@localhost.test")
   if user.nil?
@@ -171,17 +282,12 @@ def stage2_journey_a_execute
   end
   abort("user account #{user.account_id}") unless user.account_id == account.id
 
-  document = KbDocument.find_by(account_id: account.id, document_uid: UID) ||
-    KbDocument.find_by(account_id: account.id, s3_key: S3_KEY)
-  if document.nil?
-    document = KbDocument.create!(
-      account: account,
-      document_uid: UID,
-      s3_key: S3_KEY,
-      display_name: DISPLAY,
-      knowledge_scope: "tenant_private"
-    )
-  end
+  document = KbDocument.find_by(account_id: account.id, document_uid: UID)
+  refusal = stage2_document_refusal(document)
+  abort(refusal) if refusal
+  cea = KbDocument.find_by(account_id: account.id, document_uid: CEA_UID)
+  refusal = stage2_cea_refusal(cea)
+  abort(refusal) if refusal
 
   run_id = Time.now.utc.strftime("%Y%m%dT%H%M%SZ")
   session = ConversationSession.create!(

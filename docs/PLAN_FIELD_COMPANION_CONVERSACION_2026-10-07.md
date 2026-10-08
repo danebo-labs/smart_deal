@@ -1,6 +1,6 @@
 # Field Companion: conversación técnica real
 
-**Estado: ETAPA 2 BLOQUEADA.** No es `EPISODIO_VALIDADO`. La etapa 1 está en el código local. La etapa 2 sigue bloqueada: la corrección de planta quedó reparada en local sobre `66dd9e0` y no está revalidada. La comprobación web del 2026-10-07 reprodujo la consulta corta; la reparación del nombre canónico y las tres correcciones de su review quedan en local y no reabren la etapa. El contrato N4 de citas ajenas pasó en local y tampoco la reabre. La comparación de retrieval del 2026-10-07 no trajo el plano Elemont. La expansión del nombre canónico queda fuera del candidato a desplegar y no reabre la etapa. La etapa 3 no empieza. La revisión Opus del 2026-10-07 sobre `7076f05` sigue incorporada. Esta revisión no habilita un piloto.
+**Estado: ETAPA 2 BLOQUEADA.** No es `EPISODIO_VALIDADO`. La etapa 1 está en el código local. La etapa 2 sigue bloqueada: la corrección de planta quedó reparada en local sobre `66dd9e0` y no está revalidada. La comprobación web del 2026-10-07 reprodujo la consulta corta; la reparación del nombre canónico y las tres correcciones de su review quedan en local y no reabren la etapa. El contrato N4 de citas ajenas pasó en local y tampoco la reabre. Producción ejecuta `6ca7788`. La expansión del nombre canónico no va en esa imagen. Un turno real no trajo el plano Elemont y no reabre la etapa. La etapa 3 no empieza. La revisión Opus del 2026-10-07 sobre `7076f05` sigue incorporada. Esta revisión no habilita un piloto.
 
 Este documento es el único plan vigente del companion. Una revisión documental no autoriza a empezar. La etapa 1 ya está en el código local. No llama a Bedrock y no despliega.
 
@@ -471,6 +471,22 @@ La comparación anterior mezcló el compositor local con el servicio de `d5660d7
 - El contrato N4, ya sin el skip, y el test que acepta hashes iguales cuando la consulta no cambia. Entran. No cambian la consulta ni el filtro.
 
 Salen con la expansión el tope de 120 caracteres, la plaza de identificador `catalog` y los tests de esa expansión. Nada más escribe ese origen. 156 corridas de guidance, episodio, alcance, percepción y reducer: 1693 aserciones, 0 fallos. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. `PASS_CALL_CAP` sigue en 0.
+
+El candidato quedó en `6ca7788dd3694b90c8e6cd5d4f04d68be08f0407` y es la imagen que ejecutan el web y el worker. `https://elevator.danebo.ai/up` respondió 200. Justo después del despliegue, el contenedor web anterior `d5660d72` seguía presente, detenido. Volver a esa imagen es `kamal rollback d5660d72a1e676ef9f054dd49ccc7e65511b9f2c`. Los trabajos de ingesta sin terminar estaban fallidos desde agosto y no había ninguno en ejecución.
+
+#### Turno real sobre la imagen nueva (2026-10-07)
+
+Un solo `POST /rag/ask` dentro del contenedor web, por el mismo controlador que usa el formulario. Host `elevator.danebo.ai`, cuenta `danebo-legacy`, usuario aislado creado para esta prueba y borrado al terminar. La sesión de ese usuario quedó en cero. No pasó por el socket público de Puma: el cliente fue el proceso de Rails, así que el log de acceso del proxy no tiene esta petición. La pregunta fue la del turno 1, sin pin y sin el nombre canónico agregado a mano. Correlación `query:9ff9190d-225c-4439-bef3-f5db8f0a22e6`. HTTP 200.
+
+La consulta efectiva es el texto del técnico, 97 caracteres, el mismo SHA que la consulta original de la comparación anterior. HYBRID, k=8, el mismo filtro, ocho chunks aceptados. No hay Elemont. El orden coincide con la columna original de esa comparación: KONE 375, KONE 446, KOYO 131, CEA15+ 84, VF5 13, KONE 444, KONE 374, KONE 442. Aurora reintentó una vez el transporte, 15 segundos. No hubo repetición manual.
+
+La respuesta no cita el Elemont ni nombra un sensor de jamba. Dice que la puerta no cierra y el imán no magnetiza, y luego presenta desalineación, obstrucción o falla de alimentación del circuito del imán de retención. Esas tres causas no están en la pregunta ni en una cita del Elemont. Una respuesta no demuestra que la regla de hipótesis se cumpla. El turno ofreció dos manuales privados, `manual-cea15p` y el plano Elemont, como sugerencia. La sugerencia no es un chunk recuperado y no dice que el plano resuelva la falla.
+
+Dos filas de `BedrockQuery`: intérprete US$0,00348 y generación `rag_global` US$0,001403. Total US$0,004883. Quedan aparte del histórico de 106 llamadas y US$0,214838, y aparte de los US$0,004348 de la comprobación web anterior. `Retrieve` y el embedding no están en esa tabla. `PASS_CALL_CAP` sigue en 0. Los techos no cambian.
+
+Evidencia: `tmp/documentary_retrieve/20261008T002051Z/evidence.json`.
+
+La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`.
 
 ### 3. Verificar ese alcance en producción
 

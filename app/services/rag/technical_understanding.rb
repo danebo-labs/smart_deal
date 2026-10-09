@@ -25,7 +25,8 @@ module Rag
 
     IDENTITY_KEYS = %w[manufacturer model controller].freeze
     RELIABLE_SOURCES = %w[user photo catalog].freeze
-    TOKEN_RE = /[A-Za-z0-9][A-Za-z0-9-]{1,29}/
+    # A trailing "+" is part of the designator: CEA15+ is not CEA15.
+    TOKEN_RE = /[A-Za-z0-9][A-Za-z0-9-]{1,29}\+?/
     NEGATED_RE = /\bno (?:es|era)\s+([a-z0-9][a-z0-9-]{1,30})/
     REPLACEMENT_RE = /\b(?:es|era)\s+([a-z0-9][a-z0-9-]{1,30})/
     SEARCH_RE = /\bbusca con eso\b|\bbusca igual\b/

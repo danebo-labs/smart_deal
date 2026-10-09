@@ -34,4 +34,23 @@ class Rag::ObservationCorrectionTest < ActiveSupport::TestCase
     assert_empty correction.asserted
     assert_empty correction.retracted
   end
+
+  test "a negated pronoun or copula inside a report is not a retraction" do
+    [
+      "La puerta de cabina no la cierra el operador.",
+      "El operador abre la puerta pero no la termina de cerrar.",
+      "Revisé los contactos de puerta y no los veo sucios.",
+      "El variador enciende pero el motor no es el que hace ruido.",
+      "La puerta llega al marco, no la retiene el imán."
+    ].each do |turn|
+      assert_not Rag::ObservationCorrection.resolve(turn: turn, observations: [ turn.delete_suffix(".") ]).active?, turn
+    end
+  end
+
+  test "a parallel contrast is a correction without an explicit cue" do
+    correction = Rag::ObservationCorrection.resolve(turn: "La cabina queda cerca de planta 2, no de planta 1.")
+
+    assert_equal [ "La cabina queda cerca de planta 2" ], correction.asserted
+    assert_equal [ "planta 1" ], correction.retracted
+  end
 end

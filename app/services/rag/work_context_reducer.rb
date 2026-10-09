@@ -241,13 +241,13 @@ module Rag
     end
 
     def drop_replaced_observations(fresh)
-    @episode.observations.reject! { |item|
-      text = item["text"].to_s
-      next false if fresh.any? { |phrase| same_label?(phrase, text) }
+      @episode.observations.reject! { |item|
+        text = item["text"].to_s
+        next false if fresh.any? { |phrase| same_label?(phrase, text) }
 
-      fresh.any? { |phrase| observation_replaced?(text, phrase) }
-    }
-  end
+        fresh.any? { |phrase| observation_replaced?(text, phrase) }
+      }
+    end
 
     def remember_asserted!(phrase)
       return if asserted_stored?(phrase)

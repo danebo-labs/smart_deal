@@ -55,12 +55,15 @@ class BedrockRagServiceKnowledgeScopeTest < ActiveSupport::TestCase
     )
     client = FakeClient.new
     client.generate_response = response
+    client.direct_text = "Guidance without documents."
     result = nil
     with_client(client) do
       result = BedrockRagService.new(account: @viewer).query("What is S3?")
     end
 
-    assert_equal 0, client.generate_calls
+    # Zero authorized chunks: the only generation is body-free guidance.
+    assert_equal 1, client.generate_calls
+    assert client.prompts.none? { |prompt| prompt.include?("FOREIGN_PRIVATE_BODY") }
     assert_equal 1, client.retrieve_calls
     assert_not_includes result[:answer].to_s, "FOREIGN_PRIVATE_BODY"
     assert_empty result[:citations]
@@ -290,7 +293,7 @@ class BedrockRagServiceKnowledgeScopeTest < ActiveSupport::TestCase
     end
 
     assert_equal 1, client.retrieve_calls
-    assert_equal 0, client.generate_calls
+    assert_equal 1, client.generate_calls
     assert_includes account_ids(client.filter), @viewer.id.to_s
     assert_includes account_ids(client.filter), accounts(:legacy).id.to_s
     assert_includes account_ids(client.filter), accounts(:pilot).id.to_s
@@ -651,8 +654,8 @@ class BedrockRagServiceKnowledgeScopeTest < ActiveSupport::TestCase
     Aws::BedrockAgentRuntime::Client.define_singleton_method(:new) { |*| client }
     Aws::BedrockRuntime::Client.define_singleton_method(:new) do |*|
       runtime = Object.new
-      runtime.define_singleton_method(:invoke_model) do |_params|
-        client.note_generation!
+      runtime.define_singleton_method(:invoke_model) do |params|
+        client.note_generation!(params)
         text = client.generation_text
         payload = {
           "content" => [ { "text" => text } ],
@@ -816,21 +819,23 @@ class BedrockRagServiceKnowledgeScopeTest < ActiveSupport::TestCase
   end
 
   class FakeClient
-    attr_reader :filter, :filters, :generate_calls, :retrieve_calls
-    attr_accessor :generate_response, :retrieve_results, :sorry_first
+    attr_reader :filter, :filters, :generate_calls, :retrieve_calls, :prompts
+    attr_accessor :generate_response, :retrieve_results, :sorry_first, :direct_text
 
     def initialize
       @generate_calls = 0
       @retrieve_calls = 0
       @filters = []
+      @prompts = []
     end
 
-    def note_generation!
+    def note_generation!(params = nil)
       @generate_calls += 1
+      @prompts << params[:body].to_s if params
     end
 
     def generation_text
-      @generate_response&.output&.text || "ok"
+      @direct_text || @generate_response&.output&.text || "ok"
     end
 
     def retrieve(params)

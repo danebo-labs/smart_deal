@@ -780,6 +780,8 @@ Implementado en local: `Rag::ObservationCorrection` es la gramática que compart
 
 Eso no demuestra que el modelo deje de inventar el significado del código 18 o del LED 7, ni que el ranking real incluya el Elemont. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. La etapa 3 no empieza.
 
+Revisión de `632e5c5`: la cola retractiva aceptaba «no la/los/es» sin separador. Así, «abre la puerta pero no la termina de cerrar» o «no los veo sucios» pasaban a `correct` y retiraban el síntoma. Ahora la cola exige coma, punto y coma, dos puntos o «y», y un núcleo paralelo a la cláusula asertada: la misma palabra principal, o un número frente a otro. Sin paralelo, hace falta una pista explícita. `TechnicalUnderstanding::TOKEN_RE` conserva el «+», así que `CEA15+` escrito vuelve a resolver. Esa pérdida venía de `700d9d0`. Las otras tres fallas preexistentes eran expectativas desactualizadas, no defectos. Las dos de `KnowledgeScope`, desde `e62a4ab`: cero chunks autorizados generan guidance sin cuerpos, y la prueba ahora verifica que el prompt no lleva el cuerpo ajeno. La de `ValidationCapture`, desde `26a88ab`: cada invocación real del intérprete registra `attempt=1`. Suite completa: 4.453 corridas, 0 fallos, 191 skips.
+
 ### 3. Verificar ese alcance en producción
 
 Primera consulta y continuidad del mismo episodio, sobre el journey A ya aceptado en local. Una pasada. Sin sonda previa. Sin L3, sin journey B y sin T-F. Las reparaciones de las etapas 1 y 2 entran por el procedimiento de despliegue vigente.

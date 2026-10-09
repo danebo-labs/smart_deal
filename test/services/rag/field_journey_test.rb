@@ -83,10 +83,10 @@ class Rag::FieldJourneyTest < ActiveSupport::TestCase
     assert_equal false, decision.outside_discovery
   end
 
-  test "a full VF5 question stays on its own sentence" do
+  test "a full VF5+ question stays on its own sentence" do
     episode = opened_episode("las puertas no cierran")
     decision = Rag::TechnicalUnderstanding.call(
-      text: "¿Cómo uso el módulo electrónico VF5?",
+      text: "¿Cómo uso el módulo electrónico VF5+?",
       episode: episode,
       prior_turns: [ { "content" => "¿Necesitas controlador?" } ]
     )

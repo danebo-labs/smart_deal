@@ -502,7 +502,7 @@ class Rag::ValidationCaptureTest < ActiveSupport::TestCase
           episode: Rag::ActiveEpisode.new,
           viewer_account: nil,
           correlation_id: "turn-a",
-          client: meta_perception_client(attempt: 1)
+          client: meta_perception_client(attempt: 2)
         )
         Rag::ValidationCapture.record("later-a", {})
       end
@@ -532,14 +532,14 @@ class Rag::ValidationCaptureTest < ActiveSupport::TestCase
     applied_b = events.find { |row| row["kind"] == "perception_applied" && row["correlation_id"] == "turn-b" }
     assert_equal "meta", raw_a.dig("tool_input", "move")
     assert_equal "meta", applied_a["move"]
-    assert_equal 1, applied_a["attempt"]
+    assert_equal 2, applied_a["attempt"]
     assert_equal "root", applied_a["correlation_root"]
     assert_equal 3, applied_a["session_id"]
     assert_equal "turn-a", events.find { |row| row["kind"] == "later-a" }["correlation_id"]
     assert_nil events.find { |row| row["kind"] == "later-a" }["attempt"]
     assert_equal "meta", applied_b["move"]
-    assert_nil applied_b["attempt"]
-    assert_nil raw_b["attempt"]
+    assert_equal 1, applied_b["attempt"]
+    assert_equal 1, raw_b["attempt"]
     assert_equal "root", applied_b["correlation_root"]
     assert_equal "turn-b", events.find { |row| row["kind"] == "later-b" }["correlation_id"]
     %w[between after].each do |kind|

@@ -5,13 +5,18 @@ module Rag
   # reducer consumes it. The reducer does not scan the turn a second time.
   class ObservationCorrection
     FUNCTION_WORDS = %w[de del en el la los las un una es era que esta y no con por para al lo se].freeze
+    # The separator is required. "pero no la termina de cerrar" and "el motor
+    # no es el que hace ruido" are reports, not a retraction.
     TAIL = /
-      (?:[,;:]|\s+y)?\s*
-      \bno\s+(de|del|en|el|la|los|las|es|era)\s+([^.;!?\n]+)
+      (?:[,;:]\s*|\s+y\s+)
+      no\s+(de|del|en|el|la|los|las|es|era)\s+([^.;!?\n]+)
     /ix
     CUE_PREFIX = /
       \A(?:corrijo(?:\s+algo\s+de\s+antes)?|correcci\p{L}*|me\s+equivoqu\p{L}*|
       en\s+realidad|le[ií]\s+mal|instead|actually)\b\s*:?\s*
+    /ix
+    CUE = /
+      \b(?:corrijo|correcci\p{L}*|me\s+equivoqu\p{L}*|en\s+realidad|le[ií]\s+mal|instead|actually)\b
     /ix
 
     Result = Data.define(:asserted, :retracted) do
@@ -81,17 +86,37 @@ module Rag
       match = @turn.match(TAIL)
       return self.class.none if match.nil?
 
-      retracted = nuclei
-      asserted = asserted_phrases(match, retracted)
-      return self.class.none if asserted.empty? || retracted.empty?
+      clause = clause_before(match)
+      retracted = nuclei(clause)
+      return self.class.none if retracted.empty?
+
+      asserted = asserted_phrases(clause, retracted)
+      return self.class.none if asserted.empty?
 
       Result.new(asserted: asserted, retracted: retracted)
     end
 
     private
 
-    def nuclei
-      @turn.scan(TAIL).filter_map { |_function, capture| nucleus(capture) }.uniq
+    def nuclei(clause)
+      cue = @turn.match?(CUE)
+      @turn.scan(TAIL).filter_map { |_function, capture|
+        value = nucleus(capture)
+        value if value && (cue || parallel?(value, clause))
+      }.uniq
+    end
+
+    # Without an explicit cue, the retracted value must contrast with the
+    # asserted one: the same head word ("planta 2, no de planta 1") or a
+    # number against a number ("es el 5, no el 7").
+    def parallel?(value, clause)
+      return false if clause.blank?
+
+      label = self.class.normalize(clause)
+      head = value.split.find { |word| word.length >= 3 && FUNCTION_WORDS.exclude?(word) && !word.match?(/\A\d+\z/) }
+      return self.class.word_in?(label, head) if head
+
+      value.match?(/\A\d+\z/) && label.match?(/(?<![[:alnum:]])\d+(?![[:alnum:]])/)
     end
 
     def nucleus(capture)
@@ -103,8 +128,7 @@ module Rag
       tokens.join(" ")
     end
 
-    def asserted_phrases(match, retracted)
-      clause = clause_before(match)
+    def asserted_phrases(clause, retracted)
       spans = (assertion_spans + observation_phrases).reject { |span|
         retracts?(span, retracted) || contained?(span, clause)
       }

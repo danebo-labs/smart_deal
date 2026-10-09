@@ -807,7 +807,7 @@ module Rag
     def invalid(reason)
       result = Result.new(
         valid: false, move: nil, observations: [], pending_resolution: nil, clarification_target: nil,
-        identities: [], ambiguities: [],         field_rejections: @field_rejections,
+        identities: [], ambiguities: [], field_rejections: @field_rejections,
         catalog_disagreements: [], invalid_reason: reason,
         correction: ObservationCorrection.none
       )

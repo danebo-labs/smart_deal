@@ -1,8 +1,432 @@
 # Field Companion: conversación técnica real
 
+**Ruta vigente: validación progresiva.** Fase 0 pendiente. Las fases 1 a 5 están bloqueadas por el gate anterior. No es `EPISODIO_VALIDADO`. Este texto no autoriza una corrida, un Retrieve, un worker ni un despliegue. `PASS_CALL_CAP` permanece en 0. El cierre histórico sigue en 188 llamadas y US$0,423114. La reserva de 42 llamadas de la etapa 3 no se usa. El modelo no cambia.
+
+Este documento es el único plan vigente. La historia queda abajo, como referencia, y no es una segunda ruta. Una revisión favorable no sustituye pruebas ni autoriza una corrida.
+
+## Rumbo
+
+**Objetivo original.** Danebo ayuda al técnico a obtener una respuesta útil y sustentada con el menor esfuerzo posible: recuperar evidencia, pedir solo la aclaración que reduce una incertidumbre, interpretar el resultado, mantener lo ya comprobado y reconocer el límite. Conservar contexto o alargar la conversación no es el resultado.
+
+**Implementado y validado.** En local y en `main` están la etapa 1, la corrección de observaciones y de planta, el designador con «+», la composición del guidance, el aislamiento del runner y el cierre presupuestario. La imagen de producción evidenciada sigue siendo `6ca7788`. La pasada aislada del 2026-10-09 demostró efecto en la identidad declarada, el código 18, la planta 2 y el resumen, y quedó `ETAPA_2_BLOQUEADA`. No es `EPISODIO_VALIDADO`. La propuesta de descubrimiento no está implementada.
+
+**Qué falló Journey A.** Los 14 turnos, sin pin, mezclaron ranking abierto, `known?`, aplicabilidad, memoria, generación y el arnés. El Elemont no entró en los 14 retrieves del episodio, aunque una consulta por título lo recupera. Las respuestas atribuyeron funciones al código 18, al LED 7 y al clic, y pidieron mediciones. El arnés añadió «No lo sé» y activó la salida en turnos que traían un dato nuevo. El recorrido fue el runner, no `POST /rag/ask`.
+
+**Por qué cambia la ruta.** Un episodio largo no separa PDF, extracción, chunks, índice, filtro, retrieval y respuesta. La siguiente prueba reduce una sola incertidumbre: con el documento correcto ya pineado, ¿la consulta natural recupera el plano y la respuesta se mantiene dentro de lo que ese pasaje sustenta?
+
+**Próxima acción y gate.** Preparar el caso sencillo del Elemont pineado. La fase 0 no empieza con este commit. La fase 1 no empieza si la fase 0 no cierra correspondencia del PDF, acceso sin filas inventadas, representación indexada de los diagramas y filtro efectivo del pin. Antes de cada fase se actualiza este texto con el cierre de la anterior. Si el gate falla, no se avanza, no se repite la corrida y no se repara en caliente: se clasifica la causa, se propone el cambio mínimo y se actualiza el plan.
+
+**Conservado, diferido y reemplazado.**
+
+- Conservado: el fixture y las trazas de Journey A, como prueba histórica de continuidad; las reparaciones locales ya demostradas por test; el pin por botón, con revalidación de id y uid, `pin_only` y sin soltar el foco en silencio; el aislamiento del proceso; Haiku 4.5 global; el cierre de 188 llamadas y US$0,423114.
+- Diferido: la propuesta de descubrimiento documental, en la fase 4. No es prerrequisito de la fase 1. Su texto sigue en «Propuesta diferida de descubrimiento».
+- Reemplazado, como ruta de ejecución: la luz verde única de las etapas 1, 2 y 3; los 14 turnos como duración o meta; «en esta validación el pin no se setea»; otra pasada sin pin como siguiente paso; `RETRIEVAL_EMPTY` como parada de la próxima corrida; implementar el descubrimiento antes del caso pineado; tratar la fila local 213 o el UID `dcc8e046-037d-48a6-8913-1992aed28507` como la copia de Jesús; reabrir el cupo, usar la reserva de la etapa 3, cambiar el modelo o desplegar desde este documento. El borrador de cinco pasos sigue retirado.
+
+## Alcance de esta ruta
+
+El alcance inmediato es el caso del plano Elemont, de la fase 0 a la 5, en ese orden. Cada pregunta tiene que reducir una incertidumbre relevante. Journey A no se alarga ni se reescribe para aprobar un caso.
+
+Quedan en el backlog, y no entran en esta autorización: cambio explícito de caso, cambio ambiguo, regreso tras una pausa, journey B, T-F y recuperar un caso anterior. El detalle histórico de esos seis escenarios está en la referencia. Adelantar uno es decisión del fundador.
+
+## Estado real
+
+Separado en tres planos. No se mezclan.
+
+- Implementado en el código de `main`, y no revalidado en la imagen `6ca7788` salvo la etapa 1 y lo que esa imagen ya contenía: corrección de planta, designadores con signo, guidance por unidades, continuidad bajo 2400 caracteres, aislamiento de `smart_deal_stage2_isolated` y `Rag::ValidationCapture`.
+- Demostrado en una corrida real: la pasada del 2026-10-09, sesión aislada 3, conservó identidad, código 18, planta 2 y resumen, y no recuperó el Elemont en el episodio. Veredicto de esa pasada: `ETAPA_2_BLOQUEADA`. Las cifras de esa pasada no se reabren.
+- Propuesta pendiente: candidatos, botón vigente, correspondencia por slot y guidance sin diagnóstico genérico cuando no hay pasaje. Está escrita y no está implementada.
+
+## Entorno
+
+Rails local. PostgreSQL `smart_deal_stage2_isolated`, `smart_deal_stage2_isolated_cache` y `smart_deal_stage2_isolated_cable`, en `localhost` o `127.0.0.1`, comprobadas por `current_database` cuando una fase se ejecute. RDS de producción sigue caído. No se repara y no se leen las bases Rails de producción.
+
+Knowledge Base de esta validación: `BEDROCK_KNOWLEDGE_BASE_ID=Y7RZWMFJSR`, `AWS_REGION=us-east-1`. No es `QGVYLPTEGT`, la KB habitual de desarrollo.
+
+El proceso de validación exporta ese id y exige el adaptador `postgresql` y esas tres bases. No edita `.env`, credentials, `database.yml`, `cache.yml`, `cable.yml` ni `deploy.yml`. Solid Queue no se redirige. `TrackBedrockQueryJob` corre en línea. Cualquier otro `perform_later` aborta antes de escribir la cola de desarrollo. No se arrancan workers. Cuando una fase se autorice, ese proceso lleva `AWS_MAX_ATTEMPTS=1`. El modelo acordado es `global.anthropic.claude-haiku-4-5-20251001-v1:0`. Haiku 5.5 no entra.
+
+Un proceso que no carga el runner sigue en las bases de desarrollo y en la KB habitual. No se crean filas locales ni se modifican permisos para hacer funcionar el caso.
+
+## Presupuesto
+
+El cierre de `Rag::Stage2RunBudget` no se toca: 188 llamadas, US$0,423114, techo de etapa 2 en 188, reserva de etapa 3 en 42, techo global en 230, tope US$2,50, `PASS_CALL_CAP` 0. `Retrieve` y el embedding siguen fuera de `BedrockQuery`. Este complemento no abre cupo.
+
+Presupuestos nuevos, escritos y no autorizados. Un defecto de ingesta o de índice no los amplía.
+
+- Fase 0: 0 llamadas de modelo. Tope propuesto de 4 `Retrieve` de solo lectura, para URI, metadata, representación del diagrama y filtro del pin. No autorizado.
+- Fase 1: un turno. Tope propuesto de 3 llamadas de modelo, intérprete más hasta dos de generación, sin repetición en la misma corrida. Supuesto US$0,0275. El `Retrieve` del turno no entra en ese cupo. No autorizado. No usa las 42 de la etapa 3.
+- Fases 2 a 5: el cupo se escribe al cerrar la fase anterior. No está abierto.
+
+## Cadena documental
+
+Cada caso valida, en este orden, PDF, extracción, chunks, indexación, filtro, retrieval y respuesta. La referencia del evaluador se escribe antes de la corrida. Lleva página, evidencia esperada, interpretación permitida y afirmaciones que el pasaje no sustenta. No entra en la consulta, el prompt, el fixture ni una página forzada.
+
+Si la consulta natural no recupera esa evidencia, el caso se detiene. Una búsqueda posterior no lo declara superado. La localización se para en la primera capa que explica la ausencia:
+
+1. Confirmar el contenido en el PDF.
+2. Inspeccionar extracción y chunks, en especial las relaciones de los diagramas.
+3. Comprobar presencia y metadata en la KB.
+4. Verificar URI y filtro del pin.
+5. Evaluar retrieval y ranking.
+6. Solo después de esas cinco, considerar embeddings.
+
+Cuatro resultados, y no se mezclan:
+
+- Ausente del índice: el PDF o el chunk local la tienen y la KB no.
+- Deteriorada por extracción o troceo: la etiqueta existe, pero se perdió la relación del diagrama, se partió el recorrido o el texto quedó por debajo de lo que el plano muestra.
+- Excluida por filtro: está en la KB y el filtro del pin, de la cuenta o de la compuerta no la deja entrar.
+- Existente y no recuperada: pasa el filtro y no aparece en el ranking de la consulta natural.
+
+Las búsquedas por página, URI o texto específico van a un registro diagnóstico, con consulta, filtro, k y resultado. No declaran que la consulta natural pasó. La captura `tmp/documentary_retrieve/20261007T212124Z/` ya es de ese tipo: título más «Seguridad Puerta nivel 1», k=8, sin pin.
+
+No se reingiere, no se cambian embeddings, no se modifica metadata y no se amplía el presupuesto al encontrar el defecto. Si la capa es de ingesta o de indexación, se documentan la evidencia y la reparación propuesta, y el caso no continúa hasta una decisión del fundador.
+
+La misma corrida distingue, además, fallo de estado, de generación y de arnés. La cadena de arriba se recorre antes de atribuir el fallo a la respuesta o a la memoria. No se repara durante la corrida.
+
+## Trazabilidad del recorrido
+
+Cada consulta natural se reconstruye con lo que ya existe. `PilotUsageLog` y `pilot_events` no contienen el recorrido completo. Antes de ejecutar una fase se comprueba que `Rag::ValidationCapture.capture` está abierto en ese proceso. `PILOT_AUDIT_CAPTURE=true` no abre ese bloque: solo añade texto a `TurnEvidence` y a `PilotAuditLog`. Se reutiliza el bloque que ya abre `script/field_companion/stage2_journey_a.rb`. Si el bloque no está activo, la corrida no empieza.
+
+Qué guarda cada mecanismo:
+
+- `PilotUsageLog` y `pilot_events`. Eventos `field_companion_turn`, `kb_retrieve`, `open_retrieval` y `document_identity_scope`. Traen cuenta, usuario, sesión, correlación y episodio. El turno guarda el SHA del mensaje, el de la consulta efectiva y el del estado antes y después. El retrieve guarda la consulta recortada a 500 caracteres, k, conteos, `filter_applied` y una huella de 16 caracteres del filtro. No guardan el prompt, el cuerpo de los chunks, el filtro completo ni la salida cruda del intérprete.
+- `BedrockQuery`. Fila de llamada de modelo: correlación, sesión, ruta, `source`, modelo, intento, tokens y `user_query`. El costo sale de esos tokens. No guarda filtro, chunks ni prompt. Un `Retrieve` no crea fila. Un intento sin fila no se inventa como costo.
+- `Rag::TurnEvidence` y `PilotAuditLog`. Sin el flag de auditoría, la evidencia es un SHA. Con el flag, el log añade pregunta, respuesta y texto de chunk hasta 4000 caracteres, y no escribe `pilot_events`.
+- `Rag::ValidationCapture`, solo dentro del bloque. Percepción, delta del episodio, ruta, parámetros del `Retrieve` con su filtro, chunks con URI, página y score o `unavailable`, política de aplicabilidad, prompt de `generate_text`, recorte del guidance, respuesta y citas. El fallo del intérprete trae clase, etapa y motivo sanitizado. El delta no es el episodio entero.
+
+Correlación, por `correlation_id`: mensaje original y efectivo, interpretación, estado antes y después, sesión y episodio, foco documental, consulta y filtro enviados, chunks, aplicabilidad, contexto o prompt, respuesta, citas, errores e intentos. El foco se lee de `conversation_sessions.document_focus` y del filtro del evento `retrieve`. `route_decision` no copia las URI. Si el retrieve no ocurrió, no se reconstruye ese filtro.
+
+El fallo señala el primer punto que se desvía de la referencia, con el evento que lo muestra. Lo posterior es consecuencia. Una medición inventada no es la causa si el filtro del pin nunca se aplicó. Una búsqueda diagnóstica usa otra correlación.
+
+Si falta un dato, se anota el límite de observabilidad. Un request que no quedó capturado no se declara enviado. No se añade instrumentación en este corte. Un campo nuevo solo se propone si una fase cerrada no puede señalar el primer desvío. El candidato no autorizado es copiar las URI del foco en `route_decision` cuando no hay evento `retrieve` y la fila de sesión tampoco las tiene.
+
+## Fases
+
+Antes de iniciar una fase, este documento se actualiza con los hallazgos de la anterior y se revisan casos, supuestos, instrucciones y presupuesto. Un cambio de modelo, presupuesto, arquitectura o alcance vuelve al fundador.
+
+### Fase 0. Preparación documental y del entorno
+
+1. Estado: pendiente. La preparación con archivos y capturas ya existentes queda escrita aquí. Las llamadas nuevas no están autorizadas.
+2. Prerrequisitos y evidencia heredada. Cierre de 188 llamadas y US$0,423114. RDS de producción caído. Captura diagnóstica `tmp/documentary_retrieve/20261007T212124Z/`. No hay correspondencia demostrada entre el PDF del fundador y la fila local 213.
+3. Pregunta. ¿El PDF aportado y el objeto indexado en `Y7RZWMFJSR` son el mismo plano, la extracción conserva la línea de seguridad, y el visor que ya existe puede pinear ese objeto sin inventar filas ni permisos?
+4. Acciones y límites. Dos verificaciones distintas. La del PDF original no se sustituye por la de la KB. No se crean filas, no se cambian permisos, no se reingiere y no se edita metadata. `PASS_CALL_CAP` sigue en 0. El tope propuesto de 4 `Retrieve` no está autorizado. No se arrancan workers.
+5. Entradas y resultados esperados. Entrada: el nombre `Montacargas 2N Temporizado-1 (1)(2).pdf`; las copias locales de `Montacargas 2N Temporizado-1 (1).pdf`, fuera del repositorio; la captura diagnóstica. Resultado, solo cuando se autorice: URI, metadata, correspondencia de bytes o de identidad documental, acceso del visor, representación indexada de los diagramas de las páginas 5 y 6, y el filtro que queda al pinear.
+6. Aceptación, fallo y detención. Aceptación: las dos verificaciones quedan separadas y la referencia del evaluador solo se confirma si el PDF la contiene. Fallo: pinear la copia `(1)` o la fila 213 para hacer funcionar el caso. Detención: el archivo `(1)(2)` no aparece y el fundador no identifica el objeto, o no hay una fila ya autorizada para ese URI.
+7. Evidencias que debe guardar. Identidad del archivo, URI de origen, metadata del chunk, filtro efectivo y una marca de que toda búsqueda por título, página o texto es diagnóstica.
+8. Hallazgos de la preparación, no de una corrida. El nombre `(1)(2).pdf` no está en el disco revisado. Sí hay copias de `(1).pdf`, incluida la carpeta de manuales de Jesús, y otra sin el `(1)`. La inspección visual de ChatGPT —página 5, circuito 3, línea de seguridad, «Seguridad Puerta nivel 2» entre Seg In y Seg Out; chapas en las páginas 5 y 6— queda por comprobar en el PDF. La captura diagnóstica, sin pin y con filtro de la cuenta 4, trajo primero `chunk_p5_1.txt` del prefijo `121bfffe…`, URI `Montacargas 2N Temporizado-1 (1).pdf`. El texto lista «Seguridad Puerta nivel 2» entre los niveles 5 y 1 y dice que el orden exacto de la serie requiere verificación de campo. La página 6 no entró en esos ocho. Eso no hace pasar la consulta natural. La fila local 213 y el UID `dcc8e046-037d-48a6-8913-1992aed28507` son una reconstrucción, no la copia de Jesús en producción.
+9. Cambios en la fase siguiente. La fase 1 sigue bloqueada hasta el cierre de estas cuatro comprobaciones: correspondencia, acceso, representación indexada y filtro `pin_only`. Si una falla, la fase 1 se reescribe con esa causa y no se ejecuta.
+
+### Fase 1. Consulta sencilla con el documento correcto pineado
+
+1. Estado: pendiente y bloqueada por la fase 0.
+2. Prerrequisitos. Cierre de la fase 0 con el mismo objeto pineable, sin filas nuevas. Captura de validación activa. Cupo de modelo propio, todavía no autorizado.
+3. Pregunta. Con ese plano ya seleccionado, ¿la consulta natural recupera dónde aparece la seguridad de la puerta del nivel 2 y cómo se relaciona con las demás seguridades, sin afirmar la causa de la falla?
+4. Acciones y límites. Un turno. El pin se escribe con el mecanismo que ya revalida id y uid, antes de la pregunta. No se inyectan páginas ni la respuesta esperada. No se sube k, no se suelta el pin y no se abre el corpus si el retrieve vuelve vacío. No se reingiere. Sin repetición en la misma corrida.
+5. Entradas y resultados. Consulta: «Estoy revisando un Elemont MH por un problema de puerta en el nivel 2. Según el plano seleccionado, ¿dónde aparece la seguridad de esa puerta y cómo se relaciona con las demás seguridades?» Referencia del evaluador, provisional hasta el PDF de la fase 0: página 5; evidencia, «Seguridad Puerta nivel 2» en la línea de seguridad del circuito 3, entre Seg In y Seg Out; interpretación permitida, ubicar el contacto y explicar la conexión representada, incluido el límite de orden si el pasaje lo trae; no sustenta la causa de la falla, una medición, una intervención ni que sea la chapa. Resultado esperado: filtro `pin_only`, `force_entity_filter` verdadero, solo esa URI, k=3.
+6. Aceptación, fallo y detención. Aceptación: la consulta natural recupera esa evidencia y la respuesta cabe en la interpretación permitida. El fallo nombra el primer desvío del recorrido, con su evento. Detención: documento distinto, filtro abierto, cita ajena, causa inventada o evidencia ausente. Esa ausencia se clasifica en la cadena y no se repara en la corrida.
+7. Evidencias. Bloque `ValidationCapture` de ese turno, fila de sesión con `document_focus`, eventos de piloto que existan y filas `BedrockQuery` del periodo. Las búsquedas diagnósticas, si hacen falta después, van aparte.
+8. Hallazgos al cerrar. Vacío hasta la ejecución.
+9. Fase siguiente. La fase 2 hereda el pasaje realmente recuperado. Si la fase 1 no recupera la evidencia, la fase 2 no empieza.
+
+### Fase 2. Guía conversacional con el documento correcto
+
+1. Estado: pendiente y bloqueada por la fase 1.
+2. Prerrequisitos. El plano sigue pineado y la fase 1 recuperó un pasaje de ese documento. El cupo se escribe al cerrar la fase 1.
+3. Pregunta. ¿Danebo distingue la seguridad de la puerta del nivel 2 de la chapa de ese nivel, o explica que el plano no alcanza para igualarlas, sin inventar una reparación?
+4. Acciones y límites. Un seguimiento. No se presenta como caso positivo con solución conocida. No se inyecta la referencia. No se fuerza una conversación larga.
+5. Entradas y resultados. Seguimiento candidato: «¿Eso es lo mismo que la chapa de puerta del nivel 2?» Referencia provisional: páginas 5 y 6; evidencia, las etiquetas de seguridad y las de chapa si el PDF las separa; interpretación permitida, decir que no queda demostrado que sean el mismo contacto; no sustenta igualarlas ni un procedimiento. La captura diagnóstica ya las separa y no convierte eso en un pase de la consulta natural.
+6. Aceptación, fallo y detención. Aceptación: una aclaración que reduce esa incertidumbre y un límite explícito si el pasaje no iguala los dos nombres. Detención: los iguala, inventa una reparación, o no recupera la distinción y se sigue de largo. En ese último caso se localiza la capa y se para.
+7. Evidencias. La misma correlación del turno, más la referencia del evaluador ya confirmada o corregida por la fase 0.
+8. Hallazgos al cerrar. Vacío hasta la ejecución.
+9. Fase siguiente. La fase 3 solo usa hechos que este turno haya dejado vigentes. Si el límite documental cambió la referencia, se reescribe el caso antes de continuar.
+
+### Fase 3. Continuidad y correcciones
+
+1. Estado: pendiente y bloqueada por la fase 2.
+2. Prerrequisitos. Hechos vigentes del caso pineado. No se usa el fixture de Journey A como guion de esta fase.
+3. Pregunta. ¿Un seguimiento y una corrección coherentes con este caso conservan lo comprobado, actualizan lo corregido y no repiten una comprobación ya hecha?
+4. Acciones y límites. Los turnos que hagan falta para esa pregunta, no 14. Cada turno lleva su referencia de evaluador, escrita al cerrar la fase 2. Journey A no se edita.
+5. Entradas y resultados. Se definen al cerrar la fase 2, a partir del pasaje real. No se inventan ahora.
+6. Aceptación, fallo y detención. Aceptación: el estado y la respuesta usan el valor nuevo y no tratan el viejo como vigente. Detención: se pierde un hecho que cambia el paso, o un turno no recupera su evidencia. Ahí se para y se separa causa inicial de consecuencia.
+7. Evidencias. Delta del episodio, estado de la sesión y prompt enviado, dentro de la captura.
+8. Hallazgos al cerrar. Vacío hasta la ejecución.
+9. Fase siguiente. La fase 4 incorpora lo que estas tres fases hayan mostrado del pin y del pasaje. No se implementa el descubrimiento antes de ese cierre.
+
+### Fase 4. Identificación y selección documental
+
+1. Estado: pendiente, diferida y bloqueada por la fase 3.
+2. Prerrequisitos. Hallazgos de las fases 0 a 3. La propuesta de «Ajustes a la propuesta (2026-10-09)» se conserva y no está implementada. No es prerrequisito de la fase 1.
+3. Pregunta. Con lo ya visto en el plano pineado, ¿hace falta el flujo de candidatos, confirmación por botón, pin y compatibilidad, y cuál es el cambio mínimo?
+4. Acciones y límites. Primero se actualiza esta fase con los hallazgos anteriores. No se implementa desde este texto. Siguen fuera la confirmación por frase, reconfirmar un manual que ya no es candidato y seleccionar por marca o por falla.
+5. Entradas y resultados. La propuesta diferida, más el comportamiento real del pin en las fases 1 a 3.
+6. Aceptación, fallo y detención. Aceptación de una implementación futura: la que ya está escrita en la propuesta, ajustada por los hallazgos. Detención: empezar a codificarla antes de ese ajuste, o tratar `known?` como compatibilidad.
+7. Evidencias. Diff de producto, cuando se autorice, y pruebas con stubs. Sin AWS en ese corte local.
+8. Hallazgos al cerrar. Vacío hasta la ejecución.
+9. Fase siguiente. La fase 5 usa el foco explícito que esta fase haya dejado disponible. Si esta fase no se autoriza, la fase 5 no inventa otro mecanismo de selección.
+
+### Fase 5. Interpretación documental equivocada
+
+1. Estado: pendiente y bloqueada por la fase 4.
+2. Prerrequisitos. Un pasaje real del plano y una conclusión del técnico que ese pasaje no sustenta. La referencia la escribe el evaluador al cerrar la fase anterior.
+3. Pregunta. ¿Danebo explica que el diagrama no sustenta esa conclusión, revisa la documentación pertinente y propone cambiar o complementar el foco de forma explícita?
+4. Acciones y límites. No se reingiere ni se altera el índice para forzar la explicación. Una búsqueda diagnóstica no aprueba la consulta natural. No se enseña un procedimiento de otro equipo.
+5. Entradas y resultados. Se fijan con el pasaje recuperado. La afirmación que el pasaje no sostiene forma parte de la referencia y no se inyecta.
+6. Aceptación, fallo y detención. Aceptación: la respuesta nombra el límite y la acción explícita sobre el foco. Fallo: adopta la conclusión del técnico, o suelta el pin en silencio. Detención: el pasaje no está en la consulta natural.
+7. Evidencias. Recorrido correlacionado del turno y la referencia del evaluador.
+8. Hallazgos al cerrar. Vacío hasta la ejecución.
+9. Fase siguiente. No hay una fase 6 en esta ruta. El backlog sigue aparte.
+
+## Registro de revisión
+
+| Hallazgo | Resolución | Estado |
+|---|---|---|
+| La ruta de las etapas 1 a 3 y los 14 turnos sin pin no separan extracción, retrieval, aplicabilidad, memoria, generación y arnés. | Este corte deja una sola ruta, fases 0 a 5, y pasa el texto anterior a referencia. | Pendiente de revisión de ChatGPT y de Fable. No autoriza corrida. |
+| El PDF del fundador y la fila local 213 pueden no ser el mismo objeto. | La fase 0 los verifica por separado y no inventa filas. | Abierto. |
+| `PilotUsage` no guarda el recorrido completo. | La corrida exige `ValidationCapture.capture`. El flag de auditoría no lo sustituye. | Escrito. Sin cambio de código. |
+
+## Propuesta diferida de descubrimiento
+
+Sigue sin implementar. No es prerrequisito de la fase 1. El borrador de cinco pasos permanece retirado en la referencia histórica. La frase de confirmación, reconfirmar un manual que ya no es candidato y seleccionar por marca o por falla siguen fuera. El texto de abajo es el que estaba en «Ajustes a la propuesta (2026-10-09)», movido aquí sin cambiar sus decisiones.
+
+### Ajustes a la propuesta (2026-10-09)
+
+Esta es la única propuesta. Reemplaza el borrador de cinco pasos, que queda retirado arriba. Está corregida en su lugar: no hay otra sección de propuesta. Sigue sin implementar, sin llamadas AWS, sin workers, sin despliegue y sin ampliar el presupuesto. `PASS_CALL_CAP` permanece en 0. El cierre de `3ff27f9` queda en 188 llamadas y US$0,423114.
+
+###### Qué cambia respecto del texto anterior de esta misma sección
+
+1. Correspondencia del manual y evidencia de la búsqueda son evaluaciones distintas. Un pasaje de compatibilidad incierta no es lo mismo que una búsqueda sin evidencia.
+2. Confirmar que un manual corresponde al equipo no demuestra que cubra la placa, que contenga la respuesta ni que esta búsqueda haya recuperado un pasaje. Reconfirmar no vuelve usable una respuesta sin evidencia. Otro manual seleccionado tampoco vuelve aplicable el primero.
+3. En este corte el botón solo acepta una propuesta vigente. Un botón armado antes de corregir equipo, modelo o placa se rechaza si esa fila ya no es candidata. No hay reconfirmación excepcional del mismo documento. Agregar, reemplazar o quitar usan propuestas vigentes o el control de quitar que ya existe.
+4. La marca no anula un conflicto de modelo o de placa. La falta de modelo en un pasaje no prueba compatibilidad ni incompatibilidad. Equipo y componente son slots distintos.
+5. `DocumentDiscovery::MAX_CARDS` sigue en 2. No se muestra una tarjeta por cada documento cuando hay más de dos, y el orden no se presenta como acierto si no hay con qué ordenar.
+6. Los síntomas y las comprobaciones se conservan y se utilizan cuando corresponde. No se exige un resumen completo en cada respuesta.
+
+###### Cómo interactúan los mecanismos ya revisados
+
+`5f69556` conserva el «+» al guardar el designador (`ActiveEpisodeTurn::DESIGNATOR_RE`, `TechnicalReferentResolver`, `DocumentIdentityCatalog.designator_label`). `DocumentDiscovery#exact_entries` compara con `#normalize`, que llama a `FollowupQueryRewriter.normalize_label` y borra el signo. `CEA15` y `CEA15+` quedan en la misma clave. `FocusNotice#normalize` usa el mismo método: si el aviso recibiera los designadores, `CEA15` y `CEA15+` no se verían distintos. `DocumentIdentityCatalog#resolve_designator` y el designador de `#resolve_compound_brand` comparan con `designator_label`, que conserva el «+». `#resolve_brand` normaliza la marca, no el designador. El prefijo del catálogo exige token de largo al menos 6, con dígito y sufijo de hasta 4. `CEA15` tiene largo 5 y `VF5` largo 3, así que esa regla no los convierte en `CEA15+` ni en `VF5+`. Un `:exact` o un `:prefix` con varias entradas del mismo designador devuelve `candidates` vacío y un solo valor; no enumera los documentos. Dos valores de designador distintos vuelven `:ambiguous`. `#resolve_compound_brand` devuelve `nil` si hay más de una entrada.
+
+En `:ambiguous`, `candidates` trae los valores de designador, no los `KbDocument`. La lista de documentos sale de las entradas que coinciden, las mismas que recorre `exact_entries`, y de enlazar cada una. `resolve_brand` en éxito trae el fabricante y `candidates` vacío; en ambigüedad trae cadenas de marca, no documentos.
+
+`EquipmentIdentity#known?` es verdadero con fabricante o modelo de procedencia `user` o `photo`. Abre la ruta `document_identity_scope`. No filtra el índice y no prueba correspondencia documental. En la pasada, los catorce retrieves siguieron en corpus abierto, k=8, y `DocumentIdentityScope` marcó los ocho resultados como ajenos.
+
+`CompanionGuidanceContext` mete en el guidance conocido «Continue helping … generic diagnostic reasoning» y, cuando la salida está apagada, una observación o comprobación siguiente. La frase «Put what the photo shows…» sale en `known_detail_pieces` sin mirar si hay imagen. `INTERVENTION_LIMIT` está solo en el guidance desconocido. `documentation_exit?` del camino conocido recibe la consulta compuesta (`BedrockRagService#document_identity_scope_result`); el camino desconocido recibe el turno crudo. `EXIT_RULE` pide un dato decisivo y a la vez prohíbe otra comprobación de rutina. Esa combinación, más el párrafo de razonamiento genérico, es lo que los turnos 9 y 12 cumplieron al pie de la primera rama y no de la segunda.
+
+Las instrucciones del repositorio empujan en el mismo sentido. `AGENTS.md` dice que, con identidad conocida y sin manual compatible, se continúa el diagnóstico con la observación visual aceptada, el problema activo y razonamiento genérico de campo, sin enseñar un procedimiento ajeno y sin cerrar en un rechazo de búsqueda. `app/services/rag/AGENTS.md` repite esa continuación y dice que el turno no termina en `DATA_NOT_AVAILABLE`. `app/prompts/AGENTS.md` repite la continuación, autoriza a decir lo obvio para ese tipo de componente y, con identidad desconocida, a ofrecer un procedimiento análogo con manual, página y un descargo. El descargo no vuelve aplicable el procedimiento. El guidance en runtime obedece la continuación genérica y deja sin efecto, en la respuesta visible, la prohibición de procedimiento ajeno.
+
+El pin de la tarjeta no usa el control de episodio que ya existe. `ConversationSession#pin_kb_document_if_episode_owner!` compara `expected_episode_id` con `live_episode_id` dentro de `with_lock` y no escribe si difieren. El POST de la tarjeta llama a `pin_kb_document!`, que también toma el lock y no compara el episodio. El id de episodio tampoco basta: una corrección de modelo ocurre dentro del mismo episodio. `WorkContextReducer#clear_pending_unless_meta` borra `pending_question` en cada turno que no es meta ni `clarify_first`. Guardar ahí la propuesta la perdería en el turno siguiente y competiría con `ActiveEpisode::MAX_BYTES` (4096). La propuesta no se persiste. La tarjeta ya lleva `kb_document_id`, `document_uid` y `focus_mode`.
+
+`DocumentIdentityScope.chunk_applicability` devuelve `:compatible` en cuanto un needle coincide con un campo de identidad, antes de mirar si otro designador del mismo campo está en conflicto. `contains_word?` usa `normalize_label`, así que también borra el «+». Con los datos actuales, una coincidencia de marca puede marcar compatible un pasaje cuyo modelo documental es otro, y `MH` puede coincidir con `MH+`. El comentario del método dice que un título sin designador, como «Elemont montacargas», queda `:neutral` cuando el documento está seleccionado. El catálogo guarda `role` (`equipment` o `component`) y no guarda en qué equipos se instala un componente. `DocumentIdentityScope` no lee `role`. `resolve_needles` mezcla fabricante, modelo e identificadores en una sola bolsa. Esa bolsa no distingue el slot del equipo del slot de la placa.
+
+###### Candidatos
+
+La resolución reutiliza el catálogo y el enlace ya existentes, en el turno, sin Retrieve, sin otra llamada de modelo y sin tabla. Cada designador se clasifica con `resolve_designator` o, si el span trae marca y designador, con `resolve_compound_brand`. Esa clasificación no es la lista de documentos. Las tarjetas salen de las entradas cuyo `designator_label` coincide, enlazadas con `KnowledgeScopePolicy.bind_catalog_candidate`. La marca sola usa `resolve_brand` y las entradas de equipo de esa marca. Una fila se ofrece si el enlace devuelve un documento que el visor puede usar. La comparación conserva el signo.
+
+`DocumentDiscovery::MAX_CARDS` vale 2 y este corte no lo sube. «Una tarjeta por documento» vale cuando hay una o dos. Cuando hay más, se muestran dos y se dice que hay más. No se agrega otra pantalla ni otro control para recorrer el resto.
+
+El orden, antes de cortar en dos, usa el slot y no un retrieve extra:
+
+1. Designador exacto del slot de la pregunta: modelo del equipo, o placa o controlador.
+2. Designador exacto de otro slot ya declarado.
+3. Una entrada de equipo de la marca, cuando el modelo no se conoce.
+
+Un `:prefix` del catálogo, con el largo mínimo de 6 que ya existe, va después de los exactos y se muestra como parecido, con el designador real a la vista. No se baja ese umbral para alcanzar `CEA15` o `VF5`. Si en el mismo nivel quedan más de dos y ni el catálogo ni los datos ya declarados los distinguen, esos dos no son un ranking. El texto dice que son parte de la lista y que ninguno queda elegido, y pide la marca impresa que los distinguiría. No se presenta el primero como el correcto.
+
+- Sin coincidencia exacta. Se dice que no hay un manual con ese designador. Los síntomas y las comprobaciones se conservan y se utilizan cuando corresponde. Se pide el dato que distinguiría un manual. `CEA15` no ofrece el manual de `CEA15+`.
+- Varios candidatos. No hay elección por defecto. Un «sí» no elige. Con más de dos se muestran dos, en el orden de arriba.
+- El técnico no conoce el modelo. Si la marca tiene una sola entrada de equipo enlazada, esa se propone. Si tiene varias, se muestran hasta dos y se pregunta el modelo. No se bloquea la conversación por faltar el resto de la placa.
+- Equipo y placa. Cada slot produce su propia propuesta. Elegir el manual del equipo no cubre la placa, y al revés. Si la placa no tiene fila exacta, se dice eso y no se le asigna el manual del equipo ni el designador vecino.
+- Entrada de catálogo sin documento local. Se puede nombrar y no tiene botón. En esta base aislada, 202 entradas están así porque las filas no están cargadas: es límite del entorno. El límite de producto es una entrada que, para ese visor, no enlaza un documento. Cargar las 202 filas no es requisito de este diseño.
+
+###### Confirmación de una propuesta vigente
+
+El botón solo acepta una propuesta vigente. La propuesta lleva `kb_document_id`, `document_uid`, el span, el slot del que salió y el `episode_id` con el que se armó. El POST entra al `with_lock` de la sesión. Antes de escribir se comprueban la autorización, que el id tenga ese uid, que el episodio sea el vivo, y que al recalcular los slots declarados esa fila siga siendo candidata. Un turno que solo agrega síntoma, planta o código no cambia el slot y el botón sigue vigente. Dos toques del mismo documento siguen siendo idempotentes. Elegir una tarjeta no elige la otra.
+
+El botón obsoleto es el que se armó antes de corregir equipo, modelo o placa, cuando ese span ya no resuelve la misma fila. El POST no escribe. La propuesta nueva es otra tarjeta, calculada después de la corrección, y solo aparece si la identidad corregida todavía tiene esa fila como candidata. Su POST puede agregar o reemplazar porque la correspondencia que se revalida es la de ahora.
+
+Las dos reglas conviven porque no actúan sobre el mismo objeto. El POST viejo se rechaza. La tarjeta nueva se acepta solo mientras la fila siga siendo candidata. No hay un tercer paso en el que el botón rechazado escriba después la misma fila.
+
+Si la corrección deja esa fila fuera de los candidatos, no aparece un botón para ella. En este corte se puede agregar o reemplazar con una propuesta que sí esté vigente, o quitar el manual con el control que ya existe. Reconfirmar un manual que ya no es candidato sería un dato nuevo de correspondencia. El botón actual no puede expresarlo, porque solo acepta candidatura vigente. Esa reconfirmación queda fuera de este corte.
+
+Confirmar el equipo escribe el hecho en el episodio. Confirmar el manual lo deja seleccionado. Ninguna de las dos prueba que el manual cubra la placa, que contenga la respuesta o que esta búsqueda haya traído un pasaje. Nombrar el manual no lo selecciona. Un «sí» suelto, el «sí» a una medición o el «sí» con dos tarjetas no escriben la selección. La confirmación por frase queda fuera de este corte.
+
+###### Correspondencia del manual y pasaje de la búsqueda
+
+Se evalúan por separado, y cada manual por su cuenta. Otro manual seleccionado no cambia el resultado del primero.
+
+Los slots no se mezclan. El del equipo es la marca y el modelo declarados. El del componente es la placa o el controlador declarados. Un designador se compara solo con su slot. El modelo del equipo no tiene que figurar en el manual de la placa. El designador de la placa no tiene que figurar en el manual del equipo.
+
+Precedencia:
+
+1. Identidad declarada vigente, por slot.
+2. Identidad de catálogo de ese documento: `role`, marcas y designadores. `role` ya está guardado. El alcance hoy no lo lee. Este corte lo usa para elegir el slot, no para crear otro almacén.
+3. Campos de identidad del pasaje, solo para ese pasaje.
+4. Selección explícita. Mantiene el manual seleccionado y visible. No borra una contradicción explícita de los puntos 2 o 3 y no crea un pasaje.
+
+Una coincidencia de marca no anula un conflicto explícito de modelo o de placa en el slot de ese documento. Un pasaje sin modelo no prueba compatibilidad ni incompatibilidad. La comparación de designadores usa `designator_label`. Hoy `identity_matches?` y `contains_word?` no lo hacen: una marca basta para `:compatible` y el «+» se pierde. Ese es el comportamiento que este corte cambia.
+
+Un manual de componente puede servir a más de un equipo solo cuando esa relación está respaldada. Con los datos que hay, la relación respaldada es la coincidencia exacta del designador en el slot del componente, con `role` de componente. El catálogo no registra en qué equipos se instala esa placa. Que la marca del manual sea distinta de la del ascensor no es, por sí solo, un conflicto de ese manual de placa. Si la placa no está declarada, la correspondencia de ese manual con este ascensor queda sin decidir: se dice y se pide la inscripción de la placa. No se infiere por la marca del ascensor.
+
+Ejemplos, que también son pruebas:
+
+- Marca coincidente y modelo en conflicto. Lo declarado es Elemont y MH+. El catálogo y el pasaje dicen Elemont y MH. La marca coincide y el slot del modelo no. El pasaje no es el procedimiento de este trabajo. Si el manual ya estaba seleccionado, sigue seleccionado. El botón viejo no escribe.
+- Pasaje sin modelo, con la correspondencia ya caída. El título es «Elemont montacargas» y no trae modelo, después de corregir el modelo fuera del designador del catálogo. El pasaje no restablece la correspondencia y no se enseña como procedimiento del modelo nuevo.
+- Manual de componente con relación respaldada. La placa declarada es CEA15+ y la entrada tiene `role` de componente, designador CEA15+ y marca Controles S.A., con equipo Elemont MH. El slot de la placa coincide. Es candidato de la placa. No prueba que cubra todo el MH ni que contenga la falla. CEA15 declarado no coincide con CEA15+.
+- Dos manuales seleccionados. Uno sigue coincidiendo con MH y tiene un pasaje que responde la pregunta. El otro es CEA15+ y la placa declarada es CEA15. Se usa solo el pasaje del primero. El segundo sigue seleccionado y su procedimiento no se usa. El resultado del primero no lo absuelve.
+- La selección no borra una contradicción explícita. El técnico eligió el manual de MH y después dice que el modelo es otro. El manual sigue seleccionado. El conflicto de modelo permanece. Ese manual deja de ser candidato y no se le arma un botón.
+
+###### Manual seleccionado en conflicto, y búsqueda sin evidencia
+
+El manual no se quita y el corpus no se abre.
+
+Correspondencia en conflicto: el slot del documento contradice el slot declarado. El manual sigue seleccionado. No se enseña su procedimiento, tampoco el de un pasaje suyo que no trae modelo. El texto nombra las dos referencias: «El manual seleccionado es del modelo MH. Indicaste otro modelo. Sigue seleccionado y no uso su procedimiento.» En este corte se puede agregar una propuesta vigente, reemplazar por una propuesta vigente, o quitar. No se ofrece confirmar ese mismo manual.
+
+Búsqueda sin evidencia: la correspondencia de ese manual puede seguir vigente y, aun así, esta búsqueda no trajo un pasaje que responda. El texto es «No encontré evidencia suficiente en esta búsqueda.» El manual sigue seleccionado. Eso no prueba que el manual no tenga la sección. Volver a elegirlo no crea el pasaje. El pasaje de otro manual seleccionado tampoco cuenta como evidencia de este.
+
+Pasaje que no decide: la búsqueda sí trajo un pasaje, y sus campos no dicen el slot. Si la correspondencia del documento sigue vigente, la respuesta puede decir solo lo que ese pasaje dice, sin convertir la falta de modelo en una coincidencia. Si la correspondencia está en conflicto o sin decidir, ese pasaje no la repara.
+
+Una afirmación del fabricante sale solo de un pasaje que pertenece a un documento con correspondencia vigente, cuyos campos no traen un conflicto explícito, y que contiene ese dato.
+
+Hoy `RagController` arma el aviso con `model_tokens` vacío y `DocumentDiscovery` hace lo mismo en la rama de contradicción. Un cambio de modelo sin marca nueva no muestra la diferencia, y el guidance conocido sigue encargando diagnóstico genérico.
+
+###### Búsqueda, refuerzo y consulta directa
+
+Mostrar candidatos, confirmar que un manual corresponde y dejarlo seleccionado son tres acciones distintas. La evidencia de campo no las funde.
+
+Jesús Graterol, fundador, el 28/09/2026:
+
+«Sí respondió correctamente, es decir asoció la falla con los elementos relacionados con ese punto, lo que sí no hizo fue asociar la marca del ascensor a los manuales que están ahí. Entonces me tocó seleccionarlos».
+
+«Como recomendación, sería bueno que al colocar la marca del equipo y la falla, ella inmediatamente me mostrara los manuales donde podrían buscar más información relacionada con las soluciones que me brinda a manera de refuerzo».
+
+Es evidencia aportada por el fundador. No autoriza a seleccionar un manual por la marca o por la falla. No prueba que aquella respuesta tuviera respaldo documental. Describe que la respuesta le sirvió para asociar la falla con elementos, que los manuales no quedaron ligados a la marca, y que la selección la hizo él.
+
+Caminos:
+
+- Marca o equipo, y falla. Se usan los antecedentes ya guardados para proponer manuales candidatos y se pregunta solo el dato que falta para distinguirlos. Mostrarlos no los selecciona y no confirma la correspondencia. Un manual presentado como refuerzo tiene que contener un pasaje que respalde lo que se afirma. En este corte eso ocurre después de la selección y de la búsqueda dentro de ese manual. No se arma una solución y después se le acerca un documento por parecido.
+- Manual ya seleccionado, con la correspondencia todavía vigente para el slot de la pregunta. Se busca ahí directamente. No se reinicia la identificación.
+- Pregunta explícita por un manual. Se usa el nombre para reconocer de qué documento se habla. Nombrarlo no lo selecciona y no obliga a rehacer la identificación. Si ya hay otro manual seleccionado, la búsqueda actual no sale de los manuales seleccionados. La alternativa mínima es ofrecerlo como candidato para agregar. No se abre el corpus y no se agrega solo. Ese es el límite del foco actual. Si no hay manual seleccionado, la búsqueda abierta que ya existe puede correr; el nombre sigue sin seleccionar.
+- Pregunta por un componente o un código. Se resuelve ese slot. No se exige la identidad completa del ascensor. Si lo que distinguiría el manual es la inscripción de la placa, se pide eso.
+- Candidatos sin correspondencia clara. Se muestra la incertidumbre y se pide el dato que distingue. No se presenta el primero como el correcto.
+
+La foto entra en el guidance solo cuando ese turno tiene una observación visual aceptada. `documentation_exit?` del camino conocido evalúa el mensaje original del técnico, no la consulta compuesta. El modo conocido recibe `INTERVENTION_LIMIT` cuando no hay un pasaje que respalde. El guidance deja de encargar diagnóstico genérico y una comprobación siguiente tanto si la correspondencia está en conflicto como si esta búsqueda no tiene evidencia suficiente. Esas correcciones no desbloquean la etapa: los turnos 9 y 12 ya tenían `EXIT_RULE` y pidieron mediciones. El resumen de salida queda para ese turno de salida, no para cada respuesta de identificación. Los síntomas y las comprobaciones se conservan y se utilizan cuando corresponde.
+
+###### Estados y transiciones
+
+No hay estado nuevo persistido. Cada turno deriva, por manual, la correspondencia, y por separado el resultado de esta búsqueda.
+
+| Relación | Qué la sostiene |
+| --- | --- |
+| Declarada | Identificadores del episodio, separados por slot. |
+| Candidatos | Hasta dos tarjetas vigentes. Ninguna deja el manual seleccionado. |
+| Manual seleccionado, correspondencia vigente | El técnico eligió esa fila y el slot del catálogo sigue coincidiendo. |
+| Manual seleccionado, correspondencia en conflicto | Sigue seleccionado y el slot del documento contradice el declarado. |
+| Manual seleccionado, correspondencia no decidida | Sigue seleccionado y falta el slot o una relación respaldada. |
+| Pasaje que respalda | Esta búsqueda trajo un pasaje de un documento con correspondencia vigente, sin conflicto explícito en sus campos, y el pasaje contiene el dato. |
+| Pasaje que no decide | Esta búsqueda trajo un pasaje sin modelo o sin slot. No prueba compatibilidad ni incompatibilidad. |
+| Sin evidencia en esta búsqueda | Esta búsqueda no trajo un pasaje que responda. Es independiente de la correspondencia. |
+
+Transiciones:
+
+- Declarada → candidatos, cuando hay filas para mostrar, como máximo dos.
+- Candidato vigente → manual seleccionado, solo con el botón, el lock, id, uid, autorización, episodio y correspondencia vigente de ese slot.
+- Botón obsoleto → no escribe. Si la identidad corregida produce otra tarjeta, esa tarjeta es otra propuesta. Si no la produce, no hay botón para el documento que dejó de ser candidato.
+- Manual con correspondencia vigente → pasaje que respalda, o pasaje que no decide, o sin evidencia, según esta búsqueda. Son tres llegadas distintas.
+- Sin evidencia no pasa a pasaje que respalda por volver a elegir el manual, ni porque otro manual seleccionado sí tenga un pasaje.
+- Un pasaje que no decide no pasa a pasaje que respalda por la selección ni por el otro manual.
+- La correspondencia en conflicto permanece así mientras el slot declarado contradiga el del documento. No hay botón que la vuelva vigente. Si un turno posterior cambia el slot y el documento vuelve a ser candidato, esa tarjeta es una propuesta nueva: elegirlo deja el manual seleccionado para la identidad que ahora coincide. Esa elección no crea un pasaje y no convierte en evidencia una búsqueda que no lo tuvo.
+- Agregar y reemplazar escriben solo una propuesta vigente. Quitar usa el control existente. Cada manual conserva su evaluación.
+
+Comportamiento visible, en lenguaje del técnico:
+
+- Un candidato: «Entiendo que se trata del equipo Elemont MH. Encontré el manual Elemont Montacargas Hidraulico Modelo MH. ¿Ese manual corresponde a tu equipo?» Botón para dejarlo seleccionado. No dice que cubra la placa ni que contenga la falla.
+- Más de dos: «Encontré varios manuales. Te muestro dos. Ninguno queda elegido. Si en la placa figura el modelo, con eso los distingo.»
+- Sin fila: «No encontré un manual con el designador CEA15. CEA15+ es otro.»
+- Tras elegirlo: «Manual seleccionado.» El texto de estado de hoy dice «Manual enfocado»; el cambio de frase es de este corte, cuando se autorice, no de esta revisión.
+- Conflicto: «El manual seleccionado es del modelo MH. Indicaste otro modelo. Sigue seleccionado y no uso su procedimiento. Podés agregar otro, reemplazarlo o quitarlo.»
+- Sin evidencia: «No encontré evidencia suficiente en esta búsqueda. El manual sigue seleccionado.»
+- Pasaje que no decide: «Este pasaje no indica el modelo. No alcanza para decir que corresponda al que indicaste.»
+- Los síntomas y las comprobaciones se conservan y se utilizan cuando corresponde. No se exige un resumen completo en cada respuesta.
+
+###### Archivos, cuando se autorice
+
+- `app/services/rag/document_discovery.rb`: igualdad con `designator_label`. Candidatos por slot. `MAX_CARDS` permanece en 2. Si quedan más, el texto dice que la lista es más larga y que el orden no elige.
+- `app/services/rag/document_identity_catalog.rb`: el prefijo mantiene el largo mínimo de 6. `role` se lee para elegir el slot del equipo o del componente.
+- `app/controllers/rag_controller.rb` y la vista de la tarjeta: la tarjeta vigente lleva span, slot y `episode_id`.
+- `app/controllers/pinned_documents_controller.rb` y `ConversationSession#pin_kb_document!`: revalidación bajo el lock de id, uid, autorización, episodio y candidatura vigente. El POST obsoleto no escribe. No se agrega un camino de reconfirmación excepcional.
+- `app/services/rag/focus_notice.rb`: slots del episodio y `designator_label`, no `model_tokens` vacío. El aviso no ofrece confirmar un manual que ya no es candidato.
+- `app/services/rag/document_identity_scope.rb`: un designador se compara con `designator_label` y solo con su slot. Una marca no deja en compatible un modelo o una placa en conflicto. Un pasaje sin modelo queda sin decidir. La selección no borra esa contradicción ni abre el corpus.
+- `app/services/rag/companion_guidance_context.rb` y `app/services/bedrock_rag_service.rb`: foto condicionada, salida sobre el mensaje original, límite de instrumento cuando no hay pasaje que respalde, y sin diagnóstico genérico si la correspondencia está en conflicto o si esta búsqueda no tiene evidencia. Sin resumen completo en cada turno.
+- `app/javascript/controllers/rag_chat_controller.js`: solo si el POST debe enviar span, slot y `episode_id`. El endpoint sigue siendo el de la selección.
+- `config/locales/rag.es.yml`: «Manual seleccionado», «No encontré evidencia suficiente en esta búsqueda», y la diferencia concreta entre las dos referencias. Esas frases no nombran autorización ni normalización.
+- Instrucciones, en el mismo corte que el guidance: `AGENTS.md`, `app/services/rag/AGENTS.md`, `app/prompts/AGENTS.md`.
+- Pruebas nuevas, abajo. El fixture de Journey A no se edita.
+
+No entran otra tabla, otra caché, una búsqueda en segundo plano ni una llamada de modelo. El catálogo, la tarjeta, el lock y el alcance por pasaje alcanzan para este corte. La búsqueda con manual seleccionado sigue limitada a esos manuales. Subir la cantidad de resultados no forma parte de esta propuesta.
+
+Queda fuera de este corte: la confirmación por frase; reconfirmar un manual que ya no es candidato; subir `MAX_CARDS`; una navegación nueva para ver más tarjetas; abrir el corpus cuando la búsqueda del manual seleccionado no trae evidencia; seleccionar al nombrar una marca, una falla o un manual; presentar un manual como refuerzo de una solución que ese manual no respalda con un pasaje.
+
+###### Secuencia y criterios de aceptación
+
+1. Pruebas locales con stubs, en rojo, antes de cambiar la conducta.
+2. Comparación de designador que conserva el signo, y candidatos por slot sin escribir la selección.
+3. Texto y botones de un candidato, de dos, y de más de dos sin presentar el primero como el correcto.
+4. Revalidación del POST bajo el lock, y rechazo del botón obsoleto.
+5. Correspondencia en conflicto, pasaje que no decide y búsqueda sin evidencia, como tres resultados distintos. Cada manual se evalúa solo.
+6. Guidance y las tres instrucciones del repositorio, en el mismo corte.
+7. La suite con stubs, incluidos los caminos de consulta directa. Journey A no se corre y sus 14 turnos no se modifican.
+
+Aceptación:
+
+- Descubrimiento: `CEA15` no ofrece `CEA15+` y `VF5` no ofrece `VF5+`. La prueba cubre la tarjeta, no solo el guardado del designador.
+- Un candidato Elemont MH enlazado a la fila 213 se nombra y no queda seleccionado hasta el botón.
+- Dos candidatos muestran dos tarjetas y un «sí» no selecciona. Con tres o más se muestran dos, el texto dice que hay más y ninguno queda elegido, y `MAX_CARDS` sigue en 2.
+- Sin coincidencia no se inventa un manual. Síntoma y comprobaciones siguen guardados y no se recitan enteros en la respuesta.
+- Marca conocida sin modelo: una sola fila de equipo se propone; varias se listan hasta dos.
+- Entrada sin documento local no tiene botón. La prueba separa ese límite de producto de las 202 filas ausentes en la base aislada.
+- El botón deja el manual seleccionado, en modo agregar, solo si id, uid, episodio y candidatura vigente coinciden, y la autorización sigue vigente.
+- Después de corregir modelo o placa, el POST de la tarjeta vieja no escribe. Una tarjeta calculada después escribe solo si esa fila sigue siendo candidata. No existe un botón que reconfirma la fila que dejó de serlo.
+- Un «sí» ambiguo no escribe la selección. Nombrar el manual tampoco.
+- Marca coincidente y modelo documental en conflicto: el procedimiento de ese manual no se publica. La selección, si existía, sigue visible.
+- Pasaje sin modelo de un documento cuya correspondencia ya no está confirmada: no se enseña como procedimiento del modelo corregido.
+- Manual de componente con designador de placa coincidente: es candidato de la placa aunque la marca del manual no sea la del ascensor. No cubre el equipo entero ni afirma la falla. `CEA15` no toma el manual de `CEA15+`.
+- Dos manuales seleccionados, uno con pasaje que respalda y otro en conflicto de placa: se usa solo el primero. El segundo sigue seleccionado y no queda absuelto por el primero. El corpus no se amplía.
+- La selección del técnico no elimina un conflicto explícito de modelo.
+- Manual con correspondencia vigente y búsqueda sin evidencia: sigue seleccionado y la respuesta dice «No encontré evidencia suficiente en esta búsqueda». No dice que el manual no contenga la respuesta. Volver a elegirlo no produce un pasaje.
+- Marca y falla: se proponen manuales y no se seleccionan. No se los presenta como fuente de una solución que no está en un pasaje.
+- Manual ya seleccionado y todavía pertinente: la pregunta se busca ahí y no se reinicia la identificación.
+- Pregunta por un manual no seleccionado, habiendo otro seleccionado: no se selecciona por el nombre y la búsqueda no sale de los manuales ya elegidos. Se ofrece como candidato.
+- Pregunta por una placa o un código, sin la identidad completa del ascensor: no se exige el resto de la placa. Se pide solo el dato que distinguiría el manual.
+- Sin imagen, el prompt no trae la frase de la foto ni «La foto muestra».
+- Sin pasaje que respalde, o con correspondencia en conflicto, el prompt no encarga medición, función de LED, código o terminal, ni diagnóstico genérico. La presencia de `EXIT_RULE` no basta para dar esta prueba por cumplida.
+- Journey A permanece como comparación histórica.
+
+###### Instrucciones que deben alinearse
+
+No se editan en esta tarea. El corte que cambie el guidance cambia estos tres textos a la vez:
+
+- `AGENTS.md`, el párrafo que empieza en «When equipment identity is known and no compatible manufacturer manual was found». La continuación pasa a ser: conservar el caso, decir «No encontré evidencia suficiente en esta búsqueda» cuando no hay pasaje, y pedir un dato que distinguiría un manual o escalar con lo ya verificado. No se asignan funciones de código, LED o terminal ni se recomienda una medición. No se enseña un procedimiento ajeno. No se cierra en un rechazo seco. Un descargo no vuelve aplicable ese procedimiento. Confirmar el manual no crea el pasaje. `known?` no es correspondencia documental.
+- `app/services/rag/AGENTS.md`, el punto «Known equipment with no compatible manual continues as Danebo guidance». La misma conducta. El turno puede no imprimir `DATA_NOT_AVAILABLE` al técnico y tampoco sustituirlo por un diagnóstico inventado.
+- `app/prompts/AGENTS.md`. «State what is obvious for that kind of component» queda limitado a la seguridad de la acción que el técnico ya está haciendo, no a una función que el pasaje no trae. El procedimiento análogo, con identidad desconocida, puede nombrarse con manual, página y descargo, y ese descargo no autoriza a ejecutar sus pasos en este trabajo. «When no compatible manufacturer manual was found, continue as Danebo guidance» queda alineado con el párrafo de la raíz. Si el manual está seleccionado y esta búsqueda no trajo evidencia, falta el pasaje. Eso no prueba que el manual no tenga la sección.
+
+###### Prueba de identificación, separada de Journey A
+
+Journey A entrega observaciones prefijadas y responde «No lo sé» a la medición. Sirve para memoria y correcciones. No pide ni confirma un manual. No se le agrega un turno para fabricar una aprobación.
+
+La prueba futura, con stubs y sin AWS, recorre en una sesión distinta los caminos de arriba: propone el manual del equipo y no el de una placa sin fila; el botón vigente lo deja seleccionado; la falla se busca en ese manual; una búsqueda sin evidencia conserva la selección y no afirma que el manual no tenga la respuesta; una corrección de modelo deja ese manual seleccionado, fuera de uso, y el botón viejo no escribe; un segundo manual entra solo si una propuesta nueva lo ofrece y el técnico lo agrega. El resultado esperado no se declara cumplido por este documento.
+
+Veredicto de estos ajustes: `ETAPA_2_BLOQUEADA`. No es `EPISODIO_VALIDADO`. No autoriza implementación, otra pasada ni la etapa 3.
+
+
+## Referencia histórica
+
+Esta parte no es ruta de ejecución. Conserva hechos, cifras y cierres. No se reescriben.
+
+Quedan sin efecto, como instrucciones de la próxima corrida: la luz verde única de las etapas 1, 2 y 3; los 14 turnos de Journey A como duración o meta; el journey sin pin como gate vigente; `RETRIEVAL_EMPTY` como parada de la siguiente corrida; el veredicto de producción de la etapa 3 como paso siguiente. Journey A sigue siendo la prueba histórica de continuidad. El veredicto de su última pasada, `ETAPA_2_BLOQUEADA`, no se convierte en `EPISODIO_VALIDADO`.
+
+### Encabezado anterior, conservado
+
 **Estado: ETAPA 2 BLOQUEADA.** No es `EPISODIO_VALIDADO`. La última evidencia de producción registrada en este plan es la imagen `6ca7788`: web y worker, `https://elevator.danebo.ai/up` en 200, y un POST real. Esa imagen contiene la etapa 1 (`78df58a`), el código de la corrección de planta que llega hasta ella desde `66dd9e0`, la regla de hipótesis y el contrato N4 (`71b83a4`). La corrección de planta no está revalidada. La expansión del nombre canónico quedó fuera de esa imagen. Un turno real no trajo el plano Elemont y no reabre la etapa. `47c43e2` es la base de la reparación de designadores; `700d9d0` la contiene, está en `main` y no forma parte de la imagen evidenciada. La composición por unidades del guidance quedó en `085969c`, en `main`, y tampoco está en esa imagen. La continuidad bajo presión quedó en `8274192`, en `main`, y no está en esa imagen. Al juntar la pregunta larga, la búsqueda vacía y la corrección de 217 caracteres, esa reparación conservaba la corrección y expulsaba el objetivo. Esa pérdida queda reparada en local: no está desplegada y no está revalidada. La pasada local aislada del journey A, sesión 1, sigue `BLOQUEADA`. Los defectos de planta, objetivo residual, identificador «clic», resumen técnico y captura del fallo del intérprete quedan reparados en local y no están revalidados. La clase de la excepción del turno 1 no está en la captura. El cumplimiento del modelo y la búsqueda documental del Elemont siguen pendientes. No es `EPISODIO_VALIDADO`. Faltan 202 filas del catálogo. La validación de producción sigue pendiente. La etapa 3 no empieza. La revisión Opus del 2026-10-07 sobre `7076f05` sigue incorporada. Esta revisión no habilita un piloto.
 
-**Lectura vigente (2026-10-09).** La pasada aislada de ese día terminó los 14 turnos y queda `ETAPA_2_BLOQUEADA`. No es `EPISODIO_VALIDADO`. La auditoría está en «Auditoría de la pasada aislada (2026-10-09)». La propuesta precisa para revisar está en «Ajustes a la propuesta (2026-10-09)» y corrige el borrador de cinco pasos donde se indica. Esa sección no implementa, no llama a AWS y no autoriza otra corrida.
+**Lectura vigente (2026-10-09).** La pasada aislada de ese día terminó los 14 turnos y queda `ETAPA_2_BLOQUEADA`. No es `EPISODIO_VALIDADO`. La auditoría está en «Auditoría de la pasada aislada (2026-10-09)». La única propuesta para revisar es «Ajustes a la propuesta (2026-10-09)», corregida en su lugar. El borrador de cinco pasos queda retirado. Esta revisión no implementa, no llama a AWS y no autoriza otra corrida.
 
 Este documento es el único plan vigente del companion. Una revisión documental no autoriza a empezar. La etapa 1 está en la imagen evidenciada `6ca7788`. Este documento no llama a Bedrock y no despliega.
 
@@ -899,25 +1323,11 @@ Lo que ese mecanismo no hace:
 - El runner no llama a `attach_manual_suggestion`. Sus tarjetas son diagnóstico de catálogo, `uses_current_retrieval: false`, sin botón y sin efecto sobre el retrieve. Esta pasada no ejercitó el pin.
 - `pin_only` impide buscar documentación complementaria fuera de lo seleccionado. Eso cumple el contrato de no soltar el foco. La forma de incorporar la placa u otro componente es otra confirmación explícita con `focus_mode=add`, que suma esa URI. No se reabre el corpus por detrás. Si el designador de la placa no tiene fila propia, no se sustituye por `CEA15+`. Si el retrieve dentro del manual seleccionado no trae un pasaje útil, se dice ese límite y se mantiene la selección. Subir k seguiría dentro de las URIs ya elegidas; no forma parte de esta propuesta y no se mide aquí.
 
-Una confirmación explícita de la propuesta puede autorizar la selección si reutiliza ese escritor y esa revalidación. El botón ya es esa autorización. Para que la frase «¿Corresponde a tu equipo?» también lo sea, la propuesta tiene que quedar atada a la fila (id y uid) y solo una respuesta cerrada a esa propuesta puede llamar al mismo `pin_kb_document!`. Un «sí» suelto, o el nombre del manual dentro de la consulta, sigue sin pinear. Hace falta corregir antes la comparación del «+» en `DocumentDiscovery`; si no, la confirmación seleccionaría `CEA15+`. No hace falta otra tabla ni otro pin. El foco sigue siendo de sesión: la explicación tiene que decir que permanece hasta que el técnico lo quite, también si abre otro caso.
+El botón revalida id y uid, y esa es la confirmación que el mecanismo ya sabe hacer. La frase «¿Corresponde a tu equipo?» no selecciona por sí sola. Un «sí» suelto, o el nombre del manual dentro de la consulta, no selecciona. La comparación del «+» en `DocumentDiscovery` tiene que corregirse antes de ofrecer `CEA15`: si no, la tarjeta sería de otro designador. No hace falta otra tabla ni otro pin. El foco sigue siendo de sesión y permanece hasta que el técnico lo quite, también si abre otro caso. La confirmación por frase queda fuera de la propuesta.
 
 ##### Propuesta mínima
 
-Es el primer borrador de esta auditoría. La propuesta precisa está en «Ajustes a la propuesta (2026-10-09)». Este borrador se conserva. Donde difieren, manda la sección de ajustes. No se implementa con esta auditoría.
-
-1. Reconocer los identificadores declarados como ya hace el episodio, con procedencia y con el signo. `known?` sigue sin significar compatibilidad.
-2. Resolver candidatos en el turno, sin Retrieve y sin otra llamada de modelo: `designator_label` sobre los identificadores del episodio, entrada confirmada, `bind_catalog_candidate` y autorización del visor. Un candidato único se nombra: «Entiendo que se trata del equipo Elemont MH; encontré Elemont Montacargas Hidraulico Modelo MH. ¿Corresponde a tu equipo?» La placa `CEA15` queda dicha y sin manual equivalente. `CEA15+` no se ofrece.
-3. La confirmación específica usa el pin existente. El botón actual, o una respuesta cerrada a esa propuesta con el mismo id y uid, llama a `pin_kb_document!` en modo agregar. Se explica con el estado ya traducido y se puede quitar con el mismo control. Varios manuales son varias confirmaciones de agregado. El reemplazo queda para cuando el técnico cambie el manual elegido, no para sumar la placa.
-4. Las búsquedas posteriores, ya con pin, quedan en `pin_only`. El síntoma, el código y las comprobaciones se buscan dentro de esos URI. Si no hay pasaje, se dice que esta búsqueda no lo trajo, se mantiene el pin y no se enseña otro equipo. Otro documento complementario entra solo con otra confirmación.
-5. Entre turnos se conservan el episodio y, si el técnico ya confirmó, `document_focus`. Los candidatos se recalculan desde los identificadores. Corregir equipo, modelo o placa recalcula candidatos y muestra `pin_conflict` si el foco queda de otra marca. El pin no se suelta solo y no se sustituye en silencio. Sin candidato, se pide el dato que distinguiría un documento, no un formulario completo. Con ambigüedad, no se elige ni se pinea. Sin evidencia dentro de lo seleccionado, se explica el límite y se pide un dato útil o se escala.
-
-La foto entra en el guidance solo cuando ese turno tiene una observación visual aceptada. `documentation_exit?` evalúa el mensaje del técnico, el de la petición, no la consulta compuesta. En `no_compatible`, la respuesta resume lo comprobado, dice qué documentación falta o no fue confirmada, y no pide una medición ni asigna funciones de código, LED o clic. El modo conocido recibe el mismo límite de instrumento que hoy solo tiene el modo desconocido. Esas tres correcciones de guidance no sacan a la etapa del bloqueo: el retrieve del episodio seguiría sin el Elemont y sin citas, y los turnos 9 y 12 ya mostraron la salida mientras pedían mediciones.
-
-**Archivos, cuando se autorice.** `app/services/rag/document_discovery.rb` y el catálogo, para la comparación del signo y los candidatos del episodio. `app/services/rag/companion_guidance_context.rb` y `app/services/bedrock_rag_service.rb`, para la foto, la salida sobre el turno crudo y la conducta sin manual compatible. `app/services/rag/pending_question.rb`, solo si la confirmación por frase se agrega al lado del botón; el escritor sigue en `ConversationSession#pin_kb_document!` y `PinnedDocumentsController`. El controlador de chat solo presenta la pregunta y el botón que ya confirma la fila. `rag_query_concern.rb` mantiene `pin_only`. Pruebas en guidance, descubrimiento, foco de manual y percepción. El fixture de Journey A no se edita para aprobar.
-
-**Validación local propuesta, sin ejecutarla ahora.** Reproducir primero el fallo: la consulta compuesta de «¿Y ahora?» no dispara la salida y el mensaje original sí; la frase de la foto aparece sin imagen y desaparece cuando no hay observación visual; «CEA15» no ofrece `manual-cea15p`; el prompt `no_compatible` no encarga una medición. Después, un candidato Elemont MH enlazado a la fila 213, `CEA15` sin fila sustituta, pin solo tras id y uid, agregado de un segundo manual sin borrar el primero, conflicto visible si cambia la marca y el foco sigue, y retrieve vacío que no reabre el corpus. Sin AWS. Journey A histórico no es esa prueba.
-
-**Journey A y una prueba conversacional de identificación.** Journey A entrega observaciones prefijadas y responde «No lo sé» a la medición que no trae. Sirve para memoria y correcciones. No pide ni confirma un manual. Una prueba futura de identificación tendría que partir de los datos disponibles, mostrar el candidato, aceptar solo la confirmación de esa fila y recién entonces buscar el síntoma dentro del pin. No se alarga este fixture para simularla. Hasta esa prueba, y hasta una pasada autorizada, la etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`.
+Queda retirada. No es propuesta y no se implementa. La única propuesta es «Ajustes a la propuesta (2026-10-09)». Los cinco pasos que estaban aquí admitían un «sí» cerrado en el mismo corte, dejaban la coincidencia exacta como camino principal y trataban el aviso de conflicto como si bastara para seguir usando el manual. Esos pasos no quedan como instrucciones.
 
 ##### Enfoques descartados y parches que se mantienen
 
@@ -927,7 +1337,9 @@ Descartados, con motivo:
 - Tratar `known?`, la marca normalizada o la tarjeta `EXACT_DESIGNATOR` como compatibilidad o como pin.
 - Igualar `CEA15`, `CEA15+` y `CEA15P`.
 - Pinear porque el técnico nombró el manual, porque el catálogo coincidió o porque dijo que el equipo es Elemont.
-- Reabrir el corpus cuando `pin_only` vuelve vacío, o quitar el pin al corregir la marca. El contrato vigente hace lo contrario: el foco se mantiene y el conflicto se muestra.
+- Reabrir el corpus cuando `pin_only` vuelve vacío, o quitar el pin al corregir la marca. El foco se mantiene y el conflicto se muestra.
+- Reconfirmar con el botón viejo un manual que ya no es candidato, o tratar esa reconfirmación como prueba de que hay un pasaje.
+- Pinear al nombrar una marca o una falla. El comentario de Jesús Graterol del 28/09/2026 pide mostrar manuales, no seleccionarlos solo.
 - Una tabla nueva, una caché, una búsqueda en segundo plano o una llamada de modelo adicional.
 - Cambiar el fixture de Journey A para obtener una aprobación.
 - Declarar el episodio validado porque mejoraron identidad, código, planta y resumen.
@@ -942,173 +1354,11 @@ Se mantienen, porque esta pasada o el código ya muestran efecto:
 - El guardado del designador con «+» de `5f69556`. El descubrimiento de tarjetas todavía no usa esa comparación; se corrige aparte, sin revertir el guardado.
 - La composición del guidance, la regla de hipótesis, el contrato N4 y la continuidad bajo el tope de 2400.
 - El pin opcional, la autorización por fila y uid, `pin_only` y la conservación del foco.
-- El cierre presupuestario del árbol de trabajo: 188 llamadas, US$0,423114, techos 188, 42 y 230, `PASS_CALL_CAP` 0. Permanece sin commit hasta que se pida.
+- El cierre presupuestario de `3ff27f9`: 188 llamadas, US$0,423114, techos 188, 42 y 230, `PASS_CALL_CAP` 0. Esta revisión no lo abre.
 
 Veredicto de esta auditoría: `ETAPA_2_BLOQUEADA`. No es `EPISODIO_VALIDADO`. No autoriza implementación, otra pasada ni la etapa 3.
 
-##### Ajustes a la propuesta (2026-10-09)
-
-Esta sección corrige el borrador de cinco pasos. Sigue sin implementar, sin llamadas AWS, sin workers, sin despliegue y sin ampliar el presupuesto. `PASS_CALL_CAP` permanece en 0. Los tres archivos locales de cierre presupuestario no forman parte de este ajuste.
-
-###### Correcciones al borrador
-
-1. Una fila autorizada con designador exacto propone un candidato. No declara compatibilidad, no demuestra que el manual contenga la respuesta y no cubre los demás componentes. El punto 2 del borrador nombraba un candidato único por coincidencia exacta; ese camino se conserva y deja de ser el único.
-2. El punto 3 admitía, en el mismo corte, el botón o una respuesta cerrada. El corte para revisar usa solo el botón. Un «sí» textual queda como corte posterior y solo si existe una única propuesta concreta, vigente y atribuible. Un «sí» ambiguo no selecciona.
-3. El punto 5 mostraba `pin_conflict` y conservaba el pin. Conservarlo no autoriza a seguir aplicando el procedimiento cuando la identidad declarada ya no corresponde. El aviso actual no alcanza: llega con `model_tokens` vacío y solo mira la marca de la pregunta en curso.
-4. Un retrieve vacío dentro del pin mantiene la selección y no prueba que el manual carezca de esa sección. El borrador decía el límite; esta sección separa documento seleccionado, pasaje recuperado, orientación general y afirmación del fabricante.
-5. La frase de la foto condicionada a evidencia visual, `documentation_exit?` sobre el mensaje original y el límite de instrumento en el modo conocido siguen en la secuencia. No desbloquean la etapa. Los turnos 9 y 12 ya tenían `EXIT_RULE` y pidieron mediciones sin evidencia.
-
-###### Cómo interactúan los mecanismos ya revisados
-
-`5f69556` conserva el «+» al guardar el designador (`ActiveEpisodeTurn::DESIGNATOR_RE`, `TechnicalReferentResolver`, `DocumentIdentityCatalog.designator_label`). `DocumentDiscovery#exact_entries` compara con `#normalize`, que llama a `FollowupQueryRewriter.normalize_label` y borra el signo. `CEA15` y `CEA15+` quedan en la misma clave. `FocusNotice#normalize` usa el mismo método: si el aviso recibiera los designadores, `CEA15` y `CEA15+` no se verían distintos. `DocumentIdentityCatalog#resolve_designator` y el designador de `#resolve_compound_brand` comparan con `designator_label`, que conserva el «+». `#resolve_brand` normaliza la marca, no el designador. El prefijo del catálogo exige token de largo al menos 6, con dígito y sufijo de hasta 4. `CEA15` tiene largo 5 y `VF5` largo 3, así que esa regla no los convierte en `CEA15+` ni en `VF5+`. Un `:exact` o un `:prefix` con varias entradas del mismo designador devuelve `candidates` vacío y un solo valor; no enumera los documentos. Dos valores de designador distintos vuelven `:ambiguous`. `#resolve_compound_brand` devuelve `nil` si hay más de una entrada.
-
-En `:ambiguous`, `candidates` trae los valores de designador, no los `KbDocument`. La lista de documentos sale de las entradas que coinciden, las mismas que recorre `exact_entries`, y de enlazar cada una. `resolve_brand` en éxito trae el fabricante y `candidates` vacío; en ambigüedad trae cadenas de marca, no documentos.
-
-`EquipmentIdentity#known?` es verdadero con fabricante o modelo de procedencia `user` o `photo`. Abre la ruta `document_identity_scope`. No filtra el índice y no prueba correspondencia documental. En la pasada, los catorce retrieves siguieron en corpus abierto, k=8, y `DocumentIdentityScope` marcó los ocho resultados como ajenos.
-
-`CompanionGuidanceContext` mete en el guidance conocido «Continue helping … generic diagnostic reasoning» y, cuando la salida está apagada, una observación o comprobación siguiente. La frase «Put what the photo shows…» sale en `known_detail_pieces` sin mirar si hay imagen. `INTERVENTION_LIMIT` está solo en el guidance desconocido. `documentation_exit?` del camino conocido recibe la consulta compuesta (`BedrockRagService#document_identity_scope_result`); el camino desconocido recibe el turno crudo. `EXIT_RULE` pide un dato decisivo y a la vez prohíbe otra comprobación de rutina. Esa combinación, más el párrafo de razonamiento genérico, es lo que los turnos 9 y 12 cumplieron al pie de la primera rama y no de la segunda.
-
-Las instrucciones del repositorio empujan en el mismo sentido. `AGENTS.md` dice que, con identidad conocida y sin manual compatible, se continúa el diagnóstico con la observación visual aceptada, el problema activo y razonamiento genérico de campo, sin enseñar un procedimiento ajeno y sin cerrar en un rechazo de búsqueda. `app/services/rag/AGENTS.md` repite esa continuación y dice que el turno no termina en `DATA_NOT_AVAILABLE`. `app/prompts/AGENTS.md` repite la continuación, autoriza a decir lo obvio para ese tipo de componente y, con identidad desconocida, a ofrecer un procedimiento análogo con manual, página y un descargo. El descargo no vuelve aplicable el procedimiento. El guidance en runtime obedece la continuación genérica y deja sin efecto, en la respuesta visible, la prohibición de procedimiento ajeno.
-
-El pin de la tarjeta no usa el control de episodio que ya existe. `ConversationSession#pin_kb_document_if_episode_owner!` compara `expected_episode_id` con `live_episode_id` dentro de `with_lock` y no escribe si difieren. El POST de la tarjeta llama a `pin_kb_document!`, que también toma el lock y no compara el episodio. El id de episodio tampoco basta: una corrección de modelo ocurre dentro del mismo episodio. `WorkContextReducer#clear_pending_unless_meta` borra `pending_question` en cada turno que no es meta ni `clarify_first`. Guardar ahí la propuesta la perdería en el turno siguiente y competiría con `ActiveEpisode::MAX_BYTES` (4096). La propuesta no se persiste. La tarjeta ya lleva `kb_document_id`, `document_uid` y `focus_mode`.
-
-###### Candidatos, más allá de la coincidencia exacta
-
-La resolución reutiliza el catálogo y el enlace ya existentes, en el turno, sin Retrieve, sin otra llamada de modelo y sin tabla. Cada designador declarado se clasifica con `resolve_designator` o, si el span trae marca y designador, con `resolve_compound_brand`. Esa clasificación no es la lista de documentos: `Resolution#candidates` no trae filas en un éxito. Las tarjetas salen de las entradas cuyo `designator_label` coincide, enlazadas una a una con `KnowledgeScopePolicy.bind_catalog_candidate`. La marca sola se clasifica con `resolve_brand` y las tarjetas salen de las entradas de equipo de esa marca que enlazan. Una fila solo se ofrece como tarjeta si el enlace devuelve un `KbDocument` autorizado para el visor. La comparación de designador usa `designator_label`.
-
-- Sin coincidencia exacta. Se dice que no hay un documento autorizado con ese designador. Se conservan síntomas y comprobaciones. Se pide el dato que distinguiría un documento. No se exige el resto de la placa. `CEA15` no ofrece `manual-cea15p`. Un resultado `:prefix` del catálogo, con la regla de largo que ya existe, se muestra como candidato aproximado y con el designador real a la vista. No se selecciona solo y no se declara compatible. No se baja el umbral de 6 para alcanzar a `CEA15` o `VF5`.
-- Varios candidatos. `:ambiguous` muestra los designadores distintos y no elige. Varias entradas enlazadas para un mismo `:exact` muestran una tarjeta por `KbDocument`, aunque `candidates` venga vacío. No hay selección por defecto. Un «sí» no elige entre ellas.
-- El técnico no conoce el modelo. Si la marca declarada resuelve una sola fila de equipo autorizada, esa fila se propone como candidato. Si resuelve varias, se listan y se pregunta cuál corresponde. El síntoma sigue en el episodio. No se bloquea la identificación por faltar el modelo.
-- Equipo y placa con manuales distintos. Cada designador produce su propia propuesta. Confirmar el del equipo agrega ese documento. Confirmar el de la placa agrega el otro con `focus_mode=add`. Ninguna de las dos confirmaciones cubre el otro componente. Si la placa no tiene fila exacta, se dice eso y no se le asigna el manual del equipo ni un designador vecino.
-- Entrada de catálogo sin `KbDocument` local. Se puede nombrar la entrada y no se ofrece botón ni se pinea. En esta base aislada, 202 entradas están en ese estado porque las filas no están cargadas: es límite del entorno y no prueba que el índice de producción carezca del documento. El límite de producto es una entrada que, para ese visor, no enlaza una fila autorizada. Cargar las 202 filas no es requisito de este diseño.
-
-###### Confirmación inequívoca
-
-La primera vía es el botón actual. Identifica la propuesta con `kb_document_id`, `document_uid`, el span del que salió (designador o marca) y el `episode_id` vivo al renderizarla. El POST entra al mismo `with_lock` de la sesión. Antes de escribir se repite la autorización (`KnowledgeScopePolicy`) y la identidad de la fila (el id encontrado debe traer ese uid). Además se recalcula la resolución de ese span contra el episodio vivo: la fila solo se agrega si sigue estando entre los candidatos de ese span. Corregir equipo, modelo o placa cambia esa resolución o retira el span, y el toque tardío no escribe. Un turno que solo agrega síntoma, planta o código no cambia el span y el botón sigue vigente. Dos toques del mismo documento siguen siendo idempotentes. Dos tarjetas vigentes se agregan por separado; confirmar una no confirma la otra.
-
-Confirmar el equipo escribe el hecho en el episodio. Confirmar el manual escribe `document_focus` en modo agregar y la respuesta dice que el manual queda seleccionado hasta que el técnico lo quite o lo reemplace. Nombrar el manual no lo selecciona. Un «sí» suelto, el «sí» a una medición o el «sí» cuando hay dos tarjetas no llaman a `pin_kb_document!`.
-
-El corte posterior, si se autoriza aparte, puede aceptar una frase solo cuando `pending_question` sea de un tipo nuevo con exactamente una fila, id y uid, y la respuesta sea el turno inmediato. Hoy `PendingQuestion` solo cierra «ninguno» y «al abrir», y el reducer borra el pendiente en el turno sustantivo siguiente. Ese corte no entra en esta propuesta. No hace falta otra tabla: el botón ya transporta la propuesta y el lock ya serializa la escritura.
-
-###### Pin conservado con aplicabilidad en conflicto
-
-El pin no se borra y el corpus no se reabre. `pin_only` sigue limitado a las URI seleccionadas. Lo que cambia es qué cuerpo se puede usar.
-
-Para cada documento seleccionado se lee primero la evidencia del retrieve, con `DocumentIdentityScope#chunk_applicability`:
-
-- Un chunk `:compatible` por coincidencia de sus propios campos de identidad sigue siendo usable. Una diferencia de cadena que el chunk no contiene no lo bloquea si esos campos sí corresponden a la identidad corregida.
-- Un chunk con marca en conflicto o designador explícito que no coincide queda `reference_only`. Su procedimiento no se enseña. El pin sigue visible.
-- Un chunk `:neutral` cuyo designador de catálogo sigue coincidiendo de forma exacta con un identificador vigente conserva el contrato actual: la selección del técnico cubre la metadata que no trae modelo.
-- Un chunk `:neutral` cuyo designador o marca de catálogo ya no coincide con lo declarado queda sin aplicabilidad resuelta. No se enseña como instrucción del fabricante. No se quita el pin.
-
-El aviso nombra la diferencia concreta: nombre del manual seleccionado y su designador de catálogo, frente al identificador declarado. Pide confirmación de ese mismo id y uid, agregado de otro manual, o reemplazo. La confirmación repite la revalidación del botón, con el episodio ya corregido. Un segundo pin cuyo designador sigue coincidiendo permanece usable aunque el primero esté en conflicto. La comparación del aviso y de los designadores usa `designator_label`, no `normalize_label`.
-
-Hoy `RagController` arma el aviso con `model_tokens` vacío y `DocumentDiscovery` hace lo mismo en la rama de contradicción. Por eso un cambio de modelo sin marca nueva no muestra conflicto, y el guidance conocido sigue encargando diagnóstico genérico sobre cuerpos que el alcance ya marcó como ajenos o que quedaron neutros.
-
-###### Sin evidencia y con instrucciones coherentes
-
-Cuatro planos, en este orden:
-
-1. Documento seleccionado: está en `document_focus`.
-2. Evidencia recuperada: pasajes de esta consulta cuya aplicabilidad quedó resuelta a favor.
-3. Orientación general: ordenar antecedentes, decir el límite y proponer un siguiente paso que no afirme una función, un código, un terminal ni una medición.
-4. Afirmación del fabricante: solo sale de un pasaje aplicable que contenga ese dato.
-
-Un retrieve vacío dentro del pin deja el plano 1 intacto, deja el plano 2 vacío y no autoriza el plano 4. La frase visible dice que esta búsqueda no trajo un pasaje que responda y que eso no demuestra que el manual no lo tenga. No se suelta el pin, no se abre el corpus y no se usa un descargo para aplicar un procedimiento de otro equipo. La misma conducta vale para `no_compatible` cuando no hay pin: se organizan los antecedentes, se dice qué documentación no se pudo confirmar y se pide el dato que resolvería esa incertidumbre, o se escala con el resumen ya verificado.
-
-La foto se menciona en el guidance solo si ese turno tiene una observación visual aceptada. `documentation_exit?` del camino conocido evalúa el mensaje original del técnico, el de la petición, no la consulta compuesta. El modo conocido recibe `INTERVENTION_LIMIT` cuando no hay cuerpo aplicable. Esas tres correcciones no bastan: los turnos 9 y 12 ya traían la regla de salida y siguieron recomendando tensión, continuidad y funciones de LED, clic o código. El guidance conocido tiene que dejar de encargar razonamiento diagnóstico genérico y una comprobación siguiente cuando la aplicabilidad no está resuelta. La aceptación de ese texto es local. El cumplimiento del modelo sigue sin probar y la etapa sigue bloqueada.
-
-###### Estados y transiciones
-
-No hay estado nuevo persistido. Cada turno deriva la relación documental del episodio, del catálogo, de `document_focus` y del retrieve de esa consulta.
-
-| Relación | Qué la sostiene |
-| --- | --- |
-| Declarada | Identificadores y hechos del episodio, con procedencia. |
-| Sin candidato único | Cero filas, varias filas, prefijo, o entrada sin `KbDocument` autorizado. |
-| Propuesta | Una o más tarjetas vigentes, cada una con id, uid y span. Nada escrito en el pin por la propuesta. |
-| Seleccionada | El técnico confirmó esa fila con el botón y la revalidación pasó. |
-| Seleccionada, aplicabilidad sin resolver | El pin sigue y el chunk no es compatible con la identidad vigente, o el retrieve no trajo pasaje. |
-| Con pasaje aplicable | Hay chunk compatible de esta consulta. La respuesta solo afirma lo que ese pasaje contiene. |
-
-Transiciones:
-
-- Declarada → propuesta, cuando la resolución enlaza una o más filas autorizadas.
-- Declarada → sin candidato único, cuando no hay fila, hay ambigüedad o la entrada no enlaza.
-- Propuesta → seleccionada, solo con el botón, el lock, la autorización y la resolución vigente de ese span.
-- Propuesta que deja de resolver la misma fila → el POST no escribe. Se muestran los candidatos recalculados.
-- Seleccionada → con pasaje aplicable, o → aplicabilidad sin resolver, según el retrieve de esa consulta.
-- Aplicabilidad sin resolver → seleccionada y usable, si el técnico reconfirma esa fila con la identidad ya corregida, o si otro pin suyo sigue coincidiendo. Reemplazar escribe el conjunto nuevo. Agregar suma una URI. Quitar usa el control que ya existe.
-- Retrieve vacío dentro de lo seleccionado → la relación seleccionada no cambia.
-
-Comportamiento visible:
-
-- Un candidato: «Entiendo que se trata del equipo Elemont MH. Encontré Elemont Montacargas Hidraulico Modelo MH. ¿Ese manual corresponde a tu equipo?» Botón «Usar este manual». No dice que sea compatible ni que cubra la placa.
-- Varios: la misma fórmula, una tarjeta por fila, sin botón único de «sí».
-- Sin fila: «No tengo un documento autorizado con el designador CEA15. CEA15+ es otro designador y no lo propongo.»
-- Tras el botón: el estado ya traducido, «Manual enfocado», y la acción de quitar.
-- Conflicto: «Sigue seleccionado Elemont Montacargas Hidraulico Modelo MH (MH). Ahora indicaste otro modelo. No uso su procedimiento hasta que confirmes que corresponde, lo reemplaces o agregues otro.»
-- Sin pasaje: «Busqué en el manual seleccionado y esta consulta no trajo un pasaje que responda. El manual sigue seleccionado. No puedo afirmar que no lo contenga.»
-- Durante la identificación se repiten los síntomas y las comprobaciones ya dichas, y no se vuelve a pedir un dato que el técnico ya dio.
-
-###### Archivos, cuando se autorice
-
-- `app/services/rag/document_discovery.rb`: dejar de decidir igualdad con `normalize_label`. Ofrecer los candidatos del episodio con la resolución del catálogo, incluida marca sola, varias filas y ausencia de fila.
-- `app/services/rag/document_identity_catalog.rb`: solo si el enlace o el rótulo del prefijo necesitan el texto de candidato aproximado. La regla de largo 6 se mantiene.
-- `app/controllers/rag_controller.rb` y la vista de la tarjeta: copiar span y `episode_id` al botón; el texto de candidato, de ausencia y de varios.
-- `app/controllers/pinned_documents_controller.rb` y `ConversationSession#pin_kb_document!`: la revalidación bajo el lock que ya tiene `pin_kb_document_if_episode_owner!`, más el recálculo del span. Modo agregar. Sin tipo nuevo de `PendingQuestion` en este corte.
-- `app/services/rag/focus_notice.rb`: designadores con `designator_label` y tokens tomados del episodio, no un arreglo vacío.
-- `app/services/rag/document_identity_scope.rb`: distinguir neutro que sigue coincidiendo con el catálogo de neutro cuya identidad de catálogo ya no coincide. No borrar el pin ni abrir el corpus.
-- `app/services/rag/companion_guidance_context.rb` y `app/services/bedrock_rag_service.rb`: foto condicionada, salida sobre el mensaje original, límite de instrumento en el camino conocido, y sin encargo de diagnóstico genérico ni de comprobación siguiente cuando no hay pasaje aplicable.
-- `app/javascript/controllers/rag_chat_controller.js`: solo si el POST debe enviar span y `episode_id`. El endpoint sigue siendo el de foco.
-- `config/locales/rag.es.yml`: frases de conflicto, de candidato y de búsqueda sin pasaje.
-- Instrucciones, en el mismo corte que el guidance: `AGENTS.md`, `app/services/rag/AGENTS.md`, `app/prompts/AGENTS.md`.
-- Pruebas nuevas de descubrimiento, foco, alcance y guidance. El fixture de Journey A no se edita.
-
-No entran otra tabla, otra caché, una búsqueda en segundo plano ni una llamada de modelo. El catálogo, la tarjeta, el lock y el alcance por chunk ya pueden cumplir el contrato. `rag_query_concern.rb` mantiene `pin_only`. Subir k no forma parte de esta propuesta.
-
-###### Secuencia y criterios de aceptación
-
-1. Pruebas locales con stubs, en rojo, antes de cambiar la conducta.
-2. Comparación de designador que conserva el signo, y candidatos por catálogo sin escribir el pin.
-3. Texto y botones de candidato único, varios y ninguno.
-4. Revalidación del POST bajo el lock.
-5. Aviso y retención del procedimiento cuando la aplicabilidad queda sin resolver; pins que siguen coincidiendo se conservan usables.
-6. Guidance y las tres instrucciones del repositorio, en el mismo corte.
-7. La suite con stubs. Journey A no se corre y sus 14 turnos no se modifican.
-
-Aceptación:
-
-- Descubrimiento: `CEA15` no ofrece `CEA15+` y `VF5` no ofrece `VF5+`. La prueba cubre la tarjeta, no solo el guardado del designador.
-- Un candidato Elemont MH enlazado a la fila 213 se nombra y no se pinea hasta el botón.
-- Varios candidatos muestran varias tarjetas y un «sí» no pinea.
-- Sin coincidencia no se inventa un manual y el episodio conserva síntoma y comprobaciones.
-- Marca conocida sin modelo: una sola fila de equipo se propone; varias se listan.
-- Entrada sin `KbDocument` no tiene botón. El comentario de la prueba separa ese límite de producto de las 202 filas ausentes en la base aislada.
-- El botón pinea en modo agregar solo si id, uid, episodio y span recalculado coinciden, y la autorización sigue vigente.
-- Después de corregir modelo o placa, el POST de la tarjeta vieja no escribe.
-- Un «sí» ambiguo no escribe el pin.
-- Con aplicabilidad en conflicto el pin sigue visible, el procedimiento de ese documento no se publica y el corpus no se amplía. Un segundo manual que sigue coincidiendo se puede agregar con otro botón y permanece usable.
-- Manual confirmado y retrieve vacío: el pin sigue y la respuesta no afirma que el manual carece de la respuesta ni enseña otro equipo.
-- Sin imagen, el prompt no trae la frase de la foto ni «La foto muestra».
-- El prompt de aplicabilidad sin resolver no encarga medición, función de LED, código o terminal, ni diagnóstico genérico. La presencia de `EXIT_RULE` no basta para dar esta prueba por cumplida.
-- Journey A permanece como comparación histórica. El escenario de identificación es otra prueba, descrita abajo.
-
-###### Instrucciones que deben alinearse
-
-No se editan en esta tarea. El corte que cambie el guidance cambia estos tres textos a la vez:
-
-- `AGENTS.md`, el párrafo que empieza en «When equipment identity is known and no compatible manufacturer manual was found». La continuación pasa a ser: conservar el caso, decir que esta búsqueda no trajo un pasaje que responda, y pedir un dato que seleccionaría documentación o escalar con el resumen verificado. No se asignan funciones de código, LED o terminal ni se recomienda una medición. No se enseña un procedimiento ajeno. No se cierra en un rechazo seco de búsqueda. Un descargo no vuelve aplicable ese procedimiento. `known?` no es compatibilidad documental.
-- `app/services/rag/AGENTS.md`, el punto «Known equipment with no compatible manual continues as Danebo guidance». La misma conducta. El turno puede no imprimir `DATA_NOT_AVAILABLE` al técnico y tampoco sustituirlo por un diagnóstico inventado.
-- `app/prompts/AGENTS.md`. «State what is obvious for that kind of component» queda limitado a la seguridad de la acción que el técnico ya está haciendo, no a una función de componente que el pasaje no trae. El procedimiento análogo, con identidad desconocida, puede nombrarse con manual, página y descargo, y ese descargo no autoriza a ejecutar sus pasos, valores o terminales en este trabajo. «When no compatible manufacturer manual was found, continue as Danebo guidance» queda alineado con el párrafo de la raíz. La misma distinción vale si el manual está seleccionado y el retrieve de esa consulta volvió vacío: falta el pasaje, no una prueba de que el manual no tiene la sección.
-
-###### Prueba de identificación, separada de Journey A
-
-Journey A entrega observaciones prefijadas y responde «No lo sé» a la medición. Sirve para memoria y correcciones. No pide ni confirma un manual. No se le agrega un turno para fabricar una aprobación.
-
-La prueba futura, con stubs y sin AWS, recorre en una sesión distinta: el técnico declara equipo y un designador de placa que no tiene fila; Danebo propone solo el manual del equipo; el técnico oprime ese botón; la búsqueda del síntoma queda en `pin_only`; una corrección de modelo deja el pin visible y fuera de uso hasta una confirmación nueva; un segundo manual, con fila propia, entra solo por otro agregado explícito. El resultado esperado de esa prueba no se declara cumplido por este documento.
-
-Veredicto de estos ajustes: `ETAPA_2_BLOQUEADA`. No es `EPISODIO_VALIDADO`. No autoriza implementación, otra pasada ni la etapa 3.
+El texto de «Ajustes a la propuesta (2026-10-09)» está en «Propuesta diferida de descubrimiento», arriba de esta referencia. No es la ruta de ejecución.
 
 ### 3. Verificar ese alcance en producción
 

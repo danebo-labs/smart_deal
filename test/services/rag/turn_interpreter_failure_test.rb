@@ -144,7 +144,8 @@ class Rag::TurnInterpreterFailureTest < ActiveSupport::TestCase
     assert_equal 6, result.input_tokens
     assert events.none? { |event| event["kind"] == "interpreter_failure" }
   ensure
-    TrackBedrockQueryJob.define_singleton_method(:perform_later) { |*args, **kwargs, &block| original.call(*args, **kwargs, &block) } if original
+    job = TrackBedrockQueryJob.singleton_class
+    job.send(:remove_method, :perform_later) if original && job.instance_methods(false).include?(:perform_later)
   end
 
   private

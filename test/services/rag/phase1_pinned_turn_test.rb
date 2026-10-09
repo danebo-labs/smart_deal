@@ -6,6 +6,7 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
   MESSAGE = "Estoy revisando un Elemont MH por un problema de puerta en el nivel 2. Según el plano seleccionado, ¿dónde aparece la seguridad de esa puerta y cómo se relaciona con las demás seguridades?"
 
   setup do
+    Rag::Phase1PinnedTurn
     @authorization = ENV["PHASE1_PINNED_TURN_AUTHORIZED"]
     @require = ENV["PHASE1_PINNED_TURN_REQUIRE"]
   end
@@ -13,8 +14,8 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
   teardown do
     restore_env("PHASE1_PINNED_TURN_AUTHORIZED", @authorization)
     restore_env("PHASE1_PINNED_TURN_REQUIRE", @require)
-    Rag::Phase1ModelBudget.disarm!
     Rag::Phase1QueueGuard.disarm!
+    Rag::Phase1ModelBudget.disarm!
   end
 
   test "refuses a wrong environment and a missing authorization before a session" do
@@ -31,7 +32,9 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
         connections: Rag::Phase1PinnedTurn.stub_environment.merge("primary_database" => "smart_deal_development"),
         executor: spy,
         interpreter_client: quiet_converse,
-        enforce_capture_uri: false
+        enforce_capture_uri: false,
+        evidence_root: test_evidence_root,
+        run_id: "refuse-env"
       )
     end
     assert_equal "refused", wrong.status
@@ -49,7 +52,9 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
         connections: Rag::Phase1PinnedTurn.stub_environment,
         executor: spy,
         interpreter_client: quiet_converse,
-        enforce_capture_uri: false
+        enforce_capture_uri: false,
+        evidence_root: test_evidence_root,
+        run_id: "refuse-auth"
       )
     end
     assert_equal "refused", missing.status
@@ -68,7 +73,9 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
         message: MESSAGE,
         connections: Rag::Phase1PinnedTurn.stub_environment,
         executor: executor_spy,
-        interpreter_client: quiet_converse
+        interpreter_client: quiet_converse,
+        evidence_root: test_evidence_root,
+        run_id: "refuse-uri"
       )
     end
 
@@ -92,6 +99,7 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
       executor: spy,
       interpreter_client: quiet_converse,
       enforce_capture_uri: false,
+      evidence_root: test_evidence_root,
       run_id: "test-pin"
     )
 
@@ -190,6 +198,7 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
   end
 
   test "an unexpected job is refused before the queue and tracking stays inline" do
+    job = nil
     Rag::Phase1QueueGuard.activate!
     inlined = 0
     queued_before = ActiveJob::Base.queue_adapter.enqueued_jobs.size
@@ -197,12 +206,35 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
       KbDocumentEnrichmentJob.perform_later
     end
     assert_equal queued_before, ActiveJob::Base.queue_adapter.enqueued_jobs.size
-    TrackBedrockQueryJob.singleton_class.alias_method(:phase1_perform_now_original, :perform_now)
-    TrackBedrockQueryJob.define_singleton_method(:perform_now) { |*| inlined += 1 }
+    job = TrackBedrockQueryJob.singleton_class
+    job.alias_method(:phase1_perform_now_original, :perform_now)
+    job.define_method(:perform_now) { |*| inlined += 1 }
     TrackBedrockQueryJob.perform_later(model_id: "stub")
-    TrackBedrockQueryJob.singleton_class.alias_method(:perform_now, :phase1_perform_now_original)
+    assert_equal 1, inlined
     assert_equal queued_before, ActiveJob::Base.queue_adapter.enqueued_jobs.size
     assert_equal 0, Rag::Stage2RunBudget::PASS_CALL_CAP
+  ensure
+    if job&.method_defined?(:phase1_perform_now_original)
+      job.alias_method(:perform_now, :phase1_perform_now_original)
+    end
+    Rag::Phase1QueueGuard.disarm!
+  end
+
+  test "a perform_later wrapper captured after install does not recurse" do
+    Rag::Phase1QueueGuard.activate!
+    Rag::Phase1QueueGuard.disarm!
+    captured = TrackBedrockQueryJob.method(:perform_later)
+    TrackBedrockQueryJob.define_singleton_method(:perform_later) do |*args, **kwargs, &block|
+      captured.call(*args, **kwargs, &block)
+    end
+
+    before = ActiveJob::Base.queue_adapter.enqueued_jobs.size
+    TrackBedrockQueryJob.perform_later(model_id: "stub", user_query: "puerta", latency_ms: 1, input_tokens: 1, output_tokens: 1)
+    assert_equal before + 1, ActiveJob::Base.queue_adapter.enqueued_jobs.size
+  ensure
+    singleton = TrackBedrockQueryJob.singleton_class
+    singleton.send(:remove_method, :perform_later) if singleton.instance_methods(false).include?(:perform_later)
+    Rag::Phase1QueueGuard.disarm!
   end
 
   test "exports the capture when the turn completes and when it stops" do
@@ -251,6 +283,7 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
       executor: executor_spy(success: false, error_message: "generation down"),
       interpreter_client: quiet_converse,
       enforce_capture_uri: false,
+      evidence_root: test_evidence_root,
       run_id: "export-failed"
     )
 
@@ -260,6 +293,35 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
     saved = JSON.parse(File.read(File.join(result.evidence_path, "result.json")))
     assert_equal "failed", saved["status"]
     assert_equal "pending", saved["documentary_acceptance"]
+  end
+
+  test "an export error after the files exist is not left as completed" do
+    ENV["PHASE1_PINNED_TURN_AUTHORIZED"] = "1"
+    singleton = Rag::ValidationCapture.singleton_class
+    singleton.alias_method(:phase1_export_capture_original, :export_capture)
+    singleton.define_method(:export_capture) { |*| raise "spill down" }
+    result = Rag::Phase1PinnedTurn.call(
+      account: accounts(:legacy),
+      user: users(:one),
+      document: pinned_document(accounts(:legacy)),
+      message: MESSAGE,
+      connections: Rag::Phase1PinnedTurn.stub_environment,
+      executor: executor_spy,
+      interpreter_client: quiet_converse,
+      enforce_capture_uri: false,
+      evidence_root: test_evidence_root,
+      run_id: "export-spill"
+    )
+
+    assert_equal "failed", result.status
+    assert_includes result.reason, "evidence_export:RuntimeError"
+    assert_includes result.reason, "prior=completed"
+    saved = JSON.parse(File.read(File.join(result.evidence_path, "result.json")))
+    assert_equal "failed", saved["status"]
+    assert_includes saved["reason"], "evidence_export:RuntimeError"
+    assert_equal "pending", saved["documentary_acceptance"]
+  ensure
+    singleton.alias_method(:export_capture, :phase1_export_capture_original) if singleton&.method_defined?(:phase1_export_capture_original)
   end
 
   test "an evidence write failure does not stay completed" do
@@ -299,7 +361,9 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
         connections: drifted,
         executor: spy,
         interpreter_client: quiet_converse,
-        enforce_capture_uri: false
+        enforce_capture_uri: false,
+        evidence_root: test_evidence_root,
+        run_id: "refuse-bucket"
       )
     end
 
@@ -322,7 +386,9 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
         connections: Rag::Phase1PinnedTurn.effective_environment,
         executor: spy,
         interpreter_client: quiet_converse,
-        enforce_capture_uri: false
+        enforce_capture_uri: false,
+        evidence_root: test_evidence_root,
+        run_id: "refuse-loaded"
       )
     end
 
@@ -331,16 +397,73 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
     assert_empty spy.calls
   end
 
+  test "an owner turn exports the interpreter request the stub received" do
+    ENV["PHASE1_PINNED_TURN_AUTHORIZED"] = "1"
+    previous_mode = ENV["HAIKU_QUERY_ANALYSIS_MODE"]
+    previous_episode = ENV["FIELD_COMPANION_EPISODE_ENABLED"]
+    ENV["HAIKU_QUERY_ANALYSIS_MODE"] = "owner"
+    ENV["FIELD_COMPANION_EPISODE_ENABLED"] = "true"
+    account = accounts(:legacy)
+    document = pinned_document(account)
+    client = recording_meta_client
+    spy = executor_spy
+    result = Rag::Phase1PinnedTurn.call(
+      account: account,
+      user: users(:one),
+      document: document,
+      message: MESSAGE,
+      connections: Rag::Phase1PinnedTurn.stub_environment,
+      executor: spy,
+      interpreter_client: client,
+      enforce_capture_uri: false,
+      evidence_root: test_evidence_root,
+      run_id: "audit-owner"
+    )
+
+    assert_equal "completed", result.status, result.reason
+    assert_equal 1, client.calls
+    assert client.received.key?(:model_id)
+    memory = result.capture.find { |event| event["kind"] == "interpreter_request" }
+    assert_equal Rag::ValidationCapture.sanitize(client.received), memory["request"]
+    assert_includes memory["message_text"], "work_context"
+    assert_includes memory["system"], "You classify one technician turn"
+    assert_nil memory["episode_id"]
+    assert_equal "phase1:#{result.session_id}", memory["correlation_root"]
+    assert_equal "phase1:#{result.session_id}", memory["correlation_id"]
+    assert result.capture.none? { |event| %w[retrieve generate_text retrieval_results retrieve_and_generate].include?(event["kind"]) }
+    assert_equal result.capture.pluck("sequence"), (1..result.capture.size).to_a
+    later = result.capture.find { |event| event["kind"] == "phase1_turn" }
+    assert_operator memory["sequence"], :<, later["sequence"]
+    assert_equal result.session_id, later["session_id"]
+    assert_exported(result, MESSAGE)
+    request = JSON.parse(File.read(File.join(result.evidence_path, "capture.json")))["events"].find { |event| event["kind"] == "interpreter_request" }
+    assert_includes request["message_text"], "work_context"
+    assert_empty spy.retrieve_calls
+  ensure
+    restore_env("HAIKU_QUERY_ANALYSIS_MODE", previous_mode)
+    restore_env("FIELD_COMPANION_EPISODE_ENABLED", previous_episode)
+  end
+
   test "the script entry refuses without authorization and does not connect" do
+    previous_root = ENV["PHASE1_PINNED_TURN_EVIDENCE_ROOT"]
     ENV["PHASE1_PINNED_TURN_REQUIRE"] = "1"
+    ENV["PHASE1_PINNED_TURN_EVIDENCE_ROOT"] = test_evidence_root.to_s
     ENV.delete("PHASE1_PINNED_TURN_AUTHORIZED")
     load Rails.root.join("script/field_companion/phase1_pinned_turn.rb")
 
-    assert_equal 2, phase1_pinned_turn_main
+    output = capture_io { assert_equal 2, phase1_pinned_turn_main }.first
+    assert_includes output, "tmp/phase1_pinned_turn_test"
+    assert_not_includes output, "tmp/phase1_pinned_turn/runs"
     assert_equal false, Rag::Phase1PinnedTurn.authorized?
+  ensure
+    restore_env("PHASE1_PINNED_TURN_EVIDENCE_ROOT", previous_root)
   end
 
   private
+
+  def test_evidence_root
+    Rails.root.join("tmp/phase1_pinned_turn_test")
+  end
 
   def restore_env(key, value)
     if value.nil?
@@ -357,6 +480,32 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
       display_name: "Phase 1 stub",
       knowledge_scope: "tenant_private"
     )
+  end
+
+  def recording_meta_client
+    tool = {
+      "move" => "meta",
+      "assertions" => [],
+      "observations" => [],
+      "pending_resolution" => nil,
+      "clarification_target" => nil
+    }
+    Object.new.tap do |client|
+      calls = 0
+      received = nil
+      client.define_singleton_method(:calls) { calls }
+      client.define_singleton_method(:received) { received }
+      client.define_singleton_method(:converse) do |params|
+        calls += 1
+        received = params
+        tool_use = Struct.new(:name, :input).new("turn_perception", tool)
+        block = Struct.new(:tool_use).new(tool_use)
+        message = Struct.new(:content).new([ block ])
+        output = Struct.new(:message).new(message)
+        usage = Struct.new(:input_tokens, :output_tokens).new(0, 0)
+        Struct.new(:output, :usage).new(output, usage)
+      end
+    end
   end
 
   def quiet_converse
@@ -379,7 +528,15 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
     assert_equal "phase1:#{result.session_id}", turn["technician_correlation_id"]
     assert_equal "phase1:#{result.session_id}:query", turn["query_correlation_id"]
     capture = JSON.parse(File.read(directory.join("capture.json")))
-    assert capture.any? { |event| event["kind"] == "phase1_turn" }
+    assert_equal "danebo.audit.v1", capture["schema_version"]
+    assert_equal directory.basename.to_s, capture["run_id"]
+    events = capture["events"]
+    assert_equal (1..events.size).to_a, events.pluck("sequence")
+    assert events.any? { |event| event["kind"] == "phase1_turn" }
+    request = events.find { |event| event["kind"] == "interpreter_request" }
+    assert_includes request["message_text"], "work_context" if request
+    assert events.none? { |event| %w[retrieve generate_text retrieval_results retrieve_and_generate].include?(event["kind"]) }
+    assert_not_includes capture.to_s, "AKIA"
     ledger = JSON.parse(File.read(directory.join("ledger.json")))
     assert ledger.key?("attempts")
     assert ledger.dig("cost", "cost_usd").present? || ledger.dig("cost", "cost_usd") == "unavailable"

@@ -421,7 +421,7 @@ class QueryOrchestratorService
   def note_route_exit(exit_name, condition)
     return unless Rag::ValidationCapture.active?
 
-    payload = { "exit" => exit_name, "condition" => condition }
+    payload = { "stage" => "route", "result" => exit_name, "exit" => exit_name, "condition" => condition }
     payload["correlation_id"] = @correlation_id if @correlation_id.present?
     Rag::ValidationCapture.record("route_exit", payload)
   end

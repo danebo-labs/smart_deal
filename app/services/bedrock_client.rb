@@ -105,6 +105,8 @@ class BedrockClient
 
     Rag::ValidationCapture.record(
       "generate_text",
+      "stage" => "generate",
+      "result" => "sent",
       "model_id" => model_id,
       "max_tokens" => max_tokens,
       "temperature" => temperature,
@@ -122,6 +124,8 @@ class BedrockClient
     Rag::ValidationCapture.record(
       "generation_result",
       {
+        "stage" => "generate",
+        "result" => "ok",
         "answer" => text,
         "input_tokens" => input_tokens.nil? ? "unavailable" : input_tokens,
         "output_tokens" => output_tokens.nil? ? "unavailable" : output_tokens,
@@ -137,6 +141,8 @@ class BedrockClient
     Rag::ValidationCapture.record(
       "generation_result",
       {
+        "stage" => "generate",
+        "result" => "error",
         "answer" => nil,
         "error_class" => error.class.name,
         "documentary_context" => Rag::ValidationCapture.documentary_context(prompt)

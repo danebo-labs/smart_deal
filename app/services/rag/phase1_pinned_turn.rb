@@ -104,10 +104,30 @@ module Rag
     end
 
     module InlineTracking
-      def perform_later(...)
-        return super unless Rag::Phase1QueueGuard.active?
+      def perform_later(*args, **kwargs, &block)
+        if Rag::Phase1QueueGuard.active?
+          return Rag::Phase1QueueGuard.tracking_original.call(*args, **kwargs, &block) if Thread.current[:phase1_tracking_inline]
 
-        perform_now(...)
+          Thread.current[:phase1_tracking_inline] = true
+          begin
+            perform_now(*args, **kwargs, &block)
+          ensure
+            Thread.current[:phase1_tracking_inline] = nil
+          end
+        elsif Thread.current[:phase1_tracking_passthrough]
+          # A test may wrap perform_later with the method captured after this
+          # prepend. super then finds that wrapper, and the wrapper calls this
+          # method again. The saved method is the one that existed before the
+          # prepend, so the second entry enqueues instead of looping.
+          Rag::Phase1QueueGuard.tracking_original.call(*args, **kwargs, &block)
+        else
+          Thread.current[:phase1_tracking_passthrough] = true
+          begin
+            super
+          ensure
+            Thread.current[:phase1_tracking_passthrough] = nil
+          end
+        end
       end
     end
 
@@ -116,9 +136,14 @@ module Rag
         Thread.current[:phase1_queue_guard] == true
       end
 
+      def tracking_original
+        @tracking_original
+      end
+
       def install!
         return if @installed
 
+        @tracking_original = TrackBedrockQueryJob.method(:perform_later)
         ApplicationJob.singleton_class.prepend(Refusal)
         TrackBedrockQueryJob.singleton_class.prepend(InlineTracking)
         @installed = true
@@ -335,6 +360,7 @@ module Rag
         Phase1ModelBudget.arm!
         ValidationCapture.capture do |bucket|
           events = bucket
+          ValidationCapture.bind(run_id: run_id)
           session = open_session(account, user, run_id)
           pinned = session.pin_kb_document!(document)
           unless pinned
@@ -516,10 +542,26 @@ module Rag
         result.evidence_path = directory.to_s
         result
       rescue StandardError => error
-        result.status = "failed" if result.status == "completed"
+        prior = result.status
+        result.status = "failed"
         extra = "evidence_export:#{error.class}"
+        extra = "#{extra} prior=#{prior}" if prior.present? && prior != "failed"
         result.reason = [ result.reason, extra ].compact.join(" ")
+        rewrite_failed_result(result, directory)
+        result.evidence_path = directory.to_s
         result
+      end
+
+      def rewrite_failed_result(result, directory)
+        path = Pathname(directory).join("result.json")
+        return unless path.file?
+
+        saved = JSON.parse(path.read)
+        saved["status"] = result.status
+        saved["reason"] = result.reason
+        File.write(path, JSON.pretty_generate(saved))
+      rescue StandardError
+        nil
       end
 
       def write_evidence(result, directory, message:, connections:)
@@ -554,9 +596,17 @@ module Rag
         File.write(directory.join("environment.json"), JSON.pretty_generate(safe["environment"]))
         File.write(directory.join("message.txt"), safe["message"].to_s)
         File.write(directory.join("turn.json"), JSON.pretty_generate(safe["turn"]))
-        File.write(directory.join("capture.json"), JSON.pretty_generate(safe["capture"]))
         File.write(directory.join("result.json"), JSON.pretty_generate(safe["result"]))
         File.write(directory.join("ledger.json"), JSON.pretty_generate(safe["ledger"]))
+        capture = ValidationCapture.export_capture(safe["capture"], directory, run_id: directory.basename.to_s)
+        capture["artifacts"] = {
+          "environment" => ValidationCapture.describe_artifact(directory, "environment.json", "application/json"),
+          "message" => ValidationCapture.describe_artifact(directory, "message.txt", "text/plain; charset=utf-8"),
+          "turn" => ValidationCapture.describe_artifact(directory, "turn.json", "application/json"),
+          "result" => ValidationCapture.describe_artifact(directory, "result.json", "application/json"),
+          "ledger" => ValidationCapture.describe_artifact(directory, "ledger.json", "application/json")
+        }
+        File.write(directory.join("capture.json"), JSON.pretty_generate(capture))
       end
 
       def attempt_cost(session)

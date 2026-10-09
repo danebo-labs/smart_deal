@@ -828,6 +828,8 @@ module Rag
 
       ValidationCapture.record(
         "perception_applied",
+        "stage" => "perception",
+        "result" => result.valid ? "valid" : "invalid",
         "links" => "interpreter_raw",
         "valid" => result.valid,
         "move" => result.move,

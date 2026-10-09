@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 module Rag
-  # Diff of the episode fields a turn actually changed. No-op unless a
-  # validation capture is open. The full episode stays out of the event.
+  # Diff of the episode fields a turn actually changed, plus the episode
+  # hashes read before and after. No-op unless a validation capture is open.
   module EpisodeDelta
     module_function
 
@@ -28,7 +28,12 @@ module Rag
         delta["episode"] = { "before" => before.episode_id, "after" => after.episode_id }
       end
 
-      payload = { "changed" => delta.any? }
+      payload = {
+        "stage" => "episode",
+        "changed" => delta.any?,
+        "episode_before" => episode_snapshot(before),
+        "episode_after" => episode_snapshot(after)
+      }
       payload["episode_id"] = after.episode_id if after.episode_id.present?
       payload.merge!(delta)
       payload["correlation_id"] = correlation_id if correlation_id.present?
@@ -41,6 +46,13 @@ module Rag
       return if added.empty? && removed.empty?
 
       delta[key] = { "added" => added, "removed" => removed }
+    end
+
+    def episode_snapshot(episode)
+      return {} unless episode.respond_to?(:to_h)
+
+      snapshot = episode.to_h
+      snapshot.is_a?(Hash) ? snapshot : {}
     end
 
     def goal_text(episode)

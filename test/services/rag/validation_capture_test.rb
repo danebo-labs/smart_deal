@@ -227,11 +227,17 @@ class Rag::ValidationCaptureTest < ActiveSupport::TestCase
     end
 
     exit_event = events.find { |row| row["kind"] == "route_exit" && row["exit"] == "meta" }
+    published = events.find { |row| row["kind"] == "published_answer" }
     assert_equal "move_meta", exit_event["condition"]
     assert_equal "cid-meta", exit_event["correlation_id"]
     assert_equal "meta", result.generation_mode
     assert_equal false, result.model_invoked
+    assert_equal "published", published["result"]
+    assert_equal [], published["citations"]
     assert_nil events.find { |row| row["kind"] == "retrieve" }
+    assert_nil events.find { |row| row["kind"] == "generate_text" }
+    assert_nil events.find { |row| row["kind"] == "retrieval_results" }
+    assert_nil events.find { |row| row["kind"] == "retrieve_and_generate" }
   end
 
   test "retrieval rows keep accepted text and mark a missing score unavailable" do
@@ -483,6 +489,10 @@ class Rag::ValidationCaptureTest < ActiveSupport::TestCase
     assert changed["pending_question"]["before"] != changed["pending_question"]["after"]
     assert_nil changed["state"]
     assert_nil changed["v"]
+    assert_equal "puerta", changed.dig("episode_before", "goal", "text")
+    assert_equal "imán", changed.dig("episode_after", "goal", "text")
+    assert_equal "ep-1", changed.dig("episode_before", "episode_id")
+    assert_equal "ep-1", changed.dig("episode_after", "episode_id")
     assert_equal "cid-e", changed["correlation_id"]
     assert_equal false, unchanged["changed"]
     assert_nil unchanged["goal"]

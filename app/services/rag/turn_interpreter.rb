@@ -63,6 +63,7 @@ module Rag
     end
 
     def initialize(turn:, episode:, viewer_account:, correlation_id:, attribution:, client:, catalog:, active_photo_context: nil)
+      @turn_input = turn
       @turn = TurnText.truncate(turn)
       @episode = episode || ActiveEpisode.new
       @viewer_account = viewer_account
@@ -143,13 +144,20 @@ module Rag
       params = converse_params
       stage = STAGE_CONVERSE
       ValidationCapture.attempt_unless_set(1)
-      ValidationCapture.record("interpreter_attempt", "correlation_id" => @correlation_id)
+      ValidationCapture.record(
+        "interpreter_attempt",
+        "stage" => STAGE_CONVERSE,
+        "result" => "started",
+        "correlation_id" => @correlation_id
+      )
+      record_interpreter_request(params)
       response = client.converse(params)
       latency_ms = elapsed_since(started)
       stage = STAGE_EXTRACT
       usage = response.usage
       track_paid_call(usage, latency_ms)
       raw = extract_tool_input(response.output&.message&.content)
+      record_interpreter_response(response, raw)
       record_interpreter_raw(raw)
       stage = STAGE_PERCEPTION
       perception = TurnPerception.build(
@@ -191,14 +199,20 @@ module Rag
     def record_interpreter_failure(error, reason, stage)
       return unless ValidationCapture.active?
 
-      ValidationCapture.attempt_unless_set(1)
-      ValidationCapture.record(
-        "interpreter_failure",
+      full = scrubbed_failure_text(error)
+      payload = {
         "stage" => stage,
+        "result" => "error",
         "error_class" => error.class.name.to_s,
-        "reason" => reason,
+        "reason" => full,
         "correlation_id" => @correlation_id
-      )
+      }
+      if full != reason
+        payload["reason_summary"] = reason
+        payload["reason_summary_truncated"] = true
+      end
+      ValidationCapture.attempt_unless_set(1)
+      ValidationCapture.record("interpreter_failure", payload)
     end
 
     def failure_status(error, stage)
@@ -208,19 +222,136 @@ module Rag
     end
 
     def failure_reason(error)
+      scrubbed_failure_text(error).truncate(180)
+    end
+
+    def scrubbed_failure_text(error)
       text = error.message.to_s.gsub(
         /[^\n]*(?:authorization|x-api-key|x-amz-security-token|aws_secret_access_key|secret_access_key)[^\n]*/i,
         "[redacted]"
       )
-      ValidationCapture.scrub_text(text).squish.truncate(180)
+      ValidationCapture.scrub_text(text).squish
+    end
+
+    # The hash passed to the client is copied for the audit. The client
+    # receives that same object, unchanged.
+    def record_interpreter_request(params)
+      return unless ValidationCapture.active?
+
+      message_text = interpreter_message_text(params)
+      system_text = interpreter_system_text(params)
+      structured = structured_message(message_text)
+      payload = {
+        "stage" => STAGE_CONVERSE,
+        "result" => "sent",
+        "model_id" => params[:model_id] || params["model_id"],
+        "prompt_version" => Digest::SHA256.hexdigest(system_text),
+        "system" => system_text,
+        "message_text" => message_text,
+        "structured" => structured,
+        "visual_context" => visual_context(structured),
+        "inference_config" => params[:inference_config] || params["inference_config"],
+        "tool_config" => params[:tool_config] || params["tool_config"],
+        "request" => params
+      }
+      payload["turn_transform"] = turn_transform if @turn_input.to_s != @turn.to_s
+      ValidationCapture.record("interpreter_request", payload)
+    end
+
+    def record_interpreter_response(response, raw)
+      return unless ValidationCapture.active?
+
+      ValidationCapture.record(
+        "interpreter_response",
+        "stage" => STAGE_EXTRACT,
+        "result" => raw.nil? ? "empty" : "tool_input",
+        "links" => "interpreter_request",
+        "usage" => {
+          "input_tokens" => usage_token(response&.usage, :input_tokens),
+          "output_tokens" => usage_token(response&.usage, :output_tokens)
+        },
+        "content" => observed_content(response)
+      )
     end
 
     def record_interpreter_raw(raw)
       return unless ValidationCapture.active?
 
-      payload = { "tool_input" => raw }
+      payload = {
+        "stage" => STAGE_EXTRACT,
+        "result" => raw.nil? ? "empty" : "tool_input",
+        "links" => "interpreter_response",
+        "tool_input" => raw
+      }
       payload["correlation_id"] = @correlation_id if @correlation_id.present?
       ValidationCapture.record("interpreter_raw", payload)
+    end
+
+    def turn_transform
+      {
+        "operation" => "truncate",
+        "limit" => ConversationSession::MAX_MSG_LENGTH,
+        "original" => @turn_input.to_s,
+        "sent" => @turn.to_s
+      }
+    end
+
+    def interpreter_system_text(params)
+      system = params[:system] || params["system"]
+      Array(system).map { |block|
+        if block.is_a?(Hash)
+          (block[:text] || block["text"]).to_s
+        else
+          block.to_s
+        end
+      }.join
+    end
+
+    def interpreter_message_text(params)
+      messages = Array(params[:messages] || params["messages"])
+      first = messages.first
+      return "" unless first.is_a?(Hash)
+
+      content = Array(first[:content] || first["content"])
+      block = content.first
+      return "" unless block.is_a?(Hash)
+
+      (block[:text] || block["text"]).to_s
+    end
+
+    def structured_message(message_text)
+      parsed = JSON.parse(message_text)
+      return parsed if parsed.is_a?(Hash)
+
+      { "provenance" => "uncaptured", "reason" => "message_not_object" }
+    rescue JSON::ParserError
+      { "provenance" => "uncaptured", "reason" => "message_not_json" }
+    end
+
+    def visual_context(structured)
+      context = structured.is_a?(Hash) ? structured["work_context"] : nil
+      return { "included" => false, "provenance" => "uncaptured" } unless context.is_a?(Hash)
+      return { "included" => true, "value" => context["active_photo_context"] } if context.key?("active_photo_context")
+
+      { "included" => false }
+    end
+
+    def observed_content(response)
+      content = response&.output&.message&.content
+      Array(content).map { |item| observed_block(item) }
+    end
+
+    def observed_block(item)
+      tool = if item.respond_to?(:tool_use)
+        item.tool_use
+      elsif item.is_a?(Hash)
+        item["tool_use"] || item[:tool_use]
+      end
+      return { "tool_use" => "unavailable" } if tool.nil?
+
+      name = tool.respond_to?(:name) ? tool.name : (tool["name"] || tool[:name])
+      input = tool.respond_to?(:input) ? tool.input : (tool["input"] || tool[:input])
+      { "tool_name" => name, "input" => input.is_a?(Hash) ? input : nil }
     end
 
     def extract_tool_input(content)

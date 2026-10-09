@@ -398,11 +398,15 @@ module Rag
       return unless ValidationCapture.active?
 
       payload = {
+        "stage" => "route",
+        "result" => decision.performs_retrieval? ? "retrieve" : "no_retrieve",
         "route" => decision.decision,
         "condition" => condition.to_s,
         "fallback" => decision.fallback,
         "retrieval" => decision.performs_retrieval?
       }
+      payload["focus_uris"] = decision.focus_uris if decision.focus_uris.present?
+      payload["focus_document_ids"] = decision.focus_document_ids if decision.focus_document_ids.present?
       payload["episode_id"] = @previous.episode_id if @previous.episode_id.present?
       ValidationCapture.record("route_decision", payload)
     end

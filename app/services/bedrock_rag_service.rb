@@ -385,6 +385,8 @@ class BedrockRagService
   def self.deny_retrieval_result(question:, session_id: nil, response_locale: nil)
     Rag::ValidationCapture.record(
       "route_exit",
+      "stage" => "route",
+      "result" => "deny_retrieval",
       "exit" => "deny_retrieval",
       "condition" => "pin_denied"
     )
@@ -1137,6 +1139,8 @@ class BedrockRagService
   def identity_closed_result(status:, reason:, question:, response_locale:, retrieval: nil, model_invoked: false)
     Rag::ValidationCapture.record(
       "route_exit",
+      "stage" => "route",
+      "result" => "identity_closed",
       "exit" => "identity_closed",
       "condition" => reason&.to_s.presence || "unavailable",
       "status" => status.to_s
@@ -1674,7 +1678,14 @@ class BedrockRagService
   end
 
   def retrieve_with_retry(params)
-    Rag::ValidationCapture.record("retrieve", params) if Rag::ValidationCapture.active?
+    if Rag::ValidationCapture.active?
+      recorded = if params.is_a?(Hash)
+        params.merge("stage" => "retrieve", "result" => "sent")
+      else
+        params
+      end
+      Rag::ValidationCapture.record("retrieve", recorded)
+    end
     transport_attempt = 0
     begin
       Bedrock::AuroraColdStartRetry.with_retry(
@@ -1695,6 +1706,8 @@ class BedrockRagService
 
     recorded = params.is_a?(Hash) ? params.dup : { "params" => "unavailable" }
     recorded = recorded.merge(
+      "stage" => "generate",
+      "result" => "sent",
       "documentary_context" => "template",
       "documentary_context_note" => "placeholders_are_not_resolved_chunks"
     )
@@ -1722,6 +1735,8 @@ class BedrockRagService
     end
     Rag::ValidationCapture.record(
       "generation_result",
+      "stage" => "generate",
+      "result" => "ok",
       "source" => "retrieve_and_generate",
       "answer" => answer,
       "full_result_set" => "unavailable",
@@ -1747,6 +1762,8 @@ class BedrockRagService
     reason = error.respond_to?(:message) ? error.message.to_s : ""
     Rag::ValidationCapture.record(
       "terminal_error",
+      "stage" => operation,
+      "result" => "error",
       "operation" => operation,
       "error_class" => error.class.name,
       "reason" => reason.presence || "unavailable",
@@ -2849,6 +2866,8 @@ class BedrockRagService
     source = probe.is_a?(Hash) ? probe[:stage].to_s.presence : nil
     payload = {
       "role" => "retrieved",
+      "stage" => source || "publication_gate",
+      "result" => "returned",
       "source" => source || "publication_gate",
       "query" => query.presence || "unavailable",
       "rows" => rows
@@ -2908,6 +2927,8 @@ class BedrockRagService
     Rag::ValidationCapture.record(
       "retrieval_results",
       "role" => "cited",
+      "stage" => "citations",
+      "result" => "returned",
       "rows" => Array(citations).map { |citation| cited_capture_row(citation) }
     )
   end
@@ -2980,8 +3001,11 @@ class BedrockRagService
   def record_published_answer(result, prompt, truncated)
     return unless Rag::ValidationCapture.active?
 
-    Rag::ValidationCapture.record(
-      "published_answer",
+    citations = result[:citations] unless result[:citations].nil?
+    citations = result["citations"] if citations.nil? && result.is_a?(Hash) && !result["citations"].nil?
+    payload = {
+      "stage" => "publish",
+      "result" => "published",
       "answer" => result[:answer],
       "generation_mode" => result[:generation_mode],
       "route_outcome" => result[:route_outcome],
@@ -2989,7 +3013,9 @@ class BedrockRagService
       "prompt_chars" => prompt.to_s.length,
       "documentary_context" => Rag::ValidationCapture.documentary_context(prompt),
       "error_class" => nil
-    )
+    }
+    payload["citations"] = citations unless citations.nil?
+    Rag::ValidationCapture.record("published_answer", payload)
   end
 
   def r1a_probe_filter(correlation_id, question, params, reason: nil, attempt: nil)

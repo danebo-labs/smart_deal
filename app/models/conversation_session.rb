@@ -835,8 +835,11 @@ class ConversationSession < ApplicationRecord
   end
 
   def apply_recorded_owner_turn!(content, user_id:, correlation_id:, now:, locale:, interpreter_client:)
+    focus_before = :unset
     self.turn_causal = nil
     turn = Rag::TurnText.truncate(content)
+    record_user_message(content, turn)
+    focus_before = Rag::ValidationCapture.active? ? document_focus_entries : :unset
     if duplicate_user_correlation?(correlation_id)
       note_owner_exit("duplicate_correlation", "duplicate_user_correlation", correlation_id)
       return duplicate_owner_result(turn)
@@ -883,6 +886,8 @@ class ConversationSession < ApplicationRecord
     log_turn_interpreter(interpreted, result, correlation_id, user_id, photo_status)
     log_field_companion_turn(result, turn, correlation_id: correlation_id, user_id: user_id) if result&.state.is_a?(Hash)
     result
+  ensure
+    record_document_focus(focus_before)
   end
 
   def apply_owner_perception!(turn, interpreted, correlation_id, user_id, now, locale, focus, photo_context)
@@ -944,6 +949,7 @@ class ConversationSession < ApplicationRecord
       fields_changed: Rag::ActiveEpisodeTurn.changed_fields(before_episode, working),
       understanding: decision
     )
+    record_effective_query(turn, query, explained[:components], result)
     persist_user_turn!(stored, result, turn, user_id, correlation_id, now)
     result
   end
@@ -987,6 +993,7 @@ class ConversationSession < ApplicationRecord
       fields_changed: Rag::ActiveEpisodeTurn.changed_fields(before_episode, episode),
       understanding: decision
     )
+    record_effective_query(turn, decision.retrieval_query, nil, result)
     persist_user_turn!(
       stored, result, turn, user_id, correlation_id, now,
       keep_episode: episode.to_h == before_episode.to_h
@@ -998,11 +1005,52 @@ class ConversationSession < ApplicationRecord
     %w[snapshot_changed episode_budget_refused].exclude?(status.to_s)
   end
 
+  def record_user_message(original, sent)
+    return unless Rag::ValidationCapture.active?
+
+    Rag::ValidationCapture.record(
+      "user_message",
+      "stage" => "prepare",
+      "original" => original.to_s,
+      "sent" => sent.to_s,
+      "limit" => MAX_MSG_LENGTH,
+      "transform" => original.to_s == sent.to_s ? "none" : "truncate"
+    )
+  end
+
+  def record_document_focus(before)
+    return if before == :unset
+    return unless Rag::ValidationCapture.active?
+
+    Rag::ValidationCapture.record(
+      "document_focus",
+      "stage" => "turn",
+      "before" => before,
+      "after" => document_focus_entries
+    )
+  end
+
+  def record_effective_query(turn, composed, components, result)
+    return unless Rag::ValidationCapture.active?
+
+    payload = {
+      "stage" => "compose",
+      "sent_turn" => turn.to_s,
+      "composed" => composed,
+      "effective" => effective_retrieval_text(result, turn),
+      "retrieval" => result.understanding.respond_to?(:performs_retrieval?) && result.understanding.performs_retrieval?
+    }
+    payload["components"] = components if components
+    Rag::ValidationCapture.record("effective_query", payload)
+  end
+
   def note_owner_exit(exit_name, condition, correlation_id)
     return unless Rag::ValidationCapture.active?
 
     Rag::ValidationCapture.record(
       "route_exit",
+      "stage" => "route",
+      "result" => exit_name,
       "exit" => exit_name,
       "condition" => condition,
       "correlation_id" => correlation_id

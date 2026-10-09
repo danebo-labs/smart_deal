@@ -62,15 +62,31 @@ module RagQueryConcern
     )
   end
 
+  def record_published_turn(answer, mode, model_invoked, correlation_id)
+    return unless Rag::ValidationCapture.active?
+
+    payload = {
+      "stage" => "publish",
+      "result" => "published",
+      "answer" => answer,
+      "generation_mode" => mode,
+      "model_invoked" => model_invoked,
+      "citations" => []
+    }
+    payload["correlation_id"] = correlation_id if correlation_id.present?
+    Rag::ValidationCapture.record("published_answer", payload)
+  end
+
   def note_rag_exit(exit_name, condition, correlation_id)
     return unless Rag::ValidationCapture.active?
 
-    payload = { "exit" => exit_name, "condition" => condition }
+    payload = { "stage" => "route", "result" => exit_name, "exit" => exit_name, "condition" => condition }
     payload["correlation_id"] = correlation_id if correlation_id.present?
     Rag::ValidationCapture.record("route_exit", payload)
   end
 
   def meta_result(question, understanding, correlation_id, locale)
+    record_published_turn(understanding.clarification, "meta", false, correlation_id)
     RagResult.new(
       success?: true,
       answer: understanding.clarification,
@@ -87,6 +103,7 @@ module RagQueryConcern
   end
 
   def clarify_first_result(question, understanding, correlation_id, locale)
+    record_published_turn(understanding.clarification, "clarify_first", false, correlation_id)
     RagResult.new(
       success?: true,
       answer: understanding.clarification,

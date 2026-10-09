@@ -28,6 +28,12 @@ module ActiveSupport
     # Setup all fixtures in test/fixtures/*.yml for all tests in alphabetical order.
     fixtures :all
 
+    # Phase1QueueGuard is process-local. A turn that armed it must not leave
+    # the flag set for the next test in the same worker.
+    setup do
+      Rag::Phase1QueueGuard.disarm! if defined?(Rag::Phase1QueueGuard)
+    end
+
     # Completed non-photo ledger with a chunk prefix. Promotion to
     # danebo_general requires this evidence. A row without it stays private.
     def index_manual_for_retrieval!(document)

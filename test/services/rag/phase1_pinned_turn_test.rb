@@ -28,14 +28,14 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
         user: users(:one),
         document: document,
         message: MESSAGE,
-        connections: Rag::Phase1PinnedTurn::EXPECTED_ENVIRONMENT.merge("primary" => "smart_deal_development"),
+        connections: Rag::Phase1PinnedTurn.stub_environment.merge("primary_database" => "smart_deal_development"),
         executor: spy,
         interpreter_client: quiet_converse,
         enforce_capture_uri: false
       )
     end
     assert_equal "refused", wrong.status
-    assert_equal "environment:primary", wrong.reason
+    assert_equal "environment:primary_database", wrong.reason
     assert_empty spy.calls
     assert_empty spy.retrieve_calls
 
@@ -46,7 +46,7 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
         user: users(:one),
         document: document,
         message: MESSAGE,
-        connections: Rag::Phase1PinnedTurn::EXPECTED_ENVIRONMENT,
+        connections: Rag::Phase1PinnedTurn.stub_environment,
         executor: spy,
         interpreter_client: quiet_converse,
         enforce_capture_uri: false
@@ -66,7 +66,7 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
         user: users(:one),
         document: document,
         message: MESSAGE,
-        connections: Rag::Phase1PinnedTurn::EXPECTED_ENVIRONMENT,
+        connections: Rag::Phase1PinnedTurn.stub_environment,
         executor: executor_spy,
         interpreter_client: quiet_converse
       )
@@ -88,14 +88,15 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
       user: users(:one),
       document: document,
       message: MESSAGE,
-      connections: Rag::Phase1PinnedTurn::EXPECTED_ENVIRONMENT,
+      connections: Rag::Phase1PinnedTurn.stub_environment,
       executor: spy,
       interpreter_client: quiet_converse,
       enforce_capture_uri: false,
       run_id: "test-pin"
     )
 
-    assert_equal "ok", result.status, result.reason
+    assert_equal "completed", result.status, result.reason
+    assert_equal "pending", JSON.parse(File.read(File.join(result.evidence_path, "result.json")))["documentary_acceptance"]
     session = ConversationSession.find(result.session_id)
     assert_equal "phase1:pinned:test-pin", session.identifier
     assert_equal [ document.canonical_uri ], result.uris
@@ -204,6 +205,132 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
     assert_equal 0, Rag::Stage2RunBudget::PASS_CALL_CAP
   end
 
+  test "exports the capture when the turn completes and when it stops" do
+    ENV["PHASE1_PINNED_TURN_AUTHORIZED"] = "1"
+    root = Rails.root.join("tmp/phase1_pinned_turn_test")
+    completed = Rag::Phase1PinnedTurn.call(
+      account: accounts(:legacy),
+      user: users(:one),
+      document: pinned_document(accounts(:legacy)),
+      message: MESSAGE,
+      connections: Rag::Phase1PinnedTurn.stub_environment,
+      executor: executor_spy,
+      interpreter_client: quiet_converse,
+      enforce_capture_uri: false,
+      evidence_root: root,
+      run_id: "export-completed"
+    )
+    assert_equal "completed", completed.status
+    assert_exported completed, MESSAGE
+
+    stopped = Rag::Phase1PinnedTurn.call(
+      account: accounts(:legacy),
+      user: users(:one),
+      document: pinned_document(accounts(:legacy)),
+      message: MESSAGE,
+      connections: Rag::Phase1PinnedTurn.stub_environment,
+      executor: executor_spy(stop: true),
+      interpreter_client: quiet_converse,
+      enforce_capture_uri: false,
+      evidence_root: root,
+      run_id: "export-stopped"
+    )
+    assert_equal "stopped", stopped.status
+    assert_exported stopped, MESSAGE
+    assert_equal "pending", JSON.parse(File.read(File.join(stopped.evidence_path, "result.json")))["documentary_acceptance"]
+  end
+
+  test "a failed application result is never reported as completed" do
+    ENV["PHASE1_PINNED_TURN_AUTHORIZED"] = "1"
+    result = Rag::Phase1PinnedTurn.call(
+      account: accounts(:legacy),
+      user: users(:one),
+      document: pinned_document(accounts(:legacy)),
+      message: MESSAGE,
+      connections: Rag::Phase1PinnedTurn.stub_environment,
+      executor: executor_spy(success: false, error_message: "generation down"),
+      interpreter_client: quiet_converse,
+      enforce_capture_uri: false,
+      run_id: "export-failed"
+    )
+
+    assert_equal "failed", result.status
+    assert_includes result.reason, "generation down"
+    assert_exported result, MESSAGE
+    saved = JSON.parse(File.read(File.join(result.evidence_path, "result.json")))
+    assert_equal "failed", saved["status"]
+    assert_equal "pending", saved["documentary_acceptance"]
+  end
+
+  test "an evidence write failure does not stay completed" do
+    ENV["PHASE1_PINNED_TURN_AUTHORIZED"] = "1"
+    file = Tempfile.new("phase1-evidence")
+    file.close
+    result = Rag::Phase1PinnedTurn.call(
+      account: accounts(:legacy),
+      user: users(:one),
+      document: pinned_document(accounts(:legacy)),
+      message: MESSAGE,
+      connections: Rag::Phase1PinnedTurn.stub_environment,
+      executor: executor_spy,
+      interpreter_client: quiet_converse,
+      enforce_capture_uri: false,
+      evidence_root: file.path,
+      run_id: "export-broken"
+    )
+
+    assert_equal "failed", result.status
+    assert_includes result.reason, "evidence_export"
+  end
+
+  test "refuses a loaded bucket that disagrees with the declared bucket before a session" do
+    ENV["PHASE1_PINNED_TURN_AUTHORIZED"] = "1"
+    spy = executor_spy
+    drifted = Rag::Phase1PinnedTurn.stub_environment.merge(
+      "kb_bucket_env" => Rag::Phase1PinnedTurn::PROD_BUCKET,
+      "kb_bucket_effective" => "smart-deal-dev-kb"
+    )
+    result = assert_no_difference("ConversationSession.count") do
+      Rag::Phase1PinnedTurn.call(
+        account: accounts(:legacy),
+        user: users(:one),
+        document: pinned_document(accounts(:legacy)),
+        message: MESSAGE,
+        connections: drifted,
+        executor: spy,
+        interpreter_client: quiet_converse,
+        enforce_capture_uri: false
+      )
+    end
+
+    assert_equal "refused", result.status
+    assert_equal "environment:kb_bucket_effective", result.reason
+    assert_empty spy.calls
+    assert_empty spy.retrieve_calls
+    assert_equal 0, Rag::Stage2RunBudget::PASS_CALL_CAP
+  end
+
+  test "the loaded process environment is refused before a session" do
+    ENV["PHASE1_PINNED_TURN_AUTHORIZED"] = "1"
+    spy = executor_spy
+    result = assert_no_difference("ConversationSession.count") do
+      Rag::Phase1PinnedTurn.call(
+        account: accounts(:legacy),
+        user: users(:one),
+        document: pinned_document(accounts(:legacy)),
+        message: MESSAGE,
+        connections: Rag::Phase1PinnedTurn.effective_environment,
+        executor: spy,
+        interpreter_client: quiet_converse,
+        enforce_capture_uri: false
+      )
+    end
+
+    assert_equal "refused", result.status
+    assert_match(/\Aenvironment:/, result.reason)
+    assert_empty spy.calls
+  end
+
   test "the script entry refuses without authorization and does not connect" do
     ENV["PHASE1_PINNED_TURN_REQUIRE"] = "1"
     ENV.delete("PHASE1_PINNED_TURN_AUTHORIZED")
@@ -241,26 +368,47 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
     client
   end
 
-  def executor_spy
+  def assert_exported(result, message)
+    directory = Pathname(result.evidence_path)
+    %w[environment.json message.txt turn.json capture.json result.json ledger.json].each do |name|
+      assert File.file?(directory.join(name)), name
+    end
+    assert_equal message, File.read(directory.join("message.txt"))
+    turn = JSON.parse(File.read(directory.join("turn.json")))
+    assert_equal result.session_id, turn["session_id"]
+    assert_equal "phase1:#{result.session_id}", turn["technician_correlation_id"]
+    assert_equal "phase1:#{result.session_id}:query", turn["query_correlation_id"]
+    capture = JSON.parse(File.read(directory.join("capture.json")))
+    assert capture.any? { |event| event["kind"] == "phase1_turn" }
+    ledger = JSON.parse(File.read(directory.join("ledger.json")))
+    assert ledger.key?("attempts")
+    assert ledger.dig("cost", "cost_usd").present? || ledger.dig("cost", "cost_usd") == "unavailable"
+  end
+
+  def executor_spy(success: true, stop: false, error_message: nil)
     Class.new do
       attr_reader :calls, :retrieve_calls
 
-      def initialize
+      define_method(:initialize) do
         @calls = []
         @retrieve_calls = []
       end
 
-      def execute(_question, **kwargs)
+      define_method(:execute) do |_question, **kwargs|
+        raise Rag::Phase1ModelBudget::Stop, "cap" if stop
+
         @calls << kwargs
         result = Object.new
-        result.define_singleton_method(:success?) { true }
+        result.define_singleton_method(:success?) { success }
         result.define_singleton_method(:answer) { "stub" }
         result.define_singleton_method(:correlation_id) { nil }
         result.define_singleton_method(:pending_question) { nil }
+        result.define_singleton_method(:error_class) { "RuntimeError" }
+        result.define_singleton_method(:error_message) { error_message }
         result
       end
 
-      def retrieve_chunks(*)
+      define_method(:retrieve_chunks) do |*|
         @retrieve_calls << true
         []
       end

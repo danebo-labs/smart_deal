@@ -145,20 +145,42 @@ module Rag
     S3_KEY = "bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf"
     PROD_KB = "Y7RZWMFJSR"
     PROD_BUCKET = "multimodal-source-destination"
+    EXPECTED_MODEL = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
     HISTORICAL_USER_EMAIL = "stage2-journey-a@localhost.test"
+    # The natural question. It does not carry the evaluator reference.
+    NATURAL_MESSAGE = "Estoy revisando un Elemont MH por un problema de puerta en el nivel 2. Según el plano seleccionado, ¿dónde aparece la seguridad de esa puerta y cómo se relaciona con las demás seguridades?"
+    LOCAL_HOSTS = %w[localhost 127.0.0.1].freeze
+    HOST_KEYS = %w[primary_host cache_host cable_host queue_host].freeze
     EXPECTED_ENVIRONMENT = {
-      "primary" => "smart_deal_stage2_isolated",
-      "cache" => "smart_deal_stage2_isolated_cache",
-      "cable" => "smart_deal_stage2_isolated_cable",
-      "queue" => "smart_deal_development_queue",
-      "kb" => PROD_KB,
-      "region" => "us-east-1",
+      "primary_database" => "smart_deal_stage2_isolated",
+      "primary_adapter" => "postgresql",
+      "cache_database" => "smart_deal_stage2_isolated_cache",
+      "cache_adapter" => "postgresql",
+      "cable_database" => "smart_deal_stage2_isolated_cable",
+      "cable_adapter" => "postgresql",
+      "queue_database" => "smart_deal_development_queue",
+      "kb_env" => PROD_KB,
+      "kb_effective" => PROD_KB,
+      "region_env" => "us-east-1",
+      "region_effective" => "us-east-1",
       "aws_max_attempts" => "1",
-      "kb_bucket" => PROD_BUCKET
+      "kb_bucket_env" => PROD_BUCKET,
+      "kb_bucket_effective" => PROD_BUCKET,
+      "shared_session_effective" => false,
+      "haiku_mode" => "owner",
+      "episode_enabled" => true,
+      "turn_enabled" => true,
+      "document_identity_scope" => true,
+      "grounded_synthesis" => true,
+      "grounded_synthesis_account_ids" => "",
+      "pilot_audit_capture" => "true",
+      "interpreter_model" => EXPECTED_MODEL,
+      "generation_model" => EXPECTED_MODEL
     }.freeze
 
     Result = Struct.new(
       :status, :reason, :session_id, :document_id, :uris, :ledger, :capture,
+      :answer, :evidence_path, :episode_id,
       keyword_init: true
     )
 
@@ -200,16 +222,79 @@ module Rag
       end
 
       def live_snapshot
+        effective_environment
+      end
+
+      # Values the process will actually use. ENV and the already-loaded
+      # constant are both recorded. A credential or an account KB id is an
+      # identifier, not a secret.
+      def stub_environment
+        EXPECTED_ENVIRONMENT.merge(
+          "primary_host" => "localhost",
+          "cache_host" => "localhost",
+          "cable_host" => "localhost",
+          "queue_host" => "localhost"
+        )
+      end
+
+      def effective_environment
+        primary = ActiveRecord::Base.connection_db_config
+        cache = SolidCache::Record.connection_db_config
+        cable = SolidCable::Record.connection_db_config
+        queue = SolidQueue::Record.connection_db_config
+        account_kb = nil
         {
-          "primary" => ActiveRecord::Base.connection.current_database,
-          "cache" => SolidCache::Record.connection.current_database,
-          "cable" => SolidCable::Record.connection.current_database,
-          "queue" => SolidQueue::Record.connection_db_config.database,
-          "kb" => ENV["BEDROCK_KNOWLEDGE_BASE_ID"].to_s,
-          "region" => (ENV["AWS_REGION"].presence || ENV["AWS_DEFAULT_REGION"]).to_s,
+          "primary_database" => ActiveRecord::Base.connection.current_database,
+          "primary_host" => primary.host.to_s,
+          "primary_adapter" => primary.adapter.to_s,
+          "cache_database" => SolidCache::Record.connection.current_database,
+          "cache_host" => cache.host.to_s,
+          "cache_adapter" => cache.adapter.to_s,
+          "cable_database" => SolidCable::Record.connection.current_database,
+          "cable_host" => cable.host.to_s,
+          "cable_adapter" => cable.adapter.to_s,
+          "queue_database" => queue.database.to_s,
+          "queue_host" => queue.host.to_s,
+          "kb_env" => ENV["BEDROCK_KNOWLEDGE_BASE_ID"].to_s,
+          "kb_effective" => effective_knowledge_base_id(account_kb),
+          "region_env" => ENV["AWS_REGION"].to_s,
+          "region_effective" => effective_region,
           "aws_max_attempts" => ENV["AWS_MAX_ATTEMPTS"].to_s,
-          "kb_bucket" => KbDocument::KB_BUCKET
+          "kb_bucket_env" => ENV["KNOWLEDGE_BASE_S3_BUCKET"].to_s,
+          "kb_bucket_effective" => KbDocument::KB_BUCKET,
+          "shared_session_env" => ENV["SHARED_SESSION_ENABLED"].to_s,
+          "shared_session_effective" => SharedSession::ENABLED,
+          "haiku_mode" => HaikuQueryAnalysisFlag.mode,
+          "episode_enabled" => FieldCompanionEpisodeFlag.enabled?,
+          "turn_enabled" => FieldCompanionTurnFlag.enabled?,
+          "document_identity_scope" => DocumentIdentityScopeFlag.enabled?,
+          "grounded_synthesis" => GroundedSynthesisFlag.enabled?,
+          "grounded_synthesis_account_ids" => GroundedSynthesisFlag.configured_account_ids.join(","),
+          "pilot_audit_capture" => ENV["PILOT_AUDIT_CAPTURE"].to_s,
+          "interpreter_model" => TurnInterpreter::MODEL_ID,
+          "generation_model" => BedrockClient::QUERY_MODEL_ID,
+          "generation_model_env" => ENV["BEDROCK_MODEL_ID"].to_s
         }
+      end
+
+      def run(evidence_root: nil)
+        unless authorized?
+          return call(
+            account: nil, user: nil, document: nil, message: NATURAL_MESSAGE,
+            connections: {}, evidence_root: evidence_root
+          )
+        end
+
+        connect_isolated!
+        account = Account.find_by(id: 1)
+        user = User.find_by(email: HISTORICAL_USER_EMAIL)
+        document = account && KbDocument.find_by(account_id: account.id, document_uid: DOCUMENT_UID)
+        environment = effective_environment
+        environment["kb_effective"] = effective_knowledge_base_id(account_kb_id(account))
+        call(
+          account: account, user: user, document: document, message: NATURAL_MESSAGE,
+          connections: environment, evidence_root: evidence_root
+        )
       end
 
       # Local databases only. Does not call AWS and does not enqueue.
@@ -223,14 +308,26 @@ module Rag
         live_snapshot
       end
 
-      def call(account:, user:, document:, message:, connections:, executor: nil, interpreter_client: nil, run_id: nil, enforce_capture_uri: true)
-        refusal = authorization_refusal || environment_refusal(connections)
+      def call(account:, user:, document:, message:, connections:, executor: nil, interpreter_client: nil, run_id: nil, enforce_capture_uri: true, evidence_root: nil)
+        run_id = run_id.presence || Time.now.utc.strftime("%Y%m%dT%H%M%SZ")
+        directory = evidence_directory(evidence_root, run_id)
+        result = turn_result(
+          account: account, user: user, document: document, message: message,
+          connections: connections, executor: executor, interpreter_client: interpreter_client,
+          run_id: run_id, enforce_capture_uri: enforce_capture_uri
+        )
+        publish_evidence(result, directory, message: message, connections: connections)
+      end
+
+      private
+
+      def turn_result(account:, user:, document:, message:, connections:, executor:, interpreter_client:, run_id:, enforce_capture_uri:)
+        refusal = authorization_refusal || environment_refusal(connections) || actor_refusal(account, user)
         return refusal if refusal
 
         refusal = document_refusal(document, viewer_account: account, enforce_capture_uri: enforce_capture_uri)
         return refusal if refusal
 
-        run_id = run_id.presence || Time.now.utc.strftime("%Y%m%dT%H%M%SZ")
         session = nil
         events = nil
         outcome = nil
@@ -240,11 +337,15 @@ module Rag
           events = bucket
           session = open_session(account, user, run_id)
           pinned = session.pin_kb_document!(document)
-          raise Phase1ModelBudget::Stop, "pin refused" unless pinned
+          unless pinned
+            outcome = failed_result(session, document, events, "pin_refused")
+            next
+          end
 
           uris = SessionContextBuilder.entity_s3_uris(session)
           unless uris == [ document.canonical_uri ]
-            raise Phase1ModelBudget::Stop, "pin uri #{uris.inspect}"
+            outcome = failed_result(session, document, events, "pin_uri")
+            next
           end
 
           correlation_id = "phase1:#{session.id}"
@@ -289,43 +390,44 @@ module Rag
             session_context: SessionContextBuilder.build(session).to_s,
             entity_s3_uris: uris
           )
-          if result.respond_to?(:success?) && result.success? && result.respond_to?(:answer)
-            session.record_assistant_turn!(
-              result.answer.to_s,
-              user_id: user.id,
-              correlation_id: query_correlation,
-              pending_question: (result.pending_question if result.respond_to?(:pending_question)),
-              expected_episode_id: session.live_episode_id,
-              focus_ids: session.focus_document_ids
-            )
-          end
-          outcome = Result.new(
-            status: "ok",
-            reason: nil,
-            session_id: session.id,
-            document_id: document.id,
-            uris: uris,
-            ledger: Phase1ModelBudget.ledger,
-            capture: events
-          )
+          outcome = application_result(session, document, events, uris, result, query_correlation, user)
         end
         outcome
       rescue Phase1ModelBudget::Stop => error
-        Result.new(
-          status: "stopped",
-          reason: error.message.to_s,
-          session_id: session&.id,
-          document_id: document&.id,
-          uris: [],
-          ledger: Phase1ModelBudget.ledger,
-          capture: events
-        )
+        stopped_result(session, document, events, error.message)
+      rescue StandardError => error
+        failed_result(session, document, events, "#{error.class}: #{error.message}")
       ensure
         Phase1ModelBudget.disarm!
         Phase1QueueGuard.disarm!
       end
 
-      private
+      def application_result(session, document, events, uris, result, query_correlation, user)
+        answer = result.respond_to?(:answer) ? result.answer.to_s : ""
+        if result.respond_to?(:success?) && result.success?
+          session.record_assistant_turn!(
+            answer,
+            user_id: user.id,
+            correlation_id: query_correlation,
+            pending_question: (result.pending_question if result.respond_to?(:pending_question)),
+            expected_episode_id: session.live_episode_id,
+            focus_ids: session.focus_document_ids
+          )
+          return Result.new(
+            status: "completed",
+            reason: nil,
+            session_id: session.id,
+            episode_id: session.live_episode_id,
+            document_id: document.id,
+            uris: uris,
+            ledger: Phase1ModelBudget.ledger,
+            capture: events,
+            answer: answer
+          )
+        end
+
+        failed_result(session, document, events, application_failure_reason(result), answer: answer, uris: uris)
+      end
 
       def authorization_refusal
         return if authorized?
@@ -333,12 +435,34 @@ module Rag
         Result.new(status: "refused", reason: "authorization_absent")
       end
 
+      def actor_refusal(account, user)
+        return Result.new(status: "refused", reason: "account_missing") if account.nil?
+        return Result.new(status: "refused", reason: "user_missing") if user.nil?
+        return if user.account_id == account.id
+
+        Result.new(status: "refused", reason: "user_account")
+      end
+
       def environment_refusal(connections)
         snapshot = connections.to_h.transform_keys(&:to_s)
-        mismatch = EXPECTED_ENVIRONMENT.find { |key, value| snapshot[key].to_s != value }
-        return if mismatch.nil?
+        if snapshot["generation_model_env"].present? && snapshot["generation_model_env"] != EXPECTED_MODEL
+          return Result.new(status: "refused", reason: "environment:generation_model_env")
+        end
+        if snapshot["shared_session_env"].to_s == "true" || snapshot["shared_session_effective"] == true
+          return Result.new(status: "refused", reason: "environment:shared_session_effective")
+        end
 
-        Result.new(status: "refused", reason: "environment:#{mismatch.first}")
+        EXPECTED_ENVIRONMENT.each do |key, expected|
+          actual = snapshot[key]
+          next if actual == expected
+          next if actual.to_s == expected.to_s && [ true, false ].exclude?(expected)
+
+          return Result.new(status: "refused", reason: "environment:#{key}")
+        end
+        HOST_KEYS.each do |key|
+          return Result.new(status: "refused", reason: "environment:#{key}") unless local_host?(snapshot[key])
+        end
+        nil
       end
 
       def document_refusal(document, viewer_account:, enforce_capture_uri:)
@@ -349,6 +473,139 @@ module Rag
         return if KnowledgeScopePolicy.authorized?(document, viewer_account: viewer_account)
 
         Result.new(status: "refused", reason: "document_not_authorized")
+      end
+
+      def failed_result(session, document, events, reason, answer: nil, uris: [])
+        Result.new(
+          status: "failed",
+          reason: clean_reason(reason),
+          session_id: session&.id,
+          episode_id: session&.live_episode_id,
+          document_id: document&.id,
+          uris: uris,
+          ledger: Phase1ModelBudget.ledger,
+          capture: events,
+          answer: answer
+        )
+      end
+
+      def stopped_result(session, document, events, reason)
+        Result.new(
+          status: "stopped",
+          reason: clean_reason(reason),
+          session_id: session&.id,
+          episode_id: session&.live_episode_id,
+          document_id: document&.id,
+          uris: [],
+          ledger: Phase1ModelBudget.ledger,
+          capture: events
+        )
+      end
+
+      def application_failure_reason(result)
+        parts = []
+        parts << result.error_class if result.respond_to?(:error_class)
+        parts << result.error_type if result.respond_to?(:error_type)
+        parts << result.error_message if result.respond_to?(:error_message)
+        text = parts.compact.map(&:to_s).reject(&:empty?).join(" ")
+        text.presence || "application_failed"
+      end
+
+      def publish_evidence(result, directory, message:, connections:)
+        write_evidence(result, directory, message: message, connections: connections)
+        result.evidence_path = directory.to_s
+        result
+      rescue StandardError => error
+        result.status = "failed" if result.status == "completed"
+        extra = "evidence_export:#{error.class}"
+        result.reason = [ result.reason, extra ].compact.join(" ")
+        result
+      end
+
+      def write_evidence(result, directory, message:, connections:)
+        FileUtils.mkdir_p(directory)
+        session = result.session_id && ConversationSession.find_by(id: result.session_id)
+        focus = session&.document_focus_entries
+        payload = {
+          "environment" => connections,
+          "message" => message.to_s,
+          "turn" => {
+            "session_id" => result.session_id,
+            "episode_id" => result.episode_id,
+            "technician_correlation_id" => (result.session_id && "phase1:#{result.session_id}"),
+            "query_correlation_id" => (result.session_id && "phase1:#{result.session_id}:query"),
+            "document_id" => result.document_id,
+            "document_focus" => focus,
+            "uris" => result.uris
+          },
+          "capture" => result.capture,
+          "result" => {
+            "status" => result.status,
+            "reason" => result.reason,
+            "answer" => result.answer,
+            "documentary_acceptance" => "pending"
+          },
+          "ledger" => {
+            "attempts" => result.ledger,
+            "cost" => attempt_cost(session)
+          }
+        }
+        safe = ValidationCapture.sanitize(payload)
+        File.write(directory.join("environment.json"), JSON.pretty_generate(safe["environment"]))
+        File.write(directory.join("message.txt"), safe["message"].to_s)
+        File.write(directory.join("turn.json"), JSON.pretty_generate(safe["turn"]))
+        File.write(directory.join("capture.json"), JSON.pretty_generate(safe["capture"]))
+        File.write(directory.join("result.json"), JSON.pretty_generate(safe["result"]))
+        File.write(directory.join("ledger.json"), JSON.pretty_generate(safe["ledger"]))
+      end
+
+      def attempt_cost(session)
+        return { "rows" => [], "cost_usd" => "unavailable" } if session.nil?
+
+        rows = BedrockQuery.where(conversation_session_id: session.id).map { |row|
+          {
+            "id" => row.id,
+            "source" => row.source,
+            "attempt" => row.attempt,
+            "input_tokens" => row.input_tokens,
+            "output_tokens" => row.output_tokens,
+            "correlation_id" => row.correlation_id,
+            "cost_usd" => row.cost
+          }
+        }
+        { "rows" => rows, "cost_usd" => rows.empty? ? "unavailable" : rows.sum { |row| row["cost_usd"].to_f } }
+      rescue StandardError
+        { "rows" => [], "cost_usd" => "unavailable" }
+      end
+
+      def evidence_directory(root, run_id)
+        Pathname(root.presence || Rails.root.join("tmp/phase1_pinned_turn/runs")).join(run_id)
+      end
+
+      def local_host?(value)
+        LOCAL_HOSTS.include?(value.to_s)
+      end
+
+      def clean_reason(text)
+        ValidationCapture.scrub_text(text.to_s).squish.truncate(500)
+      end
+
+      def effective_region
+        ENV["AWS_REGION"].presence ||
+          Rails.application.credentials.dig(:aws, :region) ||
+          "us-east-1"
+      end
+
+      def account_kb_id(account)
+        return if account.nil? || !account.respond_to?(:bedrock_config)
+
+        account.bedrock_config&.knowledge_base_id
+      end
+
+      def effective_knowledge_base_id(account_kb)
+        account_kb.presence ||
+          ENV["BEDROCK_KNOWLEDGE_BASE_ID"].presence ||
+          Rails.application.credentials.dig(:bedrock, :knowledge_base_id)
       end
 
       def open_session(account, user, run_id)

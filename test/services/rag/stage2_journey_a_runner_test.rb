@@ -165,6 +165,15 @@ class Stage2JourneyARunnerTest < ActiveSupport::TestCase
     assert_equal 0, stage2_unbilled_attempts(prepare_failure, [])
     assert_equal 0, stage2_unbilled_attempts(retrieve_failure, [])
     assert_equal 0, stage2_unbilled_attempts(paid_local, paid_row)
+    completed_without_row = [ [ { "kind" => "interpreter_attempt", "correlation_id" => "stage2:a:t05" } ] ]
+    completed_with_row = [ { "correlation_id" => "stage2:a:t05", "source" => "semantic_analysis", "cost_usd" => 0.004 } ]
+    assert_equal 1, stage2_unbilled_attempts(completed_without_row, [])
+    assert_equal 0, stage2_unbilled_attempts(completed_without_row, completed_with_row)
+    failed_after_attempt = [ [
+      { "kind" => "interpreter_attempt", "correlation_id" => "stage2:a:t06" },
+      { "kind" => "interpreter_failure", "stage" => "extract", "correlation_id" => "stage2:a:t06" }
+    ] ]
+    assert_equal 1, stage2_unbilled_attempts(failed_after_attempt, [])
     assert_equal 1, stage2_unbilled_attempts(mixed, mixed_row)
     assert_equal 2, stage2_unbilled_attempts(both_failed, [])
 

@@ -142,6 +142,8 @@ module Rag
       client = converse_client
       params = converse_params
       stage = STAGE_CONVERSE
+      ValidationCapture.attempt_unless_set(1)
+      ValidationCapture.record("interpreter_attempt", "correlation_id" => @correlation_id)
       response = client.converse(params)
       latency_ms = elapsed_since(started)
       stage = STAGE_EXTRACT

@@ -1,0 +1,212 @@
+[
+  {
+    "turn": "Elemont MH con placa CEA15; la puerta 1 no termina de cerrar y el imán no magnetiza. ¿Qué reviso?",
+    "tool_input": {
+      "move": "report",
+      "assertions": [
+        {
+          "span": "Elemont MH",
+          "act": "assert",
+          "slot_hint": "manufacturer"
+        },
+        {
+          "span": "CEA15",
+          "act": "assert",
+          "slot_hint": "controller"
+        },
+        {
+          "span": "la puerta 1 no termina de cerrar",
+          "act": "assert"
+        },
+        {
+          "span": "el imán no magnetiza",
+          "act": "assert"
+        }
+      ],
+      "observations": [
+        "la puerta 1 no termina de cerrar",
+        "el imán no magnetiza"
+      ],
+      "pending_resolution": null,
+      "clarification_target": null
+    }
+  },
+  {
+    "turn": "El display muestra código 8.",
+    "tool_input": {
+      "move": "report",
+      "assertions": [
+        {
+          "span": "código 8",
+          "act": "assert",
+          "slot_hint": "fault_code"
+        }
+      ],
+      "observations": [
+        "El display muestra código 8"
+      ],
+      "pending_resolution": null,
+      "clarification_target": null
+    }
+  },
+  {
+    "turn": "La cabina está detenida cerca de planta 1 y no hay personas dentro.",
+    "tool_input": {
+      "move": "report",
+      "assertions": [],
+      "observations": [
+        "La cabina está detenida cerca de planta 1 y no hay personas dentro"
+      ],
+      "pending_resolution": null,
+      "clarification_target": null
+    }
+  },
+  {
+    "turn": "La puerta llega al marco, pero vuelve a abrir.",
+    "tool_input": {
+      "move": "report",
+      "assertions": [],
+      "observations": [
+        "La puerta llega al marco, pero vuelve a abrir"
+      ],
+      "pending_resolution": null,
+      "clarification_target": null
+    }
+  },
+  {
+    "turn": "No, leí mal: era código 18, no 8.",
+    "tool_input": {
+      "move": "correct",
+      "assertions": [
+        {
+          "span": "código 18",
+          "act": "assert",
+          "slot_hint": "fault_code"
+        }
+      ],
+      "observations": [],
+      "pending_resolution": null,
+      "clarification_target": null
+    }
+  },
+  {
+    "turn": "Ya comprobé visualmente la guía de la puerta; no veo una obstrucción.",
+    "tool_input": {
+      "move": "report",
+      "assertions": [],
+      "observations": [
+        "no veo una obstrucción"
+      ],
+      "pending_resolution": null,
+      "clarification_target": null
+    }
+  },
+  {
+    "turn": "El LED 7 está apagado. ¿Qué indica para esta placa?",
+    "tool_input": {
+      "move": "follow_up",
+      "assertions": [
+        {
+          "span": "El LED 7 está apagado",
+          "act": "assert"
+        }
+      ],
+      "observations": [
+        "El LED 7 está apagado"
+      ],
+      "pending_resolution": null,
+      "clarification_target": null
+    }
+  },
+  {
+    "turn": "Al pedir cierre se oye un clic, pero no termina de cerrar.",
+    "tool_input": {
+      "move": "report",
+      "assertions": [
+        {
+          "span": "Al pedir cierre se oye un clic, pero no termina de cerrar",
+          "act": "assert"
+        }
+      ],
+      "observations": [
+        "Al pedir cierre se oye un clic, pero no termina de cerrar"
+      ],
+      "pending_resolution": null,
+      "clarification_target": null
+    }
+  },
+  {
+    "turn": "Sigue igual. ¿Y ahora?",
+    "tool_input": {
+      "move": "follow_up",
+      "assertions": [],
+      "observations": [
+        "Sigue igual"
+      ],
+      "pending_resolution": null,
+      "clarification_target": null
+    }
+  },
+  {
+    "turn": "Resúmeme lo que llevamos y dime qué observación segura sigue.",
+    "tool_input": {
+      "move": "meta",
+      "assertions": [],
+      "observations": [],
+      "pending_resolution": null,
+      "clarification_target": null
+    }
+  },
+  {
+    "turn": "Hice esa revisión: sigue el clic y la puerta no termina de cerrar.",
+    "tool_input": {
+      "move": "follow_up",
+      "assertions": [],
+      "observations": [
+        "sigue el clic y la puerta no termina de cerrar"
+      ],
+      "pending_resolution": null,
+      "clarification_target": null
+    }
+  },
+  {
+    "turn": "Sigue igual.",
+    "tool_input": {
+      "move": "follow_up",
+      "assertions": [],
+      "observations": [
+        "Sigue igual"
+      ],
+      "pending_resolution": null,
+      "clarification_target": null
+    }
+  },
+  {
+    "turn": "Corrijo algo de antes: la cabina está detenida cerca de planta 2, no de planta 1.",
+    "tool_input": {
+      "move": "correct",
+      "assertions": [
+        {
+          "span": "cerca de planta 2",
+          "act": "assert",
+          "slot_hint": null
+        }
+      ],
+      "observations": [
+        "La cabina está detenida cerca de planta 2, no de planta 1"
+      ],
+      "pending_resolution": null,
+      "clarification_target": null
+    }
+  },
+  {
+    "turn": "¿Y ahora? No lo sé.",
+    "tool_input": {
+      "move": "answer_pending",
+      "assertions": [],
+      "observations": [],
+      "pending_resolution": "unknown",
+      "clarification_target": null
+    }
+  }
+]

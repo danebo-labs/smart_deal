@@ -181,7 +181,8 @@ def stage2_semantic_row?(row)
 end
 
 def stage2_interpreter_attempt?(event)
-  event["kind"] == "interpreter_failure" && %w[converse extract perception].include?(event["stage"].to_s)
+  event["kind"] == "interpreter_attempt" ||
+    (event["kind"] == "interpreter_failure" && %w[converse extract perception].include?(event["stage"].to_s))
 end
 
 def stage2_generation_attempts(events)

@@ -111,6 +111,47 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     assert_not identity.known?
   end
 
+  test "captured Journey A interpreter outputs preserve one episode through turn 14" do
+    turns = JSON.parse(Rails.root.join("test/fixtures/files/field_companion/journey_a_interpreter_raw_20261008.json").read)
+    session = web_session
+    elemont = manual("journey-a-elemont.pdf")
+    first_episode_id = nil
+    last_result = nil
+
+    with_owner do
+      Rag::DocumentIdentityCatalog.with_catalog(elemont_catalog(elemont)) do
+        turns.each_with_index do |row, index|
+          last_result = ask(session, row.fetch("turn"), client(row.fetch("tool_input")), correlation: "replay:a:t#{index + 1}")
+          stored = session.reload.active_episode
+          first_episode_id ||= stored.fetch("episode_id")
+          assert_equal first_episode_id, stored.fetch("episode_id"), "turn #{index + 1}"
+          next unless index == 4 || index >= 12
+
+          assert_equal "18", stored.dig("facts", "fault_code", "value")
+          assert_includes stored.fetch("rejected").pluck("value"), "8"
+        end
+      end
+    end
+
+    stored = session.reload.active_episode
+    observations = stored.fetch("observations").pluck("text")
+    identifiers = stored.fetch("identifiers").pluck("value")
+    assert_includes stored.dig("goal", "text"), "la puerta 1 no termina de cerrar"
+    assert_includes identifiers, "Elemont MH"
+    assert_includes identifiers, "CEA15"
+    assert identifiers.none? { |value| value.match?(/planta|LED|clic/i) }
+    assert_includes observations, "la cabina está detenida cerca de planta 2"
+    assert_includes observations, "no hay personas dentro"
+    assert observations.none? { |text| text.include?("planta 1 y no hay personas") }
+    assert_includes observations, "El LED 7 está apagado"
+    assert_includes observations, "Al pedir cierre se oye un clic, pero no termina de cerrar"
+    assert_includes last_result.composed, "planta 2"
+    assert_not_includes last_result.composed, "planta 1 y no hay personas"
+    block = with_owner { SessionContextBuilder.field_problem_block(session) }
+    assert_includes block, "planta 2"
+    assert_includes block, "Fault code: 18"
+  end
+
   test "both visible door manuals keep Elemont and leave CEA15 unresolved" do
     session = web_session
     elemont = manual("elemont.pdf", "Elemont Montacargas Hidraulico Modelo MH")

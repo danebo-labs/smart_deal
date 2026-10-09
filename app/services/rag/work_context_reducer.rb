@@ -231,7 +231,7 @@ module Rag
     # is not part of the replaced datum. A bare number is a shared digit, not
     # an observation to delete.
     def retracted_phrases
-      @turn.to_s.scan(/\bno de\s+([^.;!?\n]+)/i).flatten.filter_map { |raw|
+      @turn.to_s.scan(/\bno de(?:l)?\s+([^.;!?\n]+)/i).flatten.filter_map { |raw|
         tokens = FollowupQueryRewriter.normalize_label(raw).split.first(3)
         next if tokens.empty? || tokens.join(" ").match?(/\A\d+\z/)
 

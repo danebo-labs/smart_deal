@@ -272,6 +272,46 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_plant_correction_in_prompt(episode)
   end
 
+  test "a full correction observation keeps its replacement after persistence" do
+    episode = plant_episode
+    episode.append_observation!("no hay personas dentro", correlation_id: "seed")
+    raw = session_196_turn_13_raw.merge(
+      "observations" => [ "la cabina está detenida cerca de planta 2, no de planta 1" ]
+    )
+    result = perceive(raw, PLANT_CORRECTION, episode: episode)
+    decision = settle(episode, result, PLANT_CORRECTION)
+    stored = Rag::ActiveEpisode.parse(episode.to_h, now: Time.current)
+    query = Rag::QueryComposer.call(state: stored, turn: "¿Y ahora?", perception: nil, decision: decision)
+
+    assert_equal [ "la cabina está detenida cerca de planta 2" ], result.observations
+    assert_includes stored.observations.pluck("text"), "la cabina está detenida cerca de planta 2"
+    assert_includes stored.observations.pluck("text"), "no hay personas dentro"
+    assert stored.observations.none? { |item| item["text"].include?("planta 1") }
+    assert_includes query, "planta 2"
+    assert_not_includes query, "planta 1"
+    assert_plant_correction_in_prompt(stored)
+  end
+
+  test "an observation correction with a different location noun keeps its qualifier" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    episode.append_observation!("el carro queda junto al nivel 3 y está vacío", correlation_id: "seed")
+    turn = "Corrijo: el carro queda junto al nivel 4, no del nivel 3."
+    raw = {
+      "move" => "correct",
+      "assertions" => [],
+      "observations" => [ "el carro queda junto al nivel 4, no del nivel 3" ],
+      "pending_resolution" => nil,
+      "clarification_target" => nil
+    }
+    result = perceive(raw, turn, episode: episode)
+    settle(episode, result, turn)
+
+    assert_equal [ "el carro queda junto al nivel 4" ], result.observations
+    assert_includes episode.observations.pluck("text"), "el carro queda junto al nivel 4"
+    assert_includes episode.observations.pluck("text"), "está vacío"
+    assert episode.observations.none? { |item| item["text"].include?("nivel 3") }
+  end
+
   test "a real identifier beside the recovered observation stays" do
     episode = plant_episode
     turn = "La placa dice Elemont MH. #{PLANT_CORRECTION}"

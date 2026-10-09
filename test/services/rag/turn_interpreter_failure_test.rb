@@ -130,6 +130,23 @@ class Rag::TurnInterpreterFailureTest < ActiveSupport::TestCase
     assert_equal 1, job_args[:output_tokens]
   end
 
+  test "a successful response still records an attempt when usage tracking fails" do
+    original = TrackBedrockQueryJob.method(:perform_later)
+    TrackBedrockQueryJob.define_singleton_method(:perform_later) { |**| raise "tracking unavailable" }
+    result = nil
+    events = Rag::ValidationCapture.capture do
+      result = interpret("la puerta no cierra", client: ToolClient.new(valid_tool, input_tokens: 6, output_tokens: 2))
+    end
+
+    assert_equal "ok", result.status
+    assert_equal 1, events.count { |event| event["kind"] == "interpreter_attempt" }
+    assert_equal 1, events.find { |event| event["kind"] == "interpreter_attempt" }["attempt"]
+    assert_equal 6, result.input_tokens
+    assert events.none? { |event| event["kind"] == "interpreter_failure" }
+  ensure
+    TrackBedrockQueryJob.define_singleton_method(:perform_later) { |*args, **kwargs, &block| original.call(*args, **kwargs, &block) } if original
+  end
+
   private
 
   def interpret(turn, client:, correlation_id: "cid-timeout")

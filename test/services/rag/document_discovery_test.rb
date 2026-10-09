@@ -30,6 +30,19 @@ class Rag::DocumentDiscoveryTest < ActiveSupport::TestCase
     assert_empty @session.reload.document_focus_entries
   end
 
+  test "an unconfirmed designator can suggest a document without selecting equipment identity" do
+    result = Rag::DocumentDiscovery.call(
+      question: "¿Podría servir el plano Elemont MH para esta puerta?",
+      viewer_account: @account,
+      session: @session
+    )
+
+    assert_equal [ @elemont.id ], result.cards.map(&:kb_document_id)
+    assert_equal "EXACT_DESIGNATOR", result.cards.sole.label
+    assert_empty @session.reload.document_focus_entries
+    assert_nil @session.active_episode&.dig("facts", "manufacturer")
+  end
+
   test "badge 0 offers the single cited manual and leaves it unselected" do
     uri = @elemont.display_s3_uri(KbDocument::KB_BUCKET)
     result = Rag::DocumentDiscovery.call(

@@ -452,7 +452,15 @@ module Rag
 
       phrase = explicit_observation_replacement
       if phrase && %w[unclear correct].include?(move)
-        merged = merge_phrase(observations, phrase)
+        # The interpreter may return the entire correction as an observation.
+        # Its rejected tail must not make the durable replacement look redundant.
+        current = observations.reject { |text|
+          contained_phrase?(
+            FollowupQueryRewriter.normalize_label(phrase),
+            FollowupQueryRewriter.normalize_label(text)
+          ) && correction_tail?(text)
+        }
+        merged = merge_phrase(current, phrase)
         kept = identities.reject { |item| observation_fragment?(item, merged) }
         note_rule("recover_stated_correction", phrase, "explicit_observation_replacement")
         return [ "correct", nil, kept, merged, ambiguities, nil ]
@@ -534,6 +542,10 @@ module Rag
       outer.match?(/(?<![[:alnum:]])#{Regexp.escape(inner)}(?![[:alnum:]])/)
     end
 
+    def correction_tail?(text)
+      text.to_s.match?(/[,;:]\s*no\s+de(?:l)?\b/i)
+    end
+
     def asserts_fault?(item, code)
       item.act == "assert" && item.slot == "fault_code" && fault_label(item) == code
     end
@@ -559,9 +571,9 @@ module Rag
 
     def explicit_observation_replacement
       normalized = FollowupQueryRewriter.normalize_label(@turn)
-      return nil unless normalized.match?(/\bcorrijo\b/) && normalized.match?(/\bno de\b/)
+      return nil unless normalized.match?(/\bcorrijo\b/) && normalized.match?(/\bno de(?:l)?\b/)
 
-      match = @turn.match(/:\s*(.+?),\s*no\s+de\b/i)
+      match = @turn.match(/:\s*(.+?),\s*no\s+de(?:l)?\b/i)
       return nil if match.nil?
 
       phrase = match[1].to_s.squish

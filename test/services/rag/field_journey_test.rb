@@ -83,17 +83,64 @@ class Rag::FieldJourneyTest < ActiveSupport::TestCase
     assert_equal false, decision.outside_discovery
   end
 
-  test "a full VF5+ question stays on its own sentence" do
-    episode = opened_episode("las puertas no cierran")
-    decision = Rag::TechnicalUnderstanding.call(
-      text: "¿Cómo uso el módulo electrónico VF5+?",
-      episode: episode,
-      prior_turns: [ { "content" => "¿Necesitas controlador?" } ]
-    )
+  test "a full VF5 question keeps the written token and does not become VF5+" do
+    text = "¿Cómo uso el módulo electrónico VF5?"
+    decision = module_decision(text)
+    resolution = Rag::DocumentIdentityCatalog.current.resolve_designator("VF5")
 
-    assert_equal false, decision.owns_query
+    assert_includes text.scan(Rag::TechnicalUnderstanding::TOKEN_RE), "VF5"
+    assert_not_includes text.scan(Rag::TechnicalUnderstanding::TOKEN_RE), "VF5+"
+    assert_equal :none, resolution.status
+    assert_nil resolution.value
+    assert_includes decision.retrieval_query, text
+    assert_not_includes decision.retrieval_query, "VF5+"
     assert_not_includes decision.retrieval_query.downcase, "necesitas"
-    assert_includes decision.retrieval_query, "VF5"
+    assert_equal true, decision.owns_query
+    assert identity_writes(decision).empty?
+    assert_equal [ "VF5" ], stored_identifiers(text)
+  end
+
+  test "a full VF5+ question stays on its own sentence" do
+    text = "¿Cómo uso el módulo electrónico VF5+?"
+    decision = module_decision(text)
+    resolution = Rag::DocumentIdentityCatalog.current.resolve_designator("VF5+")
+
+    assert_includes text.scan(Rag::TechnicalUnderstanding::TOKEN_RE), "VF5+"
+    assert_equal :exact, resolution.status
+    assert_equal "VF5+", resolution.value
+    assert_nil resolution.type
+    assert_equal false, decision.owns_query
+    assert_includes decision.retrieval_query, text
+    assert_not_includes decision.retrieval_query.downcase, "necesitas"
+    assert identity_writes(decision).empty?
+    assert_equal [ "VF5+" ], stored_identifiers(text)
+    assert_not Rag::ActiveEpisodeTurn.written_token?(text, "VF5")
+  end
+
+  test "CEA15 and CEA15+ stay the tokens that were written" do
+    catalog = Rag::DocumentIdentityCatalog.current
+    plain = catalog.resolve_designator("CEA15")
+    plus = catalog.resolve_designator("CEA15+")
+
+    assert_equal :none, plain.status
+    assert_nil plain.value
+    assert_equal :exact, plus.status
+    assert_equal "CEA15+", plus.value
+    assert_nil plus.type
+
+    {
+      "CEA15" => "¿Cómo uso la placa electrónica CEA15?",
+      "CEA15+" => "¿Cómo uso la placa electrónica CEA15+?"
+    }.each do |token, text|
+      decision = module_decision(text)
+
+      assert_includes text.scan(Rag::TechnicalUnderstanding::TOKEN_RE), token, text
+      assert_includes decision.retrieval_query, text
+      assert identity_writes(decision).empty?, text
+      assert_equal [ token ], stored_identifiers(text), text
+    end
+    assert_not_includes module_decision("¿Cómo uso la placa electrónica CEA15?").retrieval_query, "CEA15+"
+    assert_not Rag::ActiveEpisodeTurn.written_token?("¿Cómo uso la placa electrónica CEA15+?", "CEA15")
   end
 
   test "an analyzer observation is kept only when the span is in the turn" do
@@ -124,6 +171,26 @@ class Rag::FieldJourneyTest < ActiveSupport::TestCase
       enabled: true,
       correlation_id: "query:journey"
     )
+  end
+
+  def module_decision(text)
+    Rag::TechnicalUnderstanding.call(
+      text: text,
+      episode: opened_episode("las puertas no cierran"),
+      prior_turns: [ { "content" => "¿Necesitas controlador?" } ]
+    )
+  end
+
+  def identity_writes(decision)
+    decision.mutations.select { |item| item[:op] == :write }
+  end
+
+  def stored_identifiers(text)
+    result = turn(text)
+    assert_nil result.state.dig("facts", "controller")
+    assert_nil result.state.dig("facts", "model")
+    assert_nil result.state.dig("facts", "manufacturer")
+    Array(result.state["identifiers"]).pluck("value")
   end
 
   def opened_episode(goal)

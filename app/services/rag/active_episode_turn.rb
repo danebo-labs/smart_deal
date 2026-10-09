@@ -11,7 +11,8 @@ module Rag
       "mitsubishi", "orona", "hyundai", "fermator", "blt", "elemont"
     ].freeze
 
-    DESIGNATOR_RE = /(?<![\p{L}\d])[\p{L}\d][\p{L}\d\-]{1,29}(?![\p{L}\d])/
+    # A trailing "+" belongs to the written designator. VF5 is not VF5+.
+    DESIGNATOR_RE = /(?<![\p{L}\d])[\p{L}\d][\p{L}\d\-]{1,29}\+?(?![\p{L}\d])/
     RESET_RE = /\b(nueva falla|otra falla|otro equipo|otro ascensor|otra maquina|cambio de equipo|new fault|another (unit|elevator|lift))\b/
     CORRECTION_RE = /\b(no es|no era|me equivoque|en realidad|corrijo|perdon es|not a|actually)\b/
     SUBJECT_RE = /\b(revisando|estoy en|estoy con|tengo|equipo|ascensor|elevador|es un|es una|checking)\b/
@@ -41,6 +42,11 @@ module Rag
     FILLER = %w[es un una no si].freeze
     RESOLVED = %w[known unknown_confirmed absent_confirmed].freeze
     FROM_STATE = Object.new
+
+    # "+" stays with the token that was written. "VF5" does not match "VF5+".
+    def self.written_token?(text, token)
+      text.to_s.match?(/(?<![[:alnum:]])#{Regexp.escape(token)}(?![[:alnum:]+])/)
+    end
 
     def self.call(state:, text:, role: "user", now: Time.current, selection_turn: false, pending_fact: FROM_STATE,
                   correlation_id: nil, channel: "web", enabled: nil, shared: nil, prior_user_turns: [],
@@ -594,7 +600,7 @@ module Rag
     end
 
     def typed_catalog_designator?
-      @text.scan(/[A-Za-z0-9][A-Za-z0-9-]{1,29}/).any? { |token|
+      @text.scan(DESIGNATOR_RE).any? { |token|
         Rag::DocumentIdentityCatalog.current.resolve_designator(token).type.present?
       }
     end

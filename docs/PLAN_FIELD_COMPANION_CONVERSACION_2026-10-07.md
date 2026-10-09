@@ -780,7 +780,26 @@ Implementado en local: `Rag::ObservationCorrection` es la gramática que compart
 
 Eso no demuestra que el modelo deje de inventar el significado del código 18 o del LED 7, ni que el ranking real incluya el Elemont. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. La etapa 3 no empieza.
 
-Revisión de `632e5c5`: la cola retractiva aceptaba «no la/los/es» sin separador. Así, «abre la puerta pero no la termina de cerrar» o «no los veo sucios» pasaban a `correct` y retiraban el síntoma. Ahora la cola exige coma, punto y coma, dos puntos o «y», y un núcleo paralelo a la cláusula asertada: la misma palabra principal, o un número frente a otro. Sin paralelo, hace falta una pista explícita. `TechnicalUnderstanding::TOKEN_RE` conserva el «+», así que `CEA15+` escrito vuelve a resolver. Esa pérdida venía de `700d9d0`. Las otras tres fallas preexistentes eran expectativas desactualizadas, no defectos. Las dos de `KnowledgeScope`, desde `e62a4ab`: cero chunks autorizados generan guidance sin cuerpos, y la prueba ahora verifica que el prompt no lleva el cuerpo ajeno. La de `ValidationCapture`, desde `26a88ab`: cada invocación real del intérprete registra `attempt=1`. Suite completa: 4.453 corridas, 0 fallos, 191 skips.
+Revisión de `632e5c5`: la cola retractiva aceptaba «no la/los/es» sin separador. Así, «abre la puerta pero no la termina de cerrar» o «no los veo sucios» pasaban a `correct` y retiraban el síntoma. Ahora la cola exige coma, punto y coma, dos puntos o «y», y un núcleo paralelo a la cláusula asertada: la misma palabra principal, o un número frente a otro. Sin paralelo, hace falta una pista explícita. `TechnicalUnderstanding::TOKEN_RE` conserva el «+», así que `CEA15+` escrito vuelve a resolver. Esa pérdida venía de `700d9d0`. Las otras tres fallas preexistentes eran expectativas desactualizadas, no defectos. Las dos de `KnowledgeScope`, desde `e62a4ab`: cero chunks autorizados generan guidance sin cuerpos, y la prueba ahora verifica que el prompt no lleva el cuerpo ajeno. La de `ValidationCapture`, desde `26a88ab`: cada invocación real del intérprete registra `attempt=1`. Suite completa de ese cierre: 4.453 corridas, 0 fallos, 191 skips.
+
+#### Comprobación local de VF5 y de los skips (2026-10-08)
+
+Sobre `01a0fd8`, sin pasada nueva, sin AWS, sin Retrieve, sin intérprete real y sin generación. `PASS_CALL_CAP` sigue en 0. El histórico sigue en 160 llamadas y US$0,343774. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. La etapa 3 no empieza.
+
+**VF5 y VF5+.** El catálogo no se tocó. `VF5` resuelve `:none`. `VF5+` resuelve `:exact` con valor `VF5+` y sin tipo, así que no escribe controlador, modelo ni fabricante. `CEA15` y `CEA15+` repiten esa distinción. La pregunta completa queda en la consulta y «necesitas» no entra. `VF5` no se reescribe a `VF5+`. Con seis palabras y sin resolución de catálogo, la política vigente hace que `VF5` arrastre el objetivo del episodio (`owns_query` verdadero). `VF5+`, por la resolución exacta, no toma esa consulta (`owns_query` falso). No se forzó la misma resolución.
+
+El defecto era el identificador guardado. `ActiveEpisodeTurn::DESIGNATOR_RE` cortaba el «+», y «¿Cómo uso el módulo electrónico VF5+?» persistía `VF5`. El token escrito ahora conserva el «+», y `VF5` no coincide con `VF5+`.
+
+**Skips.** `bin/rails test` dio 4.455 corridas, 0 fallos y 191 skips. El inventario, una fila por test, salió de `Minitest::StatisticsReporter#record`. Esos 191 se parten así:
+
+- 161 de WhatsApp o Twilio, canal dormido del MVP. No se habilitan.
+- 21 de carga masiva o del perímetro Climb (ruta T-31 y tipos que no son PDF). Fuera de este recorrido.
+- 2 de marcadores de ingesta que Rails ya inyecta. Fuera de este recorrido.
+- 1 de compresión JPEG que pide una subida manual por la interfaz. No se puede stubbear sin cambiar el contrato.
+- 1 de P2: el espacio irregular de «fuera de servicio» no activa a la vez el perfil de seguridad y la directiva. El cierre está descrito en `regex_characterization_test.rb` y no es el episodio de puertas. No se abre esa migración aquí.
+- 5 de foto, fases N2 a N4, en `FieldPhotoAnalysisJobTest`. Identidad aceptada, composición de la consulta y procedimiento ajeno como referencia. Con `N0_CONTRACTS=1` y sin servicios reales: 5 corridas, 107 aserciones, 0 fallos. El gate ya no los ocultaba por una falla: pasan con los stubs locales, y quedan en la suite normal. Sin el flag: esas cinco, más VF5 y CEA15, 8 corridas, 167 aserciones, 0 skips.
+
+Los skips que dependen de un archivo local (Elemont, D5, benchmark visual, artefacto F0) no entraron en los 191: el archivo estaba y el test corrió dentro de las 4.455. El teardown de `BulkUploadsControllerTest` intenta restaurar un método que el skip no llegó a guardar; queda dentro del skip y la suite no lo cuenta como error. Es la ruta de carga desactivada, no este episodio. La suite completa no se repitió después de habilitar las cinco pruebas de foto. Ningún skip que quede impide leer el contrato de texto de Journey A. Sigue sin demostrarse que el modelo no invente el código 18 o el LED 7, ni que el ranking real incluya el Elemont.
 
 ### 3. Verificar ese alcance en producción
 

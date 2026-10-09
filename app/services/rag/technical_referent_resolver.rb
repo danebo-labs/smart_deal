@@ -194,7 +194,7 @@ module Rag
       end
       phrase.scan(ActiveEpisodeTurn::DESIGNATOR_RE).uniq.each do |token|
         next unless KbDocumentResolver.specific_token?(token)
-        return true unless @text.match?(/\b#{Regexp.escape(token)}\b/)
+        return true unless ActiveEpisodeTurn.written_token?(@text, token)
       end
       unreaffirmed_name?(phrase) || explicit_model_blocks_complement?(phrase)
     end

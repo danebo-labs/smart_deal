@@ -87,8 +87,10 @@ ActiveSupport.on_load(:active_support_test_case) do
   include EnvIsolation
 end
 
-# N0 multimodal contracts stay in the suite as skipped examples.
-# N0_CONTRACTS=1 runs the asserts against current code.
+# N0 multimodal contracts stay skipped until N0_CONTRACTS=1.
+# The five FieldPhotoAnalysisJob contracts for N2–N4 now run in the
+# normal suite: they pass against the local stubs. Do not use this gate
+# to hide a contract that already passes.
 module N0Contract
   def n0_contract!(phase)
     return if ENV["N0_CONTRACTS"] == "1"

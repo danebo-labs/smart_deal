@@ -1927,7 +1927,6 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
   end
 
   test "legacy photo reuse carries accepted equipment identity into retrieval" do
-    n0_contract!("N2")
     photo = create_orona_photo(relevance: nil)
     calls = 0
     captured = {}
@@ -1952,7 +1951,6 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
   end
 
   test "same-turn photo question composes retrieval after accepted visual identity" do
-    n0_contract!("N2")
     calls = 0
     interpreter_calls = { n: 0 }
     captured = {}
@@ -2120,7 +2118,6 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
   end
 
   test "uncertain accepted photo constrains retrieval and promotes identity on reuse" do
-    n0_contract!("N2")
     photo = create_orona_photo(relevance: "uncertain")
     captured = {}
     events = nil
@@ -2200,7 +2197,6 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
   end
 
   test "foreign manufacturer chunks are reference-only for known equipment" do
-    n0_contract!("N3")
     probe = run_foreign_equipment_retrieval
     scope = probe[:scopes].last
 
@@ -2226,7 +2222,6 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
   end
 
   test "known equipment photo retrieval does not fall open onto a foreign procedure" do
-    n0_contract!("N4")
     probe = run_foreign_equipment_retrieval
 
     assert_equal 0, probe[:open_calls], "known equipment must not fall through to open retrieve_and_generate"

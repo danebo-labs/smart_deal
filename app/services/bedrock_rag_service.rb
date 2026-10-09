@@ -1629,23 +1629,46 @@ class BedrockRagService
     []
   end
 
+  # Nil until the phase 1 service has loaded its budget. Does not autoload it.
+  def phase1_model_budget
+    return unless defined?(Rag::Phase1ModelBudget)
+
+    Rag::Phase1ModelBudget
+  end
+
   # Retries the retrieve_and_generate call when Aurora Serverless is cold-starting.
   # Delegates to Bedrock::AuroraColdStartRetry (shared with KbSyncService).
+  # An armed phase 1 budget makes one attempt and skips that retry.
   def retrieve_and_generate_with_retry(params)
     record_retrieve_and_generate_request(params)
     transport_attempt = 0
     response = begin
-      Bedrock::AuroraColdStartRetry.with_retry(
-        error_classes: [ Aws::BedrockAgentRuntime::Errors::ServiceError ],
-        on_retry: (Rag::ValidationCapture.active? ? method(:note_cold_start_retry) : nil)
-      ) do
-        transport_attempt += 1
+      budget = phase1_model_budget
+      if budget&.armed?
+        # One model attempt. The cold-start retry is another model call.
+        budget.checkpoint!("retrieve_and_generate")
+        transport_attempt = 1
         @client.retrieve_and_generate(params)
+      else
+        Bedrock::AuroraColdStartRetry.with_retry(
+          error_classes: [ Aws::BedrockAgentRuntime::Errors::ServiceError ],
+          on_retry: (Rag::ValidationCapture.active? ? method(:note_cold_start_retry) : nil)
+        ) do
+          transport_attempt += 1
+          @client.retrieve_and_generate(params)
+        end
       end
     rescue StandardError => error
       record_terminal_remote_error("retrieve_and_generate", error, transport_attempt)
+      budget = phase1_model_budget
+      if budget&.armed?
+        budget.record_error!("retrieve_and_generate", error)
+        raise budget::Stop, "retrieve_and_generate stopped after #{error.class}"
+      end
+
       raise
     end
+    phase1_model_budget&.record_success!("retrieve_and_generate") if phase1_model_budget&.armed?
     record_retrieve_and_generate_response(response)
     response
   end

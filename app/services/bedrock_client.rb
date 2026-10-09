@@ -35,6 +35,9 @@ class BedrockClient
     start_time = Time.current
     capture_fields = generation_capture_fields(tracking)
     record_generation_request(model_id, max_tokens, temperature, prompt)
+    # Armed only by the phase 1 process. defined? does not load that class.
+    budget = phase1_model_budget
+    budget.checkpoint!("generate_text") if budget&.armed?
     response = @client.invoke_model(
       model_id: model_id,
       content_type: 'application/json',
@@ -46,10 +49,17 @@ class BedrockClient
 
     track_usage(result, model_id, prompt, start_time, max_tokens: max_tokens, tracking: tracking)
     record_generation_result(result, text, prompt, capture_fields)
+    phase1_model_budget&.record_success!("generate_text") if budget&.armed?
 
     text
   rescue StandardError => e
     record_generation_error(e, prompt, capture_fields)
+    budget = phase1_model_budget
+    if budget&.armed?
+      budget.record_error!("generate_text", e)
+      raise budget::Stop, "generate_text stopped after #{e.class}"
+    end
+
     Rails.logger.error("Bedrock error: #{e.message}")
     Rails.logger.error(e.backtrace.join("\n"))
     nil
@@ -74,8 +84,18 @@ class BedrockClient
   # Tool use on the primary runtime client. #converse stays the 8-second
   # shadow client used by perception. generate_text cannot send a tool schema.
   def converse_message(params)
+    budget = phase1_model_budget
+    budget.checkpoint!("converse_message") if budget&.armed?
     Rag::ValidationCapture.record("converse", params) if Rag::ValidationCapture.active?
-    @client.converse(params)
+    result = @client.converse(params)
+    budget.record_success!("converse_message") if budget&.armed?
+    result
+  rescue StandardError => error
+    budget = phase1_model_budget
+    raise unless budget&.armed?
+
+    budget.record_error!("converse_message", error)
+    raise budget::Stop, "converse_message stopped after #{error.class}"
   end
 
   private
@@ -134,6 +154,13 @@ class BedrockClient
     extra["correlation_id"] = correlation_id if correlation_id.present?
     extra["attempt"] = attempt unless attempt.nil?
     extra
+  end
+
+  # Nil until the phase 1 service has loaded its budget. Does not autoload it.
+  def phase1_model_budget
+    return unless defined?(Rag::Phase1ModelBudget)
+
+    Rag::Phase1ModelBudget
   end
 
   def converse_client

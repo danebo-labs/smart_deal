@@ -1484,7 +1484,8 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
       )
       perception = Rag::TurnPerception::Result.new(
         valid: true, move: "follow_up", observations: [], pending_resolution: nil, clarification_target: nil,
-        identities: [], ambiguities: [], field_rejections: [], catalog_disagreements: [], invalid_reason: nil
+        identities: [], ambiguities: [], field_rejections: [], catalog_disagreements: [], invalid_reason: nil,
+        correction: Rag::ObservationCorrection.none
       )
       decision = Rag::RoutePolicy.call(
         previous: Rag::ActiveEpisode.parse(kept), perception: perception, focus_count: 0, relevant_photo: context.relevant?
@@ -1874,7 +1875,8 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
     context = Rag::ActivePhotoContext.resolve(episode: episode, viewer_account: accounts(:legacy))
     perception = Rag::TurnPerception::Result.new(
       valid: true, move: "follow_up", observations: [], pending_resolution: nil, clarification_target: nil,
-      identities: [], ambiguities: [], field_rejections: [], catalog_disagreements: [], invalid_reason: nil
+      identities: [], ambiguities: [], field_rejections: [], catalog_disagreements: [], invalid_reason: nil,
+      correction: Rag::ObservationCorrection.none
     )
     decision = Rag::RoutePolicy.call(
       previous: episode, perception: perception, focus_count: 0, relevant_photo: context.relevant?

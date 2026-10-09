@@ -763,6 +763,23 @@ La preparación, sin cambiar el comportamiento por defecto: `TURN_INTERPRETER_MO
 
 **Qué no demuestra esa validación local.** Que el modelo deje de atribuir un significado al código 18 o al LED 7. Que el ranking real incluya el plano Elemont. La próxima pregunta, sin ejecutarla ahora, es una sola pasada longitudinal de Journey A con retrieval y generación reales sobre Haiku 4.5: con la identidad declarada reconocida y sin manual compatible, ¿el episodio conserva las correcciones y termina en un paso sustentado o en un escalamiento útil? Hasta esa pasada: **ETAPA 2 BLOQUEADA; no `EPISODIO_VALIDADO`**.
 
+#### Reparación local ajustada (2026-10-08)
+
+Sobre el enfoque de `26a88ab`, sin pasada nueva, sin AWS, sin Retrieve, sin intérprete real y sin generación. `PASS_CALL_CAP` sigue en 0. El histórico sigue en 160 llamadas y US$0,343774. Haiku 5.5 no entra: ni variable de modelo, ni fila de precio. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. La etapa 3 no empieza.
+
+El enfoque anterior se ajustó antes de implementarlo:
+
+- La procedencia `user` exige que la cláusula del técnico declare ese fabricante, modelo o controlador. El `slot_hint` no decide. Una pregunta o una forma dudosa sigue en `catalog` y la identidad no queda conocida. Normalizar la etiqueta dicha no es inferir un hecho: `CEA15` no pasa a `CEA15+`, y el fabricante que el catálogo añade queda en `catalog`. Un fabricante ya declarado no se pisa con esa inferencia.
+- Cambiar a modo conocido es un cambio de ruta y de aplicabilidad. No se toma como la causa demostrada de las respuestas inventadas. Las pruebas cubren las dos rutas.
+- No hay `stalled_turns`. La comprobación deja de ser obligatoria en cada turno. El resumen de lo comprobado y de la documentación que falta es una respuesta completa. Cuando el turno dice que no sabe, o solo dice `sigue igual` o `¿y ahora?`, la instrucción es resumir, decir qué falta y pedir el dato decisivo o escalar, sin otra comprobación de rutina. Un pedido de resumen no dispara esa salida forzada.
+- El prompt no nombra una entrada de catálogo que no se recuperó.
+- Las páginas 1 y 7 no alcanzan para decir que el Elemont no tiene contenido de puerta. La comprobación documental ya recuperó la página 5, con «Seguridad Puerta nivel 1». Eso no explica el código 18 ni el LED 7. El ranking no se cambia.
+- Las tarjetas del runner son diagnóstico de catálogo, con `uses_current_retrieval: false`. No explican el ranking del turno ni forman parte del guidance.
+
+Implementado en local: `Rag::ObservationCorrection` es la gramática que comparten la percepción y el reductor. No se quita el valor anterior si el reemplazo no quedó guardado. El replay de las 14 salidas crudas conserva el episodio, la planta 2, el código 18 y Elemont como declaración del técnico.
+
+Eso no demuestra que el modelo deje de inventar el significado del código 18 o del LED 7, ni que el ranking real incluya el Elemont. La etapa 2 sigue `BLOQUEADA`. No es `EPISODIO_VALIDADO`. La etapa 3 no empieza.
+
 ### 3. Verificar ese alcance en producción
 
 Primera consulta y continuidad del mismo episodio, sobre el journey A ya aceptado en local. Una pasada. Sin sonda previa. Sin L3, sin journey B y sin T-F. Las reparaciones de las etapas 1 y 2 entran por el procedimiento de despliegue vigente.

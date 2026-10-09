@@ -351,7 +351,8 @@ module Rag
     def fallback_perception
       TurnPerception::Result.new(
         valid: true, move: "report", observations: [], pending_resolution: nil, clarification_target: nil,
-        identities: [], ambiguities: [], field_rejections: [], catalog_disagreements: [], invalid_reason: nil
+        identities: [], ambiguities: [], field_rejections: [], catalog_disagreements: [], invalid_reason: nil,
+        correction: ObservationCorrection.none
       )
     end
 

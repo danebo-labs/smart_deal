@@ -242,6 +242,29 @@ class Stage2JourneyARunnerTest < ActiveSupport::TestCase
     assert_equal :now, tracker.perform_later(model_id: "stub")
   end
 
+  test "discovery cards are a catalog diagnosis and do not call a retriever" do
+    seen = []
+    account = Struct.new(:id).new(1)
+    original = Rag::DocumentDiscovery.method(:call)
+    Rag::DocumentDiscovery.define_singleton_method(:call) { |**kwargs|
+      seen << kwargs
+      Rag::DocumentDiscovery::Result.new(cards: [], action: "add", manufacturer: nil, label: nil)
+    }
+
+    record = stage2_discovery_cards(account, "Elemont MH")
+
+    assert_equal "discovery_cards", record["kind"]
+    assert_equal "catalog_only", record["diagnostic"]
+    assert_equal false, record["uses_current_retrieval"]
+    assert_equal [], record["cards"]
+    assert_nil seen.sole[:retriever]
+    assert_equal [], seen.sole[:doc_refs]
+  ensure
+    if defined?(original) && original
+      Rag::DocumentDiscovery.define_singleton_method(:call) { |**kwargs| original.call(**kwargs) }
+    end
+  end
+
   private
 
   def restore_env(key, value)

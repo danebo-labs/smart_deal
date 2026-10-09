@@ -90,7 +90,8 @@ class Rag::CausalTraceTest < ActiveSupport::TestCase
   def perception_for(identities)
     Rag::TurnPerception::Result.new(
       valid: true, move: "report", observations: [], pending_resolution: nil, clarification_target: nil,
-      identities: identities, ambiguities: [], field_rejections: [], catalog_disagreements: [], invalid_reason: nil
+      identities: identities, ambiguities: [], field_rejections: [], catalog_disagreements: [], invalid_reason: nil,
+      correction: Rag::ObservationCorrection.none
     )
   end
 

@@ -61,6 +61,34 @@ def elemont_text?(value)
     text.include?("121bfffe")
 end
 
+# Catalog cards for this turn's trace. Not the retrieve that answered it,
+# and not an explanation of that ranking. No retriever, so no model attempt.
+def stage2_discovery_cards(account, question)
+  result = Rag::DocumentDiscovery.call(
+    question: question,
+    viewer_account: account,
+    session: nil,
+    doc_refs: [],
+    abstained: false,
+    retriever: nil
+  )
+  {
+    "kind" => "discovery_cards",
+    "diagnostic" => "catalog_only",
+    "uses_current_retrieval" => false,
+    "cards" => Array(result.cards).map { |card|
+      { "display_name" => card.display_name.to_s, "label" => card.label.to_s }
+    }
+  }
+rescue StandardError => error
+  {
+    "kind" => "discovery_cards",
+    "diagnostic" => "catalog_only",
+    "uses_current_retrieval" => false,
+    "error_class" => error.class.name
+  }
+end
+
 def citation_row(citation)
   data = citation.to_h.deep_stringify_keys
   meta = data["metadata"].to_h
@@ -558,6 +586,7 @@ def stage2_journey_a_execute
     end
     end
     record["capture"] = capture
+    record["discovery_cards"] = stage2_discovery_cards(account, sent)
     captures << capture
     rows = this_run_queries(baseline_id, session.id)
     spent = spend_snapshot(rows, captures)

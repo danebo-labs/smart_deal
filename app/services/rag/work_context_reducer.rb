@@ -117,6 +117,7 @@ module Rag
         )
         next if item.manufacturer.blank? || item.slot == "manufacturer"
         next if controller_brand_replaces_equipment?(item)
+        next if declared_manufacturer?
 
         @episode.delete_rejected!("manufacturer", item.manufacturer)
         @episode.write_fact!(
@@ -213,54 +214,84 @@ module Rag
       )
     end
 
+    def declared_manufacturer?
+      source = @episode.fact("manufacturer")&.dig("source").to_s
+      %w[user photo].include?(source)
+    end
+
     def supersede_retracted_observations
-      retracted_phrases.each { |phrase| excise_retracted_phrase(phrase) }
+      correction = @perception.respond_to?(:correction) ? @perception.correction : nil
+      if correction&.active?
+        correction.asserted.each { |phrase| remember_asserted!(phrase) }
+        if correction.asserted.any? { |phrase| asserted_stored?(phrase) }
+          correction.retracted.each { |phrase| excise_retracted_phrase(phrase, correction.asserted) }
+          drop_replaced_observations(correction.asserted)
+          adopt_problem_goal!(correction.asserted)
+        end
+        return
+      end
+
+      # "Corrijo" can replace one word without a retractive tail. A changed
+      # number is not that replacement; the tail handles floors and indicators.
       return unless @turn.match?(/\bcorrijo\b/i)
 
       fresh = Array(@perception.observations).map { |text| text.to_s.squish }
-      @episode.observations.reject! { |item|
-        text = item["text"].to_s
-        next false if fresh.any? { |phrase| same_label?(phrase, text) }
-
-        fresh.any? { |phrase| observation_replaced?(text, phrase) }
-      }
+      drop_replaced_observations(fresh)
       adopt_problem_goal!(fresh)
     end
 
-    # Sentence punctuation stops the retraction. "No lo sé" after the period
-    # is not part of the replaced datum. A bare number is a shared digit, not
-    # an observation to delete.
-    def retracted_phrases
-      @turn.to_s.scan(/\bno de(?:l)?\s+([^.;!?\n]+)/i).flatten.filter_map { |raw|
-        tokens = FollowupQueryRewriter.normalize_label(raw).split.first(3)
-        next if tokens.empty? || tokens.join(" ").match?(/\A\d+\z/)
+    def drop_replaced_observations(fresh)
+    @episode.observations.reject! { |item|
+      text = item["text"].to_s
+      next false if fresh.any? { |phrase| same_label?(phrase, text) }
 
-        tokens.join(" ")
-      }.uniq
+      fresh.any? { |phrase| observation_replaced?(text, phrase) }
+    }
+  end
+
+    def remember_asserted!(phrase)
+      return if asserted_stored?(phrase)
+
+      @episode.append_observation!(phrase, correlation_id: @correlation_id)
     end
 
-    def excise_retracted_phrase(phrase)
-      pattern = token_pattern(phrase)
+    def asserted_stored?(phrase)
+      label = FollowupQueryRewriter.normalize_label(phrase)
+      return false if label.blank?
+
+      @episode.observations.any? { |item|
+        current = FollowupQueryRewriter.normalize_label(item["text"])
+        current == label || contained_label?(label, current) || contained_label?(current, label)
+      }
+    end
+
+    def contained_label?(inner, outer)
+      return false if inner.blank? || outer.blank? || inner == outer
+
+      outer.match?(/(?<![[:alnum:]])#{Regexp.escape(inner)}(?![[:alnum:]])/)
+    end
+
+    def excise_retracted_phrase(phrase, asserted)
       @episode.observations.map! { |item|
         kept = independent_clauses(item["text"]).reject { |clause|
-          FollowupQueryRewriter.normalize_label(clause).match?(pattern)
+          ObservationCorrection.retracted?(clause, phrase, asserted)
         }
         next if kept.empty?
 
         item.merge("text" => kept.join(" y "))
       }
       @episode.observations.compact!
-      excise_retracted_goal(pattern)
+      excise_retracted_goal(phrase, asserted)
     end
 
-    def excise_retracted_goal(pattern)
+    def excise_retracted_goal(phrase, asserted)
       return unless @episode.goal.is_a?(Hash)
 
       text = @episode.goal["text"].to_s
-      return unless FollowupQueryRewriter.normalize_label(text).match?(pattern)
+      return unless ObservationCorrection.retracted?(text, phrase, asserted)
 
       kept = independent_clauses(text).reject { |clause|
-        FollowupQueryRewriter.normalize_label(clause).match?(pattern)
+        ObservationCorrection.retracted?(clause, phrase, asserted)
       }
       if kept.empty? || kept.none? { |clause| problem_statement?(clause) }
         @episode.clear_goal!
@@ -469,10 +500,6 @@ module Rag
       return false if normalized.blank?
 
       TechnicalUnderstanding::SIGNAL_RE.match?(normalized)
-    end
-
-    def token_pattern(value)
-      /(?<![[:alnum:]])#{Regexp.escape(value.to_s)}(?![[:alnum:]])/i
     end
   end
 end

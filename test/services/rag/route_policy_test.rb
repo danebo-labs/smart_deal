@@ -254,7 +254,8 @@ class Rag::RoutePolicyTest < ActiveSupport::TestCase
       ambiguities: ambiguities,
       field_rejections: [],
       catalog_disagreements: [],
-      invalid_reason: nil
+      invalid_reason: nil,
+      correction: Rag::ObservationCorrection.none
     )
   end
 end

@@ -267,7 +267,8 @@ class Rag::QueryComposerTest < ActiveSupport::TestCase
   def report
     Rag::TurnPerception::Result.new(
       valid: true, move: "follow_up", observations: [], pending_resolution: nil, clarification_target: nil,
-      identities: [], ambiguities: [], field_rejections: [], catalog_disagreements: [], invalid_reason: nil
+      identities: [], ambiguities: [], field_rejections: [], catalog_disagreements: [], invalid_reason: nil,
+      correction: Rag::ObservationCorrection.none
     )
   end
 

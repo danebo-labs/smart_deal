@@ -117,7 +117,7 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     fact = result.facts.first
     assert_equal "controller", fact.slot
     assert_equal "NICE3000", fact.value
-    assert_equal "catalog", fact.source
+    assert_equal "user", fact.source
     assert_equal "MONARCH", fact.manufacturer
     assert_equal "model", result.catalog_disagreements.first["hint"]
     assert_equal "controller", result.catalog_disagreements.first["catalog"]
@@ -129,7 +129,7 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     fact = result.facts.first
     assert_equal "manufacturer", fact.slot
     assert_equal "MONARCH", fact.value
-    assert_equal "catalog", fact.source
+    assert_equal "user", fact.source
   end
 
   test "a private catalog identity does not type another tenant" do
@@ -352,7 +352,8 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_nil result.clarification_target
     assert_not_equal "clarify_first", decision.decision
     assert_equal "NICE3000", result.facts.find { |item| item.slot == "controller" }&.value
-    assert_equal "catalog", episode.fact("controller")["source"]
+    assert_equal "user", episode.fact("controller")["source"]
+    assert_equal "catalog", episode.fact("manufacturer")["source"]
     assert_equal "NICE3000", episode.fact("controller")["value"]
     assert_equal "MONARCH", episode.fact("manufacturer")["value"]
     assert_includes episode.observations.pluck("text"), "la cabina NICE3000 está detenida cerca de planta 2"
@@ -722,7 +723,7 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
       output_channel: :web
     ).dig(:generation_configuration, :prompt_template, :text_prompt_template)
 
-    assert_includes block, "Controller: NICE3000 (catalog)"
+    assert_includes block, "Controller: NICE3000 (technician)"
     assert_includes block, "Manufacturer: MONARCH (catalog)"
     assert_includes block, "planta 2"
     assert_not_includes block, "planta 1"
@@ -746,21 +747,22 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
 
     fact = result.facts.find { |item| item.slot == "manufacturer" }
     assert_equal "Elemont", fact.value
-    assert_equal "catalog", fact.source
+    assert_equal "user", fact.source
     assert_equal "Elemont MH", fact.span
     assert result.identifiers.any? { |item| item.value == "Elemont MH" }
     assert result.catalog_disagreements.none? { |row| row["span"] == "Elemont MH" }
     assert result.facts.none? { |item| item.value == "CEA15+" }
     assert_equal "Elemont", episode.fact("manufacturer")["value"]
-    assert_equal "catalog", episode.fact("manufacturer")["source"]
+    assert_equal "user", episode.fact("manufacturer")["source"]
     assert_includes episode.identifiers.pluck("value"), "Elemont MH"
     assert_includes episode.identifiers.pluck("value"), "CEA15"
-    assert_not identity.known?
+    assert identity.known?
+    assert_nil Rag::DocumentIdentityScope.applicability_mode(identity)
     assert_equal "ready", decision.decision
     assert_nil decision.clarification
     assert_not_includes explained[:query], DOOR_DISPLAY
     assert_not_includes explained[:query], "CEA15+"
-    assert_includes field_problem(episode), "Manufacturer: Elemont (catalog)"
+    assert_includes field_problem(episode), "Manufacturer: Elemont (technician)"
   end
 
   test "an observation that names the equipment does not store the floor or the indicator" do
@@ -799,9 +801,9 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     settle(episode, result, turn)
 
     assert_equal "Elemont", episode.fact("manufacturer")["value"]
-    assert_equal "catalog", episode.fact("manufacturer")["source"]
+    assert_equal "user", episode.fact("manufacturer")["source"]
     assert_equal "NICE3000", episode.fact("controller")["value"]
-    assert_equal "catalog", episode.fact("controller")["source"]
+    assert_equal "user", episode.fact("controller")["source"]
     assert_not_equal "CEA15+", episode.fact("controller")["value"]
     assert_nil episode.fact("model")
     assert_equal [ "Elemont MH", "CEA15" ], episode.identifiers.pluck("value")
@@ -809,7 +811,7 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_includes episode.observations.pluck("text"), "LED 7 apagado"
     assert episode.observations.any? { |item| item["text"].include?("clic") }
     assert_empty result.ambiguities
-    assert_not Rag::EquipmentIdentity.from_episode(episode).known?
+    assert Rag::EquipmentIdentity.from_episode(episode).known?
   end
 
   test "Elemont CEA15 does not select CEA15+ or write a manufacturer" do
@@ -908,11 +910,12 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
 
     fact = result.facts.find { |item| item.slot == "manufacturer" }
     assert_equal "Elemont", fact.value
-    assert_equal "catalog", fact.source
+    assert_equal "user", fact.source
     assert_equal "Elemont MH+", fact.span
     assert result.identifiers.any? { |item| item.value == "Elemont MH+" }
     assert_equal "Elemont", episode.fact("manufacturer")["value"]
-    assert_equal "catalog", episode.fact("manufacturer")["source"]
+    assert_equal "user", episode.fact("manufacturer")["source"]
+    assert Rag::EquipmentIdentity.from_episode(episode).known?
   end
 
   test "both visible manuals keep Elemont and do not read CEA15 as CEA15+" do
@@ -924,13 +927,14 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     values = episode.identifiers.pluck("value")
 
     assert_equal "Elemont", episode.fact("manufacturer")["value"]
-    assert_equal "catalog", episode.fact("manufacturer")["source"]
+    assert_equal "user", episode.fact("manufacturer")["source"]
     assert_includes values, "Elemont MH"
     assert_includes values, "CEA15"
     assert_not_includes values, "CEA15+"
     assert_nil episode.fact("controller")
     assert result.facts.none? { |item| item.value == "CEA15+" || item.manufacturer == "Controles S.A." }
-    assert_not identity.known?
+    assert identity.known?
+    assert_nil Rag::DocumentIdentityScope.applicability_mode(identity)
     assert_equal "ready", decision.decision
     assert_nil decision.clarification
     assert_not_includes explained[:query].to_s, DOOR_DISPLAY
@@ -946,11 +950,111 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     settle(episode, result, turn)
 
     assert_equal "CEA15+", episode.fact("controller")["value"]
-    assert_equal "catalog", episode.fact("controller")["source"]
+    assert_equal "user", episode.fact("controller")["source"]
     assert_equal "Elemont", episode.fact("manufacturer")["value"]
     assert_equal "catalog", episode.fact("manufacturer")["source"]
     assert_includes episode.identifiers.pluck("value"), "Elemont MH"
     assert_not Rag::EquipmentIdentity.from_episode(episode).known?
+  end
+
+  test "a declared brand is the technician's and a hedge or a question stays catalog" do
+    catalog = equipment_catalog([
+      equipment_row(brand: "Elemont", designators: [ "MH" ], display_name: DOOR_DISPLAY)
+    ])
+    declared = "Elemont MH con placa CEA15; la puerta 1 no termina de cerrar."
+    declared_raw = report([ assert_span("Elemont MH", nil) ])
+    declared_result = perceive_with(catalog, declared_raw, declared)
+    declared_episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    settle(declared_episode, declared_result, declared)
+    declared_identity = Rag::EquipmentIdentity.from_episode(declared_episode)
+
+    assert_equal "user", declared_episode.fact("manufacturer")["source"]
+    assert declared_identity.known?
+    assert_nil Rag::DocumentIdentityScope.applicability_mode(declared_identity)
+    assert declared_result.field_rejections.none? { |row| row["reason"] == "slot_hint" }
+
+    hedge = "Creo que es un Elemont MH; la puerta no termina de cerrar."
+    hedge_result = perceive_with(catalog, report([ assert_span("Elemont MH", "manufacturer") ]), hedge)
+    hedge_episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    settle(hedge_episode, hedge_result, hedge)
+    hedge_identity = Rag::EquipmentIdentity.from_episode(hedge_episode)
+
+    assert_equal "catalog", hedge_episode.fact("manufacturer")["source"]
+    assert_not hedge_identity.known?
+    assert_equal(
+      Rag::DocumentIdentityScope::IDENTITY_UNKNOWN_REFERENCE,
+      Rag::DocumentIdentityScope.applicability_mode(hedge_identity)
+    )
+
+    question = "¿Será un Elemont MH?"
+    question_result = perceive_with(catalog, report([ assert_span("Elemont MH", "manufacturer") ]), question)
+    question_episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    settle(question_episode, question_result, question)
+
+    assert_equal "catalog", question_episode.fact("manufacturer")["source"]
+    assert_not Rag::EquipmentIdentity.from_episode(question_episode).known?
+  end
+
+  test "a declared controller does not turn the catalog manufacturer into a known identity" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    result = perceive(report([ assert_span("NICE3000", "controller") ]), "Es NICE3000")
+    settle(episode, result, "Es NICE3000")
+
+    assert_equal "user", episode.fact("controller")["source"]
+    assert_equal "MONARCH", episode.fact("manufacturer")["value"]
+    assert_equal "catalog", episode.fact("manufacturer")["source"]
+    identity = Rag::EquipmentIdentity.from_episode(episode)
+    assert_nil identity
+    assert_equal(
+      Rag::DocumentIdentityScope::IDENTITY_UNKNOWN_REFERENCE,
+      Rag::DocumentIdentityScope.applicability_mode(identity)
+    )
+  end
+
+  test "other correction wordings keep the replacement and drop only the retracted floor" do
+    [
+      "En realidad la cabina está cerca de planta 2, no de planta 1.",
+      "Me equivoqué: la cabina está cerca de planta 2, no en planta 1.",
+      "Corrijo: la cabina está cerca de planta 2 y no en planta 1."
+    ].each do |turn|
+      episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+      episode.append_observation!("detenida cerca de planta 1", correlation_id: "seed")
+      episode.append_observation!("no hay personas dentro", correlation_id: "seed")
+      result = perceive(observation_report([]), turn, episode: episode)
+      settle(episode, result, turn)
+      texts = episode.observations.pluck("text")
+
+      assert texts.any? { |text| text.include?("planta 2") }, turn
+      assert_includes texts, "no hay personas dentro", turn
+      assert texts.none? { |text| text.match?(/(?<![[:alnum:]])planta 1(?![[:alnum:]])/) }, turn
+    end
+  end
+
+  test "a corrected indicator replaces the previous one" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    episode.append_observation!("El LED 7 está apagado", correlation_id: "seed")
+    turn = "Corrijo: el LED que está apagado es el 5, no el 7."
+    result = perceive(
+      { "move" => "unclear", "assertions" => [], "observations" => [], "pending_resolution" => nil, "clarification_target" => "correction_target" },
+      turn,
+      episode: episode
+    )
+    settle(episode, result, turn)
+    texts = episode.observations.pluck("text")
+
+    assert_equal "correct", result.move
+    assert texts.any? { |text| text.include?("LED") && text.include?("5") }
+    assert texts.none? { |text| text.include?("LED 7") }
+  end
+
+  test "a retraction without a replacement leaves the stored observation" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    episode.append_observation!("detenida cerca de planta 1", correlation_id: "seed")
+    turn = "Corrijo: no de planta 1."
+    result = perceive(observation_report([]), turn, episode: episode)
+    settle(episode, result, turn)
+
+    assert_includes episode.observations.pluck("text"), "detenida cerca de planta 1"
   end
 
   def correct_payload(assertions)

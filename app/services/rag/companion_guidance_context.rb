@@ -10,7 +10,7 @@ module Rag
     # follow-up flag. Units that do not fit are omitted whole.
     MAX_CHARS = 2400
     # Diagnostic only. Not rendered, not routed, and not TurnPerception::PROMPT_VERSION.
-    COMPANION_POLICY_VERSION = "2026-10-07.1"
+    COMPANION_POLICY_VERSION = "2026-10-08.1"
     HYPOTHESIS_RULE = "Separate the report, the evidence, and a hypothesis. An unestablished part or place is conditional; do not treat it as present."
     ADVANCE_FAULT = "advance_fault"
     RESOLVE_IDENTITY = "resolve_identity"
@@ -24,7 +24,10 @@ module Rag
     }.freeze
     # Used only when the turn is advance_fault and no concrete state was reported.
     NO_STATE_OBJECTIVE = "Current objective: advance the current request. No fault or symptom was reported. Do not ask equipment identity by routine."
-    SYMPTOM_LEAD = "Ask for one safe look, read, or listen check tied to the reported symptom. Put the observational verb and the thing observed in the same sentence. One main question. Do not make a questionnaire."
+    SYMPTOM_LEAD = "You may ask one safe look, read, or listen check tied to the reported symptom. Put the observational verb and the thing observed in the same sentence. One main question. Do not make a questionnaire."
+    DOC_GAP = "No applicable documentation for this job was retrieved this turn."
+    EXIT_RULE = "#{DOC_GAP} Summarize what was verified, state what documentation is missing, then ask the one decisive datum or recommend escalation with that summary. Do not propose another check by routine."
+    MANUAL_STOP = "Do not print DATA_NOT_AVAILABLE. A summary of what was verified and the missing documentation is a complete answer."
     TASK_LEAD = "This request is the anchor. Do not ask them to describe the fault, restate the symptom, or explain the abnormal behavior. If a check is needed, ask one that distinguishes causes, interprets a result already reported, or decides the next step of this request. One sentence. Not a checklist. Do not ask equipment identity by routine."
     PASSIVE_RULE = "Passive means a state that already exists. Do not have them press, activate, call, send, move, power, reset, or measure to create it."
     # Concrete equipment state already reported. Not a request, a manual, or an identity.
@@ -57,7 +60,7 @@ module Rag
     TURN_CHARS = 160
     PROCEDURE_LIMIT = "If they ask for a procedure, reset, or value, do not give those steps, and do not reply by only asking which equipment this is. Say it is not confirmed. Do not stop at the refusal. Do not send them to an unknown terminal."
     DONE_ACTION = "If they already report an action as done, use it as context and do not instruct it again."
-    INTERVENTION_LIMIT = "You may observe, interpret, and hypothesize. Do not instruct a physical or operational intervention, or a tool or instrument measurement without applicable evidence."
+    INTERVENTION_LIMIT = "Mark a hypothesis as a hypothesis. Do not instruct a physical or operational intervention, or a tool or instrument measurement without applicable evidence."
     QUESTION_RULE = "One useful question when needed. Not a questionnaire."
     UNKNOWN_INVENT = "Do not invent electrical values, terminals, fault-code meanings, sequences, menu names, DIP positions, selectors, waits, inspection mode, power cuts, or resets."
     KNOWN_INVENT = "Do not invent electrical values, distances, tolerances, torque, parameters, terminal numbers, terminal functions, fault-code meanings, manufacturer-specific sequences, menu names, or DIP positions."
@@ -235,7 +238,7 @@ module Rag
         detail_piece("Keep this job in elevator field service.", 49),
         detail_piece(observation_lead, 46),
         detail_piece(nameplate_rule, 44),
-        detail_piece("Do not stop after saying there is no manual. Do not print DATA_NOT_AVAILABLE.", 41),
+        detail_piece(manual_stop_line, 41),
         detail_piece("Do not cite manuals with [n].", 41)
       ]
     end
@@ -258,10 +261,10 @@ module Rag
     def known_detail_pieces
       [
         detail_piece("Continue helping using the accepted visual observation, the active problem, and generic diagnostic reasoning.", 44),
-        detail_piece("Ask for one high-value next observation when needed. One main question. A short alternative is allowed. Do not turn the answer into a questionnaire, and do not ask for manufacturer, model, controller, fault code, and a photo together.", 42),
+        detail_piece(known_next_step, 42),
         detail_piece("Clearly distinguish observation from guidance. Put what the photo shows in its own short sentence, then Danebo guidance. Guidance is a hypothesis or a field check, not a manufacturer instruction.", 45),
         detail_piece("On a follow-up, do not greet again. A short greeting is allowed only when this opens the case.", 48),
-        detail_piece("Do not stop after saying there is no manual. Do not print DATA_NOT_AVAILABLE.", 41)
+        detail_piece(manual_stop_line, 41)
       ]
     end
 
@@ -284,7 +287,29 @@ module Rag
     # the main question. Only an advance_fault turn with no reported state
     # switches to the current request.
     def observation_lead
-      task_anchored? ? TASK_LEAD : SYMPTOM_LEAD
+      return EXIT_RULE if documentation_exit?
+      return TASK_LEAD if task_anchored?
+
+      SYMPTOM_LEAD
+    end
+
+    def known_next_step
+      return EXIT_RULE if documentation_exit?
+
+      "One high-value next observation is optional. One main question. A short alternative is allowed. Do not turn the answer into a questionnaire, and do not ask for manufacturer, model, controller, fault code, and a photo together."
+    end
+
+    def manual_stop_line
+      return "Do not print DATA_NOT_AVAILABLE." if documentation_exit?
+
+      MANUAL_STOP
+    end
+
+    # The turn already says it does not know, or it only continues the same
+    # check. A summary request is not this signal.
+    def documentation_exit?
+      folded = fold_text(@question)
+      folded.match?(/\bno lo se\b/) || folded.match?(/\A(?:sigue igual|y ahora|no lo se)(?:\s+(?:sigue igual|y ahora|no lo se))*\z/)
     end
 
     def task_anchored?

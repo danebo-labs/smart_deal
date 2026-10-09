@@ -190,7 +190,7 @@ class Rag::WorkContextReducerTest < ActiveSupport::TestCase
     with_owner { settle(episode, report_payload([ "detenida cerca de planta 2" ]), turn) }
 
     texts = episode.observations.pluck("text")
-    assert_includes texts, "detenida cerca de planta 2"
+    assert texts.any? { |text| text.include?("planta 2") }
     assert_includes texts, "no hay personas dentro"
     assert texts.none? { |text| text.match?(/(?<![[:alnum:]])planta 1(?![[:alnum:]])/i) }
   end

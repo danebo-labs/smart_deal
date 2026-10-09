@@ -137,7 +137,7 @@ class Rag::CompanionGuidanceContextTest < ActiveSupport::TestCase
     assert_includes prompt, "You are assisting an elevator technician in the field."
     assert_includes prompt, "Keep this job in elevator field service."
     assert_not_includes prompt, "another kind of machine"
-    assert_includes prompt, "Ask for one safe look, read, or listen check tied to the reported symptom."
+    assert_includes prompt, "You may ask one safe look, read, or listen check tied to the reported symptom."
     assert_includes prompt, "in the same sentence"
     assert_includes prompt, "One main question"
     assert_includes prompt, "Do not make a questionnaire."
@@ -147,7 +147,10 @@ class Rag::CompanionGuidanceContextTest < ActiveSupport::TestCase
     assert_includes prompt, "Do not choose the nameplate or the equipment identity as the main question."
     assert_not_includes prompt, "If the missing fact is which equipment this is, ask them to read the nameplate"
     assert_not_includes prompt, "Ask them to read the nameplate"
-    assert_includes prompt, "You may observe, interpret, and hypothesize."
+    assert_includes prompt, "Mark a hypothesis as a hypothesis."
+    assert_includes prompt, "A summary of what was verified and the missing documentation is a complete answer."
+    assert_not_includes prompt, "Catalog entry"
+    assert_not_includes prompt, "Do not propose another check by routine."
     assert_includes prompt, "tool or instrument measurement without applicable evidence."
     assert_includes prompt, "selectors, waits, inspection mode, power cuts, or resets."
     assert_includes prompt, "Do not print DATA_NOT_AVAILABLE."
@@ -181,6 +184,39 @@ class Rag::CompanionGuidanceContextTest < ActiveSupport::TestCase
     assert_not_includes unknown, "jamba"
     assert_includes unknown, "Do not make a questionnaire."
     assert_includes unknown, "Do not ask equipment identity by routine."
+  end
+
+  test "an unknown answer or a bare follow-up can close without another routine check" do
+    [ "¿Y ahora? No lo sé.", "Sigue igual.", "Sigue igual. ¿Y ahora?" ].each do |question|
+      unknown = unknown_prompt(question: question, session_context: "Goal: la puerta no cierra", locale: :es)
+      known = Rag::CompanionGuidanceContext.build(
+        question: question,
+        identity: Rag::EquipmentIdentity.new(
+          manufacturer: "Elemont",
+          needles: [ "Elemont" ],
+          facts: [ { "slot" => "manufacturer", "value" => "Elemont", "source" => "user" } ]
+        ),
+        session_context: "Goal: la puerta no cierra",
+        labels: [],
+        locale: :es,
+        mode: :known
+      ).to_s
+
+      [ unknown, known ].each do |prompt|
+        assert_includes prompt, "Do not propose another check by routine.", question
+        assert_includes prompt, "recommend escalation", question
+        assert_not_includes prompt, "Catalog entry", question
+        assert_not_includes prompt, "You may ask one safe look", question
+      end
+    end
+
+    summary = unknown_prompt(
+      question: "Resúmeme lo que llevamos y dime qué observación segura sigue.",
+      session_context: "Goal: la puerta no cierra",
+      locale: :es
+    )
+    assert_not_includes summary, "Do not propose another check by routine."
+    assert_includes summary, "A summary of what was verified and the missing documentation is a complete answer."
   end
 
   test "unknown guidance keeps locale follow-up and the prompt budget" do

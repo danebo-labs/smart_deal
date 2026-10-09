@@ -79,8 +79,9 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
 
     facts = session.reload.active_episode["facts"]
     assert_equal "NICE3000", facts.dig("controller", "value")
-    assert_equal "catalog", facts.dig("controller", "source")
+    assert_equal "user", facts.dig("controller", "source")
     assert_equal "MONARCH", facts.dig("manufacturer", "value")
+    assert_equal "user", facts.dig("manufacturer", "source")
     assert_nil session.active_episode["pending_question"]
   end
 
@@ -102,13 +103,13 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     assert_not result.understanding.clarify_first?
     assert_nil session.active_episode["pending_question"]
     assert_equal "Elemont", facts.dig("manufacturer", "value")
-    assert_equal "catalog", facts.dig("manufacturer", "source")
+    assert_equal "user", facts.dig("manufacturer", "source")
     assert_includes identifiers, "Elemont MH"
     assert_includes identifiers, "CEA15"
     assert_not_includes identifiers, "CEA15+"
     assert_not_includes result.composed.to_s, "Elemont Montacargas Hidraulico Modelo MH"
     assert_not_includes result.composed.to_s, "CEA15+"
-    assert_not identity.known?
+    assert identity.known?
   end
 
   test "captured Journey A interpreter outputs preserve one episode through turn 14" do
@@ -148,8 +149,13 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     assert_includes last_result.composed, "planta 2"
     assert_not_includes last_result.composed, "planta 1 y no hay personas"
     block = with_owner { SessionContextBuilder.field_problem_block(session) }
+    identity = Rag::EquipmentIdentity.from_episode(stored)
     assert_includes block, "planta 2"
     assert_includes block, "Fault code: 18"
+    assert_equal "user", stored.dig("facts", "manufacturer", "source")
+    assert_includes block, "Manufacturer: Elemont (technician)"
+    assert identity.known?
+    assert_nil Rag::DocumentIdentityScope.applicability_mode(identity)
   end
 
   test "both visible door manuals keep Elemont and leave CEA15 unresolved" do
@@ -171,7 +177,7 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     assert_not result.understanding.clarify_first?
     assert_empty session.document_focus_entries
     assert_equal "Elemont", facts.dig("manufacturer", "value")
-    assert_equal "catalog", facts.dig("manufacturer", "source")
+    assert_equal "user", facts.dig("manufacturer", "source")
     assert_nil facts["controller"]
     assert_includes identifiers, "Elemont MH"
     assert_includes identifiers, "CEA15"
@@ -180,7 +186,8 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     assert_not_includes result.composed.to_s, "Manual CEA15+"
     assert_not_includes result.composed.to_s, "CEA15+"
     assert_not_includes result.composed.to_s, "Controles S.A."
-    assert_not identity.known?
+    assert identity.known?
+    assert_nil Rag::DocumentIdentityScope.applicability_mode(identity)
   end
 
   test "an explicit CEA15+ stores the controller and keeps the equipment manufacturer" do
@@ -203,7 +210,7 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     assert_equal "ready", result.understanding.decision
     assert_empty session.document_focus_entries
     assert_equal "CEA15+", facts.dig("controller", "value")
-    assert_equal "catalog", facts.dig("controller", "source")
+    assert_equal "user", facts.dig("controller", "source")
     assert_equal "Elemont", facts.dig("manufacturer", "value")
     assert_equal "catalog", facts.dig("manufacturer", "source")
     assert_not_includes result.composed.to_s, "Controles S.A."

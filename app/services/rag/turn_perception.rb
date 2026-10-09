@@ -17,6 +17,10 @@ module Rag
     MAX_TOOL_BYTES = 4096
     MIN_OBSERVATION_CHARS = 13
     FAULT_RE = /\A[a-z]?\d{1,4}[a-z]?\z/
+    IDENTITY_HEDGE = /
+      \b(?:creo|me\s+parece|puede\s+ser|podria(?:\s+ser)?|quizas|tal\s+vez|
+      no\s+se\s+si|no\s+estoy\s+seguro)\b
+    /ix
     PROMPT_VERSION = "2026-10-07.2"
     SCHEMA_VERSION = "turn_perception.3"
 
@@ -25,7 +29,8 @@ module Rag
 
     Result = Data.define(
       :valid, :move, :observations, :pending_resolution, :clarification_target,
-      :identities, :ambiguities, :field_rejections, :catalog_disagreements, :invalid_reason
+      :identities, :ambiguities, :field_rejections, :catalog_disagreements, :invalid_reason,
+      :correction
     ) do
       def facts
         identities.select { |item| item.kind == "fact" }
@@ -100,6 +105,9 @@ module Rag
 
       assertions = literal_assertions(data["assertions"])
       observations = literal_observations(data["observations"])
+      @correction = ObservationCorrection.resolve(
+        turn: @turn, observations: observations, assertions: assertions
+      )
       identities, ambiguities = resolve_assertions(assertions, observations)
       move = data["move"]
       resolution = data["pending_resolution"]
@@ -122,7 +130,8 @@ module Rag
         ambiguities: ambiguities,
         field_rejections: @field_rejections,
         catalog_disagreements: @catalog_disagreements,
-        invalid_reason: nil
+        invalid_reason: nil,
+        correction: @correction || ObservationCorrection.none
       )
       record_perception(result)
       result
@@ -283,7 +292,7 @@ module Rag
       disagree(item["span"], item["slot_hint"], "manufacturer")
       note_rule("compound_brand", item["span"], "same_entry", { "brand" => match.brand })
       [
-        fact(item["span"], "assert", "manufacturer", match.brand, "catalog", match.brand),
+        fact(item["span"], "assert", "manufacturer", match.brand, declared_source(item["span"], match.brand), match.brand),
         identifier(item["span"], "assert")
       ]
     end
@@ -330,7 +339,10 @@ module Rag
       slot = designator.type.to_s
       if %w[controller model].include?(slot) && designator.value.present?
         disagree(item["span"], item["slot_hint"], slot)
-        return fact(item["span"], item["act"], slot, designator.value, "catalog", designator.manufacturer)
+        return fact(
+          item["span"], item["act"], slot, designator.value,
+          declared_source(item["span"], designator.value), designator.manufacturer
+        )
       end
 
       identifier(item["span"], item["act"])
@@ -342,7 +354,10 @@ module Rag
       brand = lookup_brand(item["span"])
       if brand&.status == :exact
         disagree(item["span"], item["slot_hint"], "manufacturer")
-        return fact(item["span"], item["act"], "manufacturer", brand.manufacturer, "catalog", brand.manufacturer)
+        return fact(
+          item["span"], item["act"], "manufacturer", brand.manufacturer,
+          declared_source(item["span"], brand.manufacturer), brand.manufacturer
+        )
       end
 
       span = item["span"]
@@ -437,9 +452,48 @@ module Rag
     # The turn already names the rejected value and its replacement. Keep the
     # other identities and the other checks from that same turn. A model
     # reading of correction_target would ask which datum changed and drop both.
+    # The slot hint does not decide this. The clause must name the value, and
+    # the catalog value must be that same label. A question or a hedge stays
+    # catalog. A manufacturer the catalog adds is not this method.
+    def declared_source(span, value)
+      return "catalog" unless declared_identity?(span) && catalog_normalizes?(span, value)
+
+      note_rule("identity_source", span, "catalog_normalized", { "value" => value })
+      "user"
+    end
+
+    def declared_identity?(span)
+      clause = identity_clause(span)
+      return false if clause.blank?
+
+      folded = clause.unicode_normalize(:nfkd).gsub(/\p{Mn}/, "")
+      return false if folded.match?(/[¿?]/)
+      return false if folded.match?(IDENTITY_HEDGE)
+
+      true
+    end
+
+    def identity_clause(span)
+      needle = normalize_span(span)
+      return "" if needle.blank?
+
+      @turn.to_s.split(/[.;]\s+|\n+/).find { |clause| normalize_span(clause).include?(needle) }.to_s
+    end
+
+    def catalog_normalizes?(span, value)
+      left = normalize_span(span)
+      right = normalize_span(value)
+      return false if left.blank? || right.blank?
+      return true if left == right
+      return false if right.match?(/\d/)
+
+      left.match?(/(?<![[:alnum:]])#{Regexp.escape(right)}(?![[:alnum:]])/)
+    end
+
     def recover_stated_correction(move, resolution, identities, observations, ambiguities, target)
       codes = explicit_fault_codes
       if codes
+        @correction = ObservationCorrection.none
         old_code, new_code = codes
         identities = merged_fault_identities(identities, old_code, new_code)
         observations = merged_fault_observations(observations, old_code)
@@ -450,8 +504,8 @@ module Rag
         return [ "correct", nil, identities, observations, ambiguities, nil ]
       end
 
-      phrase = explicit_observation_replacement
-      if phrase && %w[unclear correct].include?(move)
+      phrase = keep_stated_correction
+      if phrase && %w[unclear correct report follow_up].include?(move)
         # The interpreter may return the entire correction as an observation.
         # Its rejected tail must not make the durable replacement look redundant.
         current = observations.reject { |text|
@@ -462,11 +516,24 @@ module Rag
         }
         merged = merge_phrase(current, phrase)
         kept = identities.reject { |item| observation_fragment?(item, merged) }
-        note_rule("recover_stated_correction", phrase, "explicit_observation_replacement")
+        note_rule("recover_stated_correction", phrase, "observation_correction")
         return [ "correct", nil, kept, merged, ambiguities, nil ]
       end
 
+      @correction = ObservationCorrection.none unless @correction&.active?
       [ move, resolution, identities, observations, ambiguities, target ]
+    end
+
+    def keep_stated_correction
+      return nil unless @correction&.active?
+
+      phrase = @correction.asserted.find { |text| literal_span?(text) && symptom_observation?(text) }
+      if phrase
+        @correction = ObservationCorrection::Result.new(asserted: [ phrase ], retracted: @correction.retracted)
+      else
+        @correction = ObservationCorrection.none
+      end
+      phrase
     end
 
     def merged_fault_identities(identities, old_code, new_code)
@@ -543,7 +610,7 @@ module Rag
     end
 
     def correction_tail?(text)
-      text.to_s.match?(/[,;:]\s*no\s+de(?:l)?\b/i)
+      ObservationCorrection.tail?(text)
     end
 
     def asserts_fault?(item, code)
@@ -567,19 +634,6 @@ module Rag
       return nil unless literal_span?(old_code) && literal_span?(new_code)
 
       [ old_code, new_code ]
-    end
-
-    def explicit_observation_replacement
-      normalized = FollowupQueryRewriter.normalize_label(@turn)
-      return nil unless normalized.match?(/\bcorrijo\b/) && normalized.match?(/\bno de(?:l)?\b/)
-
-      match = @turn.match(/:\s*(.+?),\s*no\s+de(?:l)?\b/i)
-      return nil if match.nil?
-
-      phrase = match[1].to_s.squish
-      return nil unless literal_span?(phrase) && symptom_observation?(phrase)
-
-      phrase
     end
 
     def adjust_move(move, resolution, identities, observations, ambiguities, target)
@@ -620,7 +674,7 @@ module Rag
       return false if observations.empty?
       return false if identities.any? { |item| item.kind == "negate" && item.slot.present? }
 
-      explicit = explicit_observation_replacement.present?
+      explicit = @correction&.active?
       blocking = identities.select { |item|
         item.act == "assert" && %w[fact identifier].include?(item.kind) &&
           !observation_fragment?(item, observations)
@@ -753,8 +807,9 @@ module Rag
     def invalid(reason)
       result = Result.new(
         valid: false, move: nil, observations: [], pending_resolution: nil, clarification_target: nil,
-        identities: [], ambiguities: [], field_rejections: @field_rejections,
-        catalog_disagreements: [], invalid_reason: reason
+        identities: [], ambiguities: [],         field_rejections: @field_rejections,
+        catalog_disagreements: [], invalid_reason: reason,
+        correction: ObservationCorrection.none
       )
       record_perception(result)
       result

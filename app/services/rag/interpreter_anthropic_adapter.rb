@@ -1,0 +1,438 @@
+# frozen_string_literal: true
+
+module Rag
+  # Messages API adapter for the isolated interpreter experiment.
+  # TurnInterpreter keeps BedrockClient. This class is not that default.
+  # It copies the prepared converse payload and does not open a socket.
+  class InterpreterAnthropicAdapter
+    HAIKU_55 = "claude-haiku-5-5"
+    HAIKU_45 = "claude-haiku-4-5-20251001"
+    ACCEPTED_MODELS = [ HAIKU_55, HAIKU_45 ].freeze
+    BEDROCK_IDS = %w[
+      anthropic.claude-haiku-5-5
+      us.anthropic.claude-haiku-5-5
+      eu.anthropic.claude-haiku-5-5
+      au.anthropic.claude-haiku-5-5
+      jp.anthropic.claude-haiku-5-5
+      global.anthropic.claude-haiku-5-5
+      anthropic.claude-haiku-4-5
+      global.anthropic.claude-haiku-4-5-20251001-v1:0
+    ].freeze
+    ANTHROPIC_VERSION = "2023-06-01"
+    ENDPOINT = "https://api.anthropic.com/v1/messages"
+    LONG_PROMPT_TOKENS = 100_000
+    SOURCES = {
+      "model" => "https://platform.claude.com/docs/en/models/haiku-5-5/overview",
+      "migration" => "https://platform.claude.com/docs/en/models/haiku-5-5/migration-guide",
+      "haiku_45" => "https://platform.claude.com/docs/en/models/haiku-4-5/overview",
+      "pricing" => "https://platform.claude.com/docs/en/about-claude/pricing",
+      "stop_reasons" => "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons",
+      "messages" => "https://platform.claude.com/docs/en/build-with-claude/working-with-messages"
+    }.freeze
+    CONSULTED_ON = "2026-10-09"
+    # USD per token. Short-prompt Haiku 5.5 rates apply at or below 100_000
+    # input tokens. Long-prompt rates are selected only from reported usage.
+    RATES = {
+      HAIKU_55 => {
+        input: BigDecimal("0.10") / 1_000_000,
+        output: BigDecimal("0.50") / 1_000_000,
+        cache_read: BigDecimal("0.01") / 1_000_000,
+        cache_write_5m: BigDecimal("0.125") / 1_000_000,
+        cache_write_1h: BigDecimal("0.20") / 1_000_000,
+        long_input: BigDecimal("0.50") / 1_000_000,
+        long_output: BigDecimal("2.50") / 1_000_000,
+        long_cache_read: BigDecimal("0.05") / 1_000_000,
+        long_cache_write_5m: BigDecimal("0.625") / 1_000_000,
+        long_cache_write_1h: BigDecimal("1") / 1_000_000
+      }.freeze,
+      HAIKU_45 => {
+        input: BigDecimal("1") / 1_000_000,
+        output: BigDecimal("5") / 1_000_000,
+        cache_read: BigDecimal("0.10") / 1_000_000,
+        cache_write_5m: BigDecimal("1.25") / 1_000_000,
+        cache_write_1h: BigDecimal("2") / 1_000_000
+      }.freeze
+    }.freeze
+    PRICED_USAGE_KEYS = %w[
+      input_tokens output_tokens
+      cache_creation_input_tokens cache_read_input_tokens cache_creation
+    ].freeze
+    USAGE_BREAKDOWN_KEYS = %w[output_tokens_details service_tier].freeze
+    SK_ANT = /sk-ant-[A-Za-z0-9_-]{6,}/
+    BEARER = /Bearer\s+\S+/i
+
+    Message = Struct.new(:content)
+    Output = Struct.new(:message)
+    Usage = Struct.new(:input_tokens, :output_tokens)
+    Observed = Struct.new(
+      :usage, :output, :native, :normalized, :stop_reason, :returned_model, :empty,
+      keyword_init: true
+    )
+
+    class Error < StandardError
+      attr_reader :code
+
+      def initialize(code, message = nil)
+        @code = code
+        super(message || code)
+      end
+    end
+
+    class ProviderError < Error
+      attr_reader :error_type, :native
+
+      def initialize(native)
+        @native = native
+        err = native.is_a?(Hash) ? native["error"] : nil
+        @error_type = err.is_a?(Hash) ? err["type"].to_s : "provider_error"
+        text = err.is_a?(Hash) ? err["message"].to_s : @error_type
+        super("provider_error", InterpreterAnthropicAdapter.scrub_text(text).truncate(180))
+      end
+    end
+
+    def self.translate(params, model_id:)
+      new.translate(params, model_id: model_id)
+    end
+
+    def self.normalize(native)
+      new.normalize(native)
+    end
+
+    def self.tool_input(content)
+      TurnInterpreter.new(
+        turn: ".",
+        episode: ActiveEpisode.new,
+        viewer_account: nil,
+        correlation_id: "interpreter-experiment:extract",
+        attribution: nil,
+        client: :closed,
+        catalog: :closed
+      ).send(:extract_tool_input, content)
+    end
+
+    def self.price(model_id, usage)
+      new.price(model_id, usage)
+    end
+
+    def self.scrub(value)
+      case value
+      when Hash
+        value.each_with_object({}) do |(key, item), out|
+          name = key.to_s
+          next if secret_key?(name)
+
+          out[name] = scrub(item)
+        end
+      when Array
+        value.map { |item| scrub(item) }
+      when String
+        scrub_text(value)
+      when Numeric, TrueClass, FalseClass, NilClass
+        value
+      else
+        { "unmodeled_type" => value.class.name }
+      end
+    end
+
+    def self.scrub_text(text)
+      ValidationCapture.scrub_text(text.to_s).gsub(SK_ANT, "[redacted]").gsub(BEARER, "Bearer [redacted]")
+    end
+
+    def self.secret_key?(name)
+      compact = name.to_s.downcase.gsub(/[^a-z0-9]/, "")
+      return true if ValidationCapture::SECRET_KEYS.include?(compact)
+
+      compact.include?("apikey") || compact == "authorization"
+    end
+
+    def translate(params, model_id:)
+      accepted = accept_model!(model_id)
+      inference = hash_at(params, :inference_config)
+      max_tokens = inference[:max_tokens] || inference["max_tokens"]
+      raise Error, "max_tokens_missing" unless max_tokens.is_a?(Integer)
+      raise Error, "max_tokens_above_interpreter" if max_tokens > TurnInterpreter::MAX_TOKENS
+
+      temperature = inference.key?(:temperature) ? inference[:temperature] : inference["temperature"]
+      adjustments = []
+      body = {
+        "model" => accepted,
+        "max_tokens" => max_tokens,
+        "system" => [ { "type" => "text", "text" => system_text(params) } ],
+        "messages" => [
+          { "role" => "user", "content" => [ { "type" => "text", "text" => message_text(params) } ] }
+        ],
+        "tools" => anthropic_tools(hash_at(params, :tool_config)),
+        "tool_choice" => { "type" => "tool", "name" => forced_tool_name(hash_at(params, :tool_config)) }
+      }
+      apply_sampling!(body, adjustments, model_id: accepted, temperature: temperature)
+      {
+        "provider" => "anthropic",
+        "api" => "messages",
+        "endpoint" => ENDPOINT,
+        "anthropic_version" => ANTHROPIC_VERSION,
+        "model_id" => accepted,
+        "headers" => {
+          "content-type" => "application/json",
+          "anthropic-version" => ANTHROPIC_VERSION,
+          "x-api-key" => { "present" => false }
+        },
+        "adjustments" => adjustments,
+        "thinking" => "unset",
+        "body" => body
+      }
+    end
+
+    def normalize(native)
+      sanitized = self.class.scrub(native)
+      return empty_observed(sanitized) unless sanitized.is_a?(Hash) && sanitized.any?
+      raise ProviderError, sanitized if error_payload?(sanitized)
+
+      raw_content = sanitized["content"]
+      blocks = raw_content.is_a?(Array) ? raw_content.map { |block| normalize_block(block) } : []
+      usage = sanitized["usage"].is_a?(Hash) ? sanitized["usage"] : nil
+      Observed.new(
+        usage: usage_struct(usage),
+        output: Output.new(Message.new(blocks)),
+        native: sanitized,
+        normalized: {
+          "model" => sanitized["model"],
+          "stop_reason" => sanitized["stop_reason"],
+          "stop_sequence" => sanitized["stop_sequence"],
+          "content" => blocks,
+          "usage" => usage
+        },
+        stop_reason: sanitized["stop_reason"],
+        returned_model: sanitized["model"],
+        empty: blocks.empty?
+      )
+    end
+
+    def price(model_id, usage)
+      rates = RATES[model_id]
+      tariff = tariff_for(model_id, rates)
+      return tariff.merge("cost_usd" => nil, "cost_status" => "usage_absent") unless usage.is_a?(Hash)
+      if unpriced_usage?(usage)
+        return tariff.merge("cost_usd" => nil, "cost_status" => "unpriced_usage_field", "usage" => usage)
+      end
+
+      input = usage["input_tokens"]
+      output = usage["output_tokens"]
+      unless input.is_a?(Integer) && output.is_a?(Integer)
+        return tariff.merge("cost_usd" => nil, "cost_status" => "usage_incomplete", "usage" => usage)
+      end
+
+      long = model_id == HAIKU_55 && input > LONG_PROMPT_TOKENS
+      total = (BigDecimal(input) * rate(rates, :input, long)) + (BigDecimal(output) * rate(rates, :output, long))
+      total += cache_read_cost(usage, rates, long)
+      total += cache_write_cost(usage, rates, long)
+      tariff.merge(
+        "cost_usd" => format("%.6f", total),
+        "cost_status" => "priced",
+        "prompt_band" => long ? "over_100000" : "up_to_100000",
+        "usage" => usage
+      )
+    end
+
+    private
+
+    def accept_model!(model_id)
+      text = model_id.to_s
+      raise Error, "bedrock_model_rejected" if BEDROCK_IDS.include?(text) || text.include?("anthropic.claude")
+      raise Error, "model_rejected" unless ACCEPTED_MODELS.include?(text)
+
+      text
+    end
+
+    def apply_sampling!(body, adjustments, model_id:, temperature:)
+      if model_id == HAIKU_55
+        adjustments << {
+          "parameter" => "temperature",
+          "action" => "omit",
+          "source_value" => temperature,
+          "source" => SOURCES["migration"],
+          "impact" => "Haiku 5.5 returns 400 for temperature other than 1, including 0. " \
+                      "The prompt is unchanged. This call is not temperature-locked. " \
+                      "Haiku 4.5 on the same matrix still sends temperature 0."
+        }
+        adjustments << thinking_adjustment
+        return
+      end
+
+      raise Error, "haiku_45_temperature" unless temperature == 0
+
+      body["temperature"] = 0
+      adjustments << {
+        "parameter" => "temperature",
+        "action" => "send",
+        "value" => 0,
+        "source" => SOURCES["haiku_45"],
+        "impact" => "Haiku 4.5 accepts temperature 0. top_p and top_k are not sent."
+      }
+    end
+
+    def thinking_adjustment
+      {
+        "parameter" => "thinking",
+        "action" => "unset",
+        "source" => SOURCES["migration"],
+        "impact" => "Adaptive thinking is on by default. A forced named tool_choice " \
+                    "returns the tool call and no thinking block, so max_tokens stays " \
+                    "#{TurnInterpreter::MAX_TOKENS}. The limit is not raised. effort is not set. " \
+                    "A max_tokens stop is recorded and is not a pass."
+      }
+    end
+
+    def anthropic_tools(tool_config)
+      Array(tool_config[:tools] || tool_config["tools"]).map { |tool|
+        spec = tool[:tool_spec] || tool["tool_spec"] || tool
+        schema = spec.dig(:input_schema, :json) || spec.dig("input_schema", "json")
+        {
+          "name" => (spec[:name] || spec["name"]).to_s,
+          "description" => (spec[:description] || spec["description"]).to_s,
+          "input_schema" => schema.deep_dup
+        }
+      }
+    end
+
+    def forced_tool_name(tool_config)
+      choice = tool_config[:tool_choice] || tool_config["tool_choice"] || {}
+      name = choice.dig(:tool, :name) || choice.dig("tool", "name")
+      raise Error, "tool_choice" unless name == TurnInterpreter::TOOL_NAME
+
+      name
+    end
+
+    def system_text(params)
+      system = params[:system] || params["system"]
+      Array(system).map { |block|
+        block.is_a?(Hash) ? (block[:text] || block["text"]).to_s : block.to_s
+      }.join
+    end
+
+    def message_text(params)
+      messages = Array(params[:messages] || params["messages"])
+      first = messages.first
+      return "" unless first.is_a?(Hash)
+
+      content = Array(first[:content] || first["content"])
+      block = content.first
+      return "" unless block.is_a?(Hash)
+
+      (block[:text] || block["text"]).to_s
+    end
+
+    def hash_at(params, key)
+      value = params[key] || params[key.to_s]
+      value.is_a?(Hash) ? value : {}
+    end
+
+    def error_payload?(hash)
+      return true if hash["type"] == "error"
+
+      hash.key?("error") && !hash.key?("content") && !hash.key?("stop_reason")
+    end
+
+    def empty_observed(sanitized)
+      Observed.new(
+        usage: nil,
+        output: Output.new(Message.new([])),
+        native: sanitized,
+        normalized: { "content" => [], "usage" => nil, "stop_reason" => nil },
+        stop_reason: nil,
+        returned_model: nil,
+        empty: true
+      )
+    end
+
+    def normalize_block(block)
+      return { "unmodeled_block" => { "type" => block.class.name } } unless block.is_a?(Hash)
+
+      case block["type"].to_s
+      when "text"
+        block.key?("text") ? { "text" => block["text"] } : { "unmodeled_block" => { "type" => "text" } }
+      when "tool_use"
+        tool = {}
+        tool["tool_use_id"] = block["id"] if block.key?("id")
+        tool["name"] = block["name"] if block.key?("name")
+        tool["input"] = block["input"] if block.key?("input")
+        { "tool_use" => tool }
+      when "thinking"
+        thinking = {}
+        thinking["thinking"] = block["thinking"] if block.key?("thinking")
+        thinking["signature"] = block["signature"] if block.key?("signature")
+        { "thinking" => thinking }
+      when "redacted_thinking"
+        redacted = {}
+        redacted["data"] = block["data"] if block.key?("data")
+        { "redacted_thinking" => redacted }
+      else
+        { "unmodeled_block" => { "type" => block["type"].to_s } }
+      end
+    end
+
+    def usage_struct(usage)
+      return nil unless usage.is_a?(Hash)
+
+      input = usage["input_tokens"]
+      output = usage["output_tokens"]
+      return nil unless input.is_a?(Integer) && output.is_a?(Integer)
+
+      Usage.new(input, output)
+    end
+
+    def unpriced_usage?(usage)
+      return true if usage.keys.any? { |key|
+        PRICED_USAGE_KEYS.exclude?(key) && USAGE_BREAKDOWN_KEYS.exclude?(key)
+      }
+
+      creation = usage["cache_creation"]
+      flat = usage["cache_creation_input_tokens"]
+      return false unless creation.is_a?(Hash)
+      return true if flat.is_a?(Integer)
+
+      known = %w[ephemeral_5m_input_tokens ephemeral_1h_input_tokens]
+      creation.keys.any? { |key| known.exclude?(key) } ||
+        creation.each_value.any? { |value| !value.nil? && !value.is_a?(Integer) }
+    end
+
+    def tariff_for(model_id, rates)
+      {
+        "model_id" => model_id,
+        "input_usd_per_mtok" => mtok(rates[:input]),
+        "output_usd_per_mtok" => mtok(rates[:output]),
+        "source" => SOURCES["pricing"],
+        "consulted_on" => CONSULTED_ON
+      }
+    end
+
+    def rate(rates, name, long)
+      return rates[name] unless long
+
+      rates[:"long_#{name}"] || rates[name]
+    end
+
+    def cache_read_cost(usage, rates, long)
+      tokens = usage["cache_read_input_tokens"]
+      return BigDecimal("0") unless tokens.is_a?(Integer)
+
+      BigDecimal(tokens) * rate(rates, :cache_read, long)
+    end
+
+    def cache_write_cost(usage, rates, long)
+      flat = usage["cache_creation_input_tokens"]
+      total = flat.is_a?(Integer) ? BigDecimal(flat) * rate(rates, :cache_write_5m, long) : BigDecimal("0")
+      creation = usage["cache_creation"]
+      return total unless creation.is_a?(Hash)
+
+      five = creation["ephemeral_5m_input_tokens"]
+      hour = creation["ephemeral_1h_input_tokens"]
+      total += BigDecimal(five) * rate(rates, :cache_write_5m, long) if five.is_a?(Integer)
+      total += BigDecimal(hour) * rate(rates, :cache_write_1h, long) if hour.is_a?(Integer)
+      total
+    end
+
+    def mtok(per_token)
+      format("%.2f", per_token * 1_000_000)
+    end
+  end
+end

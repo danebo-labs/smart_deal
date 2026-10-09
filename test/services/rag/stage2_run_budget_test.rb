@@ -3,43 +3,43 @@
 require "test_helper"
 
 class Rag::Stage2RunBudgetTest < ActiveSupport::TestCase
-  test "the closed pass keeps the registered spend and an unbilled attempt does not invent a cost" do
+  test "the closed diagnostic pass keeps the registered spend and an unbilled attempt does not invent a cost" do
     spent = Rag::Stage2RunBudget.snapshot(new_calls: 0, new_cost_usd: 0)
 
-    assert_equal 160, spent.calls
-    assert_equal 160, spent.historical_calls
+    assert_equal 188, spent.calls
+    assert_equal 188, spent.historical_calls
     assert_equal 0, spent.new_calls
     assert_equal 0, spent.unbilled_attempts
     assert_equal 0, spent.new_attempts
-    assert_equal BigDecimal("0.343774"), spent.cost_usd
-    assert_equal BigDecimal("0.343774"), spent.historical_cost_usd
+    assert_equal BigDecimal("0.423114"), spent.cost_usd
+    assert_equal BigDecimal("0.423114"), spent.historical_cost_usd
     assert_not spent.admit_turn
     assert_equal 0, spent.pass_calls_remaining
-    assert_equal 14, spent.stage2_calls_remaining
-    assert_equal 14, spent.global_calls_remaining
-    assert_operator spent.stage2_calls_remaining, :>=, Rag::Stage2RunBudget::TURN_CALL_MARGIN
+    assert_equal 0, spent.stage2_calls_remaining
+    assert_equal 0, spent.global_calls_remaining
     assert_not Rag::Stage2RunBudget.admit_turn?(new_calls: 0, new_cost_usd: 0)
     assert_not Rag::Stage2RunBudget.admit_turn?(new_calls: 0, new_cost_usd: BigDecimal("2.30"))
 
     unbilled = Rag::Stage2RunBudget.snapshot(new_calls: 0, new_cost_usd: 0, unbilled_attempts: 1)
 
     assert_not unbilled.admit_turn
-    assert_equal 160, unbilled.calls
+    assert_equal 188, unbilled.calls
     assert_equal 0, unbilled.new_calls
     assert_equal 1, unbilled.unbilled_attempts
     assert_equal 1, unbilled.new_attempts
-    assert_equal 161, unbilled.attempts
+    assert_equal 189, unbilled.attempts
     assert_equal(-1, unbilled.pass_calls_remaining)
-    assert_equal 13, unbilled.stage2_calls_remaining
-    assert_equal BigDecimal("0.343774"), unbilled.cost_usd
+    assert_equal(-1, unbilled.stage2_calls_remaining)
+    assert_equal BigDecimal("0.423114"), unbilled.cost_usd
   end
 
   test "the stage 3 reserve stays inside the global ceiling" do
-    assert_equal 174, Rag::Stage2RunBudget::GLOBAL_CALL_CEILING - Rag::Stage2RunBudget::STAGE3_CALL_RESERVE
-    assert_equal 14, Rag::Stage2RunBudget::STAGE2_CALL_CEILING - Rag::Stage2RunBudget::HISTORICAL_CALLS
+    assert_equal 188, Rag::Stage2RunBudget::GLOBAL_CALL_CEILING - Rag::Stage2RunBudget::STAGE3_CALL_RESERVE
+    assert_equal 0, Rag::Stage2RunBudget::STAGE2_CALL_CEILING - Rag::Stage2RunBudget::HISTORICAL_CALLS
     assert_equal 0, Rag::Stage2RunBudget::PASS_CALL_CAP
     assert_equal 42, Rag::Stage2RunBudget::STAGE3_CALL_RESERVE
-    assert_equal 216, Rag::Stage2RunBudget::GLOBAL_CALL_CEILING
+    assert_equal 230, Rag::Stage2RunBudget::GLOBAL_CALL_CEILING
+    assert_equal 188, Rag::Stage2RunBudget::STAGE2_CALL_CEILING
     assert_equal BigDecimal("2.50"), Rag::Stage2RunBudget::COST_CAP_USD
     assert_operator(
       Rag::Stage2RunBudget::HISTORICAL_CALLS + Rag::Stage2RunBudget::STAGE3_CALL_RESERVE,
@@ -61,14 +61,14 @@ class Rag::Stage2RunBudgetTest < ActiveSupport::TestCase
     assert_not_equal first, second
     assert_not_equal root, first
     assert_equal "abc123", manifest["sha"]
-    assert_equal 160, manifest["historical_calls"]
-    assert_equal "0.343774", manifest["historical_cost_usd"]
+    assert_equal 188, manifest["historical_calls"]
+    assert_equal "0.423114", manifest["historical_cost_usd"]
     assert_equal 0, manifest["pass_call_cap"]
     assert_equal 0, manifest["unbilled_attempts"]
     assert_equal 0, manifest["new_attempts"]
-    assert_equal 174, manifest["stage2_call_ceiling"]
+    assert_equal 188, manifest["stage2_call_ceiling"]
     assert_equal 42, manifest["stage3_call_reserve"]
-    assert_equal 216, manifest["global_call_ceiling"]
+    assert_equal 230, manifest["global_call_ceiling"]
     assert_equal 3, manifest["turn_call_margin"]
     assert_raises(ArgumentError) { Rag::Stage2RunBudget.evidence_directory(root, run_id: "../trace", session_id: 1) }
   end

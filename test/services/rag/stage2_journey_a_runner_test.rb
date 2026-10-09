@@ -40,11 +40,11 @@ class Stage2JourneyARunnerTest < ActiveSupport::TestCase
     assert_equal :budget, stage2_journey_a_main
     assert_empty calls
     assert_equal 0, Rag::Stage2RunBudget::PASS_CALL_CAP
-    assert_equal 174, Rag::Stage2RunBudget::STAGE2_CALL_CEILING
-    assert_equal 216, Rag::Stage2RunBudget::GLOBAL_CALL_CEILING
+    assert_equal 188, Rag::Stage2RunBudget::STAGE2_CALL_CEILING
+    assert_equal 230, Rag::Stage2RunBudget::GLOBAL_CALL_CEILING
     assert_equal 3, Rag::Stage2RunBudget::TURN_CALL_MARGIN
-    assert_equal 160, Rag::Stage2RunBudget::HISTORICAL_CALLS
-    assert_equal BigDecimal("0.343774"), Rag::Stage2RunBudget::HISTORICAL_COST_USD
+    assert_equal 188, Rag::Stage2RunBudget::HISTORICAL_CALLS
+    assert_equal BigDecimal("0.423114"), Rag::Stage2RunBudget::HISTORICAL_COST_USD
   ensure
     if defined?(original_admit) && original_admit
       Rag::Stage2RunBudget.define_singleton_method(:admit_turn?) { |**kwargs| original_admit.call(**kwargs) }
@@ -180,13 +180,13 @@ class Stage2JourneyARunnerTest < ActiveSupport::TestCase
     spent = spend_snapshot([], converse_failure)
     assert_equal 0, spent.new_calls
     assert_equal 1, spent.unbilled_attempts
-    assert_equal BigDecimal("0.343774"), spent.cost_usd
+    assert_equal BigDecimal("0.423114"), spent.cost_usd
 
     hidden = spend_snapshot(mixed_row, mixed)
     assert_equal 1, hidden.new_calls
     assert_equal 1, hidden.unbilled_attempts
     assert_equal 2, hidden.new_attempts
-    assert_equal BigDecimal("0.353774"), hidden.cost_usd
+    assert_equal BigDecimal("0.433114"), hidden.cost_usd
   end
 
   test "turn 1 stops when interpretation fails and keeps a transport failure pending" do

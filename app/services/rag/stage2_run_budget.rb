@@ -1,21 +1,21 @@
 # frozen_string_literal: true
 
 module Rag
-  # The authorized text pass is closed. It added 28 registered model calls
-  # and US$0.067961 to the previous 132 calls and US$0.275813. History is
-  # now 160 calls and US$0.343774. This pass recorded no unbilled model
-  # attempt, so none is added to that history. The stage 2 ceiling stays
-  # 174. Stage 3 keeps 42 inside the global ceiling of 216. PASS_CALL_CAP
-  # is 0, so the 14 registered calls left inside 174 do not open another
-  # pass. An empty BedrockQuery table does not reopen this history. An
-  # unbilled model attempt still counts against the attempt cap and does
-  # not invent a cost. Retrieve stays outside that cap.
+  # The 2026-10-09 diagnostic pass added 28 registered calls and
+  # US$0.079340 to the previous 160 calls and US$0.343774. History is
+  # now 188 calls and US$0.423114. That pass recorded no unbilled model
+  # attempt. PASS_CALL_CAP is 0, so the closed ceiling does not open
+  # another pass. Stage 2 stays at 188. Stage 3 keeps 42 inside the
+  # global ceiling of 230. An empty BedrockQuery table does not reopen
+  # this history. An unbilled model attempt still counts against the
+  # attempt cap and does not invent a cost. Retrieve stays outside that
+  # cap. The cost cap stays US$2.50.
   class Stage2RunBudget
-    HISTORICAL_CALLS = 160
-    HISTORICAL_COST_USD = BigDecimal("0.343774")
-    STAGE2_CALL_CEILING = 174
+    HISTORICAL_CALLS = 188
+    HISTORICAL_COST_USD = BigDecimal("0.423114")
+    STAGE2_CALL_CEILING = 188
     STAGE3_CALL_RESERVE = 42
-    GLOBAL_CALL_CEILING = 216
+    GLOBAL_CALL_CEILING = 230
     PASS_CALL_CAP = 0
     COST_CAP_USD = BigDecimal("2.50")
     INTERPRETER_CALL_USD = BigDecimal("0.0045")

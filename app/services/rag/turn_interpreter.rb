@@ -62,6 +62,16 @@ module Rag
       "unreadable"
     end
 
+    # The process is entering the client method. This is not a provider receipt.
+    def self.record_attempt_started
+      ValidationCapture.record(
+        "interpreter_attempt",
+        "stage" => STAGE_CONVERSE,
+        "result" => "attempt_started",
+        "operation" => "interpreter"
+      )
+    end
+
     def initialize(turn:, episode:, viewer_account:, correlation_id:, attribution:, client:, catalog:, active_photo_context: nil)
       @turn_input = turn
       @turn = TurnText.truncate(turn)
@@ -144,20 +154,21 @@ module Rag
       params = converse_params
       stage = STAGE_CONVERSE
       ValidationCapture.attempt_unless_set(1)
-      ValidationCapture.record(
-        "interpreter_attempt",
-        "stage" => STAGE_CONVERSE,
-        "result" => "started",
-        "correlation_id" => @correlation_id
-      )
       record_interpreter_request(params)
-      response = client.converse(params)
+      # The phase 1 wrapper checks the budget inside converse. The entry mark
+      # is written there, after the guard. An unguarded client is entered here.
+      if phase1_budget_armed?
+        response = client.converse(params)
+      else
+        self.class.record_attempt_started
+        response = client.converse(params)
+      end
       latency_ms = elapsed_since(started)
       stage = STAGE_EXTRACT
       usage = response.usage
       track_paid_call(usage, latency_ms)
+      record_interpreter_response(response)
       raw = extract_tool_input(response.output&.message&.content)
-      record_interpreter_response(response, raw)
       record_interpreter_raw(raw)
       stage = STAGE_PERCEPTION
       perception = TurnPerception.build(
@@ -203,6 +214,7 @@ module Rag
       payload = {
         "stage" => stage,
         "result" => "error",
+        "operation" => "interpreter",
         "error_class" => error.class.name.to_s,
         "reason" => full,
         "correlation_id" => @correlation_id
@@ -234,7 +246,8 @@ module Rag
     end
 
     # The hash passed to the client is copied for the audit. The client
-    # receives that same object, unchanged.
+    # receives that same object, unchanged. prepared means the arguments
+    # exist here. It does not mean the provider received them.
     def record_interpreter_request(params)
       return unless ValidationCapture.active?
 
@@ -243,7 +256,8 @@ module Rag
       structured = structured_message(message_text)
       payload = {
         "stage" => STAGE_CONVERSE,
-        "result" => "sent",
+        "result" => "prepared",
+        "operation" => "interpreter",
         "model_id" => params[:model_id] || params["model_id"],
         "prompt_version" => Digest::SHA256.hexdigest(system_text),
         "system" => system_text,
@@ -258,19 +272,16 @@ module Rag
       ValidationCapture.record("interpreter_request", payload)
     end
 
-    def record_interpreter_response(response, raw)
+    def record_interpreter_response(response)
       return unless ValidationCapture.active?
 
       ValidationCapture.record(
         "interpreter_response",
         "stage" => STAGE_EXTRACT,
-        "result" => raw.nil? ? "empty" : "tool_input",
+        "result" => "returned",
+        "operation" => "interpreter",
         "links" => "interpreter_request",
-        "usage" => {
-          "input_tokens" => usage_token(response&.usage, :input_tokens),
-          "output_tokens" => usage_token(response&.usage, :output_tokens)
-        },
-        "content" => observed_content(response)
+        "response" => serialize_observed(response)
       )
     end
 
@@ -336,22 +347,33 @@ module Rag
       { "included" => false }
     end
 
-    def observed_content(response)
-      content = response&.output&.message&.content
-      Array(content).map { |item| observed_block(item) }
+    # Aws::Structure#to_h omits nil members and walks nested structures.
+    # A test double uses the same omit-nil walk. An unknown object keeps its
+    # class name and no invented text or tool fields.
+    def serialize_observed(value)
+      if value.is_a?(Aws::Structure)
+        value.to_h
+      elsif value.is_a?(Struct)
+        value.each_pair.with_object({}) do |(member, member_value), hash|
+          next if member_value.nil?
+
+          hash[member] = serialize_observed(member_value)
+        end
+      elsif value.is_a?(Hash)
+        value.each_with_object({}) do |(key, member_value), hash|
+          hash[key] = serialize_observed(member_value)
+        end
+      elsif value.is_a?(Array)
+        value.map { |item| serialize_observed(item) }
+      elsif value.is_a?(String) || value.is_a?(Numeric) || value == true || value == false || value.nil?
+        value
+      else
+        { "unmodeled_type" => value.class.name }
+      end
     end
 
-    def observed_block(item)
-      tool = if item.respond_to?(:tool_use)
-        item.tool_use
-      elsif item.is_a?(Hash)
-        item["tool_use"] || item[:tool_use]
-      end
-      return { "tool_use" => "unavailable" } if tool.nil?
-
-      name = tool.respond_to?(:name) ? tool.name : (tool["name"] || tool[:name])
-      input = tool.respond_to?(:input) ? tool.input : (tool["input"] || tool[:input])
-      { "tool_name" => name, "input" => input.is_a?(Hash) ? input : nil }
+    def phase1_budget_armed?
+      defined?(Phase1ModelBudget) && Phase1ModelBudget.armed?
     end
 
     def extract_tool_input(content)

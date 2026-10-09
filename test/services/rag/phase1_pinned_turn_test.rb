@@ -159,6 +159,36 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
     assert_equal 0, Rag::Stage2RunBudget::PASS_CALL_CAP
   end
 
+  test "a blocked fourth call keeps the prepared request and does not enter the sdk" do
+    assert_blocked_fourth("generate_text") do |calls|
+      client = BedrockClient.allocate
+      aws = Object.new
+      aws.define_singleton_method(:invoke_model) { |*| calls[:n] += 1 }
+      client.instance_variable_set(:@client, aws)
+      client.generate_text("cuarta")
+    end
+
+    assert_blocked_fourth("retrieve_and_generate") do |calls|
+      service = BedrockRagService.allocate
+      aws = Object.new
+      aws.define_singleton_method(:retrieve_and_generate) { |*| calls[:n] += 1 }
+      service.instance_variable_set(:@client, aws)
+      service.send(:retrieve_and_generate_with_retry, { input: { text: "q" }, max_tokens: 20 })
+    end
+
+    assert_blocked_fourth("interpreter") do |calls|
+      inner = Object.new
+      inner.define_singleton_method(:converse) { |*| calls[:n] += 1 }
+      Rag::TurnInterpreter.call(
+        turn: "puerta",
+        episode: Rag::ActiveEpisode.new,
+        viewer_account: nil,
+        correlation_id: "phase1:block",
+        client: Rag::Phase1PinnedTurn::BudgetedConverse.new(inner)
+      )
+    end
+  end
+
   test "a retrieve stays outside the model cap" do
     Rag::Phase1ModelBudget.arm!
     3.times do
@@ -197,43 +227,50 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
     assert_equal "error", Rag::Phase1ModelBudget.ledger.find { |row| row["name"] == "retrieve_and_generate" }["outcome"]
   end
 
-  test "an unexpected job is refused before the queue and tracking stays inline" do
-    job = nil
+  test "an active guard inlines tracking, rejects reentry and other jobs, then enqueues after disarm" do
+    singleton = TrackBedrockQueryJob.singleton_class
     Rag::Phase1QueueGuard.activate!
     inlined = 0
     queued_before = ActiveJob::Base.queue_adapter.enqueued_jobs.size
+    tracking = { model_id: "stub", user_query: "puerta", latency_ms: 1, input_tokens: 1, output_tokens: 1 }
+
     assert_raises(Rag::Phase1QueueGuard::UnexpectedJob) do
       KbDocumentEnrichmentJob.perform_later
     end
     assert_equal queued_before, ActiveJob::Base.queue_adapter.enqueued_jobs.size
-    job = TrackBedrockQueryJob.singleton_class
-    job.alias_method(:phase1_perform_now_original, :perform_now)
-    job.define_method(:perform_now) { |*| inlined += 1 }
-    TrackBedrockQueryJob.perform_later(model_id: "stub")
+
+    singleton.alias_method(:phase1_guard_perform_now, :perform_now)
+    singleton.define_method(:perform_now) { |*, **| inlined += 1 }
+    TrackBedrockQueryJob.perform_later(**tracking)
     assert_equal 1, inlined
     assert_equal queued_before, ActiveJob::Base.queue_adapter.enqueued_jobs.size
+
+    reenter = [ true ]
+    singleton.define_method(:perform_now) do |*args, **kwargs, &block|
+      inlined += 1
+      next unless reenter[0]
+
+      reenter[0] = false
+      TrackBedrockQueryJob.perform_later(*args, **kwargs, &block)
+    end
+    error = assert_raises(Rag::Phase1QueueGuard::UnexpectedJob) do
+      TrackBedrockQueryJob.perform_later(**tracking)
+    end
+    assert_match(/reentrant/, error.message)
+    assert_equal 2, inlined
+    assert_equal queued_before, ActiveJob::Base.queue_adapter.enqueued_jobs.size
+
+    singleton.alias_method(:perform_now, :phase1_guard_perform_now)
+    singleton.remove_method(:phase1_guard_perform_now)
+    Rag::Phase1QueueGuard.disarm!
+    TrackBedrockQueryJob.perform_later(**tracking)
+    assert_equal queued_before + 1, ActiveJob::Base.queue_adapter.enqueued_jobs.size
     assert_equal 0, Rag::Stage2RunBudget::PASS_CALL_CAP
   ensure
-    if job&.method_defined?(:phase1_perform_now_original)
-      job.alias_method(:perform_now, :phase1_perform_now_original)
+    if singleton&.method_defined?(:phase1_guard_perform_now)
+      singleton.alias_method(:perform_now, :phase1_guard_perform_now)
+      singleton.remove_method(:phase1_guard_perform_now)
     end
-    Rag::Phase1QueueGuard.disarm!
-  end
-
-  test "a perform_later wrapper captured after install does not recurse" do
-    Rag::Phase1QueueGuard.activate!
-    Rag::Phase1QueueGuard.disarm!
-    captured = TrackBedrockQueryJob.method(:perform_later)
-    TrackBedrockQueryJob.define_singleton_method(:perform_later) do |*args, **kwargs, &block|
-      captured.call(*args, **kwargs, &block)
-    end
-
-    before = ActiveJob::Base.queue_adapter.enqueued_jobs.size
-    TrackBedrockQueryJob.perform_later(model_id: "stub", user_query: "puerta", latency_ms: 1, input_tokens: 1, output_tokens: 1)
-    assert_equal before + 1, ActiveJob::Base.queue_adapter.enqueued_jobs.size
-  ensure
-    singleton = TrackBedrockQueryJob.singleton_class
-    singleton.send(:remove_method, :perform_later) if singleton.instance_methods(false).include?(:perform_later)
     Rag::Phase1QueueGuard.disarm!
   end
 
@@ -460,6 +497,44 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
   end
 
   private
+
+  def assert_blocked_fourth(operation)
+    calls = { n: 0 }
+    Rag::Phase1ModelBudget.disarm!
+    Rag::Phase1ModelBudget.arm!
+    3.times do
+      Rag::Phase1ModelBudget.checkpoint!("seed")
+      Rag::Phase1ModelBudget.record_success!("seed")
+    end
+    events = Rag::ValidationCapture.capture do
+      Rag::ValidationCapture.correlation = "phase1:block"
+      Rag::ValidationCapture.attempt = 4
+      assert_raises(Rag::Phase1ModelBudget::Stop) { yield calls }
+    end
+
+    prepared = events.find { |event| event["operation"] == operation && event["result"] == "prepared" }
+    blocked = events.find { |event| event["operation"] == operation && event["result"] == "blocked" }
+    assert prepared, operation
+    assert blocked, operation
+    assert_equal "phase1:block", prepared["correlation_id"], operation
+    assert_equal "phase1:block", blocked["correlation_id"], operation
+    assert_equal "observed", prepared["provenance"], operation
+    assert events.none? { |event| event["operation"] == operation && event["result"] == "attempt_started" }, operation
+    assert_equal 0, calls[:n], operation
+    assert_equal 3, Rag::Phase1ModelBudget.attempts, operation
+    if operation == "interpreter"
+      assert_equal 1, prepared["attempt"], operation
+      assert_equal 1, blocked["attempt"], operation
+      assert_includes prepared["message_text"], "puerta"
+    else
+      assert_equal 4, prepared["attempt"], operation
+      assert_equal 4, blocked["attempt"], operation
+    end
+    assert_equal "cuarta", prepared["prompt"] if operation == "generate_text"
+    assert_equal 20, prepared["max_tokens"] if operation == "retrieve_and_generate"
+  ensure
+    Rag::Phase1ModelBudget.disarm!
+  end
 
   def test_evidence_root
     Rails.root.join("tmp/phase1_pinned_turn_test")

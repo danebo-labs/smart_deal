@@ -1645,12 +1645,20 @@ class BedrockRagService
   # An armed phase 1 budget makes one attempt and skips that retry.
   def retrieve_and_generate_with_retry(params)
     record_retrieve_and_generate_request(params)
-    transport_attempt = 0
-    response = begin
-      budget = phase1_model_budget
-      if budget&.armed?
+    budget = phase1_model_budget
+    if budget&.armed?
+      begin
         # One model attempt. The cold-start retry is another model call.
         budget.checkpoint!("retrieve_and_generate")
+      rescue budget::Stop
+        Rag::ValidationCapture.record_model_boundary("retrieve_and_generate", "blocked")
+        raise
+      end
+    end
+    Rag::ValidationCapture.record_model_boundary("retrieve_and_generate", "attempt_started")
+    transport_attempt = 0
+    response = begin
+      if budget&.armed?
         transport_attempt = 1
         @client.retrieve_and_generate(params)
       else
@@ -1664,7 +1672,6 @@ class BedrockRagService
       end
     rescue StandardError => error
       record_terminal_remote_error("retrieve_and_generate", error, transport_attempt)
-      budget = phase1_model_budget
       if budget&.armed?
         budget.record_error!("retrieve_and_generate", error)
         raise budget::Stop, "retrieve_and_generate stopped after #{error.class}"
@@ -1672,7 +1679,7 @@ class BedrockRagService
 
       raise
     end
-    phase1_model_budget&.record_success!("retrieve_and_generate") if phase1_model_budget&.armed?
+    budget&.record_success!("retrieve_and_generate") if budget&.armed?
     record_retrieve_and_generate_response(response)
     response
   end
@@ -1707,7 +1714,8 @@ class BedrockRagService
     recorded = params.is_a?(Hash) ? params.dup : { "params" => "unavailable" }
     recorded = recorded.merge(
       "stage" => "generate",
-      "result" => "sent",
+      "result" => "prepared",
+      "operation" => "retrieve_and_generate",
       "documentary_context" => "template",
       "documentary_context_note" => "placeholders_are_not_resolved_chunks"
     )
@@ -1736,7 +1744,8 @@ class BedrockRagService
     Rag::ValidationCapture.record(
       "generation_result",
       "stage" => "generate",
-      "result" => "ok",
+      "result" => "returned",
+      "operation" => "retrieve_and_generate",
       "source" => "retrieve_and_generate",
       "answer" => answer,
       "full_result_set" => "unavailable",

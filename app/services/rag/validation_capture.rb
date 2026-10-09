@@ -26,7 +26,8 @@ module Rag
     PROVENANCE = %w[observed reconstructed uncaptured not_executed].freeze
     LINKAGE = {
       "join" => "Order events by sequence. Join on correlation_root when it is present. correlation_id is one segment of that turn: the technician segment, then the same id with the :query suffix. run_id, session_id, episode_id, and turn are copied only after the process knows them. An event that omits episode_id was recorded before the episode existed or before it was bound. Join it to later events by correlation_root and session_id. Do not copy a later episode_id backwards and call that copy observed. This run does not bind turn: the correlation is the turn label, and a missing turn is not turn 1.",
-      "user_message" => "user_message.original is the technician text before ConversationSession::MAX_MSG_LENGTH. user_message.sent is the text after that limit. transform none means they are the same. transform truncate means original was cut and sent is what later stages received. interpreter_request carries that sent text inside its message. A turn_transform on the request is a second cut applied by TurnInterpreter, with the original it actually received.",
+      "user_message" => "user_message.original is the technician text before ConversationSession::MAX_MSG_LENGTH. user_message.sent is the text after that limit. transform none means they are the same. transform truncate means original was cut and sent is what later stages received. interpreter_request carries that sent text inside its message. A turn_transform on the request is a second cut applied by TurnInterpreter, with the original it actually received. turn_transform.sent is that cut text. It is not a provider acknowledgement.",
+      "model_call" => "prepared means the arguments were built and stored. It does not mean they left this process. attempt_started means this process is entering the client method. When the phase 1 guard is armed, that mark is written only after the guard allows the call. It does not mean the provider received the bytes. blocked means the guard stopped the call before the client method. returned means the client method returned a payload to this process. error means the client method or a later local step raised. Join those events by correlation_id, operation, and attempt when the fields are present. A missing attempt means this capture had not set one. interpreter_attempt with result attempt_started is the interpreter's entry mark. model_call carries attempt_started or blocked for the other guarded operations, and blocked for the interpreter.",
       "provenance" => {
         "observed" => "Read from the request, the response, or the state at the moment it was used.",
         "reconstructed" => "Derived afterwards from code or stored state. It is not proof of what was sent.",
@@ -118,6 +119,16 @@ module Rag
       return "template" if TEMPLATE_MARKERS.any? { |marker| text.include?(marker) }
 
       "resolved"
+    end
+
+    # Boundary of one model call. correlation_id and attempt are copied by
+    # record when this capture already has them. Inactive capture stores nothing.
+    def record_model_boundary(operation, result)
+      record(
+        "model_call",
+        "operation" => operation.to_s,
+        "result" => result.to_s
+      )
     end
 
     def record(kind, payload)

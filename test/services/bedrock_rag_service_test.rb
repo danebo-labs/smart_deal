@@ -2203,7 +2203,7 @@ class BedrockRagServiceTest < ActiveSupport::TestCase
     yield
     captured
   ensure
-    TrackBedrockQueryJob.define_singleton_method(:perform_later) { |**kwargs| original.call(**kwargs) }
+    restore_perform_later(TrackBedrockQueryJob)
   end
 
   test "query propagates attribution to tracking and RAG_QUALITY" do

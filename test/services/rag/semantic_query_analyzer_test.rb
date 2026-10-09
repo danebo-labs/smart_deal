@@ -283,7 +283,7 @@ class Rag::SemanticQueryAnalyzerTest < ActiveSupport::TestCase
   ensure
     Rails.logger.stop_broadcasting_to(logger) if logger
     BedrockClient.define_singleton_method(:new) { |*args, **kwargs| original_client.call(*args, **kwargs) } if original_client
-    TrackBedrockQueryJob.define_singleton_method(:perform_later) { |**kwargs| original_later.call(**kwargs) } if original_later
+    restore_perform_later(TrackBedrockQueryJob) if original_later
     if previous_episode.nil?
       ENV.delete("FIELD_COMPANION_EPISODE_ENABLED")
     else

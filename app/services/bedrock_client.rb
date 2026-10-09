@@ -37,7 +37,15 @@ class BedrockClient
     record_generation_request(model_id, max_tokens, temperature, prompt)
     # Armed only by the phase 1 process. defined? does not load that class.
     budget = phase1_model_budget
-    budget.checkpoint!("generate_text") if budget&.armed?
+    if budget&.armed?
+      begin
+        budget.checkpoint!("generate_text")
+      rescue budget::Stop
+        Rag::ValidationCapture.record_model_boundary("generate_text", "blocked")
+        raise
+      end
+    end
+    Rag::ValidationCapture.record_model_boundary("generate_text", "attempt_started")
     response = @client.invoke_model(
       model_id: model_id,
       content_type: 'application/json',
@@ -84,9 +92,17 @@ class BedrockClient
   # Tool use on the primary runtime client. #converse stays the 8-second
   # shadow client used by perception. generate_text cannot send a tool schema.
   def converse_message(params)
+    record_converse_prepared(params)
     budget = phase1_model_budget
-    budget.checkpoint!("converse_message") if budget&.armed?
-    Rag::ValidationCapture.record("converse", params) if Rag::ValidationCapture.active?
+    if budget&.armed?
+      begin
+        budget.checkpoint!("converse_message")
+      rescue budget::Stop
+        Rag::ValidationCapture.record_model_boundary("converse_message", "blocked")
+        raise
+      end
+    end
+    Rag::ValidationCapture.record_model_boundary("converse_message", "attempt_started")
     result = @client.converse(params)
     budget.record_success!("converse_message") if budget&.armed?
     result
@@ -100,13 +116,24 @@ class BedrockClient
 
   private
 
+  def record_converse_prepared(params)
+    return unless Rag::ValidationCapture.active?
+
+    body = params.is_a?(Hash) ? params.dup : { "params" => "unavailable" }
+    body["stage"] = "converse"
+    body["result"] = "prepared"
+    body["operation"] = "converse_message"
+    Rag::ValidationCapture.record("converse", body)
+  end
+
   def record_generation_request(model_id, max_tokens, temperature, prompt)
     return unless Rag::ValidationCapture.active?
 
     Rag::ValidationCapture.record(
       "generate_text",
       "stage" => "generate",
-      "result" => "sent",
+      "result" => "prepared",
+      "operation" => "generate_text",
       "model_id" => model_id,
       "max_tokens" => max_tokens,
       "temperature" => temperature,
@@ -125,7 +152,8 @@ class BedrockClient
       "generation_result",
       {
         "stage" => "generate",
-        "result" => "ok",
+        "result" => "returned",
+        "operation" => "generate_text",
         "answer" => text,
         "input_tokens" => input_tokens.nil? ? "unavailable" : input_tokens,
         "output_tokens" => output_tokens.nil? ? "unavailable" : output_tokens,
@@ -143,6 +171,7 @@ class BedrockClient
       {
         "stage" => "generate",
         "result" => "error",
+        "operation" => "generate_text",
         "answer" => nil,
         "error_class" => error.class.name,
         "documentary_context" => Rag::ValidationCapture.documentary_context(prompt)

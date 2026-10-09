@@ -90,8 +90,9 @@ module Rag
   end
 
   # Process-local. The refusal is installed once and stays inert until
-  # activate!. TrackBedrockQueryJob is inlined. Every other enqueue raises
-  # before Active Job writes the queue.
+  # activate!. TrackBedrockQueryJob runs inline. A reentrant perform_later
+  # from that inline run is refused. Every other enqueue raises before
+  # Active Job writes the queue. A disarmed guard uses the normal enqueue.
   module Phase1QueueGuard
     class UnexpectedJob < StandardError; end
 
@@ -105,28 +106,19 @@ module Rag
 
     module InlineTracking
       def perform_later(*args, **kwargs, &block)
-        if Rag::Phase1QueueGuard.active?
-          return Rag::Phase1QueueGuard.tracking_original.call(*args, **kwargs, &block) if Thread.current[:phase1_tracking_inline]
+        unless Rag::Phase1QueueGuard.active?
+          return super
+        end
 
-          Thread.current[:phase1_tracking_inline] = true
-          begin
-            perform_now(*args, **kwargs, &block)
-          ensure
-            Thread.current[:phase1_tracking_inline] = nil
-          end
-        elsif Thread.current[:phase1_tracking_passthrough]
-          # A test may wrap perform_later with the method captured after this
-          # prepend. super then finds that wrapper, and the wrapper calls this
-          # method again. The saved method is the one that existed before the
-          # prepend, so the second entry enqueues instead of looping.
-          Rag::Phase1QueueGuard.tracking_original.call(*args, **kwargs, &block)
-        else
-          Thread.current[:phase1_tracking_passthrough] = true
-          begin
-            super
-          ensure
-            Thread.current[:phase1_tracking_passthrough] = nil
-          end
+        if Thread.current[:phase1_tracking_inline]
+          raise UnexpectedJob, "phase 1 refused reentrant enqueue #{name}"
+        end
+
+        Thread.current[:phase1_tracking_inline] = true
+        begin
+          perform_now(*args, **kwargs, &block)
+        ensure
+          Thread.current[:phase1_tracking_inline] = nil
         end
       end
     end
@@ -136,14 +128,9 @@ module Rag
         Thread.current[:phase1_queue_guard] == true
       end
 
-      def tracking_original
-        @tracking_original
-      end
-
       def install!
         return if @installed
 
-        @tracking_original = TrackBedrockQueryJob.method(:perform_later)
         ApplicationJob.singleton_class.prepend(Refusal)
         TrackBedrockQueryJob.singleton_class.prepend(InlineTracking)
         @installed = true
@@ -156,6 +143,7 @@ module Rag
 
       def disarm!
         Thread.current[:phase1_queue_guard] = false
+        Thread.current[:phase1_tracking_inline] = nil
       end
     end
   end
@@ -229,9 +217,17 @@ module Rag
       end
 
       def converse(params)
-        Phase1ModelBudget.checkpoint!("interpreter")
+        if Phase1ModelBudget.armed?
+          begin
+            Phase1ModelBudget.checkpoint!("interpreter")
+          rescue Phase1ModelBudget::Stop
+            ValidationCapture.record_model_boundary("interpreter", "blocked")
+            raise
+          end
+          TurnInterpreter.record_attempt_started
+        end
         result = @inner.converse(params)
-        Phase1ModelBudget.record_success!("interpreter")
+        Phase1ModelBudget.record_success!("interpreter") if Phase1ModelBudget.armed?
         result
       rescue Phase1ModelBudget::Stop
         raise

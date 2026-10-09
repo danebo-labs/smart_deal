@@ -196,7 +196,7 @@ class BedrockRagServiceGroundedSynthesisTest < ActiveSupport::TestCase
     assert_equal 2, calls.size
     assert(calls.all? { |call| call[:args].first == "q" })
   ensure
-    TrackBedrockQueryJob.define_singleton_method(:perform_later) { |**kwargs| original.call(**kwargs) } if original
+    restore_perform_later(TrackBedrockQueryJob) if original
   end
 
   test "load_generation_prompt_with_locale passes the instance grounded_synthesis value" do

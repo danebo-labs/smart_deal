@@ -36,6 +36,16 @@ module ActiveSupport
 
     # Completed non-photo ledger with a chunk prefix. Promotion to
     # danebo_general requires this evidence. A row without it stays private.
+    # A test stub of perform_later lives on the singleton class. Removing it
+    # reveals the ancestor method. Reinstalling a Method captured after
+    # Phase1QueueGuard.install! calls the prepended method again.
+    def restore_perform_later(job)
+      singleton = job.singleton_class
+      return unless singleton.instance_methods(false).include?(:perform_later)
+
+      singleton.remove_method(:perform_later)
+    end
+
     def index_manual_for_retrieval!(document)
       WebManualBatch.create!(
         account: document.account,

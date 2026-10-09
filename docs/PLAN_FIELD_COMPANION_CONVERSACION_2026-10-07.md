@@ -266,7 +266,28 @@ Antes de iniciar una fase, este documento se actualiza con los hallazgos de la a
 
    Directorios. Las pruebas del harness pasan `evidence_root` `tmp/phase1_pinned_turn_test/`. El script lee `PHASE1_PINNED_TURN_EVIDENCE_ROOT` si está definida; si no, sigue escribiendo en `tmp/phase1_pinned_turn/runs/`. La corrida real no se borra.
 
-   Límites que siguen abiertos. La regla de `meta` no está implementada. El chunk de la página 5 no se reingiere. El request de `20261009T194048Z` sigue sin capturar. Un proceso que no abre `ValidationCapture` no produce este sobre. El spy de `audit-owner` no ejecuta el publicador real, así que ese ejemplo no trae `published_answer`; la prueba de la salida `meta` del concern sí registra esa respuesta con citas vacías cuando ese camino corre.
+   Límites que siguen abiertos. La regla de `meta` no está implementada. El chunk de la página 5 no se reingiere. El request de `20261009T194048Z` sigue sin capturar. Un proceso que no abre `ValidationCapture` no produce este sobre. El spy de `audit-owner` no ejecuta el publicador real, así que ese ejemplo no trae `published_answer`; la prueba de la salida `meta` del concern sí registra esa respuesta con citas vacías cuando ese camino corre. El punto 11 sustituye la lectura de `result` `sent` de este párrafo.
+
+11. Revisión de observabilidad, 2026-10-09, sobre `2bc6e34`. Sin corrida nueva, sin AWS, sin `Retrieve` real y sin modelos. La captura `tmp/phase1_pinned_turn/runs/20261009T194048Z/` no se rellena. La causa de su `meta` sigue pendiente.
+
+   Semántica. Los eventos de una llamada de modelo se unen por `correlation_id`, `operation` e `attempt` cuando esos campos existen. Un `attempt` ausente significa que esta captura no lo había fijado.
+   - `prepared`: los argumentos están construidos y guardados. No significa que hayan salido de este proceso.
+   - `attempt_started`: este proceso entra al método del cliente. Con el guardia de la fase 1 armado, la marca se escribe solo después de que el guardia deja continuar. No significa que el proveedor haya recibido los bytes.
+   - `blocked`: el guardia detuvo la llamada antes del método del cliente.
+   - `returned`: el método del cliente devolvió un payload a este proceso.
+   - `error`: el método del cliente, o un paso local posterior, lanzó.
+
+   `interpreter_request`, `generate_text`, `retrieve_and_generate` y `converse` usan `result` `prepared`. `interpreter_attempt` con `result` `attempt_started` es la entrada del intérprete. `model_call` lleva `attempt_started` o `blocked` para `generate_text`, `retrieve_and_generate` y `converse_message`, y `blocked` para el intérprete. `interpreter_response` y `generation_result` usan `returned` cuando el cliente devolvió. `turn_transform.sent` sigue siendo el texto recortado por el intérprete. No es un acuse del proveedor. El cupo, los argumentos y el número de llamadas al cliente no cambian: `Phase1ModelBudget` sigue sumando solo cuando `checkpoint!` deja pasar, y `block!` no incrementa `attempts`.
+
+   Cuarta llamada, con stubs y el cupo ya en 3. `generate_text`, `retrieve_and_generate` y el intérprete envuelto en `BudgetedConverse` conservan el request preparado, registran `blocked`, no registran `attempt_started`, no llaman al cliente y dejan `attempts` en 3.
+
+   Respuesta del intérprete. Se registra antes de `extract_tool_input`. Ese método y la interpretación no cambian. `response` usa `Aws::Structure#to_h` cuando el valor es una estructura del SDK: omite miembros nil y conserva el orden. Un doble de prueba recorre los miembros con la misma omisión. Un objeto desconocido guarda `unmodeled_type` con el nombre de la clase y no inventa texto ni herramienta. `stop_reason` y `usage` quedan cuando el cliente los trae. Cobertura con stubs: solo texto, sin herramienta; texto y herramienta, con secreto y cuerpo externo cuyo SHA-256 coincide con el archivo; herramienta inesperada; contenido vacío; bloque desconocido que hace fallar la extracción y deja igual la respuesta ya guardada; error del cliente, sin `interpreter_response`. Siguen la sanitización, `bodies/` y los hashes.
+
+   Guardia de cola. Con `Phase1QueueGuard` activo, `TrackBedrockQueryJob` se ejecuta en línea. Una reentrada lanza `UnexpectedJob` y no escribe la cola. Cualquier otro trabajo se rechaza antes de encolarse. Después de `disarm!`, `perform_later` vuelve a encolar. No hay escape al método original mientras el guardia está activo. Los stubs de prueba que reinstalaban el `perform_later` capturado después del prepend ahora quitan el método del singleton.
+
+   Pruebas. `BUNDLE_PATH=vendor/bundle bundle exec rails test test/services/rag/audit_capture_test.rb test/services/rag/validation_capture_test.rb test/services/rag/phase1_pinned_turn_test.rb test/services/rag/turn_interpreter_failure_test.rb`. 53 corridas, 691 aserciones, 0 fallos, semilla 4179. `git diff --check` limpio. Los clientes de esta revisión son stubs: cero llamadas al SDK.
+
+   Límites que permanecen. La causa de `meta` en `20261009T194048Z` no está determinada. `attempt_started` observa la entrada al método del cliente, no la aceptación del proveedor. El `Retrieve` puro sigue fuera del cupo de modelo y su evento conserva `result` `sent`; esa palabra, en ese evento, no es un acuse del proveedor. Un reintento de arranque en frío de Aurora sigue anotado como `retry`, no como otro `attempt_started`. Un proceso que no abre `ValidationCapture` no produce este sobre. La regla de `meta` no está implementada. El chunk de la página 5 no se reingiere.
 
 ### Fase 2. Guía conversacional con el documento correcto
 
@@ -334,6 +355,7 @@ Antes de iniciar una fase, este documento se actualiza con los hallazgos de la a
 | Fase 1, run `20261009T194048Z`. | El intérprete clasificó la consulta como `meta`; el turno descartó la pregunta y salió sin `Retrieve`. Un intento de modelo, US$0,002704 estimado. El request del intérprete no quedó capturado. | Detenida por evidencia ausente. La regla de `meta` sigue propuesta, no implementada. |
 | El chunk de la página 5 pone en duda la serie con «ramas paralelas visuales». | Defecto de representación documentado. Sin reingesta. | Pendiente de decisión del fundador. |
 | La corrida de la fase 1 no guardó el request del intérprete. | Sobre `danebo.audit.v1` y `interpreter_request` copiado antes de `converse`. | Implementado en el árbol local. Sin commit, sin corrida nueva y sin llamadas AWS. |
+| `prepared` se leía como envío, la respuesta del intérprete perdía el texto y la reentrada del guardia podía encolar. | `prepared`, `attempt_started`, `blocked`, `returned` y `error`. Respuesta completa. Reentrada rechazada. | Revisado con stubs el 2026-10-09. Sin corrida nueva. La causa de `meta` sigue pendiente. |
 | Las pruebas del harness escriben en el directorio de corridas reales. | `evidence_root` de prueba y `PHASE1_PINNED_TURN_EVIDENCE_ROOT` en el script. | Implementado. Los artefactos viejos se conservan y no son corridas. |
 
 ## Cierre de la preparación local

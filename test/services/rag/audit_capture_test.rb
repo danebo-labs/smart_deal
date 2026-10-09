@@ -42,7 +42,14 @@ class Rag::AuditCaptureTest < ActiveSupport::TestCase
     assert_equal "turn_perception", request.dig("tool_config", "tools", 0, "tool_spec", "name")
     assert_equal 0, request.dig("inference_config", "temperature")
     assert_equal Rag::TurnInterpreter::MAX_TOKENS, request.dig("inference_config", "max_tokens")
-    assert_equal "sent", request["result"]
+    assert_equal "prepared", request["result"]
+    assert_equal "interpreter", request["operation"]
+    started = events.find { |event| event["kind"] == "interpreter_attempt" }
+    assert_equal "attempt_started", started["result"]
+    assert_equal "interpreter", started["operation"]
+    assert_equal request["correlation_id"], started["correlation_id"]
+    assert_equal request["attempt"], started["attempt"]
+    assert_operator request["sequence"], :<, started["sequence"]
     assert_equal "converse", request["stage"]
     assert_equal "observed", request["provenance"]
     assert_equal "audit-interpreter", request["run_id"]
@@ -58,7 +65,10 @@ class Rag::AuditCaptureTest < ActiveSupport::TestCase
     assert events.none? { |event| %w[retrieve generate_text retrieval_results retrieve_and_generate].include?(event["kind"]) }
     response = events.find { |event| event["kind"] == "interpreter_response" }
     raw = events.find { |event| event["kind"] == "interpreter_raw" }
-    assert_operator request["sequence"], :<, response["sequence"]
+    assert_operator started["sequence"], :<, response["sequence"]
+    assert_equal "returned", response["result"]
+    assert_equal "interpreter", response["operation"]
+    assert_equal "turn_perception", response.dig("response", "output", "message", "content", 0, "tool_use", "name")
     assert_operator response["sequence"], :<, raw["sequence"]
     assert_equal "meta", raw.dig("tool_input", "move")
   end
@@ -153,7 +163,11 @@ class Rag::AuditCaptureTest < ActiveSupport::TestCase
     assert_operator result.error_reason.length, :<=, 180
     failure = events.find { |event| event["kind"] == "interpreter_failure" }
     request = events.find { |event| event["kind"] == "interpreter_request" }
+    assert_equal "prepared", request["result"]
+    assert_equal "attempt_started", events.find { |event| event["kind"] == "interpreter_attempt" }["result"]
     assert_equal "error", failure["result"]
+    assert_equal "interpreter", failure["operation"]
+    assert_equal request["correlation_id"], failure["correlation_id"]
     assert_equal "converse", failure["stage"]
     assert_includes failure["reason"], "detalle"
     assert_not_includes failure["reason"], "AKIA"
@@ -200,6 +214,103 @@ class Rag::AuditCaptureTest < ActiveSupport::TestCase
     assert events.any? { |event| event["kind"] == "interpreter_request" }
   end
 
+  test "a text-only response is kept and does not invent a tool" do
+    events, result = interpret_response(converse_response([ content_block(text: "sin herramienta") ]))
+    content = response_content(events)
+
+    assert result.fallback
+    assert_equal [ { "text" => "sin herramienta" } ], content
+    assert content.none? { |block| block.key?("tool_use") }
+    assert_nil events.find { |event| event["kind"] == "interpreter_raw" }&.dig("tool_input")
+    assert_equal "end_turn", events.find { |event| event["kind"] == "interpreter_response" }.dig("response", "stop_reason")
+    assert_equal 3, events.find { |event| event["kind"] == "interpreter_response" }.dig("response", "usage", "input_tokens")
+  end
+
+  test "text and tool stay in order with usage and stop reason" do
+    note = "Veo la serie. AKIASECRETKEY1 #{'x' * 2_100}"
+    tool = meta_tool
+    events, _result = interpret_response(
+      converse_response(
+        [
+          content_block(text: note),
+          content_block(tool_use: tool_use_block("turn_perception", tool))
+        ],
+        stop_reason: "tool_use",
+        input_tokens: 11,
+        output_tokens: 4
+      )
+    )
+    response = events.find { |event| event["kind"] == "interpreter_response" }
+    content = response.dig("response", "output", "message", "content")
+    directory = Rails.root.join("tmp/phase1_pinned_turn_test/audit-response")
+    FileUtils.rm_rf(directory)
+    document = Rag::ValidationCapture.export_capture(events, directory, run_id: "audit-response")
+
+    assert_equal "returned", response["result"]
+    assert_includes content[0]["text"], "Veo la serie."
+    assert_equal "meta", events.find { |event| event["kind"] == "interpreter_raw" }.dig("tool_input", "move")
+    assert_equal "tool_use", response.dig("response", "stop_reason")
+    assert_equal 11, response.dig("response", "usage", "input_tokens")
+    assert_equal 4, response.dig("response", "usage", "output_tokens")
+    assert_equal "turn_perception", content[1].dig("tool_use", "name")
+    assert_equal "meta", content[1].dig("tool_use", "input", "move")
+    assert_equal true, response["redacted"]
+    assert_not_includes response.to_s, "AKIA"
+    body = document["events"].find { |event| event["kind"] == "interpreter_response" }
+    spilled = find_external(body)
+    stored = File.binread(directory.join(spilled["path"]))
+    assert_equal spilled["sha256"], Digest::SHA256.hexdigest(stored)
+    assert_equal false, spilled["truncated"]
+    assert_not_includes stored, "AKIA"
+    assert_includes stored, "[redacted]"
+    assert_includes stored, "Veo la serie."
+  end
+
+  test "an unexpected tool and empty content stay visible when interpretation fails" do
+    unexpected, unexpected_result = interpret_response(
+      converse_response([ content_block(tool_use: tool_use_block("other_tool", { "x" => 1 })) ])
+    )
+    empty, empty_result = interpret_response(converse_response([]))
+
+    assert unexpected_result.fallback
+    assert_equal "other_tool", response_content(unexpected).dig(0, "tool_use", "name")
+    assert_nil unexpected.find { |event| event["kind"] == "interpreter_raw" }["tool_input"]
+    assert_equal "returned", unexpected.find { |event| event["kind"] == "interpreter_response" }["result"]
+    assert empty_result.fallback
+    assert_equal [], response_content(empty)
+    assert_nil empty.find { |event| event["kind"] == "interpreter_raw" }["tool_input"]
+    assert empty.none? { |event| event.to_s.include?("turn_perception") && event["kind"] == "interpreter_response" }
+  end
+
+  test "an unknown block keeps its type and the response remains when extraction fails" do
+    text = content_block(text: "nota previa")
+    message = Struct.new(:content).new([ text, Object.new ])
+    output = Struct.new(:message).new(message)
+    usage = Struct.new(:input_tokens, :output_tokens).new(2, 1)
+    response = Struct.new(:output, :usage, :stop_reason).new(output, usage, "end_turn")
+    result = nil
+    events = Rag::ValidationCapture.capture do
+      result = Rag::TurnInterpreter.call(
+        turn: TURN,
+        episode: Rag::ActiveEpisode.new,
+        viewer_account: nil,
+        correlation_id: "phase1:unknown",
+        client: response_client(response)
+      )
+    end
+    content = response_content(events)
+
+    assert_equal "local_error", result.status
+    assert_equal "extract", result.stage
+    assert_equal "nota previa", content[0]["text"]
+    assert_equal "Object", content[1]["unmodeled_type"]
+    assert_equal 2, content.size
+    assert_nil content[1]["text"]
+    assert_nil content[1]["tool_use"]
+    assert_equal "extract", events.find { |event| event["kind"] == "interpreter_failure" }["stage"]
+    assert_equal "returned", events.find { |event| event["kind"] == "interpreter_response" }["result"]
+  end
+
   private
 
   def episode_with_goal
@@ -241,6 +352,67 @@ class Rag::AuditCaptureTest < ActiveSupport::TestCase
         Struct.new(:output, :usage).new(output, usage)
       end
     end
+  end
+
+  def interpret_response(response)
+    result = nil
+    events = Rag::ValidationCapture.capture do
+      result = Rag::TurnInterpreter.call(
+        turn: TURN,
+        episode: Rag::ActiveEpisode.new,
+        viewer_account: nil,
+        correlation_id: "phase1:response",
+        client: response_client(response)
+      )
+    end
+    [ events, result ]
+  end
+
+  def response_content(events)
+    events.find { |event| event["kind"] == "interpreter_response" }.dig("response", "output", "message", "content")
+  end
+
+  def find_external(value)
+    case value
+    when Hash
+      return value if value["evidence"] == "external"
+
+      value.each_value do |child|
+        found = find_external(child)
+        return found if found
+      end
+    when Array
+      value.each do |child|
+        found = find_external(child)
+        return found if found
+      end
+    end
+    nil
+  end
+
+  def response_client(response)
+    Object.new.tap do |client|
+      client.define_singleton_method(:converse) { |_params| response }
+    end
+  end
+
+  def content_block(text: nil, tool_use: nil)
+    Aws::Structure.new(:text, :tool_use).new(text: text, tool_use: tool_use)
+  end
+
+  def tool_use_block(name, input)
+    Aws::Structure.new(:name, :input, :tool_use_id).new(name: name, input: input, tool_use_id: "tool-1")
+  end
+
+  def converse_response(content, stop_reason: "end_turn", input_tokens: 3, output_tokens: 2)
+    message = Aws::Structure.new(:role, :content).new(role: "assistant", content: content)
+    output = Aws::Structure.new(:message).new(message: message)
+    usage = Aws::Structure.new(:input_tokens, :output_tokens).new(
+      input_tokens: input_tokens, output_tokens: output_tokens
+    )
+    Aws::Structure.new(:output, :stop_reason, :usage).new(
+      output: output, stop_reason: stop_reason, usage: usage
+    )
   end
 
   def raising_client(error)

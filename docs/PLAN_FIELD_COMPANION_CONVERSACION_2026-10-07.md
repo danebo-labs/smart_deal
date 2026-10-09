@@ -14,13 +14,13 @@ Este documento es el único plan vigente. La historia queda abajo, como referenc
 
 **Por qué cambia la ruta.** Un episodio largo no separa PDF, extracción, chunks, índice, filtro, retrieval y respuesta. La siguiente prueba reduce una sola incertidumbre: con el documento correcto ya pineado, ¿la consulta natural recupera el plano y la respuesta se mantiene dentro de lo que ese pasaje sustenta?
 
-**Próxima acción y gate.** Preparar el caso sencillo del Elemont pineado. La fase 0 no empieza con este commit. La fase 1 no empieza si la fase 0 no cierra correspondencia del PDF, acceso sin filas inventadas, representación indexada de los diagramas y filtro efectivo del pin. Antes de cada fase se actualiza este texto con el cierre de la anterior. Si el gate falla, no se avanza, no se repite la corrida y no se repara en caliente: se clasifica la causa, se propone el cambio mínimo y se actualiza el plan.
+**Próxima acción y gate.** Preparar el caso sencillo del Elemont pineado. La fase 0 no empieza con este commit. La fase 1 no empieza si la fase 0 no cierra el gate de correspondencia, el acceso con filas ya existentes y la representación indexada de los diagramas. El filtro efectivo del pin se mide en la fase 1, con `force_entity_filter` y las URI del documento seleccionado. Antes de cada fase se actualiza este texto con el cierre de la anterior. Si el gate falla, no se avanza, no se repite la corrida y no se repara en caliente: se clasifica la causa, se propone el cambio mínimo y se actualiza el plan.
 
 **Conservado, diferido y reemplazado.**
 
 - Conservado: el fixture y las trazas de Journey A, como prueba histórica de continuidad; las reparaciones locales ya demostradas por test; el pin por botón, con revalidación de id y uid, `pin_only` y sin soltar el foco en silencio; el aislamiento del proceso; Haiku 4.5 global; el cierre de 188 llamadas y US$0,423114.
 - Diferido: la propuesta de descubrimiento documental, en la fase 4. No es prerrequisito de la fase 1. Su texto sigue en «Propuesta diferida de descubrimiento».
-- Reemplazado, como ruta de ejecución: la luz verde única de las etapas 1, 2 y 3; los 14 turnos como duración o meta; «en esta validación el pin no se setea»; otra pasada sin pin como siguiente paso; `RETRIEVAL_EMPTY` como parada de la próxima corrida; implementar el descubrimiento antes del caso pineado; tratar la fila local 213 o el UID `dcc8e046-037d-48a6-8913-1992aed28507` como la copia de Jesús; reabrir el cupo, usar la reserva de la etapa 3, cambiar el modelo o desplegar desde este documento. El borrador de cinco pasos sigue retirado.
+- Reemplazado, como ruta de ejecución: la luz verde única de las etapas 1, 2 y 3; los 14 turnos como duración o meta; «en esta validación el pin no se setea»; otra pasada sin pin como siguiente paso; `RETRIEVAL_EMPTY` como parada de la próxima corrida; implementar el descubrimiento antes del caso pineado; prohibir la copia `(1)` o la fila 213 por el sufijo del nombre; tratar el `document_id` `121bfffe…`, el UID `dcc8e046-037d-48a6-8913-1992aed28507` o una fila reconstruida como identidad o propiedad en producción; reabrir el cupo, usar la reserva de la etapa 3, cambiar el modelo o desplegar desde este documento. El borrador de cinco pasos sigue retirado.
 
 ## Alcance de esta ruta
 
@@ -38,116 +38,207 @@ Separado en tres planos. No se mezclan.
 
 ## Entorno
 
-Rails local. PostgreSQL `smart_deal_stage2_isolated`, `smart_deal_stage2_isolated_cache` y `smart_deal_stage2_isolated_cable`, en `localhost` o `127.0.0.1`, comprobadas por `current_database` cuando una fase se ejecute. RDS de producción sigue caído. No se repara y no se leen las bases Rails de producción.
+Rails local contra la Knowledge Base de producción `Y7RZWMFJSR`, región `us-east-1`. RDS de producción no se usa y no se repara. No se leen las bases Rails de producción.
 
-Knowledge Base de esta validación: `BEDROCK_KNOWLEDGE_BASE_ID=Y7RZWMFJSR`, `AWS_REGION=us-east-1`. No es `QGVYLPTEGT`, la KB habitual de desarrollo.
+Bases aisladas, en `localhost` o `127.0.0.1`:
 
-El proceso de validación exporta ese id y exige el adaptador `postgresql` y esas tres bases. No edita `.env`, credentials, `database.yml`, `cache.yml`, `cable.yml` ni `deploy.yml`. Solid Queue no se redirige. `TrackBedrockQueryJob` corre en línea. Cualquier otro `perform_later` aborta antes de escribir la cola de desarrollo. No se arrancan workers. Cuando una fase se autorice, ese proceso lleva `AWS_MAX_ATTEMPTS=1`. El modelo acordado es `global.anthropic.claude-haiku-4-5-20251001-v1:0`. Haiku 5.5 no entra.
+- `smart_deal_stage2_isolated`
+- `smart_deal_stage2_isolated_cache`
+- `smart_deal_stage2_isolated_cable`
 
-Un proceso que no carga el runner sigue en las bases de desarrollo y en la KB habitual. No se crean filas locales ni se modifican permisos para hacer funcionar el caso.
+Antes de cualquier fase se imprime `current_database` en cada una. La cola permanece en `smart_deal_development_queue`: Solid Queue no se redirige y no se arrancan workers. `TrackBedrockQueryJob` corre en línea. Cualquier otro `perform_later` detiene la prueba antes de escribir esa cola. `RagController#ask` encola `KbDocumentEnrichmentJob` cuando hay `doc_refs`; el wrapper de la fase 1 tiene que negarse a ese encolado, igual que a cualquier otro trabajo inesperado.
+
+La cuenta 1 y las filas locales ya reconstruidas forman parte de este entorno aislado. La pasada del 2026-10-09 registró la cuenta 1 como `danebo-legacy`, la cuenta 3 como `danebo-pilot-elevator`, y las filas 213 y 207. Esta revisión no volvió a leer la base. La fase 0 las lee. No se crean filas nuevas para forzar el resultado. No se modifican permisos.
+
+El proceso de validación exporta el id de la KB y exige el adaptador `postgresql` y esas tres bases. No edita `.env`, credentials, `database.yml`, `cache.yml`, `cable.yml` ni `deploy.yml`. La configuración es del proceso, y se comprueba contra el código antes de empezar:
+
+| Variable | Valor | Qué hace el código si falta |
+|---|---|---|
+| `SHARED_SESSION_ENABLED` | `false` | `SharedSession::ENABLED` queda falso salvo la cadena `true`. |
+| `HAIKU_QUERY_ANALYSIS_MODE` | `owner` | Otro valor, o la ausencia, no es `owner`. El default es `off`. |
+| `FIELD_COMPANION_EPISODE_ENABLED` | `true` | El episodio no se escribe. |
+| `FIELD_COMPANION_TURN_ENABLED` | `true` | El turno no lee el episodio. |
+| `DOCUMENT_IDENTITY_SCOPE_ENABLED` | `true` | El alcance documental queda apagado. |
+| `RAG_GROUNDED_SYNTHESIS_ENABLED` | `true` | La síntesis anclada queda apagada. Una lista `RAG_GROUNDED_SYNTHESIS_ACCOUNT_IDS` no vacía restringiría las cuentas; este proceso no la define. |
+| `PILOT_AUDIT_CAPTURE` | `true` | Añade texto a `TurnEvidence` y a `PilotAuditLog`. No abre `ValidationCapture`. |
+| `AWS_MAX_ATTEMPTS` | `1` | Tope de reintento del SDK. No es el cupo de la fase. |
+| `BEDROCK_KNOWLEDGE_BASE_ID` | `Y7RZWMFJSR` | Sin esta exportación el proceso usa la KB que ya tenga configurada. |
+| `AWS_REGION` | `us-east-1` | Región de esa KB. |
+| `BEDROCK_MODEL_ID` | `global.anthropic.claude-haiku-4-5-20251001-v1:0` | Es el default de `BedrockClient::QUERY_MODEL_ID` cuando no hay otro id. Haiku 5.5 no entra. |
+
+La ejecución futura exige, además, una autorización explícita de ese proceso. La fase 1 no arranca si `PHASE1_PINNED_TURN_AUTHORIZED` no es exactamente `1`. Esa variable no está definida. `STAGE2_JOURNEY_AUTHORIZED` no la sustituye: el runner histórico sigue sujeto a `PASS_CALL_CAP` 0.
+
+La restauración se comprueba en un proceso nuevo, sin esas exportaciones. Las bases habituales de desarrollo son `smart_deal_development`, `smart_deal_development_cache` y `smart_deal_development_cable`, y la cola habitual es `smart_deal_development_queue`. La KB habitual de desarrollo es `QGVYLPTEGT`.
 
 ## Presupuesto
 
-El cierre de `Rag::Stage2RunBudget` no se toca: 188 llamadas, US$0,423114, techo de etapa 2 en 188, reserva de etapa 3 en 42, techo global en 230, tope US$2,50, `PASS_CALL_CAP` 0. `Retrieve` y el embedding siguen fuera de `BedrockQuery`. Este complemento no abre cupo.
+El cierre de `Rag::Stage2RunBudget` no se toca: 188 llamadas, US$0,423114, techo de etapa 2 en 188, reserva de etapa 3 en 42, techo global en 230, tope US$2,50, `PASS_CALL_CAP` 0. `Retrieve` y el embedding siguen fuera de `BedrockQuery`. Este complemento no abre cupo. No declara `EPISODIO_VALIDADO` y no desbloquea la etapa 2.
 
-Presupuestos nuevos, escritos y no autorizados. Un defecto de ingesta o de índice no los amplía.
+Presupuestos nuevos, escritos y no autorizados. Un defecto de ingesta o de índice no los amplía. Autorizarlos es decisión del fundador.
 
-- Fase 0: 0 llamadas de modelo. Tope propuesto de 4 `Retrieve` de solo lectura, para URI, metadata, representación del diagrama y filtro del pin. No autorizado.
-- Fase 1: un turno. Tope propuesto de 3 llamadas de modelo, intérprete más hasta dos de generación, sin repetición en la misma corrida. Supuesto US$0,0275. El `Retrieve` del turno no entra en ese cupo. No autorizado. No usa las 42 de la etapa 3.
+- Fase 0: 0 llamadas de modelo. La lectura local de la base, de las filas ya existentes y del PDF no gasta ese cupo. Tope propuesto de 4 `Retrieve` de solo lectura, separado, para comprobar presencia en la KB cuando la evidencia local no alcance. No autorizado.
+- Fase 1: un turno, en una sesión nueva. Cupo propio, abajo. No usa las 42 de la etapa 3.
 - Fases 2 a 5: el cupo se escribe al cerrar la fase anterior. No está abierto.
+
+### Cupo propuesto de la fase 1
+
+Máximo de tres intentos de llamada de modelo en esa corrida. El contador vive en el servicio de la fase, no en `Stage2RunBudget`. Se comprueba inmediatamente antes de cada llamada. Si el contador ya llegó a tres, la llamada no sale, se escribe la parada y se cierra el proceso.
+
+No hay reintento automático de una llamada fallida ni una segunda ejecución de la prueba en la misma corrida. `AWS_MAX_ATTEMPTS=1` limita el reintento del SDK. No reemplaza este contador.
+
+Cada intento queda registrado: éxito, error, si existe fila `BedrockQuery`, tokens y costo cuando la fila existe. Un intento sin fila cuenta como intento y no se le inventa un costo. `Retrieve` y el embedding quedan fuera del cupo.
+
+La hipótesis de planificación, tomada del margen de un turno sin pin en `Stage2RunBudget`, es un análisis del intérprete y hasta dos generaciones. Es un supuesto. La ejecución mide cuántas llamadas hace realmente el turno pineado. Si la siguiente llamada fuera la cuarta, la corrida se detiene en tres y ese exceso queda como hallazgo. No se sube el cupo dentro de la corrida.
+
+Hoy el intérprete entra por `ConversationSession#record_user_turn!` con `interpreter_client`. La generación entra por `BedrockClient#generate_text` y por `converse_message`, sin un argumento de cupo. `ValidationCapture.record` observa la llamada y no la impide. El seam mínimo, cuando se autorice el código, es un guardia de ese servicio inmediatamente antes de esas llamadas al SDK, activo solo si el proceso de la fase 1 armó el contador.
+
+Escribir este cupo no lo autoriza. La fase 1 real espera la decisión del fundador y `PHASE1_PINNED_TURN_AUTHORIZED=1`.
+
+## Preparación local del turno pineado
+
+`script/field_companion/stage2_journey_a.rb` no es una ejecución de la fase 1. No pinea. Recorre los 14 turnos del fixture. Hace un `Retrieve` de disponibilidad antes del episodio. Depende de `Stage2RunBudget`, que con `PASS_CALL_CAP` 0 no admite otro turno. Exige la cuenta 1 `danebo-legacy`, la cuenta 3 `danebo-pilot-elevator` y una fila cuyo `document_uid` sea `dcc8e046-037d-48a6-8913-1992aed28507` y cuya `s3_key` sea `bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf`. Esas constantes son el contrato del runner. No demuestran que la fila aislada siga siendo ese objeto.
+
+El trabajo local pendiente, todavía sin escribir, respeta `script/AGENTS.md`: la lógica va a un servicio en `app/services` y `script/` solo lee el entorno, llama al servicio e imprime. Destino previsto, que este documento no crea: `app/services/rag/phase1_pinned_turn.rb` y `script/field_companion/phase1_pinned_turn.rb`.
+
+Ese servicio, cuando se autorice:
+
+- Comprueba las tres bases aisladas por `current_database`.
+- Usa la cuenta y el usuario ya existentes y explícitos, autorizados para el documento. No crea filas para forzar el caso.
+- Abre una sesión nueva. No altera la sesión histórica de Journey A.
+- Pinea con `ConversationSession#pin_kb_document!`, el mismo contrato que `PinnedDocumentsController`: la fila se toma por `kb_document_id`, `document_uid` solo confirma esa fila, la URI sale de `display_s3_uri` y `KnowledgeScopePolicy.authorized?` tiene que aceptarla.
+- Ejecuta un turno por la secuencia de texto de `RagController#ask`: `record_user_turn!` y después `execute_rag_query`, con las URI leídas del pin. No sustituye esa secuencia por un `Retrieve` suelto.
+- Abre `Rag::ValidationCapture.capture` durante el turno y conserva la correlación.
+- No hace un `Retrieve` adicional de disponibilidad.
+- Pasa pruebas Minitest con stubs antes de cualquier ejecución real. Esas pruebas cubren el rechazo por cupo, la ausencia de reintento y la parada ante un `perform_later` inesperado.
+
+Hasta que esas pruebas existan y el fundador autorice el cupo, la fase 1 no se ejecuta.
 
 ## Cadena documental
 
-Cada caso valida, en este orden, PDF, extracción, chunks, indexación, filtro, retrieval y respuesta. La referencia del evaluador se escribe antes de la corrida. Lleva página, evidencia esperada, interpretación permitida y afirmaciones que el pasaje no sustenta. No entra en la consulta, el prompt, el fixture ni una página forzada.
+Cada caso localiza la primera divergencia comprobada en este orden:
+
+PDF, extracción y chunks, publicación e indexación, autorización y filtro, recuperación y ranking, generación, estado conversacional.
+
+La referencia del evaluador se escribe antes de la corrida. Lleva página, evidencia esperada, interpretación permitida y afirmaciones que el pasaje no sustenta. No entra en la consulta natural, el prompt, el fixture ni una página forzada. La consulta natural tampoco recibe el pasaje ni un dato que el técnico no haya dicho.
 
 Si la consulta natural no recupera esa evidencia, el caso se detiene. Una búsqueda posterior no lo declara superado. La localización se para en la primera capa que explica la ausencia:
 
 1. Confirmar el contenido en el PDF.
 2. Inspeccionar extracción y chunks, en especial las relaciones de los diagramas.
-3. Comprobar presencia y metadata en la KB.
-4. Verificar URI y filtro del pin.
+3. Comprobar publicación y metadata en la KB.
+4. Verificar autorización, URI y filtro del pin.
 5. Evaluar retrieval y ranking.
 6. Solo después de esas cinco, considerar embeddings.
 
+Un `Retrieve` vacío demuestra que esa búsqueda no recuperó evidencia. No demuestra que la sección no exista ni que el documento esté ausente del índice. Un archivo presente en S3 tampoco demuestra que esté indexado: afirmar presencia o ausencia en la KB exige evidencia propia de la indexación. No se reindexa ni se cambia el sistema durante una corrida.
+
 Cuatro resultados, y no se mezclan:
 
-- Ausente del índice: el PDF o el chunk local la tienen y la KB no.
+- Ausente del índice: el PDF o el chunk local la tienen y la evidencia de indexación no.
 - Deteriorada por extracción o troceo: la etiqueta existe, pero se perdió la relación del diagrama, se partió el recorrido o el texto quedó por debajo de lo que el plano muestra.
-- Excluida por filtro: está en la KB y el filtro del pin, de la cuenta o de la compuerta no la deja entrar.
+- Excluida por filtro o por autorización: está en la KB y el filtro del pin, de la cuenta o de la compuerta no la deja entrar.
 - Existente y no recuperada: pasa el filtro y no aparece en el ranking de la consulta natural.
 
-Las búsquedas por página, URI o texto específico van a un registro diagnóstico, con consulta, filtro, k y resultado. No declaran que la consulta natural pasó. La captura `tmp/documentary_retrieve/20261007T212124Z/` ya es de ese tipo: título más «Seguridad Puerta nivel 1», k=8, sin pin.
+Las pruebas naturales de aceptación y las consultas diagnósticas van separadas. Una búsqueda por página, URI o texto específico se anota con consulta, filtro, k y resultado. No declara que la consulta natural pasó. La captura `tmp/documentary_retrieve/20261007T212124Z/` ya es de ese tipo.
+
+Cada consulta de prueba lleva, antes de ejecutarse, su referencia tomada del PDF original: página, pasaje o diagrama, y la respuesta que ese material permite sostener. Esa referencia no entra en la consulta. Cuando una lectura de la KB está autorizada, se contrasta con el contenido y la metadata de los chunks: fidelidad frente al PDF, contexto que el pasaje necesita para entenderse, procedencia y correspondencia con el documento seleccionado.
+
+Son dos comprobaciones distintas.
+
+1. Representación en el índice. El chunk y su metadata conservan la página, el pasaje o el diagrama, y apuntan al documento seleccionado.
+2. Recuperación. La consulta natural de la fase trae ese chunk.
+
+Si el chunk esperado no llega, se nombra la primera divergencia comprobable de la cadena. Un resultado vacío de esa consulta no atribuye el fallo a embeddings y no concluye que el pasaje esté ausente del índice. No se reindexa y no se hacen llamadas fuera del cupo autorizado.
+
+La referencia de la consulta natural de la fase 1, leída en el PDF de SHA-256 `121bfffe0827f6bc681ba9bdc910503900555c4ce58d616732a1c063f3b16986`:
+
+- Página 5, «DIAGRAMAS CIRCUITO #3», «SECCIÓN LÍNEA DE SEGURIDAD». Etiquetas visibles en la extracción de texto: Seg In, Seg Out y «Seguridad Puerta» de los niveles 1 a 5, incluida la del nivel 2.
+- La misma página, «SECCIÓN BOTONERA DE PASILLO NIVEL 1», etiqueta las chapas por nivel. La página 6 las vuelve a etiquetar en otro diagrama del circuito 3.
+- La respuesta puede ubicar la etiqueta del nivel 2 en esa sección y decir solo la relación que el pasaje recuperado muestre.
+- El PDF no sostiene la causa de la falla, una medición, una intervención, el orden serie exacto, que esa seguridad sea la chapa, un código de falla 8 o 18, un LED 7 ni una solución de CEA15.
+
+Contraste ya hecho con la captura diagnóstica existente, sin llamada nueva. El chunk `chunk_p5_1.txt`, página 5, trae esas etiquetas, la URI `bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf`, `document_id` `121bfffe…` y `account_id` 1. También arma una tabla del nivel 5 al 1 y dice que el orden exacto requiere verificación de campo. Esa tabla es extracción: el texto del PDF no fija ese orden. La misma búsqueda, k=8 y sin pin, no trajo la página 6. Eso es la primera divergencia de esa consulta diagnóstica en recuperación y ranking. No demuestra que la página 6 falte en el índice ni que la consulta natural de la fase 1 vaya a recuperar la página 5.
 
 No se reingiere, no se cambian embeddings, no se modifica metadata y no se amplía el presupuesto al encontrar el defecto. Si la capa es de ingesta o de indexación, se documentan la evidencia y la reparación propuesta, y el caso no continúa hasta una decisión del fundador.
 
-La misma corrida distingue, además, fallo de estado, de generación y de arnés. La cadena de arriba se recorre antes de atribuir el fallo a la respuesta o a la memoria. No se repara durante la corrida.
+La misma corrida distingue, además, fallo de estado, de generación y de arnés. La cadena de arriba se recorre antes de atribuir el fallo a la respuesta o a la memoria. No se mezclan en una sola intervención la reparación de indexación, retrieval, generación, memoria y arnés. No se repara durante la corrida.
 
 ## Trazabilidad del recorrido
 
-Cada consulta natural se reconstruye con lo que ya existe. `PilotUsageLog` y `pilot_events` no contienen el recorrido completo. Antes de ejecutar una fase se comprueba que `Rag::ValidationCapture.capture` está abierto en ese proceso. `PILOT_AUDIT_CAPTURE=true` no abre ese bloque: solo añade texto a `TurnEvidence` y a `PilotAuditLog`. Se reutiliza el bloque que ya abre `script/field_companion/stage2_journey_a.rb`. Si el bloque no está activo, la corrida no empieza.
+Cada criterio de una fase se contrasta con las trazas de la misma sesión, el mismo episodio y el mismo turno. La respuesta visible no lo da por cumplido. `PILOT_AUDIT_CAPTURE=true` tampoco: ese flag añade texto a `TurnEvidence` y a `PilotAuditLog`, y no abre `ValidationCapture` ni escribe `pilot_events`. Antes de ejecutar una fase se comprueba que `Rag::ValidationCapture.capture` está abierto en ese proceso. Si el bloque no está activo, la corrida no empieza.
 
-Qué guarda cada mecanismo:
+Esta revisión leyó las trazas ya guardadas de la sesión 3. No hizo llamadas nuevas. Archivos: `tmp/stage2_journey_a/runs/20261009T114733Z-session-3/` y `tmp/stage2_journey_a/exports/20261009T114941Z/`. Sesión 3, cuenta 1, usuario 1, episodio `ep_60ed345c266abc03`, 14 turnos, sin pin. `filter.json` de esa corrida no trae `PILOT_AUDIT_CAPTURE`, `DOCUMENT_IDENTITY_SCOPE_ENABLED` ni `RAG_GROUNDED_SYNTHESIS_ENABLED`. Esas tres variables no quedan demostradas por estos archivos.
 
-- `PilotUsageLog` y `pilot_events`. Eventos `field_companion_turn`, `kb_retrieve`, `open_retrieval` y `document_identity_scope`. Traen cuenta, usuario, sesión, correlación y episodio. El turno guarda el SHA del mensaje, el de la consulta efectiva y el del estado antes y después. El retrieve guarda la consulta recortada a 500 caracteres, k, conteos, `filter_applied` y una huella de 16 caracteres del filtro. No guardan el prompt, el cuerpo de los chunks, el filtro completo ni la salida cruda del intérprete.
-- `BedrockQuery`. Fila de llamada de modelo: correlación, sesión, ruta, `source`, modelo, intento, tokens y `user_query`. El costo sale de esos tokens. No guarda filtro, chunks ni prompt. Un `Retrieve` no crea fila. Un intento sin fila no se inventa como costo.
-- `Rag::TurnEvidence` y `PilotAuditLog`. Sin el flag de auditoría, la evidencia es un SHA. Con el flag, el log añade pregunta, respuesta y texto de chunk hasta 4000 caracteres, y no escribe `pilot_events`.
-- `Rag::ValidationCapture`, solo dentro del bloque. Percepción, delta del episodio, ruta, parámetros del `Retrieve` con su filtro, chunks con URI, página y score o `unavailable`, política de aplicabilidad, prompt de `generate_text`, recorte del guidance, respuesta y citas. El fallo del intérprete trae clase, etapa y motivo sanitizado. El delta no es el episodio entero.
+Un turno de esa corrida usa dos correlaciones. `stage2:a:t01` cubre el intérprete y el `field_companion_turn` del técnico. `stage2:a:t01:query` cubre `kb_retrieve`, `document_identity_scope`, `photo_continuity` y la generación. En `ValidationCapture`, `correlation_root` vale `stage2:a:t01` en los dos tramos. Los eventos del intérprete y `route_decision` salen antes de enlazar el episodio: traen sesión y correlación, y el `episode_id` llega en el `retrieve`.
 
-Correlación, por `correlation_id`: mensaje original y efectivo, interpretación, estado antes y después, sesión y episodio, foco documental, consulta y filtro enviados, chunks, aplicabilidad, contexto o prompt, respuesta, citas, errores e intentos. El foco se lee de `conversation_sessions.document_focus` y del filtro del evento `retrieve`. `route_decision` no copia las URI. Si el retrieve no ocurrió, no se reconstruye ese filtro.
+Qué registra cada fuente en ese turno, y qué falta:
+
+- `pilot_events`, 84 filas, todas de la sesión 3. `field_companion_turn` del técnico: SHA del mensaje, SHA de la consulta efectiva, SHA del estado antes y después, episodio y decisión. No trae el texto del mensaje. Los otros 14 `field_companion_turn`, los de la respuesta, comparten el episodio y tienen `correlation_id` vacío: el runner les pasó `result.correlation_id`, y `RagResult` copia solo el id que devuelve el servicio. No se unen al turno por correlación. `turn_interpreter`: movimiento, aserciones, modelo y tokens. El turno 1 coincide en 2150 y 266 tokens con la fila `BedrockQuery` de `semantic_analysis`; el costo está solo en esa fila. Sumar las dos contaría la misma llamada dos veces. `kb_retrieve`: texto de la consulta, `requested_k` 8, `effective_k` 8, `search_type` HYBRID, conteos y una huella de 16 caracteres. `filter_applied` es falso en los 14. En el código ese campo es el filtro de URI del pin, no el filtro de cuenta. El episodio no viene en este evento. No hay cuerpo de chunk ni filtro completo. No hay evento `open_retrieval` en este export.
+- `bedrock_queries.json`, 28 filas de la sesión 3: 14 `semantic_analysis` con `attempt` vacío y 14 `query` con intento 1. Traen correlación, ruta, modelo, tokens, costo y `user_query` recortado a 500 caracteres. No traen filtro, chunks ni prompt. Un `Retrieve` no crea fila.
+- `trace.json`, bloque `capture` de `ValidationCapture`, 16 eventos en el turno 1. Ahí están la solicitud de `Retrieve` con el filtro completo, la KB `Y7RZWMFJSR`, modalidad HYBRID y k=8; los chunks con URI, página, score, texto, decisión y motivo; el prompt de `generate_text`; la respuesta publicada; el delta del episodio y la percepción. El filtro de ese `retrieve` es cuenta 1, o cuenta 3 sin foto y sin `manual_corpus=account`, o `manual_corpus=general`. El primer chunk aceptado es KONE, página 375, motivo `shared_corpus`. Los 14 turnos tienen respuesta visible y cero filas de citas. El mensaje original completo está en el registro del runner (`original` y `sent`), no como campo propio de `PilotUsage`. `route_decision` no copia las URI del foco. Esta corrida no tiene `document_focus` ni `pin_only`: no sirve para dar por probado el filtro de un pin.
+- `TurnEvidence` y `PilotAuditLog` no están en estos archivos. Con el flag apagado, el código guarda SHA. Con el flag encendido, el log añade pregunta, respuesta y texto de chunk hasta 4000 caracteres. Esta exportación no permite ver cuál de los dos ocurrió.
+
+En las ejecuciones futuras el mismo cruce es obligatorio. Sesión, episodio y las dos correlaciones del turno tienen que apuntar al mismo caso. El criterio de alcance se lee del filtro del evento `retrieve` de `ValidationCapture` y de `document_focus`. El de evidencia se lee de los chunks aceptados, con URI, página y texto. El de respuesta se lee del prompt y de la respuesta publicada, contrastados con esos chunks y con la referencia del PDF. Una respuesta visible con citas vacías, como las 14 de la sesión 3, no cumple evidencia. Un dato que no esté en esas trazas se anota como límite de observabilidad. Un request que no quedó capturado no se declara enviado.
 
 El fallo señala el primer punto que se desvía de la referencia, con el evento que lo muestra. Lo posterior es consecuencia. Una medición inventada no es la causa si el filtro del pin nunca se aplicó. Una búsqueda diagnóstica usa otra correlación.
 
-Si falta un dato, se anota el límite de observabilidad. Un request que no quedó capturado no se declara enviado. No se añade instrumentación en este corte. Un campo nuevo solo se propone si una fase cerrada no puede señalar el primer desvío. El candidato no autorizado es copiar las URI del foco en `route_decision` cuando no hay evento `retrieve` y la fila de sesión tampoco las tiene.
+No se añade instrumentación en este corte. Un campo nuevo solo se propone si una fase cerrada no puede señalar el primer desvío. El candidato no autorizado es copiar las URI del foco en `route_decision` cuando no hay evento `retrieve` y la fila de sesión tampoco las tiene. El otro hueco ya visto, y tampoco se repara aquí, es el `correlation_id` vacío en el `field_companion_turn` de la respuesta.
 
 ## Fases
 
-Antes de iniciar una fase, este documento se actualiza con los hallazgos de la anterior y se revisan casos, supuestos, instrucciones y presupuesto. Un cambio de modelo, presupuesto, arquitectura o alcance vuelve al fundador.
+Antes de iniciar una fase, este documento se actualiza con los hallazgos de la anterior y se revisan casos, supuestos, instrucciones y presupuesto. Un cambio de modelo, presupuesto, arquitectura o alcance vuelve al fundador. Un criterio se da por cumplido solo cuando las trazas de la misma sesión, el mismo episodio y el mismo turno lo muestran. La respuesta visible y `PILOT_AUDIT_CAPTURE=true` no alcanzan.
 
 ### Fase 0. Preparación documental y del entorno
 
-1. Estado: pendiente. La preparación con archivos y capturas ya existentes queda escrita aquí. Las llamadas nuevas no están autorizadas.
-2. Prerrequisitos y evidencia heredada. Cierre de 188 llamadas y US$0,423114. RDS de producción caído. Captura diagnóstica `tmp/documentary_retrieve/20261007T212124Z/`. No hay correspondencia demostrada entre el PDF del fundador y la fila local 213.
-3. Pregunta. ¿El PDF aportado y el objeto indexado en `Y7RZWMFJSR` son el mismo plano, la extracción conserva la línea de seguridad, y el visor que ya existe puede pinear ese objeto sin inventar filas ni permisos?
-4. Acciones y límites. Dos verificaciones distintas. La del PDF original no se sustituye por la de la KB. No se crean filas, no se cambian permisos, no se reingiere y no se edita metadata. `PASS_CALL_CAP` sigue en 0. El tope propuesto de 4 `Retrieve` no está autorizado. No se arrancan workers.
-5. Entradas y resultados esperados. Entrada: el nombre `Montacargas 2N Temporizado-1 (1)(2).pdf`; las copias locales de `Montacargas 2N Temporizado-1 (1).pdf`, fuera del repositorio; la captura diagnóstica. Resultado, solo cuando se autorice: URI, metadata, correspondencia de bytes o de identidad documental, acceso del visor, representación indexada de los diagramas de las páginas 5 y 6, y el filtro que queda al pinear.
-6. Aceptación, fallo y detención. Aceptación: las dos verificaciones quedan separadas y la referencia del evaluador solo se confirma si el PDF la contiene. Fallo: pinear la copia `(1)` o la fila 213 para hacer funcionar el caso. Detención: el archivo `(1)(2)` no aparece y el fundador no identifica el objeto, o no hay una fila ya autorizada para ese URI.
-7. Evidencias que debe guardar. Identidad del archivo, URI de origen, metadata del chunk, filtro efectivo y una marca de que toda búsqueda por título, página o texto es diagnóstica.
-8. Hallazgos de la preparación, no de una corrida. El nombre `(1)(2).pdf` no está en el disco revisado. Sí hay copias de `(1).pdf`, incluida la carpeta de manuales de Jesús, y otra sin el `(1)`. La inspección visual de ChatGPT —página 5, circuito 3, línea de seguridad, «Seguridad Puerta nivel 2» entre Seg In y Seg Out; chapas en las páginas 5 y 6— queda por comprobar en el PDF. La captura diagnóstica, sin pin y con filtro de la cuenta 4, trajo primero `chunk_p5_1.txt` del prefijo `121bfffe…`, URI `Montacargas 2N Temporizado-1 (1).pdf`. El texto lista «Seguridad Puerta nivel 2» entre los niveles 5 y 1 y dice que el orden exacto de la serie requiere verificación de campo. La página 6 no entró en esos ocho. Eso no hace pasar la consulta natural. La fila local 213 y el UID `dcc8e046-037d-48a6-8913-1992aed28507` son una reconstrucción, no la copia de Jesús en producción.
-9. Cambios en la fase siguiente. La fase 1 sigue bloqueada hasta el cierre de estas cuatro comprobaciones: correspondencia, acceso, representación indexada y filtro `pin_only`. Si una falla, la fase 1 se reescribe con esa causa y no se ejecuta.
+1. Estado: pendiente. La lectura local de esta revisión queda escrita en el punto 8. Las llamadas nuevas no están autorizadas.
+2. Prerrequisitos y evidencia heredada. Cierre de 188 llamadas y US$0,423114. RDS de producción fuera de este plan. Captura diagnóstica `tmp/documentary_retrieve/20261007T212124Z/`. El sufijo del nombre no decide el documento.
+3. Pregunta. ¿El PDF, el objeto indexado en `Y7RZWMFJSR` y una fila local ya seleccionable son el mismo plano, la extracción conserva la línea de seguridad, y el usuario de la prueba puede pinear esa fila sin crear filas ni cambiar permisos?
+4. Acciones y límites. La lectura del PDF y de la captura no se sustituye por un `Retrieve`. No se crean filas, no se cambian permisos, no se reingiere y no se edita metadata. `PASS_CALL_CAP` sigue en 0. El tope propuesto de 4 `Retrieve` no está autorizado. No se arrancan workers. La comprobación de conexión y de `current_database` es local.
+5. Entradas y resultados esperados. Entrada: las copias locales ya comparadas, la captura diagnóstica y la fila aislada que ya exista. Resultado del gate de correspondencia, las tres condiciones a la vez:
+   1. La URI canónica de la fila local coincide con `original_source_uri` del chunk.
+   2. El PDF corresponde al objeto indexado por el contenido de las páginas relevantes o por bytes. El hash local contra `doc_sha256` de la captura ya cubre los bytes de esos archivos; falta la clave de la fila y, si el fundador lo pide, una lectura del objeto en S3.
+   3. La selección está autorizada para el usuario de la prueba, por `KnowledgeScopePolicy.authorized?`.
+6. Aceptación, fallo y detención. Aceptación: las tres condiciones quedan comprobadas por separado y la referencia del evaluador solo afirma lo que el PDF contiene. Fallo: pinear una fila cuya URI no coincide, o crear una fila para que coincida. Detención: no hay una fila ya existente y autorizada para esa URI. El nombre `(1)`, `(2)` o `(1)(2)` no es causa de aceptación ni de detención.
+7. Evidencias que debe guardar. SHA-256 del PDF, URI canónica de la fila, `original_source_uri` y `document_id` del chunk, `document_uid` de la fila, cuenta y usuario, y una marca de que toda búsqueda por título, página o texto es diagnóstica. El filtro del pin se mide en la fase 1.
+8. Hallazgos de esta revisión, sin corrida y sin leer la base. Siete archivos locales, fuera del repositorio, con y sin el sufijo `(1)`, miden 583429 bytes y comparten el SHA-256 `121bfffe0827f6bc681ba9bdc910503900555c4ce58d616732a1c063f3b16986`. Ese valor es el `doc_sha256` de los chunks Elemont de la captura. El nombre no los distingue. `pdftotext` de uno de esos archivos, 7 páginas, muestra en la página 5 «DIAGRAMAS CIRCUITO #3» y «SECCIÓN LÍNEA DE SEGURIDAD», con las etiquetas Seg In, Seg Out y «Seguridad Puerta» de los niveles 1 a 5. La misma página, en «SECCIÓN BOTONERA DE PASILLO NIVEL 1», etiqueta «Chapa Puerta nivel 1» y «Chapa nivel» 1 a 5. La página 6 etiqueta otra vez las chapas por nivel, en otro diagrama del circuito 3. La extracción de texto no fija el orden serie del dibujo. Ese texto no explica un código de falla 8 o 18, un LED 7 ni una solución de CEA15. Sí etiqueta el bus «Com 18vdc» en la botonera de la página 5; esa etiqueta no es un código de falla. El chunk `chunk_p5_1.txt` de la captura enumera esas etiquetas de puerta en una tabla, del nivel 5 al 1, y dice que el orden exacto de la serie requiere verificación de campo. Esa tabla es extracción, no el PDF. La captura hizo un `Retrieve`, cero `retrieve_and_generate`. Consulta diagnóstica: «Elemont Montacargas Hidraulico Modelo MH Seguridad Puerta nivel 1», HYBRID, k=8, sin pin. `request.json` tiene `account_id` 1 y el filtro de `account_filter`: la cuenta 1, o la cuenta 4 sin `field_photo_v1` y sin `manual_corpus=account`, o `manual_corpus=general`. El primer chunk fue aceptado con `reason` `viewer_account` porque su `account_id` de metadata es `1`, el del visor. `SharedManualCorpus` resuelve `danebo-legacy` y `danebo-pilot-elevator` en el proceso; no fija el id 4. El runner histórico espera el brazo de la cuenta 3. Son dos registros distintos. Ninguno es RDS de producción. La página 6 no entró en esos ocho. Eso no demuestra que falte en el índice ni hace pasar la consulta natural. Identificadores, comprobados y todavía separados: el `document_id` del chunk es `121bfffe0827f6bc681ba9bdc91050390055`, los primeros 36 hex del SHA; `publication_gate` no lo compara con `KbDocument.document_uid`. El UID del runner es `dcc8e046-037d-48a6-8913-1992aed28507`. `partition_evidence` sí trataría el `document_id` del chunk como confirmación de `document_uid` y, si difieren, marcaría el chunk ambiguo; esa política no es el filtro del pin ni la compuerta de publicación. `bind_catalog_candidate` exige otra cosa: el `document_id` de la entrada de catálogo tiene que ser el `document_uid` de la fila, y la clave canónica del objeto tiene que coincidir en una sola fila autorizada. Los ids de catálogo `1` y `3` son ids de índice, no `accounts.id`. El pin guarda `kb_document_id` y la URI que `display_s3_uri` copia de la fila. El filtro de ese pin compara esa URI canónica con `original_source_uri` y con `x-amz-bedrock-kb-source-uri`. La fila local no se leyó en esta revisión: la coincidencia de URI y la autorización siguen abiertas.
+9. Cambios en la fase siguiente. La fase 1 sigue bloqueada hasta cerrar URI de la fila y la autorización del usuario. La representación de la página 5 ya está contrastada con la captura diagnóstica existente; la recuperación de esa página por la consulta natural es la comprobación distinta, y queda en la fase 1. Si una condición falla, la fase 1 se reescribe con esa causa y no se ejecuta. `pin_only` no cierra este gate.
 
 ### Fase 1. Consulta sencilla con el documento correcto pineado
 
-1. Estado: pendiente y bloqueada por la fase 0.
-2. Prerrequisitos. Cierre de la fase 0 con el mismo objeto pineable, sin filas nuevas. Captura de validación activa. Cupo de modelo propio, todavía no autorizado.
+1. Estado: pendiente y bloqueada por la fase 0 y por la preparación local del wrapper.
+2. Prerrequisitos. Gate de correspondencia cerrado sobre la misma fila, sin filas nuevas. Servicio de la fase con pruebas de stubs en verde. `ValidationCapture.capture` abierto. `PHASE1_PINNED_TURN_AUTHORIZED=1`. Cupo de tres intentos de modelo, autorizado por el fundador. Sesión nueva.
 3. Pregunta. Con ese plano ya seleccionado, ¿la consulta natural recupera dónde aparece la seguridad de la puerta del nivel 2 y cómo se relaciona con las demás seguridades, sin afirmar la causa de la falla?
-4. Acciones y límites. Un turno. El pin se escribe con el mecanismo que ya revalida id y uid, antes de la pregunta. No se inyectan páginas ni la respuesta esperada. No se sube k, no se suelta el pin y no se abre el corpus si el retrieve vuelve vacío. No se reingiere. Sin repetición en la misma corrida.
-5. Entradas y resultados. Consulta: «Estoy revisando un Elemont MH por un problema de puerta en el nivel 2. Según el plano seleccionado, ¿dónde aparece la seguridad de esa puerta y cómo se relaciona con las demás seguridades?» Referencia del evaluador, provisional hasta el PDF de la fase 0: página 5; evidencia, «Seguridad Puerta nivel 2» en la línea de seguridad del circuito 3, entre Seg In y Seg Out; interpretación permitida, ubicar el contacto y explicar la conexión representada, incluido el límite de orden si el pasaje lo trae; no sustenta la causa de la falla, una medición, una intervención ni que sea la chapa. Resultado esperado: filtro `pin_only`, `force_entity_filter` verdadero, solo esa URI, k=3.
-6. Aceptación, fallo y detención. Aceptación: la consulta natural recupera esa evidencia y la respuesta cabe en la interpretación permitida. El fallo nombra el primer desvío del recorrido, con su evento. Detención: documento distinto, filtro abierto, cita ajena, causa inventada o evidencia ausente. Esa ausencia se clasifica en la cadena y no se repara en la corrida.
-7. Evidencias. Bloque `ValidationCapture` de ese turno, fila de sesión con `document_focus`, eventos de piloto que existan y filas `BedrockQuery` del periodo. Las búsquedas diagnósticas, si hacen falta después, van aparte.
-8. Hallazgos al cerrar. Vacío hasta la ejecución.
-9. Fase siguiente. La fase 2 hereda el pasaje realmente recuperado. Si la fase 1 no recupera la evidencia, la fase 2 no empieza.
+4. Acciones y límites. Un turno, por la secuencia de `RagController#ask` descrita arriba. El pin se escribe antes de la pregunta. No se inyectan páginas, el pasaje ni la respuesta esperada. No se sube k a mano, no se suelta el pin y no se abre el corpus si el retrieve vuelve vacío. No hay `Retrieve` de disponibilidad. No se reingiere. El contador se comprueba antes de cada llamada de modelo. Sin reintento y sin repetir la prueba.
+5. Entradas y resultados. Consulta natural: «Estoy revisando un Elemont MH por un problema de puerta en el nivel 2. Según el plano seleccionado, ¿dónde aparece la seguridad de esa puerta y cómo se relaciona con las demás seguridades?» Referencia del evaluador, leída en el PDF de la fase 0: la página 5 muestra, en la línea de seguridad del circuito 3, la etiqueta «Seguridad Puerta nivel 2» junto con las de los otros niveles, y también las etiquetas Seg In y Seg Out. La interpretación permitida ubica esa etiqueta en ese circuito y dice la relación que el pasaje recuperado muestre. No sustenta la causa de la falla, una medición, una intervención, el orden serie que el texto del PDF no fija, ni que esa seguridad sea la chapa. Las chapas están etiquetadas en las páginas 5 y 6; igualarlas queda para la fase 2, después de ver el pasaje real. Tres criterios, independientes:
+   1. Alcance. `force_entity_filter` verdadero y `entity_s3_uris` exactamente las URI canónicas del documento seleccionado, las que `authorize_retrieval_set` haya dejado pasar. Se registran `reason`, modalidad y k reales. `pin_only` solo dice que había URI pineadas: `resolve_retrieval_scope` lo asigna en cuanto la lista no está vacía. No prueba el filtro enviado. El perfil de un documento pineado usa 3 resultados en la consulta ordinaria, 5 si la clasifica como crítica y otro valor si es exhaustiva. Esta frase no coincide con esos patrones. El k que salga se anota. No se exige 3.
+   2. Evidencia. Aparece el pasaje de la página 5 con esas etiquetas, y la procedencia verifica `original_source_uri`, página y el documento seleccionado.
+   3. Respuesta. Interpreta ese pasaje y no añade un diagnóstico que el plano no demuestra.
+6. Aceptación, fallo y detención. Aceptación: los tres criterios pasan, cada uno leído en las trazas correlacionadas de ese turno. Un criterio fallido no se compensa con otro. La respuesta visible no sustituye el chunk ni el filtro. El fallo nombra el primer desvío del recorrido, con su evento, y se clasifica en la cadena. Si el chunk de la página 5 no llega, la primera divergencia puede estar en la representación ya contrastada con el PDF o en la recuperación de esta consulta: son comprobaciones distintas. Detención: documento distinto, filtro que no es el del pin, cita ajena, causa inventada, evidencia ausente o cuarta llamada de modelo. La ausencia se clasifica y no se repara en la corrida. Un retrieve vacío de esta consulta no declara el plano ausente del índice y no se atribuye a embeddings sin haber recorrido la cadena. No hay llamadas fuera del cupo.
+7. Evidencias. Bloque `ValidationCapture` de ese turno, fila de sesión con `document_focus`, solicitud de `Retrieve` con filtro, modalidad y k, chunks devueltos y aceptados, eventos de piloto de la misma sesión y episodio, y filas `BedrockQuery` de las dos correlaciones del turno, con intentos, errores y costo. El `field_companion_turn` de la respuesta se anota aparte si vuelve a salir sin `correlation_id`. Las búsquedas diagnósticas, si hacen falta después, van aparte, dentro del cupo que esté autorizado, y no reabren el turno.
+8. Hallazgos al cerrar. Vacío hasta la ejecución. Esta revisión no completa la respuesta esperada con el texto del chunk.
+9. Fase siguiente. La fase 2 hereda el pasaje realmente recuperado y el conteo real de llamadas. Si la fase 1 no recupera la evidencia, la fase 2 no empieza.
 
 ### Fase 2. Guía conversacional con el documento correcto
 
 1. Estado: pendiente y bloqueada por la fase 1.
-2. Prerrequisitos. El plano sigue pineado y la fase 1 recuperó un pasaje de ese documento. El cupo se escribe al cerrar la fase 1.
-3. Pregunta. ¿Danebo distingue la seguridad de la puerta del nivel 2 de la chapa de ese nivel, o explica que el plano no alcanza para igualarlas, sin inventar una reparación?
-4. Acciones y límites. Un seguimiento. No se presenta como caso positivo con solución conocida. No se inyecta la referencia. No se fuerza una conversación larga.
-5. Entradas y resultados. Seguimiento candidato: «¿Eso es lo mismo que la chapa de puerta del nivel 2?» Referencia provisional: páginas 5 y 6; evidencia, las etiquetas de seguridad y las de chapa si el PDF las separa; interpretación permitida, decir que no queda demostrado que sean el mismo contacto; no sustenta igualarlas ni un procedimiento. La captura diagnóstica ya las separa y no convierte eso en un pase de la consulta natural.
-6. Aceptación, fallo y detención. Aceptación: una aclaración que reduce esa incertidumbre y un límite explícito si el pasaje no iguala los dos nombres. Detención: los iguala, inventa una reparación, o no recupera la distinción y se sigue de largo. En ese último caso se localiza la capa y se para.
-7. Evidencias. La misma correlación del turno, más la referencia del evaluador ya confirmada o corregida por la fase 0.
+2. Prerrequisitos. El plano sigue pineado y la fase 1 recuperó un pasaje de ese documento. El cupo se escribe al cerrar la fase 1, con el conteo medido. El caso definitivo se diseña entonces. No se fuerza una aclaración si ese pasaje ya respondió la consulta.
+3. Pregunta. Cuando el pasaje deje una incertidumbre que cambie el paso, ¿Danebo formula una sola pregunta útil, usa el dato que el técnico responde y ajusta la orientación?
+4. Acciones y límites. El ciclo mínimo es una pregunta de Danebo, la respuesta del técnico y el turno siguiente. No se presenta como caso positivo con solución conocida. No se inyecta la referencia. No se alarga la conversación para imitar Journey A. Si la fase 1 ya cerró la pregunta, esta fase registra ese hecho y elige otra incertidumbre real del pasaje, o se detiene sin fabricar una duda.
+5. Entradas y resultados. El caso se escribe al cerrar la fase 1. Un candidato, solo si el pasaje recuperado no iguala los dos nombres: Danebo pregunta si «Seguridad Puerta nivel 2» es la chapa de ese nivel; el técnico responde con lo que ve; la respuesta siguiente usa esa respuesta. El PDF etiqueta las dos cosas en páginas distintas del dibujo y no dice que sean el mismo contacto. La captura diagnóstica tampoco convierte esa distinción en un pase. No se usa este candidato si la fase 1 ya lo resolvió o si el pasaje recuperado no da pie.
+6. Aceptación, fallo y detención. Aceptación: una sola pregunta que reduce una incertidumbre relevante, el dato del técnico queda en el estado, y la respuesta siguiente lo usa para ajustar la orientación. Si el pasaje no alcanza, el límite queda dicho. Detención: pregunta de más, ignora el dato aportado, iguala seguridad y chapa sin respaldo, o inventa una reparación. Si falta evidencia documental nueva, se localiza la capa y se para.
+7. Evidencias. Correlación de los turnos del ciclo, estado del episodio antes y después, y la referencia ya corregida por el pasaje de la fase 1.
 8. Hallazgos al cerrar. Vacío hasta la ejecución.
-9. Fase siguiente. La fase 3 solo usa hechos que este turno haya dejado vigentes. Si el límite documental cambió la referencia, se reescribe el caso antes de continuar.
+9. Fase siguiente. La fase 3 solo usa hechos que este ciclo haya dejado vigentes. Si el límite documental cambió la referencia, se reescribe el caso antes de continuar.
 
 ### Fase 3. Continuidad y correcciones
 
 1. Estado: pendiente y bloqueada por la fase 2.
-2. Prerrequisitos. Hechos vigentes del caso pineado. No se usa el fixture de Journey A como guion de esta fase.
-3. Pregunta. ¿Un seguimiento y una corrección coherentes con este caso conservan lo comprobado, actualizan lo corregido y no repiten una comprobación ya hecha?
-4. Acciones y límites. Los turnos que hagan falta para esa pregunta, no 14. Cada turno lleva su referencia de evaluador, escrita al cerrar la fase 2. Journey A no se edita.
-5. Entradas y resultados. Se definen al cerrar la fase 2, a partir del pasaje real. No se inventan ahora.
-6. Aceptación, fallo y detención. Aceptación: el estado y la respuesta usan el valor nuevo y no tratan el viejo como vigente. Detención: se pierde un hecho que cambia el paso, o un turno no recupera su evidencia. Ahí se para y se separa causa inicial de consecuencia.
-7. Evidencias. Delta del episodio, estado de la sesión y prompt enviado, dentro de la captura.
+2. Prerrequisitos. Hechos vigentes del caso pineado. No se usa el fixture de Journey A como guion de esta fase. Los 14 turnos siguen siendo referencia histórica de continuidad, no la duración de esta fase.
+3. Pregunta. ¿Un seguimiento, una corrección y un resumen coherentes con este caso conservan lo comprobado, actualizan lo corregido y respaldan cada afirmación documental nueva?
+4. Acciones y límites. Los turnos que hagan falta para esa pregunta. Cada turno lleva su referencia de evaluador, escrita al cerrar la fase 2. Journey A no se edita. Una corrección, una aclaración o un resumen puede resolverse con el estado ya disponible, sin `Retrieve`. Una afirmación documental nueva necesita respaldo recuperado en ese turno o heredado e identificable: documento, página y pasaje ya aceptado.
+5. Entradas y resultados. Se definen al cerrar la fase 2, a partir del pasaje real. No se inventan ahora. No se anticipan códigos, LED ni una placa que este PDF no contiene.
+6. Aceptación, fallo y detención. Aceptación: el estado y la respuesta usan el valor nuevo y no tratan el viejo como vigente; cada afirmación documental nueva señala su respaldo. Detención: se pierde un hecho que cambia el paso, o una afirmación documental nueva no tiene pasaje recuperado ni heredado. Ahí se para y se separa causa inicial de consecuencia. La ausencia de `Retrieve` en una corrección resuelta con el estado no es, por sí sola, un fallo.
+7. Evidencias. Delta del episodio, estado de la sesión, prompt enviado y, cuando hubo búsqueda, la solicitud y los chunks. Dentro de la captura.
 8. Hallazgos al cerrar. Vacío hasta la ejecución.
 9. Fase siguiente. La fase 4 incorpora lo que estas tres fases hayan mostrado del pin y del pasaje. No se implementa el descubrimiento antes de ese cierre.
 
@@ -179,9 +270,15 @@ Antes de iniciar una fase, este documento se actualiza con los hallazgos de la a
 
 | Hallazgo | Resolución | Estado |
 |---|---|---|
-| La ruta de las etapas 1 a 3 y los 14 turnos sin pin no separan extracción, retrieval, aplicabilidad, memoria, generación y arnés. | Este corte deja una sola ruta, fases 0 a 5, y pasa el texto anterior a referencia. | Pendiente de revisión de ChatGPT y de Fable. No autoriza corrida. |
-| El PDF del fundador y la fila local 213 pueden no ser el mismo objeto. | La fase 0 los verifica por separado y no inventa filas. | Abierto. |
-| `PilotUsage` no guarda el recorrido completo. | La corrida exige `ValidationCapture.capture`. El flag de auditoría no lo sustituye. | Escrito. Sin cambio de código. |
+| La ruta de las etapas 1 a 3 y los 14 turnos sin pin no separan extracción, retrieval, aplicabilidad, memoria, generación y arnés. | Este corte deja una sola ruta, fases 0 a 5, y pasa el texto anterior a referencia. | Escrito. No autoriza corrida. |
+| El sufijo `(1)` y la fila 213 no deciden el documento. El `document_id` del chunk y el `document_uid` de la fila son identificadores distintos. | La fase 0 exige URI canónica, bytes o páginas, y autorización del usuario. El hash local ya coincide con `doc_sha256`. La fila no se leyó. | Abierto en URI y autorización. |
+| El runner de Journey A no ejecuta la fase 1. | Wrapper en servicio, sesión nueva, un turno por la secuencia de `ask`, sin `Retrieve` de disponibilidad. | Escrito. El código no existe. |
+| El cupo de la fase 1 no puede ser el de `Stage2RunBudget`. | Tres intentos, contador antes de cada llamada, sin reintento. `PASS_CALL_CAP` sigue en 0. | Escrito. Pendiente de autorización del fundador. |
+| Alcance, evidencia y respuesta se medían juntos, con k=3 y `pin_only`. | Tres criterios independientes. Se registran reason, modalidad y k reales. | Escrito. |
+| La fase 2 no tenía el ciclo de una pregunta útil y la fase 3 exigía `Retrieve` en toda corrección. | El caso de la fase 2 se diseña tras el pasaje real. Una afirmación documental nueva lleva respaldo recuperado o heredado. | Escrito. Sin caso definitivo. |
+| Jesús Graterol figuraba como fundador. | Es el técnico. Lahiri Sánchez es el fundador que aportó ese feedback. | Corregido en la propuesta diferida. |
+| `PilotUsage` no guarda el recorrido completo. | La corrida exige `ValidationCapture.capture`. El flag de auditoría no lo sustituye. La sesión 3 muestra el hueco: 14 respuestas visibles, cero citas, `filter_applied` falso y el filtro de cuenta solo en la captura. | Escrito. Sin cambio de código. Sin llamadas nuevas. |
+| La representación indexada y la recuperación son la misma prueba. | La referencia sale del PDF. El chunk de la captura diagnóstica se contrasta aparte. Que esa búsqueda no traiga la página 6 no declara ausencia en el índice. | Escrito. La consulta natural sigue sin ejecutarse. |
 
 ## Propuesta diferida de descubrimiento
 
@@ -291,13 +388,13 @@ Hoy `RagController` arma el aviso con `model_tokens` vacío y `DocumentDiscovery
 
 Mostrar candidatos, confirmar que un manual corresponde y dejarlo seleccionado son tres acciones distintas. La evidencia de campo no las funde.
 
-Jesús Graterol, fundador, el 28/09/2026:
+Jesús Graterol, técnico, el 28/09/2026. Lahiri Sánchez, fundador, aportó este feedback:
 
 «Sí respondió correctamente, es decir asoció la falla con los elementos relacionados con ese punto, lo que sí no hizo fue asociar la marca del ascensor a los manuales que están ahí. Entonces me tocó seleccionarlos».
 
 «Como recomendación, sería bueno que al colocar la marca del equipo y la falla, ella inmediatamente me mostrara los manuales donde podrían buscar más información relacionada con las soluciones que me brinda a manera de refuerzo».
 
-Es evidencia aportada por el fundador. No autoriza a seleccionar un manual por la marca o por la falla. No prueba que aquella respuesta tuviera respaldo documental. Describe que la respuesta le sirvió para asociar la falla con elementos, que los manuales no quedaron ligados a la marca, y que la selección la hizo él.
+Es evidencia aportada por el fundador a partir de lo que dijo el técnico. No autoriza a seleccionar un manual por la marca o por la falla. No prueba que aquella respuesta tuviera respaldo documental. Describe que la respuesta le sirvió a Jesús para asociar la falla con elementos, que los manuales no quedaron ligados a la marca, y que la selección la hizo él.
 
 Caminos:
 

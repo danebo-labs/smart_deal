@@ -347,11 +347,15 @@ module Rag
       { "included" => false }
     end
 
-    # Aws::Structure#to_h omits nil members and walks nested structures.
-    # A test double uses the same omit-nil walk. An unknown object keeps its
-    # class name and no invented text or tool fields.
+    # Seahorse::Client::Response delegates to its data payload. Serialize that
+    # payload only. The request context holds transport, credentials, and
+    # headers and is not walked. Aws::Structure#to_h omits nil members and
+    # keeps order. A test double uses the same omit-nil walk. An unknown
+    # object keeps its class name and no invented text or tool fields.
     def serialize_observed(value)
-      if value.is_a?(Aws::Structure)
+      if seahorse_response?(value)
+        serialize_observed(value.data)
+      elsif value.is_a?(Aws::Structure)
         value.to_h
       elsif value.is_a?(Struct)
         value.each_pair.with_object({}) do |(member, member_value), hash|
@@ -370,6 +374,10 @@ module Rag
       else
         { "unmodeled_type" => value.class.name }
       end
+    end
+
+    def seahorse_response?(value)
+      defined?(Seahorse::Client::Response) && value.is_a?(Seahorse::Client::Response)
     end
 
     def phase1_budget_armed?

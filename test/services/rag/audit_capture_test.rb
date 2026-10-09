@@ -209,8 +209,9 @@ class Rag::AuditCaptureTest < ActiveSupport::TestCase
     assert_equal first.received[:inference_config], second.received[:inference_config]
     assert_equal first.received[:tool_config], second.received[:tool_config]
     assert_equal outside.status, inside.status
-    assert_equal outside.perception.move, inside.perception.move
     assert_equal outside.fallback, inside.fallback
+    assert_equal outside.perception.valid, inside.perception.valid
+    assert_equal outside.perception.invalid_reason, inside.perception.invalid_reason
     assert events.any? { |event| event["kind"] == "interpreter_request" }
   end
 
@@ -311,6 +312,121 @@ class Rag::AuditCaptureTest < ActiveSupport::TestCase
     assert_equal "returned", events.find { |event| event["kind"] == "interpreter_response" }["result"]
   end
 
+  test "a seahorse response serializes its data and not the transport context" do
+    spec = Gem.loaded_specs.fetch("aws-sdk-core")
+    assert_equal "3.254.1", spec.version.to_s
+    assert_equal "1.63.0", Gem.loaded_specs.fetch("aws-sdk-bedrockruntime").version.to_s
+    assert Seahorse::Client::Response < Delegator
+
+    tool = meta_tool
+    response = seahorse_converse(
+      [
+        content_block(text: "Veo la serie. AKIASEAHORSE1"),
+        content_block(tool_use: tool_use_block("turn_perception", tool))
+      ],
+      stop_reason: "tool_use",
+      input_tokens: 11,
+      output_tokens: 4
+    )
+    before_data = response.data.to_h
+    before_header = response.context.http_request.headers["authorization"]
+    outside = interpret_quietly("hola", response)
+    events, inside = interpret_response(response, turn: "hola")
+    body = events.find { |event| event["kind"] == "interpreter_response" }
+    content = body.dig("response", "output", "message", "content")
+
+    assert_equal Seahorse::Client::Response, response.class
+    assert_equal before_data, response.data.to_h
+    assert_equal before_header, response.context.http_request.headers["authorization"]
+    assert_equal outside.perception.move, inside.perception.move
+    assert_equal outside.fallback, inside.fallback
+    assert_equal outside.status, inside.status
+    assert_equal "meta", inside.perception.move
+    assert_equal false, inside.fallback
+    assert_equal "returned", body["result"]
+    assert_equal "Veo la serie. [redacted]", content[0]["text"]
+    assert_equal "turn_perception", content[1].dig("tool_use", "name")
+    assert_equal "meta", content[1].dig("tool_use", "input", "move")
+    assert_equal [ "text", "tool_use" ], content.map { |block| block.key?("text") ? "text" : "tool_use" }
+    assert_equal "tool_use", body.dig("response", "stop_reason")
+    assert_equal 11, body.dig("response", "usage", "input_tokens")
+    assert_equal 4, body.dig("response", "usage", "output_tokens")
+    assert_equal 17, body.dig("response", "metrics", "latency_ms")
+    assert_not body["response"].key?("trace")
+    assert_equal "meta", events.find { |event| event["kind"] == "interpreter_raw" }.dig("tool_input", "move")
+    assert_not_includes events.to_s, "HEADER-SECRET-9f3a"
+    assert_not_includes events.to_s, "CREDENTIAL-MATERIAL-9f3a"
+    assert_not_includes events.to_s, "Seahorse::Client::Response"
+    assert_not_includes events.to_s, "unmodeled_type"
+  end
+
+  test "a seahorse text response does not invent a tool" do
+    response = seahorse_converse([ content_block(text: "sin herramienta") ])
+    outside = interpret_quietly("hola", response)
+    events, inside = interpret_response(response, turn: "hola")
+    content = response_content(events)
+
+    assert_equal outside.fallback, inside.fallback
+    assert_equal outside.status, inside.status
+    assert inside.fallback
+    assert_equal [ { "text" => "sin herramienta" } ], content
+    assert content.none? { |block| block.key?("tool_use") }
+    assert_nil events.find { |event| event["kind"] == "interpreter_raw" }["tool_input"]
+    assert_equal "end_turn", events.find { |event| event["kind"] == "interpreter_response" }.dig("response", "stop_reason")
+    assert_equal 3, events.find { |event| event["kind"] == "interpreter_response" }.dig("response", "usage", "input_tokens")
+    assert_not_includes events.to_s, "HEADER-SECRET-9f3a"
+    assert_not_includes events.to_s, "CREDENTIAL-MATERIAL-9f3a"
+  end
+
+  test "an empty seahorse payload stays empty" do
+    response = seahorse_converse([])
+    outside = interpret_quietly("hola", response)
+    events, inside = interpret_response(response, turn: "hola")
+
+    assert_equal outside.fallback, inside.fallback
+    assert_equal outside.status, inside.status
+    assert_equal [], response_content(events)
+    assert_nil events.find { |event| event["kind"] == "interpreter_raw" }["tool_input"]
+    assert_equal "end_turn", events.find { |event| event["kind"] == "interpreter_response" }.dig("response", "stop_reason")
+    assert events.none? { |event| event.to_s.include?("turn_perception") && event["kind"] == "interpreter_response" }
+    assert_not_includes events.to_s, "HEADER-SECRET-9f3a"
+    assert_not_includes events.to_s, "unmodeled_type"
+  end
+
+  test "a seahorse error payload does not invent output or copy credentials" do
+    response = seahorse_error("boom CREDENTIAL-MATERIAL-9f3a")
+    outside = interpret_quietly("hola", response)
+    events, inside = interpret_response(response, turn: "hola")
+    failure = events.find { |event| event["kind"] == "interpreter_failure" }
+
+    assert_equal outside.fallback, inside.fallback
+    assert_equal outside.status, inside.status
+    assert_equal outside.stage, inside.stage
+    assert_nil outside.perception
+    assert_nil inside.perception
+    assert_equal "local_error", inside.status
+    assert_equal "extract", inside.stage
+    assert_nil events.find { |event| event["kind"] == "interpreter_response" }
+    assert_equal "extract", failure["stage"]
+    assert_not_includes events.to_s, "HEADER-SECRET-9f3a"
+    assert_not_includes events.to_s, "CREDENTIAL-MATERIAL-9f3a"
+    assert_not_includes events.to_s, "unmodeled_type"
+    assert_equal response.context.http_request.headers["authorization"], "HEADER-SECRET-9f3a"
+
+    loaded = seahorse_converse([ content_block(text: "sin herramienta") ])
+    loaded.error = RuntimeError.new("boom CREDENTIAL-MATERIAL-9f3a")
+    loaded_events, loaded_result = interpret_response(loaded, turn: "hola")
+    loaded_body = loaded_events.find { |event| event["kind"] == "interpreter_response" }
+
+    assert loaded_result.fallback
+    assert_equal [ { "text" => "sin herramienta" } ], response_content(loaded_events)
+    assert_equal "end_turn", loaded_body.dig("response", "stop_reason")
+    assert_not loaded_body["response"].key?("error")
+    assert_not_includes loaded_events.to_s, "HEADER-SECRET-9f3a"
+    assert_not_includes loaded_events.to_s, "CREDENTIAL-MATERIAL-9f3a"
+    assert_not_includes loaded_events.to_s, "boom"
+  end
+
   private
 
   def episode_with_goal
@@ -354,11 +470,11 @@ class Rag::AuditCaptureTest < ActiveSupport::TestCase
     end
   end
 
-  def interpret_response(response)
+  def interpret_response(response, turn: TURN)
     result = nil
     events = Rag::ValidationCapture.capture do
       result = Rag::TurnInterpreter.call(
-        turn: TURN,
+        turn: turn,
         episode: Rag::ActiveEpisode.new,
         viewer_account: nil,
         correlation_id: "phase1:response",
@@ -366,6 +482,43 @@ class Rag::AuditCaptureTest < ActiveSupport::TestCase
       )
     end
     [ events, result ]
+  end
+
+  def interpret_quietly(turn, response)
+    Rag::TurnInterpreter.call(
+      turn: turn,
+      episode: Rag::ActiveEpisode.new,
+      viewer_account: nil,
+      correlation_id: "phase1:quiet",
+      client: response_client(response)
+    )
+  end
+
+  def seahorse_converse(content, stop_reason: "end_turn", input_tokens: 3, output_tokens: 2)
+    message = Aws::Structure.new(:role, :content).new(role: "assistant", content: content)
+    output = Aws::Structure.new(:message).new(message: message)
+    usage = Aws::Structure.new(:input_tokens, :output_tokens).new(
+      input_tokens: input_tokens, output_tokens: output_tokens
+    )
+    metrics = Aws::Structure.new(:latency_ms).new(latency_ms: 17)
+    data = Aws::Structure.new(:output, :stop_reason, :usage, :metrics, :trace).new(
+      output: output, stop_reason: stop_reason, usage: usage, metrics: metrics, trace: nil
+    )
+    seahorse_wrapper(data)
+  end
+
+  def seahorse_error(message)
+    seahorse_wrapper(nil, error: RuntimeError.new(message))
+  end
+
+  def seahorse_wrapper(data, error: nil)
+    request = Seahorse::Client::Http::Request.new
+    request.headers["authorization"] = "HEADER-SECRET-9f3a"
+    request.headers["x-amz-security-token"] = "CREDENTIAL-MATERIAL-9f3a"
+    config = Object.new
+    config.define_singleton_method(:secret_access_key) { "CREDENTIAL-MATERIAL-9f3a" }
+    context = Seahorse::Client::RequestContext.new(http_request: request, config: config)
+    Seahorse::Client::Response.new(context: context, data: data, error: error)
   end
 
   def response_content(events)

@@ -23,6 +23,12 @@ module Rag
     /ix
     PROMPT_VERSION = "2026-10-07.2"
     SCHEMA_VERSION = "turn_perception.3"
+    # Markers already used to separate a lone evidence offer from a mixed turn.
+    # They are not the definition of a technical question.
+    TECHNICAL_MARKER = /\b(?:resum|observacion|falla|codigo|puerta|sintoma)\b/
+    COURTESY_TOKEN = /\A(?:que|tal|estas|esta|como|va|bien|todo|buenos|buena)\z/
+    PRODUCT_OPERATION = /\b(?:uso|usar|usas|funciona|sirve|selecciono|seleccionar|selecciona|elijo|elegir|elige)\b/
+    DOCUMENT_NOUN = /\b(?:manual|plano|esquema|documento)\b/
 
     Identity = Data.define(:span, :act, :kind, :slot, :value, :source, :manufacturer)
     Ambiguity = Data.define(:span, :candidates)
@@ -117,6 +123,10 @@ module Rag
       move, resolution, identities, observations, ambiguities, target = adjust_move(
         move, resolution, identities, observations, ambiguities, target
       )
+      if move == "meta" && meta_incompatible?(@turn)
+        note_rule("reject_meta", "meta", "meta_incompatible", { "from" => "meta", "to" => "fallback" })
+        return invalid("meta_incompatible", original_move: "meta")
+      end
       resolution = nil unless move == "answer_pending"
       identities = apply_structured_slots(move, resolution, identities)
 
@@ -741,9 +751,48 @@ module Rag
         (normalized.match?(/\bobservacion/) && normalized.match?(/\b(?:sigue|siguiente)/))
     end
 
+    # meta may not drop a searchable turn. A greeting, a request for what
+    # Danebo needs, a lone evidence offer, and a question about using Danebo
+    # or selecting a manual stay meta. Document focus is not an input.
+    def meta_incompatible?(text)
+      return false unless RoutePolicy.searchable_symptom?(text)
+
+      !administrative_meta?(FollowupQueryRewriter.normalize_label(text))
+    end
+
+    def administrative_meta?(normalized)
+      courtesy_greeting?(normalized) || assistant_request?(normalized) ||
+        evidence_offer?(normalized) || product_help?(normalized)
+    end
+
+    def courtesy_greeting?(normalized)
+      tokens = normalized.to_s.split
+      return false if tokens.empty? || technical_marker?(normalized)
+
+      tokens.all? { |word| word.match?(RoutePolicy::GREETING_TOKEN) || word.match?(COURTESY_TOKEN) }
+    end
+
+    def assistant_request?(normalized)
+      return false if technical_marker?(normalized)
+
+      normalized.match?(/\bnecesitas\b/)
+    end
+
+    def product_help?(normalized)
+      return false if technical_marker?(normalized)
+      return true if normalized.match?(/\bdanebo\b/) && (
+        normalized.match?(PRODUCT_OPERATION) || normalized.match?(/\b(?:que es|para que)\b/)
+      )
+
+      normalized.match?(PRODUCT_OPERATION) && normalized.match?(DOCUMENT_NOUN)
+    end
+
+    def technical_marker?(normalized)
+      normalized.match?(TECHNICAL_MARKER)
+    end
+
     def evidence_offer?(normalized)
-      normalized.match?(/\b(?:foto|imagen|video)\b/) &&
-        !normalized.match?(/\b(?:resum|observacion|falla|codigo|puerta|sintoma)/)
+      normalized.match?(/\b(?:foto|imagen|video)\b/) && !technical_marker?(normalized)
     end
 
     def prior_context?
@@ -804,14 +853,14 @@ module Rag
       note_rule("reject_field", field, reason)
     end
 
-    def invalid(reason)
+    def invalid(reason, original_move: nil)
       result = Result.new(
         valid: false, move: nil, observations: [], pending_resolution: nil, clarification_target: nil,
         identities: [], ambiguities: [], field_rejections: @field_rejections,
         catalog_disagreements: [], invalid_reason: reason,
         correction: ObservationCorrection.none
       )
-      record_perception(result)
+      record_perception(result, original_move: original_move)
       result
     end
 
@@ -823,11 +872,10 @@ module Rag
       @adjustments << row
     end
 
-    def record_perception(result)
+    def record_perception(result, original_move: nil)
       return unless ValidationCapture.active?
 
-      ValidationCapture.record(
-        "perception_applied",
+      payload = {
         "stage" => "perception",
         "result" => result.valid ? "valid" : "invalid",
         "links" => "interpreter_raw",
@@ -839,7 +887,9 @@ module Rag
         "observations" => result.observations,
         "adjustments" => @adjustments,
         "field_rejections" => @field_rejections
-      )
+      }
+      payload["original_move"] = original_move if original_move.present?
+      ValidationCapture.record("perception_applied", payload)
     end
 
     def compact_identity(item)

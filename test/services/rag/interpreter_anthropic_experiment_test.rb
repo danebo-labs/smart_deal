@@ -591,10 +591,15 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
         credential_source: source, only: [ "buenas_tardes", "variador" ], ledger_root: quota_root(dir)
       )
       usage = JSON.parse(Pathname(dir).join("runs", "failed", "buenas_tardes", HAIKU_55, "usage.json").read)
+      priced = Rag::InterpreterAnthropicAdapter.price(HAIKU_55, { "input_tokens" => 9, "output_tokens" => 0 })
       assert_equal 1, summary["calls"]
       assert_equal 1, failed.calls.size
       assert_equal true, summary["closed"]
       assert_equal "priced", usage["cost_status"]
+      assert_equal priced["cost_usd"], summary["known_cost_usd"]
+      assert_equal priced["cost_usd"], summary["spent_usd"]
+      assert_equal true, summary["cost_total_determined"]
+      assert_equal 0, summary["undetermined_attempts"]
       assert_not_includes File.read(Pathname(dir).join("runs", "failed", "capture.json")), SECRET
 
       blind = StubTransport.new {
@@ -610,7 +615,12 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
         credential_source: source, only: [ "buenas_tardes", "variador" ], ledger_root: quota_root(dir)
       )
       assert_equal 1, summary["calls"]
+      assert_equal 1, blind.calls.size
       assert_equal "usage_absent", summary["close_reason"]
+      assert_equal "0.000000", summary["known_cost_usd"]
+      assert_equal "0.000000", summary["spent_usd"]
+      assert_equal false, summary["cost_total_determined"]
+      assert_equal 1, summary["undetermined_attempts"]
 
       over = StubTransport.new { |_count, body|
         Rag::InterpreterAnthropicTransport::Result.new(
@@ -758,6 +768,12 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
       assert_equal "normalize", state["failure_stage"]
       assert_equal 1, state["attempts"]
       assert_equal priced["cost_usd"], state["spent_usd"]
+      assert_equal priced["cost_usd"], state["known_cost_usd"]
+      assert_equal true, state["cost_total_determined"]
+      assert_equal 0, state["undetermined_attempts"]
+      marker = JSON.parse(Pathname(dir).join("runs", "normalize", "evidence_incomplete.json").read)
+      assert_equal true, marker["cost_total_determined"]
+      assert_equal 0, marker["undetermined_attempts"]
       assert_includes capture["events"].map { |event| event["result"] }, "incomplete"
       assert_not_equal "completed", state["close_reason"]
     end
@@ -792,8 +808,14 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
       assert_instance_of IOError, error.cause
       assert_equal 1, transport.calls.size
       assert_equal "0.000000", state["spent_usd"]
+      assert_equal "0.000000", state["known_cost_usd"]
+      assert_equal false, state["cost_total_determined"]
+      assert_equal 1, state["undetermined_attempts"]
       assert_equal 1, state["attempts"]
       assert_equal false, state["evidence_complete"]
+      marker = JSON.parse(Pathname(dir).join("runs", "files", "evidence_incomplete.json").read)
+      assert_equal false, marker["cost_total_determined"]
+      assert_equal 1, marker["undetermined_attempts"]
     end
   ensure
     if original
@@ -822,7 +844,11 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
           )
         }
 
+        priced = Rag::InterpreterAnthropicAdapter.price(HAIKU_55, { "input_tokens" => 11, "output_tokens" => 7 })
         assert_includes error.message, "emergency_write_failed"
+        assert_includes error.message, "known_cost_usd=#{priced["cost_usd"]}"
+        assert_includes error.message, "cost_total_determined=true"
+        assert_includes error.message, "undetermined_attempts=0"
         assert_equal "normalize boom", error.cause.message
         assert_equal 1, transport.calls.size
       ensure
@@ -956,10 +982,363 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
     end
   end
 
+  test "every priced attempt determines the known total" do
+    experiment = Rag::InterpreterAnthropicExperiment
+    usage = { "input_tokens" => 40, "output_tokens" => 8 }
+    transport = StubTransport.new { |_count, body|
+      Rag::InterpreterAnthropicTransport::Result.new(
+        http_status: 200,
+        payload: message_payload(perception("meta"), usage: usage).merge("model" => body["model"]),
+        error_code: nil, error_message: nil
+      )
+    }
+    Dir.mktmpdir do |dir|
+      summary = experiment.execute(
+        evidence_root: dir, run_id: "priced", approval: approved("priced"), transport: transport,
+        credential_source: -> { "present" }, only: [ "buenas_tardes" ], ledger_root: quota_root(dir)
+      )
+      known = [ HAIKU_55, HAIKU_45 ].sum { |model_id|
+        BigDecimal(Rag::InterpreterAnthropicAdapter.price(model_id, usage)["cost_usd"])
+      }
+
+      assert_equal 2, summary["calls"]
+      assert_equal 2, transport.calls.size
+      assert_equal format("%.6f", known), summary["known_cost_usd"]
+      assert_equal summary["known_cost_usd"], summary["spent_usd"]
+      assert_equal true, summary["cost_total_determined"]
+      assert_equal 0, summary["undetermined_attempts"]
+      assert_equal "completed", summary["status"]
+      assert_equal true, summary["evidence_complete"]
+    end
+  end
+
+  test "a transport error without usage does not become a free call" do
+    experiment = Rag::InterpreterAnthropicExperiment
+    transport = StubTransport.new {
+      Rag::InterpreterAnthropicTransport::Result.new(
+        http_status: nil, payload: nil, error_code: "transport_error", error_message: "reset"
+      )
+    }
+    Dir.mktmpdir do |dir|
+      summary = experiment.execute(
+        evidence_root: dir, run_id: "reset", approval: approved("reset"), transport: transport,
+        credential_source: -> { "present" }, only: [ "buenas_tardes", "variador" ], ledger_root: quota_root(dir)
+      )
+
+      assert_equal 1, summary["calls"]
+      assert_equal 1, transport.calls.size
+      assert_equal "provider_error", summary["close_reason"]
+      assert_equal "0.000000", summary["known_cost_usd"]
+      assert_equal "0.000000", summary["spent_usd"]
+      assert_equal false, summary["cost_total_determined"]
+      assert_equal 1, summary["undetermined_attempts"]
+      assert_not Pathname(dir).join("runs", "reset", "variador").exist?
+    end
+  end
+
+  test "known cost stays beside an attempt that cannot be priced" do
+    experiment = Rag::InterpreterAnthropicExperiment
+    known_usage = { "input_tokens" => 15, "output_tokens" => 3 }
+    transport = StubTransport.new { |count, body|
+      usage = if count == 1
+        known_usage
+      else
+        known_usage.merge("unknown_meter" => 1)
+      end
+      Rag::InterpreterAnthropicTransport::Result.new(
+        http_status: 200,
+        payload: message_payload(perception("meta"), usage: usage).merge("model" => body["model"]),
+        error_code: nil, error_message: nil
+      )
+    }
+    Dir.mktmpdir do |dir|
+      summary = experiment.execute(
+        evidence_root: dir, run_id: "mix", approval: approved("mix"), transport: transport,
+        credential_source: -> { "present" }, only: [ "buenas_tardes", "variador" ], ledger_root: quota_root(dir)
+      )
+      known = Rag::InterpreterAnthropicAdapter.price(HAIKU_55, known_usage)
+      blocked = StubTransport.new { flunk("undetermined cost is not zero") }
+      resumed = experiment.execute(
+        evidence_root: dir, run_id: "mix-resume", approval: approved("mix-resume"), transport: blocked,
+        credential_source: -> { "present" }, only: [ "buenas_tardes" ], ledger_root: quota_root(dir),
+        budget_state: {
+          "attempts" => 1, "spent_usd" => "0.000010", "undetermined_attempts" => 1, "closed" => false
+        }
+      )
+
+      assert_equal 2, summary["calls"]
+      assert_equal [ HAIKU_55, HAIKU_45 ], transport.calls.map { |call| call[:body]["model"] }
+      assert_equal known["cost_usd"], summary["known_cost_usd"]
+      assert_equal false, summary["cost_total_determined"]
+      assert_equal 1, summary["undetermined_attempts"]
+      assert_equal "unpriced_usage_field", summary["close_reason"]
+      assert_not Pathname(dir).join("runs", "mix", "variador").exist?
+      assert_equal 0, resumed["calls"]
+      assert_empty blocked.calls
+      assert_equal "cost_incomplete", resumed["close_reason"]
+      assert_equal "0.000010", resumed["known_cost_usd"]
+      assert_equal false, resumed["cost_total_determined"]
+    end
+  end
+
+  test "a normalize failure without usage does not invent a zero total" do
+    experiment = Rag::InterpreterAnthropicExperiment
+    transport = StubTransport.new {
+      Rag::InterpreterAnthropicTransport::Result.new(
+        http_status: 200, payload: message_payload(perception("meta"), usage: nil),
+        error_code: nil, error_message: nil
+      )
+    }
+    original = Rag::InterpreterAnthropicAdapter.method(:normalize)
+    Rag::InterpreterAnthropicAdapter.define_singleton_method(:normalize) { |*| raise RuntimeError, "normalize boom" }
+    Dir.mktmpdir do |dir|
+      error = assert_raises(Rag::InterpreterAnthropicExperiment::Interrupted) {
+        experiment.execute(
+          evidence_root: dir, run_id: "normalize-blind", approval: approved("normalize-blind"),
+          transport: transport, credential_source: -> { "present" },
+          only: [ "buenas_tardes", "variador" ], ledger_root: quota_root(dir)
+        )
+      }
+      state = JSON.parse(Pathname(dir).join("runs", "normalize-blind", "execution_state.json").read)
+      marker = JSON.parse(Pathname(dir).join("runs", "normalize-blind", "evidence_incomplete.json").read)
+
+      assert_equal "normalize", error.stage
+      assert_equal 1, transport.calls.size
+      assert_equal "0.000000", state["known_cost_usd"]
+      assert_equal false, state["cost_total_determined"]
+      assert_equal 1, state["undetermined_attempts"]
+      assert_equal false, marker["cost_total_determined"]
+      assert_equal 1, marker["undetermined_attempts"]
+      assert_not Pathname(dir).join("runs", "normalize-blind", "variador").exist?
+    end
+  ensure
+    if original
+      Rag::InterpreterAnthropicAdapter.define_singleton_method(:normalize) { |*args, **kwargs|
+        original.call(*args, **kwargs)
+      }
+    end
+  end
+
+  test "an emergency write without usage keeps the cost undetermined" do
+    experiment = Rag::InterpreterAnthropicExperiment
+    transport = StubTransport.new {
+      Rag::InterpreterAnthropicTransport::Result.new(
+        http_status: 200, payload: message_payload(perception("meta"), usage: nil),
+        error_code: nil, error_message: nil
+      )
+    }
+    original_normalize = Rag::InterpreterAnthropicAdapter.method(:normalize)
+    original_write = File.method(:write)
+    Rag::InterpreterAnthropicAdapter.define_singleton_method(:normalize) { |*| raise RuntimeError, "normalize boom" }
+    Dir.mktmpdir do |dir|
+      File.define_singleton_method(:write) { |*| raise IOError, "disk" }
+      begin
+        error = assert_raises(Rag::InterpreterAnthropicExperiment::Interrupted) {
+          experiment.execute(
+            evidence_root: dir, run_id: "emergency-blind", approval: approved("emergency-blind"),
+            transport: transport, credential_source: -> { "present" },
+            only: [ "buenas_tardes" ], ledger_root: quota_root(dir)
+          )
+        }
+
+        assert_includes error.message, "emergency_write_failed"
+        assert_includes error.message, "known_cost_usd=0.000000"
+        assert_includes error.message, "cost_total_determined=false"
+        assert_includes error.message, "undetermined_attempts=1"
+        assert_equal "normalize boom", error.cause.message
+        assert_equal 1, transport.calls.size
+      ensure
+        File.define_singleton_method(:write) { |*args, **kwargs| original_write.call(*args, **kwargs) }
+      end
+    end
+  ensure
+    if original_normalize
+      Rag::InterpreterAnthropicAdapter.define_singleton_method(:normalize) { |*args, **kwargs|
+        original_normalize.call(*args, **kwargs)
+      }
+    end
+    if original_write
+      File.define_singleton_method(:write) { |*args, **kwargs| original_write.call(*args, **kwargs) }
+    end
+  end
+
+  test "an approved phase 1 probe runs the four stub requests once" do
+    experiment = Rag::InterpreterAnthropicExperiment
+    catalog = Rag::InterpreterPromptCatalog
+    run_id = "phase1-probe-stub"
+    pairs = [
+      [ HAIKU_45, "original" ],
+      [ HAIKU_55, "original" ],
+      [ HAIKU_45, "opus_2026_10_09" ],
+      [ HAIKU_55, "opus_2026_10_09" ]
+    ]
+    usages = [
+      { "input_tokens" => 20, "output_tokens" => 4 },
+      { "input_tokens" => 21, "output_tokens" => 5 },
+      { "input_tokens" => 22, "output_tokens" => 6 },
+      { "input_tokens" => 23, "output_tokens" => 7 }
+    ]
+    transport = StubTransport.new { |count, body|
+      Rag::InterpreterAnthropicTransport::Result.new(
+        http_status: 200,
+        payload: message_payload(perception("report"), usage: usages[count - 1]).merge("model" => body["model"]),
+        error_code: nil, error_message: nil
+      )
+    }
+    credential_reads = 0
+    source = -> {
+      credential_reads += 1
+      "stub-credential"
+    }
+    Dir.mktmpdir do |dir|
+      ledger = quota_root(dir)
+      env_reads = experiment.env_credential_reads
+      summary = experiment.execute(
+        evidence_root: dir, run_id: run_id, scope: "probe", approval: probe_enabled(run_id),
+        transport: transport, credential_source: source, ledger_root: ledger
+      )
+      root = Pathname(dir).join("runs", run_id, "phase1")
+      messages = []
+      schemas = []
+      costs = []
+      export_names = %w[
+        prepared_request.json client_input.json native_response.json tool_input.json judgment.json usage.json
+      ]
+
+      transport.calls.each_with_index do |call, index|
+        model_id, version = pairs[index]
+        body = call[:body]
+        prompt = body.dig("system", 0, "text")
+        case_dir = root.join(model_id, version)
+        case_file = JSON.parse(case_dir.join("case.json").read)
+        usage = JSON.parse(case_dir.join("usage.json").read)
+        judgment = JSON.parse(case_dir.join("judgment.json").read)
+        tool_input = JSON.parse(case_dir.join("tool_input.json").read)
+        priced = Rag::InterpreterAnthropicAdapter.price(model_id, usages[index])
+
+        assert_equal model_id, body["model"]
+        assert_equal catalog.text(version), prompt
+        assert_equal catalog.sha256(version), Digest::SHA256.hexdigest(prompt)
+        assert_equal catalog.sha256(version), case_file["prompt_sha256"]
+        assert_equal version, case_file["prompt_version"]
+        assert_equal 512, body["max_tokens"]
+        assert_nil body["thinking"]
+        assert_nil body["top_p"]
+        assert_nil body["top_k"]
+        assert_nil body["output_config"]
+        assert_equal({ "type" => "tool", "name" => "turn_perception" }, body["tool_choice"])
+        if model_id == HAIKU_45
+          assert_equal 0, body["temperature"]
+        else
+          assert_not body.key?("temperature")
+        end
+        messages << body.dig("messages", 0, "content", 0, "text")
+        schemas << body.dig("tools", 0, "input_schema")
+        export_names.each { |name| assert case_dir.join(name).file?, case_dir.join(name).to_s }
+        assert_equal JSON.parse(JSON.generate(body)), JSON.parse(case_dir.join("client_input.json").read)["body"]
+        assert_equal "report", tool_input.dig("tool_input", "move")
+        assert_equal "pass", judgment["judgment"]
+        assert_equal priced["cost_usd"], usage["cost_usd"]
+        assert_equal "priced", usage["cost_status"]
+        costs << usage["cost_usd"]
+      end
+      claim = JSON.parse(File.read(Dir[File.join(ledger, "*.json")].first))
+      other = File.join(dir, "other-evidence")
+      blocked = StubTransport.new { flunk("second probe call") }
+
+      assert_equal 4, transport.calls.size
+      assert_equal pairs, transport.calls.map { |call|
+        text = call[:body].dig("system", 0, "text")
+        version = text == catalog.text("original") ? "original" : "opus_2026_10_09"
+        [ call[:body]["model"], version ]
+      }
+      assert_equal [ messages.first ], messages.uniq
+      assert_equal [ schemas.first ], schemas.uniq
+      assert_equal format("%.6f", costs.sum { |amount| BigDecimal(amount) }), summary["known_cost_usd"]
+      assert_equal true, summary["cost_total_determined"]
+      assert_equal 0, summary["undetermined_attempts"]
+      assert_equal true, summary["evidence_complete"]
+      assert_equal "completed", summary["status"]
+      assert_equal false, summary["provider_call"]
+      assert_equal 1, credential_reads
+      assert_equal env_reads, experiment.env_credential_reads
+      assert_equal false, experiment.probe_approval["enabled"]
+      assert_equal "closed", claim["status"]
+      assert_equal run_id, claim["run_id"]
+      refused = assert_raises(Rag::InterpreterAnthropicExperiment::Error) {
+        experiment.execute(
+          evidence_root: other, run_id: run_id, scope: "probe", approval: probe_enabled(run_id),
+          transport: blocked, credential_source: -> { flunk("credential") }, ledger_root: ledger
+        )
+      }
+      assert_equal "authorization_consumed", refused.code
+      assert_empty blocked.calls
+      assert_equal 1, credential_reads
+      assert_equal env_reads, experiment.env_credential_reads
+      assert_not Pathname(other).join("runs").exist?
+    end
+  end
+
+  test "a phase 1 probe stops the remaining combinations after an intermediate failure" do
+    experiment = Rag::InterpreterAnthropicExperiment
+    run_id = "phase1-probe-stop"
+    usage = { "input_tokens" => 18, "output_tokens" => 4 }
+    transport = StubTransport.new { |_count, body|
+      Rag::InterpreterAnthropicTransport::Result.new(
+        http_status: 200,
+        payload: message_payload(perception("report"), usage: usage).merge("model" => body["model"]),
+        error_code: nil, error_message: nil
+      )
+    }
+    seen = 0
+    original = Rag::InterpreterAnthropicAdapter.method(:normalize)
+    Rag::InterpreterAnthropicAdapter.define_singleton_method(:normalize) do |native|
+      seen += 1
+      raise RuntimeError, "normalize boom" if seen == 2
+
+      original.call(native)
+    end
+    Dir.mktmpdir do |dir|
+      error = assert_raises(Rag::InterpreterAnthropicExperiment::Interrupted) {
+        experiment.execute(
+          evidence_root: dir, run_id: run_id, scope: "probe", approval: probe_enabled(run_id),
+          transport: transport, credential_source: -> { "stub-credential" }, ledger_root: quota_root(dir)
+        )
+      }
+      root = Pathname(dir).join("runs", run_id, "phase1")
+      known = [
+        Rag::InterpreterAnthropicAdapter.price(HAIKU_45, usage)["cost_usd"],
+        Rag::InterpreterAnthropicAdapter.price(HAIKU_55, usage)["cost_usd"]
+      ]
+      state = JSON.parse(Pathname(dir).join("runs", run_id, "execution_state.json").read)
+
+      assert_equal "normalize", error.stage
+      assert_equal 2, transport.calls.size
+      assert_equal [ HAIKU_45, HAIKU_55 ], transport.calls.map { |call| call[:body]["model"] }
+      assert_equal format("%.6f", known.sum { |amount| BigDecimal(amount) }), state["known_cost_usd"]
+      assert_equal true, state["cost_total_determined"]
+      assert_equal 0, state["undetermined_attempts"]
+      assert_equal false, state["evidence_complete"]
+      assert root.join(HAIKU_45, "original", "judgment.json").file?
+      assert_not root.join(HAIKU_45, "opus_2026_10_09").exist?
+      assert_not root.join(HAIKU_55, "opus_2026_10_09").exist?
+    end
+  ensure
+    if original
+      Rag::InterpreterAnthropicAdapter.define_singleton_method(:normalize) { |*args, **kwargs|
+        original.call(*args, **kwargs)
+      }
+    end
+  end
+
   private
 
   def approved(run_id)
     Rag::InterpreterAnthropicExperiment.approval.merge("enabled" => true, "run_id" => run_id)
+  end
+
+  def probe_enabled(run_id)
+    Rag::InterpreterAnthropicExperiment.probe_approval.merge("enabled" => true, "run_id" => run_id)
   end
 
   def quota_root(dir)

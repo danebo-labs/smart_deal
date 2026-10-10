@@ -41,7 +41,7 @@ module Rag
 
     class Interrupted < Error
       attr_reader :stage, :original
-      attr_accessor :emergency_write_failed
+      attr_accessor :emergency_write_failed, :cost_note
 
       def initialize(stage, original)
         @stage = stage.to_s
@@ -52,6 +52,7 @@ module Rag
       def message
         text = "evidence_incomplete:#{stage}:#{original.class}"
         text += ";emergency_write_failed" if emergency_write_failed
+        text += ";#{cost_note}" if emergency_write_failed && cost_note
         text
       end
     end
@@ -71,14 +72,17 @@ module Rag
       MONEY_CAP = BigDecimal("0.141650")
 
       class Ledger
-        attr_reader :attempts, :spent, :close_reason
+        attr_reader :attempts, :spent, :close_reason, :undetermined_attempts
 
+        # spent is the sum of priced attempts. It is not the provider total
+        # while undetermined_attempts is positive: a missing usage is not zero.
         def initialize(state = nil, attempt_cap: ATTEMPT_CAP, money_cap: MONEY_CAP)
           state ||= {}
           @attempt_cap = attempt_cap
           @money_cap = money_cap
           @attempts = state["attempts"].to_i
-          @spent = decimal(state["spent_usd"] || "0")
+          @spent = decimal(state["spent_usd"] || state["known_cost_usd"] || "0")
+          @undetermined_attempts = state["undetermined_attempts"].to_i
           @closed = state["closed"] == true
           @close_reason = state["close_reason"]
           @last_reservation = BigDecimal("0")
@@ -90,6 +94,7 @@ module Rag
 
         def reserve!(model_id)
           return "execution_closed" if @closed
+          return "cost_incomplete" if @undetermined_attempts.positive?
           return "attempt_cap" if @attempts >= @attempt_cap
 
           reservation = Budget.reservation_usd(model_id)
@@ -112,24 +117,38 @@ module Rag
           nil
         end
 
-        def add_known_cost!(amount)
-          return if amount.nil?
+        def cost_total_determined?
+          @undetermined_attempts.zero?
+        end
 
-          @spent += decimal(amount)
+        def record_cost!(priced)
+          if priced["cost_status"] == "priced" && priced["cost_usd"]
+            amount = decimal(priced["cost_usd"])
+            @spent += amount
+            close!("reservation_exceeded") if amount > @last_reservation
+          else
+            @undetermined_attempts += 1
+          end
           nil
         end
 
         def reconcile!(model_id, provider_result:, usage:)
           priced = InterpreterAnthropicAdapter.price(model_id, usage)
-          if priced["cost_status"] == "priced" && priced["cost_usd"]
-            amount = decimal(priced["cost_usd"])
-            @spent += amount
-            close!("reservation_exceeded") if amount > @last_reservation
-          end
+          record_cost!(priced)
           if provider_result != "returned" || priced["cost_status"] != "priced"
             close!(provider_result == "returned" ? priced["cost_status"] : "provider_error")
           end
           priced
+        end
+
+        def cost_fields
+          amount = format("%.6f", @spent)
+          {
+            "spent_usd" => amount,
+            "known_cost_usd" => amount,
+            "cost_total_determined" => cost_total_determined?,
+            "undetermined_attempts" => @undetermined_attempts
+          }
         end
 
         private
@@ -485,6 +504,7 @@ module Rag
         "status" => execution_status(budget, calls),
         "calls" => calls,
         "attempts" => budget.attempts,
+        **budget.cost_fields,
         "closed" => budget.closed?,
         "close_reason" => budget.close_reason,
         "provider_call" => transport_live?(client),
@@ -599,10 +619,7 @@ module Rag
 
     def remember_known_cost!(budget, model_id, result)
       usage = result&.payload.is_a?(Hash) ? result.payload["usage"] : nil
-      priced = InterpreterAnthropicAdapter.price(model_id, usage)
-      return unless priced["cost_status"] == "priced" && priced["cost_usd"]
-
-      budget.add_known_cost!(priced["cost_usd"])
+      budget.record_cost!(InterpreterAnthropicAdapter.price(model_id, usage))
     end
 
     def interrupt!(stage, error, budget)
@@ -636,13 +653,14 @@ module Rag
       marker_error = nil
       if reported
         begin
-          write_incomplete_marker(root, reported, capture_error, state_error)
+          write_incomplete_marker(root, reported, capture_error, state_error, budget)
         rescue StandardError => error
           marker_error = error
         end
       end
       if failure
         failure.emergency_write_failed = marker_error.present? && (capture_error || state_error)
+        failure.cost_note = budget.cost_fields.map { |key, value| "#{key}=#{value}" }.join(";")
         @quota_close_reason = failure.stage
         raise failure
       end
@@ -656,15 +674,17 @@ module Rag
       nil
     end
 
-    def write_incomplete_marker(root, reported, capture_error, state_error)
+    def write_incomplete_marker(root, reported, capture_error, state_error, budget)
       FileUtils.mkdir_p(root)
       File.write(root.join("evidence_incomplete.json"), JSON.generate(
-        "evidence_complete" => false,
-        "failure_stage" => reported.stage,
-        "error_class" => reported.original.class.name,
-        "capture_saved" => capture_error.nil?,
-        "state_saved" => state_error.nil?,
-        "emergency_write_failed" => false
+        {
+          "evidence_complete" => false,
+          "failure_stage" => reported.stage,
+          "error_class" => reported.original.class.name,
+          "capture_saved" => capture_error.nil?,
+          "state_saved" => state_error.nil?,
+          "emergency_write_failed" => false
+        }.merge(budget.cost_fields)
       ))
     end
 
@@ -678,7 +698,7 @@ module Rag
       sent_turn = built.dig(:message, "turn").to_s
       block = budget.reserve!(model_id)
       if block
-        budget.close!(block) if block == "attempt_cap"
+        budget.close!(block) if block == "attempt_cap" || block == "cost_incomplete"
         write_blocked(row, model_id, block, prompt_version: prompt_version)
         return 0
       end
@@ -1249,7 +1269,7 @@ module Rag
         "run_id" => @run_id,
         "scope" => @scope,
         "attempts" => budget.attempts,
-        "spent_usd" => format("%.6f", budget.spent),
+        **budget.cost_fields,
         "closed" => budget.closed?,
         "close_reason" => budget.close_reason,
         "evidence_complete" => failure.nil?,

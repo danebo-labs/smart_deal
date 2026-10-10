@@ -28,10 +28,14 @@ module Rag
       "migration" => "https://platform.claude.com/docs/en/models/haiku-5-5/migration-guide",
       "haiku_45" => "https://platform.claude.com/docs/en/models/haiku-4-5/overview",
       "pricing" => "https://platform.claude.com/docs/en/about-claude/pricing",
+      "residency" => "https://platform.claude.com/docs/en/build-with-claude/data-residency",
+      "service_tiers" => "https://platform.claude.com/docs/en/api/service-tiers",
+      "usage" => "https://platform.claude.com/docs/en/api/messages/create",
       "stop_reasons" => "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons",
       "messages" => "https://platform.claude.com/docs/en/build-with-claude/working-with-messages"
     }.freeze
-    CONSULTED_ON = "2026-10-09"
+    CONSULTED_ON = "2026-10-10"
+    TARIFF_VERSION = "2026-10-10"
     # USD per token. Short-prompt Haiku 5.5 rates apply at or below 100_000
     # input tokens. Long-prompt rates are selected only from reported usage.
     RATES = {
@@ -59,7 +63,20 @@ module Rag
       input_tokens output_tokens
       cache_creation_input_tokens cache_read_input_tokens cache_creation
     ].freeze
-    USAGE_BREAKDOWN_KEYS = %w[output_tokens_details service_tier].freeze
+    USAGE_BREAKDOWN_KEYS = %w[output_tokens_details].freeze
+    INTERPRETED_USAGE_KEYS = %w[service_tier inference_geo].freeze
+    # Haiku 4.5 does not take an inference_geo request. The documented usage
+    # value is not_available and the token rate stays standard.
+    # Haiku 5.5: global stays standard, us is 1.1x on every token category.
+    GEO_MULTIPLIERS = {
+      HAIKU_45 => { "not_available" => BigDecimal("1.0") }.freeze,
+      HAIKU_55 => { "global" => BigDecimal("1.0"), "us" => BigDecimal("1.1") }.freeze
+    }.freeze
+    # Direct Messages response values that do not change the token price.
+    SERVICE_TIER_MULTIPLIERS = {
+      "standard" => BigDecimal("1.0"),
+      "priority" => BigDecimal("1.0")
+    }.freeze
     SK_ANT = /sk-ant-[A-Za-z0-9_-]{6,}/
     BEARER = /Bearer\s+\S+/i
 
@@ -216,7 +233,7 @@ module Rag
       rates = RATES[model_id]
       tariff = tariff_for(model_id, rates)
       return tariff.merge("cost_usd" => nil, "cost_status" => "usage_absent") unless usage.is_a?(Hash)
-      if unpriced_usage?(usage)
+      if unpriced_usage?(model_id, usage)
         return tariff.merge("cost_usd" => nil, "cost_status" => "unpriced_usage_field", "usage" => usage)
       end
 
@@ -230,10 +247,18 @@ module Rag
       total = (BigDecimal(input) * rate(rates, :input, long)) + (BigDecimal(output) * rate(rates, :output, long))
       total += cache_read_cost(usage, rates, long)
       total += cache_write_cost(usage, rates, long)
+      geo = geo_multiplier(model_id, usage)
+      tier = service_tier_multiplier(usage)
+      total *= geo * tier
       tariff.merge(
         "cost_usd" => format("%.6f", total),
         "cost_status" => "priced",
         "prompt_band" => long ? "over_100000" : "up_to_100000",
+        "pricing_api" => "messages",
+        "inference_geo" => usage["inference_geo"],
+        "inference_geo_multiplier" => format_multiplier(geo),
+        "service_tier" => usage["service_tier"],
+        "service_tier_multiplier" => format_multiplier(tier),
         "usage" => usage
       )
     end
@@ -403,19 +428,64 @@ module Rag
       Usage.new(input, output)
     end
 
-    def unpriced_usage?(usage)
+    def unpriced_usage?(model_id, usage)
       return true if usage.keys.any? { |key|
-        PRICED_USAGE_KEYS.exclude?(key) && USAGE_BREAKDOWN_KEYS.exclude?(key)
+        PRICED_USAGE_KEYS.exclude?(key) && USAGE_BREAKDOWN_KEYS.exclude?(key) && INTERPRETED_USAGE_KEYS.exclude?(key)
       }
+      return true unless cache_consistent?(usage)
+      return true unless service_tier_priced?(usage)
+      return true unless inference_geo_priced?(model_id, usage)
 
+      false
+    end
+
+    def cache_consistent?(usage)
       creation = usage["cache_creation"]
       flat = usage["cache_creation_input_tokens"]
-      return false unless creation.is_a?(Hash)
-      return true if flat.is_a?(Integer)
+      if creation.is_a?(Hash)
+        known = %w[ephemeral_5m_input_tokens ephemeral_1h_input_tokens]
+        return false if creation.keys.any? { |key| known.exclude?(key) }
+        return false unless creation.each_value.all? { |value| value.is_a?(Integer) && value >= 0 }
+      elsif usage.key?("cache_creation") && !creation.nil?
+        return false
+      end
+      return true unless creation.is_a?(Hash) && flat.is_a?(Integer)
 
-      known = %w[ephemeral_5m_input_tokens ephemeral_1h_input_tokens]
-      creation.keys.any? { |key| known.exclude?(key) } ||
-        creation.each_value.any? { |value| !value.nil? && !value.is_a?(Integer) }
+      flat == creation.values.sum
+    end
+
+    def service_tier_priced?(usage)
+      return true unless usage.key?("service_tier")
+
+      value = usage["service_tier"]
+      return false if value.nil?
+
+      SERVICE_TIER_MULTIPLIERS.key?(value)
+    end
+
+    def inference_geo_priced?(model_id, usage)
+      return true unless usage.key?("inference_geo")
+
+      value = usage["inference_geo"]
+      return false if value.nil?
+
+      GEO_MULTIPLIERS.fetch(model_id, {}).key?(value)
+    end
+
+    def geo_multiplier(model_id, usage)
+      return BigDecimal("1") unless usage.key?("inference_geo")
+
+      GEO_MULTIPLIERS.fetch(model_id).fetch(usage["inference_geo"])
+    end
+
+    def service_tier_multiplier(usage)
+      return BigDecimal("1") unless usage.key?("service_tier")
+
+      SERVICE_TIER_MULTIPLIERS.fetch(usage["service_tier"])
+    end
+
+    def format_multiplier(value)
+      format("%.1f", value)
     end
 
     def tariff_for(model_id, rates)
@@ -424,7 +494,12 @@ module Rag
         "input_usd_per_mtok" => mtok(rates[:input]),
         "output_usd_per_mtok" => mtok(rates[:output]),
         "source" => SOURCES["pricing"],
-        "consulted_on" => CONSULTED_ON
+        "geo_source" => SOURCES["residency"],
+        "service_tier_source" => SOURCES["service_tiers"],
+        "usage_source" => SOURCES["usage"],
+        "consulted_on" => CONSULTED_ON,
+        "tariff_version" => TARIFF_VERSION,
+        "pricing_api" => "messages"
       }
     end
 
@@ -442,16 +517,20 @@ module Rag
     end
 
     def cache_write_cost(usage, rates, long)
-      flat = usage["cache_creation_input_tokens"]
-      total = flat.is_a?(Integer) ? BigDecimal(flat) * rate(rates, :cache_write_5m, long) : BigDecimal("0")
       creation = usage["cache_creation"]
-      return total unless creation.is_a?(Hash)
+      if creation.is_a?(Hash)
+        five = creation["ephemeral_5m_input_tokens"]
+        hour = creation["ephemeral_1h_input_tokens"]
+        total = BigDecimal("0")
+        total += BigDecimal(five) * rate(rates, :cache_write_5m, long) if five.is_a?(Integer)
+        total += BigDecimal(hour) * rate(rates, :cache_write_1h, long) if hour.is_a?(Integer)
+        return total
+      end
 
-      five = creation["ephemeral_5m_input_tokens"]
-      hour = creation["ephemeral_1h_input_tokens"]
-      total += BigDecimal(five) * rate(rates, :cache_write_5m, long) if five.is_a?(Integer)
-      total += BigDecimal(hour) * rate(rates, :cache_write_1h, long) if hour.is_a?(Integer)
-      total
+      flat = usage["cache_creation_input_tokens"]
+      return BigDecimal("0") unless flat.is_a?(Integer)
+
+      BigDecimal(flat) * rate(rates, :cache_write_5m, long)
     end
 
     def mtok(per_token)

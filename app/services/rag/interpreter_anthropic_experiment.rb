@@ -279,13 +279,43 @@ module Rag
       return "models_unapproved" unless record["models"] == MODELS
       return "endpoint_unapproved" unless record["endpoint"] == InterpreterAnthropicAdapter::ENDPOINT
       return "retries_unapproved" unless record["retries"] == 0
-      return "attempt_cap_unapproved" unless record["attempt_cap"] == PROBE_ATTEMPT_CAP
-      return "money_cap_unapproved" unless record["money_cap_usd"] == format("%.6f", probe_money_cap)
       return "cases_unapproved" unless record["cases"] == [ "phase1" ]
       return "prompts_unapproved" unless record["prompts"] == InterpreterPromptCatalog.catalog
       return "run_id_unapproved" if record["run_id"].blank? || record["run_id"] != run_id
+      if record["combinations"].nil?
+        return "attempt_cap_unapproved" unless record["attempt_cap"] == PROBE_ATTEMPT_CAP
+        return "money_cap_unapproved" unless record["money_cap_usd"] == format("%.6f", probe_money_cap)
+      else
+        return "combinations_unapproved" unless combinations_allowed?(record["combinations"])
+        return "attempt_cap_unapproved" unless record["attempt_cap"] == record["combinations"].size
+        return "money_cap_unapproved" unless money_within_probe?(record["money_cap_usd"])
+      end
 
       nil
+    end
+
+    def self.combinations_allowed?(combinations)
+      return false unless combinations.is_a?(Array) && combinations.any?
+
+      allowed = PROBE_PAIRS.map { |model_id, version| [ model_id, version ] }
+      seen = []
+      combinations.all? { |pair|
+        next false unless pair.is_a?(Array) && pair.size == 2
+
+        item = [ pair[0].to_s, pair[1].to_s ]
+        next false unless allowed.include?(item)
+        next false if seen.include?(item)
+
+        seen << item
+        true
+      }
+    end
+
+    def self.money_within_probe?(text)
+      amount = BigDecimal(text.to_s)
+      amount.positive? && amount <= probe_money_cap && format("%.6f", amount) == text.to_s
+    rescue ArgumentError
+      false
     end
 
     def self.env_credential_reads
@@ -543,7 +573,8 @@ module Rag
     def targets(only)
       if @scope == "probe"
         row = self.class.matrix.find { |item| item["id"] == "phase1" }
-        return self.class::PROBE_PAIRS.map { |model_id, version| [ row, model_id, version ] }
+        pairs = probe_combinations || self.class::PROBE_PAIRS
+        return pairs.map { |model_id, version| [ row, model_id, version ] }
       end
 
       selected_rows(only).flat_map { |row| MODELS.map { |model_id| [ row, model_id, "original" ] } }
@@ -557,12 +588,24 @@ module Rag
       end
     end
 
+    def probe_combinations
+      return nil unless @scope == "probe"
+
+      @active_approval["combinations"]
+    end
+
     def attempt_cap_for_scope
-      @scope == "probe" ? PROBE_ATTEMPT_CAP : Budget::ATTEMPT_CAP
+      return Budget::ATTEMPT_CAP unless @scope == "probe"
+      return @active_approval["attempt_cap"] if probe_combinations
+
+      PROBE_ATTEMPT_CAP
     end
 
     def money_cap_for_scope
-      @scope == "probe" ? self.class.probe_money_cap : Budget::MONEY_CAP
+      return Budget::MONEY_CAP unless @scope == "probe"
+      return BigDecimal(@active_approval["money_cap_usd"]) if probe_combinations
+
+      self.class.probe_money_cap
     end
 
     def raise_after_claim(code)
@@ -580,7 +623,8 @@ module Rag
         "attempt_cap" => approval["attempt_cap"],
         "money_cap_usd" => approval["money_cap_usd"],
         "matrix_sha256" => approval["matrix_sha256"],
-        "prompts" => approval["prompts"]
+        "prompts" => approval["prompts"],
+        "combinations" => approval["combinations"]
       )
       File.open(path, File::WRONLY | File::CREAT | File::EXCL, 0o600) { |file| file.write(body) }
       @claimed = true

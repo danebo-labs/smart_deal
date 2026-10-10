@@ -143,6 +143,36 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
     known = Rag::InterpreterAnthropicAdapter.price(HAIKU_45, { "input_tokens" => 2174, "output_tokens" => 106 })
     assert_equal "0.002704", known["cost_usd"]
     assert_equal "https://platform.claude.com/docs/en/about-claude/pricing", known["source"]
+    assert_equal "messages", known["pricing_api"]
+    assert_equal "2026-10-10", known["tariff_version"]
+  end
+
+  test "documented inference geos price the direct messages rate" do
+    adapter = Rag::InterpreterAnthropicAdapter
+    observed = {
+      "input_tokens" => 2174,
+      "cache_creation_input_tokens" => 0,
+      "cache_read_input_tokens" => 0,
+      "cache_creation" => { "ephemeral_5m_input_tokens" => 0, "ephemeral_1h_input_tokens" => 0 },
+      "output_tokens" => 189,
+      "service_tier" => "standard",
+      "inference_geo" => "not_available"
+    }
+    haiku45 = adapter.price(HAIKU_45, observed)
+    short = { "input_tokens" => 1_000, "output_tokens" => 100, "service_tier" => "standard" }
+    global = adapter.price(HAIKU_55, short.merge("inference_geo" => "global"))
+    united = adapter.price(HAIKU_55, short.merge("inference_geo" => "us"))
+    unknown = adapter.price(HAIKU_55, short.merge("inference_geo" => "unknown"))
+
+    assert_equal "priced", haiku45["cost_status"]
+    assert_equal "0.003119", haiku45["cost_usd"]
+    assert_equal "1.0", haiku45["inference_geo_multiplier"]
+    assert_equal "0.000150", global["cost_usd"]
+    assert_equal "1.0", global["inference_geo_multiplier"]
+    assert_equal "0.000165", united["cost_usd"]
+    assert_equal "1.1", united["inference_geo_multiplier"]
+    assert_nil unknown["cost_usd"]
+    assert_equal "unpriced_usage_field", unknown["cost_status"]
   end
 
   test "a higher max token limit is rejected" do
@@ -1331,6 +1361,43 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
     end
   end
 
+  test "the pending probe combinations do not repeat the first pair" do
+    experiment = Rag::InterpreterAnthropicExperiment
+    catalog = Rag::InterpreterPromptCatalog
+    pending = [
+      [ HAIKU_55, "original" ],
+      [ HAIKU_45, "opus_2026_10_09" ],
+      [ HAIKU_55, "opus_2026_10_09" ]
+    ]
+    transport = StubTransport.new { |_count, body|
+      Rag::InterpreterAnthropicTransport::Result.new(
+        http_status: 200,
+        payload: message_payload(perception("report"), usage: { "input_tokens" => 30, "output_tokens" => 6 }).merge("model" => body["model"]),
+        error_code: nil, error_message: nil
+      )
+    }
+    run_id = "phase1-probe-remaining"
+    Dir.mktmpdir do |dir|
+      summary = experiment.execute(
+        evidence_root: dir, run_id: run_id, scope: "probe",
+        approval: narrowed_probe(run_id, pending, "0.010000"),
+        transport: transport, credential_source: -> { "stub-credential" }, ledger_root: quota_root(dir)
+      )
+      bodies = transport.calls.map { |call| call[:body] }
+
+      assert_equal 3, summary["calls"]
+      assert_equal pending, bodies.map { |body|
+        version = body.dig("system", 0, "text") == catalog.text("original") ? "original" : "opus_2026_10_09"
+        [ body["model"], version ]
+      }
+      assert bodies.none? { |body|
+        body["model"] == HAIKU_45 && body.dig("system", 0, "text") == catalog.text("original")
+      }
+      assert_equal true, summary["cost_total_determined"]
+      assert_equal "completed", summary["status"]
+    end
+  end
+
   private
 
   def approved(run_id)
@@ -1339,6 +1406,16 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
 
   def probe_enabled(run_id)
     Rag::InterpreterAnthropicExperiment.probe_approval.merge("enabled" => true, "run_id" => run_id)
+  end
+
+  def narrowed_probe(run_id, combinations, money_cap)
+    Rag::InterpreterAnthropicExperiment.probe_approval.merge(
+      "enabled" => true,
+      "run_id" => run_id,
+      "combinations" => combinations,
+      "attempt_cap" => combinations.size,
+      "money_cap_usd" => money_cap
+    )
   end
 
   def quota_root(dir)

@@ -2,8 +2,10 @@
 
 module Rag
   # Messages API adapter for the isolated interpreter experiment.
-  # TurnInterpreter keeps BedrockClient. This class is not that default.
-  # It copies the prepared converse payload and does not open a socket.
+  # Both models are Anthropic API ids: claude-haiku-5-5 and
+  # claude-haiku-4-5-20251001. TurnInterpreter keeps BedrockClient.
+  # This class does not call Bedrock and does not open a socket.
+  # normalize keeps the provider payload in memory. Export scrubs a copy.
   class InterpreterAnthropicAdapter
     HAIKU_55 = "claude-haiku-5-5"
     HAIKU_45 = "claude-haiku-4-5-20251001"
@@ -183,26 +185,29 @@ module Rag
     end
 
     def normalize(native)
-      sanitized = self.class.scrub(native)
-      return empty_observed(sanitized) unless sanitized.is_a?(Hash) && sanitized.any?
-      raise ProviderError, sanitized if error_payload?(sanitized)
+      original = duplicate_payload(native)
+      return empty_observed(original) unless original.is_a?(Hash) && original.any?
+      raise ProviderError, original if error_payload?(original)
 
-      raw_content = sanitized["content"]
+      raw_content = original["content"]
       blocks = raw_content.is_a?(Array) ? raw_content.map { |block| normalize_block(block) } : []
-      usage = sanitized["usage"].is_a?(Hash) ? sanitized["usage"] : nil
+      usage = original["usage"].is_a?(Hash) ? duplicate_payload(original["usage"]) : nil
       Observed.new(
         usage: usage_struct(usage),
         output: Output.new(Message.new(blocks)),
-        native: sanitized,
+        native: original,
         normalized: {
-          "model" => sanitized["model"],
-          "stop_reason" => sanitized["stop_reason"],
-          "stop_sequence" => sanitized["stop_sequence"],
+          "provenance" => "normalized",
+          "source" => "anthropic_message",
+          "transformations" => [ "stringify_keys", "map_content_blocks" ],
+          "model" => original["model"],
+          "stop_reason" => original["stop_reason"],
+          "stop_sequence" => original["stop_sequence"],
           "content" => blocks,
           "usage" => usage
         },
-        stop_reason: sanitized["stop_reason"],
-        returned_model: sanitized["model"],
+        stop_reason: original["stop_reason"],
+        returned_model: original["model"],
         empty: blocks.empty?
       )
     end
@@ -332,12 +337,30 @@ module Rag
       hash.key?("error") && !hash.key?("content") && !hash.key?("stop_reason")
     end
 
-    def empty_observed(sanitized)
+    def duplicate_payload(value)
+      case value
+      when Hash
+        value.each_with_object({}) { |(key, item), out| out[key.to_s] = duplicate_payload(item) }
+      when Array
+        value.map { |item| duplicate_payload(item) }
+      else
+        value
+      end
+    end
+
+    def empty_observed(original)
       Observed.new(
         usage: nil,
         output: Output.new(Message.new([])),
-        native: sanitized,
-        normalized: { "content" => [], "usage" => nil, "stop_reason" => nil },
+        native: original,
+        normalized: {
+          "provenance" => "normalized",
+          "source" => "anthropic_message",
+          "transformations" => [ "empty" ],
+          "content" => [],
+          "usage" => nil,
+          "stop_reason" => nil
+        },
         stop_reason: nil,
         returned_model: nil,
         empty: true

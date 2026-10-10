@@ -1,18 +1,23 @@
 # frozen_string_literal: true
 
 module Rag
-  # Isolated interpreter comparison. It builds TurnInterpreter's request,
-  # translates it, and stops before any provider call. It does not write an
-  # episode, does not call TurnPerception, and does not replace BedrockClient.
+  # Isolated interpreter comparison. Both models go through the Anthropic
+  # Messages API: claude-haiku-5-5 and claude-haiku-4-5-20251001.
+  # It does not call Bedrock, does not write an episode, and does not run RAG.
+  # Live execution stays closed until the approval record, the explicit
+  # authorization, and the frozen quota all pass together.
   class InterpreterAnthropicExperiment
     LIVE_CALLS_ENABLED = false
-    LANES = %w[prepared stubs].freeze
+    LANES = %w[prepared stubs runs].freeze
     PHASE1_TEXT = "Estoy revisando un Elemont MH por un problema de puerta en el nivel 2. " \
                   "Según el plano seleccionado, ¿dónde aparece la seguridad de esa puerta " \
                   "y cómo se relaciona con las demás seguridades?"
     ACTIVE_GOAL = "problema de puerta en el nivel 2"
     ACTIVE_CONTEXT_ID = "ep_experiment_active"
     MODELS = InterpreterAnthropicAdapter::ACCEPTED_MODELS
+    # Frozen after the matrix below. A later edit of the matrix does not
+    # rewrite this hash and does not raise the caps.
+    APPROVED_MATRIX_SHA256 = "1d1c17b57e819d3040d7d011c44b4f5d20c370086dff7a8428e909259d208954"
 
     class Error < StandardError
       attr_reader :code
@@ -24,18 +29,79 @@ module Rag
     end
 
     class Budget
-      # One observed Bedrock interpreter call on the phase 1 text used 2174
-      # input tokens. 2500 reserves that call plus the active-context JSON.
-      # 3500 is 2500 x 1.4, above the documented ~30% Haiku 5.5 tokenizer
-      # increase. These are reservations, not counts from the token API.
+      # INPUT_RESERVATION estimates the frozen matrix. It is not a provider
+      # limit. max_tokens caps output only. The money cap refuses the next
+      # call when this estimate would not fit, and stops after a priced call
+      # that exceeds its own reservation. That does not guarantee the
+      # provider will bill less than the estimate on a call that already left.
       INPUT_RESERVATION = {
         InterpreterAnthropicAdapter::HAIKU_45 => 2500,
         InterpreterAnthropicAdapter::HAIKU_55 => 3500
       }.freeze
       OUTPUT_RESERVATION = TurnInterpreter::MAX_TOKENS
+      ATTEMPT_CAP = 50
+      MONEY_CAP = BigDecimal("0.141650")
+
+      class Ledger
+        attr_reader :attempts, :spent, :close_reason
+
+        def initialize(state = nil)
+          state ||= {}
+          @attempts = state["attempts"].to_i
+          @spent = decimal(state["spent_usd"] || "0")
+          @closed = state["closed"] == true
+          @close_reason = state["close_reason"]
+          @last_reservation = BigDecimal("0")
+        end
+
+        def closed?
+          @closed
+        end
+
+        def reserve!(model_id)
+          return "execution_closed" if @closed
+          return "attempt_cap" if @attempts >= ATTEMPT_CAP
+
+          reservation = Budget.reservation_usd(model_id)
+          return "money_cap" if @spent + reservation > MONEY_CAP
+
+          @attempts += 1
+          @last_reservation = reservation
+          nil
+        end
+
+        def close!(reason)
+          @closed = true
+          @close_reason ||= reason
+          nil
+        end
+
+        def reconcile!(model_id, provider_result:, usage:)
+          priced = InterpreterAnthropicAdapter.price(model_id, usage)
+          if priced["cost_status"] == "priced" && priced["cost_usd"]
+            amount = decimal(priced["cost_usd"])
+            @spent += amount
+            close!("reservation_exceeded") if amount > @last_reservation
+          end
+          if provider_result != "returned" || priced["cost_status"] != "priced"
+            close!(provider_result == "returned" ? priced["cost_status"] : "provider_error")
+          end
+          priced
+        end
+
+        private
+
+        def decimal(value)
+          value.is_a?(BigDecimal) ? value : BigDecimal(value.to_s)
+        end
+      end
 
       def self.attempt_cap
-        InterpreterAnthropicExperiment.matrix.size * MODELS.size
+        ATTEMPT_CAP
+      end
+
+      def self.money_cap
+        MONEY_CAP
       end
 
       def self.reservation_usd(model_id)
@@ -44,28 +110,86 @@ module Rag
         (BigDecimal(input) * rates[:input]) + (BigDecimal(OUTPUT_RESERVATION) * rates[:output])
       end
 
-      def self.money_cap
-        MODELS.sum { |model_id| reservation_usd(model_id) * InterpreterAnthropicExperiment.matrix.size }
+      def self.estimate_usd
+        MODELS.sum { |model_id| reservation_usd(model_id) * matrix_cases }
+      end
+
+      def self.matrix_cases
+        InterpreterAnthropicExperiment.matrix.size
       end
 
       # live and credential_present are explicit arguments. Nothing here reads
-      # the process environment or a credential store.
-      def self.gate(model_id, attempts:, spent_usd:, live:, credential_present:)
+      # the process environment or a credential store. live: true is not
+      # authorization to call.
+      def self.gate(model_id, attempts:, spent_usd:, live:, credential_present:, closed: false)
+        return "execution_closed" if closed
         return "live_calls_closed" unless live
-        return "attempt_cap" if attempts >= attempt_cap
-        return "money_cap" if spent_usd + reservation_usd(model_id) > money_cap
+        return "attempt_cap" if attempts >= ATTEMPT_CAP
+
+        spent = spent_usd.is_a?(BigDecimal) ? spent_usd : BigDecimal(spent_usd.to_s)
+        return "money_cap" if spent + reservation_usd(model_id) > MONEY_CAP
         return "credential_absent" unless credential_present
 
         nil
       end
 
-      def self.continue_after?(provider_result, cost_status: "priced")
-        provider_result == "returned" && cost_status == "priced"
+      def self.continue_after?(provider_result, cost_status: "priced", cost_usd: nil, reservation_usd: nil)
+        return false unless provider_result == "returned" && cost_status == "priced"
+        return false if cost_usd && reservation_usd && BigDecimal(cost_usd.to_s) > BigDecimal(reservation_usd.to_s)
+
+        true
       end
     end
 
     def self.matrix
       @matrix ||= build_matrix.freeze
+    end
+
+    def self.matrix_sha256
+      payload = matrix.map { |row|
+        %w[
+          id text context disposition allowed_moves forbidden_moves
+          empty_observations empty_assertions pair_of justification
+        ].index_with { |key| row[key] }
+      }
+      Digest::SHA256.hexdigest(JSON.generate(payload))
+    end
+
+    def self.approval
+      @approval ||= {
+        "enabled" => false,
+        "provider" => "anthropic",
+        "matrix_sha256" => APPROVED_MATRIX_SHA256,
+        "attempt_cap" => Budget::ATTEMPT_CAP,
+        "money_cap_usd" => format("%.6f", Budget::MONEY_CAP),
+        "models" => MODELS,
+        "endpoint" => InterpreterAnthropicAdapter::ENDPOINT,
+        "retries" => InterpreterAnthropicTransport::RETRIES,
+        "haiku_55" => InterpreterAnthropicAdapter::HAIKU_55,
+        "haiku_45" => InterpreterAnthropicAdapter::HAIKU_45
+      }.freeze
+    end
+
+    def self.approval_refusal(record = approval, matrix_sha: matrix_sha256)
+      return "execution_not_approved" unless record.is_a?(Hash) && record["enabled"] == true
+      return "provider_unapproved" unless record["provider"] == "anthropic"
+      return "models_unapproved" unless record["models"] == MODELS
+      return "endpoint_unapproved" unless record["endpoint"] == InterpreterAnthropicAdapter::ENDPOINT
+      return "retries_unapproved" unless record["retries"] == 0
+      return "attempt_cap_unapproved" unless record["attempt_cap"] == Budget::ATTEMPT_CAP
+      return "money_cap_unapproved" unless record["money_cap_usd"] == format("%.6f", Budget::MONEY_CAP)
+      return "matrix_unapproved" unless record["matrix_sha256"] == matrix_sha && matrix_sha == APPROVED_MATRIX_SHA256
+
+      nil
+    end
+
+    def self.env_credential_reads
+      @env_credential_reads.to_i
+    end
+
+    def self.env_credential
+      @env_credential_reads = env_credential_reads + 1
+      ENV["ANTHROPIC_API_KEY"].to_s
     end
 
     def self.credential_status(explicit_key)
@@ -82,25 +206,67 @@ module Rag
       )
     end
 
-    def self.execute(*)
-      raise Error, "live_calls_closed"
+    def self.execute(evidence_root:, run_id:, approval: self.approval, transport: nil, credential_source: nil, only: nil, budget_state: nil)
+      new(evidence_root: evidence_root, run_id: run_id, lane: "runs").execute(
+        approval: approval,
+        transport: transport,
+        credential_source: credential_source,
+        only: only,
+        budget_state: budget_state
+      )
     end
 
-    def self.judge(row, tool_input)
-      new(evidence_root: ".", run_id: "judge", lane: "prepared").send(:judge, row, tool_input)
+    def self.command(prepare:, authorized:, evidence_root: nil, run_id: nil)
+      if prepare
+        return blocked_command("evidence_root_missing") if evidence_root.to_s.empty?
+
+        summary = self.prepare(evidence_root: evidence_root, run_id: run_id.presence || "prepared")
+        return {
+          "exit_code" => 0,
+          "output" => summary.merge("status" => "prepared", "credential_read" => false, "provider_call" => false)
+        }
+      end
+      return blocked_command("authorization_absent") unless authorized
+
+      refusal = approval_refusal(approval)
+      return blocked_command(refusal) if refusal
+
+      summary = execute(evidence_root: evidence_root, run_id: run_id.presence || "run", approval: approval)
+      { "exit_code" => 0, "output" => summary }
+    rescue Error => error
+      blocked_command(error.code)
+    end
+
+    def self.judge(row, tool_input, stop_reason: "tool_use", provider_result: "returned", sent_turn: nil)
+      new(evidence_root: ".", run_id: "judge", lane: "prepared").send(
+        :judge, row, tool_input, stop_reason: stop_reason, provider_result: provider_result, sent_turn: sent_turn
+      )
+    end
+
+    def self.blocked_command(reason)
+      {
+        "exit_code" => 2,
+        "output" => {
+          "status" => "blocked",
+          "reason" => reason,
+          "live_calls_enabled" => LIVE_CALLS_ENABLED,
+          "credential_read" => false,
+          "provider_call" => false
+        }
+      }
     end
 
     def initialize(evidence_root:, run_id:, lane:)
-      raise Error, "runs_closed" if lane.to_s == "runs"
       raise Error, "lane" unless LANES.include?(lane.to_s)
 
-      @evidence_root = Pathname(evidence_root)
+      @evidence_root = Pathname(evidence_root.to_s)
       @run_id = run_id.to_s
       @lane = lane.to_s
     end
 
     def prepare
       raise Error, "lane" unless @lane == "prepared"
+      raise Error, "run_exists" if run_dir.exist?
 
       root = run_dir
       FileUtils.mkdir_p(root)
@@ -108,7 +274,7 @@ module Rag
         ValidationCapture.bind(run_id: @run_id)
         record_configuration
         self.class.matrix.each do |row|
-          MODELS.each { |model_id| write_blocked(row, model_id) }
+          MODELS.each { |model_id| write_blocked(row, model_id, "live_calls_closed") }
         end
       end
       write_capture(root, events)
@@ -116,10 +282,11 @@ module Rag
     end
 
     def rehearse(scenario_id:, model_id:, native:, latency_ms: nil)
-      raise Error, "runs_closed" unless @lane == "stubs"
+      raise Error, "lane" unless @lane == "stubs"
 
       row = self.class.matrix.find { |item| item["id"] == scenario_id }
       raise Error, "scenario" unless row
+      raise Error, "run_exists" if run_dir.exist?
 
       root = run_dir
       FileUtils.mkdir_p(root)
@@ -131,13 +298,147 @@ module Rag
       { "lane" => @lane, "provider_call" => false }
     end
 
+    def execute(approval:, transport:, credential_source:, only:, budget_state:)
+      raise Error, "lane" unless @lane == "runs"
+
+      refusal = self.class.approval_refusal(approval)
+      raise Error, refusal if refusal
+      raise Error, "evidence_root_missing" if @run_id.empty? || evidence_root_blank?
+      raise Error, "run_exists" if run_dir.exist?
+
+      source = credential_source || self.class.method(:env_credential)
+      key = source.call.to_s
+      raise Error, "credential_absent" if key.empty?
+
+      client = transport || InterpreterAnthropicTransport.live
+      budget = Budget::Ledger.new(budget_state)
+      calls = 0
+      root = run_dir
+      FileUtils.mkdir_p(root)
+      events = ValidationCapture.capture do
+        ValidationCapture.bind(run_id: @run_id)
+        record_configuration(approval)
+        selected_rows(only).each do |row|
+          break if budget.closed?
+
+          MODELS.each do |model_id|
+            break if budget.closed?
+
+            calls += run_authorized_case(row, model_id, client, key, budget)
+          end
+        end
+        write_state(root, budget, client)
+      end
+      write_capture(root, events)
+      {
+        "lane" => @lane,
+        "run_id" => @run_id,
+        "status" => execution_status(budget, calls),
+        "calls" => calls,
+        "attempts" => budget.attempts,
+        "closed" => budget.closed?,
+        "close_reason" => budget.close_reason,
+        "provider_call" => transport_live?(client),
+        "evidence_complete" => true,
+        "credential_read" => true
+      }
+    end
+
     private
+
+    def evidence_root_blank?
+      text = @evidence_root.to_s
+      text.empty? || text == "."
+    end
+
+    def selected_rows(only)
+      return self.class.matrix if only.nil?
+
+      ids = Array(only)
+      rows = ids.filter_map { |id| self.class.matrix.find { |row| row["id"] == id } }
+      raise Error, "scenario" if rows.size != ids.size
+
+      rows
+    end
+
+    def run_authorized_case(row, model_id, client, api_key, budget)
+      built = build(row, model_id)
+      sent_turn = built.dig(:message, "turn").to_s
+      block = budget.reserve!(model_id)
+      if block
+        budget.close!(block) if block == "attempt_cap"
+        write_blocked(row, model_id, block)
+        return 0
+      end
+
+      ValidationCapture.with_turn(correlation(row, model_id)) do
+        ValidationCapture.attempt = budget.attempts
+        record_prepared_request(row, model_id, built, client)
+        ValidationCapture.record(
+          "interpreter_attempt",
+          "stage" => "converse",
+          "result" => "attempt_started",
+          "operation" => "interpreter_experiment",
+          "provider" => "anthropic",
+          "model_id" => model_id,
+          "case_id" => row["id"],
+          "provider_call" => transport_live?(client),
+          "transport" => transport_name(client),
+          "lane" => "runs",
+          "endpoint" => InterpreterAnthropicAdapter::ENDPOINT
+        )
+        started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        result = post_once(client, built, api_key)
+        latency_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
+        outcome = interpret_transport(result)
+        budget.reconcile!(model_id, provider_result: outcome[:provider_result], usage: outcome[:usage])
+        judgment = judgment_for(row, outcome, sent_turn)
+        record_terminal(outcome, judgment, client)
+        write_files(
+          case_dir(row, model_id),
+          call_files(row, model_id, built, outcome, judgment, latency_ms, client)
+        )
+      end
+      1
+    end
+
+    def post_once(client, built, api_key)
+      client.post(
+        endpoint: InterpreterAnthropicAdapter::ENDPOINT,
+        headers: {
+          "content-type" => "application/json",
+          "anthropic-version" => InterpreterAnthropicAdapter::ANTHROPIC_VERSION,
+          "x-api-key" => api_key
+        },
+        body: built[:translated]["body"],
+        open_timeout: InterpreterAnthropicTransport::OPEN_TIMEOUT_SECONDS,
+        read_timeout: InterpreterAnthropicTransport::READ_TIMEOUT_SECONDS
+      )
+    rescue StandardError => error
+      InterpreterAnthropicTransport::Result.new(
+        http_status: nil,
+        payload: nil,
+        error_code: "transport_error",
+        error_message: InterpreterAnthropicAdapter.scrub_text(error.message.to_s).truncate(180)
+      )
+    end
+
+    def judgment_for(row, outcome, sent_turn)
+      if outcome[:provider_result] == "error"
+        incomplete_judgment("provider_error", outcome[:stop_reason])
+      else
+        judge(
+          row, outcome[:tool_input],
+          stop_reason: outcome[:stop_reason], provider_result: "returned", sent_turn: sent_turn
+        )
+      end
+    end
 
     def run_dir
       @evidence_root.join(@lane, @run_id)
     end
 
-    def write_blocked(row, model_id)
+    def write_blocked(row, model_id, reason)
       built = build(row, model_id)
       dir = case_dir(row, model_id)
       ValidationCapture.with_turn(correlation(row, model_id)) do
@@ -148,27 +449,31 @@ module Rag
           "operation" => "interpreter_experiment",
           "provider" => "anthropic",
           "model_id" => model_id,
+          "case_id" => row["id"],
           "lane" => @lane,
           "provider_call" => false,
-          "request" => built[:params],
-          "client_input" => built[:translated]
+          "request" => export_value(built[:params]),
+          "client_input" => export_value(built[:translated])
         )
         ValidationCapture.record(
           "model_call",
           "operation" => "interpreter_experiment",
           "result" => "blocked",
-          "reason" => "live_calls_closed",
+          "reason" => reason,
           "provider_call" => false,
-          "lane" => @lane
+          "lane" => @lane,
+          "case_id" => row["id"],
+          "model_id" => model_id
         )
       end
-      write_files(dir, blocked_files(row, model_id, built))
+      write_files(dir, blocked_files(row, model_id, built, reason))
     end
 
     def write_stub(row, model_id, native, latency_ms)
       built = build(row, model_id)
       outcome = interpret_native(native)
-      judgment = outcome[:error] ? not_judged("provider_error") : judge(row, outcome[:tool_input])
+      sent_turn = built.dig(:message, "turn").to_s
+      judgment = judgment_for(row, outcome, sent_turn)
       dir = case_dir(row, model_id)
       ValidationCapture.with_turn(correlation(row, model_id)) do
         ValidationCapture.record(
@@ -178,23 +483,38 @@ module Rag
           "operation" => "interpreter_experiment",
           "provider" => "anthropic",
           "model_id" => model_id,
+          "case_id" => row["id"],
           "lane" => "stubs",
           "provider_call" => false,
           "transport" => "injected_native"
         )
-        record_stub_outcome(outcome)
-        ValidationCapture.record(
-          "experiment_judgment",
-          "result" => judgment["judgment"],
-          "reason" => judgment["reason"],
-          "provider_call" => false,
-          "lane" => "stubs"
-        )
+        record_observed(outcome, judgment, live: false, transport: "injected_native")
       end
       write_files(dir, stub_files(row, model_id, built, outcome, judgment, latency_ms))
     end
 
-    def record_stub_outcome(outcome)
+    def record_prepared_request(row, model_id, built, client)
+      ValidationCapture.record(
+        "interpreter_request",
+        "stage" => "converse",
+        "result" => "prepared",
+        "operation" => "interpreter_experiment",
+        "provider" => "anthropic",
+        "model_id" => model_id,
+        "case_id" => row["id"],
+        "lane" => "runs",
+        "provider_call" => transport_live?(client),
+        "transport" => transport_name(client),
+        "request" => export_value(built[:params]),
+        "client_input" => export_value(built[:translated])
+      )
+    end
+
+    def record_terminal(outcome, judgment, client)
+      record_observed(outcome, judgment, live: transport_live?(client), transport: transport_name(client))
+    end
+
+    def record_observed(outcome, judgment, live:, transport:)
       if outcome[:error]
         ValidationCapture.record(
           "interpreter_failure",
@@ -203,29 +523,42 @@ module Rag
           "operation" => "interpreter_experiment",
           "error_class" => outcome[:error].class.name,
           "reason" => outcome[:error].message,
-          "provider_call" => false,
-          "lane" => "stubs"
+          "provider_call" => live,
+          "transport" => transport,
+          "lane" => @lane
         )
-        return
+      else
+        ValidationCapture.record(
+          "interpreter_response",
+          "stage" => "extract",
+          "result" => "returned",
+          "operation" => "interpreter_experiment",
+          "provider_call" => live,
+          "transport" => transport,
+          "lane" => @lane,
+          "stop_reason" => outcome[:stop_reason],
+          "response" => export_value(outcome[:observed].native)
+        )
+        ValidationCapture.record(
+          "interpreter_raw",
+          "stage" => "extract",
+          "result" => outcome[:tool_input].nil? ? "empty" : "tool_input",
+          "tool_input" => export_value(outcome[:tool_input]),
+          "provider_call" => live,
+          "transport" => transport,
+          "lane" => @lane
+        )
       end
-
       ValidationCapture.record(
-        "interpreter_response",
-        "stage" => "extract",
-        "result" => "returned",
-        "operation" => "interpreter_experiment",
-        "provider_call" => false,
-        "transport" => "injected_native",
-        "lane" => "stubs",
-        "response" => outcome[:observed].native
-      )
-      ValidationCapture.record(
-        "interpreter_raw",
-        "stage" => "extract",
-        "result" => outcome[:tool_input].nil? ? "empty" : "tool_input",
-        "tool_input" => outcome[:tool_input],
-        "provider_call" => false,
-        "lane" => "stubs"
+        "experiment_judgment",
+        "result" => judgment["judgment"],
+        "classification" => judgment["classification"],
+        "reason" => judgment["reason"],
+        "stop_reason" => judgment["stop_reason"],
+        "validation" => export_value(judgment["validation"]),
+        "provider_call" => live,
+        "transport" => transport,
+        "lane" => @lane
       )
     end
 
@@ -234,10 +567,59 @@ module Rag
       {
         observed: observed,
         tool_input: InterpreterAnthropicAdapter.tool_input(observed.output.message.content),
-        error: nil
+        error: nil,
+        usage: observed.normalized["usage"],
+        stop_reason: observed.stop_reason,
+        provider_result: "returned"
       }
     rescue InterpreterAnthropicAdapter::ProviderError => error
-      { observed: nil, tool_input: nil, error: error }
+      {
+        observed: nil,
+        tool_input: nil,
+        error: error,
+        usage: error.native.is_a?(Hash) ? error.native["usage"] : nil,
+        stop_reason: nil,
+        provider_result: "error"
+      }
+    end
+
+    def interpret_transport(result)
+      if result.nil? || result.error_code
+        payload = result&.payload
+        return transport_failure(error_from_transport(result), payload)
+      end
+
+      observed = InterpreterAnthropicAdapter.normalize(result.payload)
+      {
+        observed: observed,
+        tool_input: InterpreterAnthropicAdapter.tool_input(observed.output.message.content),
+        error: nil,
+        usage: observed.normalized["usage"],
+        stop_reason: observed.stop_reason,
+        provider_result: "returned"
+      }
+    rescue InterpreterAnthropicAdapter::ProviderError => error
+      transport_failure(error, result.payload)
+    end
+
+    def transport_failure(error, payload)
+      {
+        observed: nil,
+        tool_input: nil,
+        error: error,
+        usage: payload.is_a?(Hash) ? payload["usage"] : nil,
+        stop_reason: nil,
+        provider_result: "error"
+      }
+    end
+
+    def error_from_transport(result)
+      payload = result&.payload
+      if payload.is_a?(Hash) && (payload["type"] == "error" || payload["error"].is_a?(Hash))
+        return InterpreterAnthropicAdapter::ProviderError.new(payload)
+      end
+
+      InterpreterAnthropicAdapter::Error.new(result&.error_code || "transport_error", result&.error_message)
     end
 
     def build(row, model_id)
@@ -246,6 +628,9 @@ module Rag
       prompt = translated.dig("body", "system", 0, "text")
       raise Error, "prompt_drift" unless prompt == TurnInterpreter::PROMPT
       raise Error, "max_tokens" unless translated.dig("body", "max_tokens") == TurnInterpreter::MAX_TOKENS
+      unless InterpreterAnthropicAdapter::ACCEPTED_MODELS.include?(translated.dig("body", "model"))
+        raise Error, "model_rejected"
+      end
 
       { params: params, translated: translated, message: message_payload(translated) }
     end
@@ -280,12 +665,12 @@ module Rag
       { "provenance" => "uncaptured" }
     end
 
-    def blocked_files(row, model_id, built)
+    def blocked_files(row, model_id, built, reason)
       {
-        "case.json" => case_payload(row, model_id, built),
+        "case.json" => case_payload(row, model_id, built).merge("block_reason" => reason),
         "prepared_request.json" => built[:params],
         "client_input.json" => built[:translated],
-        "native_response.json" => { "provenance" => "not_executed", "reason" => "live_calls_closed" },
+        "native_response.json" => { "provenance" => "not_executed", "reason" => reason },
         "normalized.json" => { "provenance" => "not_executed" },
         "tool_input.json" => { "tool_input" => nil, "provenance" => "not_executed" },
         "judgment.json" => expected_and_observed(row, nil, not_judged("not_called")),
@@ -294,33 +679,52 @@ module Rag
     end
 
     def stub_files(row, model_id, built, outcome, judgment, latency_ms)
+      files_for(row, model_id, built, outcome, judgment, latency_ms, provider_call: false, transport: "injected_native")
+    end
+
+    def call_files(row, model_id, built, outcome, judgment, latency_ms, client)
+      files_for(
+        row, model_id, built, outcome, judgment, latency_ms,
+        provider_call: transport_live?(client), transport: transport_name(client)
+      )
+    end
+
+    def files_for(row, model_id, built, outcome, judgment, latency_ms, provider_call:, transport:)
+      usage = outcome_usage(outcome)
       if outcome[:error]
-        native = outcome[:error].native
-        normalized = { "provenance" => "not_executed", "reason" => "provider_error" }
-        usage = nil
-        errors = [ { "code" => outcome[:error].code, "error_type" => outcome[:error].error_type } ]
+        native = outcome[:error].respond_to?(:native) ? outcome[:error].native : nil
+        native ||= { "provenance" => "transport_error", "code" => outcome[:error].code }
+        normalized = { "provenance" => "not_normalized", "reason" => "provider_error" }
+        errors = [ { "code" => outcome[:error].code } ]
+        errors[0]["error_type"] = outcome[:error].error_type if outcome[:error].respond_to?(:error_type)
         status = "error"
       else
         native = outcome[:observed].native
         normalized = outcome[:observed].normalized
-        usage = outcome[:observed].normalized["usage"]
         errors = []
         status = "returned"
       end
       {
         "case.json" => case_payload(row, model_id, built).merge(
-          "transport" => "injected_native", "provider_result" => status
+          "transport" => transport, "provider_result" => status, "provider_call" => provider_call
         ),
         "prepared_request.json" => built[:params],
         "client_input.json" => built[:translated],
         "native_response.json" => native,
         "normalized.json" => normalized,
-        "tool_input.json" => { "tool_input" => outcome[:tool_input], "provider_call" => false },
+        "tool_input.json" => { "tool_input" => outcome[:tool_input], "provider_call" => provider_call },
         "judgment.json" => expected_and_observed(row, outcome[:tool_input], judgment).merge(
-          "provider_result" => status, "provider_call" => false
+          "provider_result" => status, "provider_call" => provider_call
         ),
         "usage.json" => usage_payload(model_id, usage, latency_ms, status, errors)
       }
+    end
+
+    def outcome_usage(outcome)
+      return outcome[:usage] if outcome[:usage].is_a?(Hash)
+      return nil unless outcome[:error].respond_to?(:native) && outcome[:error].native.is_a?(Hash)
+
+      outcome[:error].native["usage"]
     end
 
     def case_payload(row, model_id, built)
@@ -334,11 +738,24 @@ module Rag
         },
         "pair_of" => row["pair_of"],
         "text" => row["text"],
+        "sent_turn" => built.dig(:message, "turn"),
         "provider" => "anthropic",
+        "endpoint" => InterpreterAnthropicAdapter::ENDPOINT,
         "model_id" => model_id,
         "lane" => @lane,
         "provider_call" => false,
-        "live_calls_enabled" => LIVE_CALLS_ENABLED
+        "live_calls_enabled" => LIVE_CALLS_ENABLED,
+        "exports" => {
+          "native_response" => {
+            "provenance" => "sanitized_export",
+            "transformations" => %w[drop_secret_keys redact_secret_text]
+          },
+          "normalized" => {
+            "provenance" => "normalized_then_sanitized_export",
+            "normalization" => %w[stringify_keys map_content_blocks],
+            "export" => %w[drop_secret_keys redact_secret_text]
+          }
+        }
       }
     end
 
@@ -352,14 +769,17 @@ module Rag
         },
         "observed" => tool_input,
         "judgment" => judgment["judgment"],
-        "reason" => judgment["reason"]
+        "classification" => judgment["classification"],
+        "reason" => judgment["reason"],
+        "stop_reason" => judgment["stop_reason"],
+        "validation" => judgment["validation"]
       }
     end
 
     def usage_payload(model_id, usage, latency_ms, status, errors)
       priced = InterpreterAnthropicAdapter.price(model_id, usage)
-      if %w[not_called error].include?(status)
-        priced["cost_status"] = status
+      if status == "not_called"
+        priced["cost_status"] = "not_called"
         priced["cost_usd"] = nil
       end
       priced["latency_ms"] = latency_ms
@@ -368,29 +788,38 @@ module Rag
       priced
     end
 
-    def judge(row, tool_input)
-      return not_judged("tool_input_absent") unless tool_input.is_a?(Hash)
-      return fail_judgment("incomplete_tool_input") unless contract_shape?(tool_input)
-      return fail_judgment("forbidden_move") if row["forbidden_moves"].include?(tool_input["move"])
-      return fail_judgment("observation_on_non_symptom") if contaminated_observations?(row, tool_input)
-      return fail_judgment("assertion_on_non_symptom") if contaminated_assertions?(row, tool_input)
-      if !tool_input["clarification_target"].nil? && tool_input["move"] != "unclear"
-        return fail_judgment("clarification_target")
+    def judge(row, tool_input, stop_reason:, provider_result:, sent_turn:)
+      sent = sent_turn.nil? ? row["text"].to_s : sent_turn.to_s
+      return not_judged("not_called") if provider_result == "not_called"
+      return incomplete_judgment("provider_error", stop_reason) if provider_result == "error"
+      return incomplete_judgment("max_tokens", stop_reason) if stop_reason.to_s == "max_tokens"
+      if %w[refusal stop_sequence pause_turn].include?(stop_reason.to_s)
+        return incomplete_judgment(stop_reason.to_s, stop_reason)
       end
-      return fail_judgment("move_outside_contract") unless row["allowed_moves"].include?(tool_input["move"])
-      return { "judgment" => "review", "reason" => "ambiguous_case" } if row["disposition"] == "review"
+      unless provider_result == "returned" && tool_input.is_a?(Hash) && %w[tool_use end_turn].include?(stop_reason.to_s)
+        reason = tool_input.nil? ? (stop_reason.nil? ? "empty_response" : "tool_absent") : "stop_not_complete"
+        return incomplete_judgment(reason, stop_reason)
+      end
 
-      { "judgment" => "pass", "reason" => "allowed_move" }
-    end
+      validation = InterpreterPayloadContract.evaluate(tool_input, sent_turn: sent)
+      unless validation["valid"]
+        return fail_judgment(validation["reason"], "contract_failure", stop_reason, validation)
+      end
+      if row["forbidden_moves"].include?(tool_input["move"])
+        return fail_judgment("forbidden_move", "interpretation_failure", stop_reason, validation)
+      end
+      if contaminated_observations?(row, tool_input)
+        return fail_judgment("observation_on_non_symptom", "interpretation_failure", stop_reason, validation)
+      end
+      if contaminated_assertions?(row, tool_input)
+        return fail_judgment("assertion_on_non_symptom", "interpretation_failure", stop_reason, validation)
+      end
+      unless row["allowed_moves"].include?(tool_input["move"])
+        return fail_judgment("move_outside_contract", "interpretation_failure", stop_reason, validation)
+      end
+      return review_judgment(stop_reason, validation) if row["disposition"] == "review"
 
-    def contract_shape?(tool_input)
-      return false unless (tool_input.keys - TurnPerception::ROOT_KEYS).empty?
-      return false unless (TurnPerception::ROOT_KEYS - tool_input.keys).empty?
-      return false unless tool_input["move"].is_a?(String)
-      return false unless tool_input["assertions"].is_a?(Array)
-      return false unless tool_input["observations"].is_a?(Array)
-
-      true
+      pass_judgment(stop_reason, validation)
     end
 
     def contaminated_observations?(row, tool_input)
@@ -402,39 +831,119 @@ module Rag
     end
 
     def not_judged(reason)
-      { "judgment" => "not_judged", "reason" => reason }
+      {
+        "judgment" => "not_judged",
+        "classification" => "not_judged",
+        "reason" => reason,
+        "stop_reason" => nil,
+        "validation" => nil
+      }
     end
 
-    def fail_judgment(reason)
-      { "judgment" => "fail", "reason" => reason }
+    def incomplete_judgment(reason, stop_reason)
+      {
+        "judgment" => "incomplete",
+        "classification" => "incomplete_response",
+        "reason" => reason,
+        "stop_reason" => stop_reason,
+        "validation" => nil
+      }
     end
 
-    def record_configuration
+    def fail_judgment(reason, classification, stop_reason, validation)
+      {
+        "judgment" => "fail",
+        "classification" => classification,
+        "reason" => reason,
+        "stop_reason" => stop_reason,
+        "validation" => validation
+      }
+    end
+
+    def review_judgment(stop_reason, validation)
+      {
+        "judgment" => "review",
+        "classification" => "pending_review",
+        "reason" => "ambiguous_case",
+        "stop_reason" => stop_reason,
+        "validation" => validation
+      }
+    end
+
+    def pass_judgment(stop_reason, validation)
+      {
+        "judgment" => "pass",
+        "classification" => "pass",
+        "reason" => "allowed_move",
+        "stop_reason" => stop_reason,
+        "validation" => validation
+      }
+    end
+
+    def record_configuration(approval = nil)
       ValidationCapture.record(
         "experiment_configuration",
         "result" => "prepared",
         "operation" => "interpreter_experiment",
         "provider" => "anthropic",
+        "endpoint" => InterpreterAnthropicAdapter::ENDPOINT,
         "models" => MODELS,
         "live_calls_enabled" => LIVE_CALLS_ENABLED,
-        "attempt_cap" => Budget.attempt_cap,
-        "money_cap_usd" => format("%.6f", Budget.money_cap),
+        "execution_approved" => approval.is_a?(Hash) && approval["enabled"] == true,
+        "attempt_cap" => Budget::ATTEMPT_CAP,
+        "money_cap_usd" => format("%.6f", Budget::MONEY_CAP),
+        "matrix_sha256" => self.class.matrix_sha256,
+        "approved_matrix_sha256" => APPROVED_MATRIX_SHA256,
+        "input_reservation" => Budget::INPUT_RESERVATION,
+        "reservation_kind" => "estimate_not_provider_limit",
+        "retries" => InterpreterAnthropicTransport::RETRIES,
+        "open_timeout_seconds" => InterpreterAnthropicTransport::OPEN_TIMEOUT_SECONDS,
+        "read_timeout_seconds" => InterpreterAnthropicTransport::READ_TIMEOUT_SECONDS,
         "sources" => InterpreterAnthropicAdapter::SOURCES,
         "consulted_on" => InterpreterAnthropicAdapter::CONSULTED_ON,
         "provider_call" => false
       )
     end
 
+    def write_state(root, budget, client)
+      File.write(root.join("execution_state.json"), JSON.pretty_generate(
+        "attempts" => budget.attempts,
+        "spent_usd" => format("%.6f", budget.spent),
+        "closed" => budget.closed?,
+        "close_reason" => budget.close_reason,
+        "matrix_sha256" => self.class.matrix_sha256,
+        "approved_matrix_sha256" => APPROVED_MATRIX_SHA256,
+        "attempt_cap" => Budget::ATTEMPT_CAP,
+        "money_cap_usd" => format("%.6f", Budget::MONEY_CAP),
+        "provider" => "anthropic",
+        "provider_call" => transport_live?(client)
+      ))
+    end
+
     def write_capture(root, events)
       document = ValidationCapture.export_capture(events, root, run_id: @run_id)
       File.write(root.join("capture.json"), JSON.pretty_generate(document))
+    rescue StandardError => error
+      begin
+        FileUtils.mkdir_p(root)
+        File.write(root.join("export_failed.json"), JSON.generate(
+          "evidence_complete" => false, "reason" => "export_failed", "error_class" => error.class.name
+        ))
+      rescue StandardError
+        nil
+      end
+      raise Error, "export_failed"
     end
 
     def write_files(dir, files)
       FileUtils.mkdir_p(dir)
       files.each do |name, value|
-        File.write(dir.join(name), JSON.pretty_generate(InterpreterAnthropicAdapter.scrub(json_ready(value))))
+        File.write(dir.join(name), JSON.pretty_generate(export_value(value)))
       end
+    end
+
+    def export_value(value)
+      InterpreterAnthropicAdapter.scrub(json_ready(value))
     end
 
     def json_ready(value)
@@ -460,6 +969,21 @@ module Rag
       "interpreter-experiment:#{row["id"]}:#{model_id}"
     end
 
+    def execution_status(budget, calls)
+      return "stopped" if budget.closed?
+      return "blocked" if calls.zero?
+
+      "completed"
+    end
+
+    def transport_live?(client)
+      client.respond_to?(:live?) && client.live?
+    end
+
+    def transport_name(client)
+      transport_live?(client) ? "anthropic_https" : "stub"
+    end
+
     def self.build_matrix
       technical = { "disposition" => "score", "allowed_moves" => %w[report],
                     "forbidden_moves" => %w[meta follow_up answer_pending correct new_work unclear],
@@ -469,7 +993,9 @@ module Rag
                "empty_observations" => true, "empty_assertions" => true }
       [
         row("phase1", PHASE1_TEXT, "empty", technical,
-            "Declara un trabajo y pregunta por el equipo. Sin trabajo abierto, el contrato usa report. meta queda prohibido."),
+            "Declara un trabajo y pregunta por el equipo. Sin trabajo abierto, el contrato usa report. " \
+            "meta queda prohibido. La etiqueta no alcanza: el payload cumple el esquema y, si trae spans " \
+            "u observaciones, son literales del texto enviado. Una observación no es obligatoria."),
         row("variador", "El variador no arranca", "empty", technical,
             "Declara una falla. El contrato usa report. meta queda prohibido."),
         row("saludo_variador", "Buenas tardes. El variador no arranca", "empty", technical,
@@ -479,15 +1005,21 @@ module Rag
             "La oferta no borra la falla. report. meta queda prohibido. Par de variador con oferta.",
             pair_of: "variador"),
         row("circuito", "Según el manual, ¿cómo funciona el circuito de seguridad?", "empty", technical,
-            "Pregunta por el equipo. No pregunta qué necesita Danebo. report. meta queda prohibido."),
+            "Pregunta por el equipo. No pregunta qué necesita Danebo. report. meta queda prohibido. " \
+            "No exige observación."),
         row("kse", "¿Para qué sirve el contacto KSE según el plano?", "empty", technical,
-            "Una pregunta por un designador es report, como «¿Qué es Q2?». meta queda prohibido."),
+            "Una pregunta por un designador es report, como «¿Qué es Q2?». meta queda prohibido. " \
+            "No exige observación. Un span, si viene, es literal."),
         row("foto_variador", "Te envío una foto: el variador no arranca", "empty", technical,
             "La misma frase trae una falla. La oferta no la borra. report. meta queda prohibido."),
         row("necesitas_motor", "¿Qué necesitas para investigar por qué el motor se detiene?", "empty", technical,
             "Pregunta qué hace falta y declara que el motor se detiene. El contrato no deja esa falla en meta."),
-        row("foto_fallas", "Puedo enviarte una foto de las fallas que muestra el display", "empty", technical,
-            "La oferta nombra las fallas del display. report. meta queda prohibido."),
+        row("foto_fallas", "Puedo enviarte una foto de las fallas que muestra el display", "empty",
+            review_case(%w[meta report unclear], %w[follow_up answer_pending correct new_work],
+                        observations: false, assertions: false),
+            "Oferta de una lectura de display. El prompt manda meta si no hay falla y clasificación normal " \
+            "si la misma frase trae una falla. «las fallas que muestra el display» no fija cuál de las dos es. " \
+            "Revisión. No cuenta como acierto ni como superioridad de un modelo."),
         row("perfecto", "Perfecto, entendido", "empty", review_admin(%w[meta unclear]),
             "No declara trabajo ni falla. El prompt no la nombra. Revisión. " \
             "Falla si escribe trabajo, observación o aserción."),
@@ -506,9 +1038,11 @@ module Rag
         row("donde_veo_plano", "¿Dónde veo el plano seleccionado?", "empty",
             review_case(%w[meta report unclear], %w[follow_up answer_pending correct new_work],
                         observations: true, assertions: false),
-            "Puede ser la pantalla de Danebo o el plano. Revisión. Una observación inventada falla."),
+            "Puede ser la pantalla de Danebo o el plano. Revisión. Una observación inventada falla. " \
+            "No se exige una observación para aprobar un report."),
         row("foto_resumen", "Te mando una foto y el resumen de lo que vi", "empty", meta,
-            "Ofrece foto y resumen, sin falla ni valor. meta. El resumen no es una observación."),
+            "Oferta inicial de foto y de un resumen, sin la falla y sin el contenido del resumen. " \
+            "meta, sin observación ni aserción. No es un pedido ni una respuesta de resumen con un trabajo abierto."),
         row("puerta_singular", "La puerta no cierra", "empty", technical,
             "Declara una falla, en singular. report. meta queda prohibido."),
         row("puertas_plural", "Las puertas no cierran", "empty", technical,
@@ -518,17 +1052,25 @@ module Rag
             { "disposition" => "score", "allowed_moves" => %w[follow_up report],
               "forbidden_moves" => %w[meta new_work answer_pending correct unclear],
               "empty_observations" => false, "empty_assertions" => false },
-            "El trabajo abierto es esa puerta. follow_up o report respetan el contrato. meta y new_work no."),
+            "El trabajo abierto es esa puerta. follow_up o report respetan el contrato. meta y new_work no. " \
+            "La etiqueta no alcanza sin un payload literal."),
         row("variador_active", "El variador no arranca", "active",
             review_case(%w[report follow_up new_work unclear], %w[meta answer_pending correct],
                         observations: false, assertions: false),
-            "El variador puede ser otro trabajo o parte del de la puerta. Revisión. meta falla."),
+            "El variador puede ser otro trabajo o parte del de la puerta. Revisión. meta falla. " \
+            "No cuenta como acierto."),
         row("perfecto_active", "Perfecto, entendido", "active",
             review_case(%w[meta unclear follow_up], %w[report new_work answer_pending correct],
                         observations: true, assertions: true),
             "No sustituye el objetivo. Revisión. report, new_work o una observación fallan."),
         row("necesitas_active", "¿Qué necesitas que te mande?", "active", meta,
-            "Pregunta qué enviar, sin falla. meta, sin observación. No abre otro trabajo.")
+            "Pregunta qué enviar, sin falla. meta, sin observación. No abre otro trabajo."),
+        row("resumen_pedido_active", "¿Me haces un resumen de lo que vimos?", "active",
+            { "disposition" => "score", "allowed_moves" => %w[follow_up],
+              "forbidden_moves" => %w[meta report new_work answer_pending correct unclear],
+              "empty_observations" => true, "empty_assertions" => true },
+            "Pide el resumen del trabajo ya abierto. No ofrece una foto ni entrega el contenido. follow_up. " \
+            "No es la oferta inicial «Te mando una foto y el resumen de lo que vi», que sigue en meta.")
       ]
     end
 
@@ -558,6 +1100,6 @@ module Rag
         "empty_assertions" => assertions
       }
     end
-    private_class_method :build_matrix, :row, :review_admin, :review_case
+    private_class_method :build_matrix, :row, :review_admin, :review_case, :blocked_command
   end
 end

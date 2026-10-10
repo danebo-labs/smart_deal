@@ -93,6 +93,71 @@ module Rag
       }
     end
 
+    # Same rejections coerce_tool applied before rewriting slot_hint.
+    # It does not drop spans, clear pending_resolution, or run build.
+    def self.structural_failure(raw)
+      return "not_a_hash" unless raw.is_a?(Hash)
+
+      data = raw.deep_stringify_keys
+      return "extra_keys" if (data.keys - ROOT_KEYS).any?
+      return "invalid_move" unless MOVES.include?(data["move"])
+      return "invalid_assertions" unless data["assertions"].is_a?(Array)
+      return "invalid_observations" unless data["observations"].is_a?(Array)
+      return "too_many_assertions" if data["assertions"].size > MAX_ASSERTIONS
+      return "too_many_observations" if data["observations"].size > ActiveEpisode::MAX_OBSERVATIONS
+      unless data["pending_resolution"].nil? || RESOLUTIONS.include?(data["pending_resolution"])
+        return "invalid_pending_resolution"
+      end
+
+      clarification = clarification_failure(data)
+      return clarification if clarification
+      return "malformed_assertion" unless data["assertions"].all? { |item| assertion_shape?(item) }
+      return "invalid_observation" unless data["observations"].all? { |item| item.is_a?(String) }
+      return "over_bytes" if JSON.generate(data).bytesize > MAX_TOOL_BYTES
+
+      nil
+    end
+
+    def self.clarification_failure(data)
+      return "missing_clarification_target" unless data.key?("clarification_target")
+
+      target = data["clarification_target"]
+      return "invalid_clarification_target" unless target.nil? || CLARIFICATION_TARGETS.include?(target)
+      return "unclear_without_target" if data["move"] == "unclear" && target.nil?
+      return "clarification_target_not_null" if data["move"] != "unclear" && !target.nil?
+
+      nil
+    end
+
+    def self.assertion_shape?(item)
+      return false unless item.is_a?(Hash)
+
+      keys = item.keys.map(&:to_s)
+      return false if (keys - ASSERTION_KEYS).any?
+      return false unless item["span"].is_a?(String) || item[:span].is_a?(String)
+      return false unless ACTS.include?(item["act"] || item[:act])
+
+      true
+    end
+
+    # Literal substring check used by the product and by the experiment.
+    # The product drops a failed span. The experiment rejects the payload.
+    def self.literal_fragment?(span, turn)
+      candidate = normalize_span_text(span).sub(/\A\p{P}+/u, "").sub(/\p{P}+\z/u, "")
+      return false if candidate.empty?
+
+      normalize_span_text(turn).include?(candidate)
+    end
+
+    def self.normalize_span_text(value)
+      value.to_s.unicode_normalize(:nfc).downcase.gsub(/[[:space:]]+/, " ").strip
+    end
+
+    def self.over_length?(data)
+      data["assertions"].any? { |item| item["span"].length > ActiveEpisode::MAX_VALUE_CHARS } ||
+        data["observations"].any? { |item| item.length > ActiveEpisode::MAX_OBSERVATION_CHARS }
+    end
+
     def initialize(raw:, turn:, episode:, catalog:, viewer_account:)
       @raw = raw
       @turn = TurnText.truncate(turn)
@@ -150,44 +215,11 @@ module Rag
     private
 
     def coerce_tool(raw)
-      return nil unless raw.is_a?(Hash)
+      return nil if self.class.structural_failure(raw)
 
       data = raw.deep_stringify_keys
-      return nil if (data.keys - ROOT_KEYS).any?
-      return nil unless MOVES.include?(data["move"])
-      return nil unless data["assertions"].is_a?(Array) && data["observations"].is_a?(Array)
-      return nil if data["assertions"].size > MAX_ASSERTIONS
-      return nil if data["observations"].size > ActiveEpisode::MAX_OBSERVATIONS
-      return nil unless data["pending_resolution"].nil? || RESOLUTIONS.include?(data["pending_resolution"])
-      return nil unless clarification_target_ok?(data)
-      return nil unless data["assertions"].all? { |item| assertion_shape?(item) }
-      return nil unless data["observations"].all? { |item| item.is_a?(String) }
-      return nil if JSON.generate(data).bytesize > MAX_TOOL_BYTES
-
       data["assertions"] = data["assertions"].map { |item| normalize_assertion(item.deep_stringify_keys) }
       data
-    end
-
-    def clarification_target_ok?(data)
-      return false unless data.key?("clarification_target")
-
-      target = data["clarification_target"]
-      return false unless target.nil? || CLARIFICATION_TARGETS.include?(target)
-      return false if data["move"] == "unclear" && target.nil?
-      return false if data["move"] != "unclear" && !target.nil?
-
-      true
-    end
-
-    def assertion_shape?(item)
-      return false unless item.is_a?(Hash)
-
-      keys = item.keys.map(&:to_s)
-      return false if (keys - ASSERTION_KEYS).any?
-      return false unless item["span"].is_a?(String) || item[:span].is_a?(String)
-      return false unless ACTS.include?(item["act"] || item[:act])
-
-      true
     end
 
     def normalize_assertion(item)
@@ -201,8 +233,7 @@ module Rag
     end
 
     def over_length?(data)
-      data["assertions"].any? { |item| item["span"].length > ActiveEpisode::MAX_VALUE_CHARS } ||
-        data["observations"].any? { |item| item.length > ActiveEpisode::MAX_OBSERVATION_CHARS }
+      self.class.over_length?(data)
     end
 
     def literal_assertions(assertions)
@@ -246,14 +277,11 @@ module Rag
     end
 
     def literal_span?(span)
-      candidate = normalize_span(span).sub(/\A\p{P}+/u, "").sub(/\p{P}+\z/u, "")
-      return false if candidate.empty?
-
-      normalize_span(@turn).include?(candidate)
+      self.class.literal_fragment?(span, @turn)
     end
 
     def normalize_span(value)
-      value.to_s.unicode_normalize(:nfc).downcase.gsub(/[[:space:]]+/, " ").strip
+      self.class.normalize_span_text(value)
     end
 
     def short_token?(text)

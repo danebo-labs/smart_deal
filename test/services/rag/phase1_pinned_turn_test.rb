@@ -274,6 +274,23 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
     Rag::Phase1QueueGuard.disarm!
   end
 
+  test "reinstalling the guarded enqueue does not recurse once the guard is disarmed" do
+    Rag::Phase1QueueGuard.activate!
+    Rag::Phase1QueueGuard.disarm!
+    captured = TrackBedrockQueryJob.method(:perform_later)
+    TrackBedrockQueryJob.define_singleton_method(:perform_later) { |**| nil }
+    TrackBedrockQueryJob.define_singleton_method(:perform_later, captured)
+    tracking = { model_id: "stub", user_query: "puerta", latency_ms: 1, input_tokens: 1, output_tokens: 1 }
+    queued_before = ActiveJob::Base.queue_adapter.enqueued_jobs.size
+
+    TrackBedrockQueryJob.perform_later(**tracking)
+
+    assert_equal queued_before + 1, ActiveJob::Base.queue_adapter.enqueued_jobs.size
+  ensure
+    restore_perform_later(TrackBedrockQueryJob)
+    Rag::Phase1QueueGuard.disarm!
+  end
+
   test "exports the capture when the turn completes and when it stops" do
     ENV["PHASE1_PINNED_TURN_AUTHORIZED"] = "1"
     root = Rails.root.join("tmp/phase1_pinned_turn_test")

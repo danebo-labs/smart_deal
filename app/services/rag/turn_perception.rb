@@ -36,8 +36,9 @@ module Rag
     # Words of a complete question about Danebo or about choosing its manual.
     PRODUCT_FUNCTION_TOKEN = /\A(?:como|que|es|para|danebo|un|una|el|la|los|las)\z/
     MEDIA_TOKEN = /\A(?:foto|imagen|video)\z/
-    # Offer-frame words only. Equipment words are not added here.
-    LONE_OFFER_TOKEN = /\A(?:puedo|puedes|tengo|enviarte|envio|enviar|te|si|otra|una|un|la|el|de|mi|foto|imagen|video|mando|mandarte|adjunto|esta|este|por|favor|sirve)\z/
+    # Offer-frame words, plus the subject of a photo. A symptom word stays
+    # outside this frame, so the offer does not hide a technical question.
+    LONE_OFFER_TOKEN = /\A(?:puedo|puedes|tengo|enviarte|envio|enviar|te|si|otra|una|un|la|el|de|mi|foto|imagen|video|mando|mandarte|adjunto|esta|este|por|favor|sirve|placa|mismo|equipo)\z/
 
     Identity = Data.define(:span, :act, :kind, :slot, :value, :source, :manufacturer)
     Ambiguity = Data.define(:span, :candidates)

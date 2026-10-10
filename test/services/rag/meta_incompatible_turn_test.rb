@@ -170,6 +170,7 @@ class Rag::MetaIncompatibleTurnTest < ActiveSupport::TestCase
       "Hola, ¿qué necesitas que te mande?",
       "Puedo enviarte una foto",
       "tengo una foto, te sirve?",
+      "Adjunto una foto de la placa de este mismo equipo.",
       "¿Cómo uso Danebo?",
       "Buenos días. ¿Cómo uso Danebo?",
       "¿Qué es Danebo?",
@@ -229,6 +230,7 @@ class Rag::MetaIncompatibleTurnTest < ActiveSupport::TestCase
     [
       "Perfecto, entendido",
       "Puedo enviarte una foto",
+      "Adjunto una foto de la placa de este mismo equipo.",
       "¿Qué necesitas que te mande?",
       "¿Cómo uso Danebo?"
     ].each do |turn|

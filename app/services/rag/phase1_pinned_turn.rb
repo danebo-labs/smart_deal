@@ -107,7 +107,10 @@ module Rag
     module InlineTracking
       def perform_later(*args, **kwargs, &block)
         unless Rag::Phase1QueueGuard.active?
-          return super
+          # Call the enqueue captured before this module was prepended.
+          # super would find a Method that a test reinstalled on the job class,
+          # and that Method is this one: the call recurses until the stack dies.
+          return phase1_enqueue_tracking(*args, **kwargs, &block)
         end
 
         if Thread.current[:phase1_tracking_inline]
@@ -131,8 +134,12 @@ module Rag
       def install!
         return if @installed
 
+        singleton = TrackBedrockQueryJob.singleton_class
+        unless singleton.method_defined?(:phase1_enqueue_tracking)
+          singleton.alias_method(:phase1_enqueue_tracking, :perform_later)
+        end
         ApplicationJob.singleton_class.prepend(Refusal)
-        TrackBedrockQueryJob.singleton_class.prepend(InlineTracking)
+        singleton.prepend(InlineTracking)
         @installed = true
       end
 

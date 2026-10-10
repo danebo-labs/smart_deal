@@ -23,7 +23,14 @@ module Rag
       @live
     end
 
-    def post(endpoint:, headers:, body:, open_timeout:, read_timeout:)
+    def post(endpoint:, headers:, body:, open_timeout:, read_timeout:, authorization: nil)
+      if @live && !granted?(authorization)
+        return Result.new(
+          http_status: nil, payload: nil, error_code: "execution_not_approved",
+          error_message: "execution_not_approved"
+        )
+      end
+
       uri = URI(endpoint.to_s)
       http = @http.new(uri.host, uri.port)
       http.use_ssl = uri.scheme == "https"
@@ -46,6 +53,10 @@ module Rag
     end
 
     private
+
+    def granted?(authorization)
+      authorization.is_a?(Hash) && authorization["granted"] == true && authorization["run_id"].present?
+    end
 
     def parse_response(response)
       status = response.code.to_i

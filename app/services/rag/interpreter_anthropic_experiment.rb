@@ -18,6 +18,17 @@ module Rag
     # Frozen after the matrix below. A later edit of the matrix does not
     # rewrite this hash and does not raise the caps.
     APPROVED_MATRIX_SHA256 = "1d1c17b57e819d3040d7d011c44b4f5d20c370086dff7a8428e909259d208954"
+    # One initial probe: phase 1, two models, two prompts. Not opened.
+    # The full matrix with both prompts would be 100 calls. That quota is
+    # not this cap and is not authorized.
+    PROBE_ATTEMPT_CAP = 4
+    DEFERRED_BOTH_PROMPTS_CALLS = 100
+    PROBE_PAIRS = [
+      [ InterpreterAnthropicAdapter::HAIKU_45, InterpreterPromptCatalog::ORIGINAL ],
+      [ InterpreterAnthropicAdapter::HAIKU_55, InterpreterPromptCatalog::ORIGINAL ],
+      [ InterpreterAnthropicAdapter::HAIKU_45, InterpreterPromptCatalog::OPUS ],
+      [ InterpreterAnthropicAdapter::HAIKU_55, InterpreterPromptCatalog::OPUS ]
+    ].freeze
 
     class Error < StandardError
       attr_reader :code
@@ -25,6 +36,23 @@ module Rag
       def initialize(code, message = nil)
         @code = code
         super(message || code)
+      end
+    end
+
+    class Interrupted < Error
+      attr_reader :stage, :original
+      attr_accessor :emergency_write_failed
+
+      def initialize(stage, original)
+        @stage = stage.to_s
+        @original = original
+        super("evidence_incomplete")
+      end
+
+      def message
+        text = "evidence_incomplete:#{stage}:#{original.class}"
+        text += ";emergency_write_failed" if emergency_write_failed
+        text
       end
     end
 
@@ -45,8 +73,10 @@ module Rag
       class Ledger
         attr_reader :attempts, :spent, :close_reason
 
-        def initialize(state = nil)
+        def initialize(state = nil, attempt_cap: ATTEMPT_CAP, money_cap: MONEY_CAP)
           state ||= {}
+          @attempt_cap = attempt_cap
+          @money_cap = money_cap
           @attempts = state["attempts"].to_i
           @spent = decimal(state["spent_usd"] || "0")
           @closed = state["closed"] == true
@@ -60,10 +90,10 @@ module Rag
 
         def reserve!(model_id)
           return "execution_closed" if @closed
-          return "attempt_cap" if @attempts >= ATTEMPT_CAP
+          return "attempt_cap" if @attempts >= @attempt_cap
 
           reservation = Budget.reservation_usd(model_id)
-          return "money_cap" if @spent + reservation > MONEY_CAP
+          return "money_cap" if @spent + reservation > @money_cap
 
           @attempts += 1
           @last_reservation = reservation
@@ -73,6 +103,19 @@ module Rag
         def close!(reason)
           @closed = true
           @close_reason ||= reason
+          nil
+        end
+
+        def close_for_evidence!(reason)
+          @closed = true
+          @close_reason = reason
+          nil
+        end
+
+        def add_known_cost!(amount)
+          return if amount.nil?
+
+          @spent += decimal(amount)
           nil
         end
 
@@ -166,11 +209,36 @@ module Rag
         "endpoint" => InterpreterAnthropicAdapter::ENDPOINT,
         "retries" => InterpreterAnthropicTransport::RETRIES,
         "haiku_55" => InterpreterAnthropicAdapter::HAIKU_55,
+        "haiku_45" => InterpreterAnthropicAdapter::HAIKU_45,
+        "run_id" => nil,
+        "scope" => "matrix"
+      }.freeze
+    end
+
+    def self.probe_money_cap
+      pairs = PROBE_PAIRS.map(&:first)
+      pairs.sum { |model_id| Budget.reservation_usd(model_id) }
+    end
+
+    def self.probe_approval
+      @probe_approval ||= {
+        "enabled" => false,
+        "scope" => "phase1_prompt_probe",
+        "provider" => "anthropic",
+        "run_id" => nil,
+        "attempt_cap" => PROBE_ATTEMPT_CAP,
+        "money_cap_usd" => format("%.6f", probe_money_cap),
+        "models" => MODELS,
+        "cases" => [ "phase1" ],
+        "prompts" => InterpreterPromptCatalog.catalog,
+        "endpoint" => InterpreterAnthropicAdapter::ENDPOINT,
+        "retries" => InterpreterAnthropicTransport::RETRIES,
+        "haiku_55" => InterpreterAnthropicAdapter::HAIKU_55,
         "haiku_45" => InterpreterAnthropicAdapter::HAIKU_45
       }.freeze
     end
 
-    def self.approval_refusal(record = approval, matrix_sha: matrix_sha256)
+    def self.approval_refusal(record = approval, matrix_sha: matrix_sha256, run_id: record["run_id"])
       return "execution_not_approved" unless record.is_a?(Hash) && record["enabled"] == true
       return "provider_unapproved" unless record["provider"] == "anthropic"
       return "models_unapproved" unless record["models"] == MODELS
@@ -179,6 +247,24 @@ module Rag
       return "attempt_cap_unapproved" unless record["attempt_cap"] == Budget::ATTEMPT_CAP
       return "money_cap_unapproved" unless record["money_cap_usd"] == format("%.6f", Budget::MONEY_CAP)
       return "matrix_unapproved" unless record["matrix_sha256"] == matrix_sha && matrix_sha == APPROVED_MATRIX_SHA256
+      return "scope_unapproved" unless record["scope"] == "matrix"
+      return "run_id_unapproved" if record["run_id"].blank? || record["run_id"] != run_id
+
+      nil
+    end
+
+    def self.probe_refusal(record = probe_approval, run_id: record["run_id"])
+      return "execution_not_approved" unless record.is_a?(Hash) && record["enabled"] == true
+      return "scope_unapproved" unless record["scope"] == "phase1_prompt_probe"
+      return "provider_unapproved" unless record["provider"] == "anthropic"
+      return "models_unapproved" unless record["models"] == MODELS
+      return "endpoint_unapproved" unless record["endpoint"] == InterpreterAnthropicAdapter::ENDPOINT
+      return "retries_unapproved" unless record["retries"] == 0
+      return "attempt_cap_unapproved" unless record["attempt_cap"] == PROBE_ATTEMPT_CAP
+      return "money_cap_unapproved" unless record["money_cap_usd"] == format("%.6f", probe_money_cap)
+      return "cases_unapproved" unless record["cases"] == [ "phase1" ]
+      return "prompts_unapproved" unless record["prompts"] == InterpreterPromptCatalog.catalog
+      return "run_id_unapproved" if record["run_id"].blank? || record["run_id"] != run_id
 
       nil
     end
@@ -200,19 +286,28 @@ module Rag
       new(evidence_root: evidence_root, run_id: run_id, lane: "prepared").prepare
     end
 
+    def self.prepare_probe(evidence_root:, run_id:)
+      raise Error, "evidence_root_missing" if evidence_root.to_s.empty?
+
+      new(evidence_root: evidence_root, run_id: run_id.presence || "phase1-probe", lane: "prepared").prepare_probe
+    end
+
     def self.rehearse(evidence_root:, run_id:, scenario_id:, model_id:, native:, latency_ms: nil)
       new(evidence_root: evidence_root, run_id: run_id, lane: "stubs").rehearse(
         scenario_id: scenario_id, model_id: model_id, native: native, latency_ms: latency_ms
       )
     end
 
-    def self.execute(evidence_root:, run_id:, approval: self.approval, transport: nil, credential_source: nil, only: nil, budget_state: nil)
+    def self.execute(evidence_root:, run_id:, approval: nil, transport: nil, credential_source: nil, only: nil, budget_state: nil, ledger_root: nil, scope: "matrix")
+      approval ||= scope == "probe" ? probe_approval : self.approval
       new(evidence_root: evidence_root, run_id: run_id, lane: "runs").execute(
         approval: approval,
         transport: transport,
         credential_source: credential_source,
         only: only,
-        budget_state: budget_state
+        budget_state: budget_state,
+        ledger_root: ledger_root,
+        scope: scope
       )
     end
 
@@ -228,7 +323,7 @@ module Rag
       end
       return blocked_command("authorization_absent") unless authorized
 
-      refusal = approval_refusal(approval)
+      refusal = approval_refusal(approval, run_id: run_id)
       return blocked_command(refusal) if refusal
 
       summary = execute(evidence_root: evidence_root, run_id: run_id.presence || "run", approval: approval)
@@ -281,6 +376,53 @@ module Rag
       { "lane" => @lane, "run_id" => @run_id, "cases" => self.class.matrix.size * MODELS.size, "calls" => 0 }
     end
 
+    def prepare_probe
+      raise Error, "lane" unless @lane == "prepared"
+      raise Error, "evidence_root_missing" if @run_id.empty? || evidence_root_blank?
+      raise Error, "run_exists" if run_dir.exist?
+
+      @scope = "probe"
+      root = run_dir
+      FileUtils.mkdir_p(root)
+      row = self.class.matrix.find { |item| item["id"] == "phase1" }
+      combinations = self.class::PROBE_PAIRS.map { |model_id, version|
+        built = build(row, model_id, prompt_version: version)
+        write_files(
+          root.join(row["id"], model_id, version),
+          "case.json" => case_payload(row, model_id, built).merge(
+            "probe" => "phase1_prompt", "block_reason" => "probe_not_authorized", "calls" => 0
+          ),
+          "prepared_request.json" => built[:params],
+          "client_input.json" => built[:translated]
+        )
+        {
+          "case_id" => row["id"],
+          "model_id" => model_id,
+          "prompt_version" => version,
+          "prompt_sha256" => built[:prompt_sha256],
+          "max_tokens" => built[:translated].dig("body", "max_tokens"),
+          "temperature" => built[:translated].dig("body", "temperature"),
+          "tool_schema_sha256" => Digest::SHA256.hexdigest(JSON.generate(built[:translated].dig("body", "tools"))),
+          "message_sha256" => Digest::SHA256.hexdigest(built.dig(:translated, "body", "messages", 0, "content", 0, "text").to_s)
+        }
+      }
+      plan = {
+        "authorized" => false,
+        "executed" => false,
+        "calls" => 0,
+        "attempt_cap" => PROBE_ATTEMPT_CAP,
+        "money_cap_usd" => format("%.6f", self.class.probe_money_cap),
+        "estimate_kind" => "reservation_sum_not_provider_limit",
+        "deferred_matrix_calls" => DEFERRED_BOTH_PROMPTS_CALLS,
+        "combinations" => combinations,
+        "opus_delta" => InterpreterPromptCatalog::OPUS_DELTA,
+        "provider_call" => false,
+        "credential_read" => false
+      }
+      File.write(root.join("probe_plan.json"), JSON.pretty_generate(export_value(plan)))
+      plan
+    end
+
     def rehearse(scenario_id:, model_id:, native:, latency_ms: nil)
       raise Error, "lane" unless @lane == "stubs"
 
@@ -298,41 +440,48 @@ module Rag
       { "lane" => @lane, "provider_call" => false }
     end
 
-    def execute(approval:, transport:, credential_source:, only:, budget_state:)
+    def execute(approval:, transport:, credential_source:, only:, budget_state:, ledger_root: nil, scope: "matrix")
       raise Error, "lane" unless @lane == "runs"
 
-      refusal = self.class.approval_refusal(approval)
+      @scope = scope.to_s
+      @active_approval = approval
+      @ledger_root = ledger_root
+      @claimed = false
+      refusal = entry_refusal
       raise Error, refusal if refusal
       raise Error, "evidence_root_missing" if @run_id.empty? || evidence_root_blank?
       raise Error, "run_exists" if run_dir.exist?
 
+      claim_run!(approval)
       source = credential_source || self.class.method(:env_credential)
       key = source.call.to_s
-      raise Error, "credential_absent" if key.empty?
+      raise_after_claim("credential_absent") if key.empty?
 
       client = transport || InterpreterAnthropicTransport.live
-      budget = Budget::Ledger.new(budget_state)
+      budget = Budget::Ledger.new(budget_state, attempt_cap: attempt_cap_for_scope, money_cap: money_cap_for_scope)
       calls = 0
+      failure = nil
+      events = []
       root = run_dir
       FileUtils.mkdir_p(root)
-      events = ValidationCapture.capture do
-        ValidationCapture.bind(run_id: @run_id)
-        record_configuration(approval)
-        selected_rows(only).each do |row|
-          break if budget.closed?
-
-          MODELS.each do |model_id|
-            break if budget.closed?
-
-            calls += run_authorized_case(row, model_id, client, key, budget)
+      begin
+        ValidationCapture.capture do |bucket|
+          events = bucket
+          ValidationCapture.bind(run_id: @run_id)
+          record_configuration(approval)
+          each_target(only, budget) do |row, model_id, prompt_version|
+            calls += run_authorized_case(row, model_id, client, key, budget, prompt_version: prompt_version)
           end
         end
-        write_state(root, budget, client)
+      rescue Interrupted => error
+        failure = error
+        budget.close!(error.stage)
       end
-      write_capture(root, events)
+      finish_evidence(root, events, budget, client, failure)
       {
         "lane" => @lane,
         "run_id" => @run_id,
+        "scope" => @scope,
         "status" => execution_status(budget, calls),
         "calls" => calls,
         "attempts" => budget.attempts,
@@ -342,6 +491,8 @@ module Rag
         "evidence_complete" => true,
         "credential_read" => true
       }
+    ensure
+      close_claim!(@quota_close_reason || failure&.stage || "failed")
     end
 
     private
@@ -361,17 +512,178 @@ module Rag
       rows
     end
 
-    def run_authorized_case(row, model_id, client, api_key, budget)
-      built = build(row, model_id)
+    def each_target(only, budget)
+      targets(only).each do |row, model_id, prompt_version|
+        break if budget.closed?
+
+        yield row, model_id, prompt_version
+      end
+    end
+
+    def targets(only)
+      if @scope == "probe"
+        row = self.class.matrix.find { |item| item["id"] == "phase1" }
+        return self.class::PROBE_PAIRS.map { |model_id, version| [ row, model_id, version ] }
+      end
+
+      selected_rows(only).flat_map { |row| MODELS.map { |model_id| [ row, model_id, "original" ] } }
+    end
+
+    def entry_refusal
+      if @scope == "probe"
+        self.class.probe_refusal(@active_approval, run_id: @run_id)
+      else
+        self.class.approval_refusal(@active_approval, run_id: @run_id)
+      end
+    end
+
+    def attempt_cap_for_scope
+      @scope == "probe" ? PROBE_ATTEMPT_CAP : Budget::ATTEMPT_CAP
+    end
+
+    def money_cap_for_scope
+      @scope == "probe" ? self.class.probe_money_cap : Budget::MONEY_CAP
+    end
+
+    def raise_after_claim(code)
+      @quota_close_reason = code
+      raise Error, code
+    end
+
+    def claim_run!(approval)
+      path = ledger_file
+      FileUtils.mkdir_p(path.dirname)
+      body = JSON.generate(
+        "run_id" => @run_id,
+        "scope" => @scope,
+        "status" => "consumed",
+        "attempt_cap" => approval["attempt_cap"],
+        "money_cap_usd" => approval["money_cap_usd"],
+        "matrix_sha256" => approval["matrix_sha256"],
+        "prompts" => approval["prompts"]
+      )
+      File.open(path, File::WRONLY | File::CREAT | File::EXCL, 0o600) { |file| file.write(body) }
+      @claimed = true
+    rescue Errno::EEXIST
+      raise Error, "authorization_consumed"
+    end
+
+    def close_claim!(reason)
+      return unless @claimed
+
+      path = ledger_file
+      payload = JSON.parse(path.read)
+      payload["status"] = "closed"
+      payload["close_reason"] = @quota_close_reason || reason
+      File.write(path, JSON.generate(payload))
+    rescue StandardError
+      nil
+    end
+
+    def ledger_file
+      root = @ledger_root.nil? ? self.class.default_ledger_root : Pathname(@ledger_root.to_s)
+      digest = Digest::SHA256.hexdigest("#{@scope}:#{@run_id}")
+      root.join("#{digest}.json")
+    end
+
+    def self.default_ledger_root
+      Rails.root.join("tmp/interpreter_anthropic_quota")
+    end
+
+    def live_grant
+      return nil if entry_refusal
+      return nil unless @claimed
+
+      { "granted" => true, "run_id" => @run_id }
+    end
+
+    def remember_known_cost!(budget, model_id, result)
+      usage = result&.payload.is_a?(Hash) ? result.payload["usage"] : nil
+      priced = InterpreterAnthropicAdapter.price(model_id, usage)
+      return unless priced["cost_status"] == "priced" && priced["cost_usd"]
+
+      budget.add_known_cost!(priced["cost_usd"])
+    end
+
+    def interrupt!(stage, error, budget)
+      budget.close_for_evidence!(stage)
+      ValidationCapture.record(
+        "experiment_evidence",
+        "result" => "incomplete",
+        "stage" => stage,
+        "error_class" => error.class.name,
+        "reason" => InterpreterAnthropicAdapter.scrub_text(error.message.to_s).truncate(180),
+        "provider_call" => false,
+        "lane" => @lane
+      )
+      raise Interrupted.new(stage, error)
+    end
+
+    def finish_evidence(root, events, budget, client, failure)
+      capture_error = nil
+      begin
+        write_capture(root, events)
+      rescue StandardError => error
+        capture_error = error
+      end
+      reported = failure || (capture_error && Interrupted.new("export", capture_error))
+      state_error = nil
+      begin
+        write_state(root, budget, client, failure: reported)
+      rescue StandardError => error
+        state_error = error
+      end
+      marker_error = nil
+      if reported
+        begin
+          write_incomplete_marker(root, reported, capture_error, state_error)
+        rescue StandardError => error
+          marker_error = error
+        end
+      end
+      if failure
+        failure.emergency_write_failed = marker_error.present? && (capture_error || state_error)
+        @quota_close_reason = failure.stage
+        raise failure
+      end
+      if capture_error
+        @quota_close_reason = "export"
+        raise capture_error
+      end
+      raise Error, "evidence_incomplete" if state_error
+
+      @quota_close_reason = budget.closed? ? budget.close_reason : "completed"
+      nil
+    end
+
+    def write_incomplete_marker(root, reported, capture_error, state_error)
+      FileUtils.mkdir_p(root)
+      File.write(root.join("evidence_incomplete.json"), JSON.generate(
+        "evidence_complete" => false,
+        "failure_stage" => reported.stage,
+        "error_class" => reported.original.class.name,
+        "capture_saved" => capture_error.nil?,
+        "state_saved" => state_error.nil?,
+        "emergency_write_failed" => false
+      ))
+    end
+
+    def run_authorized_case(row, model_id, client, api_key, budget, prompt_version: "original")
+      if transport_live?(client) && live_grant.nil?
+        budget.close!("execution_not_approved")
+        return 0
+      end
+
+      built = build(row, model_id, prompt_version: prompt_version)
       sent_turn = built.dig(:message, "turn").to_s
       block = budget.reserve!(model_id)
       if block
         budget.close!(block) if block == "attempt_cap"
-        write_blocked(row, model_id, block)
+        write_blocked(row, model_id, block, prompt_version: prompt_version)
         return 0
       end
 
-      ValidationCapture.with_turn(correlation(row, model_id)) do
+      ValidationCapture.with_turn(correlation(row, model_id, prompt_version)) do
         ValidationCapture.attempt = budget.attempts
         record_prepared_request(row, model_id, built, client)
         ValidationCapture.record(
@@ -382,6 +694,8 @@ module Rag
           "provider" => "anthropic",
           "model_id" => model_id,
           "case_id" => row["id"],
+          "prompt_version" => prompt_version,
+          "prompt_sha256" => built[:prompt_sha256],
           "provider_call" => transport_live?(client),
           "transport" => transport_name(client),
           "lane" => "runs",
@@ -390,20 +704,29 @@ module Rag
         started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         result = post_once(client, built, api_key)
         latency_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
-        outcome = interpret_transport(result)
+        begin
+          outcome = interpret_transport(result)
+        rescue StandardError => error
+          remember_known_cost!(budget, model_id, result)
+          interrupt!("normalize", error, budget)
+        end
         budget.reconcile!(model_id, provider_result: outcome[:provider_result], usage: outcome[:usage])
         judgment = judgment_for(row, outcome, sent_turn)
         record_terminal(outcome, judgment, client)
-        write_files(
-          case_dir(row, model_id),
-          call_files(row, model_id, built, outcome, judgment, latency_ms, client)
-        )
+        begin
+          write_files(
+            case_dir(row, model_id, prompt_version),
+            call_files(row, model_id, built, outcome, judgment, latency_ms, client)
+          )
+        rescue StandardError => error
+          interrupt!("write_files", error, budget)
+        end
       end
       1
     end
 
     def post_once(client, built, api_key)
-      client.post(
+      kwargs = {
         endpoint: InterpreterAnthropicAdapter::ENDPOINT,
         headers: {
           "content-type" => "application/json",
@@ -413,7 +736,9 @@ module Rag
         body: built[:translated]["body"],
         open_timeout: InterpreterAnthropicTransport::OPEN_TIMEOUT_SECONDS,
         read_timeout: InterpreterAnthropicTransport::READ_TIMEOUT_SECONDS
-      )
+      }
+      kwargs[:authorization] = live_grant if client.is_a?(InterpreterAnthropicTransport) && client.live?
+      client.post(**kwargs)
     rescue StandardError => error
       InterpreterAnthropicTransport::Result.new(
         http_status: nil,
@@ -438,10 +763,10 @@ module Rag
       @evidence_root.join(@lane, @run_id)
     end
 
-    def write_blocked(row, model_id, reason)
-      built = build(row, model_id)
-      dir = case_dir(row, model_id)
-      ValidationCapture.with_turn(correlation(row, model_id)) do
+    def write_blocked(row, model_id, reason, prompt_version: "original")
+      built = build(row, model_id, prompt_version: prompt_version)
+      dir = case_dir(row, model_id, prompt_version)
+      ValidationCapture.with_turn(correlation(row, model_id, prompt_version)) do
         ValidationCapture.record(
           "interpreter_request",
           "stage" => "converse",
@@ -622,21 +947,28 @@ module Rag
       InterpreterAnthropicAdapter::Error.new(result&.error_code || "transport_error", result&.error_message)
     end
 
-    def build(row, model_id)
-      params = converse_params(row)
+    def build(row, model_id, prompt_version: "original")
+      params = converse_params(row, prompt_version)
       translated = InterpreterAnthropicAdapter.translate(params, model_id: model_id)
       prompt = translated.dig("body", "system", 0, "text")
-      raise Error, "prompt_drift" unless prompt == TurnInterpreter::PROMPT
+      expected = InterpreterPromptCatalog.text(prompt_version)
+      raise Error, "prompt_drift" unless prompt == expected
       raise Error, "max_tokens" unless translated.dig("body", "max_tokens") == TurnInterpreter::MAX_TOKENS
       unless InterpreterAnthropicAdapter::ACCEPTED_MODELS.include?(translated.dig("body", "model"))
         raise Error, "model_rejected"
       end
 
-      { params: params, translated: translated, message: message_payload(translated) }
+      {
+        params: params,
+        translated: translated,
+        message: message_payload(translated),
+        prompt_version: prompt_version,
+        prompt_sha256: InterpreterPromptCatalog.sha256(prompt_version)
+      }
     end
 
-    def converse_params(row)
-      TurnInterpreter.new(
+    def converse_params(row, prompt_version = "original")
+      params = TurnInterpreter.new(
         turn: row["text"],
         episode: episode_for(row["context"]),
         viewer_account: nil,
@@ -645,6 +977,8 @@ module Rag
         client: :closed,
         catalog: :closed
       ).send(:converse_params)
+      params[:system] = [ { text: InterpreterPromptCatalog.text(prompt_version) } ]
+      params
     end
 
     def episode_for(context)
@@ -742,6 +1076,9 @@ module Rag
         "provider" => "anthropic",
         "endpoint" => InterpreterAnthropicAdapter::ENDPOINT,
         "model_id" => model_id,
+        "run_id" => @run_id,
+        "prompt_version" => built[:prompt_version],
+        "prompt_sha256" => built[:prompt_sha256],
         "lane" => @lane,
         "provider_call" => false,
         "live_calls_enabled" => LIVE_CALLS_ENABLED,
@@ -890,8 +1227,8 @@ module Rag
         "models" => MODELS,
         "live_calls_enabled" => LIVE_CALLS_ENABLED,
         "execution_approved" => approval.is_a?(Hash) && approval["enabled"] == true,
-        "attempt_cap" => Budget::ATTEMPT_CAP,
-        "money_cap_usd" => format("%.6f", Budget::MONEY_CAP),
+        "attempt_cap" => attempt_cap_for_scope,
+        "money_cap_usd" => format("%.6f", money_cap_for_scope),
         "matrix_sha256" => self.class.matrix_sha256,
         "approved_matrix_sha256" => APPROVED_MATRIX_SHA256,
         "input_reservation" => Budget::INPUT_RESERVATION,
@@ -901,20 +1238,27 @@ module Rag
         "read_timeout_seconds" => InterpreterAnthropicTransport::READ_TIMEOUT_SECONDS,
         "sources" => InterpreterAnthropicAdapter::SOURCES,
         "consulted_on" => InterpreterAnthropicAdapter::CONSULTED_ON,
-        "provider_call" => false
+        "provider_call" => false,
+        "prompts" => InterpreterPromptCatalog.catalog,
+        "active_scope" => @scope || "prepared"
       )
     end
 
-    def write_state(root, budget, client)
+    def write_state(root, budget, client, failure: nil)
       File.write(root.join("execution_state.json"), JSON.pretty_generate(
+        "run_id" => @run_id,
+        "scope" => @scope,
         "attempts" => budget.attempts,
         "spent_usd" => format("%.6f", budget.spent),
         "closed" => budget.closed?,
         "close_reason" => budget.close_reason,
+        "evidence_complete" => failure.nil?,
+        "failure_stage" => failure&.stage,
+        "error_class" => failure&.original&.class&.name,
         "matrix_sha256" => self.class.matrix_sha256,
         "approved_matrix_sha256" => APPROVED_MATRIX_SHA256,
-        "attempt_cap" => Budget::ATTEMPT_CAP,
-        "money_cap_usd" => format("%.6f", Budget::MONEY_CAP),
+        "attempt_cap" => attempt_cap_for_scope,
+        "money_cap_usd" => format("%.6f", money_cap_for_scope),
         "provider" => "anthropic",
         "provider_call" => transport_live?(client)
       ))
@@ -961,12 +1305,18 @@ module Rag
       end
     end
 
-    def case_dir(row, model_id)
-      run_dir.join(row["id"], model_id)
+    def case_dir(row, model_id, prompt_version = "original")
+      dir = run_dir.join(row["id"], model_id)
+      return dir unless @scope == "probe"
+
+      dir.join(prompt_version)
     end
 
-    def correlation(row, model_id)
-      "interpreter-experiment:#{row["id"]}:#{model_id}"
+    def correlation(row, model_id, prompt_version = "original")
+      base = "interpreter-experiment:#{row["id"]}:#{model_id}"
+      return base if prompt_version == "original" && @scope != "probe"
+
+      "#{base}:#{prompt_version}"
     end
 
     def execution_status(budget, calls)

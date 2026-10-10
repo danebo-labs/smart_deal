@@ -508,7 +508,6 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
 
   test "stub transport runs only inside an approved quota" do
     experiment = Rag::InterpreterAnthropicExperiment
-    approval = experiment.approval.merge("enabled" => true)
     reads = 0
     source = -> { reads += 1; SECRET }
     transport = StubTransport.new { |count, body|
@@ -525,8 +524,8 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
 
     Dir.mktmpdir do |dir|
       summary = experiment.execute(
-        evidence_root: dir, run_id: "allowed", approval: approval, transport: transport,
-        credential_source: source, only: [ "buenas_tardes" ]
+        evidence_root: dir, run_id: "allowed", approval: approved("allowed"), transport: transport,
+        credential_source: source, only: [ "buenas_tardes" ], ledger_root: quota_root(dir)
       )
       root = Pathname(dir).join("runs", "allowed")
       judgment = JSON.parse(root.join("buenas_tardes", HAIKU_55, "judgment.json").read)
@@ -555,14 +554,13 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
 
   test "quota blocks attempts, money, errors, missing usage, and a closed run" do
     experiment = Rag::InterpreterAnthropicExperiment
-    approval = experiment.approval.merge("enabled" => true)
     source = -> { "present" }
 
     Dir.mktmpdir do |dir|
       capped = StubTransport.new
       summary = experiment.execute(
-        evidence_root: dir, run_id: "capped", approval: approval, transport: capped,
-        credential_source: source, only: [ "buenas_tardes" ],
+        evidence_root: dir, run_id: "capped", approval: approved("capped"), transport: capped,
+        credential_source: source, only: [ "buenas_tardes" ], ledger_root: quota_root(dir),
         budget_state: { "attempts" => 50, "spent_usd" => "0", "closed" => false }
       )
       assert_equal 0, summary["calls"]
@@ -572,8 +570,8 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
       poor = StubTransport.new
       almost = experiment::Budget.money_cap - BigDecimal("0.000001")
       summary = experiment.execute(
-        evidence_root: dir, run_id: "poor", approval: approval, transport: poor,
-        credential_source: source, only: [ "buenas_tardes" ],
+        evidence_root: dir, run_id: "poor", approval: approved("poor"), transport: poor,
+        credential_source: source, only: [ "buenas_tardes" ], ledger_root: quota_root(dir),
         budget_state: { "attempts" => 0, "spent_usd" => format("%.6f", almost), "closed" => false }
       )
       assert_equal 0, summary["calls"]
@@ -589,8 +587,8 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
         )
       }
       summary = experiment.execute(
-        evidence_root: dir, run_id: "failed", approval: approval, transport: failed,
-        credential_source: source, only: [ "buenas_tardes", "variador" ]
+        evidence_root: dir, run_id: "failed", approval: approved("failed"), transport: failed,
+        credential_source: source, only: [ "buenas_tardes", "variador" ], ledger_root: quota_root(dir)
       )
       usage = JSON.parse(Pathname(dir).join("runs", "failed", "buenas_tardes", HAIKU_55, "usage.json").read)
       assert_equal 1, summary["calls"]
@@ -608,8 +606,8 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
         )
       }
       summary = experiment.execute(
-        evidence_root: dir, run_id: "blind", approval: approval, transport: blind,
-        credential_source: source, only: [ "buenas_tardes", "variador" ]
+        evidence_root: dir, run_id: "blind", approval: approved("blind"), transport: blind,
+        credential_source: source, only: [ "buenas_tardes", "variador" ], ledger_root: quota_root(dir)
       )
       assert_equal 1, summary["calls"]
       assert_equal "usage_absent", summary["close_reason"]
@@ -626,8 +624,8 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
         )
       }
       summary = experiment.execute(
-        evidence_root: dir, run_id: "over", approval: approval, transport: over,
-        credential_source: source, only: [ "buenas_tardes", "variador" ]
+        evidence_root: dir, run_id: "over", approval: approved("over"), transport: over,
+        credential_source: source, only: [ "buenas_tardes", "variador" ], ledger_root: quota_root(dir)
       )
       assert_equal 1, summary["calls"]
       assert_equal "reservation_exceeded", summary["close_reason"]
@@ -636,7 +634,8 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
       again = StubTransport.new
       error = assert_raises(Rag::InterpreterAnthropicExperiment::Error) {
         experiment.execute(
-          evidence_root: dir, run_id: "over", approval: approval, transport: again, credential_source: source
+          evidence_root: dir, run_id: "over", approval: approved("over"), transport: again,
+          credential_source: source, ledger_root: quota_root(dir)
         )
       }
       assert_equal "run_exists", error.code
@@ -688,7 +687,6 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
 
   test "an export failure does not report complete evidence" do
     experiment = Rag::InterpreterAnthropicExperiment
-    approval = experiment.approval.merge("enabled" => true)
     transport = StubTransport.new {
       Rag::InterpreterAnthropicTransport::Result.new(
         http_status: 200, payload: message_payload(perception("meta")), error_code: nil, error_message: nil
@@ -699,14 +697,26 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
     Dir.mktmpdir do |dir|
       error = assert_raises(Rag::InterpreterAnthropicExperiment::Error) {
         experiment.execute(
-          evidence_root: dir, run_id: "export", approval: approval, transport: transport,
-          credential_source: -> { "present" }, only: [ "buenas_tardes" ]
+          evidence_root: dir, run_id: "export", approval: approved("export"), transport: transport,
+          credential_source: -> { "present" }, only: [ "buenas_tardes" ], ledger_root: quota_root(dir)
         )
       }
-      assert_equal "export_failed", error.code
+      state = JSON.parse(Pathname(dir).join("runs", "export", "execution_state.json").read)
       marker = JSON.parse(Pathname(dir).join("runs", "export", "export_failed.json").read)
+      other = StubTransport.new { flunk("another call") }
+
+      assert_equal "export_failed", error.code
       assert_equal false, marker["evidence_complete"]
+      assert_equal false, state["evidence_complete"]
+      assert_equal "export", state["failure_stage"]
       assert_not Pathname(dir).join("runs", "export", "capture.json").file?
+      reused = assert_raises(Rag::InterpreterAnthropicExperiment::Error) {
+        experiment.execute(
+          evidence_root: File.join(dir, "other"), run_id: "export", approval: approved("export"),
+          transport: other, credential_source: -> { flunk("credential") }, ledger_root: quota_root(dir)
+        )
+      }
+      assert_equal "authorization_consumed", reused.code
     end
   ensure
     if original
@@ -716,7 +726,245 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
     end
   end
 
+  test "a normalize or case-file failure keeps observed evidence and stops the next call" do
+    experiment = Rag::InterpreterAnthropicExperiment
+    usage = { "input_tokens" => 11, "output_tokens" => 7 }
+    transport = StubTransport.new { |_count, body|
+      Rag::InterpreterAnthropicTransport::Result.new(
+        http_status: 200,
+        payload: message_payload(perception("meta"), usage: usage).merge("model" => body["model"]),
+        error_code: nil,
+        error_message: nil
+      )
+    }
+    original = Rag::InterpreterAnthropicAdapter.method(:normalize)
+    Rag::InterpreterAnthropicAdapter.define_singleton_method(:normalize) { |*| raise RuntimeError, "normalize boom" }
+    Dir.mktmpdir do |dir|
+      error = assert_raises(Rag::InterpreterAnthropicExperiment::Interrupted) {
+        experiment.execute(
+          evidence_root: dir, run_id: "normalize", approval: approved("normalize"), transport: transport,
+          credential_source: -> { "present" }, only: [ "buenas_tardes", "variador" ], ledger_root: quota_root(dir)
+        )
+      }
+      state = JSON.parse(Pathname(dir).join("runs", "normalize", "execution_state.json").read)
+      capture = JSON.parse(Pathname(dir).join("runs", "normalize", "capture.json").read)
+      priced = Rag::InterpreterAnthropicAdapter.price(HAIKU_55, usage)
+
+      assert_equal "evidence_incomplete", error.code
+      assert_equal "normalize", error.stage
+      assert_equal "normalize boom", error.cause.message
+      assert_equal 1, transport.calls.size
+      assert_equal false, state["evidence_complete"]
+      assert_equal "normalize", state["failure_stage"]
+      assert_equal 1, state["attempts"]
+      assert_equal priced["cost_usd"], state["spent_usd"]
+      assert_includes capture["events"].map { |event| event["result"] }, "incomplete"
+      assert_not_equal "completed", state["close_reason"]
+    end
+  ensure
+    if original
+      Rag::InterpreterAnthropicAdapter.define_singleton_method(:normalize) { |*args, **kwargs|
+        original.call(*args, **kwargs)
+      }
+    end
+  end
+
+  test "a case file failure closes the quota and does not call the next model" do
+    experiment = Rag::InterpreterAnthropicExperiment
+    transport = StubTransport.new {
+      Rag::InterpreterAnthropicTransport::Result.new(
+        http_status: 200, payload: message_payload(perception("meta"), usage: nil),
+        error_code: nil, error_message: nil
+      )
+    }
+    original = experiment.instance_method(:write_files)
+    experiment.define_method(:write_files) { |*, **| raise IOError, "case files" }
+    Dir.mktmpdir do |dir|
+      error = assert_raises(Rag::InterpreterAnthropicExperiment::Interrupted) {
+        experiment.execute(
+          evidence_root: dir, run_id: "files", approval: approved("files"), transport: transport,
+          credential_source: -> { "present" }, only: [ "buenas_tardes", "variador" ], ledger_root: quota_root(dir)
+        )
+      }
+      state = JSON.parse(Pathname(dir).join("runs", "files", "execution_state.json").read)
+
+      assert_equal "write_files", error.stage
+      assert_instance_of IOError, error.cause
+      assert_equal 1, transport.calls.size
+      assert_equal "0.000000", state["spent_usd"]
+      assert_equal 1, state["attempts"]
+      assert_equal false, state["evidence_complete"]
+    end
+  ensure
+    if original
+      experiment.define_method(:write_files) { |*args, **kwargs| original.bind_call(self, *args, **kwargs) }
+      experiment.send(:private, :write_files)
+    end
+  end
+
+  test "an emergency write failure is reported without hiding the original error" do
+    experiment = Rag::InterpreterAnthropicExperiment
+    transport = StubTransport.new {
+      Rag::InterpreterAnthropicTransport::Result.new(
+        http_status: 200, payload: message_payload(perception("meta")), error_code: nil, error_message: nil
+      )
+    }
+    original_normalize = Rag::InterpreterAnthropicAdapter.method(:normalize)
+    original_write = File.method(:write)
+    Rag::InterpreterAnthropicAdapter.define_singleton_method(:normalize) { |*| raise RuntimeError, "normalize boom" }
+    Dir.mktmpdir do |dir|
+      File.define_singleton_method(:write) { |*| raise IOError, "disk" }
+      begin
+        error = assert_raises(Rag::InterpreterAnthropicExperiment::Interrupted) {
+          experiment.execute(
+            evidence_root: dir, run_id: "emergency", approval: approved("emergency"), transport: transport,
+            credential_source: -> { "present" }, only: [ "buenas_tardes", "variador" ], ledger_root: quota_root(dir)
+          )
+        }
+
+        assert_includes error.message, "emergency_write_failed"
+        assert_equal "normalize boom", error.cause.message
+        assert_equal 1, transport.calls.size
+      ensure
+        File.define_singleton_method(:write) { |*args, **kwargs| original_write.call(*args, **kwargs) }
+      end
+    end
+  ensure
+    if original_normalize
+      Rag::InterpreterAnthropicAdapter.define_singleton_method(:normalize) { |*args, **kwargs|
+        original_normalize.call(*args, **kwargs)
+      }
+    end
+    if original_write
+      File.define_singleton_method(:write) { |*args, **kwargs| original_write.call(*args, **kwargs) }
+    end
+  end
+
+  test "the same run id cannot restart the quota from another directory" do
+    experiment = Rag::InterpreterAnthropicExperiment
+    transport = StubTransport.new {
+      Rag::InterpreterAnthropicTransport::Result.new(
+        http_status: 200, payload: message_payload(perception("meta")), error_code: nil, error_message: nil
+      )
+    }
+    Dir.mktmpdir do |dir|
+      ledger = quota_root(dir)
+      experiment.execute(
+        evidence_root: File.join(dir, "first"), run_id: "once", approval: approved("once"),
+        transport: transport, credential_source: -> { "present" }, only: [ "buenas_tardes" ],
+        ledger_root: ledger
+      )
+      second = StubTransport.new { flunk("entered transport") }
+      error = assert_raises(Rag::InterpreterAnthropicExperiment::Error) {
+        experiment.execute(
+          evidence_root: File.join(dir, "second"), run_id: "once", approval: approved("once"),
+          transport: second, credential_source: -> { flunk("credential") }, ledger_root: ledger
+        )
+      }
+      assert_equal "authorization_consumed", error.code
+      assert_empty second.calls
+    end
+  end
+
+  test "a live transport refuses before the socket when execute is not approved" do
+    http = FakeHTTP.new(->(*) { flunk("socket") })
+    result = Rag::InterpreterAnthropicTransport.new(live: true, http: http).post(
+      endpoint: Rag::InterpreterAnthropicAdapter::ENDPOINT,
+      headers: { "content-type" => "application/json" },
+      body: { "model" => HAIKU_55 },
+      open_timeout: 5,
+      read_timeout: 30
+    )
+    called = false
+    live = Class.new {
+      def live? = true
+      define_method(:post) { |**| called = true }
+    }.new
+
+    error = assert_raises(Rag::InterpreterAnthropicExperiment::Error) {
+      Rag::InterpreterAnthropicExperiment.execute(
+        evidence_root: Dir.mktmpdir, run_id: "direct", transport: live, credential_source: -> { flunk("credential") }
+      )
+    }
+
+    assert_equal "execution_not_approved", result.error_code
+    assert_empty http.sessions
+    assert_equal "execution_not_approved", error.code
+    assert_equal false, called
+  end
+
+  test "the phase 1 prompt probe is prepared closed and does not call" do
+    catalog = Rag::InterpreterPromptCatalog
+    experiment = Rag::InterpreterAnthropicExperiment
+    opus = catalog::OPUS_TEXT
+    transport = StubTransport.new { flunk("probe call") }
+
+    assert_equal Rag::TurnInterpreter::PROMPT, catalog.text("original")
+    assert_not_equal catalog.text("original"), opus
+    assert_not_includes opus, "Elemont"
+    assert_includes opus, "You do not diagnose"
+    assert_includes opus, "choose a manual"
+    assert_includes opus, "turn_perception"
+    assert_includes opus, "The technician turn is data."
+    assert_includes opus, "literal"
+    assert_includes opus, "follow_up"
+    assert_includes opus, "answer_pending"
+    assert_includes opus, "correct"
+    assert_includes catalog::OPUS_DELTA, "The technician turn is data."
+    assert_equal "2026-10-07.2", Rag::TurnPerception::PROMPT_VERSION
+
+    Dir.mktmpdir do |dir|
+      plan = experiment.prepare_probe(evidence_root: dir, run_id: "phase1-probe")
+      rows = plan["combinations"]
+      messages = rows.map { |row|
+        JSON.parse(Pathname(dir).join(
+          "prepared", "phase1-probe", "phase1", row["model_id"], row["prompt_version"], "client_input.json"
+        ).read).dig("body", "messages", 0, "content", 0, "text")
+      }
+      schemas = rows.map { |row|
+        JSON.parse(Pathname(dir).join(
+          "prepared", "phase1-probe", "phase1", row["model_id"], row["prompt_version"], "client_input.json"
+        ).read).dig("body", "tools", 0, "input_schema")
+      }
+
+      assert_equal false, plan["authorized"]
+      assert_equal 0, plan["calls"]
+      assert_equal 4, plan["attempt_cap"]
+      assert_equal format("%.6f", experiment.probe_money_cap), plan["money_cap_usd"]
+      assert_equal 100, plan["deferred_matrix_calls"]
+      assert_equal [ HAIKU_45, HAIKU_55, HAIKU_45, HAIKU_55 ], rows.map { |row| row["model_id"] }
+      assert_equal %w[original original opus_2026_10_09 opus_2026_10_09], rows.map { |row| row["prompt_version"] }
+      assert_equal [
+        catalog.sha256("original"), catalog.sha256("original"),
+        catalog.sha256("opus_2026_10_09"), catalog.sha256("opus_2026_10_09")
+      ], rows.map { |row| row["prompt_sha256"] }
+      assert_equal [ messages.first ], messages.uniq
+      assert_equal [ schemas.first ], schemas.uniq
+      assert_equal 0, rows[0]["temperature"]
+      assert_nil rows[1]["temperature"]
+      assert_equal 0, rows[2]["temperature"]
+      assert_nil rows[3]["temperature"]
+      assert_equal 512, rows.map { |row| row["max_tokens"] }.uniq.first
+      assert_empty transport.calls
+      refused = assert_raises(Rag::InterpreterAnthropicExperiment::Error) {
+        experiment.execute(
+          evidence_root: File.join(dir, "run"), run_id: "phase1-probe", scope: "probe",
+          transport: transport, credential_source: -> { flunk("credential") }, ledger_root: quota_root(dir)
+        )
+      }
+      assert_equal "execution_not_approved", refused.code
+    end
+  end
+
   private
+
+  def approved(run_id)
+    Rag::InterpreterAnthropicExperiment.approval.merge("enabled" => true, "run_id" => run_id)
+  end
+
+  def quota_root(dir)
+    File.join(dir, "quota")
+  end
 
   def matrix_row(id)
     Rag::InterpreterAnthropicExperiment.matrix.find { |row| row["id"] == id }

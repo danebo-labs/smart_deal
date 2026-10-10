@@ -6,10 +6,22 @@
 # INTERPRETER_HAIKU55_EXPERIMENT_REQUIRE=1 loads this file without running.
 # INTERPRETER_HAIKU55_EXPERIMENT_PREPARE=1 writes the matrix and does not
 # read a credential or open a socket.
+# INTERPRETER_HAIKU55_EXPERIMENT_PROBE_PREPARE=1 writes the four phase-1
+# prompt combinations and does not call.
 # INTERPRETER_HAIKU55_EXPERIMENT_AUTHORIZED=1 is not enough to call. The
-# service approval and the frozen quota have to pass as well.
+# service approval, the run id, and the frozen quota have to pass as well.
 
 def interpreter_haiku55_experiment_main
+  if ENV["INTERPRETER_HAIKU55_EXPERIMENT_PROBE_PREPARE"] == "1"
+    root = ENV["INTERPRETER_HAIKU55_EXPERIMENT_ROOT"]
+    summary = Rag::InterpreterAnthropicExperiment.prepare_probe(
+      evidence_root: root,
+      run_id: ENV["INTERPRETER_HAIKU55_EXPERIMENT_RUN_ID"]
+    )
+    puts JSON.generate(summary.merge("status" => "prepared"))
+    return 0
+  end
+
   result = Rag::InterpreterAnthropicExperiment.command(
     prepare: ENV["INTERPRETER_HAIKU55_EXPERIMENT_PREPARE"] == "1",
     authorized: ENV["INTERPRETER_HAIKU55_EXPERIMENT_AUTHORIZED"] == "1",

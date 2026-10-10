@@ -42,7 +42,7 @@ module Rag
                        attribution_dropped: 0, ambiguity_detected: nil,
                        ambiguity_identifier: nil, ambiguity_families: nil,
                        chunks: [], expansions: [], attribution: nil, model: nil,
-                       route_taken: nil)
+                       route_taken: nil, context_truncated: nil)
       mechanisms = Array(expansion_mechanisms)
       PilotUsageLog.log(
         "evidence_route",
@@ -73,6 +73,7 @@ module Rag
         ambiguity_detected: ambiguity_detected,
         ambiguity_identifier: ambiguity_identifier,
         ambiguity_families: ambiguity_families,
+        context_truncated: context_truncated,
         model: model,
         attribution_identities: attribution&.identities,
         attribution_anchors: attribution&.anchors

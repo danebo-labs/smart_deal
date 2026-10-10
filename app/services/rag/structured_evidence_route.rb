@@ -21,6 +21,20 @@ module Rag
 
       Do not state the equipment's manufacturer, model, or nameplate. Do not give a procedure, a measurement, a terminal, or a value to apply.
     TEXT
+    # Printed values of one asked identifier. Not a board menu and not a
+    # contradiction detector: different text can be another passage's
+    # association or an equivalent wording. Orthography is folded; the words
+    # are not classified.
+    DOCUMENTARY_CONTRAST_DIRECTIVE = <<~TEXT.strip.freeze
+      The retrieved passages assign more than one printed value to an identifier asked about. State each value in quotes, exactly as printed, with the evidence marker of the passage that prints it. Do not publish one value as that identifier's meaning in every passage. Do not invent a board, model, manufacturer, or other identity to explain the difference. A difference between passages is a separate documented association, not by itself a contradiction.
+    TEXT
+    DOCUMENTARY_SCOPE_DIRECTIVE = <<~TEXT.strip.freeze
+      The question identifies one passage. Answer from that passage and cite its marker. Other retrieved passages assign a different printed value to the same identifier, and those passages are not in this context. Do not state this passage's value as the identifier's meaning in every passage. Do not quote or invent the other printed values, and do not invent a board or other identity.
+    TEXT
+    DOCUMENTARY_LIMIT_DIRECTIVE = <<~TEXT.strip.freeze
+      Not every retrieved passage that assigns a value to this identifier fits in the context. Do not claim the passages shown are the complete set, and do not treat one shown value as the only documented association.
+    TEXT
+    PAGE_REFERENCE = /(?:\bpaginas?|\bpags?\.?|\bpages?|\bp\.)\s*((?:\d{1,4}(?:\s*(?:,|y|e|and)\s*)?)+)/i
     MAX_GENERATION_CHUNKS = Rag::EvidenceCandidateSelector::MAX_CONTEXTS
     SECTION_MARKER = Rag::EvidenceCandidateSelector::SECTION_MARKER
     HEADING_LINE = Rag::EvidenceCandidateSelector::HEADING_LINE
@@ -192,6 +206,7 @@ module Rag
       @citation_processor = Bedrock::CitationProcessor.new
       @ambiguity = nil
       @exact_lookup = false
+      @documentary = nil
     end
 
     def execute
@@ -291,6 +306,7 @@ module Rag
       end
 
       local_started = monotonic_now
+      @documentary = nil
       @ambiguity = detect_family_ambiguity(expanded_chunks)
       @exact_lookup = exact_designator_lookup?
       chunks = if @preserve_rescue_window
@@ -401,6 +417,23 @@ module Rag
       answer = attribution.answer
       answer = answer.gsub(/[ \t]*\[\d+\]/, "") if companion
       applicability_kind = unconfirmed_applicability_kind(raw_answer, answer, chunks)
+      if !companion && unresolved_documentary_contrast?(answer, chunks)
+        return abstained_outcome(
+          reason: :unresolved_documentary_contrast,
+          retrieval: retrieval,
+          retrieval_ms: retrieval_ms,
+          expansion_ms: expansion_ms,
+          local_ms: local_before_generation_ms + elapsed_ms(local_after_generation_started),
+          generation_ms: generation_ms,
+          expanded_chunks: expanded_chunks,
+          chunks: chunks,
+          expansions: expansions,
+          prompt: prompt,
+          raw_answer: raw_answer,
+          model_invoked: true,
+          attribution: attribution
+        )
+      end
       if applicability_kind
         return withhold_unconfirmed_identity_outcome(
           retrieval: retrieval,
@@ -519,7 +552,7 @@ module Rag
           safety_evidence_chunks: citation_evidence,
           expansions: expansions,
           outcome_reason: (:uncited_prose if uncited_prose)
-        }.compact
+        }.compact.merge(documentary_diagnostics)
       }
       apply_publication_fields!(result)
       if companion && result[:publication_mode] != UnknownIdentityPublication::MODE_FALLBACK
@@ -719,10 +752,10 @@ module Rag
       )
     end
 
-    # Evidence-level ambiguity is checked before the cover greedy narrows the
-    # window: the retrieval that answered "¿A qué serie corresponde el LED SPM?"
-    # carried both Sistel boards, and the cover reduced them to one chunk. Local
-    # work only — no extra Retrieve, no extra generation.
+    # Plate ambiguity is checked before the cover greedy narrows the window.
+    # It votes only on the board slot. Distinct printed values with no board
+    # slot stay available through documentary coverage, not through this
+    # detector. Local work only — no extra Retrieve, no extra generation.
     def detect_family_ambiguity(chunks)
       return nil unless Rag::FamilyAmbiguityGuardFlag.enabled?
 
@@ -1137,6 +1170,7 @@ module Rag
     # Greedily cover the strongest identifier signal from the question, choosing
     # the chunk with the most identifier coverage and lexical agreement.
     def select_generation_chunks(chunks, ambiguity: nil)
+      @documentary = nil
       return board_coverage_chunks(ambiguity) if ambiguity&.ambiguous?
 
       groups = mapping_lookup? ? borne_mapping_groups(rescue_base_text) : []
@@ -1145,28 +1179,30 @@ module Rag
       end
       return single_borne_generation_chunks(chunks) if single_borne_mapping?(groups)
 
-      analysis = question_analysis
-      labelled = analysis.identifiers.select { |identifier| identifier.position == :labelled }
-      # Labelled identifiers are the strongest coverage signal and keep priority. When
-      # the question has none — a paraphrase where the label and the identifier are not
-      # adjacent — fall back to every extracted identifier rather than to blind rank
-      # order, which would hand the generator the same top-3 the widened recall exists
-      # to get past. Bare numerics never reach here (QueryEntities drops them).
-      covering = labelled.presence || analysis.identifiers
+      covering = covering_identifiers
       return mapping_generation_chunks(chunks) if covering.empty? && mapping_lookup?
 
+      selected = cover_identifiers(chunks, covering)
+      return Array(chunks).first(RagRetrievalProfile::PINNED_DOCUMENT_RESULTS) if selected.empty?
+
+      selected = add_named_board_coverage(selected, chunks, covering)
+      apply_documentary_coverage!(selected, chunks, covering)
+    end
+
+    def cover_identifiers(chunks, covering)
       uncovered = covering.map(&:canonical).to_set
       selected = []
+      pool = Array(chunks)
 
       while uncovered.any? && selected.size < MAX_GENERATION_CHUNKS
-        candidates = Array(chunks).reject { |chunk| selected.include?(chunk) }.filter_map do |chunk|
+        candidates = pool.reject { |chunk| selected.include?(chunk) }.filter_map do |chunk|
           covered = uncovered.select { |canonical| identifier_present?(chunk[:content], canonical) }
           next if covered.empty?
 
           [
             chunk,
             covered,
-            analysis.identifiers.count { |identifier| identifier_present?(chunk[:content], identifier.canonical) },
+            question_analysis.identifiers.count { |identifier| identifier_present?(chunk[:content], identifier.canonical) },
             lexical_overlap(chunk[:content]),
             -(chunk[:rank] || Float::INFINITY)
           ]
@@ -1178,20 +1214,18 @@ module Rag
         uncovered.subtract(covered)
       end
 
-      return Array(chunks).first(RagRetrievalProfile::PINNED_DOCUMENT_RESULTS) if selected.empty?
-
-      add_named_board_coverage(selected, chunks, covering)
+      selected
     end
 
     # Comparative questions ("ARCA básica vs ARCA III") name two boards that both
     # document the identifier being asked about; the cover greedy above stops as
     # soon as one chunk covers every identifier, which can leave the second named
     # board unrepresented even though the question explicitly asked about it.
-    # Sibling of the ambiguity guard, not a duplicate: 0 named boards is the
-    # ambiguity guard's job (above), ≥2 named boards is this pass's job — a board
-    # the technician already named is never something to ask them about. Gated on
-    # the same rollback switch as that guard: off means selection is byte-identical
-    # to before this pass existed, which the archived D5 replay fidelity depends on.
+    # Sibling of the ambiguity guard, not a duplicate: zero named headings is
+    # not this pass. Two or more headings the question already named are.
+    # A heading the technician already named is never something to ask them about. Gated on
+    # the family-guard switch: off skips this named-board pass. Documentary
+    # association coverage is a later pass and does not use that switch.
     def add_named_board_coverage(selected, chunks, covering)
       return selected unless Rag::FamilyAmbiguityGuardFlag.enabled?
 
@@ -1216,6 +1250,237 @@ module Rag
       end
 
       selected
+    end
+
+    # Labelled identifiers are the strongest coverage signal and keep priority. When
+    # the question has none — a paraphrase where the label and the identifier are not
+    # adjacent — fall back to every extracted identifier rather than to blind rank
+    # order. Bare numerics never reach here (QueryEntities drops them).
+    def covering_identifiers
+      analysis = question_analysis
+      labelled = analysis.identifiers.select { |identifier| identifier.position == :labelled }
+      labelled.presence || analysis.identifiers
+    end
+
+    # Printed associations are not plate identity. Missing board_model does not
+    # collapse them, and a heading the question did not name does not become a
+    # board. A question that already identifies one passage keeps that passage.
+    # Otherwise each distinct printed value stays in the generation window until
+    # the cap; values that do not fit are recorded and are not a resolved reading.
+    def apply_documentary_coverage!(selected, retrieved, covering)
+      groups = contrasting_assignment_groups(retrieved, covering)
+      return selected if groups.empty?
+
+      named = named_boards(retrieved)
+      if named.size == 1 && page_scope_agrees?(named.first[:chunks])
+        scoped = cover_identifiers(named.first[:chunks], covering)
+        return selected if scoped.empty?
+
+        @documentary = { mode: :scoped, limited: false, omitted: 0 }
+        return scoped
+      end
+
+      if named.empty?
+        pages = referenced_pages
+        if pages.size == 1
+          on_page = chunks_on_page(retrieved, pages.first)
+          page_groups = groups.select { |group| group[:chunks].any? { |chunk| on_page.include?(chunk) } }
+          if page_groups.size == 1
+            scoped = cover_identifiers(on_page, covering)
+            if scoped.any?
+              @documentary = { mode: :scoped, limited: false, omitted: 0 }
+              return scoped
+            end
+          elsif page_groups.size > 1
+            return widen_contrast(cover_identifiers(on_page, covering), page_groups, pool: on_page)
+          end
+        end
+      end
+
+      return selected if named.any?
+
+      widen_contrast(selected, groups)
+    end
+
+    def widen_contrast(selected, groups, pool: nil)
+      omitted = 0
+      missing = groups.reject { |group| group[:chunks].any? { |chunk| selected.include?(chunk) } }
+      missing.sort_by { |group| [ group[:chunks].map { |chunk| chunk[:rank] || 1_000_000 }.min, group[:key] ] }.each do |group|
+        candidates = group[:chunks]
+        candidates = candidates.select { |chunk| pool.include?(chunk) } if pool
+        if selected.size >= MAX_GENERATION_CHUNKS
+          omitted += 1
+          next
+        end
+        addition = candidates.max_by { |chunk| selection_score(chunk) }
+        next if addition.nil? || selected.include?(addition)
+
+        selected << addition
+      end
+      represented = groups.count { |group| group[:chunks].any? { |chunk| selected.include?(chunk) } }
+      @documentary = {
+        mode: represented > 1 ? :contrast : :scoped,
+        limited: omitted.positive?,
+        omitted: omitted
+      }
+      selected
+    end
+
+    def contrasting_assignment_groups(chunks, covering)
+      rows = []
+      Array(chunks).each do |chunk|
+        chunk[:content].to_s.lines.each do |line|
+          covering.each do |identifier|
+            value = assignment_value(line, identifier.canonical)
+            next if value.blank?
+
+            key = association_key(value)
+            next if key.blank?
+
+            rows << { chunk: chunk, canonical: identifier.canonical, key: key }
+          end
+        end
+      end
+
+      rows.group_by { |row| row[:canonical] }.flat_map do |canonical, canonical_rows|
+        grouped = canonical_rows.group_by { |row| row[:key] }
+        next [] if grouped.size < 2
+
+        grouped.map do |key, group_rows|
+          {
+            canonical: canonical,
+            key: key,
+            chunks: group_rows.map { |row| row[:chunk] }.uniq
+          }
+        end
+      end
+    end
+
+    def assignment_value(line, canonical)
+      stripped = line.to_s.strip
+      return nil if stripped.blank? || stripped.match?(TABLE_SEPARATOR)
+      return nil if stripped.match?(/\A\[(?:DOCUMENT|SOURCE_URI|SEARCH_ALIASES):/i)
+
+      if stripped.include?("|")
+        return nil unless explicit_assignment_line?(stripped)
+
+        cell_assignment_value(stripped, canonical)
+      elsif assignment_line?(stripped, canonical)
+        colon_assignment_value(stripped, canonical)
+      end
+    end
+
+    def cell_assignment_value(line, canonical)
+      cells = line.split("|").map(&:strip).reject(&:empty?)
+      index = cells.index { |cell| identifier_label?(cell, canonical) }
+      return nil unless index
+
+      cells[(index + 1)..].to_a.join(" ").strip.presence
+    end
+
+    def colon_assignment_value(line, canonical)
+      match = line.match(/\A\s*[-*]?\s*#{Regexp.escape(canonical)}\s*[:\-=\u2013\u2014(]\s*(.+)\z/i)
+      match && match[1].sub(/\)\s*\z/, "").strip.presence
+    end
+
+    def identifier_label?(cell, canonical)
+      token = cell.to_s.strip
+      return false if token.blank? || token.match?(/\s/)
+
+      token.delete("-._").casecmp?(canonical) && identifier_present?(token, canonical)
+    end
+
+    def association_key(value)
+      I18n.transliterate(value.to_s).downcase.gsub(/[^\p{Alnum}]+/, " ").squeeze(" ").strip
+    end
+
+    def referenced_pages
+      folded = I18n.transliterate(@question.to_s).downcase
+      folded.scan(PAGE_REFERENCE).flat_map { |match| match[0].scan(/\d{1,4}/) }.map(&:to_i).uniq
+    end
+
+    def page_scope_agrees?(named_chunks)
+      pages = referenced_pages
+      return true if pages.empty?
+      return false unless pages.size == 1
+
+      named_chunks.any? { |chunk| page_of(chunk) == pages.first }
+    end
+
+    def chunks_on_page(chunks, page)
+      Array(chunks).select { |chunk| page_of(chunk) == page }
+    end
+
+    def page_of(chunk)
+      Integer(chunk[:metadata].to_h.stringify_keys["page_number"], exception: false)
+    end
+
+    def documentary_directives
+      state = @documentary
+      return [] unless state
+
+      parts = []
+      parts << DOCUMENTARY_CONTRAST_DIRECTIVE if state[:mode] == :contrast
+      parts << DOCUMENTARY_SCOPE_DIRECTIVE if state[:mode] == :scoped && !state[:limited]
+      parts << DOCUMENTARY_LIMIT_DIRECTIVE if state[:limited]
+      parts
+    end
+
+    def documentary_diagnostics
+      state = @documentary
+      return {} unless state
+
+      {
+        documentary_contrast: state[:mode] == :contrast,
+        documentary_scoped_passage: state[:mode] == :scoped && !state[:limited],
+        documentary_coverage_limited: state[:limited] == true,
+        documentary_associations_omitted: state[:omitted].to_i
+      }
+    end
+
+    def unresolved_documentary_contrast?(answer, chunks)
+      state = @documentary
+      return false unless state
+      return false unless state[:mode] == :contrast || state[:limited]
+
+      groups = contrasting_assignment_groups(chunks, covering_identifiers)
+      return true if state[:limited] && groups.size < 2
+      return false unless state[:mode] == :contrast
+      return false if groups.size < 2
+
+      groups.any? { |group| !association_cited?(answer, chunks, group) }
+    end
+
+    def association_cited?(answer, chunks, group)
+      answer_segments(answer).any? do |segment|
+        cited = segment[:markers].filter_map { |number| chunks[number - 1] }
+        next false unless group[:chunks].any? { |chunk| cited.include?(chunk) }
+
+        value_mentioned?(segment[:text], group[:key])
+      end
+    end
+
+    def answer_segments(answer)
+      text = +""
+      answer.to_s.split(/((?:\[\d+\])+)/).filter_map do |part|
+        if part.match?(/\A(?:\[\d+\])+\z/)
+          segment = { text: text, markers: part.scan(/\d+/).map(&:to_i) }
+          text = +""
+          segment
+        else
+          text << part
+          nil
+        end
+      end
+    end
+
+    def value_mentioned?(text, key)
+      return false if key.blank?
+
+      normalized = association_key(text)
+      return false if normalized.blank?
+
+      normalized.match?(/(?<![[:alnum:]])#{Regexp.escape(key)}(?![[:alnum:]])/)
     end
 
     # Chunks the question already names, grouped by heading text.
@@ -1308,7 +1573,8 @@ module Rag
             citation_instructions(chunks.size),
             verbatim_directive_for_applicability,
             (exact_lookup_directive if @exact_lookup),
-            (multi_family_directive if ambiguity&.ambiguous?)
+            (multi_family_directive if ambiguity&.ambiguous?),
+            *documentary_directives
           ].compact.join("\n\n")
         end
 
@@ -1787,7 +2053,7 @@ module Rag
           safety_evidence_chunks: citation_shaped(chunks),
           expansions: expansions,
           outcome_reason: reason
-        }
+        }.merge(documentary_diagnostics)
       }
       apply_publication_fields!(result)
       attach_generation_trace!(result, prompt)
@@ -1833,6 +2099,7 @@ module Rag
         ambiguity_detected: @ambiguity&.ambiguous?,
         ambiguity_identifier: @ambiguity&.identifier,
         ambiguity_families: @ambiguity&.board_keys,
+        context_truncated: (@documentary&.dig(:limited) ? true : nil),
         chunks: chunks,
         attribution: attribution,
         model: BedrockClient::DEFAULT_MODEL_ID,

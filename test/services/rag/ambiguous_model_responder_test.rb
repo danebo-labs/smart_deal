@@ -384,6 +384,8 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
     assert result[:citations].any?
     assert_includes generator.prompt, "Seguridad Puerta nivel 2"
     assert_includes generator.prompt, "ramas paralelas visuales"
+    assert_not_includes generator.prompt, "more than one printed value"
+    assert_not_includes generator.prompt, "identifies one passage"
     assert_includes generator.prompt, "The selected document is retrieval focus"
     assert_not_includes generator.prompt, "Those checks must not name a selector"
     assert_equal [ PHASE1_PIN ], service.captured_kwargs[:entity_s3_uris]

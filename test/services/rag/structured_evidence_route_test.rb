@@ -970,9 +970,9 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     Rails.logger.stop_broadcasting_to(logger) if logger
   end
 
-  test "the same evidence keeps today's single-family window with the guard off" do
+  test "the family guard off does not open a board window and still keeps the SPM contrast" do
     rag_service = FakeRagService.new(spm_board_chunks)
-    generator = FakeGenerator.new("\"SERIE PUERTAS CABINA - EXTERIORES\" [1]")
+    generator = FakeGenerator.new(spm_contrast_answer)
     output = StringIO.new
     logger = ActiveSupport::Logger.new(output)
     Rails.logger.broadcast_to(logger)
@@ -992,12 +992,22 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     )
 
     assert_equal :answered, outcome.status
-    assert_equal 1, outcome.result.dig(:retrieval_trace, :structured_route, :generation_chunks)
-    assert_equal [ "spm-tpr50" ], outcome.result.dig(:diagnostics, :generation_chunks).pluck(:chunk_sha256)
+    assert_equal 1, rag_service.calls.size
+    assert_equal %w[spm-tpr50 spm-twister spm-delta],
+                 outcome.result.dig(:diagnostics, :generation_chunks).pluck(:chunk_sha256)
+    assert_includes prompt, "SERIE PUERTAS CABINA - EXTERIORES"
+    assert_includes prompt, "SERIE DE PUERTAS"
+    assert_includes prompt, "SERIE PUERTAS DE PISO"
+    assert_includes prompt, "not by itself a contradiction"
     assert_not_includes prompt, "The evidence spans multiple distinct board families"
-    assert_not_includes prompt, "SERIE PUERTAS DE PISO"
+    assert_not_includes prompt, "ask which board"
     assert_not payload.key?("ambiguity_detected")
     assert_not payload.key?("ambiguity_families")
+    assert_not payload.key?("context_truncated")
+    outcome.result.dig(:diagnostics, :generation_chunks).each do |chunk|
+      assert_nil chunk[:metadata]["board_model"]
+      assert_nil Rag::PlateIdentity.designator(chunk)
+    end
   ensure
     Rails.logger.stop_broadcasting_to(logger) if logger
   end
@@ -1083,7 +1093,44 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_equal %w[arca3 arca-basico-section-only], selected.pluck(:chunk_sha256)
   end
 
-  test "heading-only pages do not open the per-board window" do
+  test "heading-only pages keep each SPM association and do not invent a plate" do
+    rag_service = FakeRagService.new(spm_board_chunks)
+    generator = FakeGenerator.new(spm_contrast_answer)
+
+    outcome = with_family_guard("true") do
+      build_route(
+        question: "¿A qué serie corresponde el LED SPM?",
+        rag_service: rag_service,
+        generator: generator,
+        expander: FakeExpander.new(nil)
+      ).execute
+    end
+    prompt = generator.calls.first[:prompt]
+    selected = outcome.result.dig(:diagnostics, :generation_chunks)
+
+    assert_equal :answered, outcome.status
+    assert_equal 1, rag_service.calls.size
+    assert_equal %w[spm-tpr50 spm-twister spm-delta], selected.pluck(:chunk_sha256)
+    assert_equal [ 9, 88, 91 ], outcome.result[:citations].pluck(:page)
+    assert_includes prompt, "SERIE PUERTAS CABINA - EXTERIORES"
+    assert_includes prompt, "SERIE DE PUERTAS"
+    assert_includes prompt, "SERIE PUERTAS DE PISO"
+    assert_includes prompt, "not by itself a contradiction"
+    assert_not_includes prompt, "The evidence spans multiple distinct board families"
+    assert_not_includes prompt, "ask which board"
+    assert_not outcome.result.dig(:diagnostics, :documentary_scoped_passage)
+    assert_not outcome.result.dig(:diagnostics, :documentary_coverage_limited)
+    selected.each do |chunk|
+      assert_nil chunk[:metadata]["board_model"]
+      assert_nil Rag::PlateIdentity.designator(chunk)
+    end
+    assert_not Rag::FamilyAmbiguityDetector.new.call(
+      question_analysis: Rag::QueryEntities.analyze("¿A qué serie corresponde el LED SPM?"),
+      chunks: spm_board_chunks
+    ).ambiguous?
+  end
+
+  test "a single cited association does not resolve a documentary contrast" do
     rag_service = FakeRagService.new(spm_board_chunks)
     generator = FakeGenerator.new("\"SERIE PUERTAS CABINA - EXTERIORES\" [1]")
 
@@ -1096,13 +1143,231 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
       ).execute
     end
 
+    assert_equal :abstained, outcome.status
+    assert_equal :unresolved_documentary_contrast, outcome.result.dig(:diagnostics, :outcome_reason)
+    assert_equal I18n.t("rag.data_not_available", locale: :es), outcome.result[:answer]
+    assert_empty outcome.result[:citations]
+    assert_equal 1, rag_service.calls.size
+    assert_equal 1, generator.calls.size
+    assert_includes generator.calls.first[:prompt], "SERIE PUERTAS DE PISO"
+    assert_includes generator.calls.first[:prompt], "SERIE DE PUERTAS"
+  end
+
+  test "citing every passage while stating only one value does not resolve the contrast" do
+    rag_service = FakeRagService.new(spm_board_chunks)
+    generator = FakeGenerator.new("\"SERIE PUERTAS CABINA - EXTERIORES\" [1] [2] [3]")
+
+    outcome = with_family_guard("true") do
+      build_route(
+        question: "¿A qué serie corresponde el LED SPM?",
+        rag_service: rag_service,
+        generator: generator,
+        expander: FakeExpander.new(nil)
+      ).execute
+    end
+
+    assert_equal :abstained, outcome.status
+    assert_equal :unresolved_documentary_contrast, outcome.result.dig(:diagnostics, :outcome_reason)
+    assert_equal I18n.t("rag.data_not_available", locale: :es), outcome.result[:answer]
+    assert_not_includes outcome.result[:answer], "SERIE PUERTAS CABINA - EXTERIORES"
+    assert_equal 1, rag_service.calls.size
+  end
+
+  test "two passages with the same association do not ask for clarification" do
+    chunks = [
+      board_chunk(
+        content: "## TWISTER TW - INAPELSA — Diagrama de conexiones\nSPM | SERIE DE PUERTAS",
+        page: 88, section_identity: "SISTEL", sha: "same-a"
+      ),
+      board_chunk(
+        content: "## OTRA HOJA — Diagrama\nSPM | serie de puertas.",
+        page: 90, section_identity: "SISTEL", sha: "same-b"
+      )
+    ]
+    rag_service = FakeRagService.new(chunks)
+    generator = FakeGenerator.new("\"SERIE DE PUERTAS\" [1]")
+
+    outcome = with_family_guard("true") do
+      build_route(
+        question: "¿A qué serie corresponde el LED SPM?",
+        rag_service: rag_service,
+        generator: generator,
+        expander: FakeExpander.new(nil)
+      ).execute
+    end
+
     assert_equal :answered, outcome.status
     assert_equal 1, outcome.result.dig(:retrieval_trace, :structured_route, :generation_chunks)
-    assert_not_includes generator.calls.first[:prompt], "The evidence spans multiple distinct board families"
-    assert_not Rag::FamilyAmbiguityDetector.new.call(
-      question_analysis: Rag::QueryEntities.analyze("¿A qué serie corresponde el LED SPM?"),
-      chunks: spm_board_chunks
-    ).ambiguous?
+    assert_equal [ "same-a" ], outcome.result.dig(:diagnostics, :generation_chunks).pluck(:chunk_sha256)
+    assert_not_includes generator.calls.first[:prompt], "more than one printed value"
+    assert_not_includes generator.calls.first[:prompt], "ask which board"
+    assert_nil outcome.result.dig(:diagnostics, :documentary_contrast)
+  end
+
+  test "a question that identifies one page answers from that page only" do
+    rag_service = FakeRagService.new(spm_board_chunks)
+    generator = FakeGenerator.new("\"SERIE PUERTAS DE PISO\" [1]")
+    question = "En la página 91, ¿a qué serie corresponde el LED SPM?"
+
+    outcome = with_family_guard("true") do
+      build_route(
+        question: question,
+        rag_service: rag_service,
+        generator: generator,
+        expander: FakeExpander.new(nil)
+      ).execute
+    end
+    prompt = generator.calls.first[:prompt]
+
+    assert_equal :answered, outcome.status
+    assert_equal 1, rag_service.calls.size
+    assert_equal [ "spm-delta" ], outcome.result.dig(:diagnostics, :generation_chunks).pluck(:chunk_sha256)
+    assert_equal [ 91 ], outcome.result[:citations].pluck(:page)
+    assert_includes prompt, "SERIE PUERTAS DE PISO"
+    assert_not_includes prompt, "SERIE PUERTAS CABINA - EXTERIORES"
+    assert_not_includes prompt, "SERIE DE PUERTAS"
+    assert_includes prompt, "identifies one passage"
+    assert_includes prompt, "meaning in every passage"
+    assert_includes prompt, "Do not quote or invent the other printed values"
+    assert_not_includes prompt, "ask which board"
+    assert outcome.result.dig(:diagnostics, :documentary_scoped_passage)
+    assert_nil outcome.result.dig(:diagnostics, :generation_chunks, 0, :metadata, "board_model")
+  end
+
+  test "one documented association stays a cited answer" do
+    chunks = [
+      board_chunk(
+        content: "## TWISTER TW - INAPELSA — Diagrama de conexiones\nSPM | SERIE DE PUERTAS",
+        page: 88, section_identity: "SISTEL", sha: "only-spm"
+      )
+    ]
+    rag_service = FakeRagService.new(chunks)
+    generator = FakeGenerator.new("\"SERIE DE PUERTAS\" [1]")
+
+    outcome = with_family_guard("true") do
+      build_route(
+        question: "¿A qué serie corresponde el LED SPM?",
+        rag_service: rag_service,
+        generator: generator,
+        expander: FakeExpander.new(nil)
+      ).execute
+    end
+
+    assert_equal :answered, outcome.status
+    assert_equal 1, rag_service.calls.size
+    assert_equal [ 88 ], outcome.result[:citations].pluck(:page)
+    assert_includes outcome.result[:answer], "SERIE DE PUERTAS"
+    assert_not_includes generator.calls.first[:prompt], "more than one printed value"
+    assert_not_includes generator.calls.first[:prompt], "identifies one passage"
+  end
+
+  test "documentary contrast records associations that do not fit and still rejects a single value" do
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+    Rails.logger.broadcast_to(logger)
+    chunks = Array.new(7) do |index|
+      board_chunk(
+        content: "## Nota #{index}\nSPM | SERIE #{index}",
+        page: index + 1,
+        section_identity: "SECCION",
+        sha: "serie-#{index}"
+      )
+    end
+    question = "¿A qué serie corresponde el LED SPM?"
+    route = route_for_selection(question)
+    ambiguity = Rag::FamilyAmbiguityDetector.new.call(
+      question_analysis: Rag::QueryEntities.analyze(question),
+      chunks: chunks
+    )
+    selected = with_family_guard("true") { route.send(:select_generation_chunks, chunks) }
+    covered = (0..4).map { |index| "\"SERIE #{index}\" [#{index + 1}]" }.join(". ")
+    rag_service = FakeRagService.new(chunks)
+    full_generator = FakeGenerator.new(covered)
+    full = with_family_guard("true") do
+      build_route(
+        question: question,
+        rag_service: rag_service,
+        generator: full_generator,
+        expander: FakeExpander.new(nil)
+      ).execute
+    end
+    partial_service = FakeRagService.new(chunks)
+    partial = with_family_guard("true") do
+      build_route(
+        question: question,
+        rag_service: partial_service,
+        generator: FakeGenerator.new("\"SERIE 0\" [1]"),
+        expander: FakeExpander.new(nil)
+      ).execute
+    end
+    prompt = full_generator.calls.first[:prompt]
+
+    assert_not ambiguity.ambiguous?
+    assert_equal Rag::StructuredEvidenceRoute::MAX_GENERATION_CHUNKS, selected.size
+    assert_equal (0..4).map { |index| "serie-#{index}" }, selected.pluck(:chunk_sha256)
+    assert route.instance_variable_get(:@documentary)[:limited]
+    assert_equal 2, route.instance_variable_get(:@documentary)[:omitted]
+    assert_equal :answered, full.status
+    assert full.result.dig(:diagnostics, :documentary_coverage_limited)
+    assert_equal 2, full.result.dig(:diagnostics, :documentary_associations_omitted)
+    assert_includes full.result[:answer], "SERIE 4"
+    assert_includes prompt, "fits in the context"
+    assert_not_includes prompt, "SPM | SERIE 5"
+    assert_not_includes prompt, "SPM | SERIE 6"
+    assert_equal 1, rag_service.calls.size
+    assert_equal :unresolved_documentary_contrast, partial.result.dig(:diagnostics, :outcome_reason)
+    assert_equal :abstained, partial.status
+    assert_equal 1, partial_service.calls.size
+    assert_equal 5, full.result.dig(:retrieval_trace, :structured_route, :generation_chunks)
+    payload = JSON.parse(
+      output.string.lines.find { |entry| entry.include?('"event":"evidence_route"') && entry.include?('"outcome":"answered"') }
+        .split("[PILOT_USAGE] ", 2).last
+    )
+    assert_equal true, payload["context_truncated"]
+    assert_equal I18n.t("rag.data_not_available", locale: :es), partial.result[:answer]
+  ensure
+    Rails.logger.stop_broadcasting_to(logger) if logger
+  end
+
+  test "documentary contrast does not retrieve again when generation fails" do
+    rag_service = FakeRagService.new(spm_board_chunks)
+    generator = FakeGenerator.new("")
+
+    outcome = with_family_guard("true") do
+      build_route(
+        question: "¿A qué serie corresponde el LED SPM?",
+        rag_service: rag_service,
+        generator: generator,
+        expander: FakeExpander.new(nil)
+      ).execute
+    end
+
+    assert_equal :abstained, outcome.status
+    assert_equal :generation_failure, outcome.result.dig(:diagnostics, :outcome_reason)
+    assert_equal 1, rag_service.calls.size
+    assert_equal 1, generator.calls.size
+    assert_includes generator.calls.first[:prompt], "SERIE PUERTAS DE PISO"
+    assert_empty outcome.result[:citations]
+  end
+
+  test "uncited prose does not publish one association when the passages differ" do
+    rag_service = FakeRagService.new(spm_board_chunks)
+    generator = FakeGenerator.new("La serie corresponde a las puertas de cabina. El manual lo deja escrito.")
+
+    outcome = with_family_guard("true") do
+      build_route(
+        question: "¿A qué serie corresponde el LED SPM?",
+        rag_service: rag_service,
+        generator: generator,
+        expander: FakeExpander.new(nil)
+      ).execute
+    end
+
+    assert_equal :abstained, outcome.status
+    assert_equal :unresolved_documentary_contrast, outcome.result.dig(:diagnostics, :outcome_reason)
+    assert_equal I18n.t("rag.data_not_available", locale: :es), outcome.result[:answer]
+    assert_equal 1, rag_service.calls.size
+    assert_empty outcome.result[:citations]
   end
 
   test "the per-board window never exceeds the generation cap" do
@@ -2701,6 +2966,12 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
 
   # Headings and a shared section. Not explicit plates: the heading does not
   # demonstrate a board slot. explicit_* copies add a synthetic board_model.
+  def spm_contrast_answer
+    "\"SERIE PUERTAS CABINA - EXTERIORES\" [1]. " \
+      "\"SERIE DE PUERTAS\" [2]. " \
+      "\"SERIE PUERTAS DE PISO\" [3]."
+  end
+
   def spm_board_chunks
     [
       board_chunk(

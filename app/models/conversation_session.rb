@@ -1001,7 +1001,12 @@ class ConversationSession < ApplicationRecord
     result
   end
 
+  # A rejected meta is searched from the literal turn. The turn stays in the
+  # history and in the audit. It is not stored as a goal, observation, or identity.
+  # Other failed interpretations still keep the literal report.
   def retain_failed_report?(status)
+    return false if status.to_s == "meta_incompatible"
+
     %w[snapshot_changed episode_budget_refused].exclude?(status.to_s)
   end
 

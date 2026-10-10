@@ -34,6 +34,9 @@ class Rag::MetaIncompatibleTurnTest < ActiveSupport::TestCase
 
     assert_not_includes source, "Elemont"
     assert_not_includes source, "seguridad de esa puerta"
+    assert_not_includes source, "freno"
+    assert_not_includes source, "contactor"
+    assert_not_includes source, "variador"
     assert_not_includes source, 'include?("?")'
     assert_not_includes source, "document_focus"
     assert_not_includes source, "EQUIPMENT_SYMPTOM_RE"
@@ -105,7 +108,8 @@ class Rag::MetaIncompatibleTurnTest < ActiveSupport::TestCase
       assert_equal 1, client.calls, row.inspect
       assert_equal "meta_incompatible", events.find { |event| event["kind"] == "perception_applied" }["invalid_reason"], row.inspect
       assert_equal "ready", route["route"], row.inspect
-      assert_equal "fallback_ready", route["condition"], row.inspect
+      expected_condition = row[:pin] || row[:goal] ? "fallback_ready" : "fallback_searchable_symptom"
+      assert_equal expected_condition, route["condition"], row.inspect
       assert_equal true, route["retrieval"], row.inspect
       assert_includes query["effective"], "seguridad de esa puerta", row.inspect
       assert_equal PHASE1, query["sent_turn"], row.inspect
@@ -117,7 +121,10 @@ class Rag::MetaIncompatibleTurnTest < ActiveSupport::TestCase
       end
       if row[:goal]
         assert_equal row[:goal], result.state.dig("goal", "text"), row.inspect
+      else
+        assert_nil result.state["goal"], row.inspect
       end
+      assert_equal [], Array(result.state["observations"]), row.inspect
       assert events.none? { |event| event["kind"] == "retrieve" }, row.inspect
     end
   end
@@ -134,7 +141,7 @@ class Rag::MetaIncompatibleTurnTest < ActiveSupport::TestCase
       route = events.find { |event| event["kind"] == "route_decision" }
 
       assert_equal "meta_incompatible", events.find { |event| event["kind"] == "perception_applied" }["invalid_reason"], turn
-      assert_equal "fallback_ready", route["condition"], turn
+      assert_equal "fallback_searchable_symptom", route["condition"], turn
       assert_equal true, route["retrieval"], turn
       assert_includes query["effective"], fragment, turn
       assert_equal [], result.understanding.focus_uris, turn
@@ -160,6 +167,7 @@ class Rag::MetaIncompatibleTurnTest < ActiveSupport::TestCase
       "¿Qué necesitas que te mande?",
       "¿Qué necesitas de mí?",
       "Puedo enviarte una foto",
+      "tengo una foto, te sirve?",
       "¿Cómo uso Danebo?",
       "¿Qué es Danebo?",
       "¿Cómo selecciono un manual?",
@@ -204,15 +212,52 @@ class Rag::MetaIncompatibleTurnTest < ActiveSupport::TestCase
     assert_equal false, route["retrieval"]
     assert_equal "", events.find { |event| event["kind"] == "effective_query" }["effective"]
     assert_equal "work_relation", result.state.dig("pending_question", "type")
+    assert_equal "ajustar frenos", result.state.dig("goal", "text")
+    assert_equal [], Array(result.state["observations"])
     assert_equal [ document.id ], result.understanding.focus_document_ids
     assert_equal document.id, session.document_focus_entries.sole["kb_document_id"]
     assert_nil session.active_episode.dig("facts", "manufacturer")
     assert events.none? { |event| %w[retrieve generate_text retrieve_and_generate].include?(event["kind"]) }
   end
 
+  test "an acknowledgement and a lone evidence offer stay meta without writing the episode" do
+    [ "Perfecto, entendido", "Puedo enviarte una foto" ].each do |turn|
+      session, result, events = run_turn(turn, pin: true)
+      assert_meta_without_writes(session, result, events, turn)
+      assert_nil session.active_episode&.[]("goal"), turn
+      assert_equal [], Array(session.active_episode&.[]("observations")), turn
+
+      session, result, events = run_turn(turn, pin: true, goal: "ajustar frenos", observation: "el freno queda abierto")
+      assert_meta_without_writes(session, result, events, turn)
+      assert_equal "ajustar frenos", result.state.dig("goal", "text"), turn
+      assert_equal [ "el freno queda abierto" ], result.state["observations"].pluck("text"), turn
+      assert_equal "ep_seed", result.state["episode_id"], turn
+    end
+  end
+
+  test "an uncertain meta searches the technical question and does not store it" do
+    {
+      "Según el esquema, ¿cómo funciona el freno?" => "cómo funciona el freno",
+      "¿Cómo selecciono en el plano la seguridad del contactor?" => "seguridad del contactor",
+      "Te envío una foto: el variador no arranca" => "variador no arranca"
+    }.each do |turn, fragment|
+      session, result, events, _client, document = run_turn(turn, pin: true)
+      assert_searched_without_facts(session, result, events, turn, fragment, document)
+
+      session, result, events, _client, document = run_turn(
+        turn, pin: true, goal: "ajustar frenos", observation: "el freno queda abierto"
+      )
+      assert_searched_without_facts(session, result, events, turn, fragment, document)
+      assert_equal "ajustar frenos", result.state.dig("goal", "text"), turn
+      assert_equal [ "el freno queda abierto" ], result.state["observations"].pluck("text"), turn
+      assert_equal "ep_seed", result.state["episode_id"], turn
+      assert_equal turn, session.conversation_history.last["content"], turn
+    end
+  end
+
   private
 
-  def run_turn(turn, pin:, goal: nil, pending: nil)
+  def run_turn(turn, pin:, goal: nil, pending: nil, observation: nil)
     session = web_session
     document = nil
     if pin
@@ -225,7 +270,7 @@ class Rag::MetaIncompatibleTurnTest < ActiveSupport::TestCase
       )
       assert session.pin_kb_document!(document), turn
     end
-    seed_episode(session, goal: goal, pending: pending) if goal || pending
+    seed_episode(session, goal: goal, pending: pending, observation: observation) if goal || pending || observation
     client = MetaStub.new
     result = nil
     events = []
@@ -254,15 +299,49 @@ class Rag::MetaIncompatibleTurnTest < ActiveSupport::TestCase
     )
   end
 
+  def assert_meta_without_writes(session, result, events, turn)
+    route = events.find { |event| event["kind"] == "route_decision" }
+    applied = events.find { |event| event["kind"] == "perception_applied" }
+
+    assert_equal "meta", applied["move"], turn
+    assert_nil applied["invalid_reason"], turn
+    assert_equal "meta", route["route"], turn
+    assert_equal false, route["retrieval"], turn
+    assert_equal "", events.find { |event| event["kind"] == "effective_query" }["effective"], turn
+    assert_not result.understanding.performs_retrieval?, turn
+    assert_equal turn, session.conversation_history.last["content"], turn
+    assert_nil session.active_episode&.dig("facts", "model"), turn
+  end
+
+  def assert_searched_without_facts(session, result, events, turn, fragment, document)
+    route = events.find { |event| event["kind"] == "route_decision" }
+    applied = events.find { |event| event["kind"] == "perception_applied" }
+    query = events.find { |event| event["kind"] == "effective_query" }
+
+    assert_equal "meta_incompatible", applied["invalid_reason"], turn
+    assert_equal "reject_meta", applied["adjustments"].find { |row| row["reason"] == "meta_incompatible" }["rule"], turn
+    assert_equal "ready", route["route"], turn
+    assert_equal "fallback_ready", route["condition"], turn
+    assert_equal true, route["retrieval"], turn
+    assert_equal true, route["fallback"], turn
+    assert_includes query["effective"], fragment, turn
+    assert_equal turn, query["sent_turn"], turn
+    assert result.understanding.performs_retrieval?, turn
+    assert_equal [ document.id ], result.understanding.focus_document_ids, turn
+    assert_equal document.id, session.document_focus_entries.sole["kb_document_id"], turn
+    assert_nil session.active_episode&.dig("facts", "manufacturer"), turn
+    assert_nil session.active_episode&.dig("facts", "model"), turn
+    assert_equal [], Array(session.active_episode&.dig("identifiers")), turn
+  end
+
   def assert_no_identity(session, turn)
-    episode = session.active_episode
+    episode = session.active_episode || {}
     assert_nil episode.dig("facts", "manufacturer"), turn
     assert_nil episode.dig("facts", "model"), turn
     assert_nil episode.dig("facts", "controller"), turn
     assert_equal [], Array(episode["identifiers"]), turn
-    Array(episode["observations"]).each do |item|
-      assert turn.squish.start_with?(item["text"]), turn
-    end
+    assert_nil episode["goal"], turn
+    assert_equal [], Array(episode["observations"]), turn
   end
 
   def web_session
@@ -275,7 +354,7 @@ class Rag::MetaIncompatibleTurnTest < ActiveSupport::TestCase
     )
   end
 
-  def seed_episode(session, goal:, pending:)
+  def seed_episode(session, goal:, pending:, observation: nil)
     payload = {
       "v" => 1,
       "episode_id" => "ep_seed",
@@ -289,6 +368,9 @@ class Rag::MetaIncompatibleTurnTest < ActiveSupport::TestCase
     }
     payload["goal"] = { "text" => goal, "correlation_id" => "seed", "truncated" => false } if goal
     payload["pending_question"] = pending if pending
+    if observation
+      payload["observations"] = [ { "text" => observation, "correlation_id" => "seed" } ]
+    end
     session.update!(active_episode: payload)
   end
 

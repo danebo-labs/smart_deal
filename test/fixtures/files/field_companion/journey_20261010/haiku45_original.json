@@ -1,0 +1,19 @@
+{
+  "move": "report",
+  "assertions": [
+    {
+      "span": "Elemont MH",
+      "act": "assert",
+      "slot_hint": "model"
+    },
+    {
+      "span": "problema de puerta en el nivel 2",
+      "act": "assert"
+    }
+  ],
+  "observations": [
+    "problema de puerta en el nivel 2"
+  ],
+  "pending_resolution": null,
+  "clarification_target": null
+}

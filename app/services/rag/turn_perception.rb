@@ -26,9 +26,14 @@ module Rag
     # Markers already used to separate a lone evidence offer from a mixed turn.
     # They are not the definition of a technical question.
     TECHNICAL_MARKER = /\b(?:resum|observacion|falla|codigo|puerta|sintoma)\b/
-    COURTESY_TOKEN = /\A(?:que|tal|estas|esta|como|va|bien|todo|buenos|buena)\z/
+    COURTESY_TOKEN = /\A(?:que|tal|estas|esta|como|va|bien|todo|buenos|buena|perfecto|entendido)\z/
     PRODUCT_OPERATION = /\b(?:uso|usar|usas|funciona|sirve|selecciono|seleccionar|selecciona|elijo|elegir|elige)\b/
-    DOCUMENT_NOUN = /\b(?:manual|plano|esquema|documento)\b/
+    # Using or choosing the manual in the product. Not a question about a drawing.
+    MANUAL_SELECTION = /\b(?:uso|usar|usas|selecciono|seleccionar|selecciona|elijo|elegir|elige)\b/
+    PRODUCT_DOCUMENT = /\b(?:manual|documento)\b/
+    MEDIA_TOKEN = /\A(?:foto|imagen|video)\z/
+    # Offer-frame words only. Equipment words are not added here.
+    LONE_OFFER_TOKEN = /\A(?:puedo|puedes|tengo|enviarte|envio|enviar|te|si|otra|una|un|la|el|de|mi|foto|imagen|video|mando|mandarte|adjunto|esta|este|por|favor|sirve)\z/
 
     Identity = Data.define(:span, :act, :kind, :slot, :value, :source, :manufacturer)
     Ambiguity = Data.define(:span, :candidates)
@@ -779,9 +784,11 @@ module Rag
         (normalized.match?(/\bobservacion/) && normalized.match?(/\b(?:sigue|siguiente)/))
     end
 
-    # meta may not drop a searchable turn. A greeting, a request for what
-    # Danebo needs, a lone evidence offer, and a question about using Danebo
-    # or selecting a manual stay meta. Document focus is not an input.
+    # meta may not drop a searchable turn. A greeting, an acknowledgement,
+    # a request for what Danebo needs, a lone evidence offer, and a question
+    # about using Danebo or selecting a manual stay meta. Any other meta is
+    # incompatible: the turn is searched and is not stored as a fact.
+    # Document focus is not an input.
     def meta_incompatible?(text)
       return false unless RoutePolicy.searchable_symptom?(text)
 
@@ -812,7 +819,7 @@ module Rag
         normalized.match?(PRODUCT_OPERATION) || normalized.match?(/\b(?:que es|para que)\b/)
       )
 
-      normalized.match?(PRODUCT_OPERATION) && normalized.match?(DOCUMENT_NOUN)
+      normalized.match?(MANUAL_SELECTION) && normalized.match?(PRODUCT_DOCUMENT)
     end
 
     def technical_marker?(normalized)
@@ -820,7 +827,12 @@ module Rag
     end
 
     def evidence_offer?(normalized)
-      normalized.match?(/\b(?:foto|imagen|video)\b/) && !technical_marker?(normalized)
+      return false if technical_marker?(normalized)
+
+      tokens = normalized.to_s.split
+      return false if tokens.empty? || tokens.none? { |word| word.match?(MEDIA_TOKEN) }
+
+      tokens.all? { |word| word.match?(LONE_OFFER_TOKEN) }
     end
 
     def prior_context?

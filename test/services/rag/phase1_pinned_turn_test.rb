@@ -274,6 +274,21 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
     Rag::Phase1QueueGuard.disarm!
   end
 
+  test "a stub installed after the guard still receives the enqueue" do
+    Rag::Phase1QueueGuard.activate!
+    Rag::Phase1QueueGuard.disarm!
+    seen = []
+    TrackBedrockQueryJob.define_singleton_method(:perform_later) { |**kwargs| seen << kwargs }
+    tracking = { model_id: "stub", input_tokens: 1, output_tokens: 1 }
+
+    TrackBedrockQueryJob.perform_later(**tracking)
+
+    assert_equal [ tracking ], seen
+  ensure
+    restore_perform_later(TrackBedrockQueryJob)
+    Rag::Phase1QueueGuard.disarm!
+  end
+
   test "reinstalling the guarded enqueue does not recurse once the guard is disarmed" do
     Rag::Phase1QueueGuard.activate!
     Rag::Phase1QueueGuard.disarm!

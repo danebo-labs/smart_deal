@@ -106,22 +106,32 @@ module Rag
 
     module InlineTracking
       def perform_later(*args, **kwargs, &block)
-        unless Rag::Phase1QueueGuard.active?
-          # Call the enqueue captured before this module was prepended.
-          # super would find a Method that a test reinstalled on the job class,
-          # and that Method is this one: the call recurses until the stack dies.
+        if Rag::Phase1QueueGuard.active?
+          if Thread.current[:phase1_tracking_inline]
+            raise UnexpectedJob, "phase 1 refused reentrant enqueue #{name}"
+          end
+
+          Thread.current[:phase1_tracking_inline] = true
+          begin
+            return perform_now(*args, **kwargs, &block)
+          ensure
+            Thread.current[:phase1_tracking_inline] = nil
+          end
+        end
+
+        # super reaches a stub defined on the job class after this module was
+        # prepended. A test that aliases this method back onto the class makes
+        # super call it again; the second entry uses the enqueue captured
+        # before the prepend, so the stack does not grow.
+        if Thread.current[:phase1_enqueue_passthrough]
           return phase1_enqueue_tracking(*args, **kwargs, &block)
         end
 
-        if Thread.current[:phase1_tracking_inline]
-          raise UnexpectedJob, "phase 1 refused reentrant enqueue #{name}"
-        end
-
-        Thread.current[:phase1_tracking_inline] = true
+        Thread.current[:phase1_enqueue_passthrough] = true
         begin
-          perform_now(*args, **kwargs, &block)
+          super
         ensure
-          Thread.current[:phase1_tracking_inline] = nil
+          Thread.current[:phase1_enqueue_passthrough] = nil
         end
       end
     end

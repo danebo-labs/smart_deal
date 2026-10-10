@@ -870,6 +870,123 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     BedrockRagService.define_singleton_method(:new) { |**kwargs| original_new.call(**kwargs) }
   end
 
+  test "two explicit plates do not send the orchestrator into a second search" do
+    previous_route = ENV.fetch("RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED", nil)
+    ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = "false"
+    uri = "s3://bucket/orchestrator-two-plates.pdf"
+    KbDocument.create!(account: accounts(:legacy), s3_key: uri, display_name: "Plano", aliases: [])
+    calls = { retrieve: 0, query: 0 }
+    chunks = [
+      {
+        content: "El LED indica estado.",
+        location_uri: "s3://bucket/placa-norte.txt",
+        chunk_sha256: "norte",
+        rank: 1,
+        metadata: { "board_model" => "PLACA-NORTE", "page_number" => 1 }
+      },
+      {
+        content: "Otro indicador.",
+        location_uri: "s3://bucket/placa-sur.txt",
+        chunk_sha256: "sur",
+        rank: 2,
+        metadata: { "board_model" => "PLACA-SUR", "page_number" => 2 }
+      }
+    ]
+    service = Object.new
+    service.define_singleton_method(:retrieve_chunks) do |*, **kwargs|
+      calls[:retrieve] += 1
+      calls[:kwargs] = kwargs
+      {
+        chunks: chunks,
+        retrieval_trace: {
+          resolved_scope_s3_uris: [ uri ],
+          applied_filter_s3_uris: [ uri ],
+          force_entity_filter: true
+        }
+      }
+    end
+    service.define_singleton_method(:query) do |*, **|
+      calls[:query] += 1
+      { answer: "segunda búsqueda", citations: [], session_id: "s" }
+    end
+    generator = Object.new
+    generator.define_singleton_method(:query) { |*, **| "El documento muestra el LED. [1]" }
+    original_service = BedrockRagService.method(:new)
+    original_generator = AiProvider.method(:new)
+    BedrockRagService.define_singleton_method(:new) { |**| service }
+    AiProvider.define_singleton_method(:new) { generator }
+
+    result = QueryOrchestratorService.new(
+      "¿Qué LED se enciende cuando falla?",
+      account: accounts(:legacy),
+      entity_s3_uris: [ uri ],
+      force_entity_filter: true,
+      correlation_id: "orch:plates",
+      output_channel: :web,
+      response_locale: :es,
+      equipment_identity: nil
+    ).execute
+
+    assert_equal 1, calls[:retrieve]
+    assert_equal 0, calls[:query]
+    assert_equal "structured_evidence_route", result[:generation_mode]
+    assert_not_includes result[:answer].to_s, "varias placas"
+    assert_equal "orch:plates", calls[:kwargs][:correlation_id]
+    assert_equal "model_disambiguation", calls[:kwargs][:route_taken]
+    assert_equal [ uri ], calls[:kwargs][:entity_s3_uris]
+    assert_equal true, calls[:kwargs][:force_entity_filter]
+  ensure
+    BedrockRagService.define_singleton_method(:new) { |**kwargs| original_service.call(**kwargs) } if original_service
+    AiProvider.define_singleton_method(:new) { |**kwargs| original_generator.call(**kwargs) } if original_generator
+    previous_route.nil? ? ENV.delete("RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED") : ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = previous_route
+  end
+
+  test "a denied retrieve inside the responder does not open another search" do
+    previous_route = ENV.fetch("RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED", nil)
+    ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = "false"
+    uri = "s3://bucket/orchestrator-denied-retrieve.pdf"
+    KbDocument.create!(account: accounts(:legacy), s3_key: uri, display_name: "Plano", aliases: [])
+    calls = { retrieve: 0, query: 0, generate: 0 }
+    service = Object.new
+    service.define_singleton_method(:retrieve_chunks) do |*, **|
+      calls[:retrieve] += 1
+      { chunks: [], retrieval: BedrockRagService::DENY_RETRIEVAL, retrieval_trace: { retrieval: BedrockRagService::DENY_RETRIEVAL } }
+    end
+    service.define_singleton_method(:query) do |*, **|
+      calls[:query] += 1
+      { answer: "segunda búsqueda", citations: [], session_id: "s" }
+    end
+    generator = Object.new
+    generator.define_singleton_method(:query) do |*, **|
+      calls[:generate] += 1
+      "no debe generarse [1]"
+    end
+    original_service = BedrockRagService.method(:new)
+    original_generator = AiProvider.method(:new)
+    BedrockRagService.define_singleton_method(:new) { |**| service }
+    AiProvider.define_singleton_method(:new) { generator }
+
+    result = QueryOrchestratorService.new(
+      "¿Qué LED se enciende cuando falla?",
+      account: accounts(:legacy),
+      entity_s3_uris: [ uri ],
+      force_entity_filter: true,
+      output_channel: :web,
+      response_locale: :es,
+      equipment_identity: nil
+    ).execute
+
+    assert_equal 1, calls[:retrieve]
+    assert_equal 0, calls[:query]
+    assert_equal 0, calls[:generate]
+    assert_equal BedrockRagService::DENY_RETRIEVAL, result[:generation_mode]
+    assert_equal false, result[:model_invoked]
+  ensure
+    BedrockRagService.define_singleton_method(:new) { |**kwargs| original_service.call(**kwargs) } if original_service
+    AiProvider.define_singleton_method(:new) { |**kwargs| original_generator.call(**kwargs) } if original_generator
+    previous_route.nil? ? ENV.delete("RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED") : ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = previous_route
+  end
+
   def store_visual_observation!(photo, manufacturer: "KONE")
     FieldPhotoObservation.persist!(
       photo,

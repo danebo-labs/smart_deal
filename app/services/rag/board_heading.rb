@@ -112,9 +112,9 @@ module Rag
     # Public: Rag::StructuredEvidenceRoute's comparative-selection pass reuses
     # this to compare two named boards' tokens for its specificity rule.
     #
-    # Empty means the heading is generic prose with no board name in it at all
-    # (a bare table/diagram caption) — callers use that to skip it as a board
-    # identity and fall back to metadata instead.
+    # Empty means the heading is generic prose with no distinctive token.
+    # A non-empty list is still not a demonstrated plate: PlateIdentity is
+    # the identity contract, and a heading stays a presentation label.
     def board_tokens(heading)
       norm(heading).reject { |token| STOP.include?(token) }
     end

@@ -190,25 +190,31 @@ class Rag::RegexCharacterizationTest < ActiveSupport::TestCase
   end
 
   # ---------------------------------------------------------------------------
-  # Hueco 5 — MODEL_PATTERN del desambiguador
+  # Hueco 5 — el desambiguador ya no etiqueta por forma léxica
   # ---------------------------------------------------------------------------
+  #
+  # MODEL_PATTERN se retiró. Recorrer el cuerpo en busca de un modelo convertía
+  # un código de falla, un conector o una referencia de extracción en placa.
+  # Estos textos son la lista que el patrón viejo no reconocía, más "EM4000 V1",
+  # que el patrón recortaba a "EM4000". Ninguno llena el slot board_model.
 
-  MODEL_PATTERN_BLIND_SPOTS = [
+  BODY_CODES_THAT_ARE_NOT_PLATES = [
     "ALTIUS", "ENIER", "ELECMEGON", "CTA",
-    "Thyssen Serie E", "NE 300 - LB II", "MICONIC LX", "SMART 001", "TOKIBAT 2007"
+    "Thyssen Serie E", "NE 300 - LB II", "MICONIC LX", "SMART 001", "TOKIBAT 2007",
+    "EM4000 V1"
   ].freeze
 
-  # DEUDA · P4 — la etiqueta de una opcion no puede depender de la forma lexica del
-  # texto; debe venir de metadata de seccion.
-  test "DEUDA MODEL_PATTERN no reconoce nueve de los modelos y fabricantes del corpus" do
-    MODEL_PATTERN_BLIND_SPOTS.each do |candidate|
-      assert_nil candidate[Rag::AmbiguousModelResponder::MODEL_PATTERN],
-                 "#{candidate} paso a estar reconocido: invertir esta expectativa solo en P4"
-    end
-  end
+  test "un codigo del cuerpo no se convierte en placa" do
+    assert_not Rag::AmbiguousModelResponder.const_defined?(:MODEL_PATTERN)
 
-  test "DEUDA MODEL_PATTERN pierde el sufijo de version de EM4000 V1" do
-    assert_equal "EM4000", "EM4000 V1"[Rag::AmbiguousModelResponder::MODEL_PATTERN]
+    BODY_CODES_THAT_ARE_NOT_PLATES.each do |candidate|
+      chunk = {
+        content: "Referencia #{candidate}.",
+        metadata: { "manufacturer" => "Controles" }
+      }
+      assert_nil Rag::PlateIdentity.designator(chunk), candidate
+      assert_empty Rag::PlateIdentity.signals(chunk), candidate
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -320,15 +326,13 @@ class Rag::RegexCharacterizationTest < ActiveSupport::TestCase
     end
   end
 
-  # DEUDA · P3 — el guard se invoca en un unico punto
-  # (`bedrock_rag_service.rb:342`, dentro de `BedrockRagService#query`), y el
-  # desambiguador retorna antes en el orquestador.
-  #
-  # Sonda: `DATA_NOT_AVAILABLE` es un marcador de protocolo que la ingesta escribe
-  # en el cuerpo de los chunks y que el guard reescribe SIEMPRE a copy localizada
-  # (`render_internal_markers`, sin condiciones). Si sobrevive en la respuesta
-  # entregada, el guard no corrio.
-  test "DEUDA la tarjeta de desambiguacion entrega su etiqueta sin pasar por el guard" do
+  # Los tres encabezados de abajo eran la sonda de P3: el menú copiaba el texto
+  # del `##`, incluido el marcador, y AnswerSafetyProcessor no corría. Un
+  # encabezado ya no es placa, así que esa tarjeta no se arma. La recuperación
+  # se reutiliza y la ruta sí reescribe el marcador. El generador va stub:
+  # sin él, esta prueba llamó a Bedrock en la suite de semilla 29998.
+  test "encabezados con el marcador no abren la tarjeta y la ruta lo reescribe" do
+    generator = MarkerGenerator.new
     responder = Rag::AmbiguousModelResponder.new(
       question: "¿Qué LED se enciende cuando falla?",
       account: accounts(:legacy),
@@ -336,6 +340,7 @@ class Rag::RegexCharacterizationTest < ActiveSupport::TestCase
       entity_sources: [],
       force_entity_filter: false,
       response_locale: :es,
+      generator: generator,
       rag_service: FakeRetrievalService.new(
         [
           heading_chunk("## EM4000 V1 DATA_NOT_AVAILABLE", 33),
@@ -347,6 +352,37 @@ class Rag::RegexCharacterizationTest < ActiveSupport::TestCase
 
     result = responder.execute
 
+    assert_equal 1, generator.calls
+    assert_equal "structured_evidence_route", result[:generation_mode]
+    assert_not_includes result[:answer], "varias placas"
+    assert_not_includes result[:answer], "DATA_NOT_AVAILABLE"
+  end
+
+  # DEUDA · P3 — el menú de placas explícitas sigue saliendo antes del guard.
+  # Los tres valores son sondas sintéticas, no placas capturadas. El marcador
+  # va en el slot porque es lo que la tarjeta imprime.
+  test "DEUDA el menu de placas explicitas entrega la etiqueta sin pasar por el guard" do
+    responder = Rag::AmbiguousModelResponder.new(
+      question: "¿Qué LED se enciende cuando falla?",
+      account: accounts(:legacy),
+      entity_s3_uris: [],
+      entity_sources: [],
+      force_entity_filter: false,
+      response_locale: :es,
+      generator: RaisingGenerator.new,
+      rag_service: FakeRetrievalService.new(
+        [
+          slot_chunk("DATA_NOT_AVAILABLE", 33),
+          slot_chunk("PROBE-A", 52),
+          slot_chunk("PROBE-B", 55)
+        ]
+      )
+    )
+
+    result = responder.execute
+
+    assert_equal "deterministic_model_disambiguation", result[:generation_mode]
+    assert_equal false, result[:model_invoked]
     assert_includes result[:answer], "DATA_NOT_AVAILABLE",
                     "el guard paso a cubrir la ruta determinista: invertir esta expectativa solo en P3"
     assert_not_includes processor.call(result[:answer], evidence: []), "DATA_NOT_AVAILABLE",
@@ -486,5 +522,32 @@ class Rag::RegexCharacterizationTest < ActiveSupport::TestCase
       original_source_uri: "s3://bucket/seguridades.pdf",
       metadata: {}
     }
+  end
+
+  def slot_chunk(board_model, page)
+    heading_chunk("cuerpo de sonda, sin declaración de placa", page).merge(
+      metadata: { "board_model" => board_model }
+    )
+  end
+
+  # Stub de esta caracterización. Devuelve el marcador para comprobar que la
+  # ruta lo reescribe. No es un cliente de modelo.
+  class MarkerGenerator
+    attr_reader :calls
+
+    def initialize
+      @calls = 0
+    end
+
+    def query(*, **)
+      @calls += 1
+      "DATA_NOT_AVAILABLE"
+    end
+  end
+
+  class RaisingGenerator
+    def query(*, **)
+      raise "el menú de placas explícitas no debe generar"
+    end
   end
 end

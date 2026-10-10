@@ -1,0 +1,184 @@
+[DOCUMENT: Montacargas 2N Temporizado-1 (1).pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf]
+[SEARCH_ALIASES: TDC distribucion, MELSEC FX 3S, Mitsubishi Electric PLC, EV electrovalvula, Scanavini fuente, LS automatico 3 polos, borneras montacargas, perforaciones tapa tablero]
+
+S7 — DIAGRAM
+
+DISTRIBUCION DE ELEMENTOS EN EL TDC
+
+Este plano muestra la distribución física de componentes dentro del Tablero de Control (TDC) del Montacargas Hidráulico Modelo MH, elaborado por Elemont Elevadores y Montacargas. Fecha: 02/03/2023. Dibujado por: A. Millán. Revisado por: J. Escobar. Número de plano: ELEMONT-N/A. Revisión: A. Certificación ROL 2740. Escala: S/E. Dimensiones en milímetros (mm).
+
+UBICACION: SANTA ADELA Nº 9540 - MAIPU. Contacto: (22) 725 1237 - (22) 886 5026 - ventas@elemont.cl - www.elemont.cl
+
+---
+
+DIMENSIONES GENERALES DEL TABLERO (480mm ancho)
+
+Zonas verticales según cotas:
+- 40mm (margen superior)
+- 180mm
+- 220mm
+- 160mm
+- 380mm
+- 180mm
+- 560mm
+- 165mm
+- 690mm
+- 40mm (margen inferior)
+
+---
+
+DISTRIBUCION DE ELEMENTOS (fila superior izquierda a derecha, según etiquetas visibles en el plano):
+
+Componentes identificados con etiquetas impresas en el plano:
+
+| Referencia | Descripción visible | Alimentación/Valor impreso |
+|---|---|---|
+| Q1 | Elemento de maniobra/protección | DATA_NOT_AVAILABLE en este diagrama |
+| Q2 | Elemento de maniobra/protección | DATA_NOT_AVAILABLE en este diagrama |
+| Q3 | Elemento de maniobra/protección | DATA_NOT_AVAILABLE en este diagrama |
+| Q4 | Elemento de maniobra/protección | DATA_NOT_AVAILABLE en este diagrama |
+| Q5 | Elemento de maniobra/protección | DATA_NOT_AVAILABLE en este diagrama |
+| Q6 | Elemento de maniobra/protección | DATA_NOT_AVAILABLE en este diagrama |
+| R1 | Elemento (tipo DATA_NOT_AVAILABLE) | DATA_NOT_AVAILABLE en este diagrama |
+| F1 | Elemento de protección/fusible | DATA_NOT_AVAILABLE en este diagrama |
+| F2 | Elemento de protección/fusible | DATA_NOT_AVAILABLE en este diagrama |
+| F3 | Elemento de protección/fusible | DATA_NOT_AVAILABLE en este diagrama |
+| LS | Interruptor automático 3 polos 25A 30mA (impreso en leyenda de perforación) — N L3 L1 L2 | 25A / 30mA |
+| K1 | Contactor/relé | 24VDC (impreso en plano) |
+| K2 | Contactor/relé | DATA_NOT_AVAILABLE en este diagrama |
+| K3 | Contactor/relé | DATA_NOT_AVAILABLE en este diagrama |
+| K4 | Contactor/relé | DATA_NOT_AVAILABLE en este diagrama |
+| K5 | Contactor/relé | DATA_NOT_AVAILABLE en este diagrama |
+| EV | Electroválvula | 220V 50Hz (impreso en plano) |
+| Scanavini | Fuente/transformador | 220VAC/18VCD 1.8A (impreso en plano) |
+| Bloque sin ref. | Fuente/transformador auxiliar | 24VAC 3A (impreso en plano) |
+| MELSEC FX 3S | PLC Mitsubishi Electric | DATA_NOT_AVAILABLE en este diagrama |
+
+Borneras de distribución (numeradas en el plano, fila inferior):
+Terminales 1–26 (fila superior de borneras): posiciones 1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 25, 26
+Terminales 22–34 (fila intermedia): posiciones 22, 23, 24, 27, 28, 29, 30, 31, 32, 33, 34
+Terminales 35–48 (fila inferior): posiciones 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48
+Terminales 6, 7 también indicados.
+
+NOTA: La asignación funcional exacta de cada terminal no está impresa en este plano de distribución. REQUIRES_FIELD_VERIFICATION con esquema eléctrico de detalle.
+
+---
+
+PERFORACION CONTRATAPA — AUTOMATICO 3 POLOS LS
+
+Dimensiones de la perforación para el automático tripolar LS en la contratapa:
+- 38mm (ancho zona izquierda) / 53mm (ancho zona derecha)
+- 101mm (alto superior)
+- 47mm (dimensión inferior)
+
+---
+
+PERFORACIONES EN TAPA
+
+Cotas de perforaciones en la tapa del tablero:
+- Ancho total referencia: 446mm
+- Segunda referencia: 297mm
+- Tercera referencia: 148mm
+- Alto superior: 150mm
+- Alto inferior: 397mm
+- Diámetro de perforaciones: 22mm (3 perforaciones superiores) y 22mm (1 perforación inferior)
+
+Todas las dimensiones en milímetros (mm). Escala: S/E (sin escala).
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-FB4B7E2E460FB234
+SOURCE_SECTION_OR_PAGE: Distribucion de elementos
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: LS — Interruptor automático 3 polos, posición en contratapa
+EXPECTED_RESULT: 25A / 30mA — N L3 L1 L2
+EVIDENCE: automatico 3 polos LS 25A 30mA N L3 L1 L2
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-F64FE495CB89BBA0
+SOURCE_SECTION_OR_PAGE: Distribucion de elementos
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: EV — Electroválvula, posición en tablero
+EXPECTED_RESULT: 220V 50Hz (impreso en plano junto a EV)
+EVIDENCE: EV 220V 50Hz
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-7FD8EF1B53558A58
+SOURCE_SECTION_OR_PAGE: Distribucion de elementos
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Fuente/transformador Scanavini — posición en tablero
+EXPECTED_RESULT: 220VAC/18VCD 1.8A
+EVIDENCE: Scanavini 220VAC/18VCD 1.8A
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-4E93D786B518E696
+SOURCE_SECTION_OR_PAGE: Distribucion de elementos
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Fuente auxiliar sin referencia impresa — posición en tablero
+EXPECTED_RESULT: 24VAC 3A
+EVIDENCE: 24VAC 3A
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-92141C727DA3A3E4
+SOURCE_SECTION_OR_PAGE: Distribucion de elementos
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: K1 — Contactor/relé, posición en tablero
+EXPECTED_RESULT: 24VDC (impreso en plano junto a K1)
+EVIDENCE: K1 24VDC
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-D6D0105D19A456D5
+SOURCE_SECTION_OR_PAGE: Distribucion de elementos
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: MELSEC FX 3S (Mitsubishi Electric) — PLC, posición en tablero
+EXPECTED_RESULT: DATA_NOT_AVAILABLE — alimentación no impresa en este plano de distribución
+UNCERTAINTY: Función y conexiones exactas REQUIRES_FIELD_VERIFICATION con esquema eléctrico de detalle
+EVIDENCE: MITSUBISHI ELECTRIC MELSEC FX 3S
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-F191AE504CB50A90
+SOURCE_SECTION_OR_PAGE: Distribucion de elementos
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Q1, Q2, Q3, Q4, Q5, Q6 — elementos de maniobra/protección, posición en tablero
+EXPECTED_RESULT: DATA_NOT_AVAILABLE — tipo y valores no impresos en este plano de distribución
+UNCERTAINTY: Tipo, calibre y función exactos de cada Q REQUIRES_FIELD_VERIFICATION con esquema eléctrico de detalle
+EVIDENCE: Q1 Q3 Q4 Q5 Q6 Q2
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-5BE545190C916340
+SOURCE_SECTION_OR_PAGE: Distribucion de elementos
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: F1, F2, F3 — elementos de protección, posición en tablero
+EXPECTED_RESULT: DATA_NOT_AVAILABLE — calibres no impresos en este plano de distribución
+UNCERTAINTY: Calibre y función exactos REQUIRES_FIELD_VERIFICATION con esquema eléctrico de detalle
+EVIDENCE: F1 F2 F3
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-2E6A4E3EF9FB7D1B
+SOURCE_SECTION_OR_PAGE: Distribucion de elementos
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: K2, K3, K4, K5 — contactores/relés, posición en tablero
+EXPECTED_RESULT: DATA_NOT_AVAILABLE — tensión de bobina no impresa en este plano
+UNCERTAINTY: Función y tensión de bobina REQUIRES_FIELD_VERIFICATION con esquema eléctrico de detalle
+EVIDENCE: K2 K4 K5 K3
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-CFFF1FCABD805DE7
+SOURCE_SECTION_OR_PAGE: Distribucion de elementos
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Borneras numeradas 1–48 (con saltos) — fila de distribución en parte inferior del TDC
+EXPECTED_RESULT: DATA_NOT_AVAILABLE — asignación funcional por terminal no impresa en este plano
+UNCERTAINTY: Asignación funcional exacta por terminal REQUIRES_FIELD_VERIFICATION con esquema eléctrico de detalle
+EVIDENCE: 1 2 3 4 5 8 9 10 11 12 13 14 15 16 17 18 19 20 21 25 26
+END_FIELD_RECORD

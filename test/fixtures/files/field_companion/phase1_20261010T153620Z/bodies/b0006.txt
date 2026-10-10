@@ -1,0 +1,141 @@
+[DOCUMENT: Montacargas 2N Temporizado-1 (1).pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf]
+[SEARCH_ALIASES: Diagramas Circuito #3, Sección Conexión Sobre Cabina, Sección Indicadores Sube Baja, SENSOR SPM-E PAS, SENSOR SPM-E PAD, LFS LFB, Chapa nivel, MICRO RUEDA GRANDE RIELES]
+
+S7 — DIAGRAM
+
+DIAGRAMAS CIRCUITO #3
+
+Este plano corresponde a la página 6 de 7 del expediente eléctrico del Montacargas Hidráulico Modelo MH de Elemont. Contiene dos secciones de diagrama: SECCIÓN CONEXIÓN SOBRE CABINA y SECCIÓN INDICADORES SUBE/BAJA.
+
+---
+
+## SECCIÓN CONEXIÓN SOBRE CABINA
+
+Alimentación: +24Vac / Com 24Vac
+
+Componentes y señales identificados en el diagrama:
+
+| Identificador | Descripción visible en plano | Observación |
+|---|---|---|
+| SMANT | Etiqueta en bloque superior izquierdo | Función: DATA_NOT_AVAILABLE |
+| MAN | Etiqueta adyacente a SMANT | Función: DATA_NOT_AVAILABLE |
+| COMUN | Terminal/nodo de referencia común | DATA_NOT_AVAILABLE |
+| BSUBE | Señal/botón sube (sobre cabina) | DATA_NOT_AVAILABLE |
+| BBAJA | Señal/botón baja (sobre cabina) | DATA_NOT_AVAILABLE |
+| Ind Sube | Indicador subida | DATA_NOT_AVAILABLE |
+| SWITCH LUZ CABINA | Switch luz de cabina | Alimentado desde +24Vac |
+| K4 | Contactor/relé K4 — bobina A1/A2 | Función exacta: DATA_NOT_AVAILABLE |
+| PAS | Señal SENSOR SPM-E PAS | Colores de cable: ROJO, GRIS, NEGRO |
+| PAD | Señal SENSOR SPM-E PAD | Colores de cable: ROJO, GRIS, NEGRO |
+| EXD | Etiqueta fin de carrera o sensor | Función: DATA_NOT_AVAILABLE |
+| EXS | Etiqueta fin de carrera o sensor | Función: DATA_NOT_AVAILABLE |
+| MICRO RUEDA GRANDE EN RIELES VELOCIDAD BAJA NIVEL SUPERIOR | Descripción textual impresa en el plano — dispositivo de detección de nivel superior a velocidad baja | |
+| +18Vdc POT | Alimentación +18Vdc para potenciómetro o dispositivo de posición | DATA_NOT_AVAILABLE (dispositivo receptor no identificado en este plano) |
+| Chapa nivel 1 | Chapa/selector de nivel 1 | |
+| Chapa nivel 2 | Chapa/selector de nivel 2 | |
+| Chapa nivel 3 | Chapa/selector de nivel 3 | |
+| Chapa nivel 4 | Chapa/selector de nivel 4 | |
+| Chapa nivel 5 | Chapa/selector de nivel 5 | |
+
+Nota: Los sensores SPM-E PAS y SPM-E PAD presentan tres conductores cada uno (ROJO, GRIS, NEGRO). La asignación funcional de cada conductor (alimentación, señal, común) es DATA_NOT_AVAILABLE en este diagrama; verificar en hoja de especificaciones del sensor SPM-E o en otros planos del expediente.
+
+La relación exacta entre K4, SMANT/MAN, BSUBE/BBAJA y la cadena de seguridad REQUIRES_FIELD_VERIFICATION — este diagrama muestra conexiones pero no detalla la lógica de maniobra completa.
+
+---
+
+## SECCIÓN INDICADORES SUBE/BAJA
+
+Alimentación: SUBE / BAJA (líneas superiores) — PasCom 24V (línea de retorno inferior)
+
+Indicadores de piso identificados:
+
+| Par | Indicador SUBE | Indicador BAJA |
+|---|---|---|
+| Piso 1 | LFS1 | LFB1 |
+| Piso 2 | LFS2 | LFB2 |
+| Piso 3 | LFS3 | LFB3 |
+| Piso 4 | LFS4 | LFB4 |
+| Piso 5 | LFS5 | LFB5 |
+
+Cada par LFSx/LFBx corresponde a indicadores de flecha sube/baja en el piso respectivo, conectados en paralelo entre las líneas SUBE/BAJA y PasCom 24V. El tipo exacto de dispositivo (LED, lámpara, etc.) es DATA_NOT_AVAILABLE en este diagrama.
+
+---
+
+Datos del plano:
+- Empresa: Elemont Elevadores y Montacargas
+- Ubicación del proyecto: Santa Adela Nº 9540, Maipú
+- Dibujado por: A. Millán — Fecha: 02/03/2023
+- Revisado por: J. Escobar — N/A
+- Número de plano: ELEMONT- N/A
+- Revisión: A
+- Escala: S/E
+- Certificación: ROL 2740
+- Hoja: 1 de 1 (dentro del conjunto del circuito #3)
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-21764EB866351C20
+SOURCE_SECTION_OR_PAGE: SECCIÓN CONEXIÓN SOBRE CABINA
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar señal PAS: SENSOR SPM-E PAS — conductores ROJO, GRIS, NEGRO
+EXPECTED_RESULT: DATA_NOT_AVAILABLE — asignación funcional por conductor no declarada en este diagrama
+UNCERTAINTY: Asignación de pines REQUIRES_FIELD_VERIFICATION — consultar datasheet SPM-E
+EVIDENCE: SENSOR SPM-E PAS GRIS NEGRO ROJO PAS
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-56459D1707B5D5AB
+SOURCE_SECTION_OR_PAGE: SECCIÓN CONEXIÓN SOBRE CABINA
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar señal PAD: SENSOR SPM-E PAD — conductores ROJO, GRIS, NEGRO
+EXPECTED_RESULT: DATA_NOT_AVAILABLE — asignación funcional por conductor no declarada en este diagrama
+UNCERTAINTY: Asignación de pines REQUIRES_FIELD_VERIFICATION — consultar datasheet SPM-E
+EVIDENCE: SENSOR SPM-E PAD GRIS NEGRO ROJO PAD
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-0E2A8560791D82E5
+SOURCE_SECTION_OR_PAGE: SECCIÓN CONEXIÓN SOBRE CABINA
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Verificar dispositivo etiquetado: MICRO RUEDA GRANDE EN RIELES VELOCIDAD BAJA NIVEL SUPERIOR
+EXPECTED_RESULT: DATA_NOT_AVAILABLE — conexión exacta y tipo de contacto no declarados en este diagrama
+EVIDENCE: MICRO RUEDA GRANDE EN RIELES VELOCIDAD BAJA NIVEL SUPERIOR
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-B61623877C9B772B
+SOURCE_SECTION_OR_PAGE: SECCIÓN CONEXIÓN SOBRE CABINA
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar alimentación +18Vdc POT y su dispositivo receptor sobre cabina
+EXPECTED_RESULT: DATA_NOT_AVAILABLE — receptor no identificado en este diagrama
+EVIDENCE: +18vdc POT
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-DD0268436FB65ABB
+SOURCE_SECTION_OR_PAGE: SECCIÓN CONEXIÓN SOBRE CABINA
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Verificar función de contactor/relé K4 (bobinas A1/A2) en la sección sobre cabina
+EXPECTED_RESULT: DATA_NOT_AVAILABLE — función lógica no declarada en este diagrama
+EVIDENCE: SWITCH LUZ CABINA K4 A1A2
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-BF7FBCEB4D8EBCC6
+SOURCE_SECTION_OR_PAGE: SECCIÓN INDICADORES SUBE/BAJA
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar indicadores de piso: LFS1/LFB1 a LFS5/LFB5 conectados entre líneas SUBE/BAJA y PasCom 24V
+EXPECTED_RESULT: 5 pares de indicadores sube/baja para 5 pisos, conectados en paralelo
+EVIDENCE: LFS1 LFB1 LFS2 LFB2 LFS3 LFB3 LFS4 LFB4 LFS5 LFB5 PasCom 24V
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-C1550E453DF9C3FE
+SOURCE_SECTION_OR_PAGE: SECCIÓN CONEXIÓN SOBRE CABINA
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Verificar chapas de nivel 1 a 5 conectadas a la sección sobre cabina junto a EXD y EXS
+EXPECTED_RESULT: DATA_NOT_AVAILABLE — lógica de secuencia entre chapas y señales EXD/EXS no declarada en este diagrama
+EVIDENCE: EXD EXS Chapa nivel 5 Chapa nivel 4 Chapa nivel 3 Chapa nivel 2 Chapa nivel 1
+END_FIELD_RECORD

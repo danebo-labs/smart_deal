@@ -1,0 +1,39 @@
+[DOCUMENT: Montacargas 2N Temporizado-1 (1).pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf]
+[SEARCH_ALIASES: Elemont, Montacargas Hidraulico, Modelo MH, ELEMONT-N/A, ROL 2740, Tablero de Control, A. Millan, J. Escobar]
+
+S0 — DOCUMENT IDENTIFICATION
+
+| Field | Value |
+|-|-|
+| TECHNICAL_ID | Elemont — Montacargas Hidráulico Modelo MH |
+| REGIONAL_NORMATIVE | DATA_NOT_AVAILABLE — Certificación ROL 2740 mencionada (normativa específica no identificable desde el plano) |
+| IMAGE_QUALITY | CLEAR |
+| CONFIDENCE | HIGH |
+| ERA | MODERN_MICROPROCESSOR |
+
+Origen del documento: Plano eléctrico "DESCRIPCIÓN TABLERO DE CONTROL" perteneciente al proyecto "Instalaciones Eléctricas Montacargas Hidráulico Modelo MH". Emitido por Sociedad Comercial e Industrial Elemont Limitada, Santa Adela Nº 9540, Maipú, Chile. Teléfono: (22) 725 1237. Email: ventas@elemont.cl. Sitio web: www.elemont.cl.
+
+- Dibujo: A. Millan
+- Revisado: J. Escobar
+- Fecha: 02/03/2023
+- Número de plano: ELEMONT-N/A
+- Escala: S/E
+- Nº Equipo: N/A
+- Nº Proyecto: N/A
+- Revisión: A
+- Hoja: 1 DE 1
+- Certificación: ROL 2740
+
+NOTA: Este plano contiene información confidencial y es de propiedad exclusiva de Sociedad Comercial e Industrial Elemont Limitada. No puede ser copiado o reproducido de ninguna forma sin autorización expresa.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-60D03ABCA0B4FB8D
+SOURCE_SECTION_OR_PAGE: DESCRIPCIÓN TABLERO DE CONTROL
+RECORD_TYPE: DOCUMENTATION_REQUIREMENT
+ACTION: Verificar número de plano, revisión y certificación ROL 2740 antes de intervenir el tablero.
+EXPECTED_RESULT: Plano identificado como ELEMONT-N/A, Revisión A, Certificación ROL 2740.
+EVIDENCE: NUMERO DE PLANO: ELEMONT-N/A — CERTIFICACION ROL 2740
+END_FIELD_RECORD

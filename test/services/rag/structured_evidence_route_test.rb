@@ -885,7 +885,7 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
   end
 
   test "an identifier documented on several boards is answered per board and asks which one" do
-    rag_service = FakeRagService.new(spm_board_chunks)
+    rag_service = FakeRagService.new(explicit_spm_board_chunks)
     raw_answer = "El significado de SPM depende de la placa que tenga delante.\n" \
       "En \"CARLOS SILVA TPR50\": \"SERIE PUERTAS CABINA - EXTERIORES\" [1].\n" \
       "En \"TWISTER TW - INAPELSA\": \"SERIE DE PUERTAS\" [2].\n" \
@@ -922,7 +922,7 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
   end
 
   test "an identifier that passes the lexical equipment gate is still detected from the evidence" do
-    rag_service = FakeRagService.new(dl2_board_chunks)
+    rag_service = FakeRagService.new(explicit_dl2_board_chunks)
     raw_answer = "El indicador cambia según la placa.\n" \
       "En \"LEVEL CONTROL 1B\": \"SERIE CERROJOS CERRADA\" [1].\n" \
       "En \"KDT 11\": \"SERIE PUERTAS EXTERIORES - CABINA\" [2].\n" \
@@ -944,8 +944,8 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_equal [ 1, 2 ], outcome.result[:citations].pluck(:number)
   end
 
-  test "the ambiguity guard reports the identifier and the boards it spans" do
-    rag_service = FakeRagService.new(spm_board_chunks)
+  test "the ambiguity guard reports the identifier and the explicit plates it spans" do
+    rag_service = FakeRagService.new(explicit_spm_board_chunks)
     output = StringIO.new
     logger = ActiveSupport::Logger.new(output)
     Rails.logger.broadcast_to(logger)
@@ -964,7 +964,7 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
 
     assert_equal true, payload["ambiguity_detected"]
     assert_equal "SPM", payload["ambiguity_identifier"]
-    assert_equal [ "CARLOS SILVA TPR50", "TWISTER TW - INAPELSA", "DELTA +" ],
+    assert_equal [ "PLACA-TPR50", "PLACA-TWISTER", "PLACA-DELTA" ],
                  payload["ambiguity_families"]
   ensure
     Rails.logger.stop_broadcasting_to(logger) if logger
@@ -1083,14 +1083,37 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_equal %w[arca3 arca-basico-section-only], selected.pluck(:chunk_sha256)
   end
 
+  test "heading-only pages do not open the per-board window" do
+    rag_service = FakeRagService.new(spm_board_chunks)
+    generator = FakeGenerator.new("\"SERIE PUERTAS CABINA - EXTERIORES\" [1]")
+
+    outcome = with_family_guard("true") do
+      build_route(
+        question: "¿A qué serie corresponde el LED SPM?",
+        rag_service: rag_service,
+        generator: generator,
+        expander: FakeExpander.new(nil)
+      ).execute
+    end
+
+    assert_equal :answered, outcome.status
+    assert_equal 1, outcome.result.dig(:retrieval_trace, :structured_route, :generation_chunks)
+    assert_not_includes generator.calls.first[:prompt], "The evidence spans multiple distinct board families"
+    assert_not Rag::FamilyAmbiguityDetector.new.call(
+      question_analysis: Rag::QueryEntities.analyze("¿A qué serie corresponde el LED SPM?"),
+      chunks: spm_board_chunks
+    ).ambiguous?
+  end
+
   test "the per-board window never exceeds the generation cap" do
+    # Synthetic board slots. The heading alone does not open this window.
     boards = Array.new(7) do |index|
       board_chunk(
         content: "## PLACA B#{index}Z — Diagrama de Series\nSPM | SERIE #{index}",
         page: index + 1,
         section_identity: "FABRICANTE #{index}",
         sha: "board-#{index}"
-      )
+      ).tap { |chunk| chunk[:metadata]["board_model"] = "PLACA-B#{index}" }
     end
     route = route_for_selection("¿A qué serie corresponde el LED SPM?")
     ambiguity = Rag::FamilyAmbiguityDetector.new.call(
@@ -2676,8 +2699,8 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     }
   end
 
-  # SPM is a different series on each of these three boards; two of them share
-  # section_identity "SISTEL", so only the heading tells them apart.
+  # Headings and a shared section. Not explicit plates: the heading does not
+  # demonstrate a board slot. explicit_* copies add a synthetic board_model.
   def spm_board_chunks
     [
       board_chunk(
@@ -2701,6 +2724,20 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
         sha: "spm-delta"
       )
     ]
+  end
+
+  def explicit_spm_board_chunks
+    designators = [ "PLACA-TPR50", "PLACA-TWISTER", "PLACA-DELTA" ]
+    spm_board_chunks.zip(designators).map do |chunk, designator|
+      chunk.merge(metadata: chunk[:metadata].merge("board_model" => designator))
+    end
+  end
+
+  def explicit_dl2_board_chunks
+    designators = [ "PLACA-LEVEL", "PLACA-KDT" ]
+    dl2_board_chunks.zip(designators).map do |chunk, designator|
+      chunk.merge(metadata: chunk[:metadata].merge("board_model" => designator))
+    end
   end
 
   def dl2_board_chunks

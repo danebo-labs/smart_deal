@@ -1,0 +1,250 @@
+{
+  "run_id": "20261010T153620Z",
+  "source": "tmp/phase1_pinned_turn/authorized_20261010/20261010T153620Z",
+  "source_event": "retrieval_results",
+  "source_event_sequence": 18,
+  "historical_evidence": "not modified",
+  "transformations": [
+    "Copied only the nine retrieval bodies these tests read. Interpreter prompts, environment, ledger, pilot_usage, result and the rest of capture.json stayed in tmp.",
+    "Kept the observed row fields decision, document, document_id, page, reason, score and uri.",
+    "The page-1 chunk whose capture text was an inline string was written to bodies/inline_row_01.txt. The other eight bodies were copied byte for byte from the capture files.",
+    "body_sha256 is SHA-256 of those bytes. For the eight external files it matches the sha256 recorded on the capture text object.",
+    "No board_model, controller_model, manufacturer, section_identity, canonical_name, original_source_uri or aliases were added. Those fields are absent from the capture rows."
+  ],
+  "rows": [
+    {
+      "index": 0,
+      "observed": {
+        "decision": "accepted",
+        "document": "Elemont Montacargas Hidraulico Modelo MH",
+        "document_id": "121bfffe0827f6bc681ba9bdc91050390055",
+        "page": 5.0,
+        "reason": "viewer_account",
+        "score": 0.5,
+        "uri": "s3://multimodal-source-destination/bulk_chunks/1/121bfffe0827f6bc681ba9bdc91050390055/chunk_p5_1.txt",
+        "body_file": "bodies/b0003.txt",
+        "body_sha256": "8baae756dab099e124b046057bfb4f6e835d85a5b2922f2eff1e64a637efd09c",
+        "body_bytes": 7612
+      },
+      "body_was": "external capture file bodies/b0003.txt",
+      "not_in_capture_row": [
+        "board_model",
+        "controller_model",
+        "manufacturer",
+        "section_identity",
+        "canonical_name",
+        "original_source_uri",
+        "aliases",
+        "metadata"
+      ]
+    },
+    {
+      "index": 1,
+      "observed": {
+        "decision": "accepted",
+        "document": "Elemont Montacargas Hidraulico Modelo MH",
+        "document_id": "121bfffe0827f6bc681ba9bdc91050390055",
+        "page": 1.0,
+        "reason": "viewer_account",
+        "score": 0.49193548387096775,
+        "uri": "s3://multimodal-source-destination/bulk_chunks/1/121bfffe0827f6bc681ba9bdc91050390055/chunk_p1_1.txt",
+        "body_file": "bodies/inline_row_01.txt",
+        "body_sha256": "bb64990ce57edf78c1497bd7e54157e5f04da6257f9660148106ce638737747e",
+        "body_bytes": 1840
+      },
+      "body_was": "inline string on retrieval_results.rows[1].text; written as bytes, encoding not part of the hash",
+      "not_in_capture_row": [
+        "board_model",
+        "controller_model",
+        "manufacturer",
+        "section_identity",
+        "canonical_name",
+        "original_source_uri",
+        "aliases",
+        "metadata"
+      ]
+    },
+    {
+      "index": 2,
+      "observed": {
+        "decision": "accepted",
+        "document": "Elemont Montacargas Hidraulico Modelo MH",
+        "document_id": "121bfffe0827f6bc681ba9bdc91050390055",
+        "page": 1.0,
+        "reason": "viewer_account",
+        "score": 0.48412698412698413,
+        "uri": "s3://multimodal-source-destination/bulk_chunks/1/121bfffe0827f6bc681ba9bdc91050390055/chunk_p1_2.txt",
+        "body_file": "bodies/b0004.txt",
+        "body_sha256": "788a6c1160dd1ae198a1170cee53e5bf3519bcd68d24c034b43db3a4a47729c4",
+        "body_bytes": 8984
+      },
+      "body_was": "external capture file bodies/b0004.txt",
+      "not_in_capture_row": [
+        "board_model",
+        "controller_model",
+        "manufacturer",
+        "section_identity",
+        "canonical_name",
+        "original_source_uri",
+        "aliases",
+        "metadata"
+      ]
+    },
+    {
+      "index": 3,
+      "observed": {
+        "decision": "accepted",
+        "document": "Elemont Montacargas Hidraulico Modelo MH",
+        "document_id": "121bfffe0827f6bc681ba9bdc91050390055",
+        "page": 4.0,
+        "reason": "viewer_account",
+        "score": 0.4765625,
+        "uri": "s3://multimodal-source-destination/bulk_chunks/1/121bfffe0827f6bc681ba9bdc91050390055/chunk_p4_1.txt",
+        "body_file": "bodies/b0005.txt",
+        "body_sha256": "c86e29fab35f89160ca786927471deddbd59d1e4f8be58f0bc1d0451b7773518",
+        "body_bytes": 5602
+      },
+      "body_was": "external capture file bodies/b0005.txt",
+      "not_in_capture_row": [
+        "board_model",
+        "controller_model",
+        "manufacturer",
+        "section_identity",
+        "canonical_name",
+        "original_source_uri",
+        "aliases",
+        "metadata"
+      ]
+    },
+    {
+      "index": 4,
+      "observed": {
+        "decision": "accepted",
+        "document": "Elemont Montacargas Hidraulico Modelo MH",
+        "document_id": "121bfffe0827f6bc681ba9bdc91050390055",
+        "page": 6.0,
+        "reason": "viewer_account",
+        "score": 0.46923076923076923,
+        "uri": "s3://multimodal-source-destination/bulk_chunks/1/121bfffe0827f6bc681ba9bdc91050390055/chunk_p6_1.txt",
+        "body_file": "bodies/b0006.txt",
+        "body_sha256": "6317aa802c319bca95dcffc7773f37aab17f28d200f9c04c16e0a02c34d49fcb",
+        "body_bytes": 6665
+      },
+      "body_was": "external capture file bodies/b0006.txt",
+      "not_in_capture_row": [
+        "board_model",
+        "controller_model",
+        "manufacturer",
+        "section_identity",
+        "canonical_name",
+        "original_source_uri",
+        "aliases",
+        "metadata"
+      ]
+    },
+    {
+      "index": 5,
+      "observed": {
+        "decision": "accepted",
+        "document": "Elemont Montacargas Hidraulico Modelo MH",
+        "document_id": "121bfffe0827f6bc681ba9bdc91050390055",
+        "page": 2.0,
+        "reason": "viewer_account",
+        "score": 0.4621212121212121,
+        "uri": "s3://multimodal-source-destination/bulk_chunks/1/121bfffe0827f6bc681ba9bdc91050390055/chunk_p2_1.txt",
+        "body_file": "bodies/b0007.txt",
+        "body_sha256": "6977bbfdd735cb43211f625a8b4bb8f7cb2a0ea98caccec961e4b4945b6a2624",
+        "body_bytes": 12879
+      },
+      "body_was": "external capture file bodies/b0007.txt",
+      "not_in_capture_row": [
+        "board_model",
+        "controller_model",
+        "manufacturer",
+        "section_identity",
+        "canonical_name",
+        "original_source_uri",
+        "aliases",
+        "metadata"
+      ]
+    },
+    {
+      "index": 6,
+      "observed": {
+        "decision": "accepted",
+        "document": "Elemont Montacargas Hidraulico Modelo MH",
+        "document_id": "121bfffe0827f6bc681ba9bdc91050390055",
+        "page": 7.0,
+        "reason": "viewer_account",
+        "score": 0.4552238805970149,
+        "uri": "s3://multimodal-source-destination/bulk_chunks/1/121bfffe0827f6bc681ba9bdc91050390055/chunk_p7_1.txt",
+        "body_file": "bodies/b0008.txt",
+        "body_sha256": "71299a26d5ac8a7a20555e7215a842a5b9499ec9f78d9184b7035b6d3e90ef61",
+        "body_bytes": 4231
+      },
+      "body_was": "external capture file bodies/b0008.txt",
+      "not_in_capture_row": [
+        "board_model",
+        "controller_model",
+        "manufacturer",
+        "section_identity",
+        "canonical_name",
+        "original_source_uri",
+        "aliases",
+        "metadata"
+      ]
+    },
+    {
+      "index": 7,
+      "observed": {
+        "decision": "accepted",
+        "document": "Elemont Montacargas Hidraulico Modelo MH",
+        "document_id": "121bfffe0827f6bc681ba9bdc91050390055",
+        "page": 7.0,
+        "reason": "viewer_account",
+        "score": 0.4485294117647059,
+        "uri": "s3://multimodal-source-destination/bulk_chunks/1/121bfffe0827f6bc681ba9bdc91050390055/chunk_p7_2.txt",
+        "body_file": "bodies/b0009.txt",
+        "body_sha256": "c7d760f6831f312d2fd65b306bc7f2225dcac7fe428b6592d6426e2d7bc8537a",
+        "body_bytes": 3674
+      },
+      "body_was": "external capture file bodies/b0009.txt",
+      "not_in_capture_row": [
+        "board_model",
+        "controller_model",
+        "manufacturer",
+        "section_identity",
+        "canonical_name",
+        "original_source_uri",
+        "aliases",
+        "metadata"
+      ]
+    },
+    {
+      "index": 8,
+      "observed": {
+        "decision": "accepted",
+        "document": "Elemont Montacargas Hidraulico Modelo MH",
+        "document_id": "121bfffe0827f6bc681ba9bdc91050390055",
+        "page": 3.0,
+        "reason": "viewer_account",
+        "score": 0.4420289855072464,
+        "uri": "s3://multimodal-source-destination/bulk_chunks/1/121bfffe0827f6bc681ba9bdc91050390055/chunk_p3_1.txt",
+        "body_file": "bodies/b0010.txt",
+        "body_sha256": "513490d89eb481e7b827cf81ae6c9dbbcadc45f8d257377c622d982d8796c027",
+        "body_bytes": 7805
+      },
+      "body_was": "external capture file bodies/b0010.txt",
+      "not_in_capture_row": [
+        "board_model",
+        "controller_model",
+        "manufacturer",
+        "section_identity",
+        "canonical_name",
+        "original_source_uri",
+        "aliases",
+        "metadata"
+      ]
+    }
+  ]
+}

@@ -1,13 +1,11 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require Rails.root.join("test/support/phase1_retrieval_fixture")
 
 class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
   PHASE1_PIN = "s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf"
   PHASE1_QUESTION = Rag::Phase1PinnedTurn::NATURAL_MESSAGE
-  PHASE1_EVIDENCE = Rails.root.join(
-    "tmp/phase1_pinned_turn/authorized_20261010/20261010T153620Z"
-  )
   DOCUMENTARY_ANSWER = "En el documento seleccionado, la página 5 muestra la etiqueta «Seguridad Puerta nivel 2» entre las de los niveles 3 y 1. [1] No está confirmado para el equipo instalado."
   # Measured 2026-07-31 in tmp/pilot_gate/pilot_10q_v4_1.json: the board is
   # named unambiguously, yet the question reaches this responder because
@@ -17,13 +15,13 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
     "¿Qué LED de la placa me lo confirma?"
   GENERIC_QUESTION = "¿Qué LED se enciende cuando falla?"
 
-  FakeService = Struct.new(:chunks) do
+  FakeService = Struct.new(:chunks, :retrieval_status) do
     attr_reader :captured_kwargs, :retrieve_count
 
     def retrieve_chunks(*, **kwargs)
       @captured_kwargs = kwargs
       @retrieve_count = @retrieve_count.to_i + 1
-      {
+      result = {
         chunks: chunks,
         retrieval_trace: {
           resolved_scope_s3_uris: [],
@@ -31,6 +29,8 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
           force_entity_filter: false
         }
       }
+      result[:retrieval] = retrieval_status if retrieval_status
+      result
     end
   end
 
@@ -79,12 +79,14 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
   end
 
   # CG-D19: one question in prose that names the boards. No chips.
-  test "asks one prose question naming three evidence-backed boards when several are retrieved" do
+  # The designators are synthetic board slots. A manufacturer plus a code in
+  # the body is not this menu.
+  test "asks one prose question naming three explicit plates when several are retrieved" do
     responder = build_responder(
-      chunk("TOKIBAT", "DL27 TOKIBAT", page: 39),
-      chunk("THYSSEN", "THYSSEN-E LED diagnostic", page: 93),
-      chunk("ORONA", "ORONA MR08 LED status", page: 22),
-      chunk("ALTIUS", "ALTIUS-D8 indicator", page: 7)
+      plate_chunk("DL27", page: 39),
+      plate_chunk("THYSSEN-E", page: 93),
+      plate_chunk("MR08", page: 22),
+      plate_chunk("ALTIUS-D8", page: 7)
     )
 
     result = responder.execute
@@ -94,70 +96,96 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
     assert_not result.key?(:quick_replies)
     assert_equal I18n.t(
       "rag.ambiguous_model_question", locale: :es,
-      models: "TOKIBAT — DL27, THYSSEN — THYSSEN-E o ORONA — MR08"
+      models: "DL27, THYSSEN-E o MR08"
     ), result[:answer]
-    assert_not_includes result[:answer], "ALTIUS"
+    assert_not_includes result[:answer], "ALTIUS-D8"
     assert_not_includes result[:answer], "\n"
     assert_equal [ 39, 93, 22 ], result[:citations].pluck(:page)
     assert_equal "choice", result.dig(:pending_question, "type")
-    assert_equal [ "TOKIBAT — DL27", "THYSSEN — THYSSEN-E", "ORONA — MR08" ], result.dig(:pending_question, "options")
+    assert_equal [ "DL27", "THYSSEN-E", "MR08" ], result.dig(:pending_question, "options")
   end
 
-  test "falls through when retrieval does not expose three distinct models" do
+  test "one or two body codes with a manufacturer do not start another retrieve" do
+    generator = FakeGenerator.new("El documento muestra el LED. [1]")
     responder = build_responder(
       chunk("TOKIBAT", "DL27 TOKIBAT", page: 39),
-      chunk("THYSSEN", "THYSSEN-E LED diagnostic", page: 93)
-    )
-
-    assert_nil responder.execute
-  end
-
-  test "uses documented diagram headings when manufacturer metadata is absent" do
-    responder = build_responder(
-      heading_chunk("## S7 — DIAGRAM: CTA – M8PC (ELÉCTRICO Y HIDRÁULICO) / BORNAS CARRIL", 54),
-      heading_chunk("## S4 — SAFETY SYSTEM: ARCA III — Diagrama de Series", 52),
-      heading_chunk("## S7 — DIAGRAM: MAC 5000 — Esquema de Cadena", 55)
+      chunk("THYSSEN", "THYSSEN-E LED diagnostic", page: 93),
+      generator: generator
     )
 
     result = responder.execute
 
-    assert_equal "deterministic_model_disambiguation", result[:generation_mode]
-    assert_includes result[:answer], "CTA – M8PC (ELÉCTRICO Y HIDRÁULICO), ARCA III o MAC 5000"
+    assert_equal "structured_evidence_route", result[:generation_mode]
+    assert_not_includes result[:answer], "varias placas"
+    assert_equal 1, generator.calls
+    assert_equal 1, responder.instance_variable_get(:@service).retrieve_count
+    assert_nil Rag::PlateIdentity.designator(chunk("TOKIBAT", "DL27 TOKIBAT", page: 39))
   end
 
-  test "does not fabricate a manufacturer from unrelated text in the chunk body" do
+  test "diagram headings are presentation labels and do not open the plate menu" do
+    generator = FakeGenerator.new("El documento muestra el diagrama. [1]")
+    headings = [
+      "## S7 — DIAGRAM: CTA – M8PC (ELÉCTRICO Y HIDRÁULICO) / BORNAS CARRIL",
+      "## S4 — SAFETY SYSTEM: ARCA III — Diagrama de Series",
+      "## S7 — DIAGRAM: MAC 5000 — Esquema de Cadena"
+    ]
     responder = build_responder(
-      heading_chunk("## EM 4000 V1\nCadena de seguridades ALTIUS conectada en serie.", 33),
-      heading_chunk("## S4 — SAFETY SYSTEM: ARCA III — Diagrama de Series", 52),
-      heading_chunk("## S7 — DIAGRAM: MAC 5000 — Esquema de Cadena", 55)
+      *headings.map { |heading| heading_chunk(heading, 54) },
+      generator: generator
     )
 
     result = responder.execute
 
-    assert_not_includes result[:answer], "ALTIUS — "
-    assert_includes result[:answer], "EM 4000 V1"
+    assert_equal "structured_evidence_route", result[:generation_mode]
+    assert_not_includes result[:answer], "varias placas"
+    assert_not_includes result[:answer], "ARCA III"
+    headings.each do |heading|
+      assert_nil Rag::PlateIdentity.designator(heading_chunk(heading, 54))
+      assert_nil Rag::PlateIdentity.board_key(heading_chunk(heading, 54))
+      assert_equal Rag::BoardHeading.label(heading), Rag::PlateIdentity.presentation_label(heading)
+    end
+  end
+
+  test "a manufacturer and a code in the body are not a plate model" do
+    body = "Conector XH-2 en la bornera. Código de falla E10. Registro FR-096E150644BA5108."
+    chunk = {
+      content: "## Alimentación principal y protecciones\n#{body}",
+      metadata: { "manufacturer" => "Controles" }
+    }
+    generator = FakeGenerator.new("El documento muestra la alimentación. [1]")
+    responder = build_responder(chunk, generator: generator)
+
+    result = responder.execute
+
+    assert_nil Rag::PlateIdentity.designator(chunk)
+    assert_nil Rag::PlateIdentity.board_key(chunk)
+    assert_empty Rag::PlateIdentity.signals(chunk)
+    assert_not_includes result[:answer], "Controles —"
+    assert_not_includes result[:answer], "XH-2"
+    assert_not_includes result[:answer], "varias placas"
+    assert_equal 1, responder.instance_variable_get(:@service).retrieve_count
   end
 
   test "the question is the same prose in English and never a numbered list" do
     responder = build_responder(
-      chunk("TOKIBAT", "DL27 TOKIBAT", page: 39),
-      chunk("THYSSEN", "THYSSEN-E LED diagnostic", page: 93),
-      chunk("ORONA", "ORONA MR08 LED status", page: 22),
+      plate_chunk("DL27", page: 39),
+      plate_chunk("THYSSEN-E", page: 93),
+      plate_chunk("MR08", page: 22),
       response_locale: :en
     )
 
     result = responder.execute
 
     assert_not_includes result[:answer], "1."
-    assert_includes result[:answer], "TOKIBAT — DL27, THYSSEN — THYSSEN-E or ORONA — MR08"
+    assert_includes result[:answer], "DL27, THYSSEN-E or MR08"
     assert_not result.key?(:quick_replies)
   end
 
   test "asks the retrieval layer for the contractual top_k" do
     responder = build_responder(
-      chunk("TOKIBAT", "DL27 TOKIBAT", page: 39),
-      chunk("THYSSEN", "THYSSEN-E LED diagnostic", page: 93),
-      chunk("ORONA", "ORONA MR08 LED status", page: 22)
+      plate_chunk("DL27", page: 39),
+      plate_chunk("THYSSEN-E", page: 93),
+      plate_chunk("MR08", page: 22)
     )
 
     responder.execute
@@ -204,32 +232,57 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
     assert_equal 1, responder.instance_variable_get(:@service).retrieve_count
   end
 
-  test "the question names only the boards the technician named when there are more than one" do
+  test "the question names only the explicit plates the technician named when there are more than one" do
     ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = "true"
+    generator = FakeGenerator.new("no debería generarse [1]")
     responder = build_responder(
-      *twister_chunks,
+      plate_chunk("TWISTER TW", page: 89),
+      plate_chunk("LEVEL CONTROL 1B", page: 62),
+      plate_chunk("EDEL-K3", page: 25),
       question: "#{TWISTER_QUESTION} También tengo una Level Control 1B premontada.",
-      generator: FakeGenerator.new("no debería generarse [1]")
+      generator: generator
     )
 
     result = responder.execute
 
     assert_equal "deterministic_model_disambiguation", result[:generation_mode]
-    assert_includes result[:answer], "TWISTER TW – ELECTRICO - EMBARBA o LEVEL CONTROL 1B – ELECTRICO - PREMONTADA"
+    assert_includes result[:answer], "TWISTER TW o LEVEL CONTROL 1B"
     assert_not_includes result[:answer], "EDEL-K3"
+    assert_equal 0, generator.calls
   end
 
-  # The regression that stops the filter from disabling disambiguation whole:
-  # a question that names no board must still get the three-way question.
-  test "a question that names no board still gets the three-way question" do
+  test "heading labels are not the three plates of that menu" do
     ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = "true"
-    generator = FakeGenerator.new("no debería generarse [1]")
+    generator = FakeGenerator.new("El documento muestra el LED. [1]")
     responder = build_responder(*twister_chunks, generator: generator)
 
     result = responder.execute
 
+    assert_equal "structured_evidence_route", result[:generation_mode]
+    assert_not_includes result[:answer], "varias placas"
+    assert_equal 1, generator.calls
+    twister_chunks.each do |chunk|
+      assert_nil Rag::PlateIdentity.designator(chunk)
+      assert Rag::PlateIdentity.presentation_label(chunk).present?
+    end
+  end
+
+  # Synthetic board slots. The headings of the measured Twister retrieval are
+  # not this evidence: a heading does not demonstrate a plate.
+  test "a question that names no explicit plate still gets the three-way question" do
+    ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = "true"
+    generator = FakeGenerator.new("no debería generarse [1]")
+    responder = build_responder(
+      plate_chunk("TWISTER TW", page: 89),
+      plate_chunk("LEVEL CONTROL 1B", page: 62),
+      plate_chunk("EDEL-K3", page: 25),
+      generator: generator
+    )
+
+    result = responder.execute
+
     assert_equal "deterministic_model_disambiguation", result[:generation_mode]
-    assert_includes result[:answer], "TWISTER TW – ELECTRICO - EMBARBA, LEVEL CONTROL 1B – ELECTRICO - PREMONTADA o EDEL-K3"
+    assert_includes result[:answer], "TWISTER TW, LEVEL CONTROL 1B o EDEL-K3"
     assert_equal 0, generator.calls
   end
 
@@ -238,11 +291,13 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
   # the digit that actually distinguishes them. That made `named` a single
   # match, which answered directly — about the wrong board. Fixed, no board
   # is named and the technician still gets to choose among the three retrieved.
-  test "a single retrieved sibling board does not answer a different sibling's question" do
+  test "a single retrieved sibling plate does not answer a different sibling's question" do
     ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = "true"
     generator = FakeGenerator.new("no debería generarse [1]")
     responder = build_responder(
-      *twister_chunks,
+      plate_chunk("EDEL-K3", page: 25),
+      plate_chunk("TWISTER TW", page: 89),
+      plate_chunk("LEVEL CONTROL 1B", page: 62),
       question: "En la EDEL-K2, ¿qué LED indica que los cerrojos están cerrados?",
       generator: generator
     )
@@ -255,17 +310,21 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
     assert_equal 0, generator.calls
   end
 
-  test "with the live route flag off a named board still gets the question it gets today" do
+  test "with the live route flag off one named explicit plate among three still gets the menu" do
+    generator = FakeGenerator.new("no debería generarse [1]")
     responder = build_responder(
-      *twister_chunks,
+      plate_chunk("TWISTER TW", page: 89),
+      plate_chunk("LEVEL CONTROL 1B", page: 62),
+      plate_chunk("EDEL-K3", page: 25),
       question: TWISTER_QUESTION,
-      generator: FakeGenerator.new("no debería generarse [1]")
+      generator: generator
     )
 
     result = responder.execute
 
     assert_equal "deterministic_model_disambiguation", result[:generation_mode]
-    assert result[:answer].start_with?("La evidencia recuperada corresponde a varias placas: TWISTER TW – ELECTRICO - EMBARBA")
+    assert result[:answer].start_with?("La evidencia recuperada corresponde a varias placas: TWISTER TW")
+    assert_equal 0, generator.calls
   end
 
   test "section headings of the selected manual are not plates and the retrieval is reused" do
@@ -289,8 +348,9 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
     assert_equal "phase1:6:query", responder.instance_variable_get(:@service).captured_kwargs[:correlation_id]
     assert_equal "model_disambiguation", responder.instance_variable_get(:@service).captured_kwargs[:route_taken]
     section_chunks.each do |chunk|
-      assert_nil Rag::PlateIdentity.declared_board_heading(chunk[:content])
+      assert_nil Rag::PlateIdentity.designator(chunk)
       assert_nil Rag::PlateIdentity.board_key(chunk)
+      assert Rag::PlateIdentity.presentation_label(chunk).present?
     end
   end
 
@@ -382,6 +442,21 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
     assert_equal 1, responder.instance_variable_get(:@service).retrieve_count
   end
 
+  test "the same generic heading is a section at the start and in the middle of the chunk" do
+    heading = "## Alimentación principal y protecciones"
+    [
+      "#{heading}\nDetalle de la sección.\n",
+      "S7 — DIAGRAMA\n\nTexto de la página.\n\n#{heading}\nDetalle de la sección.\n"
+    ].each do |content|
+      chunk = { content: content, metadata: {} }
+
+      assert_nil Rag::PlateIdentity.designator(chunk)
+      assert_nil Rag::PlateIdentity.board_key(chunk)
+      assert_empty Rag::PlateIdentity.signals(chunk)
+      assert_equal "Alimentación principal y protecciones", Rag::PlateIdentity.presentation_label(chunk)
+    end
+  end
+
   test "absent plate metadata is neither compatibility nor incompatibility" do
     chunk = {
       content: "S7 — DIAGRAMA\n\n## Alimentación principal y protecciones\n",
@@ -390,20 +465,206 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
 
     assert_nil Rag::PlateIdentity.designator(chunk)
     assert_nil Rag::PlateIdentity.board_key(chunk)
-    assert_nil Rag::PlateIdentity.declared_board_heading(chunk[:content])
+    assert_nil Rag::PlateIdentity.controller_signal(chunk)
+    assert_nil Rag::PlateIdentity.section_signal(chunk)
   end
 
-  test "equipment manufacturer and plate designator stay different slots" do
-    chunk = {
+  test "board, controller and section stay different slots" do
+    plate = {
       content: "S7 — DIAGRAMA\n\n## Alimentación principal y protecciones\n",
-      metadata: { "manufacturer" => "Controles", "board_model" => "CEA15" }
+      metadata: {
+        "manufacturer" => "Controles",
+        "board_model" => "CEA15",
+        "controller_model" => "VF5",
+        "section_identity" => "FAMILIA"
+      }
     }
+    board = Rag::PlateIdentity.board_signal(plate)
+    controller = Rag::PlateIdentity.controller_signal(plate)
+    section = Rag::PlateIdentity.section_signal(plate)
 
-    assert_equal "CEA15", Rag::PlateIdentity.designator(chunk)
-    assert_equal "CEA15", Rag::PlateIdentity.board_key(chunk)
+    assert_equal "CEA15", board.value
+    assert_equal :board, board.slot
+    assert_equal "board_model", board.provenance
+    assert_equal "VF5", controller.value
+    assert_equal :controller, controller.slot
+    assert_equal "controller_model", controller.provenance
+    assert_equal "FAMILIA", section.value
+    assert_equal :section, section.slot
+    assert_equal "CEA15", Rag::PlateIdentity.designator(plate)
+    assert_equal "CEA15", Rag::PlateIdentity.board_key(plate)
     assert_nil Rag::PlateIdentity.designator(
-      content: chunk[:content], metadata: { "manufacturer" => "Controles" }
+      content: plate[:content], metadata: { "manufacturer" => "Controles", "controller_model" => "VF5" }
     )
+    assert_nil Rag::PlateIdentity.board_key(
+      content: plate[:content], metadata: { "section_identity" => "FAMILIA" }
+    )
+  end
+
+  test "zero explicit plates reuse the retrieval" do
+    generator = FakeGenerator.new("El documento muestra el LED. [1]")
+    responder = build_responder(*section_chunks, generator: generator)
+
+    result = responder.execute
+
+    assert_equal "structured_evidence_route", result[:generation_mode]
+    assert_not_includes result[:answer], "varias placas"
+    assert_equal 1, responder.instance_variable_get(:@service).retrieve_count
+  end
+
+  test "one explicit plate that the question does not name is not a menu and does not search again" do
+    ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = "true"
+    generator = FakeGenerator.new("El documento muestra el LED. [1]")
+    responder = build_responder(plate_chunk("CEA15"), generator: generator)
+
+    result = responder.execute
+
+    assert_equal "structured_evidence_route", result[:generation_mode]
+    assert_not_includes result[:answer], "varias placas"
+    assert_equal 1, generator.calls
+    assert_equal 1, responder.instance_variable_get(:@service).retrieve_count
+  end
+
+  test "one explicit plate the question names is answered from the retrieval when the route flag is on" do
+    ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = "true"
+    generator = FakeGenerator.new("El LED SSEG confirma la serie. [1]")
+    responder = build_responder(
+      plate_chunk("TWISTER TW", page: 89, body: "El LED SSEG confirma la serie de puertas."),
+      question: TWISTER_QUESTION,
+      generator: generator
+    )
+
+    result = responder.execute
+
+    assert_equal "structured_evidence_route", result[:generation_mode]
+    assert_equal 1, generator.calls
+    assert_equal 1, responder.instance_variable_get(:@service).retrieve_count
+    assert_not_includes result[:answer], "varias placas"
+  end
+
+  test "two explicit plates without an identifier collision do not menu and do not search again" do
+    ENV["RAG_FAMILY_AMBIGUITY_GUARD_ENABLED"] = "true"
+    generator = FakeGenerator.new("El documento muestra el LED. [1]")
+    responder = build_responder(
+      plate_chunk("PLACA-NORTE"),
+      plate_chunk("PLACA-SUR"),
+      generator: generator
+    )
+
+    result = responder.execute
+
+    assert_equal "structured_evidence_route", result[:generation_mode]
+    assert_not_includes result[:answer], "varias placas"
+    assert_equal 1, generator.calls
+    assert_equal 1, responder.instance_variable_get(:@service).retrieve_count
+  end
+
+  test "two explicit plates that share a family clarify when the same identifier is on both" do
+    ENV["RAG_FAMILY_AMBIGUITY_GUARD_ENABLED"] = "false"
+    generator = FakeGenerator.new("no debería generarse [1]")
+    responder = build_responder(
+      family_plate("PLACA-NORTE", "SERIE PUERTAS"),
+      family_plate("PLACA-SUR", "SERIE CABINA"),
+      question: "¿Qué LED SPM se enciende cuando falla la seguridad?",
+      generator: generator
+    )
+
+    result = responder.execute
+
+    assert_equal "deterministic_model_disambiguation", result[:generation_mode]
+    assert_includes result[:answer], "PLACA-NORTE o PLACA-SUR"
+    assert_not_includes result[:answer], "FAMILIA"
+    assert_equal 0, generator.calls
+    assert_equal 1, responder.instance_variable_get(:@service).retrieve_count
+    assert_equal [ "PLACA-NORTE", "PLACA-SUR" ], Rag::FamilyAmbiguityDetector.new.call(
+      question_analysis: Rag::QueryEntities.analyze("¿Qué LED SPM se enciende cuando falla la seguridad?"),
+      chunks: [ family_plate("PLACA-NORTE", "SERIE PUERTAS"), family_plate("PLACA-SUR", "SERIE CABINA") ]
+    ).board_keys
+  end
+
+  test "a location question on the selected document reuses two plates when the identifier does not collide" do
+    generator = FakeGenerator.new("En el documento, el contacto está en la página 5. [1]")
+    responder = build_responder(
+      plate_chunk("PLACA-NORTE"),
+      plate_chunk("PLACA-SUR"),
+      question: "¿Dónde aparece el contacto de seguridad?",
+      raw_question: "¿Dónde aparece el contacto de seguridad?",
+      generator: generator,
+      entity_s3_uris: [ PHASE1_PIN ],
+      force_entity_filter: true
+    )
+
+    result = responder.execute
+
+    assert_equal "structured_evidence_route", result[:generation_mode]
+    assert_not_includes result[:answer], "varias placas"
+    assert_equal 1, responder.instance_variable_get(:@service).retrieve_count
+  end
+
+  test "a location question clarifies when the identifier is on two explicit plates" do
+    generator = FakeGenerator.new("no debería generarse [1]")
+    responder = build_responder(
+      family_plate("PLACA-NORTE", "SERIE PUERTAS"),
+      family_plate("PLACA-SUR", "SERIE CABINA"),
+      question: "¿Dónde aparece el LED SPM en las seguridades?",
+      raw_question: "¿Dónde aparece el LED SPM en las seguridades?",
+      generator: generator,
+      entity_s3_uris: [ PHASE1_PIN ],
+      force_entity_filter: true
+    )
+
+    result = responder.execute
+
+    assert_equal "deterministic_model_disambiguation", result[:generation_mode]
+    assert_includes result[:answer], "PLACA-NORTE o PLACA-SUR"
+    assert_equal 0, generator.calls
+  end
+
+  test "an empty retrieval abstains without another retrieve or a generation" do
+    generator = FakeGenerator.new("no debería generarse [1]")
+    responder = build_responder(generator: generator)
+
+    result = responder.execute
+
+    assert_equal :empty_evidence, result.dig(:diagnostics, :outcome_reason)
+    assert_equal "structured_evidence_route", result[:generation_mode]
+    assert_equal 0, generator.calls
+    assert_equal 1, responder.instance_variable_get(:@service).retrieve_count
+  end
+
+  test "a retrieval denied by authorization is terminal and does not generate" do
+    generator = FakeGenerator.new("no debería generarse [1]")
+    responder = build_responder(
+      plate_chunk("CEA15"),
+      generator: generator,
+      retrieval_status: BedrockRagService::DENY_RETRIEVAL,
+      entity_s3_uris: [ PHASE1_PIN ],
+      force_entity_filter: true
+    )
+
+    result = responder.execute
+
+    assert_equal BedrockRagService::DENY_RETRIEVAL, result[:generation_mode]
+    assert_equal BedrockRagService::DENY_RETRIEVAL, result[:retrieval]
+    assert_equal false, result[:model_invoked]
+    assert_equal 0, generator.calls
+    assert_equal 1, responder.instance_variable_get(:@service).retrieve_count
+    assert_equal [ PHASE1_PIN ], responder.instance_variable_get(:@service).captured_kwargs[:entity_s3_uris]
+    assert_not_includes result[:answer], "CEA15"
+  end
+
+  test "a failed generation on one explicit plate abstains without another retrieve" do
+    responder = build_responder(
+      plate_chunk("CEA15"),
+      generator: FakeGenerator.new(""),
+      entity_s3_uris: [ PHASE1_PIN ],
+      force_entity_filter: true
+    )
+
+    result = responder.execute
+
+    assert_equal :generation_failure, result.dig(:diagnostics, :outcome_reason)
+    assert_equal 1, responder.instance_variable_get(:@service).retrieve_count
   end
 
   test "a procedure on the selected document is withheld and does not search again" do
@@ -474,7 +735,8 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
 
   def build_responder(*chunks, response_locale: :es, question: GENERIC_QUESTION, generator: nil,
                        entity_s3_uris: [], force_entity_filter: false, correlation_id: nil,
-                       raw_question: nil, episode: nil, equipment_identity: :omit)
+                       raw_question: nil, episode: nil, equipment_identity: :omit,
+                       retrieval_status: nil)
     Rag::AmbiguousModelResponder.new(
       question: question,
       account: accounts(:legacy),
@@ -482,7 +744,7 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
       entity_sources: entity_s3_uris.any? ? [ "document" ] : [],
       force_entity_filter: force_entity_filter,
       response_locale: response_locale,
-      rag_service: FakeService.new(chunks),
+      rag_service: FakeService.new(chunks, retrieval_status),
       generator: generator,
       correlation_id: correlation_id,
       raw_question: raw_question,
@@ -566,35 +828,34 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
     end
   end
 
-  def plate_chunk(designator)
+  # Synthetic board slot. Not a captured sidecar field.
+  def plate_chunk(designator, page: 1, body: "El LED indica estado.")
     {
-      content: "Introducción del plano.\n\n## Sección interna\nEl LED indica estado.\n",
+      content: "Introducción del plano.\n\n## Sección interna\n#{body}\n",
       location_uri: "s3://bucket/#{designator}.txt",
       original_source_uri: "s3://bucket/manual.pdf",
       chunk_sha256: designator,
+      rank: page,
+      metadata: { "board_model" => designator, "page_number" => page }
+    }
+  end
+
+  # Synthetic: two plates, one shared section. The section is not the plate.
+  def family_plate(designator, series)
+    {
+      content: "SPM | #{series}",
+      location_uri: "s3://bucket/#{designator}.txt",
+      chunk_sha256: designator,
       rank: 1,
-      metadata: { "board_model" => designator, "page_number" => 1 }
+      metadata: {
+        "board_model" => designator,
+        "section_identity" => "FAMILIA",
+        "page_number" => 1
+      }
     }
   end
 
   def phase1_chunks
-    capture = JSON.parse(File.read(PHASE1_EVIDENCE.join("capture.json")))
-    rows = capture["events"].find { |event| event["kind"] == "retrieval_results" }.fetch("rows")
-    rows.each_with_index.map do |row, index|
-      text = row["text"]
-      content = text.is_a?(Hash) ? File.read(PHASE1_EVIDENCE.join(text["path"])) : text
-      {
-        content: content,
-        location_uri: row["uri"],
-        original_source_uri: PHASE1_PIN,
-        chunk_sha256: Digest::SHA256.hexdigest(content),
-        rank: index + 1,
-        metadata: {
-          "page_number" => row["page"].to_i,
-          "original_source_uri" => PHASE1_PIN,
-          "canonical_name" => row["document"]
-        }
-      }
-    end
+    Phase1RetrievalFixture.chunks
   end
 end

@@ -1198,7 +1198,7 @@ module Rag
       boards = named_boards(chunks)
       return selected if boards.size < 2
 
-      represented = selected.filter_map { |chunk| board_key(chunk) }.to_set
+      represented = selected.filter_map { |chunk| mention_key(chunk) }.to_set
       canonicals = covering.map(&:canonical)
 
       boards.each do |board|
@@ -1218,17 +1218,15 @@ module Rag
       selected
     end
 
-    # Groups chunks by board identity (Rag::PlateIdentity.board_key, the same
-    # key Rag::FamilyAmbiguityDetector uses), keeping
-    # only the boards the question actually names. A board can be named through
-    # any of its candidate strings — its own heading, the "**Section:**" line a
-    # generic table heading hides it behind, or the document's section_identity —
-    # so a real board is never missed for lack of a distinctive "## " line. The
-    # specificity rule then drops a named board whose matched tokens are a strict
-    # subset of another named board's — "ARCA" alone must not ride along on a
-    # question that already specified "ARCA básica".
+    # Chunks the question already names, grouped by heading text.
+    # That text is a presentation hint (Rag::PlateIdentity.presentation_label),
+    # not a demonstrated plate. Family ambiguity uses the board slot instead.
+    # A heading the question does not name does not enter this pass. The
+    # specificity rule then drops a named heading whose matched tokens are a
+    # strict subset of another named heading's — "ARCA" alone must not ride
+    # along on a question that already specified "ARCA básica".
     def named_boards(chunks)
-      boards = Array(chunks).group_by { |chunk| board_key(chunk) }.filter_map do |key, board_chunks|
+      boards = Array(chunks).group_by { |chunk| mention_key(chunk) }.filter_map do |key, board_chunks|
         next if key.nil?
 
         tokens = board_chunks.flat_map { |chunk| matched_board_tokens(chunk) }.to_set
@@ -1242,8 +1240,8 @@ module Rag
       end
     end
 
-    def board_key(chunk)
-      Rag::PlateIdentity.board_key(chunk)
+    def mention_key(chunk)
+      Rag::PlateIdentity.presentation_label(chunk)
     end
 
     def matched_board_tokens(chunk)

@@ -14,9 +14,6 @@ module Rag
     RETRIEVAL_RESULTS = 20
     MAX_OPTIONS = 3
 
-    MODEL_PATTERN =
-      /\b(?:[A-Z]{2,}\d+[A-Z0-9.-]*|[A-Z]{2,}(?:-[A-Z0-9]+)+)\b/.freeze
-
     def self.build(question:, account:, entity_s3_uris:, entity_sources:, force_entity_filter:,
                    response_locale: nil, user_id: nil,
                    conversation_session_id: nil, correlation_id: nil,
@@ -76,29 +73,23 @@ module Rag
         route_taken: "model_disambiguation"
       )
       retrieval_ms = elapsed_ms(retrieval_started)
+      return denied_result(retrieval) if denied_retrieval?(retrieval)
+
       chunks = retrieval[:chunks]
       candidates = candidates_from(chunks)
       # DeterministicIntent#ambiguous_hardware_query? is purely lexical over the
-      # raw question, so a board whose name carries no digit at all ("Twister TW
-      # de Embarba", measured 2026-07-31) lands here even though the technician
-      # named it unambiguously. An opening board declaration or an explicit
-      # plate slot is the KB's own answer to "which boards are on the table".
-      # A later section heading is not. Widening EXPLICIT_EQUIPMENT_PATTERN's
-      # manufacturer list only defers the problem to the next board without a digit.
+      # raw question, so a board whose name carries no digit at all lands here
+      # even when the technician named it. Only an explicit board slot is a plate.
       named = candidates.select { |candidate| Rag::BoardHeading.mentioned?(candidate[:label], @question) }
       # Exactly one named board: there is no ambiguity left to resolve and the
-      # menu would ask the technician to repeat what they already wrote. Answer
-      # from the retrieval in hand — returning nil to fall through would bill a
-      # second Retrieve for the same turn.
+      # menu would ask the technician to repeat what they already wrote.
       return answer_from(retrieval, retrieval_ms: retrieval_ms) if answer_directly?(named)
       return menu(candidates, named, retrieval) if clarify?(chunks, candidates, named)
 
-      # Evidence is already in hand. A section heading did not prove a plate,
-      # and fewer than three explicit plates do not prove that none exist.
-      # Nil here would send the orchestrator through another Retrieve.
-      return answer_from(retrieval, retrieval_ms: retrieval_ms) if reuse_retrieval?(chunks, candidates)
-
-      nil
+      # The Retrieve already happened. Finish on that result: generate, or
+      # abstain inside the route when the evidence or the generation is empty.
+      # Nil would send the orchestrator through another search.
+      answer_from(retrieval, retrieval_ms: retrieval_ms)
     rescue BedrockRagService::BedrockServiceError => e
       Rails.logger.warn("Rag::AmbiguousModelResponder: retrieval failed — #{e.message}")
       nil
@@ -113,29 +104,44 @@ module Rag
       Rag::StructuredEvidenceRouteFlag.enabled? && named.one?
     end
 
-    # Three explicit plates, and the answer depends on which one. A question
-    # about the selected document's location depends on a plate only when the
-    # same identifier is documented on more than one of those plates.
+    # MIN_DISTINCT_MODELS is the existing menu threshold for a generic hardware
+    # question that retrieved that many explicit board slots. The count is not
+    # proof that the slots are different machines beyond the metadata that
+    # named them. Below that threshold, two slots clarify only when
+    # FamilyAmbiguityDetector finds the asked identifier on more than one of
+    # them and the question names neither. Two labels without that collision
+    # are not a clarification. A location question on the selected document
+    # uses the same collision, including when three or more slots were retrieved.
     def clarify?(chunks, candidates, named)
+      collision = plate_identifier_collision?(chunks, named)
+      return true if collision && candidates.size < MIN_DISTINCT_MODELS
       return false if candidates.size < MIN_DISTINCT_MODELS
       return true if named.many?
       return true unless selected_document_location?
 
+      collision
+    end
+
+    def plate_identifier_collision?(chunks, named)
+      return false if named.any?
+
       Rag::FamilyAmbiguityDetector.new.call(
-        question_analysis: Rag::QueryEntities.analyze(@question),
+        question_analysis: Rag::QueryEntities.analyze(@raw_question.presence || @question),
         chunks: chunks
       ).ambiguous?
     end
 
-    # Empty plate set: the headings were sections, or no plate was declared.
-    # A location question on the selected document reuses the retrieval even
-    # when a plate slot is present but the answer does not depend on it.
-    # One or two explicit plates on any other question stay on the previous
-    # fallthrough: this responder does not own that turn.
-    def reuse_retrieval?(chunks, candidates)
-      return false if Array(chunks).empty?
+    def denied_retrieval?(retrieval)
+      retrieval.to_h[:retrieval].to_s == BedrockRagService::DENY_RETRIEVAL
+    end
 
-      candidates.empty? || selected_document_location?
+    # The pin check can also fail inside retrieve_chunks. That hash is terminal:
+    # do not generate from it and do not return nil, which would open another search.
+    def denied_result(retrieval)
+      BedrockRagService.deny_retrieval_result(
+        question: @question,
+        response_locale: @locale
+      ).merge(retrieval_trace: retrieval[:retrieval_trace])
     end
 
     def selected_document_location?
@@ -198,22 +204,9 @@ module Rag
     def candidates_from(chunks)
       seen = {}
       Array(chunks).filter_map do |chunk|
-        metadata = chunk[:metadata].to_h.stringify_keys
-        searchable = [
-          metadata["manufacturer"],
-          metadata["controller_model"],
-          metadata["board_model"],
-          metadata["canonical_name"],
-          Array(metadata["aliases"]).join(" "),
-          chunk[:content].to_s.first(2_000)
-        ].compact.join(" ")
-
-        # An opening "## " declaration or an explicit plate slot can name a
-        # board. A later "## " only extracts a section. Manufacturer stays in
-        # metadata_label and is not treated as the plate slot.
-        label = Rag::PlateIdentity.designator(chunk).presence ||
-          Rag::PlateIdentity.declared_board_heading(chunk[:content]).presence ||
-          metadata_label(metadata, searchable)
+        # Only the board slot. A heading, a section, a controller, a
+        # manufacturer, and a code in the body are not plates.
+        label = Rag::PlateIdentity.designator(chunk)
         next if label.blank?
 
         key = label.downcase
@@ -224,23 +217,8 @@ module Rag
       end
     end
 
-    # Only concatenates when the chunk carries an explicit manufacturer in
-    # metadata. Scanning the chunk body instead made every page of a multi-brand
-    # manual look like ALTIUS, offering boards that are not on that page.
-    def metadata_label(metadata, searchable)
-      manufacturer = metadata["manufacturer"].presence
-      return if manufacturer.blank?
-
-      model = metadata["controller_model"].presence ||
-        metadata["board_model"].presence ||
-        searchable.scan(MODEL_PATTERN).first
-      return if model.blank?
-
-      "#{manufacturer} — #{model}"
-    end
-
-    # One question in prose. The board names come from the retrieved headings
-    # or metadata, so the sentence never names a board that is not on the table.
+    # One question in prose. The names are explicit board slots, so the
+    # sentence does not name a plate the metadata did not.
     def render_answer(candidates)
       connector = I18n.t("rag.ambiguous_model_connector", locale: @locale)
       models = candidates.pluck(:label).to_sentence(

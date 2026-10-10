@@ -51,11 +51,12 @@ module Rag
         .transform_values { |pairs| pairs.map(&:last) }
     end
 
-    # Per board, not per family: Twister (p. 88) and Delta+ (p. 91) share
-    # `section_identity` "SISTEL" and still give SPM two different meanings.
-    # The key is Rag::PlateIdentity: an explicit plate slot, or the page's
-    # opening board declaration, or section_identity. A later "## " section
-    # does not vote. Absent metadata does not prove that no other plate exists.
+    # The key is the explicit board slot (Rag::PlateIdentity.board_key).
+    # controller_model and section_identity keep their own slots and do not
+    # vote. A heading is not a plate, at the start of the chunk or later.
+    # Two plates that share a section stay apart because the board values
+    # differ. Absent board_model does not prove that no other plate exists,
+    # and it does not invent one from the heading.
     def keyed_chunks(chunks)
       Array(chunks).filter_map do |chunk|
         board = board_key(chunk)

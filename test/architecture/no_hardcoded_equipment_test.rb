@@ -16,11 +16,11 @@ require "ripper"
 #      names a known manufacturer/model outside ALLOWED_MANUFACTURER_LITERAL.
 #      Comments are exempt by construction — Ripper only yields string/regexp
 #      *content* tokens, never comment tokens.
-#   B. Frozen ceiling: KNOWN_HARDCODED_LOCATIONS documents the five sites the
-#      Fase 0.5 audit (§3.1, R1-R5) already found and froze pending Fase 2/P1.
-#      Its size can only shrink (a retirement removes a row); growing it past
-#      MAX_ALLOWLIST_SIZE requires bumping that constant in the same PR, which
-#      is the "justificación en el PR" the audit doc requires for a new row.
+#   B. Frozen ceiling: KNOWN_HARDCODED_LOCATIONS documents the sites the
+#      Fase 0.5 audit (§3.1, R1-R5) froze. R2 (MODEL_PATTERN) was removed with
+#      its row. The size can only shrink; growing it past MAX_ALLOWLIST_SIZE
+#      requires bumping that constant in the same PR, which is the
+#      "justificación en el PR" the audit doc requires for a new row.
 #
 # This guardian does NOT retire R1-R5 itself — that is P4/P5/P6, gated on
 # Fase 2's metadata backfill. It only prevents the set from growing silently.
@@ -63,7 +63,6 @@ class NoHardcodedEquipmentTest < ActiveSupport::TestCase
   # how "sólo puede decrecer" happens in practice.
   KNOWN_HARDCODED_LOCATIONS = [
     { file: "app/services/rag/deterministic_intent.rb", identifier: "EXPLICIT_EQUIPMENT_PATTERN", blocked_by: "Fase 2" }, # R1
-    { file: "app/services/rag/ambiguous_model_responder.rb", identifier: "MODEL_PATTERN", blocked_by: "nada — P1" },     # R2
     { file: "app/services/rag/answer_safety_processor.rb", identifier: "board_model_name?", blocked_by: "Fase 2" },      # R3
     { file: "app/services/rag/answer_safety_processor.rb", identifier: "DEVICE_FUNCTION_CLAIM_PATTERN", blocked_by: "Fase 1" }, # R4
     { file: "app/services/bedrock_rag_service.rb", identifier: "query_names_different_document?", blocked_by: "ya disponible" } # R5

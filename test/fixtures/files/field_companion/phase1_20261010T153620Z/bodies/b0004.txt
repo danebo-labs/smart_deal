@@ -1,0 +1,215 @@
+[DOCUMENT: Montacargas 2N Temporizado-1 (1).pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf]
+[SEARCH_ALIASES: K1, K2, K3, K4, K5, K6, K7, Q1, Elemont, Modelo MH, T1 T2 relé temporizador, Q2 partidor 11-17A, Q3 diferencial 25A 30mA]
+
+S7 — DIAGRAMA ELÉCTRICO: TABLERO DE CONTROL — MONTACARGAS HIDRÁULICO MODELO MH
+
+Este diagrama muestra el circuito completo del tablero de control del montacargas hidráulico Modelo MH de Elemont. A continuación se describen los componentes y bloques de terminales identificados con sus etiquetas visibles en el plano.
+
+## Alimentación principal y protecciones
+
+- Q1: Interruptor automático 3 polos 25 A — alimentación trifásica L1, L2, L3 + N desde barra superior. Designación de la hoja 2.
+- Q2: Partidor de motor 11–17 A. Designación de la hoja 2.
+- Q3: Interruptor diferencial 25 A 30 mA. Designación de la hoja 2.
+- Q4: Interruptor automático 1 polo 10 A — Iluminación Foso. Designación de la hoja 2.
+- Q5: Dispositivo de protección (circuito auxiliar).
+- Q6: Dispositivo de protección (circuito auxiliar).
+- F1, F2, F3: Fusibles de protección (circuitos auxiliares). Cada uno con bornes X1-X2.
+- R1: Componente visible en circuito de alimentación — función: DATA_NOT_AVAILABLE en este diagrama.
+- H1, H2, H3: Lámparas o indicadores visuales (piloto) — cada uno con bornes X1-X2.
+- H4: Lámpara/indicador visual con bornes X1-X2 — vinculado a K5 y K7.
+
+## Transformadores
+
+- T1: Relé temporizador (Modo E, t < 3 minutos) — ver tabla de designaciones, hoja 2. Rectificador adicional etiquetado "Rectificador 24VAC/24VCD" presente, generando +24VCD y Com 24VDC.
+- T2: Relé temporizador (Modo Wu, t < 1 segundo) — ver tabla de designaciones, hoja 2.
+
+## Relés y contactores
+
+- K1: Contactor/relé — bobina A1-A2. Contactos: 21, 24 (principal), auxiliares visibles. Involucrado en circuito SUBE/BAJA y LLAMADA NIVEL 2.
+- K2: Contactor/relé — bobina A1-A2. Contactos: 43-44 (principal), auxiliares. Involucrado en circuito LLAMADA NIVEL 1 y BAJA.
+- K3: Relé — bobina A1-A2. Contactos: 11-12. Vinculado a LIMITE SUPERIOR y LIMITE INFERIOR.
+- K4: Relé — bobina A1-A2. Contactos: 1-4 y 6-7. Vinculado a RLP OUT y circuito de seguridad.
+- K5: Relé — bobina A1-A2. Contactos: 10-12 y 11-12. Vinculado a PET, RLP y Com 24VDC.
+- K6: Relé 11 pines 24 VCA INSPECCION — bobina A1-A2; vinculado a circuitos SUBE y BAJA. Designación de la hoja 2.
+- K7: Relé — bobina A2-A1. Contactos presentes. Vinculado a H4.
+
+## Otros dispositivos de control
+
+- PET: Dispositivo visible — función: DATA_NOT_AVAILABLE en este diagrama.
+- Guarda motor: Protección térmica del motor — terminal 33.
+- Rele simetria: Relé de control de fases — terminal 34.
+- RLP: Etiqueta de señal/relé auxiliar — aparece en múltiples puntos del diagrama (terminales 3, 6, 30).
+
+## Bloque de terminales (numeración 1 a 35)
+
+El plano muestra un bloque de 35 terminales. Las señales asignadas a los terminales según etiquetas visibles son:
+
+| Terminal(es) | Etiqueta visible |
+|---|---|
+| 1 | L1 |
+| 2 | L2 |
+| 3 | L3 |
+| 4 | N |
+| 5 | (sin etiqueta visible en este plano) |
+| 6 | +24vdc |
+| 7 | Com 24vdc |
+| 8 | +18VCD |
+| 9 | Com 18VCD |
+| 10 | Com 18vdc |
+| 11 | +18vdc |
+| 12 | ver tabla de borneras, hoja 2 |
+| 13 | ver tabla de borneras, hoja 2 |
+| 14 | ver tabla de borneras, hoja 2 |
+| 15 | ver tabla de borneras, hoja 2 |
+| 16 | BAJA |
+| 17 | (sin etiqueta visible) |
+| 18 | (sin etiqueta visible) |
+| 19 | (sin etiqueta visible) |
+| 20 | (sin etiqueta visible) |
+| 21 | ARIA (posible BAJA — verificar en campo) |
+| 22 | ver tabla de borneras, hoja 2 |
+| 23 | ver tabla de borneras, hoja 2 |
+| 24 | ver tabla de borneras, hoja 2 |
+| 25 | PRESOSTATO OUT |
+| 26 | ver tabla de borneras, hoja 2 |
+| 27 | ver tabla de borneras, hoja 2 |
+| 28 | SUBE |
+| 29 | BAJA |
+| 30 | RLP OUT |
+| 31 | ver tabla de borneras, hoja 2 |
+| 32 | ver tabla de borneras, hoja 2 |
+| 33 | (Guarda motor — confirmación campo) |
+| 34 | (Rele simetria — confirmación campo) |
+| 35 | INSPECCION |
+
+NOTA: La asignación exacta de cada terminal a su señal específica debe verificarse físicamente en campo — algunas etiquetas del plano aparecen superpuestas o de lectura ambigua en el bloque inferior.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-D261AD45F4DE1940
+SOURCE_SECTION_OR_PAGE: DESCRIPCIÓN TABLERO DE CONTROL
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Q1 — interruptor automático 3 polos 25 A; alimentación trifásica L1, L2, L3 + N
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Q1 — interruptor automático 3 polos 25 A; alimentación L1 L2 L3 N desde barra superior; designación hoja 2
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-DE59218FE0C08F66
+SOURCE_SECTION_OR_PAGE: DESCRIPCIÓN TABLERO DE CONTROL
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Q2 — partidor de motor 11–17 A; designación hoja 2
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Q2 — partidor de motor 11–17 A; designación hoja 2
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-DC886AE144319124
+SOURCE_SECTION_OR_PAGE: DESCRIPCIÓN TABLERO DE CONTROL
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: T1 — relé temporizador (Modo E, t < 3 minutos); ver tabla de designaciones, hoja 2. Rectificador 24VAC/24VCD etiquetado en el dibujo
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Relé temporizador Modo E, t < 3 minutos — hoja 2. Rectificador 24VAC/24VCD visible en el dibujo
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-71D54E3A0B8D00C2
+SOURCE_SECTION_OR_PAGE: DESCRIPCIÓN TABLERO DE CONTROL
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: T2 — relé temporizador (Modo Wu, t < 1 segundo); ver tabla de designaciones, hoja 2
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Relé temporizador Modo Wu, t < 1 segundo — hoja 2
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-26D5EC099FCFA29F
+SOURCE_SECTION_OR_PAGE: DESCRIPCIÓN TABLERO DE CONTROL
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: K6 — relé etiquetado INSPECCION; vinculado a terminal 35 y circuitos SUBE/BAJA
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: K6 A1A2 INSPECCION — terminal 35
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-475DB1B39B4BF3AD
+SOURCE_SECTION_OR_PAGE: DESCRIPCIÓN TABLERO DE CONTROL
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Guarda motor — protección térmica del motor; terminal 33
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Guarda motor 33
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-373463F41742FC4F
+SOURCE_SECTION_OR_PAGE: DESCRIPCIÓN TABLERO DE CONTROL
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Rele simetria — control de fases; terminal 34
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Rele simetria — terminal 34
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-63350921484CD3C1
+SOURCE_SECTION_OR_PAGE: DESCRIPCIÓN TABLERO DE CONTROL
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: ver tabla de borneras, hoja 2
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: ver tabla de borneras, hoja 2
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-7F09AE93C5D48FFC
+SOURCE_SECTION_OR_PAGE: DESCRIPCIÓN TABLERO DE CONTROL
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: ver tabla de borneras, hoja 2
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: ver tabla de borneras, hoja 2
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-8DD7459F90FBFEA2
+SOURCE_SECTION_OR_PAGE: DESCRIPCIÓN TABLERO DE CONTROL
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: ver tabla de borneras, hoja 2
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: ver tabla de borneras, hoja 2
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-0841E4BB959075F8
+SOURCE_SECTION_OR_PAGE: DESCRIPCIÓN TABLERO DE CONTROL
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RLP / RLP OUT — señal de relé auxiliar presente en terminales 3 y 30; aparece en múltiples nodos del diagrama
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: RLP OUT — RLP — terminal 30
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-2273F0236EAD0D31
+SOURCE_SECTION_OR_PAGE: DESCRIPCIÓN TABLERO DE CONTROL
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: ver tabla de borneras, hoja 2
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: ver tabla de borneras, hoja 2
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-AD32DE2B93218CA0
+SOURCE_SECTION_OR_PAGE: DESCRIPCIÓN TABLERO DE CONTROL
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: SUBE / BAJA — señales de mando de movimiento en terminales 28 y 29 (y terminal 16 para BAJA adicional)
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: 28 29 SUBE BAJA — 16 BAJA
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-2D660289E240ACB4
+SOURCE_SECTION_OR_PAGE: DESCRIPCIÓN TABLERO DE CONTROL
+RECORD_TYPE: INSPECTION_CHECK
+ACTION: Verificar físicamente en campo la asignación exacta terminal-señal del bloque de 35 terminales; algunas etiquetas del plano se superponen o son de lectura ambigua.
+EXPECTED_RESULT: REQUIRES_FIELD_VERIFICATION
+UNCERTAINTY: Etiquetas de terminales superpuestas en imagen del bloque inferior del diagrama
+EVIDENCE: bloque terminales 1 a 35 con etiquetas superpuestas
+END_FIELD_RECORD

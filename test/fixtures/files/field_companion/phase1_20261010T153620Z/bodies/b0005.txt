@@ -1,0 +1,117 @@
+[DOCUMENT: Montacargas 2N Temporizado-1 (1).pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf]
+[SEARCH_ALIASES: diagrama unilineal, tablero de control, bomba hidráulica RST, electroválvulas, fuente conmutada 12VCD, fuente conmutada 24VCD, relé tensión U=0, Elemont MH]
+
+S7 — DIAGRAM
+
+DIAGRAMA UNILINEAL DEL TABLERO DE CONTROL
+Montacargas Hidráulico Modelo MH — Elemont
+Fecha: 02/03/2023 | Plano N°: ELEMONT-N/A | Hoja: 1 DE 1 | Rev: A | Certificación ROL 2740
+
+Este plano muestra el diagrama unilineal del tablero de control del montacargas hidráulico Modelo MH, confeccionado por Sociedad Comercial e Industrial Elemont Limitada. El documento es confidencial y de propiedad exclusiva de Elemont.
+
+Alimentación principal: R-S-T-N (trifásico + neutro)
+
+Componentes identificados en el diagrama:
+- F1, F2, F3: Fusibles de protección (en línea de alimentación)
+- Q1: Interruptor/contactor — circuito Bomba hidráulica (Fase RST, cable 4X2.5mm², Sala de máquinas)
+- Q2: Interruptor — asociado a relé térmico I> y contactor K1
+- K1: Contactor principal (asociado a Q2)
+- K2: Contactor secundario (asociado a circuito electroválvulas)
+- H1, H2, H3: Luces piloto, presencia de fase — designación de la hoja 2
+- Q3: Interruptor — rama superior derecha del diagrama
+- Q4: Interruptor — circuito Iluminación foso (Fase R, cable 3X0.75mm², Foso)
+- Q5: Interruptor — circuito Central hidráulica / Iluminación cabina (Fase R, cable 3X0.75mm², Cabina)
+- Q6: Interruptor — circuito Control 24VCA (cable 2X0.75mm², Tablero y foso)
+- Q7: Interruptor — circuito Sirena 12VCD (cable 3X0.75mm², Foso)
+- R1: Relé de tensión (U=0 / U<) — protección por falta o baja tensión
+- I>: Relé de sobrecorriente (asociado a Q2)
+- Fuente conmutada 220VCA/12VCD — alimenta circuito Sirena (circuito 2, destino Sirena, foso)
+- Fuente conmutada 220VCA/24VCD — alimenta circuito Control 24VCA (circuito 4R, tablero y foso)
+
+Tabla de circuitos (extraída literalmente del plano):
+
+| CIRCUITO | FASE | DESTINO | UBICACIÓN | CABLE |
+|---|---|---|---|---|
+| 1 | RST | Bomba hidráulica | Sala de máquinas | 4X2.5mm² |
+| 2 | 12VCD | Sirena | Foso | 3X0.75mm² |
+| 3 | 24VCA | Control | Tablero, foso | 2X0.75mm² |
+| 4 | R | Electroválvulas | Central hidráulica | 4X0.75mm² |
+| 5 | R | Iluminación cabina | Cabina | 3X0.75mm² |
+| 6 | R | Iluminación foso | Foso | 3X0.75mm² |
+
+Nota: La asociación exacta de cada componente (Q3, Q4, Q5, Q6, Q7, K1, K2, H1, H2, H3) a terminales individuales del tablero no está especificada en este plano unilineal — REQUIRES_FIELD_VERIFICATION en campo con esquema de bornes correspondiente.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-DDA2A46EAE129325
+SOURCE_SECTION_OR_PAGE: DIAGRAMA UNILINEAL DEL TABLERO DE CONTROL
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Q1 — interruptor circuito bomba hidráulica, fase RST, cable 4X2.5mm², sala de máquinas
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: CIRCUITO 1 / FASE RST / DESTINO Bomba hidraulica / CABLE 4X2.5mm2
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-727C7CD596D7D623
+SOURCE_SECTION_OR_PAGE: DIAGRAMA UNILINEAL DEL TABLERO DE CONTROL
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Fuente conmutada 220VCA/12VCD — alimenta circuito Sirena, ubicación Foso, cable 3X0.75mm²
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: CIRCUITO 2 / FASE 12VCD / DESTINO Sirena / CABLE 3X0.75mm2
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-3066442CAC165B1E
+SOURCE_SECTION_OR_PAGE: DIAGRAMA UNILINEAL DEL TABLERO DE CONTROL
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Fuente conmutada 220VCA/24VCD — alimenta circuito Control 24VCA, ubicación Tablero y foso, cable 2X0.75mm²
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: CIRCUITO 3 / FASE 24VCA / DESTINO Control / Tablero, foso / CABLE 2X0.75mm2
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-FB58C7ABBEBF6639
+SOURCE_SECTION_OR_PAGE: DIAGRAMA UNILINEAL DEL TABLERO DE CONTROL
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: K2 — contactor circuito Electroválvulas, fase R, cable 4X0.75mm², central hidráulica
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: CIRCUITO 4 / FASE R / DESTINO Electrovalvulas / CABLE 4X0.75mm2
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-4B0982CFD5E03994
+SOURCE_SECTION_OR_PAGE: DIAGRAMA UNILINEAL DEL TABLERO DE CONTROL
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Q5 — interruptor circuito Iluminación cabina, fase R, cable 3X0.75mm², cabina
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: CIRCUITO 5 / FASE R / DESTINO Iluminacion cabina / CABLE 3X0.75mm2
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-27BE80861095F68A
+SOURCE_SECTION_OR_PAGE: DIAGRAMA UNILINEAL DEL TABLERO DE CONTROL
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Q4 — interruptor circuito Iluminación foso, fase R, cable 3X0.75mm², foso
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: CIRCUITO 6 / FASE R / DESTINO Iluminacion foso / CABLE 3X0.75mm2
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-2DE187E1EBBB81A6
+SOURCE_SECTION_OR_PAGE: DIAGRAMA UNILINEAL DEL TABLERO DE CONTROL
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: R1 — relé de tensión con funciones U=0 (tensión cero) y U< (subtensión), en rama de alimentación principal
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: U=0 / U< R1
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-3B528BA13E207652
+SOURCE_SECTION_OR_PAGE: DIAGRAMA UNILINEAL DEL TABLERO DE CONTROL
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: I> — relé de sobrecorriente asociado a Q2 y K1 en circuito bomba hidráulica
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: I>
+END_FIELD_RECORD

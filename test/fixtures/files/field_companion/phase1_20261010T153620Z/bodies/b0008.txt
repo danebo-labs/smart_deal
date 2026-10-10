@@ -1,0 +1,99 @@
+[DOCUMENT: Montacargas 2N Temporizado-1 (1).pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf]
+[SEARCH_ALIASES: circuito iluminacion cabina, diagrama circuito 5, lampara cabina 40W, lampara inspeccion 20W, barrera laser, enchufe inspeccion, K4, S4]
+
+S7 — DIAGRAM
+
+DIAGRAMA CIRCUITO #5 — CIRCUITO ILUMINACIÓN DE CABINA
+
+Fuente: L 220vac / N 220vac
+Terminales de referencia: 15 (L) y 16 (N)
+
+Componentes en circuito (rama de fase L):
+
+| Componente | Descripción visible | Alimentación |
+|---|---|---|
+| Lampara de Cabina | 40W | 220 Vac |
+| Lampara de inspeccion | 20W | 220 Vac |
+| Barrera Laser | Barrera Laser | 220 Vac |
+| Enchufe inspeccion | Enchufe inspeccion | 220 Vac |
+
+Controles de corte visibles en el diagrama:
+- K4: contactor/relé que controla la Lampara de Cabina 40W
+- S4: interruptor que controla la Lampara de inspeccion 20W
+
+La Barrera Laser y el Enchufe inspeccion aparecen conectados directamente sin interruptor individual visible en este diagrama.
+
+Nota: la asignación exacta de K4 y S4 a cada carga debe verificarse en campo — el diagrama muestra su posición en la rama pero no imprime etiquetas de terminal individuales por componente.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-71F953CB5E0C5A24
+SOURCE_SECTION_OR_PAGE: DIAGRAMA CIRCUITO #5 — CIRCUITO ILUMINACIÓN DE CABINA
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar componente: Lampara de Cabina 40W en circuito iluminación cabina
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: function=DATA_NOT_AVAILABLE; value=40W; connection=serie con K4, entre L 220vac y N 220vac
+EVIDENCE: Lampara de Cabina 40W
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-2E7729B0F003962B
+SOURCE_SECTION_OR_PAGE: DIAGRAMA CIRCUITO #5 — CIRCUITO ILUMINACIÓN DE CABINA
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar componente: Lampara de inspeccion 20W en circuito iluminación cabina
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: function=DATA_NOT_AVAILABLE; value=20W; connection=serie con S4, entre L 220vac y N 220vac
+EVIDENCE: Lampara de inspeccion 20W
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-3FFF0753375C21BC
+SOURCE_SECTION_OR_PAGE: DIAGRAMA CIRCUITO #5 — CIRCUITO ILUMINACIÓN DE CABINA
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar componente: Barrera Laser en circuito iluminación cabina
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: function=DATA_NOT_AVAILABLE; connection=entre L 220vac y N 220vac; interruptor individual=DATA_NOT_AVAILABLE en este diagrama
+EVIDENCE: Barrera Laser
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-B790B5F144383652
+SOURCE_SECTION_OR_PAGE: DIAGRAMA CIRCUITO #5 — CIRCUITO ILUMINACIÓN DE CABINA
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar componente: Enchufe inspeccion en circuito iluminación cabina
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: function=DATA_NOT_AVAILABLE; connection=entre L 220vac y N 220vac; interruptor individual=DATA_NOT_AVAILABLE en este diagrama
+EVIDENCE: Enchufe inspeccion
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-82ED491E0E714D93
+SOURCE_SECTION_OR_PAGE: DIAGRAMA CIRCUITO #5 — CIRCUITO ILUMINACIÓN DE CABINA
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar elemento de corte: K4 en circuito iluminación cabina
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: function=DATA_NOT_AVAILABLE; connection=en rama de Lampara de Cabina 40W; tipo=DATA_NOT_AVAILABLE
+EVIDENCE: K4
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-546DBE6FA4C15544
+SOURCE_SECTION_OR_PAGE: DIAGRAMA CIRCUITO #5 — CIRCUITO ILUMINACIÓN DE CABINA
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar elemento de corte: S4 en circuito iluminación cabina
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: function=DATA_NOT_AVAILABLE; connection=en rama de Lampara de inspeccion 20W; tipo=DATA_NOT_AVAILABLE
+EVIDENCE: S4
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-7628D0ED9CE96BDE
+SOURCE_SECTION_OR_PAGE: DIAGRAMA CIRCUITO #5 — CIRCUITO ILUMINACIÓN DE CABINA
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar terminales de alimentación: L 220vac (terminal 15) y N 220vac (terminal 16)
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: value=220 Vac; terminales=15 (L), 16 (N)
+EVIDENCE: L 220vac … N 220vac
+END_FIELD_RECORD

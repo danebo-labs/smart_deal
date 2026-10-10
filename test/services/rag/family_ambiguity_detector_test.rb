@@ -1,32 +1,57 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require Rails.root.join("test/support/phase1_retrieval_fixture")
 
 class Rag::FamilyAmbiguityDetectorTest < ActiveSupport::TestCase
-  PHASE1_EVIDENCE = Rails.root.join(
-    "tmp/phase1_pinned_turn/authorized_20261010/20261010T153620Z"
-  )
-  test "one identifier documented on three boards with no board named is ambiguous" do
+  test "headings do not make one identifier ambiguous" do
     result = detect("¿A qué serie corresponde el LED SPM?", spm_chunks)
+
+    assert_not result.ambiguous?
+    assert_empty result.board_keys
+    spm_chunks.each do |chunk|
+      assert_nil Rag::PlateIdentity.designator(chunk)
+      assert Rag::PlateIdentity.presentation_label(chunk).present?
+    end
+  end
+
+  test "one identifier on three explicit plates with no plate named is ambiguous" do
+    result = detect("¿A qué serie corresponde el LED SPM?", explicit_spm_chunks)
 
     assert result.ambiguous?
     assert_equal "SPM", result.identifier
-    assert_equal [ "CARLOS SILVA TPR50", "TWISTER TW - INAPELSA", "DELTA +" ].sort,
-                 result.board_keys.sort
+    assert_equal [ "PLACA-TPR50", "PLACA-TWISTER", "PLACA-DELTA" ].sort, result.board_keys.sort
     assert_equal [ 1, 1, 1 ], result.chunks_by_board.values.map(&:size)
   end
 
-  test "an identifier that passes the lexical equipment gate is still caught by the evidence" do
-    # "DL2" reads as explicitly scoped equipment, so no lexical gate can protect
-    # the technician here — only the retrieved evidence can.
+  test "two explicit plates that share a section stay distinct" do
+    chunks = [
+      explicit_plate("PLACA-TWISTER", "SPM | SERIE DE PUERTAS", section: "SISTEL"),
+      explicit_plate("PLACA-DELTA", "SPM | SERIE PUERTAS DE PISO", section: "SISTEL")
+    ]
+
+    result = detect("¿A qué serie corresponde el LED SPM?", chunks)
+
+    assert result.ambiguous?
+    assert_equal [ "PLACA-DELTA", "PLACA-TWISTER" ], result.board_keys.sort
+    assert_equal [ "SISTEL" ], chunks.filter_map { |chunk| Rag::PlateIdentity.section_signal(chunk)&.value }.uniq
+  end
+
+  test "an identifier that passes the lexical equipment gate is still caught from explicit plates" do
     assert_match Rag::DeterministicIntent::EXPLICIT_EQUIPMENT_PATTERN, "¿Qué serie indica el LED DL2?"
 
-    result = detect("¿Qué serie indica el LED DL2?", dl2_chunks)
+    result = detect("¿Qué serie indica el LED DL2?", explicit_dl2_chunks)
 
     assert result.ambiguous?
     assert_equal "DL2", result.identifier
-    assert_equal [ "LEVEL CONTROL 1B – ELECTRICO - PREMONTADA", "KDT 11" ].sort,
-                 result.board_keys.sort
+    assert_equal [ "PLACA-KDT", "PLACA-LEVEL" ].sort, result.board_keys.sort
+  end
+
+  test "the same identifier on heading-only chunks is not caught by the lexical gate's evidence" do
+    result = detect("¿Qué serie indica el LED DL2?", dl2_chunks)
+
+    assert_not result.ambiguous?
+    assert_empty result.board_keys
   end
 
   test "a question that names its board is never ambiguous" do
@@ -92,7 +117,7 @@ class Rag::FamilyAmbiguityDetectorTest < ActiveSupport::TestCase
     assert_not result.ambiguous?
   end
 
-  test "a chunk falls back to its section identity when it declares no heading" do
+  test "section identity does not vote as a plate" do
     chunks = [
       { content: "SPM | SERIE DE PUERTAS", metadata: { "section_identity" => "SISTEL" },
         chunk_sha256: "a", rank: 1 },
@@ -102,8 +127,11 @@ class Rag::FamilyAmbiguityDetectorTest < ActiveSupport::TestCase
 
     result = detect("¿A qué serie corresponde el LED SPM?", chunks)
 
-    assert result.ambiguous?
-    assert_equal %w[CARLOS\ SILVA SISTEL], result.board_keys.sort
+    assert_not result.ambiguous?
+    assert_empty result.board_keys
+    assert_equal [ "CARLOS SILVA", "SISTEL" ], chunks.filter_map { |chunk|
+      Rag::PlateIdentity.section_signal(chunk)&.value
+    }.sort
   end
 
   test "an empty evidence set is not ambiguous" do
@@ -115,23 +143,17 @@ class Rag::FamilyAmbiguityDetectorTest < ActiveSupport::TestCase
   end
 
   test "section headings of one manual do not make an identifier ambiguous" do
-    capture = JSON.parse(File.read(PHASE1_EVIDENCE.join("capture.json")))
-    rows = capture["events"].find { |event| event["kind"] == "retrieval_results" }.fetch("rows")
-    chunks = rows.each_with_index.map do |row, index|
-      text = row["text"]
-      content = text.is_a?(Hash) ? File.read(PHASE1_EVIDENCE.join(text["path"])) : text
-      {
-        content: content,
-        metadata: { "page_number" => row["page"].to_i, "canonical_name" => row["document"] },
-        chunk_sha256: "phase1-#{index}",
-        rank: index + 1
-      }
-    end
+    chunks = Phase1RetrievalFixture.chunks
 
     result = detect(Rag::Phase1PinnedTurn::NATURAL_MESSAGE, chunks)
 
     assert_not result.ambiguous?
     assert_empty result.board_keys
+    chunks.each do |chunk|
+      assert_nil Rag::PlateIdentity.designator(chunk)
+      assert_nil chunk[:metadata]["canonical_name"]
+      assert_nil chunk[:metadata]["original_source_uri"]
+    end
   end
 
   private
@@ -189,6 +211,35 @@ class Rag::FamilyAmbiguityDetectorTest < ActiveSupport::TestCase
       chunk("## S4 — SAFETY SYSTEM: Diagrama de cadena de seguridades ARCA III\nP32 | SERIE SEGURIDADES PRINCIPALES",
             page: 64, section_identity: "ORONA")
     ]
+  end
+
+  # Synthetic board slots. The heading text in the source chunks is not a plate.
+  def explicit_spm_chunks
+    [
+      explicit_plate("PLACA-TPR50", spm_chunks[0][:content], section: "CARLOS SILVA"),
+      explicit_plate("PLACA-TWISTER", spm_chunks[1][:content], section: "SISTEL"),
+      explicit_plate("PLACA-DELTA", spm_chunks[2][:content], section: "SISTEL")
+    ]
+  end
+
+  def explicit_dl2_chunks
+    [
+      explicit_plate("PLACA-LEVEL", dl2_chunks[0][:content], section: "ALJO"),
+      explicit_plate("PLACA-KDT", dl2_chunks[1][:content], section: "CARLOS SILVA")
+    ]
+  end
+
+  def explicit_plate(designator, content, section:)
+    {
+      content: content,
+      metadata: {
+        "board_model" => designator,
+        "section_identity" => section,
+        "page_number" => 1
+      },
+      chunk_sha256: designator,
+      rank: 1
+    }
   end
 
   def chunk(content, page:, section_identity:)

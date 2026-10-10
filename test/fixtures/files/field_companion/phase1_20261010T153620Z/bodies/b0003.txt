@@ -1,0 +1,180 @@
+[DOCUMENT: Montacargas 2N Temporizado-1 (1).pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf]
+[SEARCH_ALIASES: Diagramas Circuito 3, Linea de Seguridad, Botonera Pasillo Nivel 1, Seg In, Seg Out, Parada emergencia foso, Barrera laser, Chapa Puerta nivel 1]
+
+S7 — DIAGRAM
+
+DIAGRAMAS CIRCUITO #3
+
+Fuente: Elemont Elevadores y Montacargas — Montacargas Hidráulico Modelo MH — Instalaciones Eléctricas. Fecha: 02/03/2023. Dibujado por: A. Millán. Revisado por: J. Escobar. Certificación ROL 2740. Número de plano: ELEMONT-N/A. Hoja 1 de 1. Revisión: A. Ubicación: Santa Adela Nº 9540, Maipú.
+
+---
+
+SECCIÓN LÍNEA DE SEGURIDAD
+
+Esta sección muestra el circuito serie de la cadena de seguridad del montacargas hidráulico. Los componentes se conectan en serie entre los nodos Seg In y Seg Out. El diagrama indica los siguientes elementos en el circuito, en el orden visible de arriba hacia abajo:
+
+| Posición | Etiqueta visible en diagrama |
+|---|---|
+| 1 | Seg In |
+| 2 | Parada emergencia sobre cabina |
+| 3 | Barrera laser |
+| 4 | Fin de carrera sup |
+| 5 | Seguridad Puerta nivel 5 |
+| 6 | Seguridad Puerta nivel 4 |
+| 7 | Seguridad Puerta nivel 3 |
+| 8 | Seguridad Puerta nivel 2 |
+| 9 | Seguridad Puerta nivel 1 |
+| 10 | Parada emergencia foso |
+| 11 | Seg Out |
+
+Nota: El orden exacto de conexión en serie entre los dispositivos de seguridad de puerta por nivel (niveles 1 al 5) y los demás elementos de la cadena debe verificarse físicamente en campo, ya que el diagrama presenta ramas paralelas visuales en la representación gráfica. REQUIRES_FIELD_VERIFICATION: disposición serie exacta de cada dispositivo en la cadena.
+
+---
+
+SECCIÓN BOTONERA DE PASILLO NIVEL 1
+
+Esta sección muestra el circuito de la botonera de pasillo correspondiente al Nivel 1. El bus superior se alimenta desde Com 18vdc; el bus inferior corresponde a PasCom 24V.
+
+El diagrama muestra múltiples conectores identificados con etiquetas LC y pares Sp/Dp, distribuidos a lo largo del bus:
+
+| Conector | Etiquetas visibles asociadas |
+|---|---|
+| LC1 | Sp1, Dp1 |
+| LC2 | Sp2, Dp2 |
+| LC7 | Sp3, Dp3 |
+| LC8 | Sp4, Dp4 (aparece dos veces en el diagrama) |
+
+Además se indican dos conectores AP (sin denominación adicional visible) y la etiqueta Chapa Puerta nivel 1 conectada al bus superior.
+
+En el bus inferior (PasCom 24V) se identifican las siguientes salidas de chapa por nivel:
+
+| Salida | Etiqueta |
+|---|---|
+| 1 | Chapa nivel 1 |
+| 2 | Chapa nivel 2 |
+| 3 | Chapa nivel 3 |
+| 4 | Chapa nivel 4 |
+| 5 | Chapa nivel 5 |
+| 6 | Chapa nivel 1 (segunda instancia visible) |
+
+Nota: La función específica de los pares Sp/Dp (posiblemente subida/parada y dirección/parada) y de los conectores AP no está explicitada en el texto visible del diagrama. Sus funciones quedan como DATA_NOT_AVAILABLE en este plano. La repetición de LC8 con Sp4/Dp4 y de Chapa nivel 1 puede indicar derivaciones o conexiones redundantes; REQUIRES_FIELD_VERIFICATION en campo.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-805D93B8B7157513
+SOURCE_SECTION_OR_PAGE: SECCIÓN LÍNEA DE SEGURIDAD
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar nodo de entrada de la cadena de seguridad
+EXPECTED_RESULT: Etiqueta: Seg In
+EVIDENCE: Seg In
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-80FD5EC309BCF18E
+SOURCE_SECTION_OR_PAGE: SECCIÓN LÍNEA DE SEGURIDAD
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar nodo de salida de la cadena de seguridad
+EXPECTED_RESULT: Etiqueta: Seg Out
+EVIDENCE: Seg Out
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-A44060F00DF1EF49
+SOURCE_SECTION_OR_PAGE: SECCIÓN LÍNEA DE SEGURIDAD
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar dispositivo de parada de emergencia ubicado sobre cabina
+EXPECTED_RESULT: Etiqueta: Parada emergencia sobre cabina — función de conexión exacta en serie REQUIRES_FIELD_VERIFICATION
+EVIDENCE: Parada emergencia sobre cabina
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-9965A0267B71D3DA
+SOURCE_SECTION_OR_PAGE: SECCIÓN LÍNEA DE SEGURIDAD
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar dispositivo de detección en cadena de seguridad
+EXPECTED_RESULT: Etiqueta: Barrera laser — función y tipo de contacto DATA_NOT_AVAILABLE en este diagrama
+EVIDENCE: Barrera laser
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-ADBD91E792ACCE4E
+SOURCE_SECTION_OR_PAGE: SECCIÓN LÍNEA DE SEGURIDAD
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar fin de carrera superior en cadena de seguridad
+EXPECTED_RESULT: Etiqueta: Fin de carrera sup — tipo de contacto y cableado exacto REQUIRES_FIELD_VERIFICATION
+EVIDENCE: Fin de carrera sup
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-096E150644BA5108
+SOURCE_SECTION_OR_PAGE: SECCIÓN LÍNEA DE SEGURIDAD
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar dispositivos de seguridad de puerta por nivel en cadena de seguridad
+EXPECTED_RESULT: Etiquetas: Seguridad Puerta nivel 1, nivel 2, nivel 3, nivel 4, nivel 5 — orden serie exacto REQUIRES_FIELD_VERIFICATION
+EVIDENCE: Seguridad Puerta nivel 5 … Seguridad Puerta nivel 1
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-CECE5263ABF9FE19
+SOURCE_SECTION_OR_PAGE: SECCIÓN LÍNEA DE SEGURIDAD
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar dispositivo de parada de emergencia ubicado en foso
+EXPECTED_RESULT: Etiqueta: Parada emergencia foso — posición en cadena serie REQUIRES_FIELD_VERIFICATION
+EVIDENCE: Parada emergencia foso
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-C7A12AE8C5424D0C
+SOURCE_SECTION_OR_PAGE: SECCIÓN BOTONERA DE PASILLO NIVEL 1
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar bus de alimentación superior de botonera de pasillo nivel 1
+EXPECTED_RESULT: Etiqueta: Com 18vdc
+EVIDENCE: Com 18vdc
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-16D5DB6C568B4EDF
+SOURCE_SECTION_OR_PAGE: SECCIÓN BOTONERA DE PASILLO NIVEL 1
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar bus de alimentación inferior de botonera de pasillo nivel 1
+EXPECTED_RESULT: Etiqueta: PasCom 24V
+EVIDENCE: PasCom 24V
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-72533B2981D5BCA1
+SOURCE_SECTION_OR_PAGE: SECCIÓN BOTONERA DE PASILLO NIVEL 1
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar conectores de botonera en bus: LC1, LC2, LC7, LC8 con sus pares Sp/Dp asociados
+EXPECTED_RESULT: LC1–Sp1/Dp1, LC2–Sp2/Dp2, LC7–Sp3/Dp3, LC8–Sp4/Dp4 — función de Sp y Dp DATA_NOT_AVAILABLE en este diagrama
+EVIDENCE: Sp1 Dp1 LC1 Sp2 Dp2 LC2 Sp3 Dp3 LC7 Sp4 Dp4 LC8
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-5941846F7A31D511
+SOURCE_SECTION_OR_PAGE: SECCIÓN BOTONERA DE PASILLO NIVEL 1
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar conectores AP en botonera de pasillo nivel 1
+EXPECTED_RESULT: Etiqueta: AP (dos instancias visibles) — función DATA_NOT_AVAILABLE en este diagrama
+EVIDENCE: AP AP
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-BEF95A3D11C60D33
+SOURCE_SECTION_OR_PAGE: SECCIÓN BOTONERA DE PASILLO NIVEL 1
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar salida de chapa de puerta nivel 1 en bus superior de botonera
+EXPECTED_RESULT: Etiqueta: Chapa Puerta nivel 1
+EVIDENCE: Chapa Puerta nivel 1
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-F96D2D2E19D00D3A
+SOURCE_SECTION_OR_PAGE: SECCIÓN BOTONERA DE PASILLO NIVEL 1
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar salidas de chapa por nivel en bus inferior PasCom 24V
+EXPECTED_RESULT: Chapa nivel 1, Chapa nivel 2, Chapa nivel 3, Chapa nivel 4, Chapa nivel 5 — segunda instancia de Chapa nivel 1 REQUIRES_FIELD_VERIFICATION
+EVIDENCE: Chapa nivel 1 Chapa nivel 2 Chapa nivel 3 Chapa nivel 4 Chapa nivel 5
+END_FIELD_RECORD

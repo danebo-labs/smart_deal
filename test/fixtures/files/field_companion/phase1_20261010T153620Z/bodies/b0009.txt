@@ -1,0 +1,90 @@
+[DOCUMENT: Montacargas 2N Temporizado-1 (1).pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf]
+[SEARCH_ALIASES: circuito iluminacion foso, diagrama circuito 6, lampara foso 20W, enchufe foso, S1, S2, foso iluminacion, Elemont ROL 2740]
+
+S7 — DIAGRAM (continuación)
+
+DIAGRAMA CIRCUITO #6 — CIRCUITO ILUMINACIÓN DE FOSO
+
+Fuente: L 220vac / N 220vac
+Terminales de referencia: 10 (L) y 11 (N)
+
+Componentes en circuito (rama de fase L):
+
+| Componente | Cantidad | Potencia | Alimentación |
+|---|---|---|---|
+| Lampara | 3 | 20W c/u | 220 Vac |
+| Enchufe de foso | 1 | — | 220 Vac |
+
+Controles de corte visibles en el diagrama:
+- S1: interruptor conectado en la rama de retorno (N)
+- S2: interruptor conectado en la rama de línea (L)
+
+Las tres lámparas de 20W y el Enchufe de foso aparecen en paralelo entre L y N. Los interruptores S1 y S2 controlan el circuito completo de iluminación de foso.
+
+Nota: la asignación exacta de S1 y S2 (bipolar, unipolar, posición exacta en circuito) debe verificarse en campo — el diagrama muestra su posición en ramas L y N respectivamente.
+
+Datos del plano:
+- Empresa: ELEMONT — Elevadores y Montacargas
+- Proyecto: MONTACARGAS HIDRAULICO MODELO MH
+- Título: INSTALACIONES ELECTRICAS MONTACARGAS HIDRAULICO MODELO MH
+- Número de plano: ELEMONT-N/A
+- Dibujo: A. MILLAN — Fecha: 02/03/2023
+- Revisado: J. Escobar — N/A
+- Revisión: A
+- Escala: S/E
+- Hoja: 1 DE 1
+- Certificación: ROL 2740
+- Ubicación: SANTA ADELA Nº 9540 — MAIPU
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-C2C66383A9DEFE46
+SOURCE_SECTION_OR_PAGE: DIAGRAMA CIRCUITO #6 — CIRCUITO ILUMINACIÓN DE FOSO
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar componente: Lampara 20W (×3) en circuito iluminación foso
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: function=DATA_NOT_AVAILABLE; value=20W cada una; connection=en paralelo entre L 220vac y N 220vac
+EVIDENCE: Lampara 20W … Lampara 20W … Lampara 20W
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-9C81D1B0743A3020
+SOURCE_SECTION_OR_PAGE: DIAGRAMA CIRCUITO #6 — CIRCUITO ILUMINACIÓN DE FOSO
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar componente: Enchufe de foso en circuito iluminación foso
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: function=DATA_NOT_AVAILABLE; connection=en paralelo entre L 220vac y N 220vac; interruptor individual=DATA_NOT_AVAILABLE en este diagrama
+EVIDENCE: Enchufe de foso
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-6B0BAC42AC19F192
+SOURCE_SECTION_OR_PAGE: DIAGRAMA CIRCUITO #6 — CIRCUITO ILUMINACIÓN DE FOSO
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar elemento de corte: S1 en circuito iluminación foso
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: function=DATA_NOT_AVAILABLE; connection=rama N 220vac del circuito foso; tipo=DATA_NOT_AVAILABLE
+EVIDENCE: S1
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-A63AEC948CCEE2D5
+SOURCE_SECTION_OR_PAGE: DIAGRAMA CIRCUITO #6 — CIRCUITO ILUMINACIÓN DE FOSO
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar elemento de corte: S2 en circuito iluminación foso
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: function=DATA_NOT_AVAILABLE; connection=rama L 220vac del circuito foso; tipo=DATA_NOT_AVAILABLE
+EVIDENCE: S2
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-A8EF9AA733CD512C
+SOURCE_SECTION_OR_PAGE: DIAGRAMA CIRCUITO #6 — CIRCUITO ILUMINACIÓN DE FOSO
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar terminales de alimentación: L 220vac (terminal 10) y N 220vac (terminal 11)
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: value=220 Vac; terminales=10 (L), 11 (N)
+EVIDENCE: L 220vac … N 220vac
+END_FIELD_RECORD

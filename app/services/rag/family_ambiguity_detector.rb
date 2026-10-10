@@ -52,10 +52,10 @@ module Rag
     end
 
     # Per board, not per family: Twister (p. 88) and Delta+ (p. 91) share
-    # `section_identity` "SISTEL" and still give SPM two different meanings. A
-    # chunk that declares neither a heading nor a section identity cannot be
-    # attributed to a board, so it never votes for ambiguity — a document without
-    # this metadata must not turn every question into a clarification.
+    # `section_identity` "SISTEL" and still give SPM two different meanings.
+    # The key is Rag::PlateIdentity: an explicit plate slot, or the page's
+    # opening board declaration, or section_identity. A later "## " section
+    # does not vote. Absent metadata does not prove that no other plate exists.
     def keyed_chunks(chunks)
       Array(chunks).filter_map do |chunk|
         board = board_key(chunk)
@@ -64,10 +64,7 @@ module Rag
     end
 
     def board_key(chunk)
-      heading = Rag::BoardHeading.label(chunk[:content]).presence
-      heading = nil if heading && Rag::BoardHeading.board_tokens(heading).empty?
-
-      heading || chunk[:metadata].to_h.stringify_keys["section_identity"].presence
+      Rag::PlateIdentity.board_key(chunk)
     end
 
     # Same priority as the generation cover

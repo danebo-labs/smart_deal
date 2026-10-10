@@ -295,7 +295,7 @@ module Rag
           "interpreter_model" => TurnInterpreter::MODEL_ID,
           "generation_model" => BedrockClient::QUERY_MODEL_ID,
           "generation_model_env" => ENV["BEDROCK_MODEL_ID"].to_s
-        }
+        }.merge(route_flag_snapshot)
       end
 
       def run(evidence_root: nil)
@@ -640,6 +640,39 @@ module Rag
         ENV["AWS_REGION"].presence ||
           Rails.application.credentials.dig(:aws, :region) ||
           "us-east-1"
+      end
+
+      # Effective route flags against config/deploy.yml. Recording the
+      # difference does not turn a production flag on and does not edit .env.
+      def route_flag_snapshot
+        production = production_route_flags
+        effective = {
+          "structured_evidence_route" => StructuredEvidenceRouteFlag.enabled?,
+          "family_ambiguity_guard" => FamilyAmbiguityGuardFlag.enabled?
+        }
+        differences = effective.filter_map do |key, value|
+          next if value == production[key]
+
+          {
+            "flag" => key,
+            "effective" => value,
+            "production" => production[key]
+          }
+        end
+        effective.merge(
+          "production_structured_evidence_route" => production["structured_evidence_route"],
+          "production_family_ambiguity_guard" => production["family_ambiguity_guard"],
+          "route_flag_differences" => differences
+        )
+      end
+
+      def production_route_flags
+        deployed = YAML.safe_load_file(Rails.root.join("config/deploy.yml"), aliases: true)
+        env = deployed.dig("env", "clear") || {}
+        {
+          "structured_evidence_route" => env["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"].to_s == "true",
+          "family_ambiguity_guard" => env["RAG_FAMILY_AMBIGUITY_GUARD_ENABLED"].to_s == "true"
+        }
       end
 
       def account_kb_id(account)

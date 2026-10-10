@@ -3,6 +3,9 @@
 require "test_helper"
 
 class Rag::FamilyAmbiguityDetectorTest < ActiveSupport::TestCase
+  PHASE1_EVIDENCE = Rails.root.join(
+    "tmp/phase1_pinned_turn/authorized_20261010/20261010T153620Z"
+  )
   test "one identifier documented on three boards with no board named is ambiguous" do
     result = detect("¿A qué serie corresponde el LED SPM?", spm_chunks)
 
@@ -109,6 +112,26 @@ class Rag::FamilyAmbiguityDetectorTest < ActiveSupport::TestCase
 
   test "a question without identifiers is not ambiguous" do
     assert_not detect("¿Qué información documenta el manual?", spm_chunks).ambiguous?
+  end
+
+  test "section headings of one manual do not make an identifier ambiguous" do
+    capture = JSON.parse(File.read(PHASE1_EVIDENCE.join("capture.json")))
+    rows = capture["events"].find { |event| event["kind"] == "retrieval_results" }.fetch("rows")
+    chunks = rows.each_with_index.map do |row, index|
+      text = row["text"]
+      content = text.is_a?(Hash) ? File.read(PHASE1_EVIDENCE.join(text["path"])) : text
+      {
+        content: content,
+        metadata: { "page_number" => row["page"].to_i, "canonical_name" => row["document"] },
+        chunk_sha256: "phase1-#{index}",
+        rank: index + 1
+      }
+    end
+
+    result = detect(Rag::Phase1PinnedTurn::NATURAL_MESSAGE, chunks)
+
+    assert_not result.ambiguous?
+    assert_empty result.board_keys
   end
 
   private

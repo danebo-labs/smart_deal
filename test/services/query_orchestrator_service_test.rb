@@ -1107,6 +1107,39 @@ class QueryOrchestratorServiceTest < ActiveSupport::TestCase
     BedrockRagService.define_method(:query, original_query) if original_query
   end
 
+  test "a generated disambiguation exit is not labeled as the plate menu" do
+    fake = Object.new
+    fake.define_singleton_method(:execute) do
+      {
+        answer: "En el documento seleccionado. [1]",
+        generation_mode: "structured_evidence_route",
+        citations: []
+      }
+    end
+    original_structured = Rag::StructuredEvidenceRoute.method(:build)
+    original_ambiguous = Rag::AmbiguousModelResponder.method(:build)
+    original_overview = Rag::DocumentOverviewResponder.method(:build)
+    Rag::StructuredEvidenceRoute.define_singleton_method(:build) { |**| nil }
+    Rag::DocumentOverviewResponder.define_singleton_method(:build) { |**| nil }
+    Rag::AmbiguousModelResponder.define_singleton_method(:build) { |**| fake }
+
+    events = Rag::ValidationCapture.capture do
+      QueryOrchestratorService.new(
+        "¿Qué LED se enciende cuando falla la seguridad?",
+        account: accounts(:legacy),
+        correlation_id: "phase1:6:query"
+      ).execute
+    end
+
+    exit_event = events.reverse.find { |event| event["kind"] == "route_exit" }
+    assert_equal "structured_evidence_route", exit_event["exit"]
+    assert_equal "structured_evidence_route", exit_event["condition"]
+  ensure
+    Rag::StructuredEvidenceRoute.define_singleton_method(:build) { |**kwargs| original_structured.call(**kwargs) } if original_structured
+    Rag::AmbiguousModelResponder.define_singleton_method(:build) { |**kwargs| original_ambiguous.call(**kwargs) } if original_ambiguous
+    Rag::DocumentOverviewResponder.define_singleton_method(:build) { |**kwargs| original_overview.call(**kwargs) } if original_overview
+  end
+
   def live_otis_session
     Object.new.tap do |session|
       session.define_singleton_method(:active_episode) do

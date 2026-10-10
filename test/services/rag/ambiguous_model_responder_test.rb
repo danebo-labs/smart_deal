@@ -3,6 +3,12 @@
 require "test_helper"
 
 class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
+  PHASE1_PIN = "s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf"
+  PHASE1_QUESTION = Rag::Phase1PinnedTurn::NATURAL_MESSAGE
+  PHASE1_EVIDENCE = Rails.root.join(
+    "tmp/phase1_pinned_turn/authorized_20261010/20261010T153620Z"
+  )
+  DOCUMENTARY_ANSWER = "En el documento seleccionado, la página 5 muestra la etiqueta «Seguridad Puerta nivel 2» entre las de los niveles 3 y 1. [1] No está confirmado para el equipo instalado."
   # Measured 2026-07-31 in tmp/pilot_gate/pilot_10q_v4_1.json: the board is
   # named unambiguously, yet the question reaches this responder because
   # "TWISTER TW" carries no digit for EXPLICIT_EQUIPMENT_PATTERN to catch.
@@ -45,15 +51,14 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
 
   setup do
     @original_route_flag = ENV.fetch("RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED", nil)
+    @original_family_flag = ENV.fetch("RAG_FAMILY_AMBIGUITY_GUARD_ENABLED", nil)
     ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = "false"
+    ENV.delete("RAG_FAMILY_AMBIGUITY_GUARD_ENABLED")
   end
 
   teardown do
-    if @original_route_flag.nil?
-      ENV.delete("RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED")
-    else
-      ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = @original_route_flag
-    end
+    restore_flag("RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED", @original_route_flag)
+    restore_flag("RAG_FAMILY_AMBIGUITY_GUARD_ENABLED", @original_family_flag)
   end
 
   test "intent accepts a generic LED question and rejects a named model" do
@@ -263,18 +268,226 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
     assert result[:answer].start_with?("La evidencia recuperada corresponde a varias placas: TWISTER TW – ELECTRICO - EMBARBA")
   end
 
+  test "section headings of the selected manual are not plates and the retrieval is reused" do
+    ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = "false"
+    ENV["RAG_FAMILY_AMBIGUITY_GUARD_ENABLED"] = "false"
+    generator = FakeGenerator.new("En el documento. [1]")
+    responder = build_responder(
+      *section_chunks,
+      question: GENERIC_QUESTION,
+      generator: generator,
+      correlation_id: "phase1:6:query"
+    )
+
+    result = responder.execute
+
+    assert_equal "structured_evidence_route", result[:generation_mode]
+    assert_not_includes result[:answer], "varias placas"
+    assert_equal 0, result[:citations].size
+    assert_equal 1, generator.calls
+    assert_equal 1, responder.instance_variable_get(:@service).retrieve_count
+    assert_equal "phase1:6:query", responder.instance_variable_get(:@service).captured_kwargs[:correlation_id]
+    assert_equal "model_disambiguation", responder.instance_variable_get(:@service).captured_kwargs[:route_taken]
+    section_chunks.each do |chunk|
+      assert_nil Rag::PlateIdentity.declared_board_heading(chunk[:content])
+      assert_nil Rag::PlateIdentity.board_key(chunk)
+    end
+  end
+
+  test "the phase 1 chunks answer the selected document without creating identity" do
+    ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = "false"
+    ENV["RAG_FAMILY_AMBIGUITY_GUARD_ENABLED"] = "false"
+    episode = {}
+    generator = FakeGenerator.new(DOCUMENTARY_ANSWER)
+    responder = build_responder(
+      *phase1_chunks,
+      question: PHASE1_QUESTION,
+      raw_question: PHASE1_QUESTION,
+      generator: generator,
+      entity_s3_uris: [ PHASE1_PIN ],
+      force_entity_filter: true,
+      correlation_id: "phase1:6:query",
+      episode: episode,
+      equipment_identity: nil
+    )
+
+    result = responder.execute
+    service = responder.instance_variable_get(:@service)
+
+    assert_equal "structured_evidence_route", result[:generation_mode]
+    assert_equal true, result[:model_invoked]
+    assert_not_equal "unknown_identity_guidance", result[:publication_mode]
+    assert_not_includes result[:answer], "varias placas"
+    assert_includes result[:answer], "Seguridad Puerta nivel 2"
+    assert_includes result[:answer], "[1]"
+    assert_includes result[:answer], "No está confirmado"
+    assert result[:citations].any?
+    assert_includes generator.prompt, "Seguridad Puerta nivel 2"
+    assert_includes generator.prompt, "ramas paralelas visuales"
+    assert_includes generator.prompt, "The selected document is retrieval focus"
+    assert_not_includes generator.prompt, "Those checks must not name a selector"
+    assert_equal [ PHASE1_PIN ], service.captured_kwargs[:entity_s3_uris]
+    assert_equal true, service.captured_kwargs[:force_entity_filter]
+    assert_equal "phase1:6:query", service.captured_kwargs[:correlation_id]
+    assert_equal "model_disambiguation", service.captured_kwargs[:route_taken]
+    assert_equal 1, service.retrieve_count
+    assert_equal({}, episode)
+    assert_nil Rag::PlateIdentity.designator(phase1_chunks.first)
+  end
+
+  test "production route flags still reuse the phase 1 retrieval instead of the plate menu" do
+    ENV["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"] = "true"
+    ENV["RAG_FAMILY_AMBIGUITY_GUARD_ENABLED"] = "true"
+    generator = FakeGenerator.new(DOCUMENTARY_ANSWER)
+    responder = build_responder(
+      *phase1_chunks,
+      question: PHASE1_QUESTION,
+      raw_question: PHASE1_QUESTION,
+      generator: generator,
+      entity_s3_uris: [ PHASE1_PIN ],
+      force_entity_filter: true,
+      correlation_id: "phase1:6:query",
+      episode: {},
+      equipment_identity: nil
+    )
+
+    result = responder.execute
+
+    assert_equal "structured_evidence_route", result[:generation_mode]
+    assert_not_includes result[:answer], "varias placas"
+    assert result[:citations].any?
+    assert_equal 1, generator.calls
+    assert_equal 1, responder.instance_variable_get(:@service).retrieve_count
+    assert_not Rag::FamilyAmbiguityDetector.new.call(
+      question_analysis: Rag::QueryEntities.analyze(PHASE1_QUESTION),
+      chunks: phase1_chunks
+    ).ambiguous?
+  end
+
+  test "explicit plate designators can still require clarification" do
+    generator = FakeGenerator.new("no debería generarse [1]")
+    responder = build_responder(
+      plate_chunk("TWISTER"),
+      plate_chunk("DELTA"),
+      plate_chunk("EDEL"),
+      generator: generator
+    )
+
+    result = responder.execute
+
+    assert_equal "deterministic_model_disambiguation", result[:generation_mode]
+    assert_equal 0, generator.calls
+    assert_includes result[:answer], "TWISTER, DELTA o EDEL"
+    assert_not_includes result[:answer], "Sección interna"
+    assert_equal 1, responder.instance_variable_get(:@service).retrieve_count
+  end
+
+  test "absent plate metadata is neither compatibility nor incompatibility" do
+    chunk = {
+      content: "S7 — DIAGRAMA\n\n## Alimentación principal y protecciones\n",
+      metadata: {}
+    }
+
+    assert_nil Rag::PlateIdentity.designator(chunk)
+    assert_nil Rag::PlateIdentity.board_key(chunk)
+    assert_nil Rag::PlateIdentity.declared_board_heading(chunk[:content])
+  end
+
+  test "equipment manufacturer and plate designator stay different slots" do
+    chunk = {
+      content: "S7 — DIAGRAMA\n\n## Alimentación principal y protecciones\n",
+      metadata: { "manufacturer" => "Controles", "board_model" => "CEA15" }
+    }
+
+    assert_equal "CEA15", Rag::PlateIdentity.designator(chunk)
+    assert_equal "CEA15", Rag::PlateIdentity.board_key(chunk)
+    assert_nil Rag::PlateIdentity.designator(
+      content: chunk[:content], metadata: { "manufacturer" => "Controles" }
+    )
+  end
+
+  test "a procedure on the selected document is withheld and does not search again" do
+    generator = FakeGenerator.new("Puentea el contacto de la puerta del nivel 2. [1]")
+    responder = build_responder(
+      *phase1_chunks,
+      question: PHASE1_QUESTION,
+      raw_question: PHASE1_QUESTION,
+      generator: generator,
+      entity_s3_uris: [ PHASE1_PIN ],
+      force_entity_filter: true,
+      episode: {},
+      equipment_identity: nil
+    )
+
+    result = responder.execute
+
+    assert_equal :procedure_application, result[:applicability_violation]
+    assert_empty result[:citations]
+    assert_not_includes result[:answer], "Puentea"
+    assert_equal 1, responder.instance_variable_get(:@service).retrieve_count
+  end
+
+  test "uncited prose about the selected document abstains without another retrieve" do
+    generator = FakeGenerator.new("La cadena queda definida. El orden es único.")
+    responder = build_responder(
+      *phase1_chunks,
+      question: PHASE1_QUESTION,
+      raw_question: PHASE1_QUESTION,
+      generator: generator,
+      entity_s3_uris: [ PHASE1_PIN ],
+      force_entity_filter: true,
+      episode: {},
+      equipment_identity: nil
+    )
+
+    result = responder.execute
+
+    assert_equal :insufficient_evidence, result.dig(:diagnostics, :outcome_reason)
+    assert_not_includes result[:answer], "La cadena queda definida"
+    assert_equal 1, responder.instance_variable_get(:@service).retrieve_count
+  end
+
+  test "a blank generation abstains without another retrieve" do
+    responder = build_responder(
+      *phase1_chunks,
+      question: PHASE1_QUESTION,
+      raw_question: PHASE1_QUESTION,
+      generator: FakeGenerator.new(""),
+      entity_s3_uris: [ PHASE1_PIN ],
+      force_entity_filter: true,
+      episode: {},
+      equipment_identity: nil
+    )
+
+    result = responder.execute
+
+    assert_equal :generation_failure, result.dig(:diagnostics, :outcome_reason)
+    assert_equal "structured_evidence_route", result[:generation_mode]
+    assert_equal 1, responder.instance_variable_get(:@service).retrieve_count
+  end
+
   private
 
-  def build_responder(*chunks, response_locale: :es, question: GENERIC_QUESTION, generator: nil)
+  def restore_flag(key, value)
+    value.nil? ? ENV.delete(key) : ENV[key] = value
+  end
+
+  def build_responder(*chunks, response_locale: :es, question: GENERIC_QUESTION, generator: nil,
+                       entity_s3_uris: [], force_entity_filter: false, correlation_id: nil,
+                       raw_question: nil, episode: nil, equipment_identity: :omit)
     Rag::AmbiguousModelResponder.new(
       question: question,
       account: accounts(:legacy),
-      entity_s3_uris: [],
-      entity_sources: [],
-      force_entity_filter: false,
+      entity_s3_uris: entity_s3_uris,
+      entity_sources: entity_s3_uris.any? ? [ "document" ] : [],
+      force_entity_filter: force_entity_filter,
       response_locale: response_locale,
       rag_service: FakeService.new(chunks),
-      generator: generator
+      generator: generator,
+      correlation_id: correlation_id,
+      raw_question: raw_question,
+      episode: episode,
+      equipment_identity: equipment_identity
     )
   end
 
@@ -334,5 +547,54 @@ class Rag::AmbiguousModelResponderTest < ActiveSupport::TestCase
       original_source_uri: "s3://bucket/seguridades.pdf",
       metadata: {}
     }
+  end
+
+  def section_chunks
+    [
+      "Alimentación principal y protecciones",
+      "SECCIÓN CONEXIÓN SOBRE CABINA",
+      "Componentes del Tablero (Tabla de Designaciones)"
+    ].map.with_index do |heading, index|
+      {
+        content: "S7 — DIAGRAMA ELÉCTRICO\n\nTexto de la página.\n\n## #{heading}\n\nDetalle de la sección.\n",
+        location_uri: "s3://bucket/section-#{index}.txt",
+        original_source_uri: PHASE1_PIN,
+        chunk_sha256: "section-#{index}",
+        rank: index + 1,
+        metadata: { "page_number" => index + 1, "original_source_uri" => PHASE1_PIN }
+      }
+    end
+  end
+
+  def plate_chunk(designator)
+    {
+      content: "Introducción del plano.\n\n## Sección interna\nEl LED indica estado.\n",
+      location_uri: "s3://bucket/#{designator}.txt",
+      original_source_uri: "s3://bucket/manual.pdf",
+      chunk_sha256: designator,
+      rank: 1,
+      metadata: { "board_model" => designator, "page_number" => 1 }
+    }
+  end
+
+  def phase1_chunks
+    capture = JSON.parse(File.read(PHASE1_EVIDENCE.join("capture.json")))
+    rows = capture["events"].find { |event| event["kind"] == "retrieval_results" }.fetch("rows")
+    rows.each_with_index.map do |row, index|
+      text = row["text"]
+      content = text.is_a?(Hash) ? File.read(PHASE1_EVIDENCE.join(text["path"])) : text
+      {
+        content: content,
+        location_uri: row["uri"],
+        original_source_uri: PHASE1_PIN,
+        chunk_sha256: Digest::SHA256.hexdigest(content),
+        rank: index + 1,
+        metadata: {
+          "page_number" => row["page"].to_i,
+          "original_source_uri" => PHASE1_PIN,
+          "canonical_name" => row["document"]
+        }
+      }
+    end
   end
 end

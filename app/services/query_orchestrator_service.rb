@@ -368,8 +368,10 @@ class QueryOrchestratorService
         equipment_identity:      resolved_equipment_identity
       )
       if disambiguation && (disambiguated = disambiguation.execute)
-        Rails.logger.info("QueryOrchestrator: Routing to deterministic_model_disambiguation for: '#{@query}'")
-        note_route_exit("model_disambiguation", "deterministic_model_disambiguation")
+        mode = disambiguated[:generation_mode].to_s
+        exit_name = mode == "deterministic_model_disambiguation" ? "model_disambiguation" : mode
+        Rails.logger.info("QueryOrchestrator: Routing to #{exit_name} for: '#{@query}'")
+        note_route_exit(exit_name, mode)
         return disambiguated
       end
 

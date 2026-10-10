@@ -12,6 +12,15 @@ module Rag
   # Divider chunks are replaced by an authorized same-section neighbor.
   class StructuredEvidenceRoute
     GENERATION_MODE = "structured_evidence_route"
+    # Unknown equipment, selected document. States what that document shows.
+    # It does not confirm the installed equipment and does not authorize a procedure.
+    SELECTED_DOCUMENT_DIRECTIVE = <<~TEXT.strip.freeze
+      The equipment in service is not confirmed. The selected document is retrieval focus. It does not prove that the document matches the installed equipment, and it does not authorize a procedure on that equipment.
+
+      Answer what the selected document shows for this question. Cite each supported claim with [n]. Reproduce a printed label exactly. If the evidence is missing or its statements conflict, say what each statement shows and do not choose one as the equipment's fact.
+
+      Do not state the equipment's manufacturer, model, or nameplate. Do not give a procedure, a measurement, a terminal, or a value to apply.
+    TEXT
     MAX_GENERATION_CHUNKS = Rag::EvidenceCandidateSelector::MAX_CONTEXTS
     SECTION_MARKER = Rag::EvidenceCandidateSelector::SECTION_MARKER
     HEADING_LINE = Rag::EvidenceCandidateSelector::HEADING_LINE
@@ -300,54 +309,43 @@ module Rag
       generation_started = monotonic_now
       companion = false
       guidance = nil
-      if @evidence_applicability == DocumentIdentityScope::IDENTITY_UNKNOWN_REFERENCE
-        if UnknownIdentityPublication.reference_request?(@raw_question)
-          publication = unknown_identity_publication(chunks)
-          @publication = publication
-          if publication&.accepted?
-            prompt = publication.prompt
-            raw_answer = publication.answer
-          else
-            companion = true
-          end
-        else
-          companion = true
-        end
-        if companion
-          guidance = unknown_guidance(chunks)
-          prompt = guidance.to_s
-          raw_answer = @generator.query(
-            prompt,
-            max_tokens: BedrockRagService::DEFAULT_RAG_CONFIG[:generation_max_tokens],
-            temperature: BedrockRagService::DEFAULT_RAG_CONFIG[:generation_temperature],
-            tracking: {
-              account_id: @account_id,
-              user_id: @user_id,
-              conversation_session_id: @conversation_session_id,
-              correlation_id: @correlation_id
-            }
-          ).to_s.strip
-        end
-      else
+      if unknown_reference? && UnknownIdentityPublication.reference_request?(@raw_question)
         publication = unknown_identity_publication(chunks)
         @publication = publication
         if publication&.accepted?
           prompt = publication.prompt
           raw_answer = publication.answer
         else
-          prompt = generation_prompt(chunks, ambiguity: @ambiguity)
-          raw_answer = @generator.query(
-            prompt,
-            max_tokens: BedrockRagService::DEFAULT_RAG_CONFIG[:generation_max_tokens],
-            temperature: BedrockRagService::DEFAULT_RAG_CONFIG[:generation_temperature],
-            tracking: {
-              account_id: @account_id,
-              user_id: @user_id,
-              conversation_session_id: @conversation_session_id,
-              correlation_id: @correlation_id
-            }
-          ).to_s.strip
+          companion = true
         end
+      elsif unknown_reference? && selected_document_content?
+        prompt = generation_prompt(chunks, ambiguity: @ambiguity)
+        raw_answer = @generator.query(
+          prompt,
+          max_tokens: BedrockRagService::DEFAULT_RAG_CONFIG[:generation_max_tokens],
+          temperature: BedrockRagService::DEFAULT_RAG_CONFIG[:generation_temperature],
+          tracking: generation_tracking
+        ).to_s.strip
+      elsif unknown_reference?
+        companion = true
+      else
+        prompt = generation_prompt(chunks, ambiguity: @ambiguity)
+        raw_answer = @generator.query(
+          prompt,
+          max_tokens: BedrockRagService::DEFAULT_RAG_CONFIG[:generation_max_tokens],
+          temperature: BedrockRagService::DEFAULT_RAG_CONFIG[:generation_temperature],
+          tracking: generation_tracking
+        ).to_s.strip
+      end
+      if companion
+        guidance = unknown_guidance(chunks)
+        prompt = guidance.to_s
+        raw_answer = @generator.query(
+          prompt,
+          max_tokens: BedrockRagService::DEFAULT_RAG_CONFIG[:generation_max_tokens],
+          temperature: BedrockRagService::DEFAULT_RAG_CONFIG[:generation_temperature],
+          tracking: generation_tracking
+        ).to_s.strip
       end
       generation_ms = elapsed_ms(generation_started)
       if raw_answer.blank?
@@ -434,6 +432,23 @@ module Rag
       end
       local_ms = local_before_generation_ms + elapsed_ms(local_after_generation_started)
       uncited_prose = !companion && uncited_prose?(answer, internal_answer, attribution)
+      if selected_document_content? && uncited_prose
+        return abstained_outcome(
+          reason: :insufficient_evidence,
+          retrieval: retrieval,
+          retrieval_ms: retrieval_ms,
+          expansion_ms: expansion_ms,
+          local_ms: local_ms,
+          generation_ms: generation_ms,
+          expanded_chunks: expanded_chunks,
+          chunks: chunks,
+          expansions: expansions,
+          prompt: prompt,
+          raw_answer: raw_answer,
+          model_invoked: true,
+          attribution: attribution
+        )
+      end
       citations = [] if uncited_prose
       unless companion || uncited_prose || valid_citations?(answer, citations, chunks.size)
         return abstained_outcome(
@@ -1203,8 +1218,8 @@ module Rag
       selected
     end
 
-    # Groups chunks by board identity (same key as Rag::FamilyAmbiguityDetector:
-    # the "## " heading label, falling back to metadata section_identity), keeping
+    # Groups chunks by board identity (Rag::PlateIdentity.board_key, the same
+    # key Rag::FamilyAmbiguityDetector uses), keeping
     # only the boards the question actually names. A board can be named through
     # any of its candidate strings — its own heading, the "**Section:**" line a
     # generic table heading hides it behind, or the document's section_identity —
@@ -1228,10 +1243,7 @@ module Rag
     end
 
     def board_key(chunk)
-      heading = Rag::BoardHeading.label(chunk[:content]).presence
-      heading = nil if heading && Rag::BoardHeading.board_tokens(heading).empty?
-
-      heading || chunk[:metadata].to_h.stringify_keys["section_identity"].presence
+      Rag::PlateIdentity.board_key(chunk)
     end
 
     def matched_board_tokens(chunk)
@@ -1294,7 +1306,7 @@ module Rag
         .sub("$search_results$") { evidence_context(chunks) }
         .sub(BedrockRagService::OUTPUT_FORMAT_PLACEHOLDER) do
           [
-            DocumentIdentityScope.applicability_block_for(@evidence_applicability),
+            applicability_prompt_block,
             citation_instructions(chunks.size),
             verbatim_directive_for_applicability,
             (exact_lookup_directive if @exact_lookup),
@@ -1439,6 +1451,35 @@ module Rag
 
     def unknown_reference?
       @evidence_applicability == DocumentIdentityScope::IDENTITY_UNKNOWN_REFERENCE
+    end
+
+    # A pin plus a location question asks what the selected document shows.
+    # reference_request? stays the narrow "what does the manual say" contract.
+    # This does not turn the pin into equipment identity.
+    def selected_document_content?
+      return false unless unknown_reference?
+      return false if @entity_s3_uris.blank?
+
+      Rag::QueryEntities.requested_relation(@raw_question.to_s).include?(:location)
+    end
+
+    def applicability_prompt_block
+      return selected_document_directive if selected_document_content?
+
+      DocumentIdentityScope.applicability_block_for(@evidence_applicability)
+    end
+
+    def selected_document_directive
+      SELECTED_DOCUMENT_DIRECTIVE
+    end
+
+    def generation_tracking
+      {
+        account_id: @account_id,
+        user_id: @user_id,
+        conversation_session_id: @conversation_session_id,
+        correlation_id: @correlation_id
+      }
     end
 
     def citation_instructions(chunk_count)

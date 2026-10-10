@@ -335,16 +335,19 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     assert_includes identifiers, "ABC900"
   end
 
-  test "a meta question does not become an observation or a query" do
+  test "an incomplete request for what Danebo needs is searched and not stored" do
     session = web_session
     result = with_owner do
       ask(session, "¿Necesitas controlador?", client(perception("meta")))
     end
 
-    assert result.understanding.meta?
-    assert_nil result.composed
-    assert_nil session.reload.active_episode["goal"]
-    assert_nil session.active_episode["observations"]
+    assert_equal "ready", result.understanding.decision
+    assert result.understanding.fallback
+    assert result.understanding.performs_retrieval?
+    assert_includes result.composed, "controlador"
+    assert_nil session.reload.active_episode&.[]("goal")
+    assert_nil session.active_episode&.[]("observations")
+    assert_nil session.active_episode&.dig("facts", "controller")
   end
 
   test "a correction replaces the active controller and rejects the old value" do

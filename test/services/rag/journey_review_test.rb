@@ -7,7 +7,11 @@ class Rag::JourneyReviewTest < ActiveSupport::TestCase
 
   TURN = "Estoy revisando un Elemont MH por un problema de puerta en el nivel 2. Según el plano seleccionado, ¿dónde aparece la seguridad de esa puerta y cómo se relaciona con las demás seguridades?"
   SYMPTOM = "problema de puerta en el nivel 2"
-  PRIOR_GOAL = "ajustar frenos"
+  BRAKE_GOAL = "ajustar frenos"
+  DOOR_EPISODE = "ep_door_level_2"
+  DOOR_GOAL = "investigar el problema de puerta en el nivel 2"
+  DOOR_OBSERVATION = "la hoja de la puerta del nivel 2 queda entreabierta"
+  DOOR_PROCEDURE = { "name" => "seguridad_puerta_nivel_2" }.freeze
   ELEMONT_UID = "dcc8e046-037d-48a6-8913-1992aed28507"
   ELEMONT_KEY = "bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf"
 
@@ -100,7 +104,7 @@ class Rag::JourneyReviewTest < ActiveSupport::TestCase
 
   test "an empty pinned episode keeps the question, the manual, and no invented model" do
     CASES.each do |spec|
-      summary, judgment = replay(spec, active: false)
+      summary, judgment = replay(spec)
 
       assert_equal spec[:historical], judgment["historical"], spec[:key]
       assert_equal "pass", judgment["acceptance"], "#{spec[:key]} #{judgment["reasons"]} #{summary.slice("route", "condition", "query", "goal_after", "model_after", "manufacturer_after", "identifiers_after")}"
@@ -111,34 +115,69 @@ class Rag::JourneyReviewTest < ActiveSupport::TestCase
     end
   end
 
-  test "a follow-up keeps the open job unless the payload is new_work" do
+  test "a brake job and the door question are an ambiguous relation, not a continuity verdict" do
     CASES.each do |spec|
-      summary, judgment = replay(spec, active: true)
+      summary, judgment = replay(spec, scenario: :brakes)
+
+      assert_equal spec[:historical], judgment["historical"], spec[:key]
+      assert_equal "pass", judgment["acceptance"], "#{spec[:key]} #{judgment["reasons"]}"
+      assert_equal [ @document.id ], summary["focus_before"], spec[:key]
+      assert_equal summary["focus_before"], summary["focus_after"], spec[:key]
+      assert_includes summary["query"], "seguridad de esa puerta", spec[:key]
+      assert_equal "ep_active_job", summary["episode_before_id"], spec[:key]
+      assert_equal BRAKE_GOAL, summary["goal_before"], spec[:key]
+      # The captured new_work was produced with an empty context. Replaying it
+      # here records the current policy. It does not score this relation.
+      if captured_move(spec) == "new_work"
+        assert_not_equal summary["episode_before_id"], summary["episode_after_id"], spec[:key]
+        assert_equal({}, @session.current_procedure)
+      else
+        assert_equal summary["episode_before_id"], summary["episode_after_id"], spec[:key]
+        assert_equal BRAKE_GOAL, summary["goal_after"], spec[:key]
+        assert_equal({ "name" => "ajuste" }, @session.current_procedure)
+      end
+    end
+  end
+
+  test "replaying the captured payloads on the same door job records a new_work restart" do
+    CASES.each do |spec|
+      summary, judgment = replay(spec, scenario: :door)
+
       assert_equal spec[:historical], judgment["historical"], spec[:key]
       assert_equal [ @document.id ], summary["focus_before"], spec[:key]
       assert_equal summary["focus_before"], summary["focus_after"], spec[:key]
+      assert_includes summary["query"], "seguridad de esa puerta", spec[:key]
+      assert_equal DOOR_EPISODE, summary["episode_before_id"], spec[:key]
+      assert_equal DOOR_GOAL, summary["goal_before"], spec[:key]
+      assert_includes summary["observations_before"], DOOR_OBSERVATION, spec[:key]
+      assert_equal "ready", summary["route"], spec[:key]
+      assert_equal true, summary["retrieval"], spec[:key]
 
-      if spec[:key] == "haiku55_original"
+      # Captured with empty context. This replay is not a live follow-up.
+      if captured_move(spec) == "new_work"
         assert_equal "fail", judgment["acceptance"], spec[:key]
         assert_includes judgment["reasons"], "silent_restart", spec[:key]
-        assert_not_equal "ep_active_job", summary["episode_after_id"], spec[:key]
+        assert_not_equal DOOR_EPISODE, summary["episode_after_id"], spec[:key]
+        assert_not_equal DOOR_GOAL, summary["goal_after"], spec[:key]
+        assert_not_includes summary["observations_after"], DOOR_OBSERVATION, spec[:key]
         assert_equal({}, @session.current_procedure)
       else
         assert_equal "pass", judgment["acceptance"], "#{spec[:key]} #{judgment["reasons"]}"
-        assert_equal "ep_active_job", summary["episode_after_id"], spec[:key]
-        assert_equal PRIOR_GOAL, summary["goal_after"], spec[:key]
-        assert_equal({ "name" => "ajuste" }, @session.current_procedure)
+        assert_equal DOOR_EPISODE, summary["episode_after_id"], spec[:key]
+        assert_equal DOOR_GOAL, summary["goal_after"], spec[:key]
+        assert_includes summary["observations_after"], DOOR_OBSERVATION, spec[:key]
+        assert_equal DOOR_PROCEDURE, @session.current_procedure
       end
     end
   end
 
   private
 
-  def replay(spec, active:)
+  def replay(spec, scenario: nil)
     @session = web_session
     @document ||= elemont_document
     assert @session.pin_kb_document!(@document), spec[:key]
-    seed_active(@session) if active
+    seed_scenario(@session, scenario) if scenario
     events = []
     result = nil
     assert_no_enqueued_jobs only: TrackBedrockQueryJob do
@@ -160,11 +199,11 @@ class Rag::JourneyReviewTest < ActiveSupport::TestCase
     assert_equal TURN, @session.reload.conversation_history.last["content"]
     assert_nil result.understanding.clarification if spec[:unconfirmed]
     summary = Rag::JourneyReview.summarize(events)
-    judgment = Rag::JourneyReview.judge(summary, checks_for(spec, active: active))
+    judgment = Rag::JourneyReview.judge(summary, checks_for(spec, scenario: scenario))
     [ summary, judgment ]
   end
 
-  def checks_for(spec, active:)
+  def checks_for(spec, scenario:)
     checks = {
       historical: spec[:historical],
       retrieval: true,
@@ -177,16 +216,20 @@ class Rag::JourneyReviewTest < ActiveSupport::TestCase
     }
     if spec[:unconfirmed]
       checks[:no_unconfirmed_writes] = true
-      checks[:manufacturer_blank] = !active
+      checks[:manufacturer_blank] = scenario.nil?
     else
       checks[:manufacturer] = "Elemont"
     end
-    if active
+    checks[:manufacturer] = "Elemont" if scenario && spec[:unconfirmed]
+    if scenario == :door
       checks[:episode_stable] = true
-      checks[:prior_goal] = PRIOR_GOAL
-      checks[:manufacturer] = "Elemont" if spec[:unconfirmed]
+      checks[:prior_goal] = DOOR_GOAL
     end
     checks
+  end
+
+  def captured_move(spec)
+    tool_input(spec).fetch("move")
   end
 
   def tool_input(spec)
@@ -251,15 +294,20 @@ class Rag::JourneyReviewTest < ActiveSupport::TestCase
     )
   end
 
-  def seed_active(session)
+  def seed_scenario(session, scenario)
+    seeded = scenario == :door
     session.update!(
       active_episode: {
         "v" => 1,
-        "episode_id" => "ep_active_job",
+        "episode_id" => seeded ? DOOR_EPISODE : "ep_active_job",
         "status" => "active",
         "opened_at" => Time.current.iso8601,
         "updated_at" => Time.current.iso8601,
-        "goal" => { "text" => PRIOR_GOAL, "correlation_id" => "seed", "truncated" => false },
+        "goal" => {
+          "text" => seeded ? DOOR_GOAL : BRAKE_GOAL,
+          "correlation_id" => "seed",
+          "truncated" => false
+        },
         "facts" => {
           "manufacturer" => { "status" => "known", "value" => "Elemont", "source" => "user" }
         },
@@ -267,11 +315,14 @@ class Rag::JourneyReviewTest < ActiveSupport::TestCase
           { "value" => "Elemont MH", "source" => "user", "correlation_id" => "seed" }
         ],
         "observations" => [
-          { "text" => "el freno queda abierto", "correlation_id" => "seed" }
+          {
+            "text" => seeded ? DOOR_OBSERVATION : "el freno queda abierto",
+            "correlation_id" => "seed"
+          }
         ],
         "conflicts" => []
       },
-      current_procedure: { "name" => "ajuste" }
+      current_procedure: seeded ? DOOR_PROCEDURE : { "name" => "ajuste" }
     )
   end
 

@@ -31,6 +31,10 @@ module Rag
     # Using or choosing the manual in the product. Not a question about a drawing.
     MANUAL_SELECTION = /\b(?:uso|usar|usas|selecciono|seleccionar|selecciona|elijo|elegir|elige)\b/
     PRODUCT_DOCUMENT = /\b(?:manual|documento)\b/
+    # Words of a complete request for what Danebo needs. Not a search for one of them.
+    ASSISTANT_CONTENT_TOKEN = /\A(?:que|necesitas|te|mande|de|mi)\z/
+    # Words of a complete question about Danebo or about choosing its manual.
+    PRODUCT_FUNCTION_TOKEN = /\A(?:como|que|es|para|danebo|un|una|el|la|los|las)\z/
     MEDIA_TOKEN = /\A(?:foto|imagen|video)\z/
     # Offer-frame words only. Equipment words are not added here.
     LONE_OFFER_TOKEN = /\A(?:puedo|puedes|tengo|enviarte|envio|enviar|te|si|otra|una|un|la|el|de|mi|foto|imagen|video|mando|mandarte|adjunto|esta|este|por|favor|sirve)\z/
@@ -785,9 +789,10 @@ module Rag
     end
 
     # meta may not drop a searchable turn. A greeting, an acknowledgement,
-    # a request for what Danebo needs, a lone evidence offer, and a question
-    # about using Danebo or selecting a manual stay meta. Any other meta is
-    # incompatible: the turn is searched and is not stored as a fact.
+    # a complete request for what Danebo needs, a lone evidence offer, and a
+    # complete question about using Danebo or selecting a manual stay meta.
+    # A word outside that frame leaves the turn uncovered, so meta may not
+    # drop it. The turn is then searched and is not stored as a fact.
     # Document focus is not an input.
     def meta_incompatible?(text)
       return false unless RoutePolicy.searchable_symptom?(text)
@@ -804,21 +809,50 @@ module Rag
       tokens = normalized.to_s.split
       return false if tokens.empty? || technical_marker?(normalized)
 
-      tokens.all? { |word| word.match?(RoutePolicy::GREETING_TOKEN) || word.match?(COURTESY_TOKEN) }
+      tokens.all? { |word| courtesy_or_greeting?(word) }
     end
 
     def assistant_request?(normalized)
       return false if technical_marker?(normalized)
 
-      normalized.match?(/\bnecesitas\b/)
+      tokens = normalized.to_s.split
+      return false if tokens.empty? || tokens.none? { |word| word == "necesitas" }
+
+      tokens.all? { |word| assistant_frame?(word) }
+    end
+
+    def assistant_frame?(word)
+      word.match?(ASSISTANT_CONTENT_TOKEN) || courtesy_or_greeting?(word)
     end
 
     def product_help?(normalized)
       return false if technical_marker?(normalized)
-      return true if normalized.match?(/\bdanebo\b/) && (
+      return false unless product_frame?(normalized)
+
+      danebo_product_question?(normalized) || manual_choice?(normalized)
+    end
+
+    def product_frame?(normalized)
+      tokens = normalized.to_s.split
+      tokens.any? && tokens.all? { |word| product_frame_token?(word) }
+    end
+
+    def product_frame_token?(word)
+      word.match?(PRODUCT_FUNCTION_TOKEN) || word.match?(PRODUCT_OPERATION) ||
+        word.match?(PRODUCT_DOCUMENT) || courtesy_or_greeting?(word)
+    end
+
+    def courtesy_or_greeting?(word)
+      word.match?(RoutePolicy::GREETING_TOKEN) || word.match?(COURTESY_TOKEN)
+    end
+
+    def danebo_product_question?(normalized)
+      normalized.match?(/\bdanebo\b/) && (
         normalized.match?(PRODUCT_OPERATION) || normalized.match?(/\b(?:que es|para que)\b/)
       )
+    end
 
+    def manual_choice?(normalized)
       normalized.match?(MANUAL_SELECTION) && normalized.match?(PRODUCT_DOCUMENT)
     end
 

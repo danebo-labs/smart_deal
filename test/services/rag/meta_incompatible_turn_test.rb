@@ -164,12 +164,17 @@ class Rag::MetaIncompatibleTurnTest < ActiveSupport::TestCase
       "hola",
       "Buenos días",
       "Hola, ¿qué tal?",
+      "¿Qué necesitas?",
       "¿Qué necesitas que te mande?",
       "¿Qué necesitas de mí?",
+      "Hola, ¿qué necesitas que te mande?",
       "Puedo enviarte una foto",
       "tengo una foto, te sirve?",
       "¿Cómo uso Danebo?",
+      "Buenos días. ¿Cómo uso Danebo?",
       "¿Qué es Danebo?",
+      "¿Para qué sirve Danebo?",
+      "¿Cómo funciona Danebo?",
       "¿Cómo selecciono un manual?",
       "¿Qué manual elijo?"
     ].each do |turn|
@@ -221,7 +226,12 @@ class Rag::MetaIncompatibleTurnTest < ActiveSupport::TestCase
   end
 
   test "an acknowledgement and a lone evidence offer stay meta without writing the episode" do
-    [ "Perfecto, entendido", "Puedo enviarte una foto" ].each do |turn|
+    [
+      "Perfecto, entendido",
+      "Puedo enviarte una foto",
+      "¿Qué necesitas que te mande?",
+      "¿Cómo uso Danebo?"
+    ].each do |turn|
       session, result, events = run_turn(turn, pin: true)
       assert_meta_without_writes(session, result, events, turn)
       assert_nil session.active_episode&.[]("goal"), turn
@@ -232,6 +242,31 @@ class Rag::MetaIncompatibleTurnTest < ActiveSupport::TestCase
       assert_equal "ajustar frenos", result.state.dig("goal", "text"), turn
       assert_equal [ "el freno queda abierto" ], result.state["observations"].pluck("text"), turn
       assert_equal "ep_seed", result.state["episode_id"], turn
+    end
+  end
+
+  test "an administrative word does not hide a technical question" do
+    {
+      "¿Qué necesitas para investigar por qué el motor se detiene?" => "motor se detiene",
+      "Según el manual, ¿cómo selecciono el contacto adecuado?" => "contacto adecuado",
+      "Danebo, ¿para qué sirve el contacto KSE?" => "contacto KSE",
+      "Hola. ¿Qué necesitas para investigar por qué el motor se detiene?" => "motor se detiene",
+      "Buenos días. Según el manual, ¿cómo selecciono el contacto adecuado?" => "contacto adecuado",
+      "Hola. Danebo, ¿para qué sirve el contacto KSE?" => "contacto KSE"
+    }.each do |turn, fragment|
+      session, result, events, _client, document = run_turn(turn, pin: true)
+      assert_searched_without_facts(session, result, events, turn, fragment, document)
+      assert_no_identity(session, turn)
+
+      session, result, events, _client, document = run_turn(
+        turn, pin: true, goal: "ajustar frenos", observation: "el freno queda abierto"
+      )
+      assert_searched_without_facts(session, result, events, turn, fragment, document)
+      assert_equal "ajustar frenos", result.state.dig("goal", "text"), turn
+      assert_equal [ "el freno queda abierto" ], result.state["observations"].pluck("text"), turn
+      assert_equal "ep_seed", result.state["episode_id"], turn
+      assert_equal turn, session.conversation_history.last["content"], turn
+      assert_equal document.id, session.document_focus_entries.sole["kb_document_id"], turn
     end
   end
 

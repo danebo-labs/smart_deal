@@ -6,9 +6,9 @@
 
 **Estado.** La fase 0 está cerrada. La fase 1 recuperó la página 5, la incluyó en el prompt de generación y publicó una respuesta citada: corrida `20261010T193753Z`, sesión 7, `structured_evidence_route`. La fase 2 no está iniciada. Este corte no es `EPISODIO_VALIDADO`.
 
-**Bloqueo.** La aceptación documental sigue pendiente. El objeto S3 de la página 5 quedó sustituido y releyó el cuerpo corregido, pero la ingesta no se abrió: Aurora estaba reanudándose tras una pausa automática y no hubo `job_id`. El índice y la respuesta publicada de la fase 1 siguen con la nota de «ramas paralelas visuales». Lahiri confirmó la referencia técnica de este trabajo: la Línea de Seguridad es una cadena en serie plegada en dos columnas, y Seguridad Puerta nivel 2 está entre Seguridad Puerta nivel 3 y Seguridad Puerta nivel 1. La frase no está en la capa de texto de la página 5.
+**Bloqueo.** La aceptación documental sigue pendiente. La ingesta `XU1THSZ4ZT` terminó `COMPLETE` con un documento modificado y un documento fallido. El fallo nombrado es otro objeto, `bulk_chunks/3/5b1859a0bfe1c5b11e58214555f8c2fe93e6/chunk_p5_1.txt`. La condición para preparar la comprobación del caso exige cero fallidos. No se cumple. La fase 1 no queda aceptada. Lahiri confirmó la referencia técnica de este trabajo: la Línea de Seguridad es una cadena en serie plegada en dos columnas, y Seguridad Puerta nivel 2 está entre Seguridad Puerta nivel 3 y Seguridad Puerta nivel 1. La frase no está en la capa de texto de la página 5.
 
-**Siguiente acción.** No repetir `script/patch_elemont_chunk_p5_1_safety_note.rb`. La ejecución de `20261013T182142Z` está en «Aplicación supervisada, 2026-10-13» y no es un éxito. No abre otra ingesta, no acepta la fase 1 y no inicia la fase 2. `PASS_CALL_CAP` permanece en 0.
+**Siguiente acción.** No repetir `script/patch_elemont_chunk_p5_1_safety_note.rb` ni abrir otra ingesta desde este texto. El resultado está en «Continuación de la sincronización, 2026-10-13». No prepara todavía la comprobación del caso, no acepta la fase 1 y no inicia la fase 2. `PASS_CALL_CAP` permanece en 0.
 
 **Gates que ya no son el paso siguiente.** Cerrar otra vez la fase 0. Repetir `20261009T194048Z`, `20261009T221211Z`, `20261010T153620Z` o `20261010T193753Z`. Reabrir el experimento del intérprete o la comparación Haiku 4.5 / Haiku 5.5. Abrir la fase 2. Reabrir Journey A, usar la reserva de 42 llamadas, cambiar el modelo o desplegar. Ejecutar G5, F9 o F10 del focus. Reabrir el ciclo F0–F8 de discovery. Reanudar O-P2 a O-P5, F3b o F4 del recovery del 06/10. El párrafo siguiente conserva esa historia.
 
@@ -895,6 +895,18 @@ No hay `job_id`, ni estado de ingesta, ni estadísticas, ni rollback. La última
 
 Cupo de modelos: 0. `Retrieve`: 0. `PASS_CALL_CAP` permanece en 0. No hubo corrida de fase 1, ni worker, ni despliegue, ni cambio del adaptador de jobs. La fase 1 no queda aceptada. La fase 2 no empieza.
 
+#### Continuación de la sincronización, 2026-10-13
+
+Lahiri autorizó solo la sincronización pendiente de `a58cfc79a734799394e2fb9fdfd55c65119a8b6f`. `HEAD` era ese commit y el árbol estaba limpio. No se ejecutó el script de reparación. STS, con el perfil `default` y sin las claves de `.env`, devolvió otra vez la cuenta `935142957735` y `arn:aws:iam::935142957735:user/Lahiri`. No se editó `.env`.
+
+La lectura previa exigió los dos SHA. El cuerpo tenía 7360 bytes y `b466665b37f76cf2e35441787bbd30b3fe2dd42d623b4de359e05814e2c8a85a`. El sidecar tenía 924 bytes y `d34fb691855b77286aaf55e5bb86ac2e784b0c15c72b47cdd10b59d0e2e87c13`. Coincidieron. `list-data-sources` devolvió solo `PJ0N58DMHG`. No hubo fallback.
+
+`AWS_MAX_ATTEMPTS=1`. El primer `start_ingestion_job` repitió el `ValidationException` de Aurora `db-X44TTVPZA4IRPMMQUHXIBEAL64` reanudándose. Request `3abac444-b126-4b07-b3b3-e7aefa3e68b1`. SDK Attempt Count: 1. Se esperaron 30 segundos. El segundo inicio devolvió `job_id` `XU1THSZ4ZT`; quedó escrito en el registro antes del sondeo y no se envió otro inicio. Hubo cuatro observaciones, separadas por 10 segundos: tres `IN_PROGRESS` y luego `COMPLETE`.
+
+Estadísticas finales: escaneados 14918, metadatos escaneados 14918, nuevos 0, modificados 1, fallidos 1, borrados 0, metadatos modificados 0. El único `failureReasons` nombra `bulk_chunks/3/5b1859a0bfe1c5b11e58214555f8c2fe93e6/chunk_p5_1.txt`: 9048 tokens de entrada frente a un máximo de 8192. Request `c8d71169-3367-40f4-b5d0-7aed9a54a25c`. No es la clave de esta reparación. La condición autorizada para preparar la comprobación del caso es `COMPLETE`, cero fallidos y al menos un modificado. Hay un fallido, así que esa preparación no se abre.
+
+No hubo escritura S3, ni rollback, ni modelo, ni `Retrieve`, ni worker, ni despliegue, ni otra corrida. `PASS_CALL_CAP` permanece en 0. El respaldo `tmp/elemont_page5_safety_note/20261013T182142Z/` no se modificó. El registro de esta continuación está en `tmp/elemont_page5_safety_note_sync/20261013T184311Z/` y enlaza ese respaldo. La fase 1 no queda aceptada. La fase 2 no empieza.
+
 ### Fase 2. Guía conversacional con el documento correcto
 
 1. Estado: pendiente y bloqueada por la fase 1.
@@ -964,6 +976,7 @@ Cupo de modelos: 0. `Retrieve`: 0. `PASS_CALL_CAP` permanece en 0. No hubo corri
 | La sustitución de esa nota quedó preparada en local, sobre la revisión de `40b9dc4`. | Chunk corregido, servicio, script acotado a la clave y pruebas con dobles. El objeto vivo no se leyó. | Preparado. La escritura no está autorizada. La fase 1 no queda aceptada. |
 | El manifiesto no guardaba el cuerpo corregido ni el job, y un fallo de AWS después de escribir podía quedar sin etapa confirmada. | El SHA corregido y cada `job_id` se anexan al recibirlos. Si el inicio o el estado quedan inciertos, no hay otra escritura, otra ingesta ni rollback automático. | Cerrado en la preparación. La escritura sigue sin autorizar. |
 | Aplicación supervisada de `6fcb6b7`, `20261013T182142Z`. | El objeto se sustituyó y la relectura coincidió. La ingesta no se abrió: Aurora estaba reanudándose y no hubo `job_id`. | Parada en `publish_checked`. No es éxito. La fase 1 no queda aceptada. La fase 2 no empieza. |
+| Continuación de esa sincronización, `20261013T184311Z`. | Dos inicios. El segundo abrió `XU1THSZ4ZT` y terminó `COMPLETE`: 1 modificado y 1 fallido, este último en otra clave. | No abre la comprobación del caso. La fase 1 no queda aceptada. La fase 2 no empieza. |
 | La corrida de la fase 1 no guardó el request del intérprete. | Sobre `danebo.audit.v1` y `interpreter_request` copiado antes de `converse`. | La corrida `20261009T221211Z` guardó el request. La de `20261009T194048Z` no se rellena. |
 | `prepared` se leía como envío, la respuesta del intérprete perdía el texto y la reentrada del guardia podía encolar. | `prepared`, `attempt_started`, `blocked`, `returned` y `error`. | En `20261009T221211Z` se observaron `prepared`, `attempt_started` y `returned`. El cuerpo de esa corrida no se modeló y no se rellena. La causa de `meta` sigue sin demostrar. |
 | Un `meta` incompatible descartaba la consulta técnica, y `Seahorse::Client::Response` quedaba como `unmodeled_type`. | Punto 13. Rechazo determinista hacia el fallback existente, y serialización solo del payload `data`. Dos diffs. Stubs. | En `49bd0d0`. Sin corrida de fase 1 después de ese commit y sin rellenar los sobres anteriores. La fase 1 no queda validada. |

@@ -35,8 +35,9 @@ class BedrockClient
     start_time = Time.current
     capture_fields = generation_capture_fields(tracking)
     record_generation_request(model_id, max_tokens, temperature, prompt)
-    # Armed only by the phase 1 process. defined? does not load that class.
-    budget = phase1_model_budget
+    # Armed by the phase 1 or phase 2 process. defined? does not load either
+    # class. A disarmed phase 2 leaves the phase 1 cap in place.
+    budget = armed_validation_budget
     if budget&.armed?
       begin
         budget.checkpoint!("generate_text")
@@ -57,12 +58,12 @@ class BedrockClient
 
     track_usage(result, model_id, prompt, start_time, max_tokens: max_tokens, tracking: tracking)
     record_generation_result(result, text, prompt, capture_fields)
-    phase1_model_budget&.record_success!("generate_text") if budget&.armed?
+    budget&.record_success!("generate_text") if budget&.armed?
 
     text
   rescue StandardError => e
     record_generation_error(e, prompt, capture_fields)
-    budget = phase1_model_budget
+    budget = armed_validation_budget
     if budget&.armed?
       budget.record_error!("generate_text", e)
       raise budget::Stop, "generate_text stopped after #{e.class}"
@@ -93,7 +94,7 @@ class BedrockClient
   # shadow client used by perception. generate_text cannot send a tool schema.
   def converse_message(params)
     record_converse_prepared(params)
-    budget = phase1_model_budget
+    budget = armed_validation_budget
     if budget&.armed?
       begin
         budget.checkpoint!("converse_message")
@@ -104,10 +105,10 @@ class BedrockClient
     end
     Rag::ValidationCapture.record_model_boundary("converse_message", "attempt_started")
     result = @client.converse(params)
-    budget.record_success!("converse_message") if budget&.armed?
+    budget&.record_success!("converse_message") if budget&.armed?
     result
   rescue StandardError => error
-    budget = phase1_model_budget
+    budget = armed_validation_budget
     raise unless budget&.armed?
 
     budget.record_error!("converse_message", error)
@@ -196,6 +197,25 @@ class BedrockClient
     return unless defined?(Rag::Phase1ModelBudget)
 
     Rag::Phase1ModelBudget
+  end
+
+  # Nil until the phase 2 harness has loaded its budget. Does not autoload it.
+  def phase2_model_budget
+    return unless defined?(Rag::Phase2ModelBudget)
+
+    Rag::Phase2ModelBudget
+  end
+
+  # Phase 2 applies only while that run is armed. Otherwise this is the
+  # phase 1 budget, or nil when neither run is armed.
+  def armed_validation_budget
+    phase2 = phase2_model_budget
+    return phase2 if phase2&.armed?
+
+    phase1 = phase1_model_budget
+    return phase1 if phase1&.armed?
+
+    nil
   end
 
   def converse_client

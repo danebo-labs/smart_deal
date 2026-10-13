@@ -1640,12 +1640,37 @@ class BedrockRagService
     Rag::Phase1ModelBudget
   end
 
+  # Nil until the phase 2 harness has loaded its budget. Does not autoload it.
+  def phase2_model_budget
+    return unless defined?(Rag::Phase2ModelBudget)
+
+    Rag::Phase2ModelBudget
+  end
+
+  def phase2_retrieve_limit
+    return unless defined?(Rag::Phase2RetrieveLimit)
+
+    Rag::Phase2RetrieveLimit
+  end
+
+  # Phase 2 applies only while that run is armed. Otherwise this is the
+  # phase 1 budget, or nil when neither run is armed.
+  def armed_validation_budget
+    phase2 = phase2_model_budget
+    return phase2 if phase2&.armed?
+
+    phase1 = phase1_model_budget
+    return phase1 if phase1&.armed?
+
+    nil
+  end
+
   # Retries the retrieve_and_generate call when Aurora Serverless is cold-starting.
   # Delegates to Bedrock::AuroraColdStartRetry (shared with KbSyncService).
-  # An armed phase 1 budget makes one attempt and skips that retry.
+  # An armed phase 1 or phase 2 budget makes one attempt and skips that retry.
   def retrieve_and_generate_with_retry(params)
     record_retrieve_and_generate_request(params)
-    budget = phase1_model_budget
+    budget = armed_validation_budget
     if budget&.armed?
       begin
         # One model attempt. The cold-start retry is another model call.
@@ -1694,12 +1719,15 @@ class BedrockRagService
       Rag::ValidationCapture.record("retrieve", recorded)
     end
     transport_attempt = 0
+    limit = phase2_retrieve_limit
+    limit.begin_logical! if limit&.armed?
     begin
       Bedrock::AuroraColdStartRetry.with_retry(
         error_classes: [ Aws::BedrockAgentRuntime::Errors::ServiceError ],
         on_retry: (Rag::ValidationCapture.active? ? method(:note_cold_start_retry) : nil)
       ) do
         transport_attempt += 1
+        limit.before_physical! if limit&.armed?
         @client.retrieve(params)
       end
     rescue StandardError => error

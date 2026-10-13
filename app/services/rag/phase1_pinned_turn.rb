@@ -100,6 +100,7 @@ module Rag
       def perform_later(...)
         return super unless Rag::Phase1QueueGuard.active?
 
+        Rag::Phase1QueueGuard.note_refusal(name)
         raise UnexpectedJob, "phase 1 refused enqueue #{name}"
       end
     end
@@ -108,6 +109,7 @@ module Rag
       def perform_later(*args, **kwargs, &block)
         if Rag::Phase1QueueGuard.active?
           if Thread.current[:phase1_tracking_inline]
+            Rag::Phase1QueueGuard.note_refusal(name)
             raise UnexpectedJob, "phase 1 refused reentrant enqueue #{name}"
           end
 
@@ -161,6 +163,18 @@ module Rag
       def disarm!
         Thread.current[:phase1_queue_guard] = false
         Thread.current[:phase1_tracking_inline] = nil
+      end
+
+      # Evidence only. The refusal itself is the raise above. Inactive
+      # capture stores nothing, so a phase 1 run without capture is unchanged.
+      def note_refusal(job_name)
+        return unless defined?(ValidationCapture) && ValidationCapture.active?
+
+        ValidationCapture.record(
+          "queue_refusal",
+          "job" => job_name.to_s,
+          "result" => "refused"
+        )
       end
     end
   end

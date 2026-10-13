@@ -155,9 +155,10 @@ module Rag
       stage = STAGE_CONVERSE
       ValidationCapture.attempt_unless_set(1)
       record_interpreter_request(params)
-      # The phase 1 wrapper checks the budget inside converse. The entry mark
-      # is written there, after the guard. An unguarded client is entered here.
-      if phase1_budget_armed?
+      # The phase 1 or phase 2 wrapper checks the budget inside converse. The
+      # entry mark is written there, after the guard. An unguarded client is
+      # entered here.
+      if guarded_model_budget?
         response = client.converse(params)
       else
         self.class.record_attempt_started
@@ -382,6 +383,14 @@ module Rag
 
     def phase1_budget_armed?
       defined?(Phase1ModelBudget) && Phase1ModelBudget.armed?
+    end
+
+    def phase2_budget_armed?
+      defined?(Phase2ModelBudget) && Phase2ModelBudget.armed?
+    end
+
+    def guarded_model_budget?
+      phase1_budget_armed? || phase2_budget_armed?
     end
 
     def extract_tool_input(content)

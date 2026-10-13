@@ -42,6 +42,10 @@ class ElemontMhPage5SafetyNoteRepairTest < ActiveSupport::TestCase
     assert_equal SIDECAR, @dir.join("chunk_p5_1.metadata.json.before").binread
     assert_equal PATCH.digest(@before), manifest[/live_sha256=(\h+)/, 1]
     assert_equal PATCH.digest(SIDECAR), manifest[/sidecar_sha256=(\h+)/, 1]
+    assert_equal PATCH.digest(@after), manifest[/patched_sha256=(\h+)/, 1]
+    assert_includes manifest, "job_id=job-1 role=initial"
+    assert_not_includes manifest, "role=rollback"
+    assert_not_includes manifest, "aws_error="
   end
 
   test "records the downloaded sha when the live body has a trailing newline" do
@@ -53,6 +57,7 @@ class ElemontMhPage5SafetyNoteRepairTest < ActiveSupport::TestCase
 
     assert_equal @after.b + "\n".b, patched.b
     assert_equal "b466665b37f76cf2e35441787bbd30b3fe2dd42d623b4de359e05814e2c8a85a", PATCH.digest(patched)
+    assert_equal "b466665b37f76cf2e35441787bbd30b3fe2dd42d623b4de359e05814e2c8a85a", manifest[/patched_sha256=(\h+)/, 1]
     assert_equal "7658478b42b0f4bc8e7ae603a069c11d42e78d69181d143dbf08e9709b637380", manifest[/live_sha256=(\h+)/, 1]
     assert_not_equal "8baae756dab099e124b046057bfb4f6e835d85a5b2922f2eff1e64a637efd09c", manifest[/live_sha256=(\h+)/, 1]
     assert_equal source, @dir.join("chunk_p5_1_before.bin").binread
@@ -187,6 +192,7 @@ class ElemontMhPage5SafetyNoteRepairTest < ActiveSupport::TestCase
     assert_equal @before.b, store.objects[PATCH::KEY].b
     assert_equal [ PATCH::DATA_SOURCE_ID, PATCH::DATA_SOURCE_ID ], listed.starts.pluck(:data_source_id)
     assert_equal 1, listed.gets.size
+    assert manifest.index("job_id=job-1 role=initial") < manifest.index("job_id=job-2 role=rollback")
   end
 
   test "rolls back a complete job that did not modify a document" do
@@ -240,6 +246,133 @@ class ElemontMhPage5SafetyNoteRepairTest < ActiveSupport::TestCase
     assert_equal 1, sleeps
     assert_equal 1, listed.starts.size
     assert_equal @after.b, store.objects[PATCH::KEY].b
+  end
+
+  test "stops without another write when starting the ingestion raises" do
+    store = memory
+    listed = agent(start_error: RuntimeError.new("start failed"))
+    run = repair(store, listed)
+
+    error = assert_raises(ElemontMhPage5SafetyNoteRepair::Stop) { run.call }
+
+    assert_uncertain_after_write(error, store)
+    assert_includes error.message, "confirmed_stage=publish_checked"
+    assert_includes error.message, "job_id=not_received"
+    assert_includes manifest, "patched_sha256=#{PATCH.digest(@after)}"
+    assert_includes manifest, "confirmed_stage=publish_checked"
+    assert_includes manifest, "backup_dir=#{@dir}"
+    assert_includes manifest, "aws_error=RuntimeError: start failed"
+    assert_not_includes manifest, "role="
+    assert_equal 1, listed.starts.size
+    assert_empty listed.gets
+    assert_empty run.ingestions
+  end
+
+  test "stops without another write when the ingestion start returns no job id" do
+    store = memory
+    listed = agent(blank_job_id: true)
+    run = repair(store, listed)
+
+    error = assert_raises(ElemontMhPage5SafetyNoteRepair::Stop) { run.call }
+
+    assert_uncertain_after_write(error, store)
+    assert_includes error.message, "job_id=not_received"
+    assert_not_includes manifest, "role="
+    assert_equal 1, listed.starts.size
+    assert_empty run.ingestions
+  end
+
+  test "stops during polling and keeps the job id already written" do
+    store = memory
+    listed = agent(get_error: RuntimeError.new("poll failed"), manifest_path: @dir.join("manifest.txt"))
+    run = repair(store, listed)
+
+    error = assert_raises(ElemontMhPage5SafetyNoteRepair::Stop) { run.call }
+
+    assert_uncertain_after_write(error, store)
+    assert_includes error.message, "job_id=job-1"
+    assert_includes listed.manifest_at_get, "job_id=job-1 role=initial"
+    assert_includes manifest, "job_id=job-1 role=initial"
+    assert_includes manifest, "confirmed_stage=ingestion_started"
+    assert_includes manifest, "backup_dir=#{@dir}"
+    assert_includes manifest, "aws_error=RuntimeError: poll failed"
+    assert_equal 1, listed.starts.size
+    assert_equal 1, listed.gets.size
+    assert_equal [ { job_id: "job-1", data_source_id: PATCH::DATA_SOURCE_ID, role: "initial" } ], run.ingestions
+  end
+
+  test "stops a later poll error without continuing or rolling back" do
+    store = memory
+    listed = agent(
+      statuses: [ "STARTING" ],
+      get_error: RuntimeError.new("poll failed"),
+      get_error_after: 1,
+      manifest_path: @dir.join("manifest.txt")
+    )
+    sleeps = 0
+
+    error = assert_raises(ElemontMhPage5SafetyNoteRepair::Stop) do
+      repair(store, listed, sleep_for: lambda { |_|
+        sleeps += 1
+      }).call
+    end
+
+    assert_uncertain_after_write(error, store)
+    assert_equal 1, sleeps
+    assert_equal 1, listed.starts.size
+    assert_equal 2, listed.gets.size
+    assert_includes listed.manifest_at_get, "job_id=job-1 role=initial"
+    assert_includes manifest, "status=STARTING"
+    assert_not_includes manifest, "role=rollback"
+  end
+
+  test "does not roll back when the ingestion status is missing" do
+    store = memory
+    listed = agent(statuses: [ nil ])
+    run = repair(store, listed)
+
+    error = assert_raises(ElemontMhPage5SafetyNoteRepair::Stop) { run.call }
+
+    assert_uncertain_after_write(error, store)
+    assert_includes error.message, "job_id=job-1"
+    assert_includes manifest, "job_id=job-1 role=initial"
+    assert_not_includes manifest, "role=rollback"
+    assert_equal 1, listed.gets.size
+    assert_equal 1, run.ingestions.size
+  end
+
+  test "does not restore when a read after the write raises" do
+    store = memory
+    store.raise_after_upload = true
+    listed = agent
+
+    error = assert_raises(ElemontMhPage5SafetyNoteRepair::Stop) { repair(store, listed).call }
+
+    assert_uncertain_after_write(error, store)
+    assert_includes error.message, "confirmed_stage=text_uploaded"
+    assert_includes error.message, "job_id=not_received"
+    assert_includes manifest, "aws_error=RuntimeError: read failed"
+    assert_empty listed.starts
+  end
+
+  test "does not start a second rollback when that ingestion start raises" do
+    store = memory
+    listed = agent(statuses: [ "FAILED" ], start_error_after: 1, start_error: RuntimeError.new("rollback start failed"))
+    run = repair(store, listed)
+
+    error = assert_raises(ElemontMhPage5SafetyNoteRepair::Stop) { run.call }
+
+    assert_includes error.message, "job_id=job-1"
+    assert_includes error.message, "backup=#{@dir}"
+    assert_no_match(/rollback job/, error.message)
+    assert_equal @before.b, store.objects[PATCH::KEY].b
+    assert_equal [ PATCH::KEY, PATCH::KEY ], store.uploads.map(&:first)
+    assert_equal 2, listed.starts.size
+    assert_equal [ { job_id: "job-1", data_source_id: PATCH::DATA_SOURCE_ID, role: "initial" } ], run.ingestions
+    assert_includes manifest, "job_id=job-1 role=initial"
+    assert_includes manifest, "stage=body_restored"
+    assert_not_includes manifest, "role=rollback"
+    assert_includes manifest, "aws_error=RuntimeError: rollback start failed"
   end
 
   test "does not open a rollback ingestion when the restore upload fails" do
@@ -304,9 +437,17 @@ class ElemontMhPage5SafetyNoteRepairTest < ActiveSupport::TestCase
     @dir.join("manifest.txt").read
   end
 
+  def assert_uncertain_after_write(error, store)
+    assert_match(/aws error after write/, error.message)
+    assert_includes error.message, "backup=#{@dir}"
+    assert_no_match(/restor/i, error.message)
+    assert_equal [ PATCH::KEY ], store.uploads.map(&:first)
+    assert_equal @after.b, store.objects[PATCH::KEY].b
+  end
+
   class Memory
     attr_reader :downloads, :uploads, :objects
-    attr_accessor :bucket_name, :sidecar_mutates, :text_lies, :fail_second_upload
+    attr_accessor :bucket_name, :sidecar_mutates, :text_lies, :fail_second_upload, :raise_after_upload
 
     def initialize(objects, bucket_name:)
       @objects = objects
@@ -317,6 +458,7 @@ class ElemontMhPage5SafetyNoteRepairTest < ActiveSupport::TestCase
 
     def download(key)
       @downloads << key
+      raise RuntimeError, "read failed" if raise_after_upload && @uploads.any?
       return "mutated-sidecar".b if sidecar_mutates && key.end_with?(".metadata.json") && @uploads.any?
       return "lied-text".b if text_lies && key.end_with?(".txt") && @uploads.any? { |entry| entry[0] == key }
 
@@ -339,19 +481,27 @@ class ElemontMhPage5SafetyNoteRepairTest < ActiveSupport::TestCase
     Job = Struct.new(:ingestion_job_id, :status, :statistics)
     Wrap = Struct.new(:ingestion_job)
 
-    attr_reader :lists, :starts, :gets
+    attr_reader :lists, :starts, :gets, :manifest_at_get
 
     def initialize(ids: [ PATCH::DATA_SOURCE_ID ], statuses: [ "COMPLETE" ], failed: 0, modified: 1,
-                   pages: nil, always_next: false)
+                   pages: nil, always_next: false, start_error: nil, start_error_after: 0,
+                   blank_job_id: false, get_error: nil, get_error_after: 0, manifest_path: nil)
       @ids = ids
       @statuses = statuses
       @failed = failed
       @modified = modified
       @pages = pages
       @always_next = always_next
+      @start_error = start_error
+      @start_error_after = start_error_after
+      @blank_job_id = blank_job_id
+      @get_error = get_error
+      @get_error_after = get_error_after
+      @manifest_path = manifest_path
       @lists = []
       @starts = []
       @gets = []
+      @manifest_at_get = nil
     end
 
     def list_data_sources(knowledge_base_id:, next_token: nil)
@@ -368,6 +518,9 @@ class ElemontMhPage5SafetyNoteRepairTest < ActiveSupport::TestCase
 
     def start_ingestion_job(knowledge_base_id:, data_source_id:)
       @starts << { knowledge_base_id: knowledge_base_id, data_source_id: data_source_id }
+      raise @start_error if @start_error && @starts.size > @start_error_after
+      return Wrap.new(Job.new(nil, nil, nil)) if @blank_job_id
+
       Wrap.new(Job.new("job-#{@starts.size}", nil, nil))
     end
 
@@ -377,7 +530,10 @@ class ElemontMhPage5SafetyNoteRepairTest < ActiveSupport::TestCase
         data_source_id: data_source_id,
         ingestion_job_id: ingestion_job_id
       }
-      status = @statuses[@gets.size - 1] || @statuses.last
+      @manifest_at_get = File.read(@manifest_path) if @manifest_path
+      raise @get_error if @get_error && @gets.size > @get_error_after
+
+      status = @statuses.fetch(@gets.size - 1, @statuses.last)
       Wrap.new(Job.new(ingestion_job_id, status, Stats.new(@failed, @modified)))
     end
   end

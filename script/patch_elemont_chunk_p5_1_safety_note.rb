@@ -24,11 +24,16 @@
 #
 # Sync: start_ingestion_job, then get_ingestion_job until the job leaves
 # STARTING / IN_PROGRESS, or 90 observations. COMPLETE with a failed count
-# of 0 and a positive modified count is the check. Any other finished
-# status restores the backup body and starts one ingestion of that body on
-# the same data source. A job still running at the poll limit does not
-# start a second job; the backup stays in
-# tmp/elemont_page5_safety_note/<utc>/.
+# of 0 and a positive modified count is the check. FAILED, or COMPLETE
+# with a failed document or with nothing modified, restores the backup
+# body and starts one rollback ingestion on the same data source. A job
+# still running at the poll limit does not start a second job. The
+# manifest in tmp/elemont_page5_safety_note/<utc>/ records the corrected
+# SHA and each job id, initial or rollback, as soon as it is received.
+# An AWS exception after the write records the last confirmed stage, the
+# backup path and the job id when one exists. An uncertain start or
+# status does not upload again, does not start another ingestion and does
+# not restore on its own.
 #
 # Rollback by hand: upload chunk_p5_1_before.bin through
 # S3DocumentsService#upload_text at the same key, then start_ingestion_job

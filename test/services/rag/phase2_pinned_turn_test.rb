@@ -51,7 +51,7 @@ class Rag::Phase2PinnedTurnTest < ActiveSupport::TestCase
     assert_equal true, pause["evaluator_simulation"]
     assert_equal ANSWER, pause["published_answer"]
     assert_equal "evaluator_simulation", pause.dig("messages", 0, "mark")
-    saved = JSON.parse(File.read(File.join(first.evidence_path, "result.json")))
+    saved = JSON.parse(File.read(File.join(first.evidence_path, "turn_1", "result.json")))
     assert_equal true, saved["evaluator_simulation"]
     assert_equal "pending", saved["documentary_acceptance"]
 
@@ -277,8 +277,55 @@ class Rag::Phase2PinnedTurnTest < ActiveSupport::TestCase
     assert_equal "KbDocumentEnrichmentJob", refusal["job"]
     assert_equal "refused", refusal["result"]
     assert_equal queued_before, ActiveJob::Base.queue_adapter.enqueued_jobs.size
-    saved = JSON.parse(File.read(File.join(result.evidence_path, "capture.json")))
+    saved = JSON.parse(File.read(File.join(result.evidence_path, "turn_1", "capture.json")))
     assert saved["events"].any? { |event| event["kind"] == "queue_refusal" }
+  end
+
+  test "the second turn leaves the first turn files and hashes intact" do
+    ENV["PHASE2_PINNED_TURN_AUTHORIZED"] = "1"
+    document = pinned_document(accounts(:legacy))
+    first_answer = "turno-1-#{'A' * 2400}"
+    second_answer = "turno-2-#{'B' * 2400}"
+    executor = counting_executor(answers: [ first_answer, second_answer ])
+    first = Rag::Phase2PinnedTurn.start(
+      account: accounts(:legacy), user: users(:one), document: document,
+      connections: Rag::Phase1PinnedTurn.stub_environment, executor: executor,
+      interpreter_client: quiet_converse, enforce_capture_uri: false,
+      evidence_root: evidence_root, run_id: "turn-files"
+    )
+    turn1 = Pathname(first.evidence_path).join("turn_1")
+    before_hashes = tree_hashes(turn1)
+    first_bodies = referenced_bodies(turn1)
+
+    second = Rag::Phase2PinnedTurn.continue(
+      pause_path: first.pause_path, accept_candidate: true, executor: executor,
+      interpreter_client: quiet_converse
+    )
+    turn2 = Pathname(second.evidence_path).join("turn_2")
+    second_bodies = referenced_bodies(turn2)
+    before = JSON.parse(File.read(turn2.join("state_before.json")))
+    after = JSON.parse(File.read(turn2.join("state_after.json")))
+    first_after = JSON.parse(File.read(turn1.join("state_after.json")))
+
+    assert_equal before_hashes, tree_hashes(turn1)
+    assert first_bodies.any?
+    assert second_bodies.any?
+    assert_empty(first_bodies.pluck("sha256") & second_bodies.pluck("sha256"))
+    assert_equal first_answer, File.binread(turn1.join("answer.txt"))
+    assert_equal second_answer, File.binread(turn2.join("answer.txt"))
+    assert_equal [ first_answer ], body_texts(turn1, first_bodies)
+    assert_equal [ second_answer ], body_texts(turn2, second_bodies)
+    %w[session_id active_episode live_episode_id document_focus pending_question counters].each do |key|
+      assert_same_observed first_after[key], before[key], key
+    end
+    assert_same_observed before["session_id"], after["session_id"], "session_id"
+    assert_same_observed before["document_focus"], after["document_focus"], "document_focus"
+    assert_operator after.dig("counters", "model_attempts"), :>, before.dig("counters", "model_attempts")
+    pause = JSON.parse(File.read(File.join(first.evidence_path, "pause.json")))
+    assert_equal after.dig("counters", "model_attempts"), pause.dig("model_budget", "attempts")
+    assert pause.key?("retrieve_budget")
+    assert_not_includes File.read(turn1.join("capture.json")), ":t2"
+    assert_includes File.read(turn2.join("capture.json")), ":t2"
   end
 
   test "the continue script stops before a call when the decision is absent" do
@@ -316,8 +363,9 @@ class Rag::Phase2PinnedTurnTest < ActiveSupport::TestCase
     )
   end
 
-  def counting_executor
+  def counting_executor(answer: ANSWER, answers: nil)
     calls = { aws: 0 }
+    queue = answers&.dup
     client = BedrockClient.allocate
     aws = Object.new
     aws.define_singleton_method(:invoke_model) do |*|
@@ -329,13 +377,49 @@ class Rag::Phase2PinnedTurnTest < ActiveSupport::TestCase
     executor.define_singleton_method(:aws_calls) { calls[:aws] }
     executor.define_singleton_method(:execute) do |_question, **|
       client.generate_text("generacion")
+      text = queue ? queue.shift : answer
       result = Object.new
       result.define_singleton_method(:success?) { true }
-      result.define_singleton_method(:answer) { ANSWER }
+      result.define_singleton_method(:answer) { text }
       result.define_singleton_method(:pending_question) { nil }
       result
     end
     executor
+  end
+
+  def tree_hashes(directory)
+    directory = Pathname(directory)
+    directory.glob("**/*").select(&:file?).sort.map { |path|
+      [ path.relative_path_from(directory).to_s, Digest::SHA256.file(path).hexdigest ]
+    }
+  end
+
+  def referenced_bodies(turn_directory)
+    capture = JSON.parse(File.read(Pathname(turn_directory).join("capture.json")))
+    refs = []
+    walk = lambda do |node|
+      case node
+      when Hash
+        refs << node if node["evidence"] == "external"
+        node.each_value { |value| walk.call(value) }
+      when Array
+        node.each { |value| walk.call(value) }
+      end
+    end
+    walk.call(capture)
+    refs
+  end
+
+  def assert_same_observed(expected, actual, label)
+    if expected.nil?
+      assert_nil actual, label
+    else
+      assert_equal expected, actual, label
+    end
+  end
+
+  def body_texts(turn_directory, refs)
+    refs.map { |ref| File.binread(Pathname(turn_directory).join(ref["path"])) }
   end
 
   def quiet_converse

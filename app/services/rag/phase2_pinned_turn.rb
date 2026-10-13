@@ -211,6 +211,7 @@ module Rag
     Result = Struct.new(
       :status, :reason, :session_id, :document_id, :uris, :answer, :evidence_path,
       :pause_path, :attempts, :model_budget, :retrieve_budget, :capture,
+      :state_before, :state_after, :technician_correlation_id, :query_correlation_id,
       keyword_init: true
     )
 
@@ -290,7 +291,8 @@ module Rag
         )
         FileUtils.mkdir_p(directory)
         write_pause(directory, result, turn: 1) if result.status == "completed" && result.session_id
-        publish(result, directory, message: FIRST_MESSAGE)
+        export_turn(result, directory, turn: 1, message: FIRST_MESSAGE) if result.session_id
+        result.evidence_path ||= directory.to_s
         result
       end
 
@@ -334,8 +336,9 @@ module Rag
         directory = Pathname(pause["evidence_path"].presence || evidence_root || path.dirname)
         FileUtils.mkdir_p(directory)
         write_pause(directory, result, turn: 2, previous: pause) if result.session_id
-        publish(result, directory, message: CANDIDATE_REPLY)
+        export_turn(result, directory, turn: 2, message: CANDIDATE_REPLY) if result.session_id
         result.pause_path = directory.join("pause.json").to_s
+        result.evidence_path = directory.to_s
         result
       end
 
@@ -345,6 +348,9 @@ module Rag
         outcome = nil
         events = nil
         held_session = nil
+        observed_before = nil
+        held_correlation = nil
+        held_query = nil
         refusal = authorization_refusal || Phase1PinnedTurn.send(:environment_refusal, connections) ||
                   Phase1PinnedTurn.send(:actor_refusal, account, user)
         if refusal
@@ -399,6 +405,9 @@ module Rag
           turn_index = mode == :start ? 1 : 2
           correlation_id = "phase2:#{session.id}:t#{turn_index}"
           query_correlation = "#{correlation_id}:query"
+          held_correlation = correlation_id
+          held_query = query_correlation
+          observed_before = observe_state(session)
           ValidationCapture.bind(
             session_id: session.id, account_id: account.id, user_id: user.id, correlation_root: correlation_id
           )
@@ -433,15 +442,19 @@ module Rag
           )
           outcome = application_result(session, document, events, uris, result, query_correlation, user)
         end
+        remember_observation(outcome, held_session, observed_before, held_correlation, held_query)
         outcome
       rescue Phase2ModelBudget::Stop, Phase2RetrieveLimit::Stop => error
         outcome = stopped(held_session, document, events, error.message)
+        remember_observation(outcome, held_session, observed_before, held_correlation, held_query)
         outcome
       rescue Phase1QueueGuard::UnexpectedJob => error
         outcome = stopped(held_session, document, events, error.message)
+        remember_observation(outcome, held_session, observed_before, held_correlation, held_query)
         outcome
       rescue StandardError => error
         outcome = failed(held_session, document, events, "#{error.class}: #{error.message}")
+        remember_observation(outcome, held_session, observed_before, held_correlation, held_query)
         outcome
       ensure
         stamp(outcome)
@@ -451,10 +464,12 @@ module Rag
       end
 
       def application_result(session, document, events, uris, result, query_correlation, user)
-        answer = result.respond_to?(:answer) ? result.answer.to_s : ""
+        published = result.respond_to?(:answer) ? result.answer : nil
+        answer = published.nil? ? nil : published.to_s
+        ValidationCapture.record("published_answer", "answer" => answer) unless answer.nil?
         if result.respond_to?(:success?) && result.success?
           session.record_assistant_turn!(
-            answer,
+            answer.to_s,
             user_id: user.id,
             correlation_id: query_correlation,
             pending_question: (result.pending_question if result.respond_to?(:pending_question)),
@@ -541,31 +556,75 @@ module Rag
         result.pause_path = path.to_s
       end
 
-      def publish(result, directory, message:)
-        FileUtils.mkdir_p(directory)
+      def export_turn(result, run_directory, turn:, message:)
+        run_directory = Pathname(run_directory)
+        turn_directory = run_directory.join("turn_#{turn}")
+        FileUtils.mkdir_p(turn_directory)
+        File.write(turn_directory.join("message.txt"), message.to_s)
+        File.binwrite(turn_directory.join("answer.txt"), result.answer) unless result.answer.nil?
+        write_json(turn_directory.join("state_before.json"), result.state_before) if result.state_before
+        write_json(turn_directory.join("state_after.json"), result.state_after) if result.state_after
         payload = {
           "status" => result.status,
           "reason" => result.reason,
-          "answer" => result.answer,
           "session_id" => result.session_id,
           "documentary_acceptance" => "pending",
           "evaluator_simulation" => true,
           "message" => { "text" => message.to_s, "mark" => "evaluator_simulation" }
         }
-        safe = ValidationCapture.sanitize(payload)
-        File.write(directory.join("message.txt"), message.to_s)
-        File.write(directory.join("result.json"), JSON.pretty_generate(safe))
+        payload["technician_correlation_id"] = result.technician_correlation_id if result.technician_correlation_id
+        payload["query_correlation_id"] = result.query_correlation_id if result.query_correlation_id
+        File.write(turn_directory.join("result.json"), JSON.pretty_generate(ValidationCapture.sanitize(payload)))
         if result.capture
-          capture = ValidationCapture.export_capture(result.capture, directory, run_id: directory.basename.to_s)
-          File.write(directory.join("capture.json"), JSON.pretty_generate(capture))
+          capture = ValidationCapture.export_capture(
+            result.capture, turn_directory, run_id: run_directory.basename.to_s
+          )
+          File.write(turn_directory.join("capture.json"), JSON.pretty_generate(capture))
         end
-        result.evidence_path = directory.to_s
+        result.evidence_path = run_directory.to_s
         result
       rescue StandardError => error
         result.status = "failed"
         result.reason = [ result.reason, "evidence_export:#{error.class}" ].compact.join(" ")
-        result.evidence_path = directory.to_s
+        result.evidence_path = Pathname(run_directory).to_s
         result
+      end
+
+      def remember_observation(outcome, session, before, correlation, query_correlation)
+        return if outcome.nil?
+
+        outcome.state_before = before if before
+        outcome.technician_correlation_id = correlation if correlation
+        outcome.query_correlation_id = query_correlation if query_correlation
+        return unless session
+
+        outcome.state_after = observe_state(session.reload)
+        outcome.session_id ||= session.id
+      end
+
+      def observe_state(session)
+        stored = session.active_episode
+        stored = stored.as_json if stored.respond_to?(:as_json)
+        pending = stored.is_a?(Hash) ? stored["pending_question"] : nil
+        {
+          "session_id" => session.id,
+          "active_episode" => stored,
+          "live_episode_id" => session.live_episode_id,
+          "document_focus" => session.document_focus_entries.map(&:as_json),
+          "pending_question" => pending,
+          "counters" => consumed_counters
+        }
+      end
+
+      def consumed_counters
+        {
+          "model_attempts" => Phase2ModelBudget.attempts,
+          "retrieve_physical" => Phase2RetrieveLimit.run_physical
+        }
+      end
+
+      def write_json(path, payload)
+        File.write(path, JSON.pretty_generate(payload))
       end
 
       def authorization_refusal

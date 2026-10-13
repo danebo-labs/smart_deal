@@ -6,9 +6,9 @@
 
 **Estado.** La fase 0 está cerrada. La fase 1 recuperó la página 5, la incluyó en el prompt de generación y publicó una respuesta citada: corrida `20261010T193753Z`, sesión 7, `structured_evidence_route`. La fase 2 no está iniciada. Este corte no es `EPISODIO_VALIDADO`.
 
-**Bloqueo.** La aceptación documental sigue pendiente. El chunk y la respuesta atribuida al PDF dicen que el dibujo presenta «ramas paralelas visuales» y que la «disposición serie exacta» queda por verificar. Lahiri confirmó la referencia técnica de este trabajo: la Línea de Seguridad es una cadena en serie plegada en dos columnas, y Seguridad Puerta nivel 2 está entre Seguridad Puerta nivel 3 y Seguridad Puerta nivel 1. La frase no está en la capa de texto de la página 5.
+**Bloqueo.** La aceptación documental sigue pendiente. El objeto S3 de la página 5 quedó sustituido y releyó el cuerpo corregido, pero la ingesta no se abrió: Aurora estaba reanudándose tras una pausa automática y no hubo `job_id`. El índice y la respuesta publicada de la fase 1 siguen con la nota de «ramas paralelas visuales». Lahiri confirmó la referencia técnica de este trabajo: la Línea de Seguridad es una cadena en serie plegada en dos columnas, y Seguridad Puerta nivel 2 está entre Seguridad Puerta nivel 3 y Seguridad Puerta nivel 1. La frase no está en la capa de texto de la página 5.
 
-**Siguiente acción.** La preparación local de «Preparación de la reparación, sin ejecución» ya registra el cuerpo corregido y cada job, y se detiene si el inicio o el estado de la ingesta quedan inciertos. Esa preparación no autoriza la escritura, no abre cupo y no acepta la fase 1. `PASS_CALL_CAP` permanece en 0.
+**Siguiente acción.** No repetir `script/patch_elemont_chunk_p5_1_safety_note.rb`. La ejecución de `20261013T182142Z` está en «Aplicación supervisada, 2026-10-13» y no es un éxito. No abre otra ingesta, no acepta la fase 1 y no inicia la fase 2. `PASS_CALL_CAP` permanece en 0.
 
 **Gates que ya no son el paso siguiente.** Cerrar otra vez la fase 0. Repetir `20261009T194048Z`, `20261009T221211Z`, `20261010T153620Z` o `20261010T193753Z`. Reabrir el experimento del intérprete o la comparación Haiku 4.5 / Haiku 5.5. Abrir la fase 2. Reabrir Journey A, usar la reserva de 42 llamadas, cambiar el modelo o desplegar. Ejecutar G5, F9 o F10 del focus. Reabrir el ciclo F0–F8 de discovery. Reanudar O-P2 a O-P5, F3b o F4 del recovery del 06/10. El párrafo siguiente conserva esa historia.
 
@@ -877,6 +877,24 @@ Rollback manual: subir `chunk_p5_1_before.bin` con `S3DocumentsService#upload_te
 
 Esta preparación no se ejecuta desde este texto. La fase 2 no empieza.
 
+#### Aplicación supervisada, 2026-10-13
+
+Lahiri autorizó una sola ejecución de la reparación revisada en `6fcb6b7c6e4fca1e81b07e76deb9ad57b61f0643`. `HEAD` y el árbol local eran ese commit, sin cambios posteriores. La identidad se comprobó con STS antes de escribir, con el perfil `default` y sin usar las claves de `.env`: cuenta `935142957735`, `arn:aws:iam::935142957735:user/Lahiri`. Esa es la cuenta de producción de las corridas anteriores. No se mostraron claves ni tokens. No se editó `.env` ni el perfil.
+
+Comando, solo en ese proceso y con `RAG_PAGE5_SAFETY_NOTE_CONFIRM=1`:
+
+```bash
+bin/rails runner script/patch_elemont_chunk_p5_1_safety_note.rb
+```
+
+Región `us-east-1`. Bucket `multimodal-source-destination`. KB `Y7RZWMFJSR`. Data source `PJ0N58DMHG`. Clave `bulk_chunks/1/121bfffe0827f6bc681ba9bdc91050390055/chunk_p5_1.txt`. El proceso terminó con salida 1. No se repitió.
+
+Respaldo: `tmp/elemont_page5_safety_note/20261013T182142Z/`. El cuerpo anterior tiene 7613 bytes y SHA-256 `7658478b42b0f4bc8e7ae603a069c11d42e78d69181d143dbf08e9709b637380`. Es la copia con salto final, no la captura de 7612 bytes. El cuerpo corregido anotado en el manifiesto es `b466665b37f76cf2e35441787bbd30b3fe2dd42d623b4de359e05814e2c8a85a`. La etapa `publish_checked` exige que la relectura del `.txt` sea igual a ese cuerpo, así que el SHA releído es el mismo. El sidecar no se escribió. Su SHA, leído antes y exigido igual después, es `d34fb691855b77286aaf55e5bb86ac2e784b0c15c72b47cdd10b59d0e2e87c13`. El archivo `chunk_p5_1.metadata.json.before` coincide con ese digest.
+
+No hay `job_id`, ni estado de ingesta, ni estadísticas, ni rollback. La última etapa confirmada es `publish_checked`. `start_ingestion_job` devolvió `ValidationException`: la instancia Aurora `db-X44TTVPZA4IRPMMQUHXIBEAL64` se estaba reanudando tras una pausa automática. Request `75409bf5-d821-44af-8ff0-a17d916b19d5`. El mensaje de AWS pide esperar y reintentar. Esta ejecución no lo hizo. El índice no quedó sincronizado. Esto no es `COMPLETE` y no es éxito.
+
+Cupo de modelos: 0. `Retrieve`: 0. `PASS_CALL_CAP` permanece en 0. No hubo corrida de fase 1, ni worker, ni despliegue, ni cambio del adaptador de jobs. La fase 1 no queda aceptada. La fase 2 no empieza.
+
 ### Fase 2. Guía conversacional con el documento correcto
 
 1. Estado: pendiente y bloqueada por la fase 1.
@@ -945,6 +963,7 @@ Esta preparación no se ejecuta desde este texto. La fase 2 no empieza.
 | El chunk de la página 5 pone en duda la serie con «ramas paralelas visuales». | Defecto de representación documentado. Sin reingesta. | Pendiente de decisión del fundador. No apareció en `20261009T221211Z` porque no hubo chunk. |
 | La sustitución de esa nota quedó preparada en local, sobre la revisión de `40b9dc4`. | Chunk corregido, servicio, script acotado a la clave y pruebas con dobles. El objeto vivo no se leyó. | Preparado. La escritura no está autorizada. La fase 1 no queda aceptada. |
 | El manifiesto no guardaba el cuerpo corregido ni el job, y un fallo de AWS después de escribir podía quedar sin etapa confirmada. | El SHA corregido y cada `job_id` se anexan al recibirlos. Si el inicio o el estado quedan inciertos, no hay otra escritura, otra ingesta ni rollback automático. | Cerrado en la preparación. La escritura sigue sin autorizar. |
+| Aplicación supervisada de `6fcb6b7`, `20261013T182142Z`. | El objeto se sustituyó y la relectura coincidió. La ingesta no se abrió: Aurora estaba reanudándose y no hubo `job_id`. | Parada en `publish_checked`. No es éxito. La fase 1 no queda aceptada. La fase 2 no empieza. |
 | La corrida de la fase 1 no guardó el request del intérprete. | Sobre `danebo.audit.v1` y `interpreter_request` copiado antes de `converse`. | La corrida `20261009T221211Z` guardó el request. La de `20261009T194048Z` no se rellena. |
 | `prepared` se leía como envío, la respuesta del intérprete perdía el texto y la reentrada del guardia podía encolar. | `prepared`, `attempt_started`, `blocked`, `returned` y `error`. | En `20261009T221211Z` se observaron `prepared`, `attempt_started` y `returned`. El cuerpo de esa corrida no se modeló y no se rellena. La causa de `meta` sigue sin demostrar. |
 | Un `meta` incompatible descartaba la consulta técnica, y `Seahorse::Client::Response` quedaba como `unmodeled_type`. | Punto 13. Rechazo determinista hacia el fallback existente, y serialización solo del payload `data`. Dos diffs. Stubs. | En `49bd0d0`. Sin corrida de fase 1 después de ese commit y sin rellenar los sobres anteriores. La fase 1 no queda validada. |

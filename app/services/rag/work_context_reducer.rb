@@ -38,12 +38,14 @@ module Rag
       return @episode if @perception.nil?
       return @episode if @decision&.decision == "meta"
 
+      remember_referent_choice if remember_referent_choice?
       promote_carry if promote_existing_carry?
 
       if @decision&.decision == "clarify_first"
         @episode.touch!(@now)
         return @episode if @perception.move == "new_work"
 
+        preserve_referent_opening if opening_referent?
         write_pending(@decision.pending_question)
         return @episode
       end
@@ -81,6 +83,46 @@ module Rag
       Array(@episode.pending_question&.dig("carry")).each do |span|
         @episode.append_identifier!(span, correlation_id: @correlation_id, source: "user")
       end
+    end
+
+    def opening_referent?
+      @perception.move == "unclear" &&
+        @perception.clarification_target == "referent" &&
+        !referent_pending?
+    end
+
+    def referent_pending?
+      @episode.pending_question&.dig("type") == "referent"
+    end
+
+    # Stated assertions stay. The observation stays the doubt, not an identity.
+    # The goal is that doubt, not the whole turn.
+    def preserve_referent_opening
+      write_assertions
+      @perception.observations.each do |text|
+        @episode.append_observation!(text, correlation_id: @correlation_id)
+      end
+      assign_referent_goal
+    end
+
+    def assign_referent_goal
+      return if @episode.goal.present?
+
+      phrase = goal_observations.join(" ").squish
+      return if phrase.blank?
+
+      @episode.assign_goal!(phrase, correlation_id: @correlation_id)
+    end
+
+    def remember_referent_choice?
+      referent_pending? && @decision&.performs_retrieval?
+    end
+
+    def remember_referent_choice
+      choice = PendingQuestion.referent_choice(@perception, @turn)
+      return if choice.blank?
+
+      @episode.append_identifier!(choice, correlation_id: @correlation_id, source: "user")
     end
 
     def apply_negations

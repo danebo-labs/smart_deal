@@ -54,5 +54,38 @@ module Rag
         text
       }.uniq.first(MAX_CARRY)
     end
+
+    # One declared assert answers an open referent. Unknown, absent, and two
+    # asserts leave the question open. The span is the technician's words.
+    def referent_choice(perception, turn)
+      return nil if perception.nil? || unknown_referent?(perception, turn)
+      return nil unless referent_move?(perception)
+
+      spans = declared_referent_spans(perception)
+      return nil unless spans.one?
+
+      spans.first
+    end
+
+    def referent_move?(perception)
+      return true if %w[follow_up report].include?(perception.move)
+
+      perception.move == "answer_pending" && perception.pending_resolution == "value"
+    end
+
+    def unknown_referent?(perception, turn)
+      return true if %w[unknown absent].include?(perception.pending_resolution.to_s)
+
+      ActiveEpisodeTurn::UNKNOWN_RE.match?(FollowupQueryRewriter.normalize_label(turn.to_s))
+    end
+
+    def declared_referent_spans(perception)
+      perception.identities.filter_map { |item|
+        next unless item.act == "assert" && %w[identifier fact].include?(item.kind)
+
+        item.span.to_s.squish.presence
+      }.uniq
+    end
+    private_class_method :referent_move?, :unknown_referent?, :declared_referent_spans
   end
 end

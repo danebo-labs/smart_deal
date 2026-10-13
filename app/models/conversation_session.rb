@@ -908,7 +908,8 @@ class ConversationSession < ApplicationRecord
       focus_document_ids: focus[:ids],
       focus_uris: focus[:uris],
       locale: locale,
-      relevant_photo: photo_context.relevant?
+      relevant_photo: photo_context.relevant?,
+      turn: turn
     )
     before_episode = base.fork
     working = if perception.move == "new_work" || base.blank?
@@ -966,7 +967,7 @@ class ConversationSession < ApplicationRecord
     )
     note_owner_exit("fallback", status.to_s, correlation_id)
     before_episode = episode.fork
-    if retain_failed_report?(status)
+    if retain_failed_report?(status) && episode.pending_question&.dig("type") != "referent"
       episode = Rag::WorkContextReducer.retain_uninterpreted_report!(
         episode: episode, turn: turn, correlation_id: correlation_id, now: now
       )

@@ -31,11 +31,11 @@ module Rag
       end
     end
 
-    def self.call(previous:, perception:, focus_count:, focus_document_ids: [], focus_uris: [], locale: :es, relevant_photo: nil)
+    def self.call(previous:, perception:, focus_count:, focus_document_ids: [], focus_uris: [], locale: :es, relevant_photo: nil, turn: nil)
       new(
         previous: previous, perception: perception, focus_count: focus_count,
         focus_document_ids: focus_document_ids, focus_uris: focus_uris, locale: locale,
-        relevant_photo: relevant_photo
+        relevant_photo: relevant_photo, turn: turn
       ).call
     end
 
@@ -46,7 +46,7 @@ module Rag
       ).fallback(turn, catalog, viewer_account)
     end
 
-    def initialize(previous:, perception:, focus_count:, focus_document_ids:, focus_uris:, locale:, relevant_photo: nil)
+    def initialize(previous:, perception:, focus_count:, focus_document_ids:, focus_uris:, locale:, relevant_photo: nil, turn: nil)
       @previous = previous || ActiveEpisode.new
       @perception = perception
       @focus_count = focus_count.to_i
@@ -54,12 +54,25 @@ module Rag
       @focus_uris = Array(focus_uris)
       @locale = locale.to_sym
       @relevant_photo = relevant_photo
+      @turn = turn
     end
 
     def call
       previous = @perception.move == "new_work" ? ActiveEpisode.new : @previous
       if @perception.move == "meta"
         return finish("meta", outside_discovery: false, owns_query: false, clarification: I18n.t("rag.meta_continue", locale: @locale), capture: true, condition: "move_meta")
+      end
+      if unresolved_referent?
+        return finish(
+          "clarify_first",
+          outside_discovery: false,
+          owns_query: false,
+          clarification: I18n.t("rag.clarify_referent", locale: @locale),
+          pending_subject: "referent",
+          pending_question: @previous.pending_question,
+          capture: true,
+          condition: "referent_unresolved"
+        )
       end
       if @perception.move == "unclear" && @perception.clarification_target.present?
         target = @perception.clarification_target
@@ -186,6 +199,15 @@ module Rag
 
     def thin_new_work?
       @perception.move == "new_work" && !@perception.technical_payload?
+    end
+
+    # An open referent stays open until one declared choice answers it.
+    # A new job or a correction keeps its own route.
+    def unresolved_referent?
+      return false unless @previous.pending_question&.dig("type") == "referent"
+      return false if %w[new_work correct].include?(@perception.move)
+
+      PendingQuestion.referent_choice(@perception, @turn).nil?
     end
 
     # A failed interpretation does not guess the reply. The open conversational

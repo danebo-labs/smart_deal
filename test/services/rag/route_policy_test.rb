@@ -70,6 +70,29 @@ class Rag::RoutePolicyTest < ActiveSupport::TestCase
     assert_equal true, decision.fallback
   end
 
+  test "an open referent stays pending until one declared choice" do
+    episode = open_episode
+    episode.pending_question = { "type" => "referent", "carry" => [ "tablero norte" ] }
+    held = perception(
+      "follow_up",
+      identities: [ identity("sensor izquierdo"), identity("sensor derecho") ]
+    )
+    unresolved = Rag::RoutePolicy.call(previous: episode, perception: held, focus_count: 1, turn: "sensor izquierdo o sensor derecho")
+    assert_equal "clarify_first", unresolved.decision
+    assert_equal false, unresolved.owns_query
+    assert_equal [ "tablero norte" ], unresolved.pending_question["carry"]
+
+    unknown = perception("answer_pending", pending_resolution: "unknown")
+    denied = Rag::RoutePolicy.call(previous: episode, perception: unknown, focus_count: 1, turn: "no lo sé")
+    assert_equal "clarify_first", denied.decision
+    assert_nil denied.retrieval_query
+
+    chosen = perception("follow_up", identities: [ identity("contacto de la puerta") ])
+    resolved = Rag::RoutePolicy.call(previous: episode, perception: chosen, focus_count: 1, turn: "contacto de la puerta")
+    assert_equal "ready", resolved.decision
+    assert resolved.performs_retrieval?
+  end
+
   test "fallback on a referent pending repeats that question without retrieval" do
     episode = open_episode
     episode.assign_goal!("la puerta no cierra", correlation_id: "seed")
@@ -243,12 +266,12 @@ class Rag::RoutePolicyTest < ActiveSupport::TestCase
     )
   end
 
-  def perception(move, target: nil, observations: [], identities: [], ambiguities: [])
+  def perception(move, target: nil, observations: [], identities: [], ambiguities: [], pending_resolution: nil)
     Rag::TurnPerception::Result.new(
       valid: true,
       move: move,
       observations: observations,
-      pending_resolution: nil,
+      pending_resolution: pending_resolution,
       clarification_target: target,
       identities: identities,
       ambiguities: ambiguities,
@@ -256,6 +279,12 @@ class Rag::RoutePolicyTest < ActiveSupport::TestCase
       catalog_disagreements: [],
       invalid_reason: nil,
       correction: Rag::ObservationCorrection.none
+    )
+  end
+
+  def identity(span)
+    Rag::TurnPerception::Identity.new(
+      span: span, act: "assert", kind: "identifier", slot: nil, value: span, source: nil, manufacturer: nil
     )
   end
 end

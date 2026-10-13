@@ -40,6 +40,138 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     assert_equal [ "Q2" ], session.reload.active_episode.dig("pending_question", "carry")
   end
 
+  test "a captured referent clarification keeps the doubt and the validated spans" do
+    session = web_session
+    turn = "Estoy revisando una puerta del nivel 2 de un Elemont MH. En el plano seleccionado veo referencias a seguridad de puerta y a chapa, pero no tengo claro cuál corresponde a lo que estoy siguiendo. ¿Qué dato necesitas para orientarme?"
+    doubt = "En el plano seleccionado veo referencias a seguridad de puerta y a chapa"
+    interpreter = ScriptedInterpreterClient.new([
+      {
+        "move" => "unclear",
+        "assertions" => [
+          { "span" => "puerta del nivel 2", "act" => "assert" },
+          { "span" => "Elemont MH", "act" => "assert", "slot_hint" => "model" }
+        ],
+        "observations" => [ doubt ],
+        "pending_resolution" => nil,
+        "clarification_target" => "referent"
+      },
+      perception("unclear", clarification_target: "referent")
+    ])
+
+    with_owner do
+      Rag::DocumentIdentityCatalog.with_catalog(elemont_catalog(manual("captured-referent.pdf"))) do
+        opened = ask(session, turn, interpreter, correlation: "query:captured-open")
+        assert opened.understanding.clarify_first?
+        assert_nil opened.composed
+        ask(session, "puede ser cualquiera de las dos", interpreter, correlation: "query:captured-ambiguous")
+      end
+    end
+
+    episode = session.reload.active_episode
+    assert_equal "referent", episode.dig("pending_question", "type")
+    assert_includes episode.dig("pending_question", "carry"), "puerta del nivel 2"
+    assert_equal doubt, episode.dig("goal", "text")
+    assert_not_equal turn, episode.dig("goal", "text")
+    assert_includes Array(episode["observations"]).pluck("text"), doubt
+    assert_equal "Elemont", episode.dig("facts", "manufacturer", "value")
+    assert_equal "user", episode.dig("facts", "manufacturer", "source")
+    assert_nil episode.dig("facts", "model")
+    values = recorded_values(episode)
+    assert_not_includes values, "chapa"
+    assert_not_includes values, "seguridad de puerta"
+    assert_not_includes values, turn
+    assert_not_includes values, "puede ser cualquiera de las dos"
+    sent = work_context(interpreter.payloads.last)
+    assert_equal "referent", sent.dig("pending", "clarification_target")
+    assert_includes sent.dig("pending", "carry"), "puerta del nivel 2"
+    assert_includes sent.fetch("observations"), doubt
+    assert_equal doubt, sent["goal"]
+  end
+
+  test "one declared referent reply resumes the original doubt and keeps the pin" do
+    session = web_session
+    doc = manual("tablero.pdf", "Tablero")
+    session.update!(document_focus: [ focus_entry(doc) ])
+    choice = "contacto de la puerta"
+    interpreter = ScriptedInterpreterClient.new([
+      perception(
+        "unclear",
+        assertions: [ assertion("tablero norte", "assert") ],
+        observations: [ "veo dos marcas distintas" ],
+        clarification_target: "referent"
+      ),
+      perception("follow_up", assertions: [ assertion(choice, "assert") ])
+    ])
+    result = with_owner do
+      ask(session, "Estoy mirando el tablero norte y veo dos marcas distintas.", interpreter, correlation: "query:generic-open")
+      ask(session, choice, interpreter, correlation: "query:generic-choice")
+    end
+
+    episode = session.reload.active_episode
+    stored = Array(episode["identifiers"]).find { |item| item["value"] == choice }
+    assert_equal "user", stored["source"]
+    assert_nil episode["pending_question"]
+    assert_nil episode.dig("facts", "manufacturer")
+    assert_nil episode.dig("facts", "model")
+    assert_nil episode.dig("facts", "controller")
+    assert_equal "ready", result.understanding.decision
+    assert_nil result.understanding.clarification
+    assert_includes result.composed, choice
+    assert_includes result.composed, "veo dos marcas distintas"
+    assert_includes result.composed, "tablero norte"
+    assert_not_equal choice, result.composed
+    assert_equal [ doc.id ], session.focus_document_ids
+    sent = work_context(interpreter.payloads.last)
+    assert_equal "referent", sent.dig("pending", "clarification_target")
+    assert_includes sent.dig("pending", "carry"), "tablero norte"
+    assert_equal "veo dos marcas distintas", sent["goal"]
+  end
+
+  test "an unknown referent reply and a pair of asserts keep the pending doubt" do
+    unknown = open_generic_referent
+    unknown_result = with_owner do
+      ask(unknown, "no lo sé", client(perception("answer_pending", pending_resolution: "unknown")), correlation: "query:unknown")
+    end
+    unknown_episode = unknown.reload.active_episode
+    assert_equal "referent", unknown_episode.dig("pending_question", "type")
+    assert_nil unknown_result.composed
+    assert_equal "veo dos marcas distintas", unknown_episode.dig("goal", "text")
+    assert_not_includes Array(unknown_episode["identifiers"]).pluck("value"), "no lo sé"
+
+    pair = open_generic_referent
+    with_owner do
+      ask(
+        pair,
+        "sensor izquierdo o sensor derecho",
+        client(perception(
+          "follow_up",
+          assertions: [ assertion("sensor izquierdo", "assert"), assertion("sensor derecho", "assert") ]
+        )),
+        correlation: "query:pair"
+      )
+    end
+    pair_episode = pair.reload.active_episode
+    assert_equal "referent", pair_episode.dig("pending_question", "type")
+    values = Array(pair_episode["identifiers"]).pluck("value")
+    assert_not_includes values, "sensor izquierdo"
+    assert_not_includes values, "sensor derecho"
+    assert_equal "veo dos marcas distintas", pair_episode.dig("goal", "text")
+  end
+
+  test "a failed interpretation does not replace the open referent" do
+    session = open_generic_referent
+    with_owner do
+      ask(session, "no lo sé", RaisingInterpreterClient.new(Timeout::Error.new("down")), correlation: "query:referent-fail")
+    end
+
+    episode = session.reload.active_episode
+    assert_equal "referent", episode.dig("pending_question", "type")
+    assert_equal "veo dos marcas distintas", episode.dig("goal", "text")
+    assert_includes Array(episode["observations"]).pluck("text"), "veo dos marcas distintas"
+    assert_not_includes Array(episode["observations"]).pluck("text"), "no lo sé"
+    assert_not_includes Array(episode["identifiers"]).pluck("value"), "no lo sé"
+  end
+
   test "Q2 with no focus asks for the equipment and does not retrieve or store a fault" do
     session = web_session
     result = with_owner do
@@ -1329,6 +1461,33 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     count
   ensure
     FieldPhotoAnalysisService.define_singleton_method(:new) { |**kwargs| original.call(**kwargs) } if original
+  end
+
+  def open_generic_referent
+    session = web_session
+    with_owner do
+      ask(
+        session,
+        "Estoy mirando el tablero norte y veo dos marcas distintas.",
+        client(perception(
+          "unclear",
+          assertions: [ assertion("tablero norte", "assert") ],
+          observations: [ "veo dos marcas distintas" ],
+          clarification_target: "referent"
+        )),
+        correlation: "query:generic-#{SecureRandom.hex(3)}"
+      )
+    end
+    session
+  end
+
+  def recorded_values(episode)
+    Array(episode["identifiers"]).pluck("value") +
+      episode.fetch("facts", {}).values.filter_map { |fact| fact["value"] }
+  end
+
+  def work_context(payload)
+    JSON.parse(payload[:messages].first[:content].first[:text]).fetch("work_context")
   end
 
   def known(value, source: "user")

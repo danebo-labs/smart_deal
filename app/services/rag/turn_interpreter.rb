@@ -132,9 +132,15 @@ module Rag
     end
 
     def pending_payload
-      type = @episode.pending_question&.dig("type")
+      question = @episode.pending_question
+      type = question&.dig("type")
       if PendingQuestion::CONVERSATIONAL_TYPES.include?(type)
-        return { "clarification_target" => type }
+        payload = { "clarification_target" => type }
+        if type == "referent"
+          carry = question["carry"]
+          payload["carry"] = carry if carry.is_a?(Array) && carry.any?
+        end
+        return payload
       end
 
       slot = type || @episode.pending_fact&.dig("subject")

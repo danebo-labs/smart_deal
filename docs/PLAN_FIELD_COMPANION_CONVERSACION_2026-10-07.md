@@ -8,7 +8,7 @@
 
 **Bloqueo.** La aceptación documental sigue pendiente. El chunk y la respuesta atribuida al PDF dicen que el dibujo presenta «ramas paralelas visuales» y que la «disposición serie exacta» queda por verificar. Lahiri confirmó la referencia técnica de este trabajo: la Línea de Seguridad es una cadena en serie plegada en dos columnas, y Seguridad Puerta nivel 2 está entre Seguridad Puerta nivel 3 y Seguridad Puerta nivel 1. La frase no está en la capa de texto de la página 5.
 
-**Siguiente acción.** Revisar la sustitución propuesta en «Inspección de la nota de la página 5, 2026-10-13». Esta acción no ejecuta la escritura, no abre cupo y no acepta la fase 1. `PASS_CALL_CAP` permanece en 0.
+**Siguiente acción.** Revisar la preparación local de «Preparación de la reparación, sin ejecución». Esa preparación no autoriza la escritura, no abre cupo y no acepta la fase 1. `PASS_CALL_CAP` permanece en 0.
 
 **Gates que ya no son el paso siguiente.** Cerrar otra vez la fase 0. Repetir `20261009T194048Z`, `20261009T221211Z`, `20261010T153620Z` o `20261010T193753Z`. Reabrir el experimento del intérprete o la comparación Haiku 4.5 / Haiku 5.5. Abrir la fase 2. Reabrir Journey A, usar la reserva de 42 llamadas, cambiar el modelo o desplegar. Ejecutar G5, F9 o F10 del focus. Reabrir el ciclo F0–F8 de discovery. Reanudar O-P2 a O-P5, F3b o F4 del recovery del 06/10. El párrafo siguiente conserva esa historia.
 
@@ -846,6 +846,35 @@ EXPECTED_RESULT: Etiquetas: Seguridad Puerta nivel 1, nivel 2, nivel 3, nivel 4,
 
 Esta sustitución no es un parche de generación ni una reextracción. No se ejecuta desde este texto. La fase 2 no empieza. La fase 1 no queda aceptada.
 
+#### Preparación de la reparación, sin ejecución
+
+La revisión de `40b9dc4` dejó preparar la reparación. No autorizó aplicarla. Esta sección registra esa preparación. No lee S3, no escribe, no sincroniza y no abre otra corrida. La fase 1 no queda aceptada. `PASS_CALL_CAP` permanece en 0.
+
+El cuerpo corregido, generado desde el fixture histórico `test/fixtures/files/field_companion/phase1_20261010T153620Z/bodies/b0003.txt` sin editarlo, está en `test/fixtures/files/elemont/page5_safety_note/chunk_p5_1_after.txt`. La transformación está en `ElemontMhPage5SafetyNotePatch`. El recorrido que se detiene antes de escribir está en `ElemontMhPage5SafetyNoteRepair`. El script `script/patch_elemont_chunk_p5_1_safety_note.rb` solo construye los clientes si `RAG_PAGE5_SAFETY_NOTE_CONFIRM` es exactamente `1`. Ese nombre no es el del script de la bornera.
+
+Huellas locales. No son el hash del objeto S3 y el script no las usa como compuerta.
+
+| Copia local | Bytes | SHA-256 |
+|---|---:|---|
+| Captura sin salto final, antes | 7612 | `8baae756dab099e124b046057bfb4f6e835d85a5b2922f2eff1e64a637efd09c` |
+| Esa captura, después | 7359 | `067ff45ffa86a6d055cedbec8f38ce63ae36c5ba15266d32a48da5ccea9c6831` |
+| Copia con salto final, antes | 7613 | `7658478b42b0f4bc8e7ae603a069c11d42e78d69181d143dbf08e9709b637380` |
+| Esa copia, después | 7360 | `b466665b37f76cf2e35441787bbd30b3fe2dd42d623b4de359e05814e2c8a85a` |
+
+El objeto vivo puede ser una de esas copias o ninguna. Antes de escribir, el recorrido descarga la clave y el sidecar, guarda esos bytes y anota en el manifiesto el SHA-256 de la descarga. La escritura sigue solo si cada tramo aprobado aparece una vez y el complemento, fuera de esos tramos, queda igual. Una segunda pasada sobre el texto ya sustituido se detiene en ese conteo, después del respaldo y antes de `upload_text`.
+
+Destino exacto: bucket `multimodal-source-destination`, KB `Y7RZWMFJSR`, data source `PJ0N58DMHG`, región `us-east-1`. El id `8DUTRUCDTS` que nombra un comentario de `BatchChunkingPrompt` no es este data source. `KbSyncService#find_data_source_id` usa el primer data source de la lista cuando el pedido no está. Este recorrido no llama ese servicio. Lista las páginas del data source y, si `PJ0N58DMHG` no aparece, se detiene sin descargar y sin subir. No hay fallback.
+
+El sidecar se lee antes y después de subir el `.txt`. No se reescribe. Si los bytes del sidecar cambian, o si la relectura del `.txt` no coincide con lo subido, se restaura el cuerpo desde el respaldo y no se abre la ingesta.
+
+Sincronización, solo después de esa comprobación: `start_ingestion_job` con el id verificado. `get_ingestion_job` sigue mientras el estado sea `STARTING` o `IN_PROGRESS`, hasta 90 observaciones. La comprobación de éxito es `COMPLETE`, cero documentos fallidos y al menos un documento modificado. Otro estado terminado restaura el cuerpo y abre una ingesta de rollback sobre el mismo data source; esa segunda ingesta queda identificada y no se espera en el mismo bucle. Si el sondeo sigue en `STARTING` o `IN_PROGRESS` al llegar al límite, no se restaura, no se abre una segunda ingesta y el mensaje deja la ruta del respaldo.
+
+El script de la bornera del 2026-09-28 asignaba el adaptador de trabajos en proceso. Eso ejecutaba cada `perform_later` del proceso. Esta preparación no lo reutiliza: no cambia el adaptador y no encola. La ingesta sale del cliente del agente, no de un job.
+
+Rollback manual: subir `chunk_p5_1_before.bin` con `S3DocumentsService#upload_text` a la misma clave y abrir `start_ingestion_job` en `PJ0N58DMHG`. El respaldo del sidecar no se sube. El bucket no tiene versionado, según el comentario de aquel script.
+
+Esta preparación no se ejecuta desde este texto. La fase 2 no empieza.
+
 ### Fase 2. Guía conversacional con el documento correcto
 
 1. Estado: pendiente y bloqueada por la fase 1.
@@ -912,6 +941,7 @@ Esta sustitución no es un parche de generación ni una reextracción. No se eje
 | Fase 1, run `20261009T194048Z`. | El intérprete clasificó la consulta como `meta`; el turno descartó la pregunta y salió sin `Retrieve`. Un intento de modelo, US$0,002704 estimado. El request del intérprete no quedó capturado. | Detenida por evidencia ausente. Ese request no se rellena. El rechazo de `49bd0d0` no valida esta corrida. |
 | Fase 1, run `20261009T221211Z`, sesión 5, `ep_70711dad371cebac`. | Misma clasificación y la misma salida, con el request observado: prompt, `work_context` `{}` y herramienta `turn_perception`. Un intento, US$0,002704 estimado. Cero `Retrieve`. | Detenida por evidencia ausente. Cupo nuevo cerrado. El cuerpo de `returned` quedó como `Seahorse::Client::Response` y no se rellena. El serializador está en `49bd0d0`. |
 | El chunk de la página 5 pone en duda la serie con «ramas paralelas visuales». | Defecto de representación documentado. Sin reingesta. | Pendiente de decisión del fundador. No apareció en `20261009T221211Z` porque no hubo chunk. |
+| La sustitución de esa nota quedó preparada en local, sobre la revisión de `40b9dc4`. | Chunk corregido, servicio, script acotado a la clave y pruebas con dobles. El objeto vivo no se leyó. | Preparado. La escritura no está autorizada. La fase 1 no queda aceptada. |
 | La corrida de la fase 1 no guardó el request del intérprete. | Sobre `danebo.audit.v1` y `interpreter_request` copiado antes de `converse`. | La corrida `20261009T221211Z` guardó el request. La de `20261009T194048Z` no se rellena. |
 | `prepared` se leía como envío, la respuesta del intérprete perdía el texto y la reentrada del guardia podía encolar. | `prepared`, `attempt_started`, `blocked`, `returned` y `error`. | En `20261009T221211Z` se observaron `prepared`, `attempt_started` y `returned`. El cuerpo de esa corrida no se modeló y no se rellena. La causa de `meta` sigue sin demostrar. |
 | Un `meta` incompatible descartaba la consulta técnica, y `Seahorse::Client::Response` quedaba como `unmodeled_type`. | Punto 13. Rechazo determinista hacia el fallback existente, y serialización solo del payload `data`. Dos diffs. Stubs. | En `49bd0d0`. Sin corrida de fase 1 después de ese commit y sin rellenar los sobres anteriores. La fase 1 no queda validada. |

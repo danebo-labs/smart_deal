@@ -2137,6 +2137,74 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_nil Rag::DocumentIdentityScope.applicability_mode(orona_identity)
   end
 
+  test "document identity attribution reaches this route under grounded synthesis and stays off other routes" do
+    contract = BedrockRagService::DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT
+    obvious = "what is obvious for that kind of component"
+    citation = "Cite a claim taken from a search result with [n]"
+    %w[Chapa Elemont salida 24V].each do |term|
+      assert_not_includes contract.downcase, term.downcase
+    end
+
+    with_grounded_synthesis("true") do
+      service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
+      prompt = service.send(
+        :document_identity_generation_prompt,
+        "etiqueta del plano",
+        [ chunk("plano", "Etiqueta visible en el bus.", canonical_name: "Plano") ],
+        labels: [ "THIS JOB'S EQUIPMENT: Plano" ],
+        response_locale: :es,
+        session_context: nil,
+        output_channel: :web
+      )
+      shared = service.send(:load_generation_prompt_with_locale, "etiqueta del plano", response_locale: :es, output_channel: :web)
+      template = BedrockRagService.load_generation_prompt_template(grounded_synthesis: true)
+      route = Rag::StructuredEvidenceRoute.new(
+        question: "etiqueta del plano",
+        account: accounts(:legacy),
+        entity_s3_uris: [],
+        entity_sources: [],
+        force_entity_filter: false,
+        response_locale: :es,
+        rag_service: service,
+        generator: Object.new
+      )
+      other = route.send(:generation_prompt, [ chunk("plano", "Etiqueta visible en el bus.", canonical_name: "Plano") ])
+
+      assert_includes prompt, "# DOCUMENT IDENTITY ATTRIBUTION"
+      assert_includes prompt, "takes precedence over the general instruction to state what is obvious"
+      assert_includes prompt, "does not by itself prove that component's function, supply, or connection"
+      assert_includes prompt, "explicitly linked to the component asked about"
+      assert_includes prompt, "TOPOLOGY_EDGE records above remain in force"
+      assert_includes prompt, "A physical connection claim"
+      assert_includes prompt, "RECORD_TYPE: TOPOLOGY_EDGE"
+      assert_includes prompt, "identified as inference"
+      assert_includes prompt, "does not make the conclusion text of the drawing"
+      assert_includes prompt, "Do not infer an electrical specification from a bus name."
+      assert_includes prompt, "limit the absence to the passages in this prompt"
+      assert_includes prompt, "Do not say the whole document lacks the datum."
+      assert_includes prompt, "Do not state a function as documented and then deny it."
+      assert_includes prompt, "only when the evidence links that component to that sheet"
+      assert_includes prompt, "may still be answered when the function is missing"
+      assert_includes prompt, obvious
+      assert prompt.index(obvious) < prompt.index("# DOCUMENT IDENTITY ATTRIBUTION")
+      assert prompt.index("# DOCUMENT IDENTITY ATTRIBUTION") < prompt.index(citation)
+      assert_not_includes prompt, "$output_format_instructions$"
+
+      assert_includes shared, obvious
+      assert_not_includes shared, "# DOCUMENT IDENTITY ATTRIBUTION"
+      assert_includes template, obvious
+      assert_not_includes template, "# DOCUMENT IDENTITY ATTRIBUTION"
+      assert_includes other, obvious
+      assert_not_includes other, "# DOCUMENT IDENTITY ATTRIBUTION"
+    end
+
+    with_grounded_synthesis(nil) do
+      strict = BedrockRagService.load_generation_prompt_template(grounded_synthesis: false)
+      assert_not_includes strict, "# DOCUMENT IDENTITY ATTRIBUTION"
+      assert_not_includes strict, obvious
+    end
+  end
+
   private
 
   def assert_applicability_contract(prompt)
@@ -2434,6 +2502,29 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     end
   ensure
     Rails.logger.stop_broadcasting_to(logger) if logger
+  end
+
+  def with_grounded_synthesis(value)
+    original = ENV.fetch("RAG_GROUNDED_SYNTHESIS_ENABLED", nil)
+    account_ids = ENV.fetch("RAG_GROUNDED_SYNTHESIS_ACCOUNT_IDS", nil)
+    ENV.delete("RAG_GROUNDED_SYNTHESIS_ACCOUNT_IDS")
+    if value.nil?
+      ENV.delete("RAG_GROUNDED_SYNTHESIS_ENABLED")
+    else
+      ENV["RAG_GROUNDED_SYNTHESIS_ENABLED"] = value
+    end
+    yield
+  ensure
+    if original.nil?
+      ENV.delete("RAG_GROUNDED_SYNTHESIS_ENABLED")
+    else
+      ENV["RAG_GROUNDED_SYNTHESIS_ENABLED"] = original
+    end
+    if account_ids.nil?
+      ENV.delete("RAG_GROUNDED_SYNTHESIS_ACCOUNT_IDS")
+    else
+      ENV["RAG_GROUNDED_SYNTHESIS_ACCOUNT_IDS"] = account_ids
+    end
   end
 
   def with_flag(value)

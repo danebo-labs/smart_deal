@@ -34,6 +34,23 @@ class BedrockRagService
   DOCUMENT_IDENTITY_CITATION_INSTRUCTIONS = <<~TEXT.strip
     Cite a claim taken from a search result with [n], where n is that result's source number. Do not cite a result you did not use.
   TEXT
+  # Attribution limit for direct document-identity generation. It is not part of
+  # the shared generation template, so retrieve_and_generate and the other
+  # direct routes do not receive it. It follows the general prompt, including
+  # the grounded "what is obvious" orientation, and precedes the citation line.
+  DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT = <<~TEXT.strip.freeze
+    # DOCUMENT IDENTITY ATTRIBUTION
+    When a function or a specification is attributed to the drawing, this contract takes precedence over the general instruction to state what is obvious for that kind of component. What is obvious is not a statement of the drawing.
+
+    - A printed label, a column heading, or a bus name does not by itself prove that component's function, supply, or connection.
+    - A claim presented as what the drawing states must be supported by the retrieved text and explicitly linked to the component asked about. Compatible fragments that document that same link may be combined. Do not transfer a fact from another component.
+    - The physical-connection rule and TOPOLOGY_EDGE records above remain in force.
+    - An allowed interpretation is identified as inference and cites only the documented premises it uses. That citation does not make the conclusion text of the drawing. Do not infer an electrical specification from a bus name.
+    - When support is missing, limit the absence to the passages in this prompt. Do not say the whole document lacks the datum.
+    - Do not state a function as documented and then deny it.
+    - Name another sheet as the documentary location of this component only when the evidence links that component to that sheet.
+    - A supported location or label may still be answered when the function is missing.
+  TEXT
   PARTIAL_ABSTENTION_PROMPT_PREFIX = "- PARTIAL_ABSTENTION_CONTRACT:"
   GROUNDED_SYNTHESIS_PROMPT_PREFIX = "- GROUNDED_SYNTHESIS:"
   STRICT_ONLY_PROMPT_PREFIX = "- STRICT_ONLY:"
@@ -1096,7 +1113,9 @@ class BedrockRagService
     template
       .sub("$query$") { question.to_s }
       .sub("$search_results$") { Rag::DocumentIdentityScope.generation_context(chunks, labels) }
-      .sub(OUTPUT_FORMAT_PLACEHOLDER) { DOCUMENT_IDENTITY_CITATION_INSTRUCTIONS }
+      .sub(OUTPUT_FORMAT_PLACEHOLDER) do
+        "#{DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT}\n\n#{DOCUMENT_IDENTITY_CITATION_INSTRUCTIONS}"
+      end
   end
 
   def document_identity_generator

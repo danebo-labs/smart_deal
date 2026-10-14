@@ -1,0 +1,171 @@
+[DOCUMENT: Montacargas 2N Temporizado-1 (1).pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf]
+[SEARCH_ALIASES: Diagramas Circuito 3, Linea de Seguridad, Botonera Pasillo Nivel 1, Seg In, Seg Out, Parada emergencia foso, Barrera laser, Chapa Puerta nivel 1]
+
+S7 — DIAGRAM
+
+DIAGRAMAS CIRCUITO #3
+
+Fuente: Elemont Elevadores y Montacargas — Montacargas Hidráulico Modelo MH — Instalaciones Eléctricas. Fecha: 02/03/2023. Dibujado por: A. Millán. Revisado por: J. Escobar. Certificación ROL 2740. Número de plano: ELEMONT-N/A. Hoja 1 de 1. Revisión: A. Ubicación: Santa Adela Nº 9540, Maipú.
+
+---
+
+SECCIÓN LÍNEA DE SEGURIDAD
+
+Esta sección muestra el circuito serie de la cadena de seguridad del montacargas hidráulico. Los componentes se conectan en serie entre los nodos Seg In y Seg Out. El diagrama indica los siguientes elementos en una cadena en serie plegada en dos columnas. Seguridad Puerta nivel 2 queda entre Seguridad Puerta nivel 3 y Seguridad Puerta nivel 1. La tabla ordena esa lectura. Sus números de posición no están impresos en el plano.
+
+| Posición | Etiqueta visible en diagrama |
+|---|---|
+| 1 | Seg In |
+| 2 | Parada emergencia sobre cabina |
+| 3 | Barrera laser |
+| 4 | Fin de carrera sup |
+| 5 | Seguridad Puerta nivel 5 |
+| 6 | Seguridad Puerta nivel 4 |
+| 7 | Seguridad Puerta nivel 3 |
+| 8 | Seguridad Puerta nivel 2 |
+| 9 | Seguridad Puerta nivel 1 |
+| 10 | Parada emergencia foso |
+| 11 | Seg Out |
+
+---
+
+SECCIÓN BOTONERA DE PASILLO NIVEL 1
+
+Esta sección muestra el circuito de la botonera de pasillo correspondiente al Nivel 1. La horizontal superior está rotulada Com 18vdc. La horizontal inferior está rotulada PasCom 24V. Esos rótulos se conservan como nombres impresos.
+
+La sección imprime las etiquetas LC1, LC2, LC7 y LC8, y LC8 otra vez, junto a Sp1, Dp1, Sp2, Dp2, Sp3, Dp3, Sp4 y Dp4, y Sp4 y Dp4 otra vez. El trazo de LC1 llega al contacto rotulado Sp1 y no llega al símbolo Dp1. El mismo patrón visible se repite: LC2 llega a Sp2, LC7 llega a Sp3 y cada LC8 llega al Sp4 de su caja; ninguno de esos trazos llega al símbolo Dp de esa caja. Esta representación no asigna función a Sp ni a Dp.
+
+Se imprimen dos etiquetas AP. Chapa Puerta nivel 1 es otra etiqueta, junto a otro símbolo a la derecha de ese grupo. No es una de las seis etiquetas Chapa nivel. Ese símbolo queda entre la esquina de la horizontal Com 18vdc y un nodo con punto. El contacto de una etiqueta AP llega a ese nodo y cruza con puente el vertical de la otra etiqueta AP.
+
+La tabla siguiente no está impresa. Ordena las seis etiquetas Chapa nivel y el recorrido visible de cada trazo. Sus filas no están impresas y no afirman que esas etiquetas pertenezcan a PasCom 24V. La sección no imprime un nombre de papel para esos terminales.
+
+| Representación añadida | Recorrido visible |
+|---|---|
+| Chapa nivel 1 | Sale de Com 18vdc con punto de unión, pasa por el símbolo Dp1, cruza PasCom 24V con un puente semicircular sin punto de unión y termina en el terminal rotulado Chapa nivel 1. El trazo del lado Sp1 tiene punto de unión con PasCom 24V. |
+| Chapa nivel 2 | Sale de Com 18vdc con punto de unión, pasa por el símbolo Dp2, cruza PasCom 24V con un puente semicircular sin punto de unión y termina en el terminal rotulado Chapa nivel 2. El trazo del lado Sp2 tiene punto de unión con PasCom 24V. |
+| Chapa nivel 3 | Sale de Com 18vdc con punto de unión, pasa por el símbolo Dp3, cruza PasCom 24V con un puente semicircular sin punto de unión y termina en el terminal rotulado Chapa nivel 3. El trazo del lado Sp3 tiene punto de unión con PasCom 24V. |
+| Chapa nivel 4 | Sale de Com 18vdc con punto de unión, pasa por el símbolo Dp4 de la primera caja, cruza PasCom 24V con un puente semicircular sin punto de unión y termina en el terminal rotulado Chapa nivel 4. El trazo del lado Sp4 de esa caja tiene punto de unión con PasCom 24V. |
+| Chapa nivel 5 | Sale del símbolo Dp4 de la segunda caja y baja hasta el terminal rotulado Chapa nivel 5. No cruza PasCom 24V. Esa horizontal termina y sube al contacto Sp4 de la segunda caja, donde tiene punto de unión. |
+| Chapa nivel 1, segunda etiqueta impresa | Baja desde el símbolo AP de la derecha hasta el terminal rotulado Chapa nivel 1. No cruza PasCom 24V. |
+
+La repetición impresa de LC8, Sp4 y Dp4 queda como etiquetas visibles. Esta representación no la lee como conexión redundante.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-805D93B8B7157513
+SOURCE_SECTION_OR_PAGE: SECCIÓN LÍNEA DE SEGURIDAD
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar nodo de entrada de la cadena de seguridad
+EXPECTED_RESULT: Etiqueta: Seg In
+EVIDENCE: Seg In
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-80FD5EC309BCF18E
+SOURCE_SECTION_OR_PAGE: SECCIÓN LÍNEA DE SEGURIDAD
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar nodo de salida de la cadena de seguridad
+EXPECTED_RESULT: Etiqueta: Seg Out
+EVIDENCE: Seg Out
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-A44060F00DF1EF49
+SOURCE_SECTION_OR_PAGE: SECCIÓN LÍNEA DE SEGURIDAD
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar dispositivo de parada de emergencia ubicado sobre cabina
+EXPECTED_RESULT: Etiqueta: Parada emergencia sobre cabina — función de conexión exacta en serie REQUIRES_FIELD_VERIFICATION
+EVIDENCE: Parada emergencia sobre cabina
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-9965A0267B71D3DA
+SOURCE_SECTION_OR_PAGE: SECCIÓN LÍNEA DE SEGURIDAD
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar dispositivo de detección en cadena de seguridad
+EXPECTED_RESULT: Etiqueta: Barrera laser — función y tipo de contacto DATA_NOT_AVAILABLE en este diagrama
+EVIDENCE: Barrera laser
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-ADBD91E792ACCE4E
+SOURCE_SECTION_OR_PAGE: SECCIÓN LÍNEA DE SEGURIDAD
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar fin de carrera superior en cadena de seguridad
+EXPECTED_RESULT: Etiqueta: Fin de carrera sup — tipo de contacto y cableado exacto REQUIRES_FIELD_VERIFICATION
+EVIDENCE: Fin de carrera sup
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-788DC1C62E54AA33
+SOURCE_SECTION_OR_PAGE: SECCIÓN LÍNEA DE SEGURIDAD
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar dispositivos de seguridad de puerta por nivel en cadena de seguridad
+EXPECTED_RESULT: Etiquetas: Seguridad Puerta nivel 1, nivel 2, nivel 3, nivel 4, nivel 5
+EVIDENCE: Seguridad Puerta nivel 5 … Seguridad Puerta nivel 1
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-CECE5263ABF9FE19
+SOURCE_SECTION_OR_PAGE: SECCIÓN LÍNEA DE SEGURIDAD
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar dispositivo de parada de emergencia ubicado en foso
+EXPECTED_RESULT: Etiqueta: Parada emergencia foso — posición en cadena serie REQUIRES_FIELD_VERIFICATION
+EVIDENCE: Parada emergencia foso
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-EFBC33120BE0F7B4
+SOURCE_SECTION_OR_PAGE: SECCIÓN BOTONERA DE PASILLO NIVEL 1
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar el rótulo impreso de la horizontal superior de la botonera de pasillo nivel 1
+EXPECTED_RESULT: Etiqueta: Com 18vdc
+EVIDENCE: Com 18vdc
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-196D6FB0A2E067EB
+SOURCE_SECTION_OR_PAGE: SECCIÓN BOTONERA DE PASILLO NIVEL 1
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar el rótulo impreso de la horizontal inferior de la botonera de pasillo nivel 1
+EXPECTED_RESULT: Etiqueta: PasCom 24V
+EVIDENCE: PasCom 24V
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-26B2C19C23558634
+SOURCE_SECTION_OR_PAGE: SECCIÓN BOTONERA DE PASILLO NIVEL 1
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar el contacto al que llega cada etiqueta LC de la botonera de pasillo nivel 1
+EXPECTED_RESULT: LC1 llega a Sp1 y no a Dp1; LC2 llega a Sp2 y no a Dp2; LC7 llega a Sp3 y no a Dp3; cada LC8 llega al Sp4 de su caja y no al Dp4. Función de Sp y Dp DATA_NOT_AVAILABLE en este diagrama
+EVIDENCE: LC1 Sp1 LC2 Sp2 LC7 Sp3 LC8 Sp4
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-937E3F1B21F8A9B4
+SOURCE_SECTION_OR_PAGE: SECCIÓN BOTONERA DE PASILLO NIVEL 1
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar las etiquetas AP en la botonera de pasillo nivel 1
+EXPECTED_RESULT: Etiqueta: AP (dos instancias visibles) — función DATA_NOT_AVAILABLE en este diagrama
+EVIDENCE: AP AP
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-18586C8555E3D4D1
+SOURCE_SECTION_OR_PAGE: SECCIÓN BOTONERA DE PASILLO NIVEL 1
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar la etiqueta Chapa Puerta nivel 1, distinta de las etiquetas Chapa nivel
+EXPECTED_RESULT: Etiqueta: Chapa Puerta nivel 1
+EVIDENCE: Chapa Puerta nivel 1
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-EDD34F3E3DC1E14A
+SOURCE_SECTION_OR_PAGE: SECCIÓN BOTONERA DE PASILLO NIVEL 1
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Registrar el recorrido visible de las seis etiquetas Chapa nivel respecto de PasCom 24V
+EXPECTED_RESULT: Chapa nivel 1, Chapa nivel 2, Chapa nivel 3 y Chapa nivel 4 cruzan PasCom 24V con puente y sin punto de unión. Chapa nivel 5 y la segunda etiqueta Chapa nivel 1 no cruzan PasCom 24V
+EVIDENCE: Chapa nivel 1 Chapa nivel 2 Chapa nivel 3 Chapa nivel 4 Chapa nivel 5 Com 18vdc PasCom 24V
+END_FIELD_RECORD

@@ -2,11 +2,63 @@
 
 ## Estado de este corte, 2026-10-14
 
+**Corte de la botonera.** La revisión visual posterior de la sección Botonera, página 5, queda en «Corrección candidata de la botonera, 2026-10-14». El defecto demostrado es de representación: el chunk trata las etiquetas Chapa nivel como salidas de PasCom 24V. Las generaciones de `20261014T140201Z` y `20261014T152614Z` amplifican esa frase. Eso no es la causa única de todas las muestras. La aceptación conversacional de la fase 2 se mantiene. La aceptación técnica sigue pendiente. La comparación de modelos y las llamadas siguen diferidas. Este corte no acepta la fase 2 ni abre la fase 3. `PASS_CALL_CAP` sigue en 0. La prevención de ingesta y la geometría vectorial quedan fuera de este corte.
+
 **Objetivo.** La consulta documental acotada de la fase 1 quedó aceptada con reservas. En la fase 2, el ciclo conversacional quedó demostrado. `20261013T233715Z` comprobó el contrato de atribución: el prompt lo incluye y la respuesta vuelve a atribuir una función que ese prompt no contiene. Las dos respuestas no son el mismo texto. La aceptación técnica sigue pendiente. El recorte de «Reparación de la atribución, 2026-10-13» quedó rechazado. La decisión de «Revisión de la reparación, 2026-10-13» está implementada en local. La comparación de solo generación se ejecutó en `20261014T012743Z` y las dos muestras fallan la atribución. La comprobación de las dos cláusulas de inferencia se ejecutó en `20261014T020512Z` y las dos muestras vuelven a fallar. El cupo de esas dos llamadas queda cerrado. Este corte sustituye solo `DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT` para separar información documental, interpretación opcional y datos pendientes. La hipótesis se comprobó en `20261014T140201Z` y las dos muestras vuelven a fallar. Ese cupo queda cerrado. La separación system/user se comprobó en `20261014T152614Z` y las dos muestras vuelven a atribuir función y accionamiento. Ese cupo queda cerrado.
 
 **Estado.** La fase 0 está cerrada. ChatGPT aceptó `20261013T185531Z` para esa consulta, con reservas de presentación y de alcance. La decisión es posterior al cierre de la corrida y no reescribe sus resultados. La revisión de `37c7bf2` cerró la conservación de evidencia del arnés. La corrida `20261013T214527Z`, sesión 9, quedó en `withheld`. Ese cierre sigue histórico. `20261013T225115Z`, sesión 10, se detuvo con `Seahorse::Client::NetworkingError` antes de una percepción. Ese cupo sigue cerrado. `20261013T230407Z`, sesión 11, demostró el ciclo conversacional. Sobre `4dbac887`, Lahiri autorizó una corrida: `20261013T233715Z`, sesión 12. El detalle está en «Corrida de fase 2, 20261013T233715Z». No es `EPISODIO_VALIDADO`. El detalle de las dos generaciones está en «Comparación de solo generación, 20261014T012743Z». La comprobación posterior está en «Comprobación de las autorizaciones de inferencia, 20261014T020512Z». La preparación de este contrato está en «Preparación local de las tres voces, 2026-10-14». La comprobación está en «Comprobación de las tres voces, 20261014T140201Z». La comprobación de la jerarquía está en «Comprobación de la jerarquía system/user, 20261014T152614Z». La activación real de `correct` sigue pendiente.
 
 **Bloqueo.** La fase 3 sigue bloqueada. Quitar las tres instrucciones de guía de campo, sustituir el contrato anterior y retirar las dos cláusulas de inferencia no bastó: las muestras vuelven a atribuir función, alimentación o conexión. Separar documentación e interpretación se comprobó en `20261014T140201Z` y no resolvió la atribución. Separar el rol al mensaje system se comprobó en `20261014T152614Z` y tampoco la resolvió. No se añade otra cláusula. No se cambia el modelo. Haiku 5.5 queda diferido para este diagnóstico y no queda descartado. La ingesta `XU1THSZ4ZT` sigue con el fallo de `bulk_chunks/3/5b1859a0bfe1c5b11e58214555f8c2fe93e6/chunk_p5_1.txt`. Ese exceso de tokens queda en backlog.
+
+### Corrección candidata de la botonera, 2026-10-14
+
+Preparación local sobre `HEAD` `9da2125b17c7cff47c2de1dfaf1b122f15355442`, igual a `origin/main`, árbol limpio al empezar. No hubo llamada AWS ni Anthropic, Retrieve, lectura S3, escritura S3, ingesta, worker ni despliegue. No se editó prompt, modelo, ranking, sesión, guardia, presupuesto ni `.env`. `PASS_CALL_CAP` sigue en 0. Los veredictos de la fase 1 y de las corridas de la fase 2 quedan como estaban. La aceptación conversacional de la fase 2 se mantiene. La aceptación técnica sigue pendiente. Este texto no acepta la fase 2 ni abre la fase 3. La comparación de modelos sigue diferida.
+
+**Fuente.** Cinco copias locales miden 583429 bytes y dan SHA-256 `121bfffe0827f6bc681ba9bdc910503900555c4ce58d616732a1c063f3b16986`. El sufijo del nombre no cambia el contenido. Una de ellas es la copia ya citada en `Downloads/drive-download-20260831T134907Z-1-001/Montacargas 2N Temporizado-1 (1).pdf`. `pdfinfo`: 7 páginas. Este corte no leyó el objeto S3. La base del candidato es el fixture de la reparación de la línea de seguridad, 7359 bytes, SHA-256 `067ff45ffa86a6d055cedbec8f38ce63ae36c5ba15266d32a48da5ccea9c6831`. La copia histórica con salto final, 7360 bytes, SHA-256 `b466665b37f76cf2e35441787bbd30b3fe2dd42d623b4de359e05814e2c8a85a`, no se volvió a comprobar en S3. La transformación acepta ese salto final y rechaza cualquier otra base.
+
+**Revisión visual posterior.** ChatGPT y Fable habían fijado el ramal Dp2: sale de la horizontal rotulada Com 18vdc, pasa por el símbolo Dp2, cruza PasCom 24V con puente semicircular sin punto de unión y termina en el terminal rotulado Chapa nivel 2. El lado Sp2 sí tiene punto de unión con PasCom 24V. Chapa Puerta nivel 1 es otra etiqueta. Opus precisó las seis etiquetas de la misma sección, con recortes de 500–1400 dpi y la geometría vectorial de esta página. El contraste local de los mismos recortes coincide con esa tabla. Un conteo de tinta por debajo de la horizontal, cerca de Chapa nivel 5, es el trazo que baja después de que PasCom 24V ya terminó; no es un cruce. No queda una discrepancia gráfica que obligue a ampliar el texto.
+
+| Región del PDF | Texto previo del chunk | Defecto | Texto candidato |
+|---|---|---|---|
+| Horizontal superior e inferior | «El bus superior se alimenta desde Com 18vdc; el bus inferior corresponde a PasCom 24V.» | La etiqueta impresa se lee como alimentación. | Las horizontales quedan rotuladas Com 18vdc y PasCom 24V, como nombres impresos. |
+| Caja Sp2/Dp2, Chapa nivel 2 | «En el bus inferior (PasCom 24V) se identifican las siguientes salidas de chapa por nivel» y la fila 2 de esa tabla. | La posición de la etiqueta se convierte en unión eléctrica. La palabra «salida» no está impresa. | El trazo sale de Com 18vdc con punto, pasa por Dp2, cruza PasCom 24V con puente sin punto y termina en Chapa nivel 2. Sp2 sí se une a PasCom 24V. |
+| Chapa nivel 1, 3 y 4 | Las filas 1, 3 y 4 de la misma tabla de salidas. | El mismo agrupamiento las pone en PasCom 24V. | El mismo patrón visible que Chapa nivel 2: puente sobre PasCom 24V y punto en el lado Sp. |
+| Chapa nivel 5 y la segunda etiqueta Chapa nivel 1 | Las filas 5 y 6, y el registro que las llama salidas del bus inferior. | PasCom 24V no llega hasta esos trazos. El bus sube al contacto Sp4 de la segunda caja. La segunda Chapa nivel 1 baja del símbolo AP de la derecha. | Esos dos trazos no cruzan PasCom 24V. |
+| Chapa Puerta nivel 1 | «conectada al bus superior» y `FR-BEF95A3D11C60D33`, «salida … en bus superior». | «Salida» no está impresa. La etiqueta no es una de las seis. | Etiqueta distinta, junto a otro símbolo entre la esquina de Com 18vdc y un nodo con punto. Un contacto AP llega a ese nodo cruzando con puente el vertical de la otra etiqueta AP. El candidato no usa la palabra «bobina»: no está impresa. |
+| LC1 y la tabla LC–Sp/Dp | «LC1 \| Sp1, Dp1» y las filas siguientes, más «conectores». | LC1 llega al contacto Sp1 y no al símbolo Dp1. El mismo patrón se ve en LC2, LC7 y las dos LC8. «Conector» no está impreso. | Cada trazo LC llega al Sp de su caja y no al Dp. AP queda como etiqueta. |
+| Repetición de LC8, Sp4 y Dp4 | La nota dice que puede indicar conexiones redundantes. | La repetición visible no demuestra esa conexión. | Queda como etiquetas impresas dos veces. No se interpreta. |
+| Página 6, recuadro y SUBE/BAJA | No está en este chunk. | Contexto. No demuestra identidad de redes, función, polaridad ni correspondencia con el equipo. | No entra en el candidato. |
+
+La tabla del candidato es una representación añadida. No es una tabla impresa y no clasifica los terminales como salidas.
+
+**Amplificación observada.** El cuerpo que entró a las generaciones ya decía que Chapa nivel 2 está en el bus inferior PasCom 24V como salida. `20261014T140201Z` y `20261014T152614Z` publican función, mando o alimentación desde ese bus, con cita. La reparación del chunk es el objeto de este corte. No se reabre el prompt de generación ni se atribuye a esas muestras una sola causa.
+
+**Identificadores.** `field_record_id` usa página `5`, sección, tipo, acción, resultado esperado y evidencia. Cambiar esos campos cambia el id. El id anterior no se reutiliza.
+
+| Antes | Candidato | Qué cambió |
+|---|---|---|
+| `FR-C7A12AE8C5424D0C` | `FR-EFBC33120BE0F7B4` | La acción deja de llamar alimentación a la horizontal superior. |
+| `FR-16D5DB6C568B4EDF` | `FR-196D6FB0A2E067EB` | La acción deja de llamar alimentación a la horizontal inferior. |
+| `FR-72533B2981D5BCA1` | `FR-26B2C19C23558634` | La acción, el resultado y la evidencia dejan de emparejar LC con Dp. |
+| `FR-5941846F7A31D511` | `FR-937E3F1B21F8A9B4` | La acción deja de llamar conectores a AP. |
+| `FR-BEF95A3D11C60D33` | `FR-18586C8555E3D4D1` | La acción deja de llamar salida a Chapa Puerta nivel 1. |
+| `FR-F96D2D2E19D00D3A` | `FR-EDD34F3E3DC1E14A` | La acción, el resultado y la evidencia dejan de poner las seis etiquetas en PasCom 24V. |
+
+`FR-788DC1C62E54AA33` y el resto de la línea de seguridad no cambian. El encabezado, la URI, la página y la procedencia no cambian. El sidecar no se toca.
+
+**Huellas.**
+
+| Copia | Bytes | SHA-256 |
+|---|---:|---|
+| Base, sin salto final | 7359 | `067ff45ffa86a6d055cedbec8f38ce63ae36c5ba15266d32a48da5ccea9c6831` |
+| Candidato, sin salto final | 9193 | `a13141fe7586c9013d698aa29f2b6809f112702e98f4da99d9a47c3ba01d7779` |
+| Candidato, con un salto final | 9194 | `bc6d057d6ed34adae196692c7a48e1291ac020b08150027c51e13a398b77441e` |
+
+El candidato está en `test/fixtures/files/elemont/page5_botonera_branch/chunk_p5_1_candidate.txt`. El fixture histórico y `chunk_p5_1_after.txt` no se editan. La transformación es `ElemontMhPage5BotoneraBranchPatch`. Exige una ocurrencia de cada tramo, rechaza una base distinta, una sustitución parcial, un tramo repetido y una segunda pasada, y conserva el complemento. No construye un cliente externo. No extiende `script/patch_elemont_chunk_p5_1_safety_note.rb`.
+
+**Modo operativo, no implementado y no ejecutado.** Haría falta una clase distinta de `ElemontMhPage5SafetyNoteRepair`, con otra variable de confirmación. Descargaría la clave `bulk_chunks/1/121bfffe0827f6bc681ba9bdc91050390055/chunk_p5_1.txt` y su sidecar, guardaría esos bytes y aplicaría este parche. La escritura usaría `S3DocumentsService#upload_text` solo sobre el `.txt`. El sidecar no se reescribe. Después, el mismo control de `start_ingestion_job` en el data source `PJ0N58DMHG`, bucket `multimodal-source-destination`, KB `Y7RZWMFJSR`, región `us-east-1`. Este corte no crea ese recorrido.
+
+La prevención de ingesta (`field_records_v9`) y el arreglo de la geometría vectorial quedan diferidos. No forman parte de este candidato.
 
 ### Jerarquía system/user, preparación local 2026-10-14
 

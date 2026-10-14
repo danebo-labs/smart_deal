@@ -2,6 +2,8 @@
 
 ## Estado de este corte, 2026-10-14
 
+**Replay de generación del resumen, `20261014T205958Z`.** Lahiri autorizó una ejecución sobre `1b088db`. Tres generaciones, correlaciones `phase3:summary:20261014T205958Z:1`, `:2` y `:3`. Las tres volvieron `end_turn`. Ninguna atribuye Chapa nivel 3 a la cadena de seguridad ni presenta Seguridad Puerta nivel 3 como elemento correspondiente. La muestra 2 vuelve a dejar Dp3 en la categoría de contacto normalmente abierto o cerrado. La suma atribuida es US$0,043664. Esta corrida no acepta la fase 3. No es `EPISODIO_VALIDADO`. El detalle está en «Replay de generación del resumen, 20261014T205958Z».
+
 **Replay de generación del resumen, preparación.** Queda preparado el reenvío literal del `generate_text` del turno 3 de `20261014T194442Z`, sin ejecutarlo. El system es `bodies/b0007.txt`, 13668 bytes, SHA-256 `81a7dfd85e2415d2527a6537b35b540aa03a5a69b2bd06f643c8479ff0031024`. El user es `bodies/b0008.txt`, 23415 bytes, SHA-256 `e9d4ba63418d15e4820c4197bdfd17aa4dae7a81cf68527eab0d61c69a6d12b2`. Modelo, temperatura 0,1 y `max_tokens` 3000 salen del evento `prepared`. Hay tres muestras propuestas y ninguna está autorizada. Esta preparación no acepta la fase 3. El detalle está en «Preparación del replay de generación del resumen, 2026-10-14».
 
 **Corrida de fase 3, `20261014T194442Z`.** Lahiri autorizó una corrida sobre `0d53bee`. Sesión clonada 15, episodio `ep_063f3f66656047d2`, pin del documento 213. El intérprete real volvió a omitir `negate`. El ajuste `explicit_identifier_negation` dejó Chapa nivel 3 vigente, fuente `user`, y Chapa nivel 2 rechazada con slot `identifier`. La consulta del resumen usa Chapa nivel 3. La respuesta no repite la ubicación entre nivel 4 y nivel 1, y sí junta la chapa con la cadena de seguridad y trata Dp3 como contacto. Seis intentos, US$0,050081 calculados por `BedrockQuery#cost`. Cuatro físicas de `Retrieve`. `turns_recorded` no acepta la fase 3. No es `EPISODIO_VALIDADO`. El sobrante queda cerrado. El detalle está en «Corrida de fase 3, 20261014T194442Z».
@@ -53,6 +55,92 @@ PHASE3_SUMMARY_GENERATION_AUTHORIZED=1 AWS_MAX_ATTEMPTS=1 bin/rails runner scrip
 **Costo histórico, con sus límites.** La referencia es una sola generación: `BedrockQuery` 119, `query`, correlación `phase3:15:t3:query`, 11928 de entrada y 545 de salida, `end_turn`, US$0,014653 según `BedrockQuery#cost`. Para `global.anthropic.claude-haiku-4-5-20251001-v1:0` la tabla usa 0,001 por mil tokens de entrada y 0,005 por mil de salida: (11928/1000)×0,001 + (545/1000)×0,005 = 0,014653. Ese monto no es la conciliación de S3. El `generation_result` no trae tokens de caché. No incluye el intérprete del mismo turno, `BedrockQuery` 118, US$0,002796, ni el `Retrieve`. La temperatura 0,1 deja abierta otra longitud de salida. Multiplicar 0,014653 por tres no abre un cupo y no es un techo. Las tres generaciones siguen sin autorizar.
 
 **Pruebas, con dobles y sin modelo.** Semilla 194442. `test/services/rag/phase3_summary_generation_replay_test.rb`: 7 corridas, 188 aserciones, 0 fallos, 0 errores, 0 skips. Cubren el hash distinto y el prefijo rechazados antes del cliente, los bytes de system y de user idénticos a los capturados, los parámetros tomados del evento `prepared`, la autorización ausente sin construir `BedrockClient`, el tope de tres intentos con un error por muestra y sin reintento, y la evidencia de cada muestra sin reescritura. Los cuerpos de esta corrida están versionados en `test/fixtures/files/field_companion/phase3_summary_20261014T194442Z/turn_3/`. La suite no lee `tmp`. RuboCop sobre los tres Ruby de este corte: 0 ofensas.
+
+### Replay de generación del resumen, 20261014T205958Z
+
+Lahiri autorizó una ejecución del replay preparado en `1b088db0679c867449d93bc74af267e996b8e695`, igual a `origin/main`, árbol limpio. El cupo era tres generaciones, una por muestra, sin reintento, sin cuarta llamada y sin repetir la corrida. Un intento fallido habría consumido cupo. No hubo intérprete, `Retrieve`, lectura S3, escritura S3, ingesta, sesión nueva, worker ni despliegue. No se editó el prompt, el modelo, el request ni `.env`. `PASS_CALL_CAP` sigue en 0. `Stage2RunBudget` sigue en 188 llamadas, US$0,423114, techos 188, 42 y 230, tope US$2,50. Esta corrida no acepta la fase 3. No es `EPISODIO_VALIDADO`. El estado de `20261014T194442Z` queda como estaba: Chapa nivel 3 vigente, fuente `user`; Chapa nivel 2 rechazada con slot `identifier`; episodio `ep_063f3f66656047d2`; pin del documento 213.
+
+**Prechequeo, antes de invocar.** `capture.json` mide 54632 bytes, SHA-256 `8f42d80a090d8716ebfadafd36e37a4b8c9d430f88d1271e863fc38c7d1906a4`. `bodies/b0007.txt` mide 13668 bytes, SHA-256 `81a7dfd85e2415d2527a6537b35b540aa03a5a69b2bd06f643c8479ff0031024`. `bodies/b0008.txt` mide 23415 bytes, SHA-256 `e9d4ba63418d15e4820c4197bdfd17aa4dae7a81cf68527eab0d61c69a6d12b2`. El único `generate_text` `prepared` trae el modelo `global.anthropic.claude-haiku-4-5-20251001-v1:0`, temperatura 0,1, `max_tokens` 3000, `anthropic_version` `bedrock-2023-05-31` y un mensaje `role` `user`. STS del perfil `default`, sin claves en el entorno del shell, devolvió la cuenta `935142957735` y `arn:aws:iam::935142957735:user/Lahiri`. El proceso de Rails, con la credencial que carga `.env`, usó la misma cuenta y `arn:aws:iam::935142957735:user/bedrock-integration-user`. No se mostraron claves. El arranque habitual sigue en `smart_deal_development`: 2649 `BedrockQuery`, máximo 3153, 57 sesiones, máximo 196. La cola `smart_deal_development_queue` tenía 4047 trabajos, máximo 4768, 2030 listos, cero reclamados y cero procesos. La base aislada tenía 119 `BedrockQuery`, máximo 119, 15 sesiones, y cero filas `phase3:summary:`. `PASS_CALL_CAP` era 0. Los presupuestos de fase 2 y 3 no estaban cargados. No había workers.
+
+**Proceso.** El script autorizado no abre las bases aisladas ni activa el seguimiento en línea. El mismo proceso, con `PHASE3_SUMMARY_GENERATION_AUTHORIZED=1` y `AWS_MAX_ATTEMPTS=1`, comprobó otra vez el preview, conectó a `smart_deal_stage2_isolated`, `smart_deal_stage2_isolated_cache` y `smart_deal_stage2_isolated_cable`, en `localhost`, dejó la cola en desarrollo y activó `Phase1QueueGuard` antes de `phase3_summary_generation_replay_main`. `Phase1ModelBudget` quedó definido por esa conexión y desarmado. No se armaron los presupuestos de fase 2 ni 3. La KB y el bucket efectivos del entorno siguieron siendo los de `.env`, `QGVYLPTEGT` y `smart-deal-dev-kb`: `generate_text` no los usa. Se construyó un solo `BedrockClient`.
+
+El modo `legacy` no aplica `AWS_MAX_ATTEMPTS` al reintento: el handler legado usa `retry_limit`, cuyo valor por defecto es 3. Un primer proceso construyó el cliente, leyó `max_attempts` 1, `retry_mode` `legacy` y `retry_limit` 3, y salió antes de devolverlo. No hubo `invoke_model`, ni directorio de muestra, ni fila nueva. El proceso de las tres generaciones fijó `retry_limit` 0 al construir `Aws::BedrockRuntime::Client`, sin cambiar el cuerpo del request. El cliente efectivo quedó en `max_attempts` 1, `retry_mode` `legacy`, `retry_limit` 0. `AWS_RETRY_MODE` y `AWS_NEW_RETRIES_2026` no estaban definidos. Esa marca está en `client_retry.json`.
+
+**Evidencia.** `tmp/phase3_summary_generation/runs/20261014T205958Z/`. El `sent` del `request.json` final se escribe al pasar a `attempt_started`, antes de la respuesta. No demuestra recepción. En `events.json`, `prepared` guarda el request con `sent` falso; después vienen `attempt_started` y `returned`. La captura de producto, por muestra, tiene `generate_text` `prepared`, `model_call` `attempt_started` y `generation_result` `returned`. No hay `blocked` ni `error`. Los tres `usage.json` copian los tokens de ese `generation_result`. Coinciden con las filas. Los tokens de caché no vienen en esa captura y las columnas de la fila quedaron nulas: no se rellenan con cero.
+
+| Muestra | Correlación | Entrada | Salida | `stop_reason` | Fila | Costo |
+|---|---|---:|---:|---|---:|---:|
+| 1 | `phase3:summary:20261014T205958Z:1` | 11928 | 526 | `end_turn` | 120 | US$0,014558 |
+| 2 | `phase3:summary:20261014T205958Z:2` | 11928 | 537 | `end_turn` | 121 | US$0,014613 |
+| 3 | `phase3:summary:20261014T205958Z:3` | 11928 | 513 | `end_turn` | 122 | US$0,014493 |
+
+Suma US$0,043664: 3×(11928/1000)×0,001 + (526+537+513)/1000×0,005 = 0,035784 + 0,007880. `BedrockQuery#cost`, ruta `query_direct`, fuente `query`, `token_source` `provider_usage`, `max_tokens` 3000, `conversation_session_id` nulo. El `attempt` de cada fila es 1, 2 y 3. No es conciliación de S3. La referencia aproximada de US$0,044 no era un techo. No hubo cuarta llamada.
+
+Respuesta completa de la primera muestra, 1640 bytes, SHA-256 `9c775568d4a3421be378142d11e7163dc8c3d0c4b624fa1cba3d3d9f0c0446be`:
+
+# Resumen del caso vigente: Elemont MH, Chapa nivel 3
+
+**Componente identificado:** Según el plano, Chapa nivel 3 está etiquetado en la sección de la botonera de pasillo nivel 1 [1]. Su recorrido visible es: sale de la horizontal Com 18vdc con punto de unión, pasa por el símbolo Dp3, cruza la horizontal PasCom 24V con un puente semicircular sin punto de unión, y termina en el terminal rotulado Chapa nivel 3. El trazo del lado Sp3 tiene punto de unión con PasCom 24V [1].
+
+**Relación con seguridad de puerta:** El plano documenta una cadena de seguridad en serie que incluye cinco dispositivos etiquetados Seguridad Puerta nivel 1 a nivel 5 [1]. Sin embargo, el plano no establece una conexión explícita entre las etiquetas Chapa nivel (que aparecen en la botonera de pasillo) y los dispositivos Seguridad Puerta (que aparecen en la línea de seguridad). Ambos grupos de etiquetas están documentados en secciones distintas del mismo diagrama.
+
+**Lo que falta comprobar en campo:**
+
+1. **Función de Chapa nivel 3:** El plano identifica la etiqueta y su recorrido visible, pero no documenta su función operativa ni su rol en la cadena de seguridad.
+
+2. **Relación física entre Chapa nivel 3 y Seguridad Puerta nivel 3:** El plano no confirma si estas dos etiquetas corresponden al mismo dispositivo físico o a componentes distintos.
+
+3. **Terminales exactos de Sp3 y Dp3:** El plano no asigna función a los símbolos Sp (contacto) ni Dp (contacto) [1].
+
+¿Puede confirmar en el equipo físico si la etiqueta Chapa nivel 3 está impresa en el mismo componente que Seguridad Puerta nivel 3, o si son dos elementos separados?
+
+La muestra deja Chapa nivel 3 en la botonera y el recorrido de la fila del user, incluido el punto de Sp3. Dice que el plano no documenta un rol en la cadena y no confirma que las dos etiquetas sean el mismo dispositivo. La pregunta final pide confirmarlo: preguntar no lo afirma. El punto 3 llama contacto a Dp. El user llama símbolo a Dp, contacto rotulado a Sp1, y dice que la representación no asigna función a Sp ni a Dp. No pide normalmente abierto ni normalmente cerrado. La categoría está puesta; la comprobación que escribe es de terminales y de función no asignada.
+
+Respuesta completa de la segunda muestra, 1614 bytes, SHA-256 `3d8da3220cba69a769672797064f1f9165d8aa6d1090bf32c7aece4e02f4ac34`:
+
+# Resumen del caso vigente: Elemont MH, Chapa nivel 3
+
+**Componente identificado:** Según el plano, Chapa nivel 3 está etiquetado en la sección de la botonera de pasillo nivel 1 [1].
+
+**Recorrido visible documentado:** Sale de la horizontal Com 18vdc con punto de unión, pasa por el símbolo Dp3, cruza la horizontal PasCom 24V con un puente semicircular sin punto de unión, y termina en el terminal rotulado Chapa nivel 3. El trazo del lado Sp3 tiene punto de unión con PasCom 24V [1].
+
+**Relación con seguridad de puerta:** El plano documenta una etiqueta separada llamada "Chapa Puerta nivel 1" (distinta de las seis etiquetas Chapa nivel), pero no establece una conexión explícita entre Chapa nivel 3 y ningún dispositivo de seguridad de puerta. La cadena de seguridad contiene "Seguridad Puerta nivel 3" como componente en serie entre Seg In y Seg Out [1], pero el plano no vincula esa etiqueta de seguridad con la etiqueta Chapa nivel 3.
+
+---
+
+## Lo que falta comprobar en campo
+
+1. **Función de Dp3 y Sp3:** El plano no documenta qué función cumplen los símbolos Dp3 y Sp3 ni su tipo de contacto (normalmente abierto/cerrado) [1].
+
+2. **Conexión física entre Chapa nivel 3 y Seguridad Puerta nivel 3:** El plano no confirma si estas dos etiquetas están conectadas al mismo dispositivo físico o si son circuitos independientes.
+
+3. **Voltaje y alimentación de Chapa nivel 3:** Aunque el trazo sale de Com 18vdc, el plano no asigna explícitamente ese terminal a la etiqueta Chapa nivel 3 en una tabla de borneras; la hoja 2 (tabla de borneras) no está incluida en los pasajes disponibles.
+
+La separación de secciones está dicha: Seguridad Puerta nivel 3 queda en la cadena y el texto dice que el plano no la vincula con Chapa nivel 3. Chapa Puerta nivel 1 y las seis etiquetas Chapa nivel están en el user. El recorrido de la fila también. El punto 1 trata a Dp3 como contacto y deja el tipo normalmente abierto o cerrado como dato a comprobar. Esa es la repetición del fallo de categoría. El punto 3 no asigna un voltaje. El user sí nombra la hoja 2 para otros ítems y no trae una fila de bornera que asigne Com 18vdc a Chapa nivel 3; decir que la hoja no está en los pasajes es más amplio que eso.
+
+Respuesta completa de la tercera muestra, 1610 bytes, SHA-256 `89e43c0fe0b623a5a3175bf1f5be7b8dfa4d72e02b41ea533766137a92068d15`:
+
+# Resumen del caso vigente: Elemont MH, Chapa nivel 3
+
+**Componente identificado:** Según el plano, Chapa nivel 3 está etiquetado en la sección de la botonera de pasillo nivel 1 [1]. Su recorrido visible es: sale de la horizontal Com 18vdc con punto de unión, pasa por el símbolo Dp3, cruza la horizontal PasCom 24V con un puente semicircular sin punto de unión, y termina en el terminal rotulado Chapa nivel 3. El trazo del lado Sp3 tiene punto de unión con PasCom 24V [1].
+
+**Relación con seguridad de puerta:** El plano documenta una cadena de seguridad en serie que incluye cinco dispositivos etiquetados Seguridad Puerta nivel 1 a nivel 5 [1]. Estos componentes están conectados entre los nodos Seg In y Seg Out. Sin embargo, el plano no establece explícitamente una conexión física entre Chapa nivel 3 y ninguno de los dispositivos de Seguridad Puerta [1].
+
+## Lo que falta comprobar
+
+**Función de Chapa nivel 3:** El plano identifica la etiqueta y su recorrido visible, pero no documenta su función operativa ni su relación con el sistema de seguridad de puertas [1].
+
+**Conexión entre Chapa y Seguridad Puerta:** No hay evidencia en el diagrama que vincule directamente Chapa nivel 3 con Seguridad Puerta nivel 3 u otro dispositivo de seguridad de puerta. Ambos están documentados en secciones diferentes del plano [1].
+
+**Función de los símbolos Sp3 y Dp3:** El plano no define qué representan estos símbolos ni su rol en el circuito [1].
+
+¿Puede confirmar en el equipo físico si Chapa nivel 3 está mecánicamente asociado a la puerta del nivel 3, o si su función es distinta?
+
+La tercera conserva la botonera y el recorrido. Deja la cadena en la otra sección y dice que el diagrama no vincula las etiquetas. La pregunta sobre una asociación mecánica con la puerta del nivel 3 no la da por existente. Sp3 y Dp3 quedan sin categoría de contacto y sin comprobación de tipo.
+
+**Comparación.** La respuesta histórica del `generation_result`, ya citada en «Corrida de fase 3, 20261014T194442Z», afirma que Chapa nivel 3 forma parte del circuito de seguridad de puerta y que Seguridad Puerta nivel 3 es el elemento correspondiente, y pide el tipo de contacto de Dp3 y Sp3. Estas tres no repiten esa pertenencia ni ese elemento correspondiente. Las tres conservan la botonera de pasillo nivel 1 y el recorrido de la fila, con el punto de Sp3 que ese párrafo histórico no traía. La muestra 2 repite la categoría de contacto normalmente abierto o cerrado. La muestra 1 pone la palabra contacto en Dp y no llega a esa comprobación. La muestra 3 no la pone. Cero repeticiones de la fusión con la cadena no prueban que el histórico fuera un caso aislado. La repetición del contacto en la muestra 2 muestra que esa lectura vuelve. Ninguna de las dos observaciones identifica una causa única. No se cambia el prompt ni el modelo. El siguiente paso se decide con Lahiri. No hay otra cláusula.
+
+**Restauración.** Un proceso nuevo, sin `PHASE3_SUMMARY_GENERATION_AUTHORIZED` y sin `AWS_MAX_ATTEMPTS`, volvió a `smart_deal_development`, `smart_deal_development_cache`, `smart_deal_development_cable` y `smart_deal_development_queue`. KB `QGVYLPTEGT`, bucket `smart-deal-dev-kb`. `BedrockQuery` de desarrollo sigue en 2649, máximo 3153. Las sesiones de desarrollo siguen en 57, máximo 196. La cola sigue en 4047 trabajos, 2030 listos, cero reclamados y cero procesos. Cero workers. En la base aislada las filas nuevas son 120, 121 y 122; las sesiones siguen en 15 y la fila 15 conserva `2026-10-14T19:45:28.531337Z`. Los mensajes de cable aislado pasaron de 16 a 19 por el aviso de métricas en línea. No son trabajos de cola ni llamadas de modelo. El SHA-256 de `.env` sigue `e3dc3405fa00a6bec1f7e01593c484a4659bfed9af03b95da2f8523fdc1e65d8`. `PASS_CALL_CAP` sigue en 0. El cierre histórico sigue en 188 llamadas y US$0,423114. La autorización no quedó en el entorno.
 
 ### Decisión posterior de la fase 2, 2026-10-14
 

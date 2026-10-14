@@ -2,7 +2,7 @@
 
 ## Estado de este corte, 2026-10-14
 
-**Corte de la botonera.** La revisión visual posterior de la sección Botonera, página 5, queda en «Corrección candidata de la botonera, 2026-10-14». El defecto demostrado es de representación: el chunk trata las etiquetas Chapa nivel como salidas de PasCom 24V. Las generaciones de `20261014T140201Z` y `20261014T152614Z` amplifican esa frase. Eso no es la causa única de todas las muestras. La aceptación conversacional de la fase 2 se mantiene. La aceptación técnica sigue pendiente. La comparación de modelos y las llamadas siguen diferidas. Este corte no acepta la fase 2 ni abre la fase 3. `PASS_CALL_CAP` sigue en 0. La prevención de ingesta y la geometría vectorial quedan fuera de este corte.
+**Corte de la botonera.** La revisión visual posterior de la sección Botonera, página 5, queda en «Corrección candidata de la botonera, 2026-10-14». El defecto demostrado es de representación: el chunk trata las etiquetas Chapa nivel como salidas de PasCom 24V. Las generaciones de `20261014T140201Z` y `20261014T152614Z` amplifican esa frase. Eso no es la causa única de todas las muestras. La aceptación conversacional de la fase 2 se mantiene. La aceptación técnica sigue pendiente. La comparación de modelos y las llamadas siguen diferidas. Este corte no acepta la fase 2 ni abre la fase 3. `PASS_CALL_CAP` sigue en 0. La prevención de ingesta y la geometría vectorial quedan fuera de este corte. El recorrido que aplicaría el candidato quedó preparado y no se ejecutó. El detalle está en «Preparación operativa de la botonera, sin ejecución».
 
 **Objetivo.** La consulta documental acotada de la fase 1 quedó aceptada con reservas. En la fase 2, el ciclo conversacional quedó demostrado. `20261013T233715Z` comprobó el contrato de atribución: el prompt lo incluye y la respuesta vuelve a atribuir una función que ese prompt no contiene. Las dos respuestas no son el mismo texto. La aceptación técnica sigue pendiente. El recorte de «Reparación de la atribución, 2026-10-13» quedó rechazado. La decisión de «Revisión de la reparación, 2026-10-13» está implementada en local. La comparación de solo generación se ejecutó en `20261014T012743Z` y las dos muestras fallan la atribución. La comprobación de las dos cláusulas de inferencia se ejecutó en `20261014T020512Z` y las dos muestras vuelven a fallar. El cupo de esas dos llamadas queda cerrado. Este corte sustituye solo `DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT` para separar información documental, interpretación opcional y datos pendientes. La hipótesis se comprobó en `20261014T140201Z` y las dos muestras vuelven a fallar. Ese cupo queda cerrado. La separación system/user se comprobó en `20261014T152614Z` y las dos muestras vuelven a atribuir función y accionamiento. Ese cupo queda cerrado.
 
@@ -56,9 +56,50 @@ La tabla del candidato es una representación añadida. No es una tabla impresa 
 
 El candidato está en `test/fixtures/files/elemont/page5_botonera_branch/chunk_p5_1_candidate.txt`. El fixture histórico y `chunk_p5_1_after.txt` no se editan. La transformación es `ElemontMhPage5BotoneraBranchPatch`. Exige una ocurrencia de cada tramo, rechaza una base distinta, una sustitución parcial, un tramo repetido y una segunda pasada, y conserva el complemento. No construye un cliente externo. No extiende `script/patch_elemont_chunk_p5_1_safety_note.rb`.
 
-**Modo operativo, no implementado y no ejecutado.** Haría falta una clase distinta de `ElemontMhPage5SafetyNoteRepair`, con otra variable de confirmación. Descargaría la clave `bulk_chunks/1/121bfffe0827f6bc681ba9bdc91050390055/chunk_p5_1.txt` y su sidecar, guardaría esos bytes y aplicaría este parche. La escritura usaría `S3DocumentsService#upload_text` solo sobre el `.txt`. El sidecar no se reescribe. Después, el mismo control de `start_ingestion_job` en el data source `PJ0N58DMHG`, bucket `multimodal-source-destination`, KB `Y7RZWMFJSR`, región `us-east-1`. Este corte no crea ese recorrido.
+**Recorrido operativo.** Quedó preparado, con otra clase y otra confirmación, y no se ejecutó. El detalle está en «Preparación operativa de la botonera, sin ejecución».
 
 La prevención de ingesta (`field_records_v9`) y el arreglo de la geometría vectorial quedan diferidos. No forman parte de este candidato.
+
+### Preparación operativa de la botonera, sin ejecución
+
+Preparación local sobre el candidato de `5e5924db8a588817a6c77be51697dbbdeda75821`. No hubo llamada AWS ni Anthropic, Retrieve, lectura S3, escritura S3, ingesta, worker ni despliegue. No se editó el candidato, el fixture de la línea de seguridad, el prompt, el modelo, el ranking, la sesión, la guardia, el presupuesto ni `.env`. `PASS_CALL_CAP` sigue en 0. Los veredictos históricos quedan como estaban. La aceptación conversacional de la fase 2 se mantiene. La aceptación técnica sigue pendiente. Este texto no acepta la fase 2 ni abre la fase 3. La comparación de modelos sigue diferida. `ElemontMhPage5SafetyNoteRepair` y `script/patch_elemont_chunk_p5_1_safety_note.rb` no se modifican. `RAG_PAGE5_SAFETY_NOTE_CONFIRM` no autoriza este recorrido.
+
+La clase es `ElemontMhPage5BotoneraBranchRepair`. El script es `script/patch_elemont_chunk_p5_1_botonera_branch.rb`. Solo construye los clientes si `RAG_PAGE5_BOTONERA_BRANCH_CONFIRM` es exactamente `1`. La primera línea ejecutable es ese `abort`. El adaptador de trabajos queda como lo encontró el proceso. No llama `KbSyncService` ni `BulkKbSyncService`.
+
+Destino exigido, antes de descargar: bucket `multimodal-source-destination`, KB `Y7RZWMFJSR`, data source `PJ0N58DMHG`, región `us-east-1`. El id `8DUTRUCDTS` no es este data source. El recorrido lista las páginas y, si `PJ0N58DMHG` no aparece, se detiene sin descargar y sin subir. No hay fallback. La única clave es `bulk_chunks/1/121bfffe0827f6bc681ba9bdc91050390055/chunk_p5_1.txt`. El sidecar es esa clave más `.metadata.json`.
+
+Antes de `upload_text`: confirmación de esta reparación, base esperada y transformación exacta, respaldo del cuerpo y del sidecar. La base es el cuerpo de la línea de seguridad, SHA-256 `067ff45ffa86a6d055cedbec8f38ce63ae36c5ba15266d32a48da5ccea9c6831`, con un salto final como máximo. El objeto vivo después de la reparación de la línea de seguridad era esa base más el salto, 7360 bytes, SHA-256 `b466665b37f76cf2e35441787bbd30b3fe2dd42d623b4de359e05814e2c8a85a`. Este texto no lo releyó. La transformación tiene que ser el candidato, SHA-256 `a13141fe7586c9013d698aa29f2b6809f112702e98f4da99d9a47c3ba01d7779`, y conserva ese salto si la base lo traía. Con salto, el cuerpo subido mide 9194 bytes y su SHA-256 es `bc6d057d6ed34adae196692c7a48e1291ac020b08150027c51e13a398b77441e`. Una base distinta, dos saltos, el cuerpo previo a la línea de seguridad o el candidato ya aplicado se respaldan y se detienen antes de subir.
+
+El respaldo queda en `tmp/elemont_page5_botonera_branch/<utc>/`: `chunk_p5_1_before.bin`, `chunk_p5_1.metadata.json.before` y `manifest.txt`. El manifiesto anota clave, sidecar, bucket, KB, data source, región y los SHA de la descarga. Después de la transformación, y todavía antes de subir, anota la base esperada, el SHA del candidato y el SHA de los bytes que se subirían. Cada `job_id` se anota con el papel `initial` o `rollback` en cuanto llega, antes de la llamada siguiente. Cada etapa confirmada se anota antes de seguir.
+
+Después de esa compuerta solo se escribe el `.txt`, con `S3DocumentsService#upload_text`. El sidecar no se escribe. Se releen el cuerpo y el sidecar. Si la relectura del cuerpo no coincide o los bytes del sidecar cambiaron, se restaura el cuerpo desde el respaldo y no se abre la ingesta. Si `upload_text` lanza o no devuelve la clave, el recorrido se detiene. No repite la escritura y no abre la ingesta.
+
+La ingesta es `start_ingestion_job` sobre el id ya listado. `get_ingestion_job` sigue mientras el estado sea `STARTING` o `IN_PROGRESS`, hasta 90 observaciones. Una excepción de AWS, un inicio sin `job_id`, un estado ausente o distinto de `STARTING`, `IN_PROGRESS`, `COMPLETE` y `FAILED`, o el límite de sondeo todavía en curso, detienen el recorrido. No repiten la escritura, no abren otra ingesta y no restauran solos. El manifiesto queda con la última etapa confirmada, la ruta del respaldo y el `job_id` si ya se recibió.
+
+El fallo de otro documento se distingue del fallo de esta clave. Una razón cuenta como evidencia solo si contiene `bulk_chunks/<cuenta>/<sha>/chunk_pN_M.txt`. El nombre suelto `chunk_p5_1.txt` no identifica el objeto: la otra clave que ya falló termina igual.
+
+| Resultado observado | Recuperación |
+|---|---|
+| `COMPLETE`, al menos un modificado y cero fallidos | El cuerpo nuevo queda. No hay rollback. |
+| `COMPLETE`, al menos un modificado, y cada fallo nombra otra clave, con al menos tantas claves distintas como fallidos | El cuerpo nuevo queda. El manifiesto anota `foreign_failures_accepted` y el texto de cada razón. No hay rollback. El fallo de `bulk_chunks/3/5b1859a0bfe1c5b11e58214555f8c2fe93e6/chunk_p5_1.txt` entra en esta fila si el job lo nombra y esta clave no aparece. |
+| La razón nombra esta clave, en `COMPLETE` o en `FAILED` | Se restaura el cuerpo y se abre una ingesta `rollback` en `PJ0N58DMHG`. Esa segunda ingesta no se espera aquí. |
+| `COMPLETE`, cero fallidos y cero modificados | Se restaura el cuerpo y se abre una ingesta `rollback`. Esta clave no quedó indexada como modificación. |
+| `FAILED` sin esta clave, fallos sin esa forma de clave, menos claves nombradas que fallidos, una razón sin clave junto a otra que sí la tiene, estadísticas ausentes, o `COMPLETE` con fallos ajenos y cero modificados | Para. El cuerpo nuevo, si la subida llegó, se conserva. No hay rollback y no hay segunda ingesta. |
+| Sigue en `STARTING` o `IN_PROGRESS` a las 90 observaciones | Para. El cuerpo nuevo queda. No hay segunda ingesta. |
+| Excepción, `job_id` vacío, estado ausente o no reconocido, lectura fallida después de escribir, subida sin clave | Para. No repite la escritura, no abre otra ingesta y no restaura solo. |
+| La restauración o el inicio del rollback lanzan o no confirman la subida | Para. No abre un tercer intento. El respaldo sigue en el directorio. |
+
+Rollback manual, si más adelante se autoriza aparte: subir `chunk_p5_1_before.bin` con `S3DocumentsService#upload_text` a la misma clave y abrir `start_ingestion_job` en `PJ0N58DMHG`. El respaldo del sidecar no se sube. Un `ValidationException` de Aurora al iniciar, como el de `2026-10-13`, entra en la fila de excepción: este script no espera y no reintenta.
+
+Pruebas locales, con clientes dobles y sin red: `test/services/elemont_mh_page5_botonera_branch_repair_test.rb`, 38 corridas, 605 aserciones, 0 fallos. Esa ejecución, junto con las pruebas de la reparación de la línea de seguridad y las del parche de la botonera, suma 68 corridas, 1023 aserciones, 0 fallos. RuboCop sobre los tres Ruby de este recorrido: 0 ofensas.
+
+Comando que haría falta autorizar después. Este texto no lo autoriza y no lo ejecuta. En un solo proceso, con `RAG_PAGE5_BOTONERA_BRANCH_CONFIRM=1`:
+
+```bash
+bin/rails runner script/patch_elemont_chunk_p5_1_botonera_branch.rb
+```
+
+Alcance de esa autorización, si se da: un objeto, la clave de arriba, en el bucket `multimodal-source-destination`, la KB `Y7RZWMFJSR`, el data source `PJ0N58DMHG` y la región `us-east-1`. Lee esa clave y su sidecar. Escribe solo el `.txt` cuando el núcleo vivo es la base esperada y la transformación es el candidato. Abre una ingesta. Abre una segunda solo en las dos filas de rollback de la tabla. No toca otro documento, ni el sidecar, ni modelos, ni `Retrieve`, ni workers, ni el despliegue, ni el prompt, ni los presupuestos. Un estado externo incierto detiene esa ejecución sin repetirla.
 
 ### Jerarquía system/user, preparación local 2026-10-14
 

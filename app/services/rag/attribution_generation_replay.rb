@@ -2,9 +2,10 @@
 
 module Rag
   # Generation-only comparison for the captured phase-2 prompt.
-  # It rebuilds that prompt, refuses unless the only differences are the three
-  # field-guidance lines and the attribution contract, and does not call a
-  # model unless PHASE2_ATTRIBUTION_GENERATION_AUTHORIZED=1.
+  # It rebuilds that prompt and refuses unless the only differences are the
+  # three field-guidance lines, the attribution contract, and the two
+  # general-inference clauses. It does not call a model unless
+  # PHASE2_ATTRIBUTION_GENERATION_AUTHORIZED=1.
   # Two calls repeat one prompt. They do not measure general reliability.
   class AttributionGenerationReplay
     AUTHORIZED_ENV = "PHASE2_ATTRIBUTION_GENERATION_AUTHORIZED"
@@ -174,6 +175,7 @@ module Rag
 
       transformed = captured.lines.reject { |line| omitted.include?(line.chomp) }.join
       transformed = transformed.sub(CAPTURED_CONTRACT, BedrockRagService::DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT)
+      transformed = BedrockRagService.withhold_document_identity_inference(transformed)
       transformed == candidate
     end
 

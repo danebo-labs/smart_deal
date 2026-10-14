@@ -2186,7 +2186,12 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       assert_includes prompt, "Treat printed identifiers, device names, and visible labels as labels only"
       assert_includes prompt, "unless the retrieved evidence states a function, value, or connection"
       assert_includes prompt, "Do not replace a procedure the retrieved text already documents."
-      assert_includes prompt, "Reason, infer, and conclude from chunks"
+      assert_includes prompt, "relating compatible fragments of the same document is allowed"
+      assert_includes prompt, "Do not invent a torque, distance, time, crew size, tool size, brand, model, part code, terminal, or setting"
+      assert_includes prompt, "Según el manual"
+      assert_not_includes prompt, "Reason, infer, and conclude from chunks"
+      assert_not_includes prompt, "Como verificación de campo"
+      assert_not_includes prompt, "A field check that is inference says so"
       assert_not_includes prompt, "Cite a procedure as this equipment's fact"
       assert_not_includes prompt, obvious
       assert_not_includes prompt, "Open with what the technician can check or do next"
@@ -2201,6 +2206,8 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
         assert_includes rendered, obvious
         assert_includes rendered, "Open with what the technician can check or do next"
         assert_includes rendered, "layer-3 observations"
+        assert_includes rendered, "Reason, infer, and conclude from chunks"
+        assert_includes rendered, "Como verificación de campo"
         assert_not_includes rendered, "# DOCUMENT IDENTITY ATTRIBUTION"
         assert_not rendered.lines.any? { |line| line.start_with?("- FIELD_GUIDANCE:", "FIELD_GUIDANCE:") }
       end

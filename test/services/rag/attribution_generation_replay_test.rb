@@ -28,13 +28,20 @@ class Rag::AttributionGenerationReplayTest < ActiveSupport::TestCase
     assert_equal Encoding::UTF_8, preview.prompt.encoding
   end
 
-  test "preview accepts a prompt whose only differences are the three lines and the contract" do
+  test "preview accepts only the three lines, the contract, and the two inference clauses" do
     captured = fabricated_capture
     calls = []
     preview = Rag::AttributionGenerationReplay.preview(captured_prompt: captured, account: @account)
 
     assert preview.allowed?, preview.reason
     assert_equal 3, Rag::AttributionGenerationReplay.field_guidance_lines.size
+    assert_includes captured, "Reason, infer, and conclude from chunks"
+    assert_includes captured, "Como verificación de campo"
+    assert_not_includes preview.prompt, "Reason, infer, and conclude from chunks"
+    assert_not_includes preview.prompt, "Como verificación de campo"
+    assert_includes preview.prompt, "relating compatible fragments of the same document is allowed"
+    assert_includes preview.prompt, "Do not invent a torque, distance, time, crew size, tool size, brand, model, part code, terminal, or setting"
+    assert_includes preview.prompt, "Según el manual"
     assert_not_includes preview.prompt, "what is obvious for that kind of component and function"
     assert_not_includes preview.prompt, "Open with what the technician can check or do next"
     assert_not_includes preview.prompt, "layer-3 observations"
@@ -43,6 +50,40 @@ class Rag::AttributionGenerationReplayTest < ActiveSupport::TestCase
     assert_includes preview.prompt, "Etiqueta visible en el bus."
     run_without_authorization(captured, calls)
     assert_empty calls
+  end
+
+  test "an extra sentence in the captured results refuses the call" do
+    captured = fabricated_capture.sub("</search_result>\n", "</search_result>\nNota que no estaba en la captura.\n")
+    calls = []
+
+    result = Rag::AttributionGenerationReplay.run(
+      captured_prompt: captured,
+      account: @account,
+      client: failing_client(calls),
+      output_dir: @output
+    )
+
+    assert_equal "refused", result.status
+    assert_equal "search_results_changed", result.reason
+    assert_empty calls
+    assert_not @output.exist?
+  end
+
+  test "changing a kept restriction refuses the call" do
+    captured = fabricated_capture.sub("Do not invent a torque", "Do not invent a torque value")
+    calls = []
+
+    result = Rag::AttributionGenerationReplay.run(
+      captured_prompt: captured,
+      account: @account,
+      client: failing_client(calls),
+      output_dir: @output
+    )
+
+    assert_equal "refused", result.status
+    assert_equal "prompt_delta", result.reason
+    assert_empty calls
+    assert_not @output.exist?
   end
 
   test "an extra instruction refuses the call" do
@@ -144,7 +185,19 @@ class Rag::AttributionGenerationReplayTest < ActiveSupport::TestCase
     Rag::AttributionGenerationReplay.field_guidance_lines.each do |line|
       captured = captured.sub("# FORMAT\n", "#{line}# FORMAT\n")
     end
-    captured
+    restore_inference_clauses(captured)
+  end
+
+  def restore_inference_clauses(prompt)
+    clauses = BedrockRagService::DOCUMENT_IDENTITY_INFERENCE_CLAUSES
+    prompt = prompt.sub(
+      "in running prose. Use facts",
+      "in running prose. #{clauses[0]}Use facts"
+    )
+    prompt.sub(
+      '("Según el manual …").',
+      "(\"Según el manual …\").#{clauses[1]}"
+    )
   end
 
   def session_context

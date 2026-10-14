@@ -37,7 +37,8 @@ class BedrockRagService
   # Attribution limit for direct document-identity generation. It is not part of
   # the shared generation template, so retrieve_and_generate and the other
   # direct routes do not receive it. This route also omits the three
-  # FIELD_GUIDANCE lines. The contract precedes the citation line.
+  # FIELD_GUIDANCE lines and the two general-inference clauses below. The
+  # contract precedes the citation line.
   DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT = <<~TEXT.strip.freeze
     # DOCUMENT IDENTITY ATTRIBUTION
     - A printed label, a column heading, or a bus name does not by itself prove that component's function, supply, or connection.
@@ -51,6 +52,13 @@ class BedrockRagService
   PARTIAL_ABSTENTION_PROMPT_PREFIX = "- PARTIAL_ABSTENTION_CONTRACT:"
   GROUNDED_SYNTHESIS_PROMPT_PREFIX = "- GROUNDED_SYNTHESIS:"
   FIELD_GUIDANCE_PROMPT_PREFIX = "- FIELD_GUIDANCE:"
+  # Removed only by document_identity_generation_prompt. The same lines keep
+  # compatible documented facts, the manual-citation voice, and the ban on
+  # invented values and procedures. Other routes keep both clauses.
+  DOCUMENT_IDENTITY_INFERENCE_CLAUSES = [
+    "Reason, infer, and conclude from chunks. ",
+    " A field check that is inference says so (\"Como verificación de campo …\")."
+  ].freeze
   STRICT_ONLY_PROMPT_PREFIX = "- STRICT_ONLY:"
   GROUNDED_SYNTHESIS_CONTRACT_VERSION = "gs-v1"
   STRICT_CONTRACT_VERSION = "strict-v1"
@@ -1102,12 +1110,14 @@ class BedrockRagService
 
   def document_identity_generation_prompt(question, chunks, response_locale:, session_context:, output_channel:,
                                           labels: [])
-    template = load_generation_prompt_with_locale(
-      question,
-      response_locale: response_locale,
-      session_context: session_context,
-      output_channel: output_channel,
-      field_guidance: false
+    template = self.class.withhold_document_identity_inference(
+      load_generation_prompt_with_locale(
+        question,
+        response_locale: response_locale,
+        session_context: session_context,
+        output_channel: output_channel,
+        field_guidance: false
+      )
     )
     template
       .sub("$query$") { question.to_s }
@@ -2242,6 +2252,10 @@ class BedrockRagService
 
   def localized_generation_retry(locale)
     I18n.with_locale(locale) { I18n.t("rag.generation_retry") }
+  end
+
+  def self.withhold_document_identity_inference(text)
+    DOCUMENT_IDENTITY_INFERENCE_CLAUSES.reduce(text.to_s) { |current, clause| current.sub(clause, "") }
   end
 
   # Reads `app/prompts/bedrock/generation.txt` once per process in production

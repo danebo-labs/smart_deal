@@ -7,10 +7,17 @@ class Rag::AttributionGenerationReplayTest < ActiveSupport::TestCase
   setup do
     @account = accounts(:legacy)
     @output = Rails.root.join("tmp/attribution_generation_replay_test/#{SecureRandom.hex(4)}")
+    @system_role = ENV["RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE"]
+    ENV.delete("RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE")
   end
 
   teardown do
     FileUtils.rm_rf(@output)
+    if @system_role.nil?
+      ENV.delete("RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE")
+    else
+      ENV["RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE"] = @system_role
+    end
   end
 
   test "invalid bytes refuse instead of raising" do
@@ -145,6 +152,91 @@ class Rag::AttributionGenerationReplayTest < ActiveSupport::TestCase
     end
   end
 
+  test "the system partition passes the gate and a changed word in either part refuses" do
+    captured = fabricated_capture
+    preview = isolate_env("RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE", "1") do
+      Rag::AttributionGenerationReplay.preview(captured_prompt: captured, account: @account)
+    end
+
+    assert preview.allowed?, preview.reason
+    assert_equal Rag::AttributionGenerationReplay::USER_HEADINGS, prompt_headings(preview.prompt.user)
+    assert_includes preview.prompt.user, "# CONTEXT"
+    assert_includes preview.prompt.user, "<search_result>"
+    assert_not_includes preview.prompt.user, "# EVIDENCE CONTRACT"
+    assert_includes preview.prompt.system, "# ROLE"
+    assert_includes preview.prompt.system, "# DOCUMENT IDENTITY ATTRIBUTION"
+    assert_not_includes preview.prompt.system, "<search_result>"
+
+    {
+      system: [ "technical field", "technicalx field" ],
+      user: [ "etiqueta del plano", "etiquetax del plano" ]
+    }.each do |part, (from, to)|
+      refused = isolate_env("RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE", "1") do
+        Rag::PartitionMutationReplay.new(
+          part: part,
+          from: from,
+          to: to,
+          captured_prompt: captured,
+          account: @account
+        ).preview
+      end
+
+      assert_equal "refused", refused.status
+      assert_equal "prompt_delta", refused.reason
+    end
+  end
+
+  test "an authorized system partition exports both messages under the system correlation" do
+    captured = fabricated_capture
+    calls = []
+
+    result = isolate_env(Rag::AttributionGenerationReplay::AUTHORIZED_ENV, "1") do
+      isolate_env("RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE", "1") do
+        isolate_env(Rag::AttributionGenerationReplay::CORRELATION_TAG_ENV, nil) do
+          Rag::AttributionGenerationReplay.run(
+            captured_prompt: captured,
+            account: @account,
+            client: generation_client(calls),
+            output_dir: @output
+          )
+        end
+      end
+    end
+
+    assert_equal "recorded", result.status
+    assert_equal %w[phase2:attr:gen:system:1 phase2:attr:gen:system:2], result.generations.pluck("correlation_id")
+    assert_equal 2, calls.size
+    calls.each_with_index do |params, index|
+      body = JSON.parse(params.fetch(:body))
+      assert_equal result.prompt.user, body.dig("messages", 0, "content")
+      assert_equal result.prompt.system, body.fetch("system")
+      assert_not_includes body.fetch("system"), "<search_result>"
+      assert_not_includes body.dig("messages", 0, "content"), "# DOCUMENT IDENTITY ATTRIBUTION"
+      folder = @output.join(format("gen_%d", index + 1))
+      assert_equal result.prompt.system, File.read(folder.join("system.txt"), encoding: "UTF-8")
+      assert_equal result.prompt.user, File.read(folder.join("prompt.txt"), encoding: "UTF-8")
+      assert File.file?(folder.join("response.txt"))
+      assert File.file?(folder.join("usage.json"))
+      request = JSON.parse(File.read(folder.join("request.json")))
+      assert_equal Digest::SHA256.hexdigest(result.prompt.user), request.fetch("prompt_sha256")
+      assert_equal Digest::SHA256.hexdigest(result.prompt.system), request.fetch("system_sha256")
+      assert_equal "phase2:attr:gen:system:#{index + 1}", request.fetch("correlation_id")
+    end
+  end
+
+  test "the flag off reconstruction of the captured prompt keeps the voices hash" do
+    path = Rails.root.join("tmp/phase2_pinned_turn/runs/20261013T233715Z/turn_2/bodies/b0005.txt")
+    captured = File.binread(path)
+    preview = isolate_env("RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE", nil) do
+      Rag::AttributionGenerationReplay.preview(captured_prompt: captured, account: @account)
+    end
+
+    assert preview.allowed?, preview.reason
+    assert_equal "5c1d427390843f6ee3595d3ed0ae51b15c9486bb311b3789b7033c7196e4594e", preview.prompt_sha256
+    assert_equal 35087, preview.prompt.bytesize
+    assert_nil preview.system_sha256
+  end
+
   test "correlation tags default to voices and reject a malformed or historical id" do
     replay = Rag::AttributionGenerationReplay
 
@@ -236,36 +328,42 @@ class Rag::AttributionGenerationReplayTest < ActiveSupport::TestCase
 
   private
 
+  def prompt_headings(text)
+    text.to_s.lines.map(&:chomp).select { |line| Rag::AttributionGenerationReplay::PROMPT_HEADINGS.include?(line) }
+  end
+
   def restore_env(key, value)
     value.nil? ? ENV.delete(key) : ENV[key] = value
   end
 
   def fabricated_capture
     candidate = nil
-    isolate_env("RAG_GROUNDED_SYNTHESIS_ENABLED", "true") do
-      isolate_env("RAG_GROUNDED_SYNTHESIS_ACCOUNT_IDS", nil) do
-        isolate_env("RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED", nil) do
-          service = BedrockRagService.new(account: @account, knowledge_base_id: "test-kb")
-          candidate = service.send(
-            :document_identity_generation_prompt,
-            "etiqueta del plano",
-            [ { content: "Etiqueta visible en el bus." } ],
-            labels: [ "THIS JOB'S EQUIPMENT: Plano" ],
-            response_locale: :es,
-            session_context: session_context,
-            output_channel: :web
-          )
+    isolate_env("RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE", nil) do
+      isolate_env("RAG_GROUNDED_SYNTHESIS_ENABLED", "true") do
+        isolate_env("RAG_GROUNDED_SYNTHESIS_ACCOUNT_IDS", nil) do
+          isolate_env("RAG_PARTIAL_ABSTENTION_CONTRACT_ENABLED", nil) do
+            service = BedrockRagService.new(account: @account, knowledge_base_id: "test-kb")
+            candidate = service.send(
+              :document_identity_generation_prompt,
+              "etiqueta del plano",
+              [ { content: "Etiqueta visible en el bus." } ],
+              labels: [ "THIS JOB'S EQUIPMENT: Plano" ],
+              response_locale: :es,
+              session_context: session_context,
+              output_channel: :web
+            ).to_s
+          end
         end
       end
+      captured = candidate.sub(
+        BedrockRagService::DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT,
+        Rag::AttributionGenerationReplay::CAPTURED_CONTRACT
+      )
+      Rag::AttributionGenerationReplay.field_guidance_lines.each do |line|
+        captured = captured.sub("# FORMAT\n", "#{line}# FORMAT\n")
+      end
+      restore_inference_clauses(captured)
     end
-    captured = candidate.sub(
-      BedrockRagService::DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT,
-      Rag::AttributionGenerationReplay::CAPTURED_CONTRACT
-    )
-    Rag::AttributionGenerationReplay.field_guidance_lines.each do |line|
-      captured = captured.sub("# FORMAT\n", "#{line}# FORMAT\n")
-    end
-    restore_inference_clauses(captured)
   end
 
   def restore_inference_clauses(prompt)
@@ -335,5 +433,27 @@ class Rag::AttributionGenerationReplayTest < ActiveSupport::TestCase
     end
     client.instance_variable_set(:@client, aws)
     client
+  end
+end
+
+class Rag::PartitionMutationReplay < Rag::AttributionGenerationReplay
+  def initialize(part:, from:, to:, **kwargs)
+    @part = part
+    @from = from
+    @to = to
+    super(**kwargs)
+  end
+
+  private
+
+  def render_prompt(pieces)
+    prompt = super
+    return prompt unless prompt.respond_to?(:system) && prompt.system.present?
+
+    current = prompt.public_send(@part)
+    replacement = current.sub(@from, @to)
+    raise "mutation missed #{@part}" if replacement == current
+
+    prompt.with(@part => replacement)
   end
 end

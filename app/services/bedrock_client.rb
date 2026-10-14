@@ -5,6 +5,7 @@
 require 'aws-sdk-bedrockruntime'
 require 'aws-sdk-core/token_provider'
 require 'aws-sdk-core/static_token_provider'
+require 'digest'
 require 'json'
 
 class BedrockClient
@@ -22,7 +23,7 @@ class BedrockClient
     @client = Aws::BedrockRuntime::Client.new(client_options)
   end
 
-  def generate_text(prompt, model_id: DEFAULT_MODEL_ID, max_tokens: 2000, temperature: 0.7, tracking: nil)
+  def generate_text(prompt, model_id: DEFAULT_MODEL_ID, max_tokens: 2000, temperature: 0.7, tracking: nil, system: nil)
     model_id ||= DEFAULT_MODEL_ID
 
     body = {
@@ -31,10 +32,11 @@ class BedrockClient
       temperature: temperature,
       messages: [{ role: 'user', content: prompt }]
     }
+    body[:system] = system if system.present?
 
     start_time = Time.current
     capture_fields = generation_capture_fields(tracking)
-    record_generation_request(model_id, max_tokens, temperature, prompt)
+    record_generation_request(model_id, max_tokens, temperature, prompt, system: system)
     # Armed by the phase 1 or phase 2 process. defined? does not load either
     # class. A disarmed phase 2 leaves the phase 1 cap in place.
     budget = armed_validation_budget
@@ -57,12 +59,12 @@ class BedrockClient
     text = result.dig('content', 0, 'text') || result.to_s
 
     track_usage(result, model_id, prompt, start_time, max_tokens: max_tokens, tracking: tracking)
-    record_generation_result(result, text, prompt, capture_fields)
+    record_generation_result(result, text, prompt, capture_fields, system: system)
     budget&.record_success!("generate_text") if budget&.armed?
 
     text
   rescue StandardError => e
-    record_generation_error(e, prompt, capture_fields)
+    record_generation_error(e, prompt, capture_fields, system: system)
     budget = armed_validation_budget
     if budget&.armed?
       budget.record_error!("generate_text", e)
@@ -127,23 +129,25 @@ class BedrockClient
     Rag::ValidationCapture.record("converse", body)
   end
 
-  def record_generation_request(model_id, max_tokens, temperature, prompt)
+  def record_generation_request(model_id, max_tokens, temperature, prompt, system: nil)
     return unless Rag::ValidationCapture.active?
 
     Rag::ValidationCapture.record(
       "generate_text",
-      "stage" => "generate",
-      "result" => "prepared",
-      "operation" => "generate_text",
-      "model_id" => model_id,
-      "max_tokens" => max_tokens,
-      "temperature" => temperature,
-      "prompt" => prompt.to_s,
-      "documentary_context" => Rag::ValidationCapture.documentary_context(prompt)
+      {
+        "stage" => "generate",
+        "result" => "prepared",
+        "operation" => "generate_text",
+        "model_id" => model_id,
+        "max_tokens" => max_tokens,
+        "temperature" => temperature,
+        "prompt" => prompt.to_s,
+        "documentary_context" => Rag::ValidationCapture.documentary_context(prompt)
+      }.merge(generation_system_fields(system))
     )
   end
 
-  def record_generation_result(result, text, prompt, capture_fields)
+  def record_generation_result(result, text, prompt, capture_fields, system: nil)
     return unless Rag::ValidationCapture.active?
 
     usage = result.is_a?(Hash) && result["usage"].is_a?(Hash) ? result["usage"] : {}
@@ -160,11 +164,11 @@ class BedrockClient
         "output_tokens" => output_tokens.nil? ? "unavailable" : output_tokens,
         "error_class" => nil,
         "documentary_context" => Rag::ValidationCapture.documentary_context(prompt)
-      }.merge(capture_fields)
+      }.merge(capture_fields).merge(generation_system_fields(system))
     )
   end
 
-  def record_generation_error(error, prompt, capture_fields)
+  def record_generation_error(error, prompt, capture_fields, system: nil)
     return unless Rag::ValidationCapture.active?
 
     Rag::ValidationCapture.record(
@@ -176,8 +180,18 @@ class BedrockClient
         "answer" => nil,
         "error_class" => error.class.name,
         "documentary_context" => Rag::ValidationCapture.documentary_context(prompt)
-      }.merge(capture_fields || {})
+      }.merge(capture_fields || {}).merge(generation_system_fields(system))
     )
+  end
+
+  # Absent unless generate_text received a system message. The SHA is the
+  # system text alone, so the capture keeps the instructions that left the
+  # user message.
+  def generation_system_fields(system)
+    return {} if system.blank?
+
+    text = system.to_s
+    { "system" => text, "system_sha256" => Digest::SHA256.hexdigest(text) }
   end
 
   def generation_capture_fields(tracking)

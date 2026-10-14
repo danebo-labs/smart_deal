@@ -4,11 +4,14 @@ module Rag
   # Generation-only comparison for the captured phase-2 prompt.
   # It rebuilds that prompt and refuses unless the only differences are the
   # three field-guidance lines, the attribution contract, and the two
-  # general-inference clauses. It does not call a model unless
+  # general-inference clauses. With RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE=1 the
+  # same lines may be split into system and user; any other split is
+  # prompt_delta. It does not call a model unless
   # PHASE2_ATTRIBUTION_GENERATION_AUTHORIZED=1.
   # Two calls repeat one prompt. They do not measure general reliability.
   # Correlations are phase2:attr:gen:<tag>:1 and :2. The tag defaults to
-  # voices. Historical phase2:attr:gen:1 and phase2:attr:gen:2 are not reused.
+  # voices, or system when that split is on and no tag was set.
+  # Historical phase2:attr:gen:1 and phase2:attr:gen:2 are not reused.
   class AttributionGenerationReplay
     AUTHORIZED_ENV = "PHASE2_ATTRIBUTION_GENERATION_AUTHORIZED"
     CORRELATION_TAG_ENV = "PHASE2_ATTRIBUTION_CORRELATION_TAG"
@@ -27,6 +30,23 @@ module Rag
       "## Session Discipline",
       "## Query Resolution"
     ].freeze
+    USER_HEADINGS = [ "# CONTEXT", *SESSION_HEADINGS, "# FINAL LANGUAGE REMINDER" ].freeze
+    PROMPT_HEADINGS = [
+      "# RESPONSE LANGUAGE (ABSOLUTE PRIORITY)",
+      "# ROLE",
+      "# CONTEXT",
+      "# LANGUAGE AND TONE",
+      "# EVIDENCE CONTRACT",
+      "# DOCUMENT IDENTITY",
+      "# RESPONSE SELECTION",
+      "# NO MATCH",
+      "# FORMAT",
+      "# DISCRIMINATING QUESTION",
+      "# DELIVERY CHANNEL",
+      *SESSION_HEADINGS,
+      "# FINAL LANGUAGE REMINDER",
+      "# DOCUMENT IDENTITY ATTRIBUTION"
+    ].freeze
     # The contract text present in turn_2/bodies/b0005.txt of 20261013T233715Z.
     CAPTURED_CONTRACT = <<~TEXT.strip.freeze
       # DOCUMENT IDENTITY ATTRIBUTION
@@ -42,7 +62,9 @@ module Rag
       - A supported location or label may still be answered when the function is missing.
     TEXT
 
-    Result = Data.define(:status, :reason, :prompt, :prompt_sha256, :generations, :output_dir) do
+    Result = Data.define(
+      :status, :reason, :prompt, :prompt_sha256, :system_sha256, :user_sha256, :generations, :output_dir
+    ) do
       def allowed?
         status == "ready"
       end
@@ -52,6 +74,8 @@ module Rag
           "status" => status,
           "reason" => reason,
           "prompt_sha256" => prompt_sha256,
+          "system_sha256" => system_sha256,
+          "user_sha256" => user_sha256,
           "output_dir" => output_dir&.to_s,
           "generations" => generations
         }.compact
@@ -60,6 +84,10 @@ module Rag
 
     def self.preview(captured_prompt:, account:)
       new(captured_prompt: captured_prompt, account: account).preview
+    end
+
+    def self.write_preview(captured_prompt:, account:, output_dir:)
+      new(captured_prompt: captured_prompt, account: account, output_dir: output_dir).write_preview
     end
 
     def self.run(captured_prompt:, account:, client:, output_dir:, correlation_tag: ENV[CORRELATION_TAG_ENV])
@@ -112,12 +140,61 @@ module Rag
     def preview
       return refuse("encoding") unless @captured_prompt.encoding == Encoding::UTF_8 && @captured_prompt.valid_encoding?
 
-      prompt = candidate_prompt
-      return prompt if prompt.is_a?(Result)
+      pieces = extract(@captured_prompt)
+      return pieces if pieces.is_a?(Result)
 
-      return refuse("prompt_delta") unless allowed_delta?(@captured_prompt, prompt)
+      current = render_prompt(pieces)
+      return current if current.is_a?(Result)
 
-      ready(prompt)
+      unique = if current.system.nil?
+        current.to_s
+      else
+        reference = without_system_role { render_prompt(pieces) }
+        return reference if reference.is_a?(Result)
+
+        reference.to_s
+      end
+      return refuse("prompt_delta") unless allowed_delta?(@captured_prompt, unique)
+      return ready(unique) if current.system.nil?
+      return refuse("prompt_delta") unless partition_matches?(unique, current)
+
+      ready(
+        current,
+        prompt_sha256: Digest::SHA256.hexdigest(unique),
+        system_sha256: Digest::SHA256.hexdigest(current.system),
+        user_sha256: Digest::SHA256.hexdigest(current.user)
+      )
+    end
+
+    def write_preview
+      checked = preview
+      return checked unless checked.allowed?
+
+      directory = Pathname(@output_dir)
+      FileUtils.mkdir_p(directory)
+      user_text, system_text = generation_parts(checked.prompt)
+      request = {
+        "model_id" => MODEL_ID,
+        "temperature" => TEMPERATURE,
+        "max_tokens" => MAX_TOKENS,
+        "anthropic_version" => "bedrock-2023-05-31",
+        "prompt_sha256" => Digest::SHA256.hexdigest(user_text),
+        "messages" => [ { "role" => "user" } ],
+        "correlation_ids" => correlations_for(checked)
+      }
+      request["system_sha256"] = Digest::SHA256.hexdigest(system_text) if system_text
+      File.binwrite(directory.join("prompt.txt"), user_text)
+      File.binwrite(directory.join("system.txt"), system_text) if system_text
+      File.write(directory.join("request.json"), JSON.pretty_generate(request))
+      File.write(directory.join("gate.json"), JSON.pretty_generate(checked.to_h.merge(
+        "authorized" => false,
+        "model_called" => false
+      )))
+      lines = [ "prompt #{request['prompt_sha256']}" ]
+      lines << "system #{request['system_sha256']}" if request["system_sha256"]
+      lines << "unique #{checked.prompt_sha256}"
+      File.write(directory.join("sha256.txt"), "#{lines.join("\n")}\n")
+      checked
     end
 
     def run
@@ -126,19 +203,16 @@ module Rag
       return refuse("authorization_absent") unless authorized?
       return refuse("budget_armed") if budget_armed?
 
-      correlations = self.class.correlations_for(@correlation_tag)
+      correlations = correlations_for(checked)
       return refuse("correlation_tag") if correlations.nil?
       return refuse("client_absent") unless @client.respond_to?(:generate_text)
 
-      record(checked.prompt, correlations)
+      record(checked, correlations)
     end
 
     private
 
-    def candidate_prompt
-      pieces = extract(@captured_prompt)
-      return pieces if pieces.is_a?(Result)
-
+    def render_prompt(pieces)
       prompt = with_captured_flags do
         service = BedrockRagService.new(account: @account, knowledge_base_id: "attribution-replay")
         service.send(
@@ -155,6 +229,37 @@ module Rag
       return refuse("search_results_changed") unless rebuilt == pieces.fetch(:search_results)
 
       prompt
+    end
+
+    def partition_matches?(unique, prompt)
+      return false if prompt.system.blank? || prompt.user.blank?
+      return false unless prompt_headings(prompt.user) == USER_HEADINGS
+
+      content_lines(unique).tally == (content_lines(prompt.system) + content_lines(prompt.user)).tally
+    end
+
+    def prompt_headings(text)
+      text.to_s.lines.map(&:chomp).select { |line| PROMPT_HEADINGS.include?(line) }
+    end
+
+    def content_lines(text)
+      text.to_s.lines.map(&:chomp).reject { |line| line.strip.empty? }
+    end
+
+    def correlations_for(checked)
+      explicit = @correlation_tag
+      explicit = ENV[CORRELATION_TAG_ENV] if explicit.nil?
+      explicit = "system" if explicit.to_s.strip.empty? && checked.system_sha256.present?
+      self.class.correlations_for(explicit)
+    end
+
+    def without_system_role
+      key = "RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE"
+      previous = ENV[key]
+      ENV.delete(key)
+      yield
+    ensure
+      previous.nil? ? ENV.delete(key) : ENV[key] = previous
     end
 
     def extract(captured)
@@ -217,35 +322,47 @@ module Rag
       transformed == candidate
     end
 
-    def record(prompt, correlations)
+    def record(checked, correlations)
       directory = Pathname(@output_dir)
       FileUtils.mkdir_p(directory)
+      user_text, system_text = generation_parts(checked.prompt)
       generations = []
       correlations.each_with_index do |correlation, index|
         events = ValidationCapture.capture do
           @client.generate_text(
-            prompt,
+            user_text,
+            system: system_text,
             model_id: MODEL_ID,
             max_tokens: MAX_TOKENS,
             temperature: TEMPERATURE,
             tracking: { correlation_id: correlation }
           )
         end
-        generations << write_generation(directory, index + 1, correlation, prompt, events)
+        generations << write_generation(directory, index + 1, correlation, user_text, system_text, events)
         returned = events.find { |event| event["kind"] == "generation_result" && event["result"] == "returned" }
         break if returned.nil? || returned["answer"].blank?
       end
       Result.new(
         status: "recorded",
         reason: nil,
-        prompt: prompt,
-        prompt_sha256: Digest::SHA256.hexdigest(prompt),
+        prompt: checked.prompt,
+        prompt_sha256: checked.prompt_sha256,
+        system_sha256: checked.system_sha256,
+        user_sha256: checked.user_sha256,
         generations: generations,
         output_dir: directory
       )
     end
 
-    def write_generation(directory, index, correlation, prompt, events)
+    def generation_parts(prompt)
+      if prompt.respond_to?(:system) && prompt.system.present?
+        [ prompt.user.to_s, prompt.system.to_s ]
+      else
+        [ prompt.to_s, nil ]
+      end
+    end
+
+    def write_generation(directory, index, correlation, user_text, system_text, events)
       folder = directory.join(format("gen_%d", index))
       FileUtils.mkdir_p(folder)
       prepared = events.find { |event| event["kind"] == "generate_text" && event["result"] == "prepared" } || {}
@@ -255,14 +372,16 @@ module Rag
         "temperature" => prepared.fetch("temperature", TEMPERATURE),
         "max_tokens" => prepared.fetch("max_tokens", MAX_TOKENS),
         "correlation_id" => correlation,
-        "prompt_sha256" => Digest::SHA256.hexdigest(prompt)
+        "prompt_sha256" => Digest::SHA256.hexdigest(user_text)
       }
+      request["system_sha256"] = Digest::SHA256.hexdigest(system_text) if system_text.present?
       usage = {
         "input_tokens" => returned.fetch("input_tokens", "unavailable"),
         "output_tokens" => returned.fetch("output_tokens", "unavailable")
       }
       File.write(folder.join("request.json"), JSON.pretty_generate(request))
-      File.binwrite(folder.join("prompt.txt"), prompt)
+      File.binwrite(folder.join("prompt.txt"), user_text)
+      File.binwrite(folder.join("system.txt"), system_text) if system_text.present?
       File.binwrite(folder.join("response.txt"), returned["answer"].to_s)
       File.write(folder.join("usage.json"), JSON.pretty_generate(usage))
       { "correlation_id" => correlation, "request" => request, "response" => { "text" => returned["answer"] }, "usage" => usage }
@@ -301,19 +420,30 @@ module Rag
         (defined?(Phase1ModelBudget) && Phase1ModelBudget.armed?)
     end
 
-    def ready(prompt)
+    def ready(prompt, prompt_sha256: nil, system_sha256: nil, user_sha256: nil)
       Result.new(
         status: "ready",
         reason: nil,
         prompt: prompt,
-        prompt_sha256: Digest::SHA256.hexdigest(prompt),
+        prompt_sha256: prompt_sha256 || Digest::SHA256.hexdigest(prompt.to_s),
+        system_sha256: system_sha256,
+        user_sha256: user_sha256,
         generations: nil,
         output_dir: nil
       )
     end
 
     def refuse(reason)
-      Result.new(status: "refused", reason: reason, prompt: nil, prompt_sha256: nil, generations: nil, output_dir: nil)
+      Result.new(
+        status: "refused",
+        reason: reason,
+        prompt: nil,
+        prompt_sha256: nil,
+        system_sha256: nil,
+        user_sha256: nil,
+        generations: nil,
+        output_dir: nil
+      )
     end
   end
 end

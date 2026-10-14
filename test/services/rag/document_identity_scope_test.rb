@@ -293,7 +293,7 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     on = service.send(
       :document_identity_generation_prompt, question, applied.chunks, labels: applied.labels,
       response_locale: :es, session_context: nil, output_channel: :web
-    )
+    ).to_s
 
     assert_includes on, PREAMBLE
     assert_not_includes on, "Cortocircuitar BM/B1."
@@ -326,7 +326,7 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     prompt = service.send(
       :document_identity_generation_prompt, question, applied.chunks, labels: applied.labels,
       response_locale: :es, session_context: nil, output_channel: :web
-    )
+    ).to_s
 
     assert_equal 8, applied.chunks.size
     assert_equal bodies.last(5), applied.chunks.pluck(:content).last(5)
@@ -2145,9 +2145,10 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       assert_not_includes contract.downcase, term.downcase
     end
 
+    isolate_env("RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE", nil) do
     with_grounded_synthesis("true") do
       service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
-      prompt = service.send(
+      built = service.send(
         :document_identity_generation_prompt,
         "etiqueta del plano",
         [ chunk("plano", "Etiqueta visible en el bus.", canonical_name: "Plano") ],
@@ -2156,6 +2157,8 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
         session_context: nil,
         output_channel: :web
       )
+      prompt = built.to_s
+      assert_nil built.system
       shared = service.send(:load_generation_prompt_with_locale, "etiqueta del plano", response_locale: :es, output_channel: :web)
       template = BedrockRagService.load_generation_prompt_template(grounded_synthesis: true)
       route = Rag::StructuredEvidenceRoute.new(
@@ -2226,6 +2229,56 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
         assert_not_includes rendered, "ACTION and EXPECTED_RESULT lines in FIELD_RECORD are extraction annotations"
         assert_not rendered.lines.any? { |line| line.start_with?("- FIELD_GUIDANCE:", "FIELD_GUIDANCE:") }
       end
+
+      session = <<~TEXT.strip
+        ## Active Field Problem
+        Goal: ubicar una etiqueta
+
+        ## Session Focus
+        - [document] Plano
+
+        ## Recent Conversation
+        User: etiqueta del plano
+
+        ## Session Discipline
+        Keep the pin.
+
+        ## Query Resolution
+        - "Plano" -> plano.pdf
+      TEXT
+      isolate_env("RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE", "1") do
+        parted = service.send(
+          :document_identity_generation_prompt,
+          "etiqueta del plano",
+          [ chunk("plano", "Etiqueta visible en el bus.", canonical_name: "Plano") ],
+          labels: [ "THIS JOB'S EQUIPMENT: Plano" ],
+          response_locale: :es,
+          session_context: session,
+          output_channel: :web
+        )
+        shared_again = service.send(:load_generation_prompt_with_locale, "etiqueta del plano", response_locale: :es, output_channel: :web)
+        template_again = BedrockRagService.load_generation_prompt_template(grounded_synthesis: true)
+        other_again = route.send(:generation_prompt, [ chunk("plano", "Etiqueta visible en el bus.", canonical_name: "Plano") ])
+
+        assert_includes parted.user, "etiqueta del plano"
+        assert_includes parted.user, "<search_result>"
+        assert_includes parted.user, "Etiqueta visible en el bus."
+        assert_includes parted.user, session
+        assert_includes parted.user, "# FINAL LANGUAGE REMINDER"
+        assert_not_includes parted.user, "# DOCUMENT IDENTITY ATTRIBUTION"
+        assert_not_includes parted.user, "Keep documented statements"
+        assert_includes parted.system, "# ROLE"
+        assert_includes parted.system, contract
+        assert_includes parted.system, citation
+        assert_not_includes parted.system, "<search_result>"
+        %w[Chapa Elemont salida 24V].each do |term|
+          assert_not_includes contract.downcase, term.downcase
+        end
+        assert_equal shared, shared_again
+        assert_equal template, template_again
+        assert_equal other, other_again
+      end
+    end
     end
 
     with_grounded_synthesis(nil) do

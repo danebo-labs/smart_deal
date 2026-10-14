@@ -220,7 +220,7 @@ class BedrockRagServiceKnowledgeScopeTest < ActiveSupport::TestCase
       response_locale: :es,
       session_context: nil,
       output_channel: :web
-    )
+    ).to_s
 
     assert_includes prompt, "OWN_BODY"
     assert_not_includes prompt, "FOREIGN_PRIVATE_BODY"

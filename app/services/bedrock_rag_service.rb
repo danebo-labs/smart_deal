@@ -62,6 +62,16 @@ class BedrockRagService
     "Reason, infer, and conclude from chunks. ",
     " A field check that is inference says so (\"Como verificación de campo …\")."
   ].freeze
+  # Lines 7-9 of generation.txt. The system-role path removes this block
+  # before substitution and does not edit its text.
+  DOCUMENT_IDENTITY_CONTEXT_BLOCK = "# CONTEXT\nQuery: $query$\nResults: $search_results$".freeze
+  # system is nil while RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE is off. to_s is then
+  # the single user message, byte for byte the previous prompt.
+  DocumentIdentityPrompt = Data.define(:system, :user) do
+    def to_s
+      system.nil? ? user.to_s : "#{system}\n\n#{user}"
+    end
+  end
   STRICT_ONLY_PROMPT_PREFIX = "- STRICT_ONLY:"
   GROUNDED_SYNTHESIS_CONTRACT_VERSION = "gs-v1"
   STRICT_CONTRACT_VERSION = "strict-v1"
@@ -537,8 +547,7 @@ class BedrockRagService
     generation_truncated = context_truncated == true || (companion && guidance.context_truncated?)
     raw_answer = begin
       Rag::ValidationCapture.attempt_unless_set(1)
-      document_identity_generator.query(
-        prompt,
+      generation_kwargs = {
         max_tokens: @rag_config[:generation_max_tokens],
         temperature: @rag_config[:generation_temperature],
         tracking: {
@@ -547,7 +556,12 @@ class BedrockRagService
           conversation_session_id: conversation_session_id,
           correlation_id: correlation_id
         }
-      )
+      }
+      if companion
+        document_identity_generator.query(prompt, **generation_kwargs)
+      else
+        document_identity_generator.query(prompt.user, system: prompt.system, **generation_kwargs)
+      end
     rescue Timeout::Error, Net::ReadTimeout, Net::OpenTimeout, BedrockServiceError => e
       return attach_generation_trace!(
         identity_closed_result(
@@ -1113,7 +1127,38 @@ class BedrockRagService
 
   def document_identity_generation_prompt(question, chunks, response_locale:, session_context:, output_channel:,
                                           labels: [])
-    template = self.class.withhold_document_identity_inference(
+    system_role = document_identity_system_role?
+    search_results = Rag::DocumentIdentityScope.generation_context(chunks, labels)
+    template = withheld_document_identity_template(
+      question,
+      response_locale: response_locale,
+      session_context: system_role ? nil : session_context,
+      output_channel: output_channel
+    )
+    if system_role
+      parts = partition_document_identity_template(
+        template,
+        question: question,
+        search_results: search_results,
+        session_context: session_context,
+        response_locale: response_locale
+      )
+      return DocumentIdentityPrompt.new(system: parts.fetch(:system), user: parts.fetch(:user))
+    end
+
+    DocumentIdentityPrompt.new(
+      system: nil,
+      user: substitute_document_identity_template(template, question, search_results)
+    )
+  end
+
+  # The only read of RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE. Off keeps one user message.
+  def document_identity_system_role?
+    ENV["RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE"] == "1"
+  end
+
+  def withheld_document_identity_template(question, response_locale:, session_context:, output_channel:)
+    self.class.withhold_document_identity_inference(
       load_generation_prompt_with_locale(
         question,
         response_locale: response_locale,
@@ -1122,12 +1167,40 @@ class BedrockRagService
         field_guidance: false
       )
     )
+  end
+
+  def substitute_document_identity_template(template, question, search_results)
     template
       .sub("$query$") { question.to_s }
-      .sub("$search_results$") { Rag::DocumentIdentityScope.generation_context(chunks, labels) }
-      .sub(OUTPUT_FORMAT_PLACEHOLDER) do
-        "#{DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT}\n\n#{DOCUMENT_IDENTITY_CITATION_INSTRUCTIONS}"
-      end
+      .sub("$search_results$") { search_results }
+      .sub(OUTPUT_FORMAT_PLACEHOLDER) { document_identity_output_contract }
+  end
+
+  def document_identity_output_contract
+    "#{DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT}\n\n#{DOCUMENT_IDENTITY_CITATION_INSTRUCTIONS}"
+  end
+
+  # Moves the context block, the session, and the language footer into the
+  # user message. The remaining text stays in its current order.
+  def partition_document_identity_template(template, question:, search_results:, session_context:, response_locale:)
+    system_template = template.sub(DOCUMENT_IDENTITY_CONTEXT_BLOCK, "")
+    footer = removable_language_footer(system_template, question, response_locale)
+    system_template = system_template.sub("\n\n#{footer}", "") if footer
+    context = DOCUMENT_IDENTITY_CONTEXT_BLOCK
+      .sub("$query$") { question.to_s }
+      .sub("$search_results$") { search_results }
+    user = [ context, session_context.presence, footer ].compact.join("\n\n")
+    system = system_template.sub(OUTPUT_FORMAT_PLACEHOLDER) { document_identity_output_contract }
+    { system: system, user: user }
+  end
+
+  def removable_language_footer(template, question, response_locale)
+    locale = effective_response_locale(question, response_locale: response_locale)
+    lang_name = locale_to_language_name(locale)
+    return nil if lang_name.blank?
+
+    footer = language_directive_footer(lang_name)
+    template.include?("\n\n#{footer}") ? footer : nil
   end
 
   def document_identity_generator

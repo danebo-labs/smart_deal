@@ -76,6 +76,19 @@ class Rag::AttributionGenerationReplayTest < ActiveSupport::TestCase
     assert_equal "search_results_changed", result.reason
     assert_empty calls
     assert_not @output.exist?
+
+    flagged = isolate_env("RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE", "1") do
+      Rag::AttributionGenerationReplay.run(
+        captured_prompt: captured,
+        account: @account,
+        client: failing_client(calls),
+        output_dir: @output
+      )
+    end
+
+    assert_equal "refused", flagged.status
+    assert_equal "search_results_changed", flagged.reason
+    assert_empty calls
   end
 
   test "changing a kept restriction refuses the call" do
@@ -137,6 +150,8 @@ class Rag::AttributionGenerationReplayTest < ActiveSupport::TestCase
       assert_equal 3000, body.fetch("max_tokens")
       assert_in_delta 0.1, body.fetch("temperature")
       assert_equal result.prompt, body.dig("messages", 0, "content")
+      assert_nil body["system"]
+      assert_equal %w[anthropic_version max_tokens temperature messages], body.keys
       generation = result.generations[index]
       assert_equal params.fetch(:model_id), generation.dig("request", "model_id")
       assert_equal 3000, generation.dig("request", "max_tokens")
@@ -186,6 +201,23 @@ class Rag::AttributionGenerationReplayTest < ActiveSupport::TestCase
     end
   end
 
+  test "swapping two lines inside system or user refuses without changing their words" do
+    captured = fabricated_capture
+
+    %i[system user].each do |part|
+      refused = isolate_env("RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE", "1") do
+        Rag::PartitionLineSwapReplay.new(
+          part: part,
+          captured_prompt: captured,
+          account: @account
+        ).preview
+      end
+
+      assert_equal "refused", refused.status
+      assert_equal "prompt_delta", refused.reason
+    end
+  end
+
   test "an authorized system partition exports both messages under the system correlation" do
     captured = fabricated_capture
     calls = []
@@ -225,8 +257,10 @@ class Rag::AttributionGenerationReplayTest < ActiveSupport::TestCase
   end
 
   test "the flag off reconstruction of the captured prompt keeps the voices hash" do
-    path = Rails.root.join("tmp/phase2_pinned_turn/runs/20261013T233715Z/turn_2/bodies/b0005.txt")
-    captured = File.binread(path)
+    captured = File.binread(capture_fixture)
+    assert_equal 36050, captured.bytesize
+    assert_equal "42509289d310a005a01e0f31cafbc7fb3f42436b1f8405089a24a6b8347db208", Digest::SHA256.hexdigest(captured)
+
     preview = isolate_env("RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE", nil) do
       Rag::AttributionGenerationReplay.preview(captured_prompt: captured, account: @account)
     end
@@ -235,6 +269,22 @@ class Rag::AttributionGenerationReplayTest < ActiveSupport::TestCase
     assert_equal "5c1d427390843f6ee3595d3ed0ae51b15c9486bb311b3789b7033c7196e4594e", preview.prompt_sha256
     assert_equal 35087, preview.prompt.bytesize
     assert_nil preview.system_sha256
+
+    partitioned = isolate_env("RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE", "1") do
+      Rag::AttributionGenerationReplay.preview(captured_prompt: captured, account: @account)
+    end
+
+    assert partitioned.allowed?, partitioned.reason
+    assert_equal "5c1d427390843f6ee3595d3ed0ae51b15c9486bb311b3789b7033c7196e4594e", partitioned.prompt_sha256
+    assert_equal "81a7dfd85e2415d2527a6537b35b540aa03a5a69b2bd06f643c8479ff0031024", partitioned.system_sha256
+    assert_equal "655e1c29acb311b9af4ea75e45f9b4edd02f781de7ddcbc76cc348d7843f2fb3", partitioned.user_sha256
+    assert_equal 13668, partitioned.prompt.system.bytesize
+    assert_equal 21419, partitioned.prompt.user.bytesize
+    assert_equal 3, partitioned.prompt.user.scan("<search_result>").size
+    assert_includes partitioned.prompt.user, "Query: La etiqueta Chapa nivel 2 Elemont MH"
+    assert_includes partitioned.prompt.user, "## Active Field Problem"
+    assert_not_includes partitioned.prompt.user, "# DOCUMENT IDENTITY ATTRIBUTION"
+    assert_not_includes partitioned.prompt.system, "<search_result>"
   end
 
   test "correlation tags default to voices and reject a malformed or historical id" do
@@ -327,6 +377,10 @@ class Rag::AttributionGenerationReplayTest < ActiveSupport::TestCase
   end
 
   private
+
+  def capture_fixture
+    Rails.root.join("test/fixtures/files/field_companion/phase2_20261013T233715Z/turn_2/bodies/b0005.txt")
+  end
 
   def prompt_headings(text)
     text.to_s.lines.map(&:chomp).select { |line| Rag::AttributionGenerationReplay::PROMPT_HEADINGS.include?(line) }
@@ -433,6 +487,34 @@ class Rag::AttributionGenerationReplayTest < ActiveSupport::TestCase
     end
     client.instance_variable_set(:@client, aws)
     client
+  end
+end
+
+class Rag::PartitionLineSwapReplay < Rag::AttributionGenerationReplay
+  def initialize(part:, **kwargs)
+    @part = part
+    super(**kwargs)
+  end
+
+  private
+
+  def render_prompt(pieces)
+    prompt = super
+    return prompt unless prompt.respond_to?(:system) && prompt.system.present?
+
+    swapped = swap_two_lines(prompt.public_send(@part))
+    prompt.with(@part => swapped)
+  end
+
+  def swap_two_lines(text)
+    lines = text.lines
+    indexes = lines.each_index.select { |index| lines[index].strip.present? }
+    left = indexes[0]
+    right = indexes[1]
+    raise "line swap missed #{@part}" if left.nil? || right.nil? || lines[left] == lines[right]
+
+    lines[left], lines[right] = lines[right], lines[left]
+    lines.join
   end
 end
 

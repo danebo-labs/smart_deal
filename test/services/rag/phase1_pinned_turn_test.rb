@@ -552,6 +552,7 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
     assert_equal "phase1:block", blocked["correlation_id"], operation
     assert_equal "observed", prepared["provenance"], operation
     assert events.none? { |event| event["operation"] == operation && event["result"] == "attempt_started" }, operation
+    assert events.none? { |event| event["operation"] == operation && event["result"] == "error" }, operation
     assert_equal 0, calls[:n], operation
     assert_equal 3, Rag::Phase1ModelBudget.attempts, operation
     if operation == "interpreter"

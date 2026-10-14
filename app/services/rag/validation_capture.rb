@@ -123,12 +123,18 @@ module Rag
 
     # Boundary of one model call. correlation_id and attempt are copied by
     # record when this capture already has them. Inactive capture stores nothing.
-    def record_model_boundary(operation, result)
-      record(
-        "model_call",
+    def record_model_boundary(operation, result, fields = nil)
+      payload = {
         "operation" => operation.to_s,
         "result" => result.to_s
-      )
+      }
+      if fields.is_a?(Hash)
+        correlation_id = fields["correlation_id"]
+        attempt = fields["attempt"]
+        payload["correlation_id"] = correlation_id if correlation_id.present?
+        payload["attempt"] = attempt unless attempt.nil?
+      end
+      record("model_call", payload)
     end
 
     def record(kind, payload)

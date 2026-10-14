@@ -36,7 +36,9 @@ class BedrockClient
 
     start_time = Time.current
     capture_fields = generation_capture_fields(tracking)
-    record_generation_request(model_id, max_tokens, temperature, prompt, system: system)
+    record_generation_request(
+      model_id, max_tokens, temperature, prompt, system: system, linkage: capture_fields
+    )
     # Armed by the phase 1 or phase 2 process. defined? does not load either
     # class. A disarmed phase 2 leaves the phase 1 cap in place.
     budget = armed_validation_budget
@@ -44,11 +46,11 @@ class BedrockClient
       begin
         budget.checkpoint!("generate_text")
       rescue budget::Stop
-        Rag::ValidationCapture.record_model_boundary("generate_text", "blocked")
+        Rag::ValidationCapture.record_model_boundary("generate_text", "blocked", capture_fields)
         raise
       end
     end
-    Rag::ValidationCapture.record_model_boundary("generate_text", "attempt_started")
+    Rag::ValidationCapture.record_model_boundary("generate_text", "attempt_started", capture_fields)
     response = @client.invoke_model(
       model_id: model_id,
       content_type: 'application/json',
@@ -59,12 +61,18 @@ class BedrockClient
     text = result.dig('content', 0, 'text') || result.to_s
 
     track_usage(result, model_id, prompt, start_time, max_tokens: max_tokens, tracking: tracking)
-    record_generation_result(result, text, prompt, capture_fields, system: system)
+    record_generation_result(
+      result, text, prompt, capture_fields,
+      system: system, model_id: model_id, max_tokens: max_tokens, temperature: temperature
+    )
     budget&.record_success!("generate_text") if budget&.armed?
 
     text
   rescue StandardError => e
-    record_generation_error(e, prompt, capture_fields, system: system)
+    record_generation_error(
+      e, prompt, capture_fields,
+      system: system, model_id: model_id, max_tokens: max_tokens, temperature: temperature
+    )
     budget = armed_validation_budget
     if budget&.armed?
       budget.record_error!("generate_text", e)
@@ -129,7 +137,7 @@ class BedrockClient
     Rag::ValidationCapture.record("converse", body)
   end
 
-  def record_generation_request(model_id, max_tokens, temperature, prompt, system: nil)
+  def record_generation_request(model_id, max_tokens, temperature, prompt, system: nil, linkage: nil)
     return unless Rag::ValidationCapture.active?
 
     Rag::ValidationCapture.record(
@@ -138,16 +146,13 @@ class BedrockClient
         "stage" => "generate",
         "result" => "prepared",
         "operation" => "generate_text",
-        "model_id" => model_id,
-        "max_tokens" => max_tokens,
-        "temperature" => temperature,
-        "prompt" => prompt.to_s,
         "documentary_context" => Rag::ValidationCapture.documentary_context(prompt)
-      }.merge(generation_system_fields(system))
+      }.merge(generation_request_fields(model_id, max_tokens, temperature, prompt, system))
+       .merge(linkage || {})
     )
   end
 
-  def record_generation_result(result, text, prompt, capture_fields, system: nil)
+  def record_generation_result(result, text, prompt, capture_fields, system:, model_id:, max_tokens:, temperature:)
     return unless Rag::ValidationCapture.active?
 
     usage = result.is_a?(Hash) && result["usage"].is_a?(Hash) ? result["usage"] : {}
@@ -164,11 +169,12 @@ class BedrockClient
         "output_tokens" => output_tokens.nil? ? "unavailable" : output_tokens,
         "error_class" => nil,
         "documentary_context" => Rag::ValidationCapture.documentary_context(prompt)
-      }.merge(capture_fields).merge(generation_system_fields(system))
+      }.merge(generation_result_fields(model_id, max_tokens, temperature, prompt, system))
+       .merge(capture_fields || {})
     )
   end
 
-  def record_generation_error(error, prompt, capture_fields, system: nil)
+  def record_generation_error(error, prompt, capture_fields, system:, model_id:, max_tokens:, temperature:)
     return unless Rag::ValidationCapture.active?
 
     Rag::ValidationCapture.record(
@@ -180,8 +186,28 @@ class BedrockClient
         "answer" => nil,
         "error_class" => error.class.name,
         "documentary_context" => Rag::ValidationCapture.documentary_context(prompt)
-      }.merge(capture_fields || {}).merge(generation_system_fields(system))
+      }.merge(generation_result_fields(model_id, max_tokens, temperature, prompt, system))
+       .merge(capture_fields || {})
     )
+  end
+
+  # The user message stays in prompt. system is a separate field. Neither is
+  # the concatenation of the two roles.
+  def generation_request_fields(model_id, max_tokens, temperature, prompt, system)
+    generation_result_fields(model_id, max_tokens, temperature, prompt, system)
+      .merge("prompt" => prompt.to_s)
+  end
+
+  def generation_result_fields(model_id, max_tokens, temperature, prompt, system)
+    user = prompt.to_s
+    {
+      "model_id" => model_id,
+      "max_tokens" => max_tokens,
+      "temperature" => temperature,
+      "anthropic_version" => "bedrock-2023-05-31",
+      "messages" => [ { "role" => "user" } ],
+      "user_sha256" => Digest::SHA256.hexdigest(user)
+    }.merge(generation_system_fields(system))
   end
 
   # Absent unless generate_text received a system message. The SHA is the

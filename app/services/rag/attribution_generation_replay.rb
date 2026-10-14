@@ -5,8 +5,12 @@ module Rag
   # It rebuilds that prompt and refuses unless the only differences are the
   # three field-guidance lines, the attribution contract, and the two
   # general-inference clauses. With RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE=1 the
-  # same lines may be split into system and user; any other split is
-  # prompt_delta. It does not call a model unless
+  # same blocks may move into system and user. The gate compares each block's
+  # exact text and order with the single prompt. It does not call the prompt
+  # constructor again, and any other split is prompt_delta. A refusal would
+  # show that this split was not enough for the captured case. A pass would
+  # support this configuration for that capture. Neither identifies one cause
+  # or general reliability. It does not call a model unless
   # PHASE2_ATTRIBUTION_GENERATION_AUTHORIZED=1.
   # Two calls repeat one prompt. They do not measure general reliability.
   # Correlations are phase2:attr:gen:<tag>:1 and :2. The tag defaults to
@@ -31,6 +35,9 @@ module Rag
       "## Query Resolution"
     ].freeze
     USER_HEADINGS = [ "# CONTEXT", *SESSION_HEADINGS, "# FINAL LANGUAGE REMINDER" ].freeze
+    CONTEXT_HEADING = "# CONTEXT"
+    LANGUAGE_HEADING = "# LANGUAGE AND TONE"
+    FOOTER_HEADING = "# FINAL LANGUAGE REMINDER"
     PROMPT_HEADINGS = [
       "# RESPONSE LANGUAGE (ABSOLUTE PRIORITY)",
       "# ROLE",
@@ -173,14 +180,18 @@ module Rag
       directory = Pathname(@output_dir)
       FileUtils.mkdir_p(directory)
       user_text, system_text = generation_parts(checked.prompt)
+      user_sha = Digest::SHA256.hexdigest(user_text)
       request = {
         "model_id" => MODEL_ID,
         "temperature" => TEMPERATURE,
         "max_tokens" => MAX_TOKENS,
         "anthropic_version" => "bedrock-2023-05-31",
-        "prompt_sha256" => Digest::SHA256.hexdigest(user_text),
-        "messages" => [ { "role" => "user" } ],
-        "correlation_ids" => correlations_for(checked)
+        "prompt_sha256" => user_sha,
+        "user_sha256" => user_sha,
+        "messages" => [ { "role" => "user", "content_sha256" => user_sha } ],
+        "correlation_ids" => correlations_for(checked),
+        "provenance" => "reconstructed",
+        "sent" => false
       }
       request["system_sha256"] = Digest::SHA256.hexdigest(system_text) if system_text
       File.binwrite(directory.join("prompt.txt"), user_text)
@@ -188,7 +199,8 @@ module Rag
       File.write(directory.join("request.json"), JSON.pretty_generate(request))
       File.write(directory.join("gate.json"), JSON.pretty_generate(checked.to_h.merge(
         "authorized" => false,
-        "model_called" => false
+        "model_called" => false,
+        "request_provenance" => "reconstructed"
       )))
       lines = [ "prompt #{request['prompt_sha256']}" ]
       lines << "system #{request['system_sha256']}" if request["system_sha256"]
@@ -231,19 +243,73 @@ module Rag
       prompt
     end
 
+    # Cuts the single prompt at the three blocks the partition moves. It does
+    # not call document_identity_generation_prompt.
     def partition_matches?(unique, prompt)
       return false if prompt.system.blank? || prompt.user.blank?
-      return false unless prompt_headings(prompt.user) == USER_HEADINGS
 
-      content_lines(unique).tally == (content_lines(prompt.system) + content_lines(prompt.user)).tally
+      context, session, footer = moved_blocks(unique)
+      return false if context.nil? || session.nil? || footer.nil?
+      return false unless context_intact?(unique, prompt.user, context, session)
+      return false if prompt.user.include?("# DOCUMENT IDENTITY ATTRIBUTION\n")
+      return false if prompt.user.include?("# EVIDENCE CONTRACT\n")
+      return false if prompt.system.include?("#{CONTEXT_HEADING}\n")
+      return false if prompt.system.include?("#{SESSION_HEADINGS.first}\n")
+      return false if prompt.system.include?("#{FOOTER_HEADING}\n")
+
+      expected_user = [ context, session, footer ].join("\n\n")
+      expected_system = system_after_moves(unique, context, session, footer)
+      return false if expected_system.nil?
+
+      expected_system == prompt.system && expected_user == prompt.user
     end
 
-    def prompt_headings(text)
-      text.to_s.lines.map(&:chomp).select { |line| PROMPT_HEADINGS.include?(line) }
+    def moved_blocks(unique)
+      context_at = unique.index("#{CONTEXT_HEADING}\nQuery: ")
+      language_at = unique.index("\n\n#{LANGUAGE_HEADING}\n", context_at || 0)
+      return if context_at.nil? || language_at.nil? || language_at < context_at
+
+      context = unique[context_at...language_at]
+      session_at = unique.index("#{SESSION_HEADINGS.first}\n", language_at)
+      footer_at = unique.index("\n\n#{FOOTER_HEADING}\n", session_at || 0)
+      return if session_at.nil? || footer_at.nil?
+
+      session = unique[session_at...footer_at]
+      closing = unique.index("\n\n", footer_at + 2)
+      return if closing.nil?
+
+      footer = unique[(footer_at + 2)...closing]
+      return unless context.present? && session.present? && footer.start_with?("#{FOOTER_HEADING}\n")
+
+      [ context, session, footer ]
     end
 
-    def content_lines(text)
-      text.to_s.lines.map(&:chomp).reject { |line| line.strip.empty? }
+    def system_after_moves(unique, context, session, footer)
+      without_context = unique.sub(context, "")
+      return if without_context == unique
+
+      without_session = excise_block(without_context, session)
+      return if without_session.nil?
+
+      excise_block(without_session, footer)
+    end
+
+    def excise_block(text, block)
+      needle = "\n\n#{block}"
+      return unless text.include?(needle)
+
+      text.sub(needle, "")
+    end
+
+    def context_intact?(unique, user, context, session)
+      query = context[/\A# CONTEXT\nQuery: (.*)\nResults: /, 1]
+      results = context.sub(/\A# CONTEXT\nQuery: .*\nResults: /, "")
+      return false if query.blank? || results.blank? || session.blank?
+      return false unless user.include?("#{CONTEXT_HEADING}\nQuery: #{query}\nResults: #{results}")
+      return false unless user.include?(session)
+
+      count = context.scan("<search_result>").size
+      count.positive? && count == unique.scan("<search_result>").size && user.scan("<search_result>").size == count
     end
 
     def correlations_for(checked)
@@ -372,7 +438,8 @@ module Rag
         "temperature" => prepared.fetch("temperature", TEMPERATURE),
         "max_tokens" => prepared.fetch("max_tokens", MAX_TOKENS),
         "correlation_id" => correlation,
-        "prompt_sha256" => Digest::SHA256.hexdigest(user_text)
+        "prompt_sha256" => Digest::SHA256.hexdigest(user_text),
+        "user_sha256" => Digest::SHA256.hexdigest(user_text)
       }
       request["system_sha256"] = Digest::SHA256.hexdigest(system_text) if system_text.present?
       usage = {

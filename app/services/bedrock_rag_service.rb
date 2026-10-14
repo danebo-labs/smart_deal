@@ -1760,6 +1760,19 @@ class BedrockRagService
     Rag::Phase2RetrieveLimit
   end
 
+  # Nil until the phase 3 harness has loaded its budget. Does not autoload it.
+  def phase3_model_budget
+    return unless defined?(Rag::Phase3ModelBudget)
+
+    Rag::Phase3ModelBudget
+  end
+
+  def phase3_retrieve_limit
+    return unless defined?(Rag::Phase3RetrieveLimit)
+
+    Rag::Phase3RetrieveLimit
+  end
+
   # Nil until the phase 2 harness has loaded the body gate. Does not autoload it.
   def phase2_retrieved_body_gate
     return unless defined?(Rag::Phase2RetrievedBodyGate)
@@ -1776,14 +1789,28 @@ class BedrockRagService
     gate.check!(chunks, correlation_id: correlation_id)
   end
 
-  # Phase 2 applies only while that run is armed. Otherwise this is the
-  # phase 1 budget, or nil when neither run is armed.
+  # Phase 3 applies only while that run is armed. Otherwise this is the
+  # phase 2 budget while that run is armed, then the phase 1 budget, or nil
+  # when none of those runs is armed.
   def armed_validation_budget
+    phase3 = phase3_model_budget
+    return phase3 if phase3&.armed?
+
     phase2 = phase2_model_budget
     return phase2 if phase2&.armed?
 
     phase1 = phase1_model_budget
     return phase1 if phase1&.armed?
+
+    nil
+  end
+
+  def armed_retrieve_limit
+    phase3 = phase3_retrieve_limit
+    return phase3 if phase3&.armed?
+
+    phase2 = phase2_retrieve_limit
+    return phase2 if phase2&.armed?
 
     nil
   end
@@ -1842,7 +1869,7 @@ class BedrockRagService
       Rag::ValidationCapture.record("retrieve", recorded)
     end
     transport_attempt = 0
-    limit = phase2_retrieve_limit
+    limit = armed_retrieve_limit
     limit.begin_logical! if limit&.armed?
     begin
       Bedrock::AuroraColdStartRetry.with_retry(

@@ -246,9 +246,20 @@ class BedrockClient
     Rag::Phase2ModelBudget
   end
 
-  # Phase 2 applies only while that run is armed. Otherwise this is the
-  # phase 1 budget, or nil when neither run is armed.
+  # Nil until the phase 3 harness has loaded its budget. Does not autoload it.
+  def phase3_model_budget
+    return unless defined?(Rag::Phase3ModelBudget)
+
+    Rag::Phase3ModelBudget
+  end
+
+  # Phase 3 applies only while that run is armed. Otherwise this is the
+  # phase 2 budget while that run is armed, then the phase 1 budget, or nil
+  # when none of those runs is armed.
   def armed_validation_budget
+    phase3 = phase3_model_budget
+    return phase3 if phase3&.armed?
+
     phase2 = phase2_model_budget
     return phase2 if phase2&.armed?
 

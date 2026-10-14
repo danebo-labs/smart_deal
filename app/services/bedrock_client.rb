@@ -39,8 +39,8 @@ class BedrockClient
     record_generation_request(
       model_id, max_tokens, temperature, prompt, system: system, linkage: capture_fields
     )
-    # Armed by the phase 1 or phase 2 process. defined? does not load either
-    # class. A disarmed phase 2 leaves the phase 1 cap in place.
+    # Armed only while a validation run is armed. defined? does not load those
+    # classes. The phase 4 web check wins while that process is armed.
     budget = armed_validation_budget
     if budget&.armed?
       begin
@@ -98,7 +98,26 @@ class BedrockClient
     http_read_timeout: 8
   }.freeze
 
-  delegate :converse, to: :converse_client
+  # Phase 1, 2, and 3 wrappers already checkpoint their own converse. Counting
+  # those budgets here would record the same invocation twice. Only the phase
+  # 4 web check, when that process armed it, stops the call before the SDK.
+  # Disarmed, this is the SDK call and its errors propagate unchanged.
+  def converse(...)
+    budget = phase4_web_budget
+    return converse_client.converse(...) unless budget&.armed?
+
+    budget.checkpoint!("interpreter")
+    begin
+      result = converse_client.converse(...)
+    rescue budget::Stop
+      raise
+    rescue StandardError => error
+      budget.record_error!("interpreter", error)
+      raise budget::Stop, "interpreter stopped after #{error.class}"
+    end
+    budget.record_success!("interpreter")
+    result
+  end
 
   # Tool use on the primary runtime client. #converse stays the 8-second
   # shadow client used by perception. generate_text cannot send a tool schema.
@@ -232,6 +251,14 @@ class BedrockClient
     extra
   end
 
+  # Nil until the phase 4 web check has loaded. Does not autoload it.
+  # Disarmed, the habitual budgets below stay in place.
+  def phase4_web_budget
+    return unless defined?(Rag::Phase4WebCheck)
+
+    Rag::Phase4WebCheck::Budget
+  end
+
   # Nil until the phase 1 service has loaded its budget. Does not autoload it.
   def phase1_model_budget
     return unless defined?(Rag::Phase1ModelBudget)
@@ -253,10 +280,12 @@ class BedrockClient
     Rag::Phase3ModelBudget
   end
 
-  # Phase 3 applies only while that run is armed. Otherwise this is the
-  # phase 2 budget while that run is armed, then the phase 1 budget, or nil
-  # when none of those runs is armed.
+  # The phase 4 web check applies only while that process is armed. Otherwise
+  # phase 3, then phase 2, then phase 1, or nil when none of those runs is armed.
   def armed_validation_budget
+    phase4 = phase4_web_budget
+    return phase4 if phase4&.armed?
+
     phase3 = phase3_model_budget
     return phase3 if phase3&.armed?
 

@@ -220,6 +220,18 @@ module Rag
       entry.evidence_text.present?
     end
 
+    # "+" stays on the designator. normalize_label drops it, so CEA15 would
+    # equal CEA15+ and VF5 would equal VF5+. Brands still use that method.
+    # The prefix rule in resolve_designator keeps its minimum length of 6.
+    def self.designator_label(value)
+      value.to_s
+           .unicode_normalize(:nfkd)
+           .gsub(/\p{Mn}/, "")
+           .downcase
+           .gsub(/[^\p{L}\d+]+/, " ")
+           .squish
+    end
+
     def activatable?
       loaded? && entries.any? { |entry| self.class.effectively_confirmed?(entry) }
     end
@@ -284,15 +296,8 @@ module Rag
       end
     end
 
-    # "+" stays on the designator. normalize_label drops it, so MH would
-    # equal MH+ and CEA15 would equal CEA15+. Brands still use that method.
     def designator_label(value)
-      value.to_s
-           .unicode_normalize(:nfkd)
-           .gsub(/\p{Mn}/, "")
-           .downcase
-           .gsub(/[^\p{L}\d+]+/, " ")
-           .squish
+      self.class.designator_label(value)
     end
 
     def unresolved

@@ -191,10 +191,40 @@ module Rag
     end
 
     def exact_entries
-      words = normalize(@question).split
+      matches = designator_matches(designator_words(@question))
+      equipment = matches.select { |entry| equipment_entry?(entry) }
+      equipment.any? ? equipment : matches
+    end
+
+    # Equality with designator_label. The "+" stays, so CEA15 is not CEA15+
+    # and VF5 is not VF5+. An equipment designator in the same question is
+    # the candidate; component entries do not take that card.
+    def designator_matches(words)
+      return [] if words.empty?
+
       @entries.select { |entry|
-        Array(entry_value(entry, :designators)).any? { |item| words.include?(normalize(item)) }
+        designator_labels(entry).any? { |label| words.include?(label) }
       }
+    end
+
+    def designator_words(text)
+      Rag::DocumentIdentityCatalog.designator_label(text).split
+    end
+
+    def designator_labels(entry)
+      Array(entry_value(entry, :designators)).filter_map { |item|
+        Rag::DocumentIdentityCatalog.designator_label(designator_text(item)).presence
+      }
+    end
+
+    def designator_text(item)
+      return item[:value] || item["value"] if item.is_a?(Hash)
+
+      item
+    end
+
+    def equipment_entry?(entry)
+      entry_value(entry, :role).to_s == "equipment"
     end
 
     def brand_entries
@@ -305,5 +335,71 @@ module Rag
     def normalize(raw)
       Rag::FollowupQueryRewriter.normalize_label(raw)
     end
+
+    # The posted row is still the equipment manual only when the live episode
+    # declares that designator. A client field is not an input. A known model
+    # must equal the designator. A component role is not a candidate.
+    def self.equipment_candidate?(session:, document:, viewer_account:)
+      return false if session.nil? || document.nil? || viewer_account.nil?
+
+      entry = Rag::DocumentIdentityCatalog.current.for_document(document)
+      return false unless entry&.role == "equipment"
+
+      episode = Rag::ActiveEpisode.parse(session.active_episode)
+      return false if episode.blank?
+
+      labels = Array(entry.designators).filter_map { |value|
+        Rag::DocumentIdentityCatalog.designator_label(value).presence
+      }
+      return false if labels.empty?
+      return false unless episode_declares_designator?(episode, labels)
+      return false unless manufacturer_still_matches?(episode, entry)
+
+      bound = bound_equipment_document(entry, viewer_account)
+      bound&.id == document.id
+    end
+
+    def self.episode_declares_designator?(episode, labels)
+      model = known_equipment_value(episode, "model")
+      if model
+        return labels.include?(Rag::DocumentIdentityCatalog.designator_label(model))
+      end
+
+      declared = Array(episode.identifiers).flat_map { |item|
+        Rag::DocumentIdentityCatalog.designator_label(item["value"]).split
+      }
+      labels.any? { |label| declared.include?(label) }
+    end
+    private_class_method :episode_declares_designator?
+
+    def self.manufacturer_still_matches?(episode, entry)
+      manufacturer = known_equipment_value(episode, "manufacturer")
+      return true if manufacturer.blank?
+
+      brands = Array(entry.brands).map { |brand| Rag::FollowupQueryRewriter.normalize_label(brand) }
+      brands.include?(Rag::FollowupQueryRewriter.normalize_label(manufacturer))
+    end
+    private_class_method :manufacturer_still_matches?
+
+    def self.known_equipment_value(episode, key)
+      fact = episode.fact(key)
+      return nil unless fact.is_a?(Hash) && fact["status"] == "known"
+
+      fact["value"].to_s.strip.presence
+    end
+    private_class_method :known_equipment_value
+
+    def self.bound_equipment_document(entry, viewer_account)
+      candidate = {
+        document_id: entry.document_id,
+        s3_key: entry.s3_key,
+        catalog_account_id: entry.account_id
+      }
+      rows = Rag::KnowledgeScopePolicy.rows_for_catalog_candidates([ candidate ])
+      Rag::KnowledgeScopePolicy.bind_catalog_candidate(
+        candidate, rows: rows, viewer_account: viewer_account
+      )
+    end
+    private_class_method :bound_equipment_document
   end
 end

@@ -416,6 +416,10 @@ class RagController < ApplicationController
     payload = discovery.payload
     if payload
       mark_focused_cards!(payload, conv_session)
+      if conv_session.respond_to?(:live_episode_id)
+        episode_id = conv_session.live_episode_id
+        payload[:episode_id] = episode_id if episode_id.present?
+      end
       payload[:correlation_id] = correlation_id
       payload[:focus_action] ||= I18n.t("rag.manual_focus_action")
       payload[:focus_clear] = I18n.t("rag.manual_focus_clear")

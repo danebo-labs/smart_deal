@@ -166,7 +166,7 @@ class Rag::DocumentDiscoveryTest < ActiveSupport::TestCase
     vf5 = catalog_document("VF5+")
     calls = 0
     result = Rag::DocumentDiscovery.call(
-      question: "¿Cómo uso el módulo electrónico VF5?",
+      question: "¿Cómo uso el módulo electrónico VF5+?",
       viewer_account: @account,
       session: @session,
       abstained: true,
@@ -180,6 +180,85 @@ class Rag::DocumentDiscoveryTest < ActiveSupport::TestCase
     assert_equal 0, calls
     assert_equal [ vf5.id ], result.cards.map(&:kb_document_id)
     assert_equal [ @elemont.id ], @session.reload.document_focus_entries.pluck("kb_document_id")
+  end
+
+  test "Elemont MH offers the equipment manual and does not select it" do
+    calls = 0
+    result = Rag::DocumentDiscovery.call(
+      question: "El equipo es un Elemont MH.",
+      viewer_account: @account,
+      session: @session,
+      retriever: lambda { |*|
+        calls += 1
+        { chunks: [] }
+      }
+    )
+
+    card = result.cards.sole
+    assert_equal 0, calls
+    assert_equal "dcc8e046-037d-48a6-8913-1992aed28507", card.document_uid
+    assert_equal @elemont.id, card.kb_document_id
+    assert_equal "Elemont Montacargas Hidraulico Modelo MH", card.display_name
+    assert_equal "add", result.action
+    assert_equal Rag::ManualCandidateRanker::EXACT_DESIGNATOR_TEXT, card.text
+    assert_not_includes card.text, "placa"
+    assert_not_includes card.text, "respuesta"
+    assert_nil result.payload[:selected_document_uid]
+    assert_empty @session.reload.document_focus_entries
+    assert_nil @session.active_episode&.dig("pending_question")
+  end
+
+  test "CEA15 does not offer the CEA15+ manual" do
+    catalog_document("CEA15+")
+
+    result = Rag::DocumentDiscovery.call(
+      question: "La placa es CEA15.",
+      viewer_account: @account,
+      session: @session
+    )
+
+    assert_empty result.cards
+    assert_empty @session.reload.document_focus_entries
+  end
+
+  test "VF5 does not offer the VF5+ manual" do
+    catalog_document("VF5+")
+
+    result = Rag::DocumentDiscovery.call(
+      question: "¿Cómo uso el módulo electrónico VF5?",
+      viewer_account: @account,
+      session: @session
+    )
+
+    assert_empty result.cards
+    assert_not_equal(
+      Rag::FollowupQueryRewriter.normalize_label("VF5+"),
+      Rag::DocumentIdentityCatalog.designator_label("VF5+")
+    )
+    assert_equal(
+      Rag::FollowupQueryRewriter.normalize_label("VF5"),
+      Rag::FollowupQueryRewriter.normalize_label("VF5+")
+    )
+    assert_not_equal(
+      Rag::DocumentIdentityCatalog.designator_label("CEA15"),
+      Rag::DocumentIdentityCatalog.designator_label("CEA15+")
+    )
+  end
+
+  test "a component designator does not take the equipment card" do
+    component = catalog_document("CEA15+")
+
+    result = Rag::DocumentDiscovery.call(
+      question: "El equipo es un Elemont MH. La placa es CEA15+.",
+      viewer_account: @account,
+      session: @session
+    )
+
+    assert_equal [ @elemont.id ], result.cards.map(&:kb_document_id)
+    assert result.cards.none? { |card| card.kb_document_id == component.id }
+    assert_equal "equipment", Rag::DocumentIdentityCatalog.current.for_document(@elemont).role
+    assert_equal "component", Rag::DocumentIdentityCatalog.current.for_document(component).role
+    assert_empty @session.reload.document_focus_entries
   end
 
   private

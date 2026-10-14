@@ -81,8 +81,10 @@ class RagChatManualSuggestionTest < ApplicationSystemTestCase
     assert_equal "POST", request["method"]
     assert_includes request["body"], "kb_document_id"
     assert_includes request["body"], "uid-manual-a"
+    assert_includes request["body"], "ep_manual_card"
     assert_not_includes request["body"], "knowledge_scope"
     assert_not_includes request["body"], "authorized"
+    assert_not_includes request["body"], "designator"
 
     install_pin_fetch(ok: false, message: "Este manual ya no está disponible.")
     execute_script("document.querySelectorAll('.manual-focus-action')[1].click()")
@@ -114,6 +116,7 @@ class RagChatManualSuggestionTest < ApplicationSystemTestCase
         tie_at_top: true,
         selected_document_uid: nil,
         correlation_id: "query:focus",
+        episode_id: "ep_manual_card",
         focus_action: "Usar este manual",
         focus_clear: "Quitar foco",
         focus_status: "Manual enfocado",

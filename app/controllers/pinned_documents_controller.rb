@@ -8,6 +8,9 @@
 # A suggestion card sends kb_document_id and document_uid. The id is the row.
 # The uid only confirms that row. knowledge_scope from the browser is ignored.
 # A library pin omits document_uid and keeps the previous contract.
+# An equipment-manual card also sends episode_id. Inside the session lock,
+# before the write, authorization, uid, the live episode, and the equipment
+# candidacy are checked again. The candidacy is not taken from the request.
 class PinnedDocumentsController < ApplicationController
   include AuthenticationConcern
 
@@ -21,7 +24,11 @@ class PinnedDocumentsController < ApplicationController
     before_ids = session.focus_document_ids.sort
     already = already_focused?(session, kb_doc)
 
-    unless write_focus!(session, kb_doc)
+    outcome = write_focus!(session, kb_doc)
+    if outcome == :unauthorized
+      return render_focus_failure(:unavailable)
+    end
+    unless outcome == true
       return render_focus_failure(:invalid) if card_confirmation?
 
       render json: { error: "Could not pin document" }, status: :unprocessable_entity
@@ -60,7 +67,7 @@ class PinnedDocumentsController < ApplicationController
   private
 
   def create_params
-    params.permit(:kb_document_id, :document_uid, :correlation_id, :focus_mode)
+    params.permit(:kb_document_id, :document_uid, :correlation_id, :focus_mode, :episode_id)
   end
 
   def replace_focus?
@@ -68,11 +75,24 @@ class PinnedDocumentsController < ApplicationController
   end
 
   def write_focus!(session, kb_doc)
-    if replace_focus?
+    if equipment_manual_card?(kb_doc)
+      session.confirm_equipment_manual!(
+        kb_doc,
+        expected_episode_id: create_params[:episode_id],
+        document_uid: create_params[:document_uid].to_s,
+        viewer_account: current_account,
+        replace: replace_focus?
+      )
+    elsif replace_focus?
       session.replace_document_focus!(kb_doc)
     else
       session.pin_kb_document!(kb_doc)
     end
+  end
+
+  def equipment_manual_card?(kb_doc)
+    card_confirmation? &&
+      Rag::DocumentIdentityCatalog.current.for_document(kb_doc)&.role == "equipment"
   end
 
   def card_confirmation?

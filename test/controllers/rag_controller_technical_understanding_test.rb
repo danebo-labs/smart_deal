@@ -130,11 +130,23 @@ class RagControllerTechnicalUnderstandingTest < ActionDispatch::IntegrationTest
     vf5 = catalog_row("VF5+")
     web_session.pin_kb_document!(elemont)
     queries = []
-    body = ask("¿Cómo uso el módulo electrónico VF5?", queries: queries)
+    body = ask("¿Cómo uso el módulo electrónico VF5+?", queries: queries)
 
     assert_equal 1, queries.size
     assert_not_includes body["answer"], "puede significar"
     assert_equal [ vf5.document_uid ], body.dig("manual_suggestion", "cards").pluck("document_uid")
+    assert_equal [ elemont.id ], web_session.reload.document_focus_entries.pluck("kb_document_id")
+  end
+
+  test "unsigned VF5 does not offer the VF5+ manual and the open query still runs" do
+    elemont = catalog_row("MH")
+    catalog_row("VF5+")
+    web_session.pin_kb_document!(elemont)
+    queries = []
+    body = ask("¿Cómo uso el módulo electrónico VF5?", queries: queries)
+
+    assert_equal 1, queries.size
+    assert_nil body["manual_suggestion"]
     assert_equal [ elemont.id ], web_session.reload.document_focus_entries.pluck("kb_document_id")
   end
 

@@ -748,6 +748,38 @@ class ConversationSession < ApplicationRecord
     pinned
   end
 
+  # Equipment-manual card. One lock, then the write. Authorization, the row
+  # uid, the live episode, and the equipment candidacy are read again here.
+  # The candidacy comes from the episode and the catalog, not from the client.
+  # pin_kb_document_if_episode_owner! stays the ingestion path.
+  def confirm_equipment_manual!(kb_doc, expected_episode_id:, document_uid:, viewer_account:, replace: false)
+    return false if viewer_account.nil?
+
+    with_lock do
+      row = KbDocument.find_by(id: kb_doc.id)
+      uid = document_uid.to_s
+      next false if row.nil? || uid.blank? || row.document_uid.to_s != uid
+      next :unauthorized unless Rag::KnowledgeScopePolicy.authorized?(row, viewer_account: viewer_account)
+
+      expected = expected_episode_id.to_s.presence
+      current = live_episode_id
+      next false if expected.blank? || expected != current
+      next false unless Rag::DocumentDiscovery.equipment_candidate?(
+        session: self, document: row, viewer_account: viewer_account
+      )
+
+      s3_uri = row.display_s3_uri(KbDocument::KB_BUCKET)
+      next false if s3_uri.blank?
+
+      if replace && uses_document_focus?
+        update!(document_focus: [ focus_entry_for(row, s3_uri) ])
+        next true
+      end
+
+      write_focus!(row, s3_uri)
+    end
+  end
+
   # Unpin this session's focus. Match the stored kb_document_id first so a
   # revoked document can still be removed. source_uri remains the fallback
   # for a pin written before that id was stored.
@@ -1383,6 +1415,15 @@ class ConversationSession < ApplicationRecord
     else
       write_pinned_document!(kb_doc, s3_uri)
     end
+  end
+
+  def focus_entry_for(kb_doc, s3_uri)
+    {
+      "kb_document_id" => kb_doc.id,
+      "source_uri" => s3_uri,
+      "display_name" => kb_doc.display_name.presence || File.basename(kb_doc.s3_key.to_s, ".*"),
+      "added_at" => Time.current.iso8601
+    }
   end
 
   def write_document_focus!(kb_doc, s3_uri)

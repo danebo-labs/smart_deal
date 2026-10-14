@@ -1005,9 +1005,10 @@ export default class extends Controller {
     const clearLabel = suggestion.focus_clear || "Quitar foco"
     const focusedStatus = suggestion.focus_status || "Manual enfocado"
     const invalidStatus = suggestion.focus_invalid || "No pude seleccionar este manual."
+    const episodeId = suggestion.episode_id || ""
     const articles = cards.map((card) => {
       const label = card.action_label || actionLabel
-      return this.renderManualCard(card, suggestion.correlation_id, label, clearLabel, focusedStatus)
+      return this.renderManualCard(card, suggestion.correlation_id, label, clearLabel, focusedStatus, episodeId)
     }).join("")
     const tie = suggestion.tie_at_top === true ? "true" : "false"
     const replayFailed = suggestion.replay_failed || "El manual quedó seleccionado. No pude volver a consultar. Podés reintentar."
@@ -1015,13 +1016,13 @@ export default class extends Controller {
     return `<section class="manual-suggestion mt-3 flex flex-col gap-2" aria-label="Sugerencias de manual" data-tie-at-top="${tie}" data-selected="none" data-focus-action="${this.escapeAttribute(actionLabel)}" data-focus-clear="${this.escapeAttribute(clearLabel)}" data-focus-status="${this.escapeAttribute(focusedStatus)}" data-focus-invalid="${this.escapeAttribute(invalidStatus)}" data-replay-failed="${this.escapeAttribute(replayFailed)}" data-replay-reused="${this.escapeAttribute(replayReused)}">${articles}</section>`
   }
 
-  renderManualCard(card, correlationId, actionLabel, clearLabel, focusedStatus) {
+  renderManualCard(card, correlationId, actionLabel, clearLabel, focusedStatus, episodeId) {
     const name = this.escapeHtml(card.display_name || "")
     const text = this.escapeHtml(card.text || "")
     const provenance = this.escapeHtml(card.provenance || "")
     const actionable = card.kb_document_id != null && card.kb_document_id !== "" && card.document_uid
     const focused = card.focused === true
-    const action = actionable ? this.renderManualFocusButton(card, correlationId, focused, actionLabel, clearLabel, focusedStatus) : ""
+    const action = actionable ? this.renderManualFocusButton(card, correlationId, focused, actionLabel, clearLabel, focusedStatus, episodeId) : ""
     return `<article class="rounded-xl border border-[hsl(215,20%,88%)] bg-[hsl(215,20%,97%)] px-4 py-3" data-suggestion-label="${this.escapeAttribute(card.label || "")}" data-suggestion-scope="${this.escapeAttribute(card.knowledge_scope || "")}" data-focused="${focused ? "true" : "false"}">
         <p class="text-sm font-medium leading-5 text-[hsl(215,25%,16%)]">${name}</p>
         <p class="mt-1 text-sm leading-5 text-[hsl(215,16%,32%)]">${text}</p>
@@ -1030,16 +1031,19 @@ export default class extends Controller {
       </article>`
   }
 
-  renderManualFocusButton(card, correlationId, focused, actionLabel, clearLabel, focusedStatus) {
+  renderManualFocusButton(card, correlationId, focused, actionLabel, clearLabel, focusedStatus, episodeId) {
     const label = focused ? clearLabel : actionLabel
     const status = focused ? focusedStatus : ""
+    const episodeAttribute = episodeId
+      ? ` data-episode-id="${this.escapeAttribute(String(episodeId))}"`
+      : ""
     return `<button type="button"
         class="manual-focus-action mt-3 min-h-11 w-full rounded-xl border border-[hsl(217,91%,50%)] bg-white px-4 py-2.5 text-left text-sm font-medium text-[hsl(217,91%,42%)] active:bg-[hsl(217,91%,95%)]"
         data-action="click->rag-chat#confirmManualFocus"
         data-kb-document-id="${this.escapeAttribute(String(card.kb_document_id))}"
         data-document-uid="${this.escapeAttribute(card.document_uid || "")}"
         data-correlation-id="${this.escapeAttribute(correlationId || "")}"
-        data-focus-mode="${this.escapeAttribute(card.action || "add")}"
+        data-focus-mode="${this.escapeAttribute(card.action || "add")}"${episodeAttribute}
         data-focused="${focused ? "true" : "false"}"
         aria-pressed="${focused ? "true" : "false"}">${this.escapeHtml(label)}</button>
       <p class="manual-focus-status mt-2 text-sm leading-5 text-[hsl(215,16%,32%)]" role="status">${this.escapeHtml(status)}</p>`
@@ -1080,7 +1084,7 @@ export default class extends Controller {
         }
         const response = focused
           ? await this.unpinManualFocus(docId, uid, correlation)
-          : await this.pinManualFocus(docId, uid, correlation, button.dataset.focusMode || "add")
+          : await this.pinManualFocus(docId, uid, correlation, button.dataset.focusMode || "add", button.dataset.episodeId)
         const payload = await response.json().catch(() => ({}))
         if (!response.ok) {
           this.setManualFocusStatus(article, payload.error || section?.dataset.focusInvalid || "No pude seleccionar este manual.")
@@ -1153,9 +1157,10 @@ export default class extends Controller {
     button.disabled = true
   }
 
-  pinManualFocus(docId, uid, correlationId, focusMode) {
+  pinManualFocus(docId, uid, correlationId, focusMode, episodeId) {
     const body = { kb_document_id: docId, document_uid: uid, focus_mode: focusMode || "add" }
     if (correlationId) body.correlation_id = correlationId
+    if (episodeId) body.episode_id = episodeId
     return fetch("/pinned_documents", {
       method: "POST",
       headers: this._jsonHeaders(),

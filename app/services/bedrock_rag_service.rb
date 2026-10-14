@@ -1740,6 +1740,13 @@ class BedrockRagService
     []
   end
 
+  # Nil until the phase 4 web check has loaded. Does not autoload it.
+  def phase4_web_budget
+    return unless defined?(Rag::Phase4WebCheck)
+
+    Rag::Phase4WebCheck::Budget
+  end
+
   # Nil until the phase 1 service has loaded its budget. Does not autoload it.
   def phase1_model_budget
     return unless defined?(Rag::Phase1ModelBudget)
@@ -1789,10 +1796,12 @@ class BedrockRagService
     gate.check!(chunks, correlation_id: correlation_id)
   end
 
-  # Phase 3 applies only while that run is armed. Otherwise this is the
-  # phase 2 budget while that run is armed, then the phase 1 budget, or nil
-  # when none of those runs is armed.
+  # The phase 4 web check applies only while that process is armed. Otherwise
+  # phase 3, then phase 2, then phase 1, or nil when none of those runs is armed.
   def armed_validation_budget
+    phase4 = phase4_web_budget
+    return phase4 if phase4&.armed?
+
     phase3 = phase3_model_budget
     return phase3 if phase3&.armed?
 
@@ -1806,6 +1815,9 @@ class BedrockRagService
   end
 
   def armed_retrieve_limit
+    phase4 = phase4_web_budget
+    return phase4 if phase4&.armed?
+
     phase3 = phase3_retrieve_limit
     return phase3 if phase3&.armed?
 

@@ -568,8 +568,69 @@ module Rag
         return [ "correct", nil, kept, merged, ambiguities, nil ]
       end
 
+      recovered = omitted_identifier_negation(move, identities)
+      if recovered
+        return [ "correct", nil, recovered, observations, ambiguities, nil ]
+      end
+
       @correction = ObservationCorrection.none unless @correction&.active?
       [ move, resolution, identities, observations, ambiguities, target ]
+    end
+
+    # The model named the replacement and omitted the negate span. Recover it
+    # only when the turn itself denies exactly one current identifier. A fact
+    # slot still needs the span the model sent. A missing or shared denial
+    # stays a clarification.
+    def omitted_identifier_negation(move, identities)
+      return nil unless move == "correct"
+      return nil if identities.any? { |item| item.act == "negate" }
+
+      asserted = identities.select { |item| item.act == "assert" && %w[identifier fact].include?(item.kind) }
+      return nil unless asserted.one?
+
+      denied = explicit_current_identifier
+      return nil if denied.blank?
+
+      replacement = FollowupQueryRewriter.normalize_label(asserted.first.value.presence || asserted.first.span)
+      return nil if replacement.blank? || replacement == FollowupQueryRewriter.normalize_label(denied)
+
+      note_rule(
+        "recover_stated_correction", denied, "explicit_identifier_negation",
+        { "rejected" => denied, "asserted" => asserted.first.span }
+      )
+      [ identifier_negation(denied) ] + identities
+    end
+
+    def explicit_current_identifier
+      values = Array(@episode.identifiers).filter_map { |item| item["value"].to_s.presence }
+      return nil if values.empty?
+
+      turn_label = FollowupQueryRewriter.normalize_label(@turn)
+      matched = values.select { |value| denied_identifier?(turn_label, value) }
+      return nil unless matched.one?
+
+      chosen = matched.first
+      return nil if shadowed_identifier?(chosen, values)
+
+      chosen
+    end
+
+    def denied_identifier?(turn_label, value)
+      label = FollowupQueryRewriter.normalize_label(value)
+      return false if label.blank? || !literal_span?(value)
+
+      turn_label.match?(
+        /(?<![[:alnum:]])no(?:\s+(?:es|era|de|del|la|el|al|un|una))*\s+#{Regexp.escape(label)}(?![[:alnum:]])/
+      )
+    end
+
+    def shadowed_identifier?(chosen, values)
+      label = FollowupQueryRewriter.normalize_label(chosen)
+      values.any? { |other|
+        next false if other == chosen
+
+        contained_phrase?(label, FollowupQueryRewriter.normalize_label(other))
+      }
     end
 
     def keep_stated_correction

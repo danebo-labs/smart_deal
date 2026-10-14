@@ -220,6 +220,139 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_nil episode.fact("model")
   end
 
+  test "an omitted negate is recovered when the turn denies one current identifier" do
+    episode = label_episode("Chapa nivel 2")
+    episode_id = episode.episode_id
+    turn = "Me equivoqué de etiqueta: estoy siguiendo Chapa nivel 3, no Chapa nivel 2."
+    result = nil
+    events = Rag::ValidationCapture.capture {
+      result = perceive(correct_payload([ assert_span("Chapa nivel 3", "designator") ]), turn, episode: episode)
+    }
+    decision = settle(episode, result, turn)
+    query = Rag::QueryComposer.call(state: episode, turn: turn, perception: result, decision: decision)
+    later = Rag::QueryComposer.call(
+      state: episode, turn: "¿Dónde queda entonces?", perception: nil, decision: decision
+    )
+    applied = events.find { |row| row["kind"] == "perception_applied" }
+    current = episode.identifiers.find { |item| item["value"] == "Chapa nivel 3" }
+    rejected = episode.rejected.find { |item| item["value"] == "Chapa nivel 2" }
+
+    assert_equal "correct", result.move
+    assert_nil result.clarification_target
+    assert_equal "identifier", result.identities.find { |item| item.act == "negate" }.slot
+    assert_equal "user", current["source"]
+    assert_equal "seed", current["correlation_id"]
+    assert_equal "identifier", rejected["slot"]
+    assert_includes episode.identifiers.pluck("value"), "Elemont MH"
+    assert_not_includes episode.identifiers.pluck("value"), "Chapa nivel 2"
+    assert_equal "Elemont", episode.fact("manufacturer")["value"]
+    assert_equal "user", episode.fact("manufacturer")["source"]
+    assert_equal "En el plano seleccionado veo referencias a seguridad de puerta y a chapa", episode.goal["text"]
+    assert_nil episode.pending_question
+    assert_equal episode_id, episode.episode_id
+    assert_includes query, "Chapa nivel 3"
+    assert_not_includes query, "Chapa nivel 2"
+    assert_includes query, "Elemont MH"
+    assert_includes later, "Chapa nivel 3"
+    assert_not_includes later, "Chapa nivel 2"
+    assert decision.performs_retrieval?
+    assert applied["adjustments"].any? { |row| row["reason"] == "explicit_identifier_negation" }
+    assert applied["adjustments"].none? { |row| row["reason"] == "correct_without_slot_negation" }
+    assert_not Rag::ObservationCorrection.resolve(turn: turn).active?
+  end
+
+  test "an omitted negate is recovered for another current label" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    episode.append_identifier!("Elemont MH", correlation_id: "seed", source: "user")
+    episode.append_identifier!("Tablero norte", correlation_id: "seed", source: "user")
+    episode_id = episode.episode_id
+    turn = "Me equivoqué de etiqueta: estoy siguiendo Tablero sur, no Tablero norte."
+    result = perceive(correct_payload([ assert_span("Tablero sur", "designator") ]), turn, episode: episode)
+    decision = settle(episode, result, turn)
+    query = Rag::QueryComposer.call(state: episode, turn: turn, perception: result, decision: decision)
+
+    assert_equal "correct", result.move
+    assert_equal "user", episode.identifiers.find { |item| item["value"] == "Tablero sur" }["source"]
+    assert_equal "identifier", episode.rejected.find { |item| item["value"] == "Tablero norte" }["slot"]
+    assert_includes episode.identifiers.pluck("value"), "Elemont MH"
+    assert_not_includes episode.identifiers.pluck("value"), "Tablero norte"
+    assert_equal episode_id, episode.episode_id
+    assert_includes query, "Tablero sur"
+    assert_not_includes query, "Tablero norte"
+    assert decision.performs_retrieval?
+    assert_not Rag::ObservationCorrection.resolve(turn: turn).active?
+  end
+
+  test "an omitted negate accepts a copula that is not an observation tail" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    episode.append_identifier!("Bornera norte", correlation_id: "seed", source: "user")
+    turn = "Sigo Bornera sur no es Bornera norte."
+    result = perceive(correct_payload([ assert_span("Bornera sur") ]), turn, episode: episode)
+    settle(episode, result, turn)
+
+    assert_not Rag::ObservationCorrection.resolve(turn: turn).active?
+    assert_equal "correct", result.move
+    assert_equal "user", episode.identifiers.find { |item| item["value"] == "Bornera sur" }["source"]
+    assert_equal "identifier", episode.rejected.find { |item| item["value"] == "Bornera norte" }["slot"]
+  end
+
+  test "a correct assert without an explicit identifier denial stays unclear" do
+    episode = label_episode("Chapa nivel 2")
+    turn = "Estoy siguiendo Chapa nivel 3."
+    result = perceive(correct_payload([ assert_span("Chapa nivel 3", "designator") ]), turn, episode: episode)
+    settle(episode, result, turn)
+
+    assert_equal "unclear", result.move
+    assert_equal "correction_target", result.clarification_target
+    assert_empty result.identities
+    assert_equal [ "Elemont MH", "Chapa nivel 2" ], episode.identifiers.pluck("value")
+    assert_empty episode.rejected
+  end
+
+  test "an ambiguous identifier denial stays a clarification" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    episode.append_identifier!("Tablero norte", correlation_id: "seed", source: "user")
+    episode.append_identifier!("Tablero sur", correlation_id: "seed", source: "user")
+    unnamed = "No, ese no. Estoy siguiendo Tablero este."
+    both = "Estoy siguiendo Tablero este, no Tablero norte y no Tablero sur."
+    contained = label_episode("nivel 2")
+    contained.append_identifier!("Chapa nivel 2", correlation_id: "seed", source: "user")
+    contained_turn = "Estoy siguiendo otra pieza, no nivel 2."
+
+    [ [ episode, unnamed, "Tablero este" ], [ episode, both, "Tablero este" ] ].each do |stored, turn, asserted|
+      fresh = Rag::ActiveEpisode.parse(stored.to_h, now: Time.current)
+      result = perceive(correct_payload([ assert_span(asserted, "designator") ]), turn, episode: fresh)
+      settle(fresh, result, turn)
+
+      assert_equal "unclear", result.move, turn
+      assert_equal "correction_target", result.clarification_target, turn
+      assert_empty fresh.rejected, turn
+      assert_equal [ "Tablero norte", "Tablero sur" ], fresh.identifiers.pluck("value"), turn
+    end
+
+    result = perceive(correct_payload([ assert_span("otra pieza", "designator") ]), contained_turn, episode: contained)
+    settle(contained, result, contained_turn)
+
+    assert_equal "unclear", result.move
+    assert_equal "correction_target", result.clarification_target
+    assert_includes contained.identifiers.pluck("value"), "nivel 2"
+    assert_includes contained.identifiers.pluck("value"), "Chapa nivel 2"
+    assert_empty contained.rejected
+  end
+
+  test "an omitted negate does not treat a longer token as the stored identifier" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    episode.append_identifier!("VF5", correlation_id: "seed", source: "user")
+    turn = "No es VF50, es OTIS."
+    result = perceive(correct_payload([ assert_span("OTIS") ]), turn, episode: episode)
+    settle(episode, result, turn)
+
+    assert_equal "unclear", result.move
+    assert_equal "correction_target", result.clarification_target
+    assert_equal [ "VF5" ], episode.identifiers.pluck("value")
+    assert_empty episode.rejected
+  end
+
   test "an observation correction stays correct and keeps the replacement" do
     episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
     episode.append_observation!("detenida cerca de planta 1", correlation_id: "seed")
@@ -1055,6 +1188,21 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     settle(episode, result, turn)
 
     assert_includes episode.observations.pluck("text"), "detenida cerca de planta 1"
+  end
+
+  def label_episode(chosen)
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    episode.assign_goal!(
+      "En el plano seleccionado veo referencias a seguridad de puerta y a chapa",
+      correlation_id: "seed"
+    )
+    episode.write_fact!(
+      "manufacturer", status: "known", value: "Elemont", source: "user",
+      correlation_id: "seed", at: Time.current.iso8601
+    )
+    episode.append_identifier!("Elemont MH", correlation_id: "seed", source: "user")
+    episode.append_identifier!(chosen, correlation_id: "seed", source: "user")
+    episode
   end
 
   def correct_payload(assertions)

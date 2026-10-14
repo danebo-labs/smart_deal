@@ -177,6 +177,61 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     assert_not Rag::ObservationCorrection.resolve(turn: turn).active?
   end
 
+  test "an omitted label negation replaces the named identifier and keeps the pin" do
+    session = web_session
+    doc = manual("plano-referente.pdf", "Plano")
+    session.update!(document_focus: [ focus_entry(doc) ])
+    focus_before = session.document_focus_entries
+    now = Time.current
+    episode = Rag::ActiveEpisode.open(correlation_id: "phase2:seed", now: now)
+    episode.assign_goal!(
+      "En el plano seleccionado veo referencias a seguridad de puerta y a chapa",
+      correlation_id: "phase2:seed"
+    )
+    episode.write_fact!(
+      "manufacturer", status: "known", value: "Elemont", source: "user",
+      correlation_id: "phase2:seed", at: now.iso8601
+    )
+    episode.append_identifier!("Elemont MH", correlation_id: "phase2:seed", source: "user")
+    episode.append_identifier!("Chapa nivel 2", correlation_id: "phase2:12:t2", source: "user")
+    session.update!(active_episode: episode.to_h)
+    turn = "Me equivoqué de etiqueta: estoy siguiendo Chapa nivel 3, no Chapa nivel 2."
+    correlation = "phase3:label"
+    interpreter = client(perception(
+      "correct",
+      assertions: [ assertion("Chapa nivel 3", "assert", "designator") ]
+    ))
+
+    result = with_owner do
+      ask(session, turn, interpreter, correlation: correlation, now: now)
+    end
+
+    stored = session.reload.active_episode
+    current = Array(stored["identifiers"]).find { |item| item["value"] == "Chapa nivel 3" }
+    values = Array(stored["identifiers"]).pluck("value")
+    rejected = Array(stored["rejected"]).find { |item| item["value"] == "Chapa nivel 2" }
+
+    assert_equal focus_before, session.document_focus_entries
+    assert_equal "ready", result.understanding.decision
+    assert_nil result.understanding.clarification
+    assert_equal "user", current["source"]
+    assert_equal correlation, current["correlation_id"]
+    assert_not_includes values, "Chapa nivel 2"
+    assert_includes values, "Elemont MH"
+    assert_equal "identifier", rejected["slot"]
+    assert_equal "Elemont", stored.dig("facts", "manufacturer", "value")
+    assert_equal "user", stored.dig("facts", "manufacturer", "source")
+    assert_equal episode.goal["text"], stored.dig("goal", "text")
+    assert_nil stored["pending_question"]
+    assert_equal episode.episode_id, stored["episode_id"]
+    assert_includes result.composed, "Chapa nivel 3"
+    assert_not_includes result.composed, "Chapa nivel 2"
+    assert_includes result.composed, "Elemont MH"
+    assert_includes result.fields_changed, "identifiers"
+    assert_equal 1, interpreter.payloads.size
+    assert_not Rag::ObservationCorrection.resolve(turn: turn).active?
+  end
+
   test "an unknown referent reply and a pair of asserts keep the pending doubt" do
     unknown = open_generic_referent
     unknown_result = with_owner do

@@ -40,12 +40,34 @@ class BedrockRagServiceGroundedSynthesisTest < ActiveSupport::TestCase
 
   test "variant off is byte-identical to the current strict template" do
     prompt = BedrockRagService.load_generation_prompt_template(grounded_synthesis: false)
+    without_guidance = BedrockRagService.load_generation_prompt_template(
+      grounded_synthesis: false,
+      field_guidance: false
+    )
 
+    assert_equal prompt, without_guidance
     assert_equal STRICT_OFF_SHA256, Digest::SHA256.hexdigest(prompt)
     assert_not_includes prompt, "GROUNDED_SYNTHESIS"
+    assert_not_includes prompt, "FIELD_GUIDANCE"
     assert_not_includes prompt, "STRICT_ONLY"
     assert_not_includes prompt, BedrockRagService::GROUNDED_SYNTHESIS_PROMPT_PREFIX
+    assert_not_includes prompt, BedrockRagService::FIELD_GUIDANCE_PROMPT_PREFIX
     assert_not_includes prompt, BedrockRagService::STRICT_ONLY_PROMPT_PREFIX
+  end
+
+  test "field guidance changes the grounded prompt only by its three lines" do
+    full = BedrockRagService.load_generation_prompt_template(grounded_synthesis: true)
+    identity = BedrockRagService.load_generation_prompt_template(grounded_synthesis: true, field_guidance: false)
+    removed = full.lines - identity.lines
+
+    assert_equal [], identity.lines - full.lines
+    assert_equal 3, removed.size
+    assert removed.any? { |line| line.include?("what is obvious for that kind of component and function") }
+    assert removed.any? { |line| line.include?("does not suppress the allowed layer-3 observations") }
+    assert removed.any? { |line| line.include?("Open with what the technician can check or do next") }
+    assert_not full.lines.any? { |line| line.start_with?("- FIELD_GUIDANCE:", "FIELD_GUIDANCE:") }
+    assert_includes identity, "Do not replace a procedure the retrieved text already documents."
+    assert_includes identity, "Reason, infer, and conclude from chunks"
   end
 
   test "variant on keeps no STRICT_ONLY line and no literal variant prefix" do
@@ -125,19 +147,22 @@ class BedrockRagServiceGroundedSynthesisTest < ActiveSupport::TestCase
     assert_not_includes on_block, "# DISCRIMINATING QUESTION"
   end
 
-  test "production memoizes by partial_contract and grounded_synthesis" do
+  test "production memoizes by partial_contract, grounded_synthesis, and field_guidance" do
     reset_prompt_memo
     Rails.env.define_singleton_method(:production?) { true }
 
     off = BedrockRagService.load_generation_prompt_template(grounded_synthesis: false)
     off_again = BedrockRagService.load_generation_prompt_template(grounded_synthesis: false)
     on = BedrockRagService.load_generation_prompt_template(grounded_synthesis: true)
+    identity = BedrockRagService.load_generation_prompt_template(grounded_synthesis: true, field_guidance: false)
 
     assert_same off, off_again
     assert_not_same off, on
+    assert_not_same on, identity
     cache = BedrockRagService.instance_variable_get(:@generation_prompt_templates)
-    assert cache.key?([ false, false ])
-    assert cache.key?([ false, true ])
+    assert cache.key?([ false, false, true ])
+    assert cache.key?([ false, true, true ])
+    assert cache.key?([ false, true, false ])
   ensure
     if Rails.env.singleton_class.instance_methods(false).include?(:production?)
       Rails.env.singleton_class.remove_method(:production?)
@@ -211,7 +236,7 @@ class BedrockRagServiceGroundedSynthesisTest < ActiveSupport::TestCase
 
     service.send(:load_generation_prompt_with_locale, "pregunta", response_locale: :es)
 
-    assert_equal({ grounded_synthesis: true }, seen)
+    assert_equal({ grounded_synthesis: true, field_guidance: true }, seen)
   ensure
     BedrockRagService.define_singleton_method(:load_generation_prompt_template) do |**kwargs|
       original.call(**kwargs)

@@ -36,23 +36,21 @@ class BedrockRagService
   TEXT
   # Attribution limit for direct document-identity generation. It is not part of
   # the shared generation template, so retrieve_and_generate and the other
-  # direct routes do not receive it. It follows the general prompt, including
-  # the grounded "what is obvious" orientation, and precedes the citation line.
+  # direct routes do not receive it. This route also omits the three
+  # FIELD_GUIDANCE lines. The contract precedes the citation line.
   DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT = <<~TEXT.strip.freeze
     # DOCUMENT IDENTITY ATTRIBUTION
-    When a function or a specification is attributed to the drawing, this contract takes precedence over the general instruction to state what is obvious for that kind of component. What is obvious is not a statement of the drawing.
-
     - A printed label, a column heading, or a bus name does not by itself prove that component's function, supply, or connection.
     - A claim presented as what the drawing states must be supported by the retrieved text and explicitly linked to the component asked about. Compatible fragments that document that same link may be combined. Do not transfer a fact from another component.
     - The physical-connection rule and TOPOLOGY_EDGE records above remain in force.
-    - An allowed interpretation is identified as inference and cites only the documented premises it uses. That citation does not make the conclusion text of the drawing. Do not infer an electrical specification from a bus name.
+    - When the passages state only a label and its location, the answer is that label, its location, and the other labels the same passage places next to it, cited. Then say the passages do not state its function, supply, or connection. Do not add the component's principle, purpose, or what it drives; do not add an inference paragraph.
     - When support is missing, limit the absence to the passages in this prompt. Do not say the whole document lacks the datum.
-    - Do not state a function as documented and then deny it.
     - Name another sheet as the documentary location of this component only when the evidence links that component to that sheet.
-    - A supported location or label may still be answered when the function is missing.
+    - A closing question must not presuppose a function, connection, or value the passages do not state.
   TEXT
   PARTIAL_ABSTENTION_PROMPT_PREFIX = "- PARTIAL_ABSTENTION_CONTRACT:"
   GROUNDED_SYNTHESIS_PROMPT_PREFIX = "- GROUNDED_SYNTHESIS:"
+  FIELD_GUIDANCE_PROMPT_PREFIX = "- FIELD_GUIDANCE:"
   STRICT_ONLY_PROMPT_PREFIX = "- STRICT_ONLY:"
   GROUNDED_SYNTHESIS_CONTRACT_VERSION = "gs-v1"
   STRICT_CONTRACT_VERSION = "strict-v1"
@@ -1108,7 +1106,8 @@ class BedrockRagService
       question,
       response_locale: response_locale,
       session_context: session_context,
-      output_channel: output_channel
+      output_channel: output_channel,
+      field_guidance: false
     )
     template
       .sub("$query$") { question.to_s }
@@ -1896,8 +1895,11 @@ class BedrockRagService
   #
   # OUTPUT_FORMAT_PLACEHOLDER is lifted out before the dynamic directives are
   # appended and re-emitted last, so the citation contract always closes the prompt.
-  def load_generation_prompt_with_locale(question = nil, response_locale: nil, session_context: nil, output_channel: nil)
-    base = self.class.load_generation_prompt_template(grounded_synthesis: grounded_synthesis?)
+  def load_generation_prompt_with_locale(question = nil, response_locale: nil, session_context: nil, output_channel: nil, field_guidance: true)
+    base = self.class.load_generation_prompt_template(
+      grounded_synthesis: grounded_synthesis?,
+      field_guidance: field_guidance
+    )
     output_contract = base.include?(OUTPUT_FORMAT_PLACEHOLDER)
     base = base.sub(OUTPUT_FORMAT_PLACEHOLDER, "").rstrip if output_contract
     locale = if response_locale.present?
@@ -2247,28 +2249,30 @@ class BedrockRagService
   # Each RAG request renders the prompt twice (build_complete_optimized_config
   # + the post-response token-count assembly) — without memoization that means
   # 2 File.read syscalls per request multiplied by N concurrent requests.
-  def self.load_generation_prompt_template(grounded_synthesis: false)
+  def self.load_generation_prompt_template(grounded_synthesis: false, field_guidance: true)
     partial_contract = Rag::PartialAbstentionContractFlag.enabled?
     grounded_synthesis = grounded_synthesis == true
+    field_guidance = field_guidance == true
 
     if Rails.env.production?
       @generation_prompt_templates ||= {}
-      @generation_prompt_templates[[partial_contract, grounded_synthesis]] ||= begin
+      @generation_prompt_templates[[partial_contract, grounded_synthesis, field_guidance]] ||= begin
         template = @generation_prompt_template ||=
           Rails.root.join("app/prompts/bedrock/generation.txt").read
-        filter_generation_prompt(template, partial_contract:, grounded_synthesis:)
+        filter_generation_prompt(template, partial_contract:, grounded_synthesis:, field_guidance:)
       end
     else
       template = Rails.root.join("app/prompts/bedrock/generation.txt").read
-      filter_generation_prompt(template, partial_contract:, grounded_synthesis:)
+      filter_generation_prompt(template, partial_contract:, grounded_synthesis:, field_guidance:)
     end
   end
 
-  def self.filter_generation_prompt(template, partial_contract:, grounded_synthesis:)
+  def self.filter_generation_prompt(template, partial_contract:, grounded_synthesis:, field_guidance:)
     template.lines.filter_map do |line|
       next if !partial_contract && line.start_with?(PARTIAL_ABSTENTION_PROMPT_PREFIX)
       next if grounded_synthesis && strict_only_prompt_line?(line)
       next if !grounded_synthesis && grounded_synthesis_prompt_line?(line)
+      next if !field_guidance && field_guidance_prompt_line?(line)
 
       strip_variant_prompt_prefix(line)
     end.join
@@ -2276,9 +2280,14 @@ class BedrockRagService
   private_class_method :filter_generation_prompt
 
   def self.grounded_synthesis_prompt_line?(line)
-    line.match?(/\A\s*-?\s*GROUNDED_SYNTHESIS:/)
+    line.match?(/\A\s*-?\s*(?:GROUNDED_SYNTHESIS|FIELD_GUIDANCE):/)
   end
   private_class_method :grounded_synthesis_prompt_line?
+
+  def self.field_guidance_prompt_line?(line)
+    line.match?(/\A\s*-?\s*FIELD_GUIDANCE:/)
+  end
+  private_class_method :field_guidance_prompt_line?
 
   def self.strict_only_prompt_line?(line)
     line.match?(/\A\s*-?\s*STRICT_ONLY:/)
@@ -2286,12 +2295,12 @@ class BedrockRagService
   private_class_method :strict_only_prompt_line?
 
   def self.strip_variant_prompt_prefix(line)
-    if line.match?(/\A\s*-?\s*(?:GROUNDED_SYNTHESIS|STRICT_ONLY):/)
-      rest = line.sub(/\A\s*-?\s*(?:GROUNDED_SYNTHESIS|STRICT_ONLY):\s?/, "")
+    if line.match?(/\A\s*-?\s*(?:GROUNDED_SYNTHESIS|FIELD_GUIDANCE|STRICT_ONLY):/)
+      rest = line.sub(/\A\s*-?\s*(?:GROUNDED_SYNTHESIS|FIELD_GUIDANCE|STRICT_ONLY):\s?/, "")
       return rest if rest.start_with?("#")
-      return line.sub(/\A(\s+)(?:GROUNDED_SYNTHESIS|STRICT_ONLY):\s?/, "\\1") if line.match?(/\A\s+(?:GROUNDED_SYNTHESIS|STRICT_ONLY):/)
+      return line.sub(/\A(\s+)(?:GROUNDED_SYNTHESIS|FIELD_GUIDANCE|STRICT_ONLY):\s?/, "\\1") if line.match?(/\A\s+(?:GROUNDED_SYNTHESIS|FIELD_GUIDANCE|STRICT_ONLY):/)
 
-      line.sub(/\A(\s*)-\s*(?:GROUNDED_SYNTHESIS|STRICT_ONLY):\s?/, "\\1- ")
+      line.sub(/\A(\s*)-\s*(?:GROUNDED_SYNTHESIS|FIELD_GUIDANCE|STRICT_ONLY):\s?/, "\\1- ")
     else
       line
     end

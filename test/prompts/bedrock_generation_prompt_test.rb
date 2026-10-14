@@ -281,6 +281,21 @@ class BedrockGenerationPromptTest < ActiveSupport::TestCase
     assert_includes prompt, "can duplicate or\n  misspell what the table states correctly"
   end
 
+  test "published variants do not keep a FIELD_GUIDANCE prefix" do
+    [ false, true ].each do |synthesis|
+      [ false, true ].each do |guidance|
+        rendered = BedrockRagService.load_generation_prompt_template(
+          grounded_synthesis: synthesis,
+          field_guidance: guidance
+        )
+        rendered.lines.each do |line|
+          assert_not line.start_with?("- FIELD_GUIDANCE:"), line
+          assert_not line.start_with?("FIELD_GUIDANCE:"), line
+        end
+      end
+    end
+  end
+
   test "uses output_format_instructions as the single output contract" do
     assert_includes prompt, "$output_format_instructions$"
     # F1: the custom <DOC_REFS> block is retired — its XML parser collided with the

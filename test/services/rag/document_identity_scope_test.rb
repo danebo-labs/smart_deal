@@ -2171,37 +2171,51 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       other = route.send(:generation_prompt, [ chunk("plano", "Etiqueta visible en el bus.", canonical_name: "Plano") ])
 
       assert_includes prompt, "# DOCUMENT IDENTITY ATTRIBUTION"
-      assert_includes prompt, "takes precedence over the general instruction to state what is obvious"
       assert_includes prompt, "does not by itself prove that component's function, supply, or connection"
       assert_includes prompt, "explicitly linked to the component asked about"
       assert_includes prompt, "TOPOLOGY_EDGE records above remain in force"
       assert_includes prompt, "A physical connection claim"
       assert_includes prompt, "RECORD_TYPE: TOPOLOGY_EDGE"
-      assert_includes prompt, "identified as inference"
-      assert_includes prompt, "does not make the conclusion text of the drawing"
-      assert_includes prompt, "Do not infer an electrical specification from a bus name."
+      assert_includes prompt, "When the passages state only a label and its location"
+      assert_includes prompt, "Do not add the component's principle, purpose, or what it drives"
+      assert_includes prompt, "do not add an inference paragraph"
+      assert_includes prompt, "A closing question must not presuppose a function, connection, or value"
       assert_includes prompt, "limit the absence to the passages in this prompt"
       assert_includes prompt, "Do not say the whole document lacks the datum."
-      assert_includes prompt, "Do not state a function as documented and then deny it."
       assert_includes prompt, "only when the evidence links that component to that sheet"
-      assert_includes prompt, "may still be answered when the function is missing"
-      assert_includes prompt, obvious
-      assert prompt.index(obvious) < prompt.index("# DOCUMENT IDENTITY ATTRIBUTION")
+      assert_includes prompt, "Treat printed identifiers, device names, and visible labels as labels only"
+      assert_includes prompt, "unless the retrieved evidence states a function, value, or connection"
+      assert_includes prompt, "Do not replace a procedure the retrieved text already documents."
+      assert_includes prompt, "Reason, infer, and conclude from chunks"
+      assert_not_includes prompt, "Cite a procedure as this equipment's fact"
+      assert_not_includes prompt, obvious
+      assert_not_includes prompt, "Open with what the technician can check or do next"
+      assert_not_includes prompt, "layer-3 observations"
+      assert_not_includes prompt, "takes precedence over the general instruction"
+      assert_not_includes contract, "DATA_NOT_AVAILABLE"
       assert prompt.index("# DOCUMENT IDENTITY ATTRIBUTION") < prompt.index(citation)
       assert_not_includes prompt, "$output_format_instructions$"
+      assert_not prompt.lines.any? { |line| line.start_with?("- FIELD_GUIDANCE:", "FIELD_GUIDANCE:") }
 
-      assert_includes shared, obvious
-      assert_not_includes shared, "# DOCUMENT IDENTITY ATTRIBUTION"
-      assert_includes template, obvious
-      assert_not_includes template, "# DOCUMENT IDENTITY ATTRIBUTION"
-      assert_includes other, obvious
-      assert_not_includes other, "# DOCUMENT IDENTITY ATTRIBUTION"
+      [ shared, template, other ].each do |rendered|
+        assert_includes rendered, obvious
+        assert_includes rendered, "Open with what the technician can check or do next"
+        assert_includes rendered, "layer-3 observations"
+        assert_not_includes rendered, "# DOCUMENT IDENTITY ATTRIBUTION"
+        assert_not rendered.lines.any? { |line| line.start_with?("- FIELD_GUIDANCE:", "FIELD_GUIDANCE:") }
+      end
     end
 
     with_grounded_synthesis(nil) do
       strict = BedrockRagService.load_generation_prompt_template(grounded_synthesis: false)
+      strict_without_guidance = BedrockRagService.load_generation_prompt_template(
+        grounded_synthesis: false,
+        field_guidance: false
+      )
+      assert_equal strict, strict_without_guidance
       assert_not_includes strict, "# DOCUMENT IDENTITY ATTRIBUTION"
       assert_not_includes strict, obvious
+      assert_not_includes strict, "FIELD_GUIDANCE"
     end
   end
 

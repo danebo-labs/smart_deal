@@ -18,6 +18,7 @@ class Rag::Phase2PinnedTurnTest < ActiveSupport::TestCase
     Rag::Phase1ModelBudget.disarm!
     Rag::Phase2ModelBudget.disarm!
     Rag::Phase2RetrieveLimit.disarm!
+    Rag::Phase2RetrievedBodyGate.disarm!
   end
 
   test "both turns keep the same session and the same pin" do

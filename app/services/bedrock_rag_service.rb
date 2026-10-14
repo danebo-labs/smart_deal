@@ -499,6 +499,8 @@ class BedrockRagService
       return deny_retrieval_result(question: question, response_locale: response_locale, correlation_id: correlation_id)
     end
 
+    enforce_phase2_retrieved_body!(retrieval[:chunks], correlation_id: correlation_id)
+
     original = Array(retrieval[:chunks])
     applied = Rag::DocumentIdentityScope.apply(original, identity, focus_uris: entity_s3_uris)
     record_document_identity_scope(original, applied, path: "document_identity")
@@ -759,6 +761,7 @@ class BedrockRagService
       end
 
       chunks = Array(retrieval[:chunks])
+      enforce_phase2_retrieved_body!(chunks, correlation_id: query_correlation_id)
       if chunks.empty?
         focus_empty = true if apply_filter && index.zero?
         if retry_open && index.zero?
@@ -1755,6 +1758,22 @@ class BedrockRagService
     return unless defined?(Rag::Phase2RetrieveLimit)
 
     Rag::Phase2RetrieveLimit
+  end
+
+  # Nil until the phase 2 harness has loaded the body gate. Does not autoload it.
+  def phase2_retrieved_body_gate
+    return unless defined?(Rag::Phase2RetrievedBodyGate)
+
+    Rag::Phase2RetrievedBodyGate
+  end
+
+  # Uses the chunks this turn already retrieved. A disarmed gate returns
+  # without reading them and without starting another retrieval.
+  def enforce_phase2_retrieved_body!(chunks, correlation_id: nil)
+    gate = phase2_retrieved_body_gate
+    return unless gate&.armed?
+
+    gate.check!(chunks, correlation_id: correlation_id)
   end
 
   # Phase 2 applies only while that run is armed. Otherwise this is the

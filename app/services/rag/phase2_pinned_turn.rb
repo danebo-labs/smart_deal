@@ -378,6 +378,7 @@ module Rag
           Phase2RetrieveLimit.restore!(retrieve_budget || {})
         end
         Phase2RetrieveLimit.begin_turn!
+        Phase2RetrievedBodyGate.arm!
         Phase1QueueGuard.activate!
         ValidationCapture.capture do |bucket|
           events = bucket
@@ -444,7 +445,7 @@ module Rag
         end
         remember_observation(outcome, held_session, observed_before, held_correlation, held_query)
         outcome
-      rescue Phase2ModelBudget::Stop, Phase2RetrieveLimit::Stop => error
+      rescue Phase2ModelBudget::Stop, Phase2RetrieveLimit::Stop, Phase2RetrievedBodyGate::Stop => error
         outcome = stopped(held_session, document, events, error.message)
         remember_observation(outcome, held_session, observed_before, held_correlation, held_query)
         outcome
@@ -460,6 +461,7 @@ module Rag
         stamp(outcome)
         Phase2ModelBudget.disarm!
         Phase2RetrieveLimit.disarm!
+        Phase2RetrievedBodyGate.disarm!
         Phase1QueueGuard.disarm!
       end
 

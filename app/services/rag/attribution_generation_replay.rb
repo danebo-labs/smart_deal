@@ -7,12 +7,19 @@ module Rag
   # general-inference clauses. It does not call a model unless
   # PHASE2_ATTRIBUTION_GENERATION_AUTHORIZED=1.
   # Two calls repeat one prompt. They do not measure general reliability.
+  # Correlations are phase2:attr:gen:<tag>:1 and :2. The tag defaults to
+  # voices. Historical phase2:attr:gen:1 and phase2:attr:gen:2 are not reused.
   class AttributionGenerationReplay
     AUTHORIZED_ENV = "PHASE2_ATTRIBUTION_GENERATION_AUTHORIZED"
+    CORRELATION_TAG_ENV = "PHASE2_ATTRIBUTION_CORRELATION_TAG"
     MODEL_ID = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
     TEMPERATURE = 0.1
     MAX_TOKENS = 3000
-    CORRELATIONS = %w[phase2:attr:gen:1 phase2:attr:gen:2].freeze
+    DEFAULT_CORRELATION_TAG = "voices"
+    # Lowercase token. Colons stay the correlation separators, so a tag cannot
+    # recreate phase2:attr:gen:1 or phase2:attr:gen:2.
+    CORRELATION_TAG_PATTERN = /\A[a-z][a-z0-9_]{0,31}\z/
+    HISTORICAL_CORRELATIONS = %w[phase2:attr:gen:1 phase2:attr:gen:2].freeze
     SESSION_HEADINGS = [
       "## Active Field Problem",
       "## Session Focus",
@@ -55,9 +62,36 @@ module Rag
       new(captured_prompt: captured_prompt, account: account).preview
     end
 
-    def self.run(captured_prompt:, account:, client:, output_dir:)
-      new(captured_prompt: captured_prompt, account: account, client: client, output_dir: output_dir).run
+    def self.run(captured_prompt:, account:, client:, output_dir:, correlation_tag: ENV[CORRELATION_TAG_ENV])
+      new(
+        captured_prompt: captured_prompt,
+        account: account,
+        client: client,
+        output_dir: output_dir,
+        correlation_tag: correlation_tag
+      ).run
     end
+
+    def self.correlation_tag(raw = ENV[CORRELATION_TAG_ENV])
+      normalize_correlation_tag(raw)
+    end
+
+    def self.correlations_for(raw = ENV[CORRELATION_TAG_ENV])
+      tag = normalize_correlation_tag(raw)
+      return if tag.nil?
+
+      ids = [ 1, 2 ].map { |index| "phase2:attr:gen:#{tag}:#{index}" }
+      return if (ids & HISTORICAL_CORRELATIONS).any?
+
+      ids
+    end
+
+    def self.normalize_correlation_tag(raw)
+      text = raw.to_s.strip
+      text = DEFAULT_CORRELATION_TAG if text.empty?
+      text.match?(CORRELATION_TAG_PATTERN) ? text : nil
+    end
+    private_class_method :normalize_correlation_tag
 
     def self.field_guidance_lines
       Rails.root.join("app/prompts/bedrock/generation.txt").each_line.filter_map { |line|
@@ -67,11 +101,12 @@ module Rag
       }
     end
 
-    def initialize(captured_prompt:, account:, client: nil, output_dir: nil)
+    def initialize(captured_prompt:, account:, client: nil, output_dir: nil, correlation_tag: nil)
       @captured_prompt = utf8_text(captured_prompt)
       @account = account
       @client = client
       @output_dir = output_dir
+      @correlation_tag = correlation_tag
     end
 
     def preview
@@ -90,9 +125,12 @@ module Rag
       return checked unless checked.allowed?
       return refuse("authorization_absent") unless authorized?
       return refuse("budget_armed") if budget_armed?
+
+      correlations = self.class.correlations_for(@correlation_tag)
+      return refuse("correlation_tag") if correlations.nil?
       return refuse("client_absent") unless @client.respond_to?(:generate_text)
 
-      record(checked.prompt)
+      record(checked.prompt, correlations)
     end
 
     private
@@ -179,11 +217,11 @@ module Rag
       transformed == candidate
     end
 
-    def record(prompt)
+    def record(prompt, correlations)
       directory = Pathname(@output_dir)
       FileUtils.mkdir_p(directory)
       generations = []
-      CORRELATIONS.each_with_index do |correlation, index|
+      correlations.each_with_index do |correlation, index|
         events = ValidationCapture.capture do
           @client.generate_text(
             prompt,

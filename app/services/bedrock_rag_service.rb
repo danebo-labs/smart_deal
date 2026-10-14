@@ -34,20 +34,23 @@ class BedrockRagService
   DOCUMENT_IDENTITY_CITATION_INSTRUCTIONS = <<~TEXT.strip
     Cite a claim taken from a search result with [n], where n is that result's source number. Do not cite a result you did not use.
   TEXT
-  # Attribution limit for direct document-identity generation. It is not part of
-  # the shared generation template, so retrieve_and_generate and the other
-  # direct routes do not receive it. This route also omits the three
+  # Attribution contract for direct document-identity generation. It is not
+  # part of the shared generation template, so retrieve_and_generate and the
+  # other direct routes do not receive it. This route also omits the three
   # FIELD_GUIDANCE lines and the two general-inference clauses below. The
-  # contract precedes the citation line.
+  # contract keeps documented information, optional interpretation, and
+  # missing information distinct, and it precedes the citation line.
   DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT = <<~TEXT.strip.freeze
     # DOCUMENT IDENTITY ATTRIBUTION
-    - A printed label, a column heading, or a bus name does not by itself prove that component's function, supply, or connection.
-    - A claim presented as what the drawing states must be supported by the retrieved text and explicitly linked to the component asked about. Compatible fragments that document that same link may be combined. Do not transfer a fact from another component.
-    - The physical-connection rule and TOPOLOGY_EDGE records above remain in force.
-    - When the passages state only a label and its location, the answer is that label, its location, and the other labels the same passage places next to it, cited. Then say the passages do not state its function, supply, or connection. Do not add the component's principle, purpose, or what it drives; do not add an inference paragraph.
-    - When support is missing, limit the absence to the passages in this prompt. Do not say the whole document lacks the datum.
-    - Name another sheet as the documentary location of this component only when the evidence links that component to that sheet.
-    - A closing question must not presuppose a function, connection, or value the passages do not state.
+    Keep documented statements, optional interpretations, and missing information distinct. Never mix a documented claim and an unconfirmed interpretation in the same sentence. Express these distinctions naturally in the question's language; fixed headings are not required.
+
+    - Documented information ("Según el plano" for this drawing): state only what the retrieved body text supports and links to the component asked about, with [n]. Compatible fragments of the same document may be combined when they support that same link. A printed label, a column heading, or a bus name supports the label and its documented section, location, and neighboring labels; it does not by itself establish the component's function, supply, voltage, or connection. ACTION and EXPECTED_RESULT lines in FIELD_RECORD are extraction annotations, not independent evidence from the original document. They must not by themselves establish a function, supply, voltage, or connection. The physical-connection rule and TOPOLOGY_EDGE records above remain in force. Do not transfer a fact from another label. Distinguish extracted table indices from numbering printed on the drawing.
+
+    - Optional interpretation ("Interpretación posible, no confirmada por estos pasajes"): omit it unless it helps the technician. Use at most two sentences without [n]. It may explain only what a label's word commonly designates in the trade, explicitly as a possibility and with the reservation that these passages do not confirm it. It must not state this equipment's function, what the component drives, its supply, voltage, connection, terminal, or wiring. A marker does not make an unsupported equipment specification acceptable.
+
+    - Missing information ("Falta en los pasajes"): state the relevant information these passages do not provide once, scoped to the passages in this prompt. Do not claim that the whole drawing, document, PDF, or manual lacks it. Do not assert a datum as documented and then deny that it is documented.
+
+    When distinguishing two labels, explain their documented sections and locations first. A concise answer based on those distinctions is sufficient; do not enumerate every neighboring label or the complete circuit unless it helps answer the question. If the evidence does not settle which physical element the technician is following, say so and ask for one useful observation that the technician can see or read on the equipment or drawing. A closing question must not presuppose an undocumented function, connection, or value.
   TEXT
   PARTIAL_ABSTENTION_PROMPT_PREFIX = "- PARTIAL_ABSTENTION_CONTRACT:"
   GROUNDED_SYNTHESIS_PROMPT_PREFIX = "- GROUNDED_SYNTHESIS:"

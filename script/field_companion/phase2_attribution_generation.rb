@@ -3,11 +3,19 @@
 # Generation-only replay of the captured phase-2 prompt.
 # Refuses unless PHASE2_ATTRIBUTION_GENERATION_AUTHORIZED=1.
 # PHASE2_ATTRIBUTION_GENERATION_REQUIRE=1 loads without running.
+# Correlations are phase2:attr:gen:<tag>:1 and :2. PHASE2_ATTRIBUTION_CORRELATION_TAG
+# defaults to voices. Historical phase2:attr:gen:1 and phase2:attr:gen:2 are not reused.
 # Does not repeat the conversational cycle, Retrieve, or a historical session.
 
 def phase2_attribution_generation_main
   unless ENV[Rag::AttributionGenerationReplay::AUTHORIZED_ENV] == "1"
     puts({ "status" => "refused", "reason" => "authorization_absent" }.to_json)
+    return 2
+  end
+
+  tag = Rag::AttributionGenerationReplay.correlation_tag
+  if tag.nil?
+    puts({ "status" => "refused", "reason" => "correlation_tag" }.to_json)
     return 2
   end
 
@@ -30,7 +38,8 @@ def phase2_attribution_generation_main
     captured_prompt: File.binread(capture),
     account: account,
     client: BedrockClient.new,
-    output_dir: output
+    output_dir: output,
+    correlation_tag: tag
   )
   puts result.to_h.to_json
   result.status == "recorded" ? 0 : 2

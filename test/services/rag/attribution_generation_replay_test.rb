@@ -45,7 +45,9 @@ class Rag::AttributionGenerationReplayTest < ActiveSupport::TestCase
     assert_not_includes preview.prompt, "what is obvious for that kind of component and function"
     assert_not_includes preview.prompt, "Open with what the technician can check or do next"
     assert_not_includes preview.prompt, "layer-3 observations"
-    assert_includes preview.prompt, "When the passages state only a label and its location"
+    assert_includes preview.prompt, "Keep documented statements, optional interpretations, and missing information distinct"
+    assert_includes preview.prompt, "ACTION and EXPECTED_RESULT lines in FIELD_RECORD are extraction annotations"
+    assert_not_includes preview.prompt, "When the passages state only a label and its location"
     assert_includes preview.prompt, "Do not replace a procedure the retrieved text already documents."
     assert_includes preview.prompt, "Etiqueta visible en el bus."
     run_without_authorization(captured, calls)
@@ -109,17 +111,19 @@ class Rag::AttributionGenerationReplayTest < ActiveSupport::TestCase
     client = generation_client(calls)
 
     result = isolate_env(Rag::AttributionGenerationReplay::AUTHORIZED_ENV, "1") do
-      Rag::AttributionGenerationReplay.run(
-        captured_prompt: captured,
-        account: @account,
-        client: client,
-        output_dir: @output
-      )
+      isolate_env(Rag::AttributionGenerationReplay::CORRELATION_TAG_ENV, nil) do
+        Rag::AttributionGenerationReplay.run(
+          captured_prompt: captured,
+          account: @account,
+          client: client,
+          output_dir: @output
+        )
+      end
     end
 
     assert_equal "recorded", result.status
     assert_equal 2, calls.size
-    assert_equal %w[phase2:attr:gen:1 phase2:attr:gen:2], result.generations.pluck("correlation_id")
+    assert_equal %w[phase2:attr:gen:voices:1 phase2:attr:gen:voices:2], result.generations.pluck("correlation_id")
     calls.each_with_index do |params, index|
       body = JSON.parse(params.fetch(:body))
       assert_equal Rag::AttributionGenerationReplay::MODEL_ID, params.fetch(:model_id)
@@ -141,6 +145,58 @@ class Rag::AttributionGenerationReplayTest < ActiveSupport::TestCase
     end
   end
 
+  test "correlation tags default to voices and reject a malformed or historical id" do
+    replay = Rag::AttributionGenerationReplay
+
+    assert_equal "voices", replay.correlation_tag(nil)
+    assert_equal "voices", replay.correlation_tag("  ")
+    assert_equal %w[phase2:attr:gen:voices:1 phase2:attr:gen:voices:2], replay.correlations_for(nil)
+    assert_equal %w[phase2:attr:gen:lane:1 phase2:attr:gen:lane:2], replay.correlations_for("lane")
+    assert_nil replay.correlation_tag("voices:1")
+    assert_nil replay.correlation_tag("1")
+    assert_nil replay.correlations_for("VOICES")
+    assert_empty replay.correlations_for("voices") & replay::HISTORICAL_CORRELATIONS
+  end
+
+  test "an invalid correlation tag refuses before the model" do
+    calls = []
+
+    result = isolate_env(Rag::AttributionGenerationReplay::AUTHORIZED_ENV, "1") do
+      Rag::AttributionGenerationReplay.run(
+        captured_prompt: fabricated_capture,
+        account: @account,
+        client: failing_client(calls),
+        output_dir: @output,
+        correlation_tag: "voices:1"
+      )
+    end
+
+    assert_equal "refused", result.status
+    assert_equal "correlation_tag", result.reason
+    assert_empty calls
+    assert_not @output.exist?
+  end
+
+  test "an explicit tag names both generations and ignores a historical env value" do
+    calls = []
+
+    result = isolate_env(Rag::AttributionGenerationReplay::AUTHORIZED_ENV, "1") do
+      isolate_env(Rag::AttributionGenerationReplay::CORRELATION_TAG_ENV, "phase2:attr:gen:1") do
+        Rag::AttributionGenerationReplay.run(
+          captured_prompt: fabricated_capture,
+          account: @account,
+          client: generation_client(calls),
+          output_dir: @output,
+          correlation_tag: "lane"
+        )
+      end
+    end
+
+    assert_equal "recorded", result.status
+    assert_equal %w[phase2:attr:gen:lane:1 phase2:attr:gen:lane:2], result.generations.pluck("correlation_id")
+    assert_equal 2, calls.size
+  end
+
   test "the script refuses before constructing a generation client when authorization is absent" do
     previous = ENV["PHASE2_ATTRIBUTION_GENERATION_REQUIRE"]
     authorized = ENV[Rag::AttributionGenerationReplay::AUTHORIZED_ENV]
@@ -152,6 +208,30 @@ class Rag::AttributionGenerationReplayTest < ActiveSupport::TestCase
   ensure
     restore_env("PHASE2_ATTRIBUTION_GENERATION_REQUIRE", previous)
     restore_env(Rag::AttributionGenerationReplay::AUTHORIZED_ENV, authorized)
+  end
+
+  test "the script refuses an invalid correlation tag before constructing a generation client" do
+    previous_require = ENV["PHASE2_ATTRIBUTION_GENERATION_REQUIRE"]
+    previous_auth = ENV[Rag::AttributionGenerationReplay::AUTHORIZED_ENV]
+    previous_tag = ENV[Rag::AttributionGenerationReplay::CORRELATION_TAG_ENV]
+    ENV["PHASE2_ATTRIBUTION_GENERATION_REQUIRE"] = "1"
+    ENV[Rag::AttributionGenerationReplay::AUTHORIZED_ENV] = "1"
+    ENV[Rag::AttributionGenerationReplay::CORRELATION_TAG_ENV] = "voices:1"
+    load Rails.root.join("script/field_companion/phase2_attribution_generation.rb")
+    constructed = false
+    singleton = BedrockClient.singleton_class
+    singleton.define_method(:new) do |*|
+      constructed = true
+      flunk "the script constructed a generation client"
+    end
+
+    assert_equal 2, phase2_attribution_generation_main
+    assert_equal false, constructed
+  ensure
+    singleton&.remove_method(:new) if singleton&.method_defined?(:new, false)
+    restore_env("PHASE2_ATTRIBUTION_GENERATION_REQUIRE", previous_require)
+    restore_env(Rag::AttributionGenerationReplay::AUTHORIZED_ENV, previous_auth)
+    restore_env(Rag::AttributionGenerationReplay::CORRELATION_TAG_ENV, previous_tag)
   end
 
   private

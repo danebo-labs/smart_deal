@@ -2,13 +2,13 @@
 
 ## Estado de este corte, 2026-10-13
 
-**Objetivo.** La consulta documental acotada de la fase 1 quedó aceptada con reservas. En la fase 2, el ciclo conversacional quedó demostrado. `20261013T233715Z` comprobó el contrato de atribución: el prompt lo incluye y la respuesta vuelve a atribuir un accionamiento que ese prompt no contiene. La aceptación técnica sigue pendiente. La reparación propuesta está en «Reparación de la atribución, 2026-10-13».
+**Objetivo.** La consulta documental acotada de la fase 1 quedó aceptada con reservas. En la fase 2, el ciclo conversacional quedó demostrado. `20261013T233715Z` comprobó el contrato de atribución: el prompt lo incluye y la respuesta vuelve a atribuir un accionamiento que ese prompt no contiene. La aceptación técnica sigue pendiente. El recorte de «Reparación de la atribución, 2026-10-13» quedó rechazado; la decisión está en «Revisión de la reparación, 2026-10-13».
 
 **Estado.** La fase 0 está cerrada. ChatGPT aceptó `20261013T185531Z` para esa consulta, con reservas de presentación y de alcance. La decisión es posterior al cierre de la corrida y no reescribe sus resultados. La revisión de `37c7bf2` cerró la conservación de evidencia del arnés. La corrida `20261013T214527Z`, sesión 9, quedó en `withheld`. Ese cierre sigue histórico. `20261013T225115Z`, sesión 10, se detuvo con `Seahorse::Client::NetworkingError` antes de una percepción. Ese cupo sigue cerrado. `20261013T230407Z`, sesión 11, demostró el ciclo conversacional. Sobre `4dbac887`, Lahiri autorizó una corrida: `20261013T233715Z`, sesión 12. El detalle está en «Corrida de fase 2, 20261013T233715Z». No es `EPISODIO_VALIDADO`. La reparación de esa atribución está escrita y no está implementada.
 
 **Bloqueo.** La fase 3 sigue bloqueada. El contrato llegó al prompt y la respuesta no cumple la atribución. La propuesta no abre un cambio en caliente, no implementa el método y no abre la fase 3. La ingesta `XU1THSZ4ZT` sigue con el fallo de `bulk_chunks/3/5b1859a0bfe1c5b11e58214555f8c2fe93e6/chunk_p5_1.txt`. Ese exceso de tokens queda en backlog.
 
-**Siguiente acción.** Revisión de «Reparación de la atribución, 2026-10-13». No hay otra corrida abierta. Este texto no repite `20261013T233715Z`, no escribe el método y no empieza la fase 3. `PASS_CALL_CAP` permanece en 0.
+**Siguiente acción.** Decisión del fundador sobre «Revisión de la reparación, 2026-10-13»: el diff de prompt limitado a la ruta, sus pruebas con dobles y la comparación de solo generación con dos muestras. No hay otra corrida abierta. Este texto no repite `20261013T233715Z`, no implementa el diff y no empieza la fase 3. `PASS_CALL_CAP` permanece en 0.
 
 **Gates que ya no son el paso siguiente.** Cerrar otra vez la fase 0. Repetir `20261009T194048Z`, `20261009T221211Z`, `20261010T153620Z` o `20261010T193753Z`. Reabrir el experimento del intérprete o la comparación Haiku 4.5 / Haiku 5.5. Abrir la fase 2. Reabrir Journey A, usar la reserva de 42 llamadas, cambiar el modelo o desplegar. Ejecutar G5, F9 o F10 del focus. Reabrir el ciclo F0–F8 de discovery. Reanudar O-P2 a O-P5, F3b o F4 del recovery del 06/10. El párrafo siguiente conserva esa historia.
 
@@ -1232,7 +1232,7 @@ Consumo, de filas observadas. `BedrockQuery` 95, `semantic_analysis`, `phase2:12
 
 ### Reparación de la atribución, 2026-10-13
 
-Propuesta para revisión. No está implementada. No acepta la fase 2. No abre la fase 3. No reabre el ciclo `referent`. No hay modelo, `Retrieve`, S3, ingesta, workers ni deploy. `PASS_CALL_CAP` permanece en 0. Una revisión favorable no sustituye las pruebas ni autoriza una corrida.
+Propuesta revisada y rechazada el 2026-10-13; la decisión está en «Revisión de la reparación, 2026-10-13». Se conserva como registro. No está implementada. No acepta la fase 2. No abre la fase 3. No reabre el ciclo `referent`. No hay modelo, `Retrieve`, S3, ingesta, workers ni deploy. `PASS_CALL_CAP` permanece en 0. Una revisión favorable no sustituye las pruebas ni autoriza una corrida.
 
 Causa demostrada. En `20261013T233715Z` el prompt de generación, `turn_2/bodies/b0005.txt`, SHA-256 `42509289d310a005a01e0f31cafbc7fb3f42436b1f8405089a24a6b8347db208`, incluye `DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT` después de «what is obvious» y antes de la cita. `generation_mode` es `document_identity_scope`. La respuesta publicada igual afirma, como hecho citado, «salida de control», «conectadas al bus» y, después de decir que la función no está explicitada, «salida de comando que alimenta un actuador de puerta». Esas palabras no están en el prompt. La única «conectada» del pasaje nombra Chapa Puerta nivel 1 en el bus superior.
 
@@ -1287,13 +1287,105 @@ Borrador de la fase 3, bloqueado. Usa el pasaje de la página 5 ya citado y no s
 
 La fase 3 sigue bloqueada hasta una corrida posterior, autorizada aparte, sobre el diff ya probado.
 
+### Revisión de la reparación, 2026-10-13
+
+Revisión independiente de `b2f72058`. Sin modelo, `Retrieve`, S3, ingesta, workers ni deploy. `PASS_CALL_CAP` permanece en 0. Esta revisión no acepta la fase 2, no abre la fase 3 y no implementa producto. La decisión sustituye el «Cambio, cuando la revisión lo acepte» de la sección anterior; esa sección queda como propuesta rechazada y no se borra.
+
+Hechos, leídos del prompt capturado y del código.
+
+- `turn_2/bodies/b0005.txt` de `20261013T233715Z` mide 36050 bytes y su SHA-256 es `42509289d310a005a01e0f31cafbc7fb3f42436b1f8405089a24a6b8347db208`, igual al registrado. Su diff contra el `b0005.txt` de `20261013T230407Z` tiene dos líneas: `Identifiers: Elemont MH, Chapa nivel 2` contra `… La etiqueta Chapa nivel 2`, y el bloque `# DOCUMENT IDENTITY ATTRIBUTION` en lugar de la línea de cita. Los tres `<search_result>` y los bloques de sesión son iguales. El contrato fue el único cambio entre las dos corridas y las dos respuestas atribuyeron una función a Chapa nivel 2.
+- El prompt enviado conserva, con la síntesis activa, tres instrucciones que piden una capa de función o de acción para el componente: en `# RESPONSE SELECTION`, «3) Else what is obvious for that kind of component and function … give visual identification, principle, …»; en `# NO MATCH`, «does not suppress the allowed layer-3 observations and safe component-specific checks. Give that useful orientation before the knowledge boundary»; en `# FORMAT`, «Open with what the technician can check or do next, anchored on this equipment's cited fact or the allowed layer-3 orientation … Then what the manual states, what is inference, and what is unconfirmed. At most one next measurement or photo.» Son las líneas 135, 150 y 154 de `app/prompts/bedrock/generation.txt`. El contrato declara precedencia solo sobre la primera.
+- La respuesta sigue la línea de `# FORMAT` al pie de la letra: una oración directa, «Según el diagrama», el límite, un párrafo de inferencia sin marcar («es una salida de comando que alimenta un actuador de puerta») y una pregunta final que presupone una continuidad de la salida hacia un elemento de puerta. El contrato pedía marcar la inferencia; el formato pedía producirla. El modelo produjo la que el formato pedía.
+- `# LITERAL LABEL RULES` no entró: `visual_label_directive` exige `funci[oó]n|identifica|componentes|qu[eé] es` además de `plano|etiqueta`, y la consulta efectiva no trae esas palabras. Se anota como hecho. No se amplía ese léxico: sería un parche por frase.
+- Las líneas `STRICT_ONLY` 62 a 73 de `generation.txt` no se envían con la síntesis activa. Hecho ya registrado.
+- Después de la generación, `finish_document_identity_generation` pasa por `normalize_absence_semantics`, `AnswerSafetyProcessor` y `CitationAttributionGuard`. Ninguno juzga una función atribuida a una etiqueta en prosa con `companion` falso. Hecho, coincide con la propuesta.
+
+Los cuatro puntos de ChatGPT, con ejemplos locales sobre la respuesta real. La simulación aplica `FRAGMENT_SPLIT_PATTERN`, la primera pista de cada fragmento y los cortes propuestos; no reproduce la comprobación por bloque, así que es una aproximación del recorte y no su implementación.
+
+1. Léxico. La propuesta lo declara: «solo los verbos que las dos respuestas afirmaron». `alimenta`, `acciona`, `comanda`, `control` y el residuo de `salida de` salen de los dos fallos. No hay relación demostrada entre esas raíces y «afirmar una función». Una tercera respuesta con «energiza», «gobierna», «dispara» o «abre la puerta» pasa entera. Confirmado.
+2. Negación en el mismo fragmento. «Chapa nivel 2 es una salida de comando que alimenta un actuador de puerta en ese nivel; el plano no especifica su tensión» es un solo fragmento, porque el patrón corta en salto de línea, `.`, `!` y `?`, no en `;` ni en raya. Contiene `no especifica` y se conserva entera con la afirmación falsa. Confirmado.
+3. Gramática y significado. Sobre la respuesta de `20261013T233715Z`: la primera oración queda «**Chapa nivel 2** aparece identificada como una ubicada en el bus inferior (PasCom 24V) …»; la cuarta queda «… mientras que Chapa nivel 2 en el circuito de la botonera»; la quinta queda «Seguridad Puerta nivel 2 ; Chapa nivel 2 en ese nivel». La segunda pierde «Chapa nivel 1» de la enumeración porque los dos puntos no están en la lista de cortes. Confirmado.
+4. Resolver las instrucciones competidoras en el prompt. No está descartado. `4dbac887` añadió palabras y dejó en pie las tres instrucciones que piden la capa de función; el diff entre corridas muestra que añadir el contrato no cambió la salida. Quitar el incentivo en esta ruta no se ha probado. Es la hipótesis más barata que queda.
+
+Además, la prueba propuesta pasa por construcción: el fixture es el texto fallido y el léxico se derivó de él. Es el filtro frágil para hacer pasar el fixture que esta revisión debía evitar.
+
+Decisión.
+
+El recorte de `b2f72058` queda rechazado y no se implementa. No conserva significado, no demuestra respaldo y su prueba no mide nada fuera del texto que la motivó.
+
+El menor cambio justificable es una construcción de prompt limitada a `document_identity_scope` con documento compatible: no enviar las tres líneas de guía de campo en esta ruta, y acortar el contrato para que diga qué publicar cuando el plano solo trae etiqueta y ubicación. Las demás rutas reciben el mismo prompt que hoy, byte a byte. No hay segunda llamada al modelo, no hay filtro de publicación y el código productivo no nombra Chapa, Elemont, «salida» ni 24V.
+
+Por qué no otra cosa. Quitar la orientación «what is obvious» del template cambiaría todas las rutas de síntesis. Devolver las líneas `STRICT_ONLY` repite el contrato con otras palabras y ya se vio que añadir palabras no basta. Un control de publicación que demuestre respaldo necesitaría implicación semántica entre la oración publicada y el pasaje, y eso es otra llamada al modelo o un parser de español; ninguno es proporcional al bloqueo medido.
+
+Diff propuesto, no aplicado.
+
+`app/prompts/bedrock/generation.txt`: las líneas 135, 150 y 154 cambian su prefijo de `- GROUNDED_SYNTHESIS:` a `- FIELD_GUIDANCE:`. El texto de cada línea no cambia.
+
+`app/services/bedrock_rag_service.rb`:
+
+```ruby
+FIELD_GUIDANCE_PROMPT_PREFIX = "- FIELD_GUIDANCE:"
+
+# load_generation_prompt_template(grounded_synthesis: false, field_guidance: true)
+# clave de memoización: [partial_contract, grounded_synthesis, field_guidance]
+
+def self.filter_generation_prompt(template, partial_contract:, grounded_synthesis:, field_guidance:)
+  template.lines.filter_map do |line|
+    next if !partial_contract && line.start_with?(PARTIAL_ABSTENTION_PROMPT_PREFIX)
+    next if grounded_synthesis && strict_only_prompt_line?(line)
+    next if !grounded_synthesis && grounded_synthesis_prompt_line?(line)
+    next if !field_guidance && field_guidance_prompt_line?(line)
+
+    strip_variant_prompt_prefix(line)
+  end.join
+end
+```
+
+`grounded_synthesis_prompt_line?` y `strip_variant_prompt_prefix` aceptan `FIELD_GUIDANCE` junto a `GROUNDED_SYNTHESIS` y `STRICT_ONLY`: una línea `FIELD_GUIDANCE` es una línea de síntesis que además se puede omitir. `load_generation_prompt_with_locale` recibe `field_guidance: true` y lo pasa al template. `document_identity_generation_prompt` llama con `field_guidance: false`. `StructuredEvidenceRoute#generation_prompt`, `retrieve_and_generate` y el guidance no cambian.
+
+`DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT` se acorta. Sale la oración de precedencia, porque ya no hay instrucción sobre la que preceder. Entra una regla de salida y una de cierre:
+
+```text
+# DOCUMENT IDENTITY ATTRIBUTION
+- A printed label, a column heading, or a bus name does not by itself prove that component's function, supply, or connection.
+- A claim presented as what the drawing states must be supported by the retrieved text and explicitly linked to the component asked about. Compatible fragments that document that same link may be combined. Do not transfer a fact from another component.
+- The physical-connection rule and TOPOLOGY_EDGE records above remain in force.
+- When the passages state only a label and its location, the answer is that label, its location, and the other labels the same passage places next to it, cited. Then say the passages do not state its function, supply, or connection. Do not add the component's principle, purpose, or what it drives; do not add an inference paragraph.
+- When support is missing, limit the absence to the passages in this prompt. Do not say the whole document lacks the datum.
+- Name another sheet as the documentary location of this component only when the evidence links that component to that sheet.
+- A closing question must not presuppose a function, connection, or value the passages do not state.
+```
+
+Pruebas del diff, sin correr. En `test/services/rag/document_identity_scope_test.rb`, la prueba `document identity attribution reaches this route …` se reescribe: el prompt de esta ruta no contiene «what is obvious for that kind of component», «Open with what the technician can check or do next» ni «layer-3 observations»; contiene las reglas nuevas y la cita; sigue conteniendo «Treat printed identifiers, device names, and visible labels as labels only», «A physical connection claim» y «RECORD_TYPE: TOPOLOGY_EDGE». `load_generation_prompt_with_locale`, `load_generation_prompt_template(grounded_synthesis: true)` y `StructuredEvidenceRoute#generation_prompt` siguen conteniendo las tres líneas y no contienen el contrato. El template sin síntesis no contiene ninguna línea `FIELD_GUIDANCE` ni su prefijo. En `test/prompts/bedrock_generation_prompt_test.rb`: ninguna línea publicada empieza con `FIELD_GUIDANCE:` en ninguna variante. `test/architecture/no_hardcoded_equipment_test.rb` sigue en verde. Comando: `bin/rails test test/services/rag/document_identity_scope_test.rb test/prompts/bedrock_generation_prompt_test.rb test/services/bedrock_rag_service_grounded_synthesis_test.rb test/services/rag/structured_evidence_route_test.rb test/architecture/no_hardcoded_equipment_test.rb`.
+
+Hipótesis que este diff no demuestra. Que el modelo, sin las tres líneas y con la regla de salida, publique etiqueta, ubicación y límite sin añadir la función. Las pruebas con dobles demuestran la construcción del prompt, no la respuesta. Antes de autorizar otra corrida del ciclo, la hipótesis se comprueba con una comparación de solo generación.
+
+Comparación de solo generación, propuesta y no ejecutada.
+
+- Contexto: los tres `<search_result>` y los bloques `## Active Field Problem`, `## Session Focus`, `## Recent Conversation`, `## Session Discipline` y `## Query Resolution` de `b0005.txt` de `20261013T233715Z`. Sin `Retrieve`, sin intérprete, sin sesión nueva, sin `pending`. No se repite el ciclo.
+- Prompt: el que arma `document_identity_generation_prompt` con el diff, a partir de ese contexto. Puerta previa, sin modelo: su diff contra `b0005.txt` tiene que ser solo las tres líneas quitadas y el bloque del contrato. Si el diff trae otra cosa, no se envía.
+- Cupo: dos generaciones, temperatura `0.1`, el modelo de `BedrockQuery` 97, correlaciones `phase2:attr:gen:1` y `phase2:attr:gen:2`. Costo esperado por las filas observadas: cerca de US$0,014 cada una, menos de US$0,03 en total. El control no se repite: `20261013T230407Z` y `20261013T233715Z` ya son dos muestras del prompt con las tres líneas, una sin contrato y una con él.
+- Criterios, leídos por el evaluador sobre el texto completo, no por palabras. Pasa una muestra si: ninguna función, alimentación o conexión de Chapa nivel 2 se presenta como hecho del plano ni lleva `[1]`, marcada o sin marcar; la respuesta ubica Chapa nivel 2 en el bus inferior de nombre PasCom 24V de la botonera de pasillo nivel 1 y nombra Seguridad Puerta nivel 2 en la cadena entre los niveles 3 y 1, con `[1]`; el límite se dice y no se contradice; la pregunta final, si existe, no presupone función, continuidad ni valor. Las dos muestras tienen que pasar.
+- Si una falla, no se añade un filtro. La siguiente hipótesis, en orden, es la línea 21 «Reason, infer, and conclude from chunks» en esta ruta; se registra la respuesta y se decide con el fundador.
+- Esta comparación no acepta la fase 2. La aceptación sigue siendo una corrida del ciclo, autorizada aparte, sobre el diff ya probado y con esta comparación en verde.
+
+Borrador de la fase 3, corregido. La corrección anterior, «No le atribuyas una función. Solo estoy ubicando la etiqueta.», solo tiene sentido si el asistente volvió a inventar una función. Si la fase 2 se acepta, no hay nada que corregir y el turno no mide un cambio de estado; si no se acepta, la fase 3 no abre. Se reemplaza por una corrección de un dato aportado por el técnico y guardado en el episodio, que produce un delta evaluable. Tres mensajes simulados del evaluador, sin cupo, sobre el pasaje de la página 5:
+
+- Seguimiento: «¿Dónde queda entonces la etiqueta Chapa nivel 2?». Aceptación: botonera de pasillo nivel 1 y bus inferior de nombre PasCom 24V, sin función ni alimentación, sin igualar las etiquetas, con el pasaje recuperado o heredado: documento 213, página 5, `chunk_p5_1`.
+- Corrección: «Me equivoqué: la puerta que reviso no es la del nivel 2, es la del nivel 3.» Aceptación por estado: el identificador del nivel 3 queda con fuente `user` y la correlación de ese turno, y el del nivel 2 no sigue vigente como el elemento consultado. Aceptación por respuesta: Seguridad Puerta nivel 3 queda entre Seguridad Puerta nivel 4 y Seguridad Puerta nivel 2, y Chapa nivel 3 es la tercera salida de la tabla, con el pasaje heredado; no trata el nivel 2 como el vigente. No exige `Retrieve`. El `correct` del intérprete y `ObservationCorrection` ya existen; que esta frase los active se comprueba antes con dobles, sin modelo. Es una comprobación pendiente, no un hecho.
+- Resumen: «Resumí lo que ya quedó de las dos etiquetas.». Aceptación: el nivel 3 es el vigente y el nivel 2 aparece como corregido; las etiquetas siguen distintas; la serie no pasa a la chapa.
+
+Criterio transversal de los tres turnos: no aparece una función, una alimentación, una conexión, una hoja 2, un actuador, una cerradura ni un 24V como especificación del dispositivo que el pasaje no enuncie. Ese criterio ya no es el contenido de la corrección.
+
+La fase 3 sigue bloqueada hasta una corrida posterior, autorizada aparte, sobre el diff ya probado y con la comparación de solo generación en verde.
+
 ### Fase 3. Continuidad y correcciones
 
-1. Estado: pendiente y bloqueada. `20261013T233715Z` dejó una respuesta y la atribución técnica sigue pendiente. El borrador de entradas está en «Reparación de la atribución, 2026-10-13» y no abre esta fase.
+1. Estado: pendiente y bloqueada. `20261013T233715Z` dejó una respuesta y la atribución técnica sigue pendiente. El borrador de entradas corregido está en «Revisión de la reparación, 2026-10-13» y no abre esta fase.
 2. Prerrequisitos. Hechos vigentes del caso pineado. No se usa el fixture de Journey A como guion de esta fase. Los 14 turnos siguen siendo referencia histórica de continuidad, no la duración de esta fase.
 3. Pregunta. ¿Un seguimiento, una corrección y un resumen coherentes con este caso conservan lo comprobado, actualizan lo corregido y respaldan cada afirmación documental nueva?
 4. Acciones y límites. Los turnos que hagan falta para esa pregunta. Cada turno lleva su referencia de evaluador, escrita al cerrar la fase 2. Journey A no se edita. Una corrección, una aclaración o un resumen puede resolverse con el estado ya disponible, sin `Retrieve`. Una afirmación documental nueva necesita respaldo recuperado en ese turno o heredado e identificable: documento, página y pasaje ya aceptado.
-5. Entradas y resultados. El borrador, a partir del pasaje de la página 5, está en «Reparación de la atribución, 2026-10-13». Sigue bloqueado y no se ejecuta. No se anticipan códigos, LED ni una placa que este PDF no contiene.
+5. Entradas y resultados. El borrador corregido, a partir del pasaje de la página 5, está en «Revisión de la reparación, 2026-10-13»: la corrección cambia el nivel aportado por el técnico, no pide retirar una función. Sigue bloqueado y no se ejecuta. No se anticipan códigos, LED ni una placa que este PDF no contiene.
 6. Aceptación, fallo y detención. Aceptación: el estado y la respuesta usan el valor nuevo y no tratan el viejo como vigente; cada afirmación documental nueva señala su respaldo. Detención: se pierde un hecho que cambia el paso, o una afirmación documental nueva no tiene pasaje recuperado ni heredado. Ahí se para y se separa causa inicial de consecuencia. La ausencia de `Retrieve` en una corrección resuelta con el estado no es, por sí sola, un fallo.
 7. Evidencias. Delta del episodio, estado de la sesión, prompt enviado y, cuando hubo búsqueda, la solicitud y los chunks. Dentro de la captura.
 8. Hallazgos al cerrar. Vacío hasta la ejecución.
@@ -1357,7 +1449,8 @@ La fase 3 sigue bloqueada hasta una corrida posterior, autorizada aparte, sobre 
 | Corrida de fase 2, `20261013T230407Z`, sesión 11, sobre `8be4a30`. | La duda quedó en el episodio y en el request siguiente. La elección quedó con fuente `user`. La consulta retomó esa duda. La respuesta cita la página 5 y distingue las dos etiquetas, con reservas sobre la posición 8 y la función de la chapa. Tres intentos, US$0,019594. Un `Retrieve` lógico y dos físicas, la segunda por Aurora. | `second_turn_recorded`. `documentary_acceptance` sigue en `pending`. No es `EPISODIO_VALIDADO`. La repetición por red no se usó. Sesiones 9 y 10 intactas. La fase 3 no empieza. |
 | Revisión de la respuesta de `20261013T230407Z`. | El ciclo conversacional queda aceptado. En el prompt completo, la orden de accionar la chapa no está; el 24V es la etiqueta del bus PasCom; la hoja 2 nombra otros componentes; y el límite de «función exacta» contradice la función afirmada. | Aceptación técnica pendiente. El contrato de atribución quedó en `document_identity_generation_prompt`, con precedencia sobre «lo obvio». Sin filtro de palabras, sin corrida nueva y sin aceptar la respuesta. |
 | Corrida de fase 2, `20261013T233715Z`, sesión 12, sobre `4dbac887`. | El contrato llegó al prompt. La respuesta ubica Chapa nivel 2 en el bus PasCom 24V y distingue Seguridad Puerta nivel 2. Después dice que la función no está explicitada y afirma que la salida alimenta un actuador. Tres intentos, US$0,020155. Un `Retrieve` lógico y dos físicas. | `second_turn_recorded`. La atribución no se acepta. No es `EPISODIO_VALIDADO`. Sesiones 9 a 11 intactas. La fase 3 no empieza. |
-| Reparación de la atribución, 2026-10-13. | El contrato ya está en el prompt y la publicación de `document_identity_scope` no lo aplica. La propuesta recorta, al publicar y solo en esa ruta, la función, la alimentación o la conexión que el bloque de la etiqueta no trae. Conserva el límite y la ubicación. La fase 3 queda escrita y bloqueada. | Propuesta para revisión. Sin código, sin pruebas corridas y sin corrida. No acepta la fase 2. No abre la fase 3. |
+| Reparación de la atribución, 2026-10-13. | El contrato ya está en el prompt y la publicación de `document_identity_scope` no lo aplica. La propuesta recorta, al publicar y solo en esa ruta, la función, la alimentación o la conexión que el bloque de la etiqueta no trae. Conserva el límite y la ubicación. La fase 3 queda escrita y bloqueada. | Rechazada en la fila siguiente. Sin código y sin corrida. |
+| Revisión de la reparación, 2026-10-13. | El contrato fue el único cambio entre `20261013T230407Z` y `20261013T233715Z` y no cambió la salida. El prompt conserva tres líneas de guía de campo que piden la capa de función. El recorte propuesto rompe gramática, una negación escuda la afirmación falsa y su prueba pasa por construcción. Decisión: no enviar esas tres líneas en `document_identity_scope` mediante el prefijo `FIELD_GUIDANCE`, acortar el contrato con una regla de salida para etiqueta y ubicación, comprobar con dos generaciones sobre el contexto capturado. La corrección de la fase 3 pasa a ser un cambio de nivel aportado por el técnico. | Decisión escrita. Sin código, sin pruebas corridas y sin corrida. No acepta la fase 2. No abre la fase 3. |
 | La corrida de la fase 1 no guardó el request del intérprete. | Sobre `danebo.audit.v1` y `interpreter_request` copiado antes de `converse`. | La corrida `20261009T221211Z` guardó el request. La de `20261009T194048Z` no se rellena. |
 | `prepared` se leía como envío, la respuesta del intérprete perdía el texto y la reentrada del guardia podía encolar. | `prepared`, `attempt_started`, `blocked`, `returned` y `error`. | En `20261009T221211Z` se observaron `prepared`, `attempt_started` y `returned`. El cuerpo de esa corrida no se modeló y no se rellena. La causa de `meta` sigue sin demostrar. |
 | Un `meta` incompatible descartaba la consulta técnica, y `Seahorse::Client::Response` quedaba como `unmodeled_type`. | Punto 13. Rechazo determinista hacia el fallback existente, y serialización solo del payload `data`. Dos diffs. Stubs. | En `49bd0d0`. Sin corrida de fase 1 después de ese commit y sin rellenar los sobres anteriores. La fase 1 no queda validada. |

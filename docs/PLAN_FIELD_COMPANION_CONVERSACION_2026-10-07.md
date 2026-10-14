@@ -2,7 +2,7 @@
 
 ## Estado de este corte, 2026-10-14
 
-**Corte de la botonera.** La revisión visual posterior de la sección Botonera, página 5, queda en «Corrección candidata de la botonera, 2026-10-14». El defecto demostrado es de representación: el chunk trata las etiquetas Chapa nivel como salidas de PasCom 24V. Las generaciones de `20261014T140201Z` y `20261014T152614Z` amplifican esa frase. Eso no es la causa única de todas las muestras. La aceptación conversacional de la fase 2 se mantiene. La aceptación técnica sigue pendiente. La comparación de modelos y las llamadas siguen diferidas. Este corte no acepta la fase 2 ni abre la fase 3. `PASS_CALL_CAP` sigue en 0. La prevención de ingesta y la geometría vectorial quedan fuera de este corte. Sus pendientes y criterios de retomada están en «Backlog diferido: fidelidad de ingesta de diagramas, 2026-10-14». El recorrido que aplicaría el candidato quedó preparado y no se ejecutó. El detalle está en «Preparación operativa de la botonera, sin ejecución».
+**Corte de la botonera.** La revisión visual posterior de la sección Botonera, página 5, queda en «Corrección candidata de la botonera, 2026-10-14». El defecto demostrado es de representación: el chunk trata las etiquetas Chapa nivel como salidas de PasCom 24V. Las generaciones de `20261014T140201Z` y `20261014T152614Z` amplifican esa frase. Eso no es la causa única de todas las muestras. La aceptación conversacional de la fase 2 se mantiene. La aceptación técnica sigue pendiente. La comparación de modelos y las llamadas siguen diferidas. Este corte no acepta la fase 2 ni abre la fase 3. `PASS_CALL_CAP` sigue en 0. La prevención de ingesta y la geometría vectorial quedan fuera de este corte. Sus pendientes y criterios de retomada están en «Backlog diferido: fidelidad de ingesta de diagramas, 2026-10-14». El recorrido se ejecutó una vez y se detuvo en `publish_checked`, sin `job_id`. El detalle está en «Aplicación de la botonera, 2026-10-14».
 
 **Objetivo.** La consulta documental acotada de la fase 1 quedó aceptada con reservas. En la fase 2, el ciclo conversacional quedó demostrado. `20261013T233715Z` comprobó el contrato de atribución: el prompt lo incluye y la respuesta vuelve a atribuir una función que ese prompt no contiene. Las dos respuestas no son el mismo texto. La aceptación técnica sigue pendiente. El recorte de «Reparación de la atribución, 2026-10-13» quedó rechazado. La decisión de «Revisión de la reparación, 2026-10-13» está implementada en local. La comparación de solo generación se ejecutó en `20261014T012743Z` y las dos muestras fallan la atribución. La comprobación de las dos cláusulas de inferencia se ejecutó en `20261014T020512Z` y las dos muestras vuelven a fallar. El cupo de esas dos llamadas queda cerrado. Este corte sustituye solo `DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT` para separar información documental, interpretación opcional y datos pendientes. La hipótesis se comprobó en `20261014T140201Z` y las dos muestras vuelven a fallar. Ese cupo queda cerrado. La separación system/user se comprobó en `20261014T152614Z` y las dos muestras vuelven a atribuir función y accionamiento. Ese cupo queda cerrado.
 
@@ -56,7 +56,7 @@ La tabla del candidato es una representación añadida. No es una tabla impresa 
 
 El candidato está en `test/fixtures/files/elemont/page5_botonera_branch/chunk_p5_1_candidate.txt`. El fixture histórico y `chunk_p5_1_after.txt` no se editan. La transformación es `ElemontMhPage5BotoneraBranchPatch`. Exige una ocurrencia de cada tramo, rechaza una base distinta, una sustitución parcial, un tramo repetido y una segunda pasada, y conserva el complemento. No construye un cliente externo. No extiende `script/patch_elemont_chunk_p5_1_safety_note.rb`.
 
-**Recorrido operativo.** Quedó preparado, con otra clase y otra confirmación, y no se ejecutó. El detalle está en «Preparación operativa de la botonera, sin ejecución».
+**Recorrido operativo.** Quedó preparado, con otra clase y otra confirmación. La ejecución posterior está en «Aplicación de la botonera, 2026-10-14». El detalle de la preparación está en «Preparación operativa de la botonera, sin ejecución».
 
 La prevención de ingesta (`field_records_v9`) y el arreglo de la geometría vectorial quedan diferidos. No forman parte de este candidato.
 
@@ -100,6 +100,28 @@ bin/rails runner script/patch_elemont_chunk_p5_1_botonera_branch.rb
 ```
 
 Alcance de esa autorización, si se da: un objeto, la clave de arriba, en el bucket `multimodal-source-destination`, la KB `Y7RZWMFJSR`, el data source `PJ0N58DMHG` y la región `us-east-1`. Lee esa clave y su sidecar. Escribe solo el `.txt` cuando el núcleo vivo es la base esperada y la transformación es el candidato. Abre una ingesta. Abre una segunda solo en las dos filas de rollback de la tabla. No toca otro documento, ni el sidecar, ni modelos, ni `Retrieve`, ni workers, ni el despliegue, ni el prompt, ni los presupuestos. Un estado externo incierto detiene esa ejecución sin repetirla.
+
+### Aplicación de la botonera, 2026-10-14
+
+Lahiri autorizó una sola ejecución sobre `HEAD` `8607c3f04d19a87492767f637c261e23d1623828`. El árbol estaba limpio e igual a `origin/main`. El diff de ese commit para la clase, el script, el parche y el candidato estaba vacío. Los SHA locales seguían en `067ff45ffa86a6d055cedbec8f38ce63ae36c5ba15266d32a48da5ccea9c6831` y `a13141fe7586c9013d698aa29f2b6809f112702e98f4da99d9a47c3ba01d7779`. No se editó `.env`, el candidato, el presupuesto ni el backlog.
+
+STS del perfil `default`, sin claves en el entorno, devolvió la cuenta `935142957735` y `arn:aws:iam::935142957735:user/Lahiri`. El proceso de Rails usó la credencial cargada por la aplicación: la misma cuenta y `arn:aws:iam::935142957735:user/bedrock-integration-user`. No se mostraron claves. La base del proceso era `localhost` / `smart_deal_development`. No era RDS de producción. El adaptador de trabajos era Solid Queue y no había procesos de worker. La KB y el bucket habituales seguían en `QGVYLPTEGT` y `smart-deal-dev-kb`. El script fijó región y bucket solo dentro de su proceso, y pasó `Y7RZWMFJSR` y `PJ0N58DMHG` como destino.
+
+Comando, una vez, con `AWS_MAX_ATTEMPTS=1` y `RAG_PAGE5_BOTONERA_BRANCH_CONFIRM=1`:
+
+```bash
+bin/rails runner script/patch_elemont_chunk_p5_1_botonera_branch.rb
+```
+
+El proceso terminó con salida 1. No se repitió. SDK Attempt Count: 1.
+
+Respaldo: `tmp/elemont_page5_botonera_branch/20261014T170719Z/`. El cuerpo anterior mide 7360 bytes y SHA-256 `b466665b37f76cf2e35441787bbd30b3fe2dd42d623b4de359e05814e2c8a85a`. Es la base de la línea de seguridad más un salto final. El núcleo exigido `067ff45f…` queda anotado como `expected_base_sha256`. El candidato exigido `a13141fe…` queda anotado como `expected_candidate_sha256`. El cuerpo transformado, con ese salto conservado, es `bc6d057d6ed34adae196692c7a48e1291ac020b08150027c51e13a398b77441e`. La etapa `publish_checked` exige que la relectura del `.txt` sea igual a ese cuerpo y que la relectura del sidecar sea igual a los bytes descargados. El sidecar no se escribió. Mide 924 bytes y su SHA-256 es `d34fb691855b77286aaf55e5bb86ac2e784b0c15c72b47cdd10b59d0e2e87c13`, el mismo de la reparación de la línea de seguridad. El manifiesto también anota `text_uploaded` y, después del fallo, `confirmed_stage=publish_checked`.
+
+No hay `job_id`, ni estado de ingesta, ni estadísticas, ni razones de fallo de un job, ni rollback. `start_ingestion_job` devolvió `ValidationException`: la instancia Aurora `db-X44TTVPZA4IRPMMQUHXIBEAL64` se estaba reanudando tras una pausa automática. Request `04aec8b8-73c6-4cd1-a229-7946f6b0632c`. El mensaje de AWS pide esperar y reintentar. Esta ejecución no lo hizo.
+
+Estado separado. El objeto S3 de la clave quedó en el cuerpo transformado: la relectura de `publish_checked` coincidió con `bc6d057d…`. El índice no se sincronizó. Esta ejecución no abrió ingesta y no hizo `Retrieve`. No afirma que el índice ya sirva el candidato.
+
+Cupo de modelos: 0. `Retrieve`: 0. `PASS_CALL_CAP` permanece en 0. `Stage2RunBudget` sigue en 188 llamadas, US$0,423114, techos 188, 42 y 230, tope US$2,50. No hubo worker ni despliegue. Un proceso posterior, sin las variables de la corrida, volvió a `localhost` / `smart_deal_development`, KB `QGVYLPTEGT` y bucket `smart-deal-dev-kb`. `RAG_PAGE5_BOTONERA_BRANCH_CONFIRM` y `AWS_MAX_ATTEMPTS` quedaron sin definir. No había procesos de worker. La fase 2 no queda aceptada. La fase 3 no se abre. La comprobación del contenido recuperado sigue sin autorización. El backlog de fidelidad de ingesta queda como estaba.
 
 ### Jerarquía system/user, preparación local 2026-10-14
 

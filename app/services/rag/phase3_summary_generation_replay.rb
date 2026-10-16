@@ -63,6 +63,27 @@ module Rag
       Rails.root.join(DEFAULT_CAPTURE)
     end
 
+    # Read-only load. LabelComparisonVariant reuses this instead of a second parser.
+    def self.captured(capture_dir:)
+      new(capture_dir: capture_dir).captured
+    end
+
+    # Key order matches BedrockClient#generate_text when system is present.
+    # The variant serializes with this method and does not call generate_text.
+    def self.invoke_body_for(anthropic_version:, max_tokens:, temperature:, content:, system:)
+      {
+        anthropic_version: anthropic_version,
+        max_tokens: max_tokens,
+        temperature: temperature,
+        messages: [ { role: "user", content: content } ],
+        system: system
+      }.to_json
+    end
+
+    def captured
+      load_capture
+    end
+
     def initialize(capture_dir:, output_dir: nil, run_id: nil, client: nil)
       @capture_dir = Pathname(capture_dir)
       @output_dir = output_dir.nil? ? nil : Pathname(output_dir)

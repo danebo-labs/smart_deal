@@ -524,6 +524,37 @@ class ConversationSession < ApplicationRecord
     nil
   end
 
+  # User turns kept by episode_user_messages and the turn returned by
+  # last_assistant_message, in stored order. The current question stays
+  # where it was recorded.
+  def episode_prompt_history(now: Time.current)
+    cutoff = episode_history_cutoff(now)
+    user_indexes = []
+    assistant_index = nil
+
+    conversation_history.each_with_index do |message, index|
+      ts = parse_history_ts(message["ts"])
+      next if ts.nil? || ts < cutoff || ts > now
+
+      case message["role"]
+      when "user"
+        user_indexes << index
+      when "assistant"
+        assistant_index = index
+      end
+    end
+
+    indexes = user_indexes.last(EPISODE_MAX_USER_MESSAGES)
+    if assistant_index && conversation_history[assistant_index]["content"].to_s.presence
+      indexes = (indexes + [ assistant_index ]).sort
+    end
+
+    indexes.map do |index|
+      message = conversation_history[index]
+      { role: message["role"], content: message["content"].to_s }
+    end
+  end
+
   # ─── Entities ───────────────────────────────────────────────────────────────
 
   # Stores metadata-only (no chunks). FIFO eviction when count exceeds MAX_ENTITIES.

@@ -56,11 +56,16 @@ class SessionContextBuilder
       BLOCK
     end
 
+    # Episode window in stored order. The current question stays where it
+    # was recorded. Only the latest assistant turn is included, truncated
+    # to 200 characters.
     history =
-      if Rag::EpisodeScopeFlag.enabled? && session.respond_to?(:episode_user_messages)
-        users = session.episode_user_messages.map { |content| { role: "user", content: content } }
-        last  = session.last_assistant_message
-        users + (last ? [ { role: "assistant", content: last.truncate(200) } ] : [])
+      if Rag::EpisodeScopeFlag.enabled? && session.respond_to?(:episode_prompt_history)
+        session.episode_prompt_history.map do |turn|
+          content = turn[:content].to_s
+          content = content.truncate(200) if turn[:role] == "assistant"
+          { role: turn[:role], content: content }
+        end
       else
         session.recent_history_for_prompt(turns: 3)
       end

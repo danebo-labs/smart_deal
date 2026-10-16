@@ -925,17 +925,96 @@ class RagQueryConcernTest < ActiveSupport::TestCase
     assert_not_includes out, '#'
   end
 
-  test 'sanitize_answer drops bold label lines, horizontal rules and empty bold' do
+  # CG-D19 amended 2026-10-15: a colon label keeps its words. The asterisks
+  # go. A horizontal rule and an empty bold still go. Bold inside a sentence stays.
+  test 'sanitize_answer keeps colon-label words and drops rules and empty bold' do
     text = "La nota documenta el ajuste fino.\n\n**Datos faltantes:**\n- La cota del resorte.\n\n---\n\n****\n\n**Recomendación:** Consulta el manual.\nUn valor **crítico** sigue en negrita."
     out  = @controller.send(:sanitize_answer, text)
 
-    assert_not_includes out, "Datos faltantes"
-    assert_not_includes out, "---"
-    assert_not_includes out, "****"
-    assert_includes out, "- La cota del resorte."
-    assert_includes out, "Consulta el manual."
-    assert_not_includes out, "Recomendación"
-    assert_includes out, "Un valor **crítico** sigue en negrita."
+    assert_equal "La nota documenta el ajuste fino.\n\nDatos faltantes:\n- La cota del resorte.\n\nRecomendación: Consulta el manual.\nUn valor **crítico** sigue en negrita.",
+                 out
+  end
+
+  # Phase 5 raw answer, Bedrock requestId c1e4bdc5…: the bold subject that
+  # opens each paragraph was published without it.
+  test 'sanitize_answer keeps a bold subject that opens a sentence' do
+    text = "# Respuesta\n\n" \
+           "**Seguridad Puerta nivel 3** forma parte de la **Sección Línea de Seguridad**, donde se conecta en serie [1].\n\n" \
+           "**Chapa nivel 3** aparece en la **Sección Botonera de Pasillo Nivel 1** y se conecta de forma diferente [1]."
+    out  = @controller.send(:sanitize_answer, text)
+
+    assert_equal "**Seguridad Puerta nivel 3** forma parte de la **Sección Línea de Seguridad**, donde se conecta en serie [1].\n\n" \
+                 "**Chapa nivel 3** aparece en la **Sección Botonera de Pasillo Nivel 1** y se conecta de forma diferente [1].",
+                 out
+  end
+
+  test 'sanitize_answer unbolds a colon label and keeps a bold subject' do
+    text = "**Dato faltante:** Procedimiento de ajuste de resortes.\n" \
+           "**J26** — Posición Revisión: puentea las cerraduras.\n" \
+           "**K1:** contactor de subida.\n" \
+           "**Chapa nivel 3:** aparece en la botonera [1].\n" \
+           "**Interpretación técnica:** probablemente es un contacto de puerta."
+    out  = @controller.send(:sanitize_answer, text)
+
+    assert_equal "Dato faltante: Procedimiento de ajuste de resortes.\n" \
+                 "**J26** — Posición Revisión: puentea las cerraduras.\n" \
+                 "K1: contactor de subida.\n" \
+                 "Chapa nivel 3: aparece en la botonera [1].\n" \
+                 "Interpretación técnica: probablemente es un contacto de puerta.",
+                 out
+  end
+
+  test 'sanitize_answer keeps the words of a presentation label' do
+    text = "**Componente identificado:** Según el plano, Chapa nivel 3 está en la botonera [1].\n" \
+           "**Relación con seguridad de puerta:** El plano no establece una conexión explícita."
+    out  = @controller.send(:sanitize_answer, text)
+
+    assert_equal "Componente identificado: Según el plano, Chapa nivel 3 está en la botonera [1].\n" \
+                 "Relación con seguridad de puerta: El plano no establece una conexión explícita.",
+                 out
+  end
+
+  test 'sanitize_answer keeps a recommendation when the colon sits outside the bold' do
+    out = @controller.send(:sanitize_answer, "**Recomendación**: Consulta el manual.")
+
+    assert_equal "Recomendación: Consulta el manual.", out
+  end
+
+  test 'sanitize_answer keeps a colon label that occupies the last line' do
+    out = @controller.send(:sanitize_answer, "La nota documenta el ajuste fino.\n**Datos faltantes:**")
+
+    assert_equal "La nota documenta el ajuste fino.\nDatos faltantes:", out
+  end
+
+  # Opus counterexamples, 2026-10-15. A digit and a word list are not what
+  # decides whether the words stay.
+  test 'sanitize_answer keeps colon-label words that the semantic exceptions dropped' do
+    cases = {
+      "**Barrera laser:** forma parte de la cadena en serie [1]." =>
+        "Barrera laser: forma parte de la cadena en serie [1].",
+      "**Lo que el plano no establece:** que sean el mismo elemento." =>
+        "Lo que el plano no establece: que sean el mismo elemento.",
+      "**Para revisar:** medir continuidad entre Seg In y Seg Out." =>
+        "Para revisar: medir continuidad entre Seg In y Seg Out.",
+      "**Según el plano:** las dos etiquetas están en secciones distintas [1]." =>
+        "Según el plano: las dos etiquetas están en secciones distintas [1].",
+      "**Datos faltantes:**\n- Procedimiento de ajuste de resortes." =>
+        "Datos faltantes:\n- Procedimiento de ajuste de resortes.",
+      "**Dato faltante:** Procedimiento de ajuste de resortes." =>
+        "Dato faltante: Procedimiento de ajuste de resortes.",
+      "**Recomendación**: Consulta el manual." =>
+        "Recomendación: Consulta el manual.",
+      "**Componente identificado:** Según el plano, Chapa nivel 3 está en la botonera [1]." =>
+        "Componente identificado: Según el plano, Chapa nivel 3 está en la botonera [1].",
+      "**Chapa nivel 3** aparece en la **Sección Botonera** [1]." =>
+        "**Chapa nivel 3** aparece en la **Sección Botonera** [1].",
+      "**Respuesta**\nNo, no son el mismo." =>
+        "No, no son el mismo."
+    }
+
+    cases.each do |text, expected|
+      assert_equal expected, @controller.send(:sanitize_answer, text)
+    end
   end
 
   test 'sanitize_answer does not strip a hash that appears mid-sentence' do

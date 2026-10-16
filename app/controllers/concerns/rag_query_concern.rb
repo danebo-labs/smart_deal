@@ -420,13 +420,26 @@ module RagQueryConcern
     text.gsub(/^[ \t]*\#{1,6}\s+[^\n]*\n?/, '')
   end
 
-  # CG-D19 (medición 10): a line that is only a bold label («**Datos
-  # faltantes:**», «**Recomendación:**»), a horizontal rule, or an empty bold
-  # left behind is form, not prose. The sentences under it stay.
+  # CG-D19, amended 2026-10-15 (Lahiri). Form only: the rule does not
+  # classify what a label means.
+  # A bold subject followed by prose stays («**Chapa nivel 3** aparece…»,
+  # «**J26** — …»).
+  # A colon label keeps its words and loses the asterisks, on its own line
+  # or in front of prose («**Datos faltantes:**» → «Datos faltantes:»,
+  # «**Recomendación:** Consulta el manual.» → «Recomendación: Consulta el manual.»).
+  # There is no exception by digit or by a word list.
+  # A line that is only a bold title and has no colon is decorative and goes
+  # («**Respuesta**»). Horizontal rules and empty bold go.
+  # Markdown headings stay in strip_markdown_headers.
+  BOLD_TITLE_LINE_PATTERN = /^[ \t]*\*\*[^*\n]{1,80}\*\*[ \t]*(?:\n|\z)/.freeze
+  BOLD_COLON_LABEL_PATTERN = /^([ \t]*)\*\*([^*\n]{1,80}?)(?::\*\*|\*\*:)/.freeze
+  HORIZONTAL_RULE_PATTERN = /^[ \t]*(?:-{3,}|\*{3,}|_{3,})[ \t]*\n?/.freeze
+
   def strip_markdown_labels(text)
     text
-      .gsub(/^[ \t]*\*\*[^*\n]{1,80}\*\*:?[ \t]*\n?/, '')
-      .gsub(/^[ \t]*(?:-{3,}|\*{3,}|_{3,})[ \t]*\n?/, '')
+      .gsub(BOLD_TITLE_LINE_PATTERN) { |line| line.include?(":") ? line : "" }
+      .gsub(BOLD_COLON_LABEL_PATTERN) { "#{Regexp.last_match(1)}#{Regexp.last_match(2)}:" }
+      .gsub(HORIZONTAL_RULE_PATTERN, "")
   end
 
   TABLE_ROW_PATTERN     = /\A\s*\|.*\|\s*\z/.freeze

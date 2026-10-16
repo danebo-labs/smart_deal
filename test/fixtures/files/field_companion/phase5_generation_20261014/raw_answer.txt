@@ -1,0 +1,13 @@
+# Respuesta
+
+No, **Chapa nivel 3** y **Seguridad Puerta nivel 3** no son el mismo elemento, y no puede usar una referencia en lugar de la otra.
+
+Según el plano del Elemont MH, estos son dos componentes distintos que aparecen en secciones diferentes del circuito [1][2]:
+
+**Seguridad Puerta nivel 3** forma parte de la **Sección Línea de Seguridad**, donde se conecta en serie dentro de la cadena de seguridad del montacargas. Aparece en la posición 7 de esa cadena, entre Seguridad Puerta nivel 4 y Seguridad Puerta nivel 2 [1].
+
+**Chapa nivel 3** aparece en la **Sección Botonera de Pasillo Nivel 1** y se conecta de forma diferente: sale de Com 18vdc con punto de unión, pasa por el símbolo Dp3, cruza PasCom 24V con un puente semicircular sin punto de unión, y termina en el terminal rotulado Chapa nivel 3 [1].
+
+El plano también muestra que existen **cinco etiquetas Chapa nivel** (1 a 5) en la botonera de pasillo, mientras que en la cadena de seguridad hay **cinco dispositivos Seguridad Puerta** (niveles 1 a 5) [1][2]. Aunque ambos conjuntos están numerados por nivel, sus funciones, ubicaciones en el circuito y conexiones son distintas.
+
+Para el problema de puerta en nivel 2, debe verificar tanto **Seguridad Puerta nivel 2** (en la cadena de seguridad) como **Chapa nivel 2** (en la botonera de pasillo), ya que son componentes separados que pueden afectar el funcionamiento de la puerta.

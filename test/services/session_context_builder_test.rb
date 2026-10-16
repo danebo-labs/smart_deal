@@ -377,12 +377,86 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
     travel_to now do
       context = SessionContextBuilder.build(session)
       truncated = long_assistant.truncate(200)
-      assert_includes context, "Hola, tengo una falla eléctrica en un elevador hidráulico Elemont, con imanes y tarjeta Cea15"
-      assert_includes context, "La falla es en la puerta número 1 el equipo no magnetiza bien el imán de la puerta para que inicie movimiento."
-      assert_includes context, "Elemont Montacargas Hidraulico Modelo MH"
-      assert_includes context, "Assistant: #{truncated}"
       assert_equal 200, truncated.length
+      assert_equal [
+        "User: Hola, tengo una falla eléctrica en un elevador hidráulico Elemont, con imanes y tarjeta Cea15",
+        "User: La falla es en la puerta número 1 el equipo no magnetiza bien el imán de la puerta para que inicie movimiento.",
+        "Assistant: #{truncated}",
+        "User: Elemont Montacargas Hidraulico Modelo MH"
+      ], recent_conversation_lines(context)
       assert_not_includes context, "primera respuesta"
+    end
+  end
+
+  test "recent conversation places the previous answer in its stored turn" do
+    now = Time.zone.parse("2026-10-16T12:00:00-03:00")
+    long_assistant = "B" * 250
+    session = ConversationSession.create!(
+      identifier: "web:scb_order_#{SecureRandom.hex(4)}",
+      channel: "web",
+      expires_at: 30.days.from_now,
+      conversation_history: [
+        { "role" => "user", "content" => "fuera de ventana", "ts" => (now - 5.hours).iso8601 },
+        { "role" => "assistant", "content" => "respuesta vieja", "ts" => (now - 5.hours + 1.minute).iso8601 },
+        { "role" => "user", "content" => "sin marca de tiempo" },
+        { "role" => "user", "content" => "pregunta uno", "ts" => (now - 4.minutes).iso8601 },
+        { "role" => "assistant", "content" => "respuesta uno", "ts" => (now - 3.minutes).iso8601 },
+        { "role" => "user", "content" => "pregunta dos", "ts" => (now - 2.minutes).iso8601 },
+        { "role" => "assistant", "content" => long_assistant, "ts" => (now - 90.seconds).iso8601 },
+        { "role" => "user", "content" => "pregunta tres sin respuesta", "ts" => (now - 1.minute).iso8601 },
+        { "role" => "user", "content" => "pregunta actual", "ts" => now.iso8601 }
+      ]
+    )
+
+    travel_to now do
+      context = SessionContextBuilder.build(session)
+      truncated = long_assistant.truncate(200)
+
+      assert_equal [ "pregunta dos", "pregunta tres sin respuesta", "pregunta actual" ],
+                   session.episode_user_messages
+      assert_equal long_assistant, session.last_assistant_message
+      assert_equal SessionContextBuilder::MAX_CONTEXT_CHARS, 2000
+      assert_equal [
+        "User: pregunta dos",
+        "Assistant: #{truncated}",
+        "User: pregunta tres sin respuesta",
+        "User: pregunta actual"
+      ], recent_conversation_lines(context)
+      assert_not_includes context, "pregunta uno"
+      assert_not_includes context, "respuesta uno"
+      assert_not_includes context, "fuera de ventana"
+      assert_not_includes context, "respuesta vieja"
+      assert_not_includes context, "sin marca de tiempo"
+    end
+  end
+
+  test "recent conversation keeps an earlier assistant ahead of the later user turns" do
+    now = Time.zone.parse("2026-10-16T12:10:00-03:00")
+    session = ConversationSession.create!(
+      identifier: "web:scb_early_#{SecureRandom.hex(4)}",
+      channel: "web",
+      expires_at: 30.days.from_now,
+      conversation_history: [
+        { "role" => "user", "content" => "primera", "ts" => (now - 4.minutes).iso8601 },
+        { "role" => "assistant", "content" => "respuesta previa", "ts" => (now - 3.minutes).iso8601 },
+        { "role" => "user", "content" => "segunda", "ts" => (now - 2.minutes).iso8601 },
+        { "role" => "user", "content" => "tercera", "ts" => (now - 1.minute).iso8601 },
+        { "role" => "user", "content" => "actual", "ts" => now.iso8601 }
+      ]
+    )
+
+    travel_to now do
+      context = SessionContextBuilder.build(session)
+
+      assert_equal [ "segunda", "tercera", "actual" ], session.episode_user_messages
+      assert_equal "respuesta previa", session.last_assistant_message
+      assert_equal [
+        "Assistant: respuesta previa",
+        "User: segunda",
+        "User: tercera",
+        "User: actual"
+      ], recent_conversation_lines(context)
+      assert_not_includes context, "primera"
     end
   end
 
@@ -1012,6 +1086,11 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
         "rejected" => episode["rejected"]
       }
     )
+  end
+
+  def recent_conversation_lines(context)
+    body = context.to_s.split("## Recent Conversation\n", 2).last.to_s
+    body.split(/\n\n## /, 2).first.to_s.lines.map(&:chomp)
   end
 
   def episode_session(goal: "Resortes", facts: {}, identifiers: [], conflicts: [], observations: [], rejected: [], updated_at: nil, channel: "web")

@@ -298,6 +298,7 @@ La sesión que edite un test escribe acá una fila. Sin fila, el test no se toca
 | CG-D19 #F | `active_episode_test.rb`, `field_photo_analysis_job_test.rb` | probaban `FieldCompanionPhotoFlag` | el módulo no existe | Flag sin lectores. |
 | CG-D19 #G | `rag_query_concern_test.rb` (turno 3 de Jesús, «Panel Alfa») | dos chips «Continuar…» / «Resumen del documento» | `quick_replies` nil y la pregunta en prosa | Copia del menú. La puerta sigue sin llamar al orquestador. |
 | Medición 10 | `rag_query_concern_test.rb` `sanitize_answer` | no cubría rótulos en negrita ni separadores | se quitan la línea-rótulo, `---` y `****`; una negrita dentro de la oración queda | Presentación. |
+| Enmienda 2026-10-15 | `rag_query_concern_test.rb` `sanitize_answer` | la medición 10 borraba también las palabras de un rótulo con dos puntos, y una excepción por dígitos o por una lista de palabras decidía cuáles se salvaban | un rótulo con dos puntos conserva las palabras y pierde los asteriscos; un sujeto en negrita seguido de prosa se conserva; una línea que es solo un título en negrita sin dos puntos se quita; no hay lista de palabras ni excepción por dígitos. Los encabezados Markdown no cambian | Lahiri, 2026-10-15. Presentación. La medición 10 queda como historia. |
 
 ## Costo
 
@@ -407,6 +408,7 @@ Decisiones humanas abiertas (ninguna ejecutada):
 - **#F — RESUELTA por Lahiri, ejecutada:** `Rag::FieldCompanionPhotoFlag` borrado; sin lectores desde CG-D19.
 - **#G — RESUELTA por Lahiri, ejecutada:** el turno de selección de pin pregunta en prosa (`selection_turn_prompt`) sin chips; `selection_quick_replies` pasa a `selection_gate?`.
 - **Después de la medición 10:** `sanitize_answer` quita las líneas que son solo un rótulo en negrita («**Datos faltantes:**»), los separadores `---` y las negritas vacías; una negrita dentro de una oración se conserva. Sin medir.
+- **Enmienda del 2026-10-15, Lahiri.** Un rótulo en negrita con dos puntos conserva sus palabras y pierde los asteriscos, solo en su línea o delante de prosa: «**Datos faltantes:**» queda «Datos faltantes:»; «**Recomendación:** Consulta el manual.» queda «Recomendación: Consulta el manual.»; «**Recomendación**: Consulta el manual.» queda «Recomendación: Consulta el manual.». No hay excepción por dígitos ni por una lista de palabras. Un sujeto en negrita seguido de prosa, sin dos puntos, se conserva («**Chapa nivel 3** aparece…», «**J26** — …»). Una línea que es solo un título en negrita y no tiene dos puntos se sigue quitando («**Respuesta**»). Los separadores `---`, `***`, `___` y las negritas vacías se siguen quitando. `strip_markdown_headers` no cambia: un encabezado Markdown sigue saliendo entero. La medición 10 queda como historia de lo que se hizo el 23-sep.
 - **#H** Regla de producto que Lahiri enunció esa noche: cuando el técnico aporta evidencia nueva en un follow-up, la respuesta abre incorporándola. El paso 4 lo hizo; los pasos 2 y 3 no llegaron a mostrar nada. Depende de #A y de una línea GS.
 
 ### Entrada FC-D10 — identidad documental (23-sep-2026)

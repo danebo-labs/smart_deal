@@ -2,6 +2,54 @@
 
 ## Estado de este corte, 2026-10-14
 
+**Dictamen de alcance, 2026-10-16.** El defecto material es uno: inferencia derivada de la sección o del nivel presentada como hecho documental, con cita, y prescripción desde ahí. Atraviesa fases 2, 3, 4 y 5. La pregunta sí/no de fase 5 deja de ser la compuerta del piloto y queda como regresión registrada. Dos arreglos deterministas pasan a un commit: el sanitizador enmendado ya en el árbol y el orden cronológico de `Recent Conversation` en `SessionContextBuilder`. Con eso desplegado se recorre el tramo representativo de puertas (turnos 4, 6 y 7 de la interacción candidata; 1 y 2 como preparación; 3 y 5 omitidos). No se prepara representación nueva ni otra ablación de prompt. La comparación de modelo solo se abre si el defecto aparece en 4 o 7 con esos arreglos desplegados. Fases 3 y 5 pendientes. Fase 4 con reservas. No es `EPISODIO_VALIDADO`. La interacción candidata no está validada con un técnico.
+
+**Revisión de evidencia y recorrido, 2026-10-15.** El request histórico `2f8e64af…` ya contenía sección, recorrido y la falta de enlace entre Chapa nivel 3 y Seguridad Puerta nivel 3. El PDF no establece si son la misma pieza. La respuesta cruda `bc9c12b1…` cerró esa relación y prescribió la comprobación del nivel 2. La ablación de «Start with one direct sentence» queda en la muestra ya registrada y no se repitió. No hay estructura nueva ni cambio de producto. Fases 3 y 5 pendientes. Fase 4 con reservas. No es `EPISODIO_VALIDADO`. El detalle está en «Revisión de evidencia y recorrido, 2026-10-15».
+
+**Ablación de la frase de entrega, muestra 1, 2026-10-15.** Una llamada, `phase5:replay:b:direct:1`, sobre el body original `9b0d8861…`. Se quitó una sola vez «Start with one direct sentence. ». Entrada 15875, salida 446, estimación US$0,018105. La identidad se repite en toda la respuesta. No se envió la muestra 2. Esta ablación no superó el caso observado. No se concluye una causa única, ni independencia entre defectos, ni que toda intervención de prompt sea imposible. Fases 3 y 5 pendientes. Fase 4 con reservas. No es `EPISODIO_VALIDADO`.
+
+**B′1 de la variante, 2026-10-15.** Una llamada, `invoke_model`, `retry_limit` 0 y `max_attempts` 1. Entrada 16030, salida 449, estimación US$0,018275. La identidad se repite: «no son el mismo elemento según la documentación». `reading.json` deja `identity_passed` en falso. El proceso siguiente se niega con `identity_repeated` y enviaría 0. No hay B′2 ni A′1. El párrafo no se aplica. Fases 3 y 5 pendientes. Fase 4 con reservas. No es `EPISODIO_VALIDADO`.
+
+**Variante de un párrafo, preparada y no ejecutada, 2026-10-15.** El último párrafo de `DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT` sigue en producción. El candidato está en `Rag::LabelComparisonVariant` y sustituye ese párrafo una sola vez en copias de las capturas. La vista previa salió con código 2 y `sent` falso, sin `InvokeModel`. Fases 3 y 5 pendientes. Fase 4 con reservas. No es `EPISODIO_VALIDADO`. El detalle está en «Variante de comparación de etiquetas».
+
+**Muestra 2 del replay B, 2026-10-15.** La lectura de la muestra 1 quedó en `reading.json`, con `meets_case_b` falso. La muestra 2 usó el mismo body, SHA `9b0d8861…`. Una llamada, `retry_limit` 0 y `max_attempts` 1. El cupo queda cerrado: dos llamadas registradas y `cap_reached`. La muestra 2 tampoco cumple. Fases 3 y 5 pendientes. Fase 4 con reservas. No es `EPISODIO_VALIDADO`.
+
+**Muestra 1 del replay B, 2026-10-15.** `model` y `stream` pertenecen al registro, no al body de `InvokeModel`. La muestra 1 salió una vez, con `retry_limit` 0 y `max_attempts` 1. La lectura no cumple el caso. `reading.json` no está escrito y la muestra 2 no se ejecutó. Fases 3 y 5 pendientes. Fase 4 con reservas. No es `EPISODIO_VALIDADO`.
+
+**Enmienda del sanitizador y preparación del replay B, 2026-10-15.** Lahiri aprueba conservar las palabras de los rótulos con dos puntos. El cambio está en local, con tests y sin commit ni deploy. No hubo generación.
+
+- `strip_markdown_labels` quita los asteriscos de un rótulo con dos puntos y deja el texto. No hay excepción por dígitos ni por una lista de palabras. Un sujeto en negrita seguido de prosa se conserva. Una línea que es solo un título en negrita sin dos puntos se quita. Los encabezados Markdown no cambian.
+- El contrato CG-D19 queda enmendado en `PLAN_COPILOTO_GENERACION_2026-09-22.md`. La medición 10 sigue como historia.
+- El replay de la fase 5 está preparado y no está autorizado. El cuerpo es el `request_body.json` capturado, 47221 bytes, SHA-256 `2f8e64afe…`. Cupo efectivo: dos llamadas como máximo, una por proceso. La segunda solo si una lectura humana anota que la primera no cumple. Una muestra que cumple no acepta las fases 3 o 5. Dos fallos no prueban determinismo.
+
+Fase 4 aceptada con reservas. Fidelidad de las fases 3 y 5 pendiente. No es `EPISODIO_VALIDADO`.
+
+**Reparación del posprocesado y paquete de generación, 2026-10-14.** El cambio está en local, con tests y sin commit ni deploy.
+
+- `strip_markdown_labels` conserva el sujeto en negrita que abre una frase, y también un designador o una marca de ausencia o inferencia con dos puntos.
+- Sigue quitando las líneas-rótulo y las etiquetas de presentación.
+- La suite está verde. La respuesta histórica no se reescribió.
+- Los dos casos de generación quedaron empaquetados para una revisión de diseño por Opus, que no se lanzó, en `tmp/generation_design_review_2026-10-14/`. El replay sigue sin ejecutar.
+
+Fase 4 aceptada con reservas. Fidelidad de las fases 3 y 5 pendiente. No es `EPISODIO_VALIDADO`.
+
+**Registro de invocación de la fase 5, 2026-10-14.** Se leyó un objeto de S3 Model Invocation Logs, `requestId` `c1e4bdc5-91a1-423c-a6fa-c274673e383a`, 15881/468 tokens. El request y la respuesta quedaron en local con su SHA. El prompt va en un solo `user`, sin system, con los chunks de las páginas 5, 6 y 2. `[1]` es la página 5 y `[2]` la página 6.
+
+- La respuesta cruda traía los sujetos. `sanitize_answer` sobre la cruda reproduce byte a byte la publicada, y `strip_markdown_labels` es lo que los borró: defecto de posprocesado confirmado.
+- Las certezas de identidad y función, y la comprobación prescrita, salen de la generación. Van contra la frase del contrato que pide decir que la evidencia no resuelve el elemento físico y preguntar.
+- Las instrucciones son idénticas byte a byte a las del resumen de la fase 3, que hizo la misma resolución en sentido contrario.
+- «Cinco etiquetas» queda como imprecisión entre niveles y apariciones, no como fallo.
+
+Fase 5 no aceptada. Fidelidad del resumen de la fase 3 pendiente. Fase 4 conserva su aceptación con reservas. No es `EPISODIO_VALIDADO`. El detalle está en «Registro de invocación de la generación de fase 5, 2026-10-14».
+
+**Corrida de fase 5 en producción, 2026-10-14.** Lahiri envió el mensaje preparado en la sesión 128, episodio `ep_660b9f6c5ab67a20`, correlación `query:c80668ea-f7e8-4448-bb2d-ddd842fe7524`, imagen `a7efafb`. El estado de partida coincide y el pin se conservó: solo la URI canónica, k=3, `other_equipment` 0, con la página 5 recuperada. La respuesta atribuye al plano que son dos componentes distintos, afirma sin respaldo que sus funciones son distintas y prescribe verificar el nivel 2 desde esa certeza. Fase 5 no aceptada en esta respuesta. El defecto demostrado es de generación, de la misma familia que el pendiente del resumen de la fase 3. Los sujetos que faltan tienen causa probable en el posprocesado, sin determinar. El dato mínimo que falta es el registro de invocación de Bedrock de esa generación. La fase 4 no se reabre. No es `EPISODIO_VALIDADO`. El detalle está en «Corrida de fase 5 en producción, 2026-10-14».
+
+**Preparación de la fase 5, 2026-10-14.** El evaluador fijó el caso: página 5, Chapa nivel 3 frente a Seguridad Puerta nivel 3, y un mensaje que pregunta si son el mismo elemento. El PDF y el chunk locales no contradicen la referencia. La página 6 también imprime Chapa nivel 3, y su copia local de chunk añade «selector». La sesión 128 es el inicio: episodio vigente hasta `2026-10-15T01:00:36-03:00`, y el pin sobrevive a la expiración. La vía es un mensaje en producción, con unas tres llamadas y unos US$0,02 estimados. No hubo mensaje, generación, Retrieve, S3, worker ni deploy. La ejecución no está autorizada. La fidelidad del resumen de la fase 3 sigue pendiente. No es `EPISODIO_VALIDADO`. El detalle está en «Preparación de la fase 5, 2026-10-14».
+
+**Decisión de Lahiri sobre la fase 4, 2026-10-14.** Lahiri aprueba la aceptación con reservas de la fase 4 para el recorrido manual en producción: imagen `a7efafb`, sesión 128, episodio `ep_660b9f6c5ab67a20`. La comprobación exclusiva del servidor local no se ejecutó y no forma parte de esta aceptación; ese proceso quedó detenido. El botón viejo o ajeno y la supervivencia del pin al vacío y al conflicto no se recorrieron en producción. La inferencia de que abrir la seguridad detiene la operación sale citada como `[1]` y queda como reserva no resuelta. La fase 5 queda habilitada para preparación, sin ejecución. La fidelidad del resumen de la fase 3 sigue pendiente. No es `EPISODIO_VALIDADO` ni aceptación general del companion. El detalle está en «Decisión de Lahiri sobre la fase 4, 2026-10-14».
+
+**Validación en producción, elevator.danebo.ai, 2026-10-14.** Lahiri recorrió el chat con `lahiri.sanchez@danebo.ai` y exportó la traza del día. La cuenta del export es `danebo-legacy`, id 1, usuario 3. La imagen es `a7efafbae74aeaec210246a44de9850ec53ee7bc`. Sesión 128, episodio `ep_660b9f6c5ab67a20`. El criterio A queda aceptado para este recorrido observado en producción. El criterio B acepta la ubicación y la relación entre Seguridad Puerta nivel 3, nivel 2 y nivel 1. Las posiciones 7, 8 y 9 son índices del chunk, no marcas impresas. La frase de que abrir esa seguridad detiene el montacargas es una inferencia, no una instrucción impresa. No hay aceptación general del companion. La fase 5 no empieza. La fidelidad del resumen de la fase 3 sigue pendiente. No es `EPISODIO_VALIDADO`. El detalle está en «Validación en producción, 2026-10-14».
+
 **Adaptación local para la comprobación web de la fase 4.** El presupuesto de esta corrida y el arranque exclusivo quedaron en el árbol, sin commit y sin llamada. `PHASE4_WEB_CHECK` sigue fuera de `.env`. El servidor no se levantó. US$0,12 sigue siendo una estimación, no un techo. La fase 4 no queda aceptada. La fase 5 no empieza. La fidelidad del resumen de la fase 3 sigue pendiente. No es `EPISODIO_VALIDADO`. El detalle está en «Adaptación local de la comprobación web, 2026-10-14».
 
 **Preparación operativa de la fase 4.** El precheck aislado, en un proceso hijo, pasa después de `connect_isolated!`. El arranque web todavía no hereda las bases, y la ruta web no frena el quinto intento antes de enviarlo. No hubo mensaje, clic ni llamada. US$0,12 queda como estimación, no como techo. La fase 4 no queda aceptada. La fase 5 no empieza. No es `EPISODIO_VALIDADO`. El detalle está en «Preparación operativa de la fase 4, 2026-10-14».
@@ -35,6 +83,898 @@
 **Corte de la botonera.** La revisión visual posterior de la sección Botonera, página 5, queda en «Corrección candidata de la botonera, 2026-10-14». El defecto demostrado es de representación: el chunk trata las etiquetas Chapa nivel como salidas de PasCom 24V. Las generaciones de `20261014T140201Z` y `20261014T152614Z` amplifican esa frase. Eso no es la causa única de todas las muestras. La aceptación conversacional de la fase 2 se mantiene. La aceptación técnica sigue pendiente. La comparación de modelos y las llamadas siguen diferidas. Este corte no acepta la fase 2 ni abre la fase 3. `PASS_CALL_CAP` sigue en 0. La prevención de ingesta y la geometría vectorial quedan fuera de este corte. Sus pendientes y criterios de retomada están en «Backlog diferido: fidelidad de ingesta de diagramas, 2026-10-14». El recorrido se ejecutó una vez y se detuvo en `publish_checked`, sin `job_id`. La sincronización autorizada después abrió `CJBRIZKPAL`. El detalle está en «Aplicación de la botonera, 2026-10-14» y en «Continuación de la sincronización de la botonera, 2026-10-14».
 
 **Objetivo.** La consulta documental acotada de la fase 1 quedó aceptada con reservas. En la fase 2, el ciclo conversacional quedó demostrado. `20261013T233715Z` comprobó el contrato de atribución: el prompt lo incluye y la respuesta vuelve a atribuir una función que ese prompt no contiene. Las dos respuestas no son el mismo texto. La aceptación técnica sigue pendiente. El recorte de «Reparación de la atribución, 2026-10-13» quedó rechazado. La decisión de «Revisión de la reparación, 2026-10-13» está implementada en local. La comparación de solo generación se ejecutó en `20261014T012743Z` y las dos muestras fallan la atribución. La comprobación de las dos cláusulas de inferencia se ejecutó en `20261014T020512Z` y las dos muestras vuelven a fallar. El cupo de esas dos llamadas queda cerrado. Este corte sustituye solo `DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT` para separar información documental, interpretación opcional y datos pendientes. La hipótesis se comprobó en `20261014T140201Z` y las dos muestras vuelven a fallar. Ese cupo queda cerrado. La separación system/user se comprobó en `20261014T152614Z` y las dos muestras vuelven a atribuir función y accionamiento. Ese cupo queda cerrado.
+
+### Validación en producción, 2026-10-14
+
+Lahiri hizo el recorrido en el chat de `elevator.danebo.ai` y dijo que en la UI se ve bien. La traza revisada es `tmp/pilot_exports/2026-10-14_2026-10-14_danebo-legacy`, generada `2026-10-15T00:03:51Z`. `elevator.danebo.ai` resuelve `danebo-legacy`. El manifiesto trae cuenta 1, usuarios 3, 5 y 6, imagen `docker.io/lahirisan80/smart-deal:a7efafbae74aeaec210246a44de9850ec53ee7bc`, commit `a7efafb` («Stage 4»), ancestro de `HEAD`. El reporte etiqueta al usuario 3 como `lahiri.sanchez@danebo.ai` y a la cuenta como Danebo. El export de `danebo-pilot-elevator` del mismo día no tiene interacciones. El proceso local de la comprobación exclusiva seguía escuchando en el puerto 3000; no había enviado estos dos mensajes. Quedó detenido al cerrar esta lectura, y se borró la cookie de sesión local. Esa parada no es la corrida que se evalúa aquí.
+
+**Recorrido.** Sesión 128, episodio `ep_660b9f6c5ab67a20`. El hash de estado anterior del primer turno es el de vacío, `44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a`. Dos mensajes de usuario y tres respuestas. Correlaciones `query:4103b508-6a07-45e1-aeeb-b25dee87ea78` y `query:b0cb71b3-d987-420a-8d8a-df8fdd8526cc`.
+
+1. `20:58:31-03:00`. «El equipo es un Elemont MH.» SHA-256 `4f497dab6cf1f3b5d18fd1fb71fe23418d682dc6e493136461a2cbc4fe482407`. Intérprete `report`: fabricante `Elemont`, identificador `MH`. Retrieve abierto, `requested_k` 8, `filter_applied` falso, filtro de cuenta 1, cuenta 3 sin foto de campo ni `manual_corpus=account`, y `manual_corpus=general`. Ocho resultados, siete de otro equipo y uno de este. `20:58:44` publica `manual_suggestion_shown` con un solo uid, `dcc8e046-037d-48a6-8913-1992aed28507`, alcance `tenant_private`. Esa publicación ocurre en el turno completado, antes del foco.
+2. `20:59:32`. `manual_focus_confirmed` en la misma sesión y la misma correlación del primer mensaje. `document_id` `dcc8e046-037d-48a6-8913-1992aed28507`. URI `s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf`. Alcance `tenant_private`. El clic reejecuta la primera pregunta: Retrieve `requested_k` 3, `filter_applied` verdadero, y el filtro de Bedrock queda solo en esa URI, por `x-amz-bedrock-kb-source-uri` y por `original_source_uri`. Tres chunks, los tres de `121bfffe0827f6bc681ba9bdc91050390055`, `this_job` 3, `other_equipment` 0.
+3. `21:00:29`. El texto guardado es «stoy revisando un Elemont MH por un problema de puerta en el nivel 2. Según el plano seleccionado, ¿dónde aparece la seguridad de esa puerta y cómo se relaciona con las demás seguridades?». SHA-256 `dd47d463a95aed422a894aae39527384fa0a653d0f5bab3a3f4d2aa479ab7a8b`. Le falta la E inicial del texto preparado; el SHA del texto con E es `78822ce3b68510255073d1c5fc87536ad7e54caa09ee6c66202897644a51f5c5`. La consulta efectiva le agrega el objetivo «El equipo es un Elemont MH.», SHA `f44c4a53d0ec41cb80e5bc8c7c720a463e56eb9d8deaa9948a7c8e417f438f75`. Mismo episodio. Intérprete `follow_up`. El Retrieve de las `21:00:30` repite `requested_k` 3, `filter_applied` verdadero y la misma huella `b1aa52f4edf3a1ec` del Retrieve posterior al clic. El filtro vuelve a ser solo la URI canónica. Tres chunks del mismo documento, páginas citadas 5 y 1. `other_equipment` 0.
+
+En `a7efafb`, `resolve_retrieval_scope` pone `force_entity_filter` verdadero y `reason` `pin_only` cuando hay URIs pineadas. El export no guarda ese booleano. Lo que sí guarda es el filtro enviado: abierto antes del clic, y solo la URI canónica en los dos Retrieve posteriores. No hay un tercer mensaje.
+
+**Llamadas y costo.** Cinco llamadas de modelo, todas `global.anthropic.claude-haiku-4-5-20251001-v1:0`: intérprete 2120/140 y generación 7634/682 del primer mensaje; generación 10460/774 del replay; intérprete 2265/138 y generación 12046/434 del segundo. Tres `kb_retrieve` y un `kb_warm_ping`. Atribuido por uso del proveedor: US$0,045365. `reconciled_bedrock_usd` queda 0 con estado `pending_reconciliation`. No se ejecutó ningún job para completar esa conciliación.
+
+**A. Identificación, selección y alcance.** Cumple en esta traza. La tarjeta ofrece el uid correcto y el foco se confirma 48 segundos después, en otro evento, no en el mismo turno. La sesión y el episodio siguen. Las dos búsquedas posteriores al clic usan k=3 y únicamente la URI canónica. La ampliación a otros manuales queda en el Retrieve abierto anterior al clic. El primer turno escribe el identificador `MH`, no `Elemont MH`. El segundo reescribe el fabricante como `Elemont MH`. Eso no abre el corpus.
+
+**Qué conserva el export y qué no.** Las filas `kb_retrieve` traen la consulta, `requested_k`, `filter_applied`, la huella del filtro y el resultado. Las filas `bedrock_request_filter` traen el filtro enviado. Las filas de decisión traen rango, `KEEP`, `document_id`, `original_source_uri`, puntaje y `ingestion_path`. Las citas publicadas son título y página. No hay campo `excerpt`. `chunk_ids` llega `[]`. El cuerpo del chunk no está en el export. Esta lectura no lo reconstruyó desde el código: después se leyeron en S3 los objetos cuya página, en el sidecar, coincide con las citas. No hubo Retrieve ni generación.
+
+**Cinco llamadas y tres Retrieve.** Las dos frases del usuario son el mensaje de las 20:58:31 y el de las 21:00:29. El clic de las 20:59:32 no es un mensaje.
+
+1. `20:58:32`, `semantic_analysis`, correlación `4103b508…`. Intérprete del primer mensaje. 2120 tokens de entrada, 140 de salida, US$0,00282.
+2. `20:58:35`, `kb_retrieve`, la misma correlación. Consulta «El equipo es un Elemont MH.». k=8, `filter_applied` falso, filtro de cuenta. Función: búsqueda abierta anterior a la tarjeta.
+3. `20:58:44`, `query_direct`, la misma correlación. Generación de esa búsqueda abierta. 7634/682, US$0,011044. La respuesta guardada en el evento cita `[5]` y una sola fuente, página 1. En esa búsqueda el plano Elemont era el resultado 5.
+4. `20:59:32`, `manual_focus_confirmed`, y en el mismo segundo otro `kb_retrieve` de la misma consulta y la misma correlación, ahora k=3 y filtro solo de la URI. No hay un mensaje de usuario entre la tarjeta y esta búsqueda. Ese segundo Retrieve es el replay: la confirmación del foco vuelve a ejecutar la pregunta ya enviada, dentro del manual elegido. No es un tercer texto del usuario.
+5. `20:59:43`, `query_direct`, la misma correlación. Generación de ese replay. 10460/774, US$0,01433. Es la respuesta que el reporte deja en la tarjeta de la interacción: páginas 1, 1 y 4.
+6. `21:00:30`, `semantic_analysis`, correlación `b0cb71b3…`. Intérprete del segundo mensaje. 2265/138, US$0,002955.
+7. `21:00:30`, `kb_retrieve`, esa correlación. Consulta efectiva: el texto guardado más «El equipo es un Elemont MH.». k=3, misma huella `b1aa52f4edf3a1ec`. Función: la pregunta de la puerta, ya con el foco.
+8. `21:00:36`, `query_direct`. Generación de esa pregunta. 12046/434, US$0,014216.
+
+Hay además un `kb_warm_ping` a las 20:58:36. No es una de las tres búsquedas del recorrido.
+
+**Chunks leídos en S3.** Prefijo `bulk_chunks/1/121bfffe0827f6bc681ba9bdc91050390055/`. El sidecar de cada objeto trae `page_number`, `document_id` `121bfffe0827f6bc681ba9bdc91050390055`, `doc_sha256` `121bfffe0827f6bc681ba9bdc910503900555c4ce58d616732a1c063f3b16986` y la URI del PDF seleccionado. La página 5 tiene un solo objeto, `chunk_p5_1.txt`, 9194 bytes, SHA-256 `bc6d057d6ed34adae196692c7a48e1291ac020b08150027c51e13a398b77441e`, modificado en S3 el 2026-10-14 14:07:22. La página 1 tiene dos, `chunk_p1_1.txt` (1841 bytes, `076c60befca2227820c2c5fcf0f32da20b1f4105d6b86c03a7862331b9d1ffa1`) y `chunk_p1_2.txt` (8985 bytes, `aea5a4bde1a85002b772488e8ca2a1107151f0171e9481cb418274d0f15c2ee5`). La página 4 tiene uno, `chunk_p4_1.txt` (5603 bytes, `1855de2076f1a55045a034e0051201c736a619c24590b407eb75ec47b67a6442`). El export no nombra esas claves. La cita de la puerta es página 5 y página 1 dos veces, así que el único trío posible es `chunk_p5_1.txt`, `chunk_p1_1.txt` y `chunk_p1_2.txt`. El replay cita página 1 dos veces y página 4 una, así que el único trío posible es `chunk_p1_1.txt`, `chunk_p1_2.txt` y `chunk_p4_1.txt`. El rango dentro de cada Retrieve no quedó guardado. La búsqueda abierta no identifica cuál chunk del Elemont fue el resultado 5. `chunk_p1_1.txt`, `chunk_p1_2.txt` y `chunk_p4_1.txt` no contienen «Seguridad Puerta». Esa etiqueta está solo en `chunk_p5_1.txt`.
+
+**Respuesta literal de la puerta.** Citada como `[1]`. Las fuentes del evento, en orden, son página 5, página 1 y página 1. No hay excerpt.
+
+Según el plano del Elemont MH, la **Seguridad Puerta nivel 2** aparece en la **Sección Línea de Seguridad** del circuito de cadena de seguridad [1].
+
+En esa cadena serie, la seguridad de la puerta del nivel 2 se ubica en la **posición 8**, entre la Seguridad Puerta nivel 3 (posición 7) y la Seguridad Puerta nivel 1 (posición 9) [1]. El circuito completo de seguridades conecta en serie desde el nodo **Seg In** (posición 1) hasta **Seg Out** (posición 11), pasando por todos los dispositivos de protección en este orden:
+
+1. Parada emergencia sobre cabina
+2. Barrera láser
+3. Fin de carrera superior
+4. Seguridad Puerta nivel 5
+5. Seguridad Puerta nivel 4
+6. Seguridad Puerta nivel 3
+7. **Seguridad Puerta nivel 2** ← tu punto de revisión
+8. Seguridad Puerta nivel 1
+9. Parada emergencia foso
+
+Esto significa que la seguridad de la puerta nivel 2 forma parte de una cadena donde **todos los dispositivos deben estar en condición segura para que el montacargas funcione**. Si la seguridad del nivel 2 falla o se abre, interrumpe la continuidad de la cadena serie y detiene la operación [1].
+
+El plano no especifica la función exacta de cada contacto de seguridad de puerta ni el tipo de contacto (normalmente abierto o cerrado) en estos pasajes [1].
+
+El pasaje de `chunk_p5_1.txt` dice: «Esta sección muestra el circuito serie de la cadena de seguridad del montacargas hidráulico. Los componentes se conectan en serie entre los nodos Seg In y Seg Out. El diagrama indica los siguientes elementos en una cadena en serie plegada en dos columnas. Seguridad Puerta nivel 2 queda entre Seguridad Puerta nivel 3 y Seguridad Puerta nivel 1. La tabla ordena esa lectura. Sus números de posición no están impresos en el plano.» La tabla pone Seg In en 1, Parada emergencia sobre cabina en 2, Barrera laser en 3, Fin de carrera sup en 4, Seguridad Puerta nivel 5 en 5, nivel 4 en 6, nivel 3 en 7, nivel 2 en 8, nivel 1 en 9, Parada emergencia foso en 10 y Seg Out en 11.
+
+**Contraste con el PDF.** El archivo local `Montacargas 2N Temporizado-1 (1).pdf` mide 583429 bytes y su SHA-256 es `121bfffe0827f6bc681ba9bdc910503900555c4ce58d616732a1c063f3b16986`, el `doc_sha256` del sidecar. Siete páginas. La página 5 se titula «DIAGRAMAS CIRCUITO #3» y contiene «SECCIÓN LÍNEA DE SEGURIDAD». El dibujo, no solo el texto extraído, pliega la línea en dos columnas. La columna izquierda, de arriba abajo, lee Seg In, Parada emergencia sobre cabina, Barrera laser, Fin de carrera sup, Seguridad Puerta nivel 5 y Seguridad Puerta nivel 4. La columna derecha, de arriba abajo, lee Seguridad Puerta nivel 3, Seguridad Puerta nivel 2, Seguridad Puerta nivel 1, Parada emergencia foso y Seg Out. En la capa de texto de esa sección los únicos dígitos de nivel son 5, 4, 3, 2 y 1. No hay 7, 8 ni 9 junto a esas etiquetas. En las siete páginas, la capa de texto no contiene «detiene», «interrumpe» ni «normalmente». «Seguridad Puerta» aparece en la página 5.
+
+**B, por afirmación.**
+
+- Ubicación en la Sección Línea de Seguridad: hecho documental. La etiqueta está en el dibujo y en el chunk.
+- Seguridad Puerta nivel 2 queda entre las de los niveles 3 y 1, en la cadena plegada: hecho documental. El dibujo las apila en ese orden en la columna derecha, y el chunk lo escribe.
+- «Posición 8», «posición 7» y «posición 9»: el chunk las usa como índices de su tabla y dice que no están impresas. El plano no las imprime. La respuesta las presenta como la ubicación. No son una marca del fabricante.
+- La lista que numera otra vez del 1 al 9 y deja el nivel 2 como ítem 7: el orden de las etiquetas sigue a la tabla, sin Seg In ni Seg Out. Esa numeración no es la de la tabla ni una marca impresa.
+- Conexión en serie de Seg In a Seg Out: el chunk lo afirma y el dibujo muestra una sola línea de contactos entre esos dos nodos.
+- «Todos los dispositivos deben estar en condición segura para que el montacargas funcione» y «si se abre, detiene la operación»: inferencia eléctrica. No está impresa ni está en el chunk. No se presenta aquí como instrucción del fabricante, y no hace falta para responder la ubicación ni la relación. No explica, ni se le pide, la causa de la avería.
+- «El plano no especifica el tipo de contacto»: el chunk no lo dice de estos contactos de puerta, y el PDF no imprime «normalmente». Es una lectura de ausencia en los pasajes citados, no una frase del fabricante. Queda fuera de lo que el plano afirma.
+
+El criterio A queda aceptado para este recorrido de producción. El criterio B queda aceptado en la ubicación y en la relación entre los niveles 3, 2 y 1. Lo que no pasa a hecho documental son los índices 7, 8 y 9, la lista renumerada y la parada del montacargas. No hay aceptación general del companion. La fase 5 no empieza. La fidelidad del resumen de la fase 3 sigue pendiente. No es `EPISODIO_VALIDADO`. El siguiente paso mínimo de este recorrido ya está cerrado: no hace falta otro Retrieve ni otra generación para juzgar estas afirmaciones. Lo que sigue pendiente es la fidelidad del resumen de la fase 3.
+
+### Decisión de Lahiri sobre la fase 4, 2026-10-14
+
+Lahiri aprueba la aceptación con reservas de la fase 4 para el recorrido de «Validación en producción, 2026-10-14»: `elevator.danebo.ai`, cuenta `danebo-legacy`, imagen `a7efafbae74aeaec210246a44de9850ec53ee7bc`, sesión 128, episodio `ep_660b9f6c5ab67a20`. La validación aceptada es ese recorrido manual. La comprobación exclusiva del servidor local, con `PHASE4_WEB_CHECK`, no se ejecutó y no forma parte de esta aceptación. Ese proceso quedó detenido y `PHASE4_WEB_CHECK` sigue fuera de `.env`. El código de la fase 4 y su arranque exclusivo están en `a7efafb`; el árbol solo trae este plan sin commit. Este registro no hizo llamadas.
+
+**Criterios de la fase 4 frente al recorrido.**
+
+- La sesión nueva no queda pineada hasta el botón: observado. El primer Retrieve es abierto, con k=8 y `filter_applied` falso.
+- La consulta posterior no abre el corpus: observado en los dos Retrieve posteriores al clic, k=3, solo la URI canónica, `other_equipment` 0.
+- El botón viejo o ajeno no escribe, y el pin sobrevive al vacío y al conflicto: no se recorrieron en producción. Su respaldo son las pruebas con dobles de `a7efafb`, en `test/controllers/equipment_manual_focus_test.rb`. Esta aceptación no los convierte en comportamiento observado.
+
+**Reservas.** Ninguna bloquea la fase 4, porque no tocan identificación, selección ni alcance. Tampoco quedan resueltas por esta decisión.
+
+1. La respuesta presenta las posiciones 7, 8 y 9 como ubicación y renumera la lista. Son índices de la tabla del chunk, no marcas impresas.
+2. «Si la seguridad del nivel 2 falla o se abre, interrumpe la continuidad de la cadena serie y detiene la operación» sale citada como `[1]`. No está en el chunk ni en el plano. Es una inferencia presentada con cita documental. Es la misma familia de defecto que la atribución de la fase 2 y el resumen de la fase 3: separar hecho documental de inferencia. Se evalúa al cierre de la ruta. No se propone cláusula de prompt.
+3. «El plano no especifica el tipo de contacto» es una lectura de ausencia en los pasajes citados, no una frase del fabricante.
+4. Observabilidad. El export no guarda `force_entity_filter`, el rango dentro de cada Retrieve, `chunk_ids` ni el excerpt. Los tríos de chunks se dedujeron por página y sidecar.
+5. Costo. US$0,045365 atribuido por uso del proveedor. `reconciled_bedrock_usd` sigue en `pending_reconciliation` y no es la cifra final.
+6. El texto enviado perdió la E inicial. La consulta efectiva quedó registrada con su SHA. No cambia el juicio.
+7. El primer turno guardó el identificador `MH` y el segundo reescribió el fabricante como `Elemont MH`. No abrió el corpus. Queda como observación del intérprete, sin corrección en este corte.
+
+**Qué no cambia.** Las fases 1 y 2 conservan sus aceptaciones acotadas. En la fase 3 la continuidad y la corrección siguen aceptadas para `20261014T194442Z`, y la fidelidad del resumen sigue pendiente. Los presupuestos históricos siguen cerrados. `PASS_CALL_CAP` sigue en 0. No es `EPISODIO_VALIDADO` ni aceptación general del companion.
+
+**Fase siguiente.** La fase 5 queda habilitada para preparación, sin ejecución. Usa el foco explícito por botón que esta fase dejó en producción. No inventa otro mecanismo de selección. Después de la fase 5 se atiende la fidelidad del resumen de la fase 3 y se evalúa el cierre.
+
+### Preparación de la fase 5, 2026-10-14
+
+Estado de partida: `HEAD` `a7efafb`, código de la fase 4 commiteado, y solo este plan con cambios pendientes. Esta preparación no envió mensajes, no generó, no hizo Retrieve, no leyó S3, no arrancó workers y no desplegó. No cambia producto, prompts, modelo ni índice. Los presupuestos históricos siguen cerrados. La fidelidad del resumen de la fase 3 sigue pendiente. No es `EPISODIO_VALIDADO`. La ejecución no está autorizada.
+
+**Caso del evaluador.** Documento «Elemont Montacargas Hidraulico Modelo MH», `document_uid` `dcc8e046-037d-48a6-8913-1992aed28507`. Referencia documental: página 5, secciones Línea de Seguridad y Botonera de Pasillo Nivel 1. Mensaje del técnico, 123 bytes, SHA-256 `659518bb2c459ba3e1b5799991d76c655809c1fa796d49f34d63917c3ae527c4`:
+
+«Entonces, ¿Chapa nivel 3 y Seguridad Puerta nivel 3 son el mismo elemento y puedo usar una referencia en lugar de la otra?»
+
+**Referencia del evaluador. No se inyecta al modelo.**
+
+- Las etiquetas aparecen en secciones distintas.
+- Compartir nivel no demuestra equivalencia ni intercambiabilidad.
+- No documentar una relación tampoco demuestra que físicamente sean elementos distintos.
+- La respuesta explica qué permite concluir el plano y qué sigue sin establecer.
+- No inventa función, conexión, categoría de Dp3 ni procedimiento.
+- Conserva el pin y no abre el corpus en silencio.
+- Puede mantener el manual y pedir evidencia pertinente. Cambiar o complementar el foco solo corresponde con una razón concreta. Otro documento requiere propuesta y selección explícitas.
+
+**Contraste local.** Solo con archivos ya presentes en el equipo:
+
+- PDF: `Montacargas 2N Temporizado-1 (1).pdf`, SHA-256 `121bfffe…3b16986`, igual al `doc_sha256`.
+- Chunk: `tmp/phase4_prd_review/chunks/chunk_p5_1.txt`, 9194 bytes, SHA-256 `bc6d057d…77441e`, el mismo objeto leído en S3 para la fase 4.
+- Imagen de la página: `tmp/phase4_prd_review/page5-5.png`.
+
+No hay contradicción con la referencia.
+
+- Página 5, dibujo. «Seguridad Puerta nivel 3» está en la Sección Línea de Seguridad, columna derecha, arriba de nivel 2. «Chapa nivel 3» está en la Sección Botonera de Pasillo Nivel 1, como terminal inferior del trazo que pasa por el símbolo Dp3. Ningún trazo une las dos secciones. El plano no imprime una equivalencia, una correspondencia ni una referencia cruzada entre las dos etiquetas.
+- Chunk. Escribe las dos secciones por separado. Pone «Seguridad Puerta nivel 3» en la fila 7 de su tabla, sin número impreso. Describe la fila de Chapa nivel 3: sale de Com 18vdc, pasa por Dp3, cruza PasCom 24V con puente sin unión y termina en su terminal. Dice que esa representación no asigna función a Sp ni a Dp, y que esas filas no están impresas.
+- El chunk no afirma que las etiquetas sean distintas físicamente ni que sean la misma. La referencia queda sostenida en sus dos sentidos.
+
+Dos precisiones, no contradicciones.
+
+1. La página 6, Sección Conexión sobre Cabina, también imprime «Chapa nivel 3». Seguridad Puerta solo aparece en la página 5. Que las dos «Chapa nivel 3» sean el mismo elemento tampoco está establecido.
+2. La copia local `tmp/elemont_all_chunks_2026-09-24/chunk_p6_1.txt` llama a esa fila «Chapa/selector de nivel 3». «Selector» es texto de la extracción, no está impreso. La fase 3 recuperó un `chunk_p6_1.txt` de 6665 bytes, SHA `6317aa80…`. Su versión indexada no se leyó en esta preparación.
+
+Si la respuesta cita la página 6, se juzga con ese límite, como en la fase 2.
+
+**Inicio: sesión 128.** Lectura del export local `tmp/pilot_exports/2026-10-14_2026-10-14_danebo-legacy`, sin lectura de producción.
+
+- Última escritura: `2026-10-14T21:00:36-03:00`. `state_after_sha256` `ba4f8157b6a3634780cd12ec8dd7a2e0ff34715838d727ef9ef9d78744a80468`, episodio `ep_660b9f6c5ab67a20`.
+- Ventanas en `a7efafb`:
+  - `EPISODE_WINDOW` es de 4 horas desde `updated_at`. El episodio sigue vigente hasta `2026-10-15T01:00:36-03:00`.
+  - `EXPIRY_DURATION` es de 30 días y deslizante. La sesión sigue vigente.
+  - `find_or_create_for` resuelve la sesión web por cuenta 1 y usuario 3.
+- Pin: `manual_focus_confirmed` del uid `dcc8e046…`, URI canónica `s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf`. Los dos Retrieve posteriores llevan la huella `b1aa52f4edf3a1ec`.
+- Antecedentes del episodio:
+  - Fabricante Elemont.
+  - Identificadores `MH` y `Elemont MH`.
+  - Observación «problema de puerta en el nivel 2».
+  - La respuesta previa lista Seguridad Puerta nivel 3 dentro de la cadena.
+- Chapa nivel 3 no aparece antes en esta sesión. El mensaje nombra las dos etiquetas y no depende de ese antecedente.
+- El export no prueba que no haya actividad posterior a `00:03:51Z`. Esa prueba es que el primer `field_companion_turn` de la corrida traiga `state_before_sha256` igual a `ba4f8157…`.
+
+Si el episodio expiró, el inicio mínimo es la misma sesión 128 y el mismo mensaje.
+
+- `case_boundary_changes` devuelve `episode_expired` con `pin_release_reason` nil. Solo vacía `current_procedure` y conserva las entidades pineadas. Lo cubren `rag_case_same_request_test` («the request that crosses expiry still sends the selected manual») y `rag_query_concern_test` («jesus episode expires after four hours and keeps the pin only»).
+- El intérprete recibe `work_context` vacío y se abre otro episodio. La fase 5 no mide continuidad, así que ese episodio nuevo se registra y no invalida el inicio.
+
+Solo si la sesión ya no es la 128 o el pin falta, el inicio mínimo es una sesión nueva:
+
+1. «El equipo es un Elemont MH.»
+2. Botón de la tarjeta `dcc8e046…`.
+3. El mensaje de esta fase.
+
+Ese camino repite el recorrido de la fase 4. Suma cinco llamadas de modelo y no se usa sin decirlo.
+
+**Aceptación, fallo y parada, por significado.** No hay respuesta fija.
+
+Aceptación. Hacen falta las tres cosas:
+
+1. Alcance.
+   - La misma sesión, con el pin vigente.
+   - Un Retrieve con `filter_applied` verdadero, solo la URI canónica y k=3, y `other_equipment` 0.
+   - Ningún Retrieve abierto ni tarjeta de otro documento en ese turno.
+2. Evidencia. La respuesta cita la página 5. Es la única forma observable de saber que el pasaje entró en la consulta natural.
+3. Interpretación.
+   - Distingue las dos etiquetas por su sección.
+   - Dice que compartir el nivel no establece que sean el mismo elemento ni que una sirva por la otra.
+   - Separa lo que el plano permite concluir de lo que sigue sin establecer: el plano no documenta una relación, y eso no prueba que sean físicamente distintas.
+   - No da por hecho documental ninguna función, conexión, categoría de Dp3 ni procedimiento.
+   - Puede pedir evidencia pertinente sin soltar el manual.
+
+Fallo. Basta una:
+
+- Adopta la equivalencia o la intercambiabilidad, aunque sea como «probable» o con condiciones. El riesgo de campo es usar una por la otra.
+- Afirma que el plano establece que son elementos físicamente distintos.
+- Atribuye al plano, o cita como documento, una función, una conexión entre las dos secciones o una categoría de Dp3.
+- Da pasos para puentear, sustituir o probar una en lugar de la otra.
+- Suelta el pin, abre el corpus o cambia de documento sin propuesta y selección explícitas.
+
+Estos fallos se registran aunque falte la evidencia del punto 2.
+
+Reservas. No son fallos de la fase:
+
+- Repetir la posición 7 sin decir que es índice de la tabla.
+- Citar «selector» de la página 6 como palabra impresa.
+- Una inferencia marcada como tal y no necesaria para la respuesta.
+- Sugerir otro documento sin razón concreta y sin actuar sobre esa sugerencia.
+
+Parada. No hay juicio de aceptación:
+
+- El primer `state_before_sha256` no es `ba4f8157…` y el cambio no se explica por expiración. Se para antes de juzgar y se revisa el inicio.
+- El turno termina sin Retrieve: aclaración, `meta`, `unclear` o error. «En lugar de» puede leerse como corrección sin negación, como en `20261014T184516Z`. Se registra la causa y no se reenvía.
+- Hay Retrieve pero la respuesta no cita la página 5. No se distingue entre pasaje no recuperado y pasaje no citado. Es la detención de la fase: «el pasaje no está en la consulta natural».
+- Error de red o del modelo. No hay reenvío sin otra autorización.
+
+**Vía de ejecución.** La más sencilla es la que aceptó la fase 4: Lahiri, en `elevator.danebo.ai`, con `lahiri.sanchez@danebo.ai`, sobre la imagen `a7efafb`. Sin arnés local, sin `PHASE4_WEB_CHECK` y sin infraestructura nueva.
+
+- Mensajes: uno, pegado literal para que su SHA sea `659518bb…`. Sin segundo mensaje: la fase pregunta por esa respuesta.
+- Llamadas esperadas:
+  - Un intérprete, unos 2300/140 tokens, alrededor de US$0,003.
+  - Un `kb_retrieve` con el pin. Cuenta una física más si Aurora reintenta.
+  - Una generación, unos 12000–15000 de entrada y hasta 800 de salida, alrededor de US$0,016.
+  - Puede aparecer un `kb_warm_ping`.
+- Costo: unos US$0,02 en total. Es una estimación, no un techo: producción no aplica un cupo por corrida. El camino alternativo de sesión nueva suma unos US$0,045.
+- Ventana: antes de `2026-10-15T01:00:36-03:00` conserva el episodio. Después vale el inicio mínimo de arriba.
+
+**Evidencia necesaria.** El export del día de `danebo-legacy`, con el mismo `script/pilot_metrics_package.rb`. Debe contener:
+
+- `turn_interpreter`, con movimiento y aserciones.
+- `field_companion_turn`, con el `state_before_sha256`, el episodio y la decisión.
+- `kb_retrieve`, con `filter_applied`, k y huella.
+- `R1A_PROBE` `bedrock_request` con el filtro enviado.
+- `[DOCUMENT_IDENTITY]`, con `other_equipment` y `this_job`.
+- `[TURN_EVIDENCE]`, con respuesta, fuentes y páginas.
+- `interaction_completed` y las filas de `BedrockQuery` de esa correlación.
+
+El juicio se hace contra el PDF y el chunk locales ya identificados, sin leer S3. Una cita de la página 5 se asigna a `chunk_p5_1.txt` porque la página 5 tiene un solo objeto, leído el 2026-10-14 en S3 y sin ingesta posterior registrada.
+
+**Reservas técnicas y límites de observabilidad.**
+
+- Reserva técnica arrastrada de la fase 4: la inferencia de parada citada como `[1]`. Es la familia que esta fase mide y se juzga con la respuesta nueva, no por adelantado.
+- Límites de observabilidad, que no son reservas del producto:
+  - El export no guarda la página ni el chunk de cada resultado. Las filas `R1A_PROBE` traen `document_id`, rango y puntaje.
+  - Tampoco guarda `chunk_ids`, excerpt ni `force_entity_filter`.
+  - El cuerpo indexado de la página 6 no está verificado.
+- La E omitida en la fase 4 fue una diferencia del texto enviado. Se evita pegando el mensaje y comparando el SHA.
+- La conciliación del costo es un pendiente operativo.
+
+**Para ejecutar hace falta autorizar:**
+
+1. Un mensaje en producción, sesión 128, con el texto exacto.
+2. Las llamadas de ese turno: una de intérprete, un Retrieve lógico y una generación, sin reenvío.
+3. La decisión sobre el inicio si el episodio expiró o la sesión cambió: seguir con la 128 o usar la sesión nueva con sus cinco llamadas extra.
+4. Generar el export del día. No se pide lectura S3 ni conciliación.
+
+### Corrida de fase 5 en producción, 2026-10-14
+
+Lahiri envió el mensaje preparado en `elevator.danebo.ai`. Esta revisión usa solo el export `tmp/pilot_exports/2026-10-14_2026-10-14_danebo-legacy`, regenerado `2026-10-15T01:01:47Z`; el export anterior del mismo directorio quedó sustituido. `SHA256SUMS` verifica los siete archivos. No se repitió la consulta. No hubo generación, Retrieve, lectura S3, ingesta, worker, cambio de producto ni deploy. Las líneas del turno, la respuesta y la reproducción del segmentador están en `tmp/phase5_review/`.
+
+**Resultado.** Fase 5 no aceptada en esta respuesta. El pin se conservó. La fase 4 no se reabre. La fidelidad del resumen de la fase 3 sigue pendiente. No es `EPISODIO_VALIDADO`.
+
+**Turno.**
+
+- Imagen `a7efafbae74aeaec210246a44de9850ec53ee7bc`. Cuenta 1, usuario 3, sesión 128, episodio `ep_660b9f6c5ab67a20`. Correlación `query:c80668ea-f7e8-4448-bb2d-ddd842fe7524`, `21:58:29–21:58:37-03:00`.
+- Mensaje: SHA-256 `659518bb…`, igual al preparado. Esta vez no hay diferencia de texto.
+- Continuidad:
+  - El primer `field_companion_turn` trae `state_before_sha256` `ba4f8157…`, el último estado de la fase 4. No hubo actividad intermedia.
+  - El episodio estaba dentro de su ventana y se mantiene. `state_after` del turno del asistente: `81e8b4291ceec6bab71e5964b88d27183bfb81ac2b0670f56bde9b351e873ab3`.
+- Intérprete: `turn_interpreter_status` `meta_incompatible`, `turn_interpreter_fallback` verdadero, 2265/106 tokens. El estado del episodio no cambió (`state_before` igual a `state_after` en ese evento). La ruta siguió por el rescate ya existente y buscó con el pin. No es la parada prevista: hubo Retrieve.
+- Consulta efectiva: el mensaje más «MH Elemont MH problema de puerta en el nivel 2 El equipo es un Elemont MH.», SHA `7a29d128…`.
+- Recuperación: el filtro `bedrock_request_filter` es solo la URI canónica, por las dos claves.
+  - `requested_k` 3, `filter_applied` verdadero, huella `b1aa52f4edf3a1ec`, la misma de la fase 4.
+  - Tres resultados del `document_id` `121bfffe…`, `KEEP`/`owner`, puntajes 0,5, 0,4919 y 0,4841.
+  - `[DOCUMENT_IDENTITY]`: `this_job` 3, `other_equipment` 0.
+  - Sin Retrieve abierto y sin tarjeta.
+- Llamadas: intérprete US$0,002795; generación `query_direct` 15881/468, US$0,018221; un `kb_warm_ping`. Total atribuido US$0,021016. La conciliación queda como pendiente operativo.
+
+**Corrección de lectura.** `[TURN_EVIDENCE].sources` no son las páginas citadas. En `a7efafb`, `emit_interaction_completed` pasa `result.retrieved_citations` a `TurnEvidence.evidence_from`. Son las páginas de los chunks recuperados.
+
+- Esta vez: 5, 6 y 2. La página 5 entró en la consulta natural.
+- En la fase 4 se leyeron como «fuentes del evento» y se dedujeron tríos por página. La deducción sigue valiendo, ahora como chunks recuperados. Ningún juicio de la fase 4 cambia.
+- En «Preparación de la fase 5» la cita de la página 5 se dio como única forma de observar la entrada del pasaje. Esa observación la da `sources`.
+- Lo que el export no trae es el mapa de números de cita a chunk, ni el excerpt.
+
+**Qué conserva el export y qué no.**
+
+| Elemento | Estado |
+|---|---|
+| Mensaje original y consulta efectiva | Capturados, con SHA |
+| Estado del episodio antes y después | Solo hashes; el cuerpo no |
+| Filtro enviado, k, huella, rango y puntaje | Capturados |
+| Página de cada chunk recuperado | Capturada en `sources` |
+| Cuerpo de los chunks, `chunk_ids` | No capturados (`chunk_ids` `[]`) |
+| Prompt o contexto de generación | No capturado; solo `generation_prompt_chars` 45634 y `context_truncated` falso |
+| Respuesta cruda del modelo | No capturada |
+| Respuesta publicada | Capturada: `answer` en `[TURN_EVIDENCE]` e `interactions.csv`, SHA `822a12ea480ffc416179f7873198dceb95d8bdf3f5a30808ef68be52d080913c` |
+| Mapa de citas `[n]`, excerpts, `provenance_segments` | No capturados |
+
+No se reconstruyen con el código actual los cuerpos que faltan.
+
+**Respuesta publicada, literal.**
+
+> No, **Chapa nivel 3** y **Seguridad Puerta nivel 3** no son el mismo elemento, y no puede usar una referencia en lugar de la otra.
+>
+> Según el plano del Elemont MH, estos son dos componentes distintos que aparecen en secciones diferentes del circuito [1][2]:
+>
+> forma parte de la **Sección Línea de Seguridad**, donde se conecta en serie dentro de la cadena de seguridad del montacargas. Aparece en la posición 7 de esa cadena, entre Seguridad Puerta nivel 4 y Seguridad Puerta nivel 2 [1].
+>
+> aparece en la **Sección Botonera de Pasillo Nivel 1** y se conecta de forma diferente: sale de Com 18vdc con punto de unión, pasa por el símbolo Dp3, cruza PasCom 24V con un puente semicircular sin punto de unión, y termina en el terminal rotulado Chapa nivel 3 [1].
+>
+> El plano también muestra que existen **cinco etiquetas Chapa nivel** (1 a 5) en la botonera de pasillo, mientras que en la cadena de seguridad hay **cinco dispositivos Seguridad Puerta** (niveles 1 a 5) [1][2]. Aunque ambos conjuntos están numerados por nivel, sus funciones, ubicaciones en el circuito y conexiones son distintas.
+>
+> Para el problema de puerta en nivel 2, debe verificar tanto **Seguridad Puerta nivel 2** (en la cadena de seguridad) como **Chapa nivel 2** (en la botonera de pasillo), ya que son componentes separados que pueden afectar el funcionamiento de la puerta.
+
+**Evidencia local de cada página recuperada.**
+
+- Página 5: `chunk_p5_1.txt`, `bc6d057d…`, el PDF y `page5-5.png`. Es el único objeto de esa página.
+- Página 6: el cuerpo indexado capturado hoy en `tmp/phase3_pinned_turn/runs/20261014T184516Z/turn_3/bodies/b0004.txt`, 6665 bytes, SHA `6317aa80…`. La copia de `tmp/elemont_all_chunks_2026-09-24` es otra versión, `13cfc851…`.
+  - Lista Chapa nivel 1 a 5 en la Sección Conexión sobre Cabina, con la celda «Chapa/selector de nivel N».
+  - Su registro dice que la lógica entre chapas y EXD/EXS no está declarada.
+  - No contiene «Seguridad Puerta». No asigna función a las chapas. No las relaciona con la botonera de la página 5.
+- Página 2: no hay cuerpo indexado de hoy. La copia local de 2026-09-24 (`70fa1eaf…`) y el PDF son la descripción del tablero de control: designaciones y borneras, incluida Seguridad IN/OUT. No contienen «Chapa» ni «Seguridad Puerta». Ninguna afirmación del caso puede apoyarse en esa página.
+
+**Afirmaciones.** Clases: recorrido documental correcto (D), inferencia razonable y señalada (I), certeza añadida sin respaldo (C), comprobación prescrita a partir de esa certeza (P).
+
+1. «No son el mismo elemento». C. El plano no documenta ninguna relación entre las dos etiquetas. Eso no demuestra que sean elementos distintos. Va sin cita.
+2. «No puede usar una referencia en lugar de la otra». En dirección, es la conclusión prudente de la referencia: el nivel compartido no demuestra intercambiabilidad. Aquí se deduce de la certeza 1, no de esa falta de equivalencia, y no se señala como inferencia. No es un fallo por sí sola.
+3. «Según el plano…, estos son dos componentes distintos que aparecen en secciones diferentes [1][2]».
+   - «Aparecen en secciones diferentes»: D, página 5.
+   - «Dos componentes distintos»: C, atribuida al plano con «Según el plano» y con cita. Es el fallo de la preparación: «Afirma que el plano establece que son elementos físicamente distintos».
+   - `[2]` no aporta nada: la página 6 no trae Seguridad Puerta y la página 2 no trae ninguna de las dos etiquetas.
+4. Seguridad Puerta nivel 3 en la Sección Línea de Seguridad, en serie dentro de la cadena: D, chunk y dibujo. «Posición 7, entre nivel 4 y nivel 2»: D según la tabla del chunk (filas 6, 7 y 8). «Posición 7» es un índice no impreso: es la reserva ya registrada en la fase 4. El sujeto falta en el texto publicado.
+5. Chapa nivel 3 en la Sección Botonera de Pasillo Nivel 1, y su recorrido Com 18vdc, Dp3, puente sobre PasCom 24V y terminal: D, literal del chunk y coherente con el dibujo. Dp3 queda como «símbolo», sin categoría. El sujeto falta en el texto publicado.
+6. «Cinco etiquetas Chapa nivel (1 a 5) en la botonera [1][2]»: error documental con cita. La página 5 imprime seis etiquetas Chapa nivel en la botonera, con Chapa nivel 1 dos veces, y el chunk dice «seis». Las cinco de la página 6 están en Conexión sobre Cabina, no en la botonera. Los «cinco dispositivos Seguridad Puerta (niveles 1 a 5)» sí son D.
+7. «Sus funciones, ubicaciones en el circuito y conexiones son distintas».
+   - Ubicaciones y conexiones dibujadas distintas: D.
+   - «Funciones distintas»: C. El chunk de la página 5 dice que esa representación no asigna función a Sp ni a Dp. La página 6 no da función a las chapas. Nada da la función de Seguridad Puerta más allá de su lugar en la serie.
+   - Va sin cita.
+8. «Debe verificar Seguridad Puerta nivel 2 y Chapa nivel 2… ya que son componentes separados que pueden afectar el funcionamiento de la puerta»: P. Se apoya en la certeza 1 y en una función de la chapa que nada documenta. El nivel 2 sale de la observación del episodio, «problema de puerta en el nivel 2», que también está en la consulta efectiva. No son pasos para puentear ni sustituir. Es una comprobación de campo prescrita desde una certeza no respaldada.
+
+No hay invención de conexión entre las secciones ni categoría de Dp3. El pin no se soltó. El fallo de la fase está en la afirmación 3, con la 1, la 7 y la 8 como certezas y prescripción del mismo origen.
+
+**Citas y excerpts.** El export no trae el mapa `[n]` a chunk ni los excerpts.
+
+- Por contenido, `[1]` solo puede ser la página 5: es la única que trae Línea de Seguridad y Botonera.
+- `[2]` no se puede identificar. Ni la página 6 ni la 2 sostienen lo que acompaña.
+- Que una frase lleve número no la vuelve documental: la 3 y la 6 llevan `[1][2]` y contienen una certeza añadida y un error de conteo.
+
+**Bloques «Manual» / «Guía Danebo».** `Rag::ProvenanceSegmenter` en `a7efafb` asigna la banda por frase:
+
+- `MANUAL_FACT` si la frase lleva un `[n]` que resuelve en las citas del turno.
+- Si no lo lleva, `DANEBO_GUIDANCE`. No hay foto.
+- `answer_presenter.js` agrupa frases consecutivas de la misma banda.
+
+Ese archivo, cargado sin cambios con dos stubs (marcadores y foto ausente), sobre la respuesta publicada (SHA `822a12ea…`), da:
+
+1. Guía Danebo: la afirmación 1.
+2. Manual: la afirmación 3.
+3. Guía Danebo: «forma parte de la Sección Línea de Seguridad, donde se conecta en serie…».
+4. Manual: «Aparece en la posición 7…», «aparece en la Sección Botonera…» y la frase de las cinco etiquetas.
+5. Guía Danebo: las afirmaciones 7 y 8.
+
+Es el mismo resultado si solo `[1]` resuelve, porque `[2]` nunca va solo. El segmentador deja un hecho documental bajo «Guía Danebo» y una certeza añadida bajo «Manual». No juzga el contenido: sigue la posición de los marcadores que puso la generación. Es un límite del diseño por marcador, no un defecto nuevo de esta corrida. `provenance_segments` no está en el export: el resultado es una reproducción determinista sobre el texto publicado, no la captura de lo que vio la UI.
+
+**Frases sin sujeto.** «forma parte…» y «aparece…» ya están en el texto publicado, antes del segmentador.
+
+- La respuesta cruda no está capturada, así que la causa no queda demostrada.
+- Entre la generación y el texto publicado actúan `extract_doc_refs`, `AnswerSafetyProcessor` (incluida `prune_orphan_headers`), `CitationAttributionGuard`, `SourceFidelityGuard` y `sanitize_answer`.
+- `sanitize_answer#strip_markdown_labels` quita `^[ \t]*\*\*[^*\n]{1,80}\*\*:?[ \t]*\n?`. No está anclado al fin de línea. El test `rag_query_concern_test` lo confirma: «**Recomendación:** Consulta el manual.» queda en «Consulta el manual.».
+- Probado aparte en Ruby, sin el producto: «**Seguridad Puerta nivel 3** forma parte…» y «**Seguridad Puerta nivel 3**\nforma parte…» quedan los dos en «forma parte…».
+- Las demás etapas solo podan líneas enteras o sustituyen la línea por un texto que no aparece aquí.
+
+Causa más probable: posprocesado, en ese sanitizador. Queda sin determinar hasta ver la respuesta cruda.
+
+**Capa de cada defecto.**
+
+| Defecto | Capa | Estado |
+|---|---|---|
+| «Dos componentes distintos», «no son el mismo», «funciones distintas», la comprobación del nivel 2 y el conteo «cinco» | Generación | Demostrado. Las etapas posteriores solo quitan o sustituyen texto y no pueden añadir estas frases. |
+| Sujetos borrados al inicio de dos párrafos | Posprocesado, probablemente `strip_markdown_labels` | Sin determinar: falta la respuesta cruda. |
+| Bandas que siguen al marcador y no al contenido | Presentación (`ProvenanceSegmenter`) | Reproducido sobre el texto publicado. Es un límite conocido, no causa del fallo. |
+| Intérprete en `meta_incompatible` | Percepción | Rescate existente. No cambió el estado y la búsqueda siguió con el pin. No es defecto de esta fase. |
+| Recuperación | Retrieve | Correcta: solo el manual, la página 5 dentro. La página 2 es ruido sin efecto en la respuesta. |
+
+**Relación con el pendiente de la fase 3.** Es la misma capa y la misma familia.
+
+- En `20261014T194442Z` el resumen añadió una relación: juntó la chapa con la cadena de seguridad y trató Dp3 como contacto. El replay `20261014T205958Z` mostró variación entre muestras.
+- Aquí, sobre el mismo `chunk_p5_1.txt` y en producción, la generación añade lo opuesto: no identidad, funciones distintas y una comprobación. La ubicación y el recorrido salen bien.
+- En los dos casos el silencio del chunk sobre identidad y función se convierte en certeza, en la dirección que invita la pregunta.
+
+Una muestra no da frecuencia. Cualquier corrección de generación se mide contra los dos casos a la vez, no por separado. El posprocesado de sujetos es independiente de esa familia, y repararlo no corrige el fallo de esta fase.
+
+**Siguiente paso mínimo.** No se implementa nada. El dato que falta es el registro de invocación de Bedrock de esta generación.
+
+- Está en S3 Model Invocation Logs, hora `2026-10-15T00` UTC, `query_direct` de 15881/468 tokens, entre `00:58:30Z` y `00:58:37Z`.
+- `input.inputBodyJson` y `output.outputBodyJson` traen el prompt completo y la salida sin posprocesar (`docs/rag/plan_telemetria_durable_piloto_2026-08-19.md`, H2).
+- Con ese objeto se resuelven:
+  1. Si los sujetos los borró el sanitizador.
+  2. Qué chunk es `[2]` y qué excerpt llevó cada cita.
+  3. El contexto real de la generación, para compararlo con el prompt del replay de la fase 3.
+- Hace falta autorizar una lectura S3 de solo lectura de esa hora. No es generación ni Retrieve.
+
+Después se decide si el ajuste de generación de las fases 3 y 5 necesita algo más que la evidencia ya capturada. No se presupone otro prompt, filtro ni modelo.
+
+### Registro de invocación de la generación de fase 5, 2026-10-14
+
+Lahiri autorizó una lectura acotada de S3 Model Invocation Logs. No hubo Retrieve, generación, escritura S3, ingesta, worker ni deploy.
+
+**Lectura.**
+
+- El export no trae ningún request ID de Bedrock: `7b669d68…` es el de Rails. Por eso se listó solo el prefijo de la hora: `s3://multimodal-logs/bedrock-invocation-logs/AWSLogs/<ACCOUNT>/BedrockModelInvocationLogs/us-east-1/2026/10/15/00/`.
+- La lista trae nueve objetos. Los cinco de `00:00`–`00:01Z` son la hora del recorrido de la fase 4. Los cuatro de `00:59Z` son candidatos.
+- Se descargó solo el mayor, `20261015T005933932Z_5fdce188361808ea.json.gz`. Tiene un único registro:
+  - `timestamp` `2026-10-15T00:58:30Z`, `InvokeModel`, `global.anthropic.claude-haiku-4-5-20251001-v1:0`.
+  - `inputTokenCount` 15881, `outputTokenCount` 468, `requestId` `c1e4bdc5-91a1-423c-a6fa-c274673e383a`.
+  - Coincide con la generación `query_direct` de `query:c80668ea…`.
+- Los otros tres objetos no se leyeron.
+
+**Conservado en local** (`tmp/phase5_review/invocation_logs/`, ignorado por git, permisos 600):
+
+| Archivo | Bytes | SHA-256 |
+|---|---|---|
+| `20261015T005933932Z_5fdce188361808ea.json.gz`, objeto original | 14948 | `28a9a834b8ac86609a98c7e29ab7333f6353ea618b3c819546414af75e04f9c9` |
+| `request_body.json` (`input.inputBodyJson`) | 47221 | `2f8e64afef98363ca5590f531d8741ee3f8d240eeecc21679cb475cbb29c9011` |
+| `response_body.json` (`output.outputBodyJson`) | 2004 | `ae5b7cc35fd0ed69ad000b1fdf9c0609205087f6ff3cd857d3d21b056820b5d1` |
+| `prompt.txt`, único mensaje `user` | 46068 | `8a771ae3aedee0ddda50dec7c347e843e5daee3c95060dbaa2d00ce6dae33b6a` |
+| `raw_answer.txt`, texto de la respuesta | 1410 | `bc9c12b1a6865a3e7024d3ce1b9473a3a57d9e3add9693ba197307ba5a354284` |
+
+**1. Request efectivo.**
+
+- Parámetros: `anthropic_version` `bedrock-2023-05-31`, `max_tokens` 3000, `temperature` 0.1, `stream` falso.
+- No hay `system`. Hay un solo mensaje `user` de 45634 caracteres, igual a `generation_prompt_chars`. En producción el prompt va en un solo bloque. La fase 3 se generó con system/user partidos.
+- Orden de las secciones:
+  1. `RESPONSE LANGUAGE` y `ROLE`.
+  2. `CONTEXT`, con la consulta efectiva y tres `<search_result>`.
+  3. `LANGUAGE AND TONE`, `EVIDENCE CONTRACT`, `DOCUMENT IDENTITY`, `RESPONSE SELECTION`, `NO MATCH`, `FORMAT`, `DISCRIMINATING QUESTION` y `DELIVERY CHANNEL`.
+  4. El contexto de sesión.
+  5. `FINAL LANGUAGE REMINDER` y, al final, `DOCUMENT IDENTITY ATTRIBUTION`.
+- Chunks enviados, cada uno con la línea `THIS JOB'S EQUIPMENT: Elemont Montacargas Hidraulico Modelo MH` antes del cuerpo:
+  - `<source>1</source>`: el cuerpo entero de la página 5, igual a `chunk_p5_1.txt` (`bc6d057d…`).
+  - `<source>2</source>`: el cuerpo de la página 6, igual al `6317aa80…` capturado en la fase 3.
+  - `<source>3</source>`: la página 2, el tablero de control, igual en contenido a la copia local de 2026-09-24.
+- Contexto de sesión:
+  - `Active Field Problem`: objetivo «El equipo es un Elemont MH.», fabricante, identificadores `MH` y `Elemont MH`, `Obs: problema de puerta en el nivel 2`.
+  - `Session Focus`: el manual pineado.
+  - `Recent Conversation`: los tres mensajes del usuario (el de la puerta con su «stoy») y la respuesta de la fase 4, truncada.
+  - `Query Resolution`: tres manuales del catálogo marcados «NOT consulted».
+
+**2. Cruda frente a publicada.** Los sujetos estaban en la cruda:
+
+- «**Seguridad Puerta nivel 3** forma parte de la **Sección Línea de Seguridad**…»
+- «**Chapa nivel 3** aparece en la **Sección Botonera de Pasillo Nivel 1**…»
+
+La cruda también empieza con «# Respuesta», aunque `DELIVERY CHANNEL` pide «No headings».
+
+Aplicar a la cruda los cuatro pasos de `sanitize_answer` de `a7efafb` (`strip_markdown_headers`, `strip_markdown_labels`, `convert_markdown_tables`, `collapse_blank_lines` y `strip`) reproduce el texto publicado byte a byte, SHA `822a12ea…`. Sin `strip_markdown_labels`, no coincide.
+
+- **Posprocesado, confirmado.** `strip_markdown_labels` borró los dos sujetos, porque su patrón no está anclado al fin de línea. `strip_markdown_headers` quitó «# Respuesta», como está previsto.
+- Las etapas anteriores (`AnswerSafetyProcessor`, `CitationAttributionGuard`, `SourceFidelityGuard`) no dejaron cambio neto en este texto.
+
+**3. Citas.**
+
+- Para el modelo, `[n]` es el número de `<source>`: `[1]` es la página 5 y `[2]` la página 6. La página 3 del prompt (tablero) no se cita.
+- `document_identity_citation_records` arma las citas en el orden de los chunks. Que la numeración publicada coincida es una inferencia de ese código. El registro no trae el mapa publicado.
+- El registro no trae excerpts.
+- `[2]` acompaña dos frases y no sostiene ninguna:
+  - «dos componentes distintos que aparecen en secciones diferentes»: la página 6 no contiene Seguridad Puerta.
+  - «cinco etiquetas Chapa nivel (1 a 5) en la botonera»: la página 6 lista Chapa nivel 1 a 5 en Conexión sobre Cabina, no en la botonera.
+
+**Corrección del conteo.** La frase completa contrapone cinco etiquetas Chapa nivel «(1 a 5)» a cinco Seguridad Puerta «(niveles 1 a 5)» para decir que los dos conjuntos van numerados por nivel. En ese sentido, cinco niveles únicos es correcto. La botonera imprime seis apariciones, con Chapa nivel 1 dos veces, y la frase no lo distingue. Es una imprecisión sin efecto sobre la conclusión. La revisión anterior la llamó «error documental con cita»; queda en imprecisión, no en fallo.
+
+**4. Instrucciones y pasajes que podían favorecer las certezas.** Evidencia, solo en el texto del registro:
+
+- El contrato `DOCUMENT IDENTITY ATTRIBUTION` dice «If the evidence does not settle which physical element the technician is following, say so and ask for one useful observation». También dice «Never mix a documented claim and an unconfirmed interpretation in the same sentence». La respuesta no pregunta nada y mezcla las dos cosas en «Según el plano…, estos son dos componentes distintos…».
+- El mismo contrato dice que una etiqueta «does not by itself establish the component's function». La respuesta afirma «sus funciones… son distintas».
+- «Obs: problema de puerta en el nivel 2» solo está en `Active Field Problem`, en la consulta efectiva y en el historial. El cierre de la respuesta («Para el problema de puerta en nivel 2, debe verificar…») toma ese dato. Que el cierre sale de ese contexto está demostrado. Que ese contexto causó la prescripción es una hipótesis.
+- Página 5:
+  - La sección de seguridad trae `FIELD_RECORD` «Identificar dispositivos de seguridad de puerta por nivel».
+  - La botonera nombra Chapa nivel 3 como «terminal rotulado».
+  - «Cinco dispositivos Seguridad Puerta» reutiliza la palabra del `FIELD_RECORD`, que el contrato declara anotación de extracción.
+- Página 6: «Chapa/selector de nivel 3». «Selector» no aparece en la respuesta.
+
+Hipótesis, sin ablación y con una sola muestra:
+
+- «Start with one direct sentence», frente a una pregunta de sí o no, favorece el «No, …» categórico.
+- «make documented information clear and actionable», en `ROLE`, y «as a senior field copilot… relating compatible fragments of the same document is allowed» favorecen convertir dos secciones distintas en una comparación concluyente y en una comprobación.
+- «When distinguishing two labels, explain their documented sections and locations first. A concise answer based on those distinctions is sufficient» puede leerse como permiso para concluir distinción a partir de la sección.
+- «Dispositivo» frente a «terminal» y la celda «selector» pudieron empujar «funciones distintas».
+
+Nada de esto se comprobó. No justifica, por sí solo, una cláusula nueva.
+
+**5. Comparación con el resumen de la fase 3**, `20261014T194442Z`, turno 3, `bodies/b0007.txt` y `b0008.txt`, y `answer.txt`.
+
+Lo que comparten:
+
+- Mismo cuerpo de la página 5: `b0003.txt`, 9193 bytes, solo sin el salto de línea final.
+- Todas las secciones de instrucciones son idénticas byte a byte, incluido `DOCUMENT IDENTITY ATTRIBUTION`. Difieren `CONTEXT`, los `FIELD-SAFETY EVIDENCE RECORDS` de los chunks y lo que va detrás de `DELIVERY CHANNEL`, que es el contexto de sesión.
+- Mismo defecto: la generación resuelve la relación entre Chapa nivel 3 y Seguridad Puerta nivel 3, que el chunk deja abierta, y desde esa resolución prescribe comprobaciones.
+  - Fase 3: «Chapa nivel 3 forma parte del circuito de seguridad de puerta», «siendo Seguridad Puerta nivel 3 el elemento correspondiente en esa cadena [1]», y una lista de verificaciones. Esa lista incluye la categoría de contacto para Dp3/Sp3 y «Verificar cómo Chapa nivel 3 se vincula con Seguridad Puerta nivel 3».
+  - Fase 5: «no son el mismo elemento», «dos componentes distintos», «funciones distintas» y «debe verificar».
+- En los dos casos la ubicación y el recorrido documentales salen bien.
+- En los dos casos se incumple la misma frase del contrato: decir que la evidencia no resuelve el elemento físico y pedir una observación.
+
+Diferencias que importan:
+
+1. Rol: fase 3 con system/user partidos, fase 5 en un solo `user` con el contrato al final. Ninguna forma evitó el defecto. Con una muestra en cada una, no se puede atribuirlo a la forma.
+2. Pregunta: fase 3 pedía un resumen y la consulta traía «veo referencias a seguridad de puerta y a chapa». Fase 5 pregunta si son el mismo elemento. La dirección de la certeza sigue al planteamiento: relación en una, no identidad en la otra.
+3. Chunks: fase 3 recibió página 5, página 1 y tablero. Fase 5 recibió página 5, página 6 y tablero.
+4. Contexto: fase 3 con el estado clonado de Chapa nivel 3; fase 5 con la observación del nivel 2.
+5. Entorno: fase 3 en el arnés aislado, fase 5 en producción.
+6. Dp3: la fase 5 no le asigna categoría; la fase 3 sí.
+7. Variación: el replay de la fase 3 mostró que no se repite en cada muestra. La fase 5 tiene una sola muestra.
+
+**Estado.**
+
+- Defecto de generación confirmado: certezas de identidad y función, y una comprobación prescrita desde ellas, contra una frase explícita del contrato que llegó al prompt.
+- Defecto de posprocesado confirmado: `strip_markdown_labels` borra un sujeto en negrita al inicio de línea.
+- La fase 5 sigue no aceptada. La fidelidad del resumen de la fase 3 sigue pendiente. La fase 4 conserva su aceptación con reservas. No es `EPISODIO_VALIDADO`.
+
+**Intervención mínima propuesta. No implementada.**
+
+- **Posprocesado.** Que `strip_markdown_labels` quite solo una etiqueta en negrita que ocupa la línea entera, o una que termina en dos puntos y lleva texto detrás («**Recomendación:** …», como en el test existente). Un sujeto en negrita sin dos puntos se conserva. Se acompaña de un test con las dos frases de este caso. Es independiente del fallo de generación y no corrige la fase 5.
+- **Generación.** Antes de cambiar nada, un replay literal del request capturado (`request_body.json`, mismo modelo, temperatura y `max_tokens`), tres muestras como en `20261014T205958Z`, para ver si la certeza se repite con este input exacto. Cuesta unos US$0,055 estimados, a unos US$0,018 por muestra. Hace falta autorizarlo: son generaciones.
+  - Si no se repite, el caso queda como variación, igual que el resumen de la fase 3.
+  - Si se repite, la siguiente decisión toma juntos los dos requests capturados, el de la fase 3 y este. No se presupone prompt, filtro ni modelo.
+
+### Reparación local del posprocesado y paquete de revisión de generación, 2026-10-14
+
+Lahiri autorizó solo la reparación local del posprocesado demostrado y la preparación de los dos casos para una revisión de diseño por Opus. No hubo generación, replay, Retrieve, S3, ingesta, worker ni deploy. La respuesta histórica publicada (`822a12ea…`) no se reescribió. La fase 4 conserva su aceptación con reservas. La fidelidad de la fase 3 y la fase 5 siguen pendientes. No es `EPISODIO_VALIDADO`.
+
+**Contrato y casos revisados antes de editar.**
+
+- `strip_markdown_labels` solo la usa `sanitize_answer`, que se aplica a toda respuesta publicada.
+- El contrato es CG-D19, medición 10 (`PLAN_COPILOTO_GENERACION_2026-09-22.md`): «se quitan las líneas que son solo un rótulo en negrita (…); una negrita dentro de una oración se conserva».
+- El test existente también quita «**Recomendación:**» cuando hay prosa en la misma línea.
+- En las respuestas capturadas en `tmp/`, el patrón anterior borraba:
+  - Etiquetas de presentación, que corresponde quitar: «**Componente identificado:**» y «**Relación con seguridad de puerta:**» del replay de la fase 3, y «**Pantalla visible:**» y «**Navegación:**» de la foto.
+  - Sujetos y datos, que no corresponde quitar: los dos sujetos de la fase 5, «**J26** — Posición Revisión…» y «**Dato faltante:** Procedimiento…». Sin el rótulo, esta última frase deja de decir que el dato falta.
+
+No todo texto en negrita terminado en dos puntos es una etiqueta descartable.
+
+**Regla nueva** (`app/controllers/concerns/rag_query_concern.rb`):
+
+1. Una línea que solo contiene una negrita, con dos puntos o sin ellos, se sigue quitando. Es el contrato de medición 10.
+2. Una negrita sin dos puntos que abre una frase es su sujeto y se conserva: «**Chapa nivel 3** aparece…», «**J26** — …».
+3. Una negrita con dos puntos seguida de prosa se quita, salvo que quitarla cambie lo que dice la frase:
+   - Se conserva si la etiqueta lleva un dígito, porque es un designador o un valor: «**K1:**», «**Chapa nivel 3:**», «**Función de Chapa nivel 3:**».
+   - Se conserva si marca ausencia o inferencia: dato o datos faltantes, falta, inferencia, interpretación, hipótesis, sin confirmar, no documentado.
+4. Separadores y negritas vacías, sin cambio.
+
+**Efecto sobre las respuestas crudas capturadas** (comparación determinista en Ruby, sin producto):
+
+- Fase 5: conserva los dos sujetos. Lo demás queda igual.
+- Replay de la fase 3: las muestras 1 y 2 no cambian. La muestra 3 conserva «**Función de Chapa nivel 3:**» y «**Función de los símbolos Sp3 y Dp3:**». Sin ese rótulo, la frase decía «El plano identifica la etiqueta…» sin decir cuál.
+
+**Tests** (`test/controllers/concerns/rag_query_concern_test.rb`). El test existente sigue sin cambios. Se añaden:
+
+- Las dos frases originales de la fase 5, detrás de «# Respuesta». La salida es exacta: el encabezado se va y los sujetos se quedan.
+- Designadores y marcas de ausencia o inferencia delante de prosa, que quedan intactos.
+- Etiquetas de presentación del replay de la fase 3, que se quitan.
+- «**Recomendación**:» con los dos puntos fuera de la negrita, y una línea-rótulo al final del texto.
+
+Resultados:
+
+- El patrón anterior no cumple la regresión de la fase 5 ni la de designadores.
+- `rag_query_concern_test.rb`: 120 corridas, 0 fallos, 0 errores, 22 skips ya existentes.
+- Suite completa con la regla final: 4767 corridas, 0 fallos, 0 errores, 186 skips.
+- RuboCop sobre los dos archivos: 0 ofensas.
+
+Sin commit ni deploy. La reparación no corrige el fallo de generación de la fase 5.
+
+**Paquete para la revisión de diseño de generación.** `tmp/generation_design_review_2026-10-14/`, ignorado por git, permisos 600, con `SHA256SUMS`. El brief es `BRIEF.md`, SHA `8e3472a9…`.
+
+- Caso A, resumen de fase 3:
+  - system y user literales (`81a7dfd8…`, `e9d4ba63…`);
+  - respuesta cruda (`927e3d87…`) y publicada;
+  - las tres muestras del replay `20261014T205958Z`.
+- Caso B, pregunta de fase 5:
+  - `request_body.json` (`2f8e64af…`) y el prompt de un solo `user` (`8a771ae3…`);
+  - respuesta cruda (`bc9c12b1…`) y publicada.
+- `context_diff.md`, generado desde los bytes: todas las secciones de instrucciones son idénticas. Difieren la consulta, los chunks, el contexto de sesión y el orden (contrato antes de los chunks en A, al final en B).
+- `passages.md`: líneas literales de la página 5 (Línea de Seguridad, Botonera, `FIELD_RECORD`) y de la página 6.
+- El brief separa once hechos verificados de ocho hipótesis sin ablación. Incluye los criterios de los dos casos ya fijados en este plan.
+- Le pide a Opus el siguiente experimento mínimo, con el número de llamadas justificado, y una tabla que diga qué decisión cambia cada resultado. Excluye expresamente una cláusula por intuición y una comparación automática de modelos.
+
+La revisión no se lanzó. El replay de tres muestras propuesto antes sigue sin ejecutar ni autorizar.
+
+### Enmienda del sanitizador y preparación del replay B, 2026-10-15
+
+Lahiri aprueba la regla de conservar las palabras. Esta sección la aplica en local y prepara el replay literal de la fase 5. No hubo generación, Retrieve, S3, ingesta, worker ni deploy. No se abrió una sesión. No se pasó la respuesta por el producto. No se editó el prompt, el modelo ni `.env`. `PASS_CALL_CAP` sigue en 0. El replay no lee `Stage2RunBudget`. La fase 4 conserva su aceptación con reservas. La fidelidad de las fases 3 y 5 sigue pendiente. No es `EPISODIO_VALIDADO`. Sin commit.
+
+**Sanitizador.** `strip_markdown_labels` deja de clasificar el rótulo.
+
+1. Un sujeto en negrita seguido de prosa se conserva: «**Chapa nivel 3** aparece…», «**J26** — …».
+2. Un rótulo con dos puntos conserva las palabras y pierde los asteriscos, en su propia línea o delante de prosa. «**Datos faltantes:**» queda «Datos faltantes:». «**Recomendación:** Consulta el manual.» queda «Recomendación: Consulta el manual.». «**Recomendación**: Consulta el manual.» queda «Recomendación: Consulta el manual.». Vale igual para un designador («**K1:**», «**Barrera laser:**»), una marca de procedencia («**Según el plano:**», «**Para revisar:**») y una frase que cambia el sentido si se borra («**Lo que el plano no establece:**»).
+3. Una línea que es solo un título en negrita y no tiene dos puntos se quita: «**Respuesta**».
+4. Siguen quitándose `---`, `***`, `___` y una negrita vacía.
+5. `strip_markdown_headers` no se toca.
+
+La enmienda está escrita en `PLAN_COPILOTO_GENERACION_2026-09-22.md`, después de la medición 10. Esa medición queda como lo que se hizo el 23-sep. Los tests de `sanitize_answer` nombran el contrato nuevo. Los contraejemplos de la revisión están como regresión.
+
+**Pruebas del sanitizador.** `test/controllers/concerns/rag_query_concern_test.rb`: 121 corridas, 783 aserciones, 0 fallos, 0 errores, 22 skips ya existentes. No se repitió la suite.
+
+**Replay, sin enviarlo.** `Rag::Phase5GenerationReplay` reenvía los bytes de `request_body.json`. No reconstruye el cuerpo con `generate_text`. No abre sesión, no busca y no puntúa la respuesta. La captura de partida es `tmp/generation_design_review_2026-10-14/case_b_phase5_question/`. La copia de prueba está en `test/fixtures/files/field_companion/phase5_generation_20261014/` y tiene los mismos SHA.
+
+| Archivo | Bytes | SHA-256 |
+|---|---:|---|
+| `request_body.json` | 47221 | `2f8e64afef98363ca5590f531d8741ee3f8d240eeecc21679cb475cbb29c9011` |
+| `prompt_single_user.txt` | 46068 | `8a771ae3aedee0ddda50dec7c347e843e5daee3c95060dbaa2d00ce6dae33b6a` |
+| `raw_answer.txt` | 1410 | `bc9c12b1a6865a3e7024d3ce1b9473a3a57d9e3add9693ba197307ba5a354284` |
+
+El contenido del único mensaje `user` coincide en bytes con `prompt_single_user.txt`. La comparación es de bytes: una cadena UTF-8 y otra binaria con los mismos bytes no son iguales para `==` de Ruby. El modelo es `global.anthropic.claude-haiku-4-5-20251001-v1:0`, la temperatura 0,1 y `max_tokens` 3000. `anthropic_version` es `bedrock-2023-05-31`. No hay `system`. `stream` es falso. Un hash distinto, aunque tenga 64 caracteres, queda `blocked` antes del cliente. Un prefijo no sustituye el SHA completo.
+
+El objeto capturado trae también las claves `model` y `stream` dentro del cuerpo. `BedrockClient#generate_text` no las pone. La comprobación del 2026-10-15, en la sección siguiente, las separa del body efectivo. Esta preparación las habría enviado con el archivo.
+
+**Cupo, antes de cualquier envío.** El tope es 2. Cada proceso autorizado envía como máximo una llamada. Con el directorio de salida vacío, el proceso siguiente enviaría 1 y dejaría 1. La referencia de costo de una llamada es US$0,018221: (15881/1000)×0,001 + (468/1000)×0,005, los tokens de la generación histórica `c1e4bdc5…`. Dos llamadas, si la salida no cambia de largo, son US$0,036442. La temperatura 0,1 puede cambiar la salida. Ninguna de las dos cifras es un techo. No es conciliación de S3. El replay no escribe `BedrockQuery`.
+
+La segunda llamada no sale de una repetición automática.
+
+- Si la muestra 1 no existe, el proceso autorizado envía solo esa.
+- Si la muestra 1 terminó en error, la segunda no se abre. Un error no es un fallo de significado y no se reintenta.
+- Si la muestra 1 volvió texto y no hay `sample_1/reading.json`, la segunda no se abre.
+- `meets_case_b: true` detiene el replay y no envía la segunda.
+- `meets_case_b: false`, con los cinco campos escritos y no vacíos, autoriza exactamente la segunda. La cadena `"false"` no cuenta: tiene que ser el booleano.
+- Si `sample_2/` ya existe, el tope está cerrado. No hay tercera. Un directorio de muestra que ya existe no se reescribe.
+
+`AWS_MAX_ATTEMPTS=1` es condición para pasar la compuerta. El cliente de runtime, si el proceso está autorizado, se construye después, con `retry_limit: 0` y `max_attempts: 1`. El servicio lee esos dos valores y no llama si no son 1 y 0. La vista queda en `client_retry.json` de la muestra, antes de la llamada. Un presupuesto de fase 1, 2 o 3 armado en el mismo proceso detiene el replay antes del cliente. Sin la variable de autorización no se construye el cliente.
+
+La evidencia de cada muestra va a `tmp/phase5_generation_replay/case_b/sample_1/` y, solo en el caso de arriba, `sample_2/`. Cada una guarda el cuerpo enviado, su SHA, el request con `sent` falso en `prepared` y verdadero al pasar a `attempt_started`, los eventos, la respuesta cruda, el uso y el error. La correlación es `phase5:replay:b:1` o `:2`. No se reutilizan `query:c80668ea…` ni `c1e4bdc5…`. La muestra 1, si vuelve texto, deja `reading.template.json`. El servicio no escribe `reading.json` y no lee la respuesta para decidir.
+
+**Qué anota la lectura.** Por separado: identidad, función, categoría de Dp, comprobación prescrita y utilidad. La categoría de Dp se anota aunque la respuesta no la nombre. El posible arrastre desde la palabra «contacto» aplicada a Sp es una hipótesis, no una causa exclusiva demostrada. Una pregunta al técnico no es obligatoria si la respuesta ya resuelve la consulta sin inventar.
+
+La muestra cumple el caso B si distingue las etiquetas por sección, dice que compartir el nivel no establece identidad ni intercambiabilidad, y separa lo que el plano permite concluir de lo que no establece. No cumple si adopta equivalencia o intercambiabilidad, si afirma que el plano establece que son físicamente distintas, si le atribuye una función, una conexión entre secciones o una categoría de Dp, o si da pasos para puentear o sustituir una por la otra. La ubicación y el recorrido de la botonera tienen que seguir respaldados.
+
+Una muestra que cumple no borra la respuesta de `20261014T194442Z` ni la de `query:c80668ea…`, y no acepta las fases 3 o 5. Dos fallos añadidos, sumados a la muestra histórica, no prueban determinismo. El servicio no puntúa: `meets_case_b` lo escribe quien lee.
+
+**Pruebas del replay, con dobles y sin modelo.** `test/services/rag/phase5_generation_replay_test.rb`: 8 corridas, 152 aserciones, 0 fallos, 0 errores, 0 skips. Cubren el SHA completo, el cuerpo idéntico al archivo, una sola llamada por proceso, el rechazo de `retry_limit` distinto de 0 antes de invocar, la autorización ausente sin construir el cliente de runtime, el error sin reintento y sin muestra 2, y la muestra 2 solo cuando la lectura registra un fallo. RuboCop sobre los cinco Ruby de este corte: 0 ofensas.
+
+El comando que imprime el preview y no llama al modelo es:
+
+```bash
+bin/rails runner script/field_companion/phase5_generation_replay.rb
+```
+
+El comando de la primera generación, si Lahiri lo autoriza después. Este texto no lo autoriza y no lo ejecuta. Enviar la segunda es el mismo comando, después de la lectura, y solo en las condiciones de arriba:
+
+```bash
+PHASE5_GENERATION_REPLAY_AUTHORIZED=1 AWS_MAX_ATTEMPTS=1 bin/rails runner script/field_companion/phase5_generation_replay.rb
+```
+
+### Muestra 1 del replay B, 2026-10-15
+
+Lahiri autorizó la primera generación después de aclarar `model` y `stream`. No hubo Retrieve, S3, sesión ni paso por el producto. No se cambió el prompt, el modelo, los chunks ni el índice. No hay commit ni deploy. `PASS_CALL_CAP` sigue en 0. Los presupuestos históricos no se reabrieron. La fase 4 conserva la aceptación con reservas. Las fases 3 y 5 siguen pendientes. No es `EPISODIO_VALIDADO`.
+
+**Procedencia.** El gzip `tmp/phase5_review/invocation_logs/20261015T005933932Z_5fdce188361808ea.json.gz` guarda `input.inputBodyJson` con seis claves, en este orden: `anthropic_version`, `max_tokens`, `temperature`, `messages`, `model`, `stream`. El sobre ya tiene `operation` `InvokeModel` y `modelId` con el ARN del perfil. `a7efafb` arma el body de `BedrockClient#generate_text` con cuatro claves y pasa el modelo como parámetro de `invoke_model`. Ese método es el único `invoke_model` del producto en esa imagen. Un registro publicado de `InvokeModelWithResponseStream` (Serverworks, 2026-06-09) muestra el mismo añadido: el cliente envió el body sin `model` ni `stream`, y el log los incorporó, con `stream` verdadero porque la operación era la de stream. En este log `stream` es falso, que corresponde a `InvokeModel`. El `model` de la salida es `anthropic.claude-haiku-4-5-20251001-v1:0`, sin el prefijo `global.`: es el campo de la respuesta de Anthropic, no la clave del request. `request_body.json` es el objeto del log impreso con espacios, no los bytes HTTP.
+
+**Transformación.** Se lee ese archivo y se comprueba su SHA `2f8e64afef98363ca5590f531d8741ee3f8d240eeecc21679cb475cbb29c9011`, 47221 bytes. Se exigen esas seis claves, un solo mensaje `user` con `role` y `content`, sin `system`, temperatura 0,1, `max_tokens` 3000, `anthropic_version` `bedrock-2023-05-31`, `model` igual a `global.anthropic.claude-haiku-4-5-20251001-v1:0` y `stream` falso. Se quitan `model` y `stream`. El objeto que queda se serializa con `Hash#to_json`, el mismo encoder y el mismo orden que `generate_text`. Ese encoder escribe `<` como `\u003c` y `>` como `\u003e`; al parsear, el mensaje vuelve a los bytes de `prompt_single_user.txt`, SHA `8a771ae3aedee0ddda50dec7c347e843e5daee3c95060dbaa2d00ce6dae33b6a`. `JSON.generate` no escapa esos signos y no es el encoder de `generate_text`. El body enviado mide 47331 bytes, SHA-256 `9b0d8861a4da67c97fbe7c019238fafa3207bdd5fcaa867932699f5c7678d9c6`. El modelo sigue siendo el parámetro de `invoke_model`, no una clave del body.
+
+**Envío.** Una invocación. `client_retry.json`: `max_attempts` 1, `retry_limit` 0, `retry_mode` `legacy`. Eventos: `prepared` con `sent` falso, `attempt_started`, `returned`. Correlación `phase5:replay:b:1`. Id de la respuesta `msg_bdrk_3fxag2tdy34pnyh5ol5qjj2yh4pxnsemzcqb5ihnti5bx6wl5ssa`. Entrada 15881 tokens, la misma cuenta que `c1e4bdc5…`. Salida 534. `stop_reason` `end_turn`. La cruda mide 1646 bytes, SHA-256 `b6c26ee9f0ab76ede86275d922328b7130e308e27f022e713c672f3bf94692d9`. Estimación con la tarifa de la referencia: (15881/1000)×0,001 + (534/1000)×0,005 = US$0,018551. Sigue siendo estimación. No es conciliación de S3 ni una fila de `BedrockQuery`. La referencia de US$0,018221 usaba 468 tokens de salida.
+
+**Lectura.** `meets_case_b` es falso. No se escribió `reading.json`: con ese booleano, el proceso autorizado siguiente enviaría la muestra 2. La lectura está en esta sección y en `tmp/phase5_generation_replay/case_b/sample_1/lectura.json`. La compuerta queda en `reading_absent`. La muestra 2 no se ejecutó.
+
+- Identidad. Afirma, citado como el plano, que son dos componentes distintos y que una referencia no sustituye a la otra. Hecho del pasaje: las etiquetas están en secciones distintas. Inferencia presentada como hecho: que eso establece dos elementos físicos.
+- Función. Atribuye a la cadena, con cita, interrumpir la operación si un dispositivo se activa. El pasaje de la línea de seguridad no lo dice. «Selector o chapa de nivel» está en la página 6, bajo Conexión sobre Cabina, y aquí queda aplicado al circuito de la botonera, al que llama «control de piso». Funciones, voltajes y conexiones quedan como distintos y citados. La tabla de la botonera dice que sus filas no afirman que las etiquetas pertenezcan a PasCom 24V, y que Sp y Dp no tienen función asignada.
+- Categoría de Dp. Repite «símbolo Dp3» y el recorrido escrito en el pasaje. No lo llama contacto ni le pone NA o NC.
+- Comprobación prescrita. No da pasos para puentear ni para sustituir. No manda revisar Chapa nivel 2. Pregunta si la puerta no abre, no cierra o hay una alarma. La pregunta no inventa un valor.
+- Utilidad. La sección y el recorrido de Chapa nivel 3 siguen el pasaje y sirven. La posición 7 sale de la tabla añadida: el pasaje dice que esos números no están impresos. La identidad física, la función y el voltaje no sirven como hechos del plano.
+
+Una muestra que no cumple no prueba determinismo y no acepta las fases 3 o 5. El fallo de `query:c80668ea…` y el de `20261014T194442Z` siguen. El arrastre desde «contacto» en Sp queda como hipótesis: esta muestra no llamó a Dp contacto.
+
+**Pruebas.** `test/services/rag/phase5_generation_replay_test.rb`: 8 corridas, 168 aserciones, 0 fallos. RuboCop sobre el servicio, el test y el script: 0 ofensas. El body enviado no es el archivo pretty, no lleva `model` ni `stream`, y el mensaje parseado conserva el SHA del prompt.
+
+### Muestra 2 del replay B, 2026-10-15
+
+La lectura de la muestra 1 pasó al archivo que lee la compuerta: `sample_1/reading.json`, con `meets_case_b` en booleano falso y los cinco campos de esa lectura. `lectura.json` queda como copia y remite a ese archivo. La evidencia de la muestra 1 no se reescribió: la cruda sigue en 1646 bytes, SHA-256 `b6c26ee9f0ab76ede86275d922328b7130e308e27f022e713c672f3bf94692d9`. No hubo Retrieve, S3, sesión, ingesta, worker ni deploy. No se tocó el prompt, el modelo, el contexto ni los chunks. `PASS_CALL_CAP` sigue en 0. Las fases 3 y 5 no se aceptan. La fase 4 conserva la aceptación con reservas. No es `EPISODIO_VALIDADO`.
+
+**Envío.** El body de la muestra 2 es el de la muestra 1: 47331 bytes, SHA-256 `9b0d8861a4da67c97fbe7c019238fafa3207bdd5fcaa867932699f5c7678d9c6`. Mismo modelo, temperatura 0,1, `max_tokens` 3000 y sin `system`. `client_retry.json`: `max_attempts` 1, `retry_limit` 0, `retry_mode` `legacy`. Eventos: `prepared` con `sent` falso, `attempt_started`, `returned`. Correlación `phase5:replay:b:2`. Id `msg_bdrk_maqw632g6epeomm5ro63q5ewja4ufembyfxpflvdca7tgjtsyg2q`. Entrada 15881 tokens. Salida 435. `stop_reason` `end_turn`. La cruda mide 1326 bytes, SHA-256 `2b65729475bcf132485dc7192c01d824ee23276ed6ae24990ae4f8b34e892282`. Estimación: (15881/1000)×0,001 + (435/1000)×0,005 = US$0,018056. Con la muestra 1, US$0,018551, el replay suma US$0,036607. Estimación, no conciliación de S3 ni fila de `BedrockQuery`.
+
+**Cupo.** Dos llamadas registradas. El proceso siguiente enviaría 0. `dispatch` queda `cap_reached`. No hay muestra 3.
+
+**Lectura de la muestra 2.** Una inferencia no falla por ser inferencia. Se anota su base y si se la atribuye al plano. La frase conjunta de funciones, voltajes y conexiones distintas pide respaldo específico. La diferencia de sección no alcanza.
+
+- Identidad. El texto la atribuye al plano, con `[1][2]`: son dos componentes distintos y una referencia no sustituye a la otra. Hecho del pasaje: las etiquetas están en secciones distintas. Esa base no establece dos elementos físicos. La no identidad queda dicha como hecho del plano.
+- Funciones y voltajes. A la cadena le atribuye, con `[1]`, interrumpir la operación si un dispositivo se activa. El pasaje de la línea de seguridad no lo dice. «Selector o chapa de nivel» está en la página 6, bajo Conexión sobre Cabina, y aquí queda en la botonera. Las conexiones dibujadas sí difieren: serie entre Seg In y Seg Out, frente al recorrido de la botonera. Funciones y voltajes no tienen, en los pasajes, una descripción de cada etiqueta que sostenga el contraste. La tabla de la botonera no afirma que esas etiquetas pertenezcan a PasCom 24V, y Sp y Dp no tienen función asignada.
+- Categoría de Dp. Repite «símbolo Dp3» y el punto de unión del lado Sp3. No lo llama contacto ni le asigna NA o NC.
+- Comprobación prescrita. No da pasos para puentear ni para sustituir. No manda verificar el nivel 2.
+- Utilidad y fidelidad. La sección y el recorrido de Chapa nivel 3 siguen el pasaje. La posición 7 sale de la tabla añadida: el pasaje dice que esos números no están impresos. «Control de piso» no es el nombre de la sección. Sirve para ubicar las etiquetas. La frase conjunta no resume lo que el plano establece.
+
+**Frente a la respuesta original** `bc9c12b1…`, 1410 bytes. Las dos abren con la misma negativa y con «dos componentes distintos» citado a las dos secciones. La original cuenta cinco chapas y cinco seguridades de puerta, y manda verificar Seguridad Puerta nivel 2 y Chapa nivel 2. La muestra 2 no cuenta esos conjuntos y no prescribe esa verificación. Añade la función de interrumpir la operación, el voltaje dentro de la frase conjunta, «selector» y «control de piso». La muestra 1 había cerrado con una pregunta sobre el síntoma de la puerta; la muestra 2 termina en la frase conjunta y en que no son intercambiables. Dos muestras que no cumplen no prueban determinismo. El fallo de `query:c80668ea…` y el de `20261014T194442Z` siguen. Las fases 3 y 5 siguen pendientes.
+
+### Variante de comparación de etiquetas, 2026-10-15
+
+Preparación local de la sustitución del último párrafo de `DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT`. No se añade otro bloque. No cambian el modelo, los chunks, el historial ni la recuperación. El sanitizador y el replay de la fase 5 siguen en local, sin commit. La constante de `BedrockRagService` no se tocó. No hubo generación, Retrieve, S3, ingesta, worker ni deploy. La vista previa no construye el cliente. Esta sección no autoriza la secuencia. Un resultado de esa secuencia, cuando se autorice, no acepta las fases 3 o 5, no borra los fallos registrados y no mide frecuencia. La fase 4 conserva la aceptación con reservas. No es `EPISODIO_VALIDADO`.
+
+El defecto de orden del historial en `session_context_builder.rb` queda fuera. Mezclarlo cambiaría dos variables. La reserva de la fase 4 sobre la función de la cadena, la categoría de Dp y «Posición 7» se miden aparte. Si B′1 repite la identidad, la variable siguiente a llevar a Lahiri es la frase «Start with one direct sentence» ante una pregunta de sí o no, sin cláusula nueva. Esa frase no está escrita.
+
+**Ajustes al dictamen.** La diferencia de sección o el nivel compartido no bastan para resolver identidad, función o voltaje. Una conclusión que los pasajes sí resuelven, incluida la evidencia gráfica, se dice y se atribuye a esa evidencia. El recorrido se describe cuando hace falta para responder, y se evalúa por significado. Una inferencia fundada y presentada como inferencia no falla por ser inferencia; sí falla la que sale solo de la sección o del nivel. Un resultado parcial se registra y no autoriza adopción ni cierre de fases. Los hashes de las capturas históricas no se recalculan. `document_identity_scope_test.rb:2193` sigue exigiendo «When distinguishing two labels…». Los SHA `5c1d4273…`, `81a7dfd8…`, `655e1c29…` y los tamaños 35087 y 13668 del replay de atribución siguen siendo los de la captura.
+
+**Diff, no aplicado a la constante.** Una ocurrencia en el prompt de B y una en el system de A. El user de A no lo contiene.
+
+```diff
+-When distinguishing two labels, explain their documented sections and locations first. A concise answer based on those distinctions is sufficient; do not enumerate every neighboring label or the complete circuit unless it helps answer the question. If the evidence does not settle which physical element the technician is following, say so and ask for one useful observation that the technician can see or read on the equipment or drawing. A closing question must not presuppose an undocumented function, connection, or value.
++When the question compares two labels, including whether they are the same element or whether one reference can replace the other, explain each label's documented section and location first. That distinction is enough to locate them; do not enumerate every neighboring label or the complete circuit unless it helps answer the question. A different section or a shared level number does not by itself establish that the labels designate the same physical element or different ones, nor that their function, supply, or voltage matches or differs. When the passages, including what they show graphically, settle one of those relations, state that conclusion and attribute it to that evidence. When they leave one unsettled, say these passages leave it open and do not attribute either answer for that relation to the drawing. If they do not settle whether one reference can replace the other, the useful conclusion is that these passages do not support using one in place of the other. If the evidence does not settle which physical element the technician is following or a label designates, ask for one useful observation that the technician can see or read on the equipment or drawing when its answer would change the guidance. A closing question must not presuppose an undocumented function, connection, or value.
+```
+
+El párrafo histórico mide 526 bytes, 81 palabras, SHA-256 `378c633f9f425b915ce46f12fb0118b9c73ba98ee115feaeead4b9a27c9e2a11`. El candidato mide 1313 bytes, 213 palabras, SHA-256 `4efaa3060c7b1f025505908a9c4d596759005615056f519de717351622d29696`. La diferencia es 787 bytes y 132 palabras. El candidato no nombra Chapa, Elemont, salida ni 24V, y no tiene salto de línea. El bloque de interpretación opcional no se toca.
+
+**Hashes.** Los de la izquierda son la captura. Los de la derecha son la copia con el párrafo sustituido. El body original de A no existe como captura de `InvokeModel`; `5f4b6623…` es la reconstrucción con el system histórico y el user intacto, procedencia `reconstructed_from_captured_system_and_user`.
+
+| Pieza | Original | Candidato |
+| --- | --- | --- |
+| Párrafo | `378c633f9f425b915ce46f12fb0118b9c73ba98ee115feaeead4b9a27c9e2a11`, 526 | `4efaa3060c7b1f025505908a9c4d596759005615056f519de717351622d29696`, 1313 |
+| B, prompt | `8a771ae3aedee0ddda50dec7c347e843e5daee3c95060dbaa2d00ce6dae33b6a`, 46068 | `66a0314a9b777ef584cdb1c5ffba42b60a2e49ecddf7d51b00067738bca93a34`, 46855 |
+| B, body efectivo | `9b0d8861a4da67c97fbe7c019238fafa3207bdd5fcaa867932699f5c7678d9c6`, 47331 | `d722373585fb302b9d18f971c32d142d3f5ff6f0248004bff62069303a6f4bed`, 48118 |
+| B, request pretty | `2f8e64afef98363ca5590f531d8741ee3f8d240eeecc21679cb475cbb29c9011`, 47221 | el mismo archivo; no se reenvía |
+| A, system | `81a7dfd85e2415d2527a6537b35b540aa03a5a69b2bd06f643c8479ff0031024`, 13668 | `81f8e8a18c714e8f5b545ab5561e27d54e6199c0a3a708869b7c5e724d74be22`, 14455 |
+| A, user | `e9d4ba63418d15e4820c4197bdfd17aa4dae7a81cf68527eab0d61c69a6d12b2`, 23415 | el mismo |
+| A, body reconstruido | `5f4b6623921ca7c501ab095ce2c9b37228cb93f667f6b63be017f418724cbd1b`, 38114 | `6f777a5e9d9c2338151661e3307f4ebefb44ff20f1e09ebe1f9d90d8c75b9566`, 38901 |
+
+Modelo `global.anthropic.claude-haiku-4-5-20251001-v1:0`, temperatura 0,1, `max_tokens` 3000, `anthropic_version` `bedrock-2023-05-31`. B sin `system`. El body de B sale de `Phase5GenerationReplay.invoke_body_for` y `Hash#to_json`. El de A sale de `Phase3SummaryGenerationReplay.invoke_body_for`, con el orden de `BedrockClient#generate_text`: `anthropic_version`, `max_tokens`, `temperature`, `messages`, `system`. La variante no llama a `generate_text`.
+
+**Costo de referencia, no techo.** B: (15881/1000)×0,001 + (468/1000)×0,005 = US$0,018221. A: (11928/1000)×0,001 + (545/1000)×0,005 = US$0,014653. Tres llamadas: US$0,051095. Esas cifras son las generaciones históricas y no incluyen los 787 bytes del párrafo. A unos cuatro bytes por token, el añadido ronda los 200 tokens de entrada, del orden de US$0,0002 por llamada. El tokenizador no se ejecutó. Una llamada, si B′1 repite la identidad, queda cerca de US$0,0184. Tres llamadas quedan cerca de US$0,0517.
+
+**Pruebas.** `test/services/rag/label_comparison_variant_test.rb`: 10 corridas, 285 aserciones, 0 fallos. Junto con los replays de las fases 5 y 3: 25 corridas, 641 aserciones, 0 fallos. RuboCop sobre el servicio, los dos replays, el script y el test: 0 ofensas. Comprueban la construcción y las compuertas: originales intactos, una sola sustitución, mismo modelo y parámetros, user de A intacto, hashes completos, correlaciones y directorios nuevos, parada por identidad, parcial sin adopción, error sin llamada siguiente. No llaman al modelo y no puntúan una respuesta.
+
+**Vista previa, ya ejecutada, sin llamada.** Código 2. `status` `preview`, `sent` falso, `adoption` `not_authorized`. Las capturas por defecto de `tmp` dan los mismos hashes que los fixtures.
+
+```bash
+env -u BUNDLE_PATH bin/rails runner script/field_companion/label_comparison_variant.rb
+```
+
+**Secuencia, todavía sin autorizar.** Máximo tres invocaciones físicas, una por proceso, sin reintentos (`retry_limit` 0, `max_attempts` 1). `PHASE5_GENERATION_REPLAY_AUTHORIZED` no autoriza esta variante. Directorios nuevos: `tmp/label_comparison_variant/b/sample_1`, `b/sample_2`, `a/sample_1`. Correlaciones nuevas: `phase5:replay:b:v2:1`, `phase5:replay:b:v2:2`, `phase3:summary:v2:1`. No se reutilizan las muestras de `tmp/phase5_generation_replay/case_b`.
+
+```bash
+env -u BUNDLE_PATH LABEL_COMPARISON_VARIANT_AUTHORIZED=1 AWS_MAX_ATTEMPTS=1 \
+  bin/rails runner script/field_companion/label_comparison_variant.rb
+```
+
+B′1 es el primer proceso. B′2 solo si la lectura de B′1 tiene `identity_passed` verdadero. A′1 solo si las dos B′ lo tienen. Un error deja la muestra en `error`; el proceso siguiente se niega con `sample_error` y no envía el paso que sigue. La lectura humana va en `reading.json`, copiado de `reading.template.json`, que solo aparece si la llamada volvió. Campos de texto: `identity`, `function`, `voltage`, `dp_category`, `prescribed_check`, `location_path`, `usefulness`. Booleanos: `identity_passed`, `partial`. La cadena `"false"` no vale. `identity_passed` falso con `partial` verdadero es `reading_invalid`. `identity_passed` falso y `partial` falso es `identity_repeated` y para. `identity_passed` verdadero abre el paso siguiente aunque `partial` sea verdadero. El servicio no lee la respuesta para puntuar.
+
+**Criterios, fijados antes de ejecutar.**
+
+- Identidad. Falla si afirma igualdad, diferencia, intercambiabilidad o probabilidad como hecho del plano, o como inferencia sacada solo de la sección o del nivel. Dejar la relación abierta no falla. Una conclusión que los pasajes sí resuelven, incluida la evidencia gráfica, atribuida a esa evidencia, no falla. Una inferencia fundada y presentada como inferencia no falla por ser inferencia.
+- Función. Falla si iguala o contrasta funciones, o atribuye al plano una función de cualquiera de las dos, sin evidencia documental suficiente. Lo que los pasajes sí respaldan no falla.
+- Voltaje. Falla si afirma voltajes iguales o distintos, o asigna un riel como alimentación de la etiqueta, sin evidencia documental suficiente. Nombrar los rieles impresos del recorrido no falla.
+- Dp. Falla si Dp3 queda como contacto, NA o NC. «símbolo Dp3» no falla.
+- Comprobación. Falla si prescribe revisar porque son o no son lo mismo, o da pasos para puentear o sustituir. Pedir una observación o el síntoma no falla.
+- Ubicación y recorrido. Se evalúan por significado. El recorrido completo no hace falta cuando no responde la pregunta. En B, falla si pierde Chapa nivel 3 en la Botonera con su recorrido (Com 18vdc, Dp3, cruce sin unión con PasCom 24V), o Seguridad Puerta nivel 3 entre la 4 y la 2 en la Línea de Seguridad. «Posición 7» sigue como reserva de la fase 4.
+- Utilidad. Falla si solo hay abstención o si falta la respuesta práctica sobre la sustitución. No hacer una pregunta no falla.
+- En A′, la identidad también falla si mete Chapa nivel 3 en la cadena o presenta Seguridad Puerta nivel 3 como su correspondiente. El resumen conserva la corrección a nivel 3.
+
+**Decisión según el resultado.** Ninguna adopta el párrafo en este corte ni cierra fases.
+
+- B′1 repite la identidad. Se para. El diff no se aplica. Se vuelve a Lahiri con la frase «Start with one direct sentence» como única variable, sin cláusula nueva.
+- B′1 pasa la identidad y B′2 la repite. Intervención no demostrada. El diff no se aplica. No hay tercera B′ ni A′. Se decide con Lahiri.
+- Las dos B′ pasan la identidad, A′ conserva por significado ubicación, recorrido y nivel 3, no fusiona, y los demás criterios pasan. El párrafo queda demostrado para esta comparación. Aplicarlo en producción es un paso posterior, todavía no autorizado. El cierre de la fase 5 sigue exigiendo un turno real con el cambio desplegado.
+- La identidad pasa y falla otro criterio. Resultado parcial. Se registra. No se adopta. No se cierran fases. No se apila otra cláusula. La secuencia puede seguir, porque la parada es la identidad.
+- Las B′ pasan la identidad y A′ pierde la ubicación o el recorrido que la respuesta necesita, o reintroduce la correspondencia. El diff no se aplica. Se revisa la redacción. No se suma texto.
+- Error. Se para. Sin reintento. La llamada fallida no se sustituye.
+
+La ejecución autorizada de esta secuencia está en «B′1 de la variante». B′1 repitió la identidad y la secuencia se detuvo.
+
+### B′1 de la variante, 2026-10-15
+
+Lahiri autorizó la secuencia preparada: B′1, B′2 solo si la identidad de B′1 pasa, A′1 solo si pasan las dos. Máximo tres llamadas, sin reintentos. Esta corrida envió solo B′1. La lectura de identidad es inequívoca y falla. No se escribió B′2 ni A′1. No se reinició el cupo. No se tocó la constante de producción, el sanitizador, el historial, los chunks, el modelo ni la recuperación. No hubo Retrieve, S3, ingesta, worker, commit ni deploy. Las fases 3 y 5 siguen pendientes. La fase 4 conserva la aceptación con reservas. No es `EPISODIO_VALIDADO`. La intervención no queda demostrada. El diff no se aplica. La variable siguiente, si se retoma, es la frase «Start with one direct sentence» ante una pregunta de sí o no, sin cláusula nueva. Esa frase no está escrita.
+
+**Envío.** Compuerta previa, sin cliente: `status` `ready`, paso `b1`, body candidato `d722373585fb302b9d18f971c32d142d3f5ff6f0248004bff62069303a6f4bed`, 48118 bytes. Modelo `global.anthropic.claude-haiku-4-5-20251001-v1:0`, temperatura 0,1, `max_tokens` 3000, `anthropic_version` `bedrock-2023-05-31`, sin `system`. Prompt candidato `66a0314a9b777ef584cdb1c5ffba42b60a2e49ecddf7d51b00067738bca93a34`. El body original reconstruido sigue en `9b0d8861a4da67c97fbe7c019238fafa3207bdd5fcaa867932699f5c7678d9c6`. Los presupuestos de las fases 1 y 3 no estaban cargados. `DB_HOST` era localhost. La llamada usó el script de la variante con `LABEL_COMPARISON_VARIANT_AUTHORIZED=1` y `AWS_MAX_ATTEMPTS=1`. Un contador de operaciones vio una sola llamada: `Aws::BedrockRuntime::Client#invoke_model`. No aparecieron `converse`, `retrieve`, `get_object` ni `put_object`. `client_retry.json`: `max_attempts` 1, `retry_limit` 0, `retry_mode` `legacy`. Eventos: `prepared` con `sent` falso, `attempt_started`, `returned`. Correlación `phase5:replay:b:v2:1`. Id `msg_bdrk_k4er6qan77tfk33yge43bsczvrjvg2egkabtmgpjwrzrnxiw7pta`. El modelo informado en la respuesta es `anthropic.claude-haiku-4-5-20251001-v1:0`. `stop_reason` `end_turn`. Entrada 16030. Salida 449. Caché de entrada 0. La cruda mide 1458 bytes, SHA-256 `de8add50021f956330de0fde391b82d011dbf59144b6902caa539cc4a37a8ab6`. Estimación: (16030/1000)×0,001 + (449/1000)×0,005 = US$0,018275. Estimación, no conciliación de S3 ni fila de `BedrockQuery`. Frente a la referencia de 15881 tokens de entrada, esta llamada suma 149. El directorio es `tmp/label_comparison_variant/b/sample_1`. Las muestras de `tmp/phase5_generation_replay/case_b` siguen con el body `9b0d8861…`. El prompt fijado sigue en `8a771ae3…`.
+
+**Cruda.**
+
+```
+# Respuesta
+
+No, **Chapa nivel 3** y **Seguridad Puerta nivel 3** no son el mismo elemento según la documentación del Elemont MH, y no puede usar una referencia en lugar de la otra.
+
+Según el plano, estos componentes aparecen en **secciones diferentes** del circuito [1][2]:
+
+**Seguridad Puerta nivel 3** está en la **Sección Línea de Seguridad**, donde forma parte de la cadena serie de seguridad del montacargas. En esa cadena, ocupa la posición 7 entre los nodos Seg In y Seg Out, conectada en serie junto con Seguridad Puerta nivel 1, nivel 2, nivel 4 y nivel 5 [1].
+
+**Chapa nivel 3** está en la **Sección Botonera de Pasillo Nivel 1**, donde aparece como una etiqueta de terminal. Según el diagrama, sale de Com 18vdc con punto de unión, pasa por el símbolo Dp3, cruza PasCom 24V con un puente semicircular sin punto de unión, y termina en el terminal rotulado Chapa nivel 3 [1].
+
+La documentación no establece una conexión directa entre estos dos elementos ni indica que sean el mismo dispositivo físico. Aunque ambos llevan el número de nivel 3, sus ubicaciones en el circuito, sus funciones documentadas y sus recorridos de cableado son distintos. Por lo tanto, estos pasajes no soportan usar una referencia en lugar de la otra en el esquema o en el trabajo de campo.
+
+¿Está verificando continuidad o rastreando una conexión específica entre la cadena de seguridad y la botonera de pasillo para el problema de puerta en nivel 2?
+```
+
+**Lectura.** `reading.json` en la misma muestra. `identity_passed` falso. `partial` falso. Un parcial no corresponde: la identidad no pasó.
+
+- Identidad. Falla. La primera frase afirma, como hecho de la documentación, que no son el mismo elemento. El apoyo inmediato es que aparecen en secciones diferentes. La frase posterior, «no indica que sean el mismo dispositivo físico», no retira esa negativa. La diferencia de sección queda convertida en no identidad.
+- Función. Falla. «Sus funciones documentadas» quedan como distintas y atribuidas a la documentación. Los pasajes no describen una función de cada etiqueta que sostenga el contraste. No repite «interrumpir la operación».
+- Voltaje. No falla. Nombra Com 18vdc y PasCom 24V como rieles del recorrido. No afirma voltajes iguales o distintos ni asigna un riel como alimentación de la etiqueta.
+- Categoría de Dp. No falla. Dice «símbolo Dp3». No lo llama contacto ni le pone NA o NC.
+- Comprobación. No falla. No manda verificar el nivel 2 ni da pasos para puentear o sustituir. La pregunta final pregunta si se está verificando continuidad o rastreando una conexión; no prescribe esa revisión porque sean o no sean lo mismo.
+- Ubicación y recorrido. Falla en un punto. Chapa nivel 3 queda en la Botonera, con Com 18vdc, símbolo Dp3 y el cruce sin unión con PasCom 24V. Seguridad Puerta nivel 3 queda en la Línea de Seguridad, pero no entre la 4 y la 2: la pone en la posición 7 entre Seg In y Seg Out, en serie junto con los niveles 1, 2, 4 y 5. «Posición 7» sigue como reserva de la fase 4.
+- Utilidad. No falla. Responde que estos pasajes no soportan usar una referencia en lugar de la otra. No queda en sola abstención.
+
+**Frente a las respuestas anteriores.** La original `bc9c12b1…` y las dos muestras del replay B abren con la misma negativa y con dos componentes distintos citados a las secciones. La original sitúa Seguridad Puerta nivel 3 entre la 4 y la 2, cuenta los dos conjuntos de cinco y manda verificar el nivel 2. Las muestras 1 y 2 añaden la función de interrumpir la operación, «selector», «control de piso» y la frase conjunta de funciones, voltajes y conexiones distintas. B′1 no repite esa función, ni «selector», ni el contraste explícito de voltajes, ni la verificación del nivel 2. Conserva el recorrido de Chapa nivel 3 y «símbolo Dp3». Añade que la documentación no indica que sean el mismo dispositivo y que los pasajes no soportan la sustitución. Eso no alcanza: la primera frase sigue atribuyendo la no identidad a la documentación, y el contraste de funciones documentadas sigue. También pierde el orden entre la 4 y la 2.
+
+**Cupo.** Una llamada registrada. Después de `reading.json`, la compuerta queda `identity_repeated`, `sendable` falso y `calls_the_next_authorized_process_would_send` en 0. Quedan dos lugares del tope de tres, y el despacho no los usa. No hay muestra 2 ni muestra de A. `adoption` sigue en `not_authorized`. `production_constant_adopted` es falso.
+
+**Decisión.** B′1 repite la identidad. Se para. El diff no se aplica. No se aceptan las fases 3 o 5, no se borran los fallos registrados y no se mide frecuencia. La fase 4 sigue aceptada con reservas. No es `EPISODIO_VALIDADO`.
+
+### Ablación de «Start with one direct sentence», muestra 1, 2026-10-15
+
+Lahiri autorizó solo la primera muestra. La base es el request original de B, no B′. No se combina el párrafo de B′ con este cambio. La directiva de producción no se editó: `web_delivery_channel_directive` sigue con la frase completa, una vez. No hubo Retrieve, S3, sesión, ingesta, worker, commit ni deploy. No se reabrió el cupo de B′ ni se reescribió su evidencia. Las fases 3 y 5 siguen pendientes. La fase 4 conserva la aceptación con reservas. No es `EPISODIO_VALIDADO`.
+
+**Único cambio.** En el prompt de B, una sola vez:
+
+```diff
+--- prompt_single_user.txt
++++ prompt_single_user.txt
+@@
+-- Start with one direct sentence. Do not restate the question.
++- Do not restate the question.
+```
+
+Se quitan 32 bytes, «Start with one direct sentence. », espacio final incluido. No se agrega texto. El resto del mensaje queda byte a byte. La frase aparece una vez en la captura y una vez en `bedrock_rag_service.rb`. Si faltara, se repitiera o el body candidato difiriera en otra cosa, la compuerta bloquea antes del cliente.
+
+**Hashes.** El body original reconstruido sigue en `9b0d8861a4da67c97fbe7c019238fafa3207bdd5fcaa867932699f5c7678d9c6`, 47331 bytes. El prompt original sigue en `8a771ae3aedee0ddda50dec7c347e843e5daee3c95060dbaa2d00ce6dae33b6a`, 46068. El prompt candidato es `49fdf2bcbcba6dd03a39c5f54221aaa0e43cc75200e68dee7c0b8b2442ee9868`, 46036. El body candidato es `37df061b1f09efb308ca1b7ead8827cf3f89fad88d4fd13ebd0c50e611659394`, 47299. Serialización `Hash#to_json`, el mismo orden que el replay B. Modelo `global.anthropic.claude-haiku-4-5-20251001-v1:0`, temperatura 0,1, `max_tokens` 3000, `anthropic_version` `bedrock-2023-05-31`, sin `system`. El párrafo histórico de atribución sigue una vez. El párrafo de B′ no entra.
+
+**Directorio.** `tmp/direct_sentence_ablation/sample_1`. Correlación `phase5:replay:b:direct:1`. `phase5:replay:b:direct:2` queda definida y no se usó. No se escribieron `tmp/phase5_generation_replay/case_b` ni `tmp/label_comparison_variant`.
+
+**Vista previa.** Sin la variable de autorización, código 2, `status` `preview`, `sent` falso. No construyó el cliente.
+
+**Envío.** `DIRECT_SENTENCE_ABLATION_AUTHORIZED=1` y `AWS_MAX_ATTEMPTS=1`. `PHASE5_GENERATION_REPLAY_AUTHORIZED` y `LABEL_COMPARISON_VARIANT_AUTHORIZED` no estaban definidas. En el proceso de la compuerta posterior, `DB_HOST` no estaba definido y los presupuestos de las fases 1, 2 y 3 no estaban cargados. `client_retry.json`: `max_attempts` 1, `retry_limit` 0, `retry_mode` `legacy`. Eventos: `prepared` con `sent` falso, `attempt_started`, `returned`. Una sola operación contada: `Aws::BedrockRuntime::Client#invoke_model`. El contador vigilaba también `converse`, `retrieve`, `get_object` y `put_object`; no aparecieron. Id `msg_bdrk_vogis7zomlq5zaw5ilbbjly6o3ikmuabzi4h5f465ta4xtdj3nha`. El modelo informado en la respuesta es `anthropic.claude-haiku-4-5-20251001-v1:0`. `stop_reason` `end_turn`. Entrada 15875. Salida 446. Caché de lectura y de creación, 0. La cruda mide 1367 bytes, SHA-256 `2ed485e0d57db4de3213640eb70928e739676dd2936dde9553049401836da56a`. Estimación: (15875/1000)×0,001 + (446/1000)×0,005 = US$0,018105. Estimación, no conciliación de S3 ni fila de `BedrockQuery`. La referencia aproximada de US$0,0185 no era un techo. Frente a las 15881 de entrada del replay del mismo request, esta llamada informa 15875.
+
+**Cruda.**
+
+```
+# Respuesta
+
+No, **Chapa nivel 3** y **Seguridad Puerta nivel 3** no son el mismo elemento, y no puede usar una referencia en lugar de la otra.
+
+Según el plano del Elemont MH, estos son dos componentes distintos que aparecen en secciones diferentes del circuito [1][2]:
+
+**Seguridad Puerta nivel 3** forma parte de la **cadena serie de seguridad** (Sección Línea de Seguridad). En esa cadena, aparece en la posición 7, entre Seguridad Puerta nivel 4 y Seguridad Puerta nivel 2. Esta cadena conecta entre los nodos Seg In y Seg Out, y su función es controlar la habilitación del movimiento del montacargas según el estado de las puertas de cada nivel [1].
+
+**Chapa nivel 3** aparece en la **Sección Botonera de Pasillo Nivel 1** (circuito de control de piso). Según el plano, sale de Com 18vdc con punto de unión, pasa por el símbolo Dp3, cruza PasCom 24V con un puente semicircular sin punto de unión y termina en el terminal rotulado Chapa nivel 3. El trazo del lado Sp3 tiene punto de unión con PasCom 24V [1].
+
+Aunque ambas etiquetas incluyen "nivel 3", pertenecen a circuitos diferentes: una es un dispositivo de seguridad en la cadena serie, y la otra es un selector o chapa de nivel en el circuito de botonera de piso. Usar una referencia en lugar de la otra causaría un error de cableado, ya que sus funciones y conexiones no son intercambiables.
+```
+
+**Lectura.** `reading.json` en la misma muestra. `identity_passed` falso. `partial` falso. La identidad se lee en todo el texto. Una inferencia fundada y explícita no fallaría por ser inferencia. No se exigen los vecinos 4 y 2 ni una enumeración exhaustiva. Perder el orden entre la 4 y la 2 no sería un fallo. «Posición 7» sigue como reserva de la fase 4.
+
+- Identidad. Falla. La primera oración dice que no son el mismo elemento y que no puede usar una referencia en lugar de la otra. El párrafo siguiente los llama dos componentes distintos y lo atribuye al plano, apoyado en que están en secciones diferentes. El cierre repite la no intercambiabilidad y le añade un error de cableado. Ninguna frase deja la relación abierta ni retira la negativa.
+- Función. Falla. A la cadena le atribuye, con `[1]`, controlar la habilitación del movimiento según el estado de las puertas. El pasaje de la línea de seguridad no lo dice. Contrasta un dispositivo de seguridad con un selector o chapa de nivel. «Selector» está en la página 6, bajo Conexión sobre Cabina, y aquí queda en la botonera. Los pasajes no sostienen ese contraste de funciones.
+- Voltaje. No falla. Nombra Com 18vdc y PasCom 24V como rieles del recorrido. No afirma voltajes iguales o distintos ni asigna un riel como alimentación de la etiqueta.
+- Categoría de Dp. No falla. Dice «símbolo Dp3». No lo llama contacto ni le pone NA o NC.
+- Comprobación. No falla. No manda verificar el nivel 2 ni da pasos para puentear o sustituir.
+- Ubicación y recorrido. No falla. Chapa nivel 3 queda en la Botonera, con Com 18vdc, símbolo Dp3 y el cruce sin unión con PasCom 24V. Seguridad Puerta nivel 3 queda en la Línea de Seguridad, en serie entre Seg In y Seg Out, y el texto además la pone entre la 4 y la 2. «Control de piso» no es el nombre de la sección. «Posición 7» sigue como reserva de la fase 4.
+- Utilidad. No falla. Responde que no se use una referencia en lugar de la otra. No queda en sola abstención. La forma categórica ya está contada en la identidad.
+
+**Frente a B original y a B′1.** La original `bc9c12b1…` abre con la misma negativa, sin «según la documentación», llama dos componentes distintos a las dos secciones, sitúa Seguridad Puerta nivel 3 entre la 4 y la 2, conserva el recorrido de Chapa nivel 3 y «símbolo Dp3», cuenta los dos conjuntos de cinco y manda verificar el nivel 2. Esta muestra repite esa negativa inicial y la no identidad más abajo. No cuenta los conjuntos ni manda verificar el nivel 2. Añade la función de habilitar el movimiento, «selector», «control de piso» y el error de cableado. B′1, `de8add50…`, también abre con la negativa y la atribuye a la documentación. Más abajo dice que la documentación no indica que sean el mismo dispositivo y que los pasajes no soportan la sustitución; las dos afirmaciones conviven. Esta muestra no trae ese reconocimiento. B′1 contrastaba «funciones documentadas» sin la función de habilitar el movimiento. El recorrido de Chapa nivel 3 y «símbolo Dp3» se conservan en las tres.
+
+**Cupo.** Una llamada registrada. Después de `reading.json`, la compuerta queda `identity_repeated`, `sent` falso y `calls_the_next_authorized_process_would_send` en 0. Queda un lugar del tope de dos, y el despacho no lo usa. No hay muestra 2. `adoption` sigue en `not_authorized`. `production_directive_adopted` es falso. `b_prime_paragraph_adopted` es falso. Las respuestas históricas siguen con los mismos SHA: replay B muestra 1 `b6c26ee9…`, muestra 2 `2b657294…`, B′1 `de8add50…`.
+
+**Decisión.** La identidad falla. Se para. No se envió la muestra 2. Esta ablación no superó el caso observado. El resultado no establece una causa única, no establece que el defecto de función sea independiente de esta frase, y no establece que toda intervención de prompt sea imposible. El diff no se aplica en producción. No se aceptan las fases 3 o 5, no se borran los fallos registrados y no se mide frecuencia. La fase 4 sigue aceptada con reservas. No es `EPISODIO_VALIDADO`.
+
+**Pruebas, con dobles y sin modelo.** `test/services/rag/direct_sentence_ablation_test.rb`: 9 corridas, 189 aserciones, 0 fallos. RuboCop sobre el servicio, el script y el test: 0 ofensas. Comprueban una sola sustitución, el rechazo si la frase falta, se repite o hay otra diferencia, el body original `9b0d8861…`, la ausencia del párrafo de B′, la parada por identidad, el error sin llamada siguiente, y que la vista previa no construye el cliente.
+
+### Revisión de evidencia y recorrido, 2026-10-15
+
+Revisión local del turno `query:c80668ea-f7e8-4448-bb2d-ddd842fe7524`. No hubo generación, Retrieve, lectura S3, ingesta, worker ni deploy. No cambian producto, prompts, modelo, chunks ni índice. Los cambios locales se conservan, incluida la reparación del sanitizador. La ablación `phase5:replay:b:direct:1` ya estaba hecha: cruda `2ed485e0…`, 1367 bytes, identidad fallida. No se repitió y no se envió la muestra 2. Fases 3 y 5 siguen pendientes. La fase 4 conserva la aceptación con reservas. No es `EPISODIO_VALIDADO`.
+
+El paquete para compartir está en `tmp/phase5_evidence_review_20261015/paquete/`. `INDEX.md`, SHA-256 `095c71f5f9988758f151e4d8cf867f14c5f41ad89b23f2ec69a7b4c399e1a76e`. `SHA256SUMS` cubre los 31 archivos de trabajo y no se incluye a sí mismo. No hay credenciales ni el gzip de invocación.
+
+**Qué recibió el modelo.** Fuente: `input.inputBodyJson` del log, `request/invocation_request_body.json`, 47221 bytes, SHA-256 `2f8e64afef98363ca5590f531d8741ee3f8d240eeecc21679cb475cbb29c9011`. Seis claves. `model` y `stream` son del registro. El body efectivo del replay B, sin esas dos claves, sigue en `9b0d8861…`, 47331 bytes, y se copia al paquete sin reconstruirlo. Un solo `user`, 46068 bytes, SHA-256 `8a771ae3…`, sin `system`. Temperatura 0,1, `max_tokens` 3000, `anthropic_version` `bedrock-2023-05-31`.
+
+La consulta efectiva mide 198 bytes y su SHA-256 es `7a29d12886aedf4bf6e7ebdd47327d058cc746a4cdd4f9cead1389b74467ca97`, el de `kb_retrieve` y de `[TURN_EVIDENCE]`. El `query` de `R1A_PROBE` corta en «El equipo » por el tope del log. `generation_context` informa `observations_count` 0 porque cuenta líneas «Technician observations:»; el prompt sí trae `Obs: problema de puerta en el nivel 2`.
+
+Orden del `user`: idioma y rol; contexto con la consulta y tres resultados; instrucciones hasta el canal; contexto de sesión; recordatorio de idioma y `DOCUMENT IDENTITY ATTRIBUTION` al final. El contrato que pide dejar abierto el elemento físico está en el prompt, 2677 bytes en `request/document_identity_attribution.txt`.
+
+Chunks, cada uno precedido por `THIS JOB'S EQUIPMENT: Elemont Montacargas Hidraulico Modelo MH`. Esa línea la pone `DocumentIdentityScope.generation_context` y no forma parte del cuerpo indexado.
+
+| Fuente | Página | Cuerpo en el prompt | Contraste local |
+|---|---|---|---|
+| 1 | 5 | 9193 bytes, `a13141fe…` | `chunk_p5_1.txt`, 9194, `bc6d057d…`, el mismo texto con salto final |
+| 2 | 6 | 6665 bytes, `6317aa80…` | `b0004.txt` de `20261014T184516Z`, igual byte a byte |
+| 3 | 2 | 12879 bytes, `6977bbfd…` | copia de 2026-09-24, 12880, `70fa1eaf…`, el mismo texto con salto final |
+
+El prompt no numera la página 5. La página sale del cuerpo. `[1]` es `<source>1</source>` y `[2]` es `<source>2</source>`. La página 2 no se cita. El sidecar, con `page_number` y `doc_sha256` completo, no viajó como metadato. `document_id` del probe tiene 40 hexadecimales, `121bfffe0827f6bc681ba9bdc91050390055`. El SHA-256 del PDF tiene 64. Esta igualdad con copias locales no prueba el índice de hoy: no se releyó S3.
+
+**PDF frente a lo enviado.** El PDF local mide 583429 bytes y da `121bfffe0827f6bc681ba9bdc910503900555c4ce58d616732a1c063f3b16986`. Se renderizaron las páginas 2, 5 y 6 y los recortes de las dos secciones. La geometría se leyó en esos recortes. Los dígitos salen de `pdftotext -bbox`. Una lectura automática de los rótulos rotados de la página 6 los vio como 50, 40, 30, 20 y 10; las cajas dicen 5, 4, 3, 2 y 1. «selector» y «potenciómetro» no están en la capa de texto.
+
+- Seguridad Puerta nivel 3 está impresa en la Sección Línea de Seguridad, columna derecha, entre Seguridad Puerta nivel 4 y Seguridad Puerta nivel 2 si se sigue el pliegue de izquierda a derecha. El símbolo es un quiebre de la serie entre Seg In y Seg Out. No hay número de posición impreso. El cuerpo enviado dice lo mismo y marca la tabla de posiciones como no impresa.
+- Chapa nivel 3 de la página 5 está impresa en la Sección Botonera de Pasillo Nivel 1, bajo la caja Sp3/Dp3. El trazo coherente con el recorte sale de Com 18vdc con punto, pasa por el símbolo Dp3, salta PasCom 24V con puente sin punto y termina en el círculo rotulado Chapa nivel 3. El lado Sp3 tiene punto sobre PasCom 24V. LC7 llega a Sp3. El cuerpo llama a esa fila «representación añadida» y dice que no asigna función a Sp ni a Dp. Hay seis etiquetas «Chapa nivel», con «Chapa nivel 1» dos veces, y otra etiqueta distinta: «Chapa Puerta nivel 1», junto a un rectángulo negro a la derecha.
+- Entre las dos secciones de la página 5 no hay trazo ni referencia cruzada impresa. Compartir el nivel 3 no identifica la pieza ni autoriza la sustitución. Tampoco prueba que sean piezas distintas.
+- La página 6 imprime otra «Chapa nivel 3», en Sección Conexión sobre Cabina, de izquierda a derecha entre la 4 y la 2, con EXS a la izquierda del 5 y EXD a la derecha del 1. El símbolo es un interruptor abierto sobre un riel común. `+18vdc` y `POT` caen en la vertical de esa etiqueta, al riel, y el plano no dice que alimenten esa chapa. Si esa aparición es la misma pieza que la de la botonera queda sin establecer. El cuerpo la escribe «Chapa/selector de nivel 3» y expande POT a «potenciómetro». Esas dos palabras no están impresas. El registro `FR-C1550E453DF9C3FE` deja la lógica con EXD/EXS en `DATA_NOT_AVAILABLE`.
+- La página 2 imprime los bornes 23 Seguridad OUT y 24 Seguridad IN. No imprime «Chapa» ni «Seguridad Puerta». No establece que esos bornes sean los extremos Seg In y Seg Out.
+
+**Suficiencia.** Con ese request se podía responder la consulta. Lo resoluble es la sección y el recorrido dibujado de cada etiqueta de la página 5, y que estos pasajes no documentan un enlace ni una sustitución. Lo que debía quedar abierto es la identidad física, la función de cada una y si la «Chapa nivel 3» de la página 6 es la misma de la botonera. La representación alcanza para decir eso. No hace falta un grafo ni inventar la relación en la ingesta.
+
+**Defectos demostrados.**
+
+- Generación. La cruda `bc9c12b1…` afirma que no son el mismo elemento, que el plano los muestra como componentes distintos y que sus funciones son distintas, y manda verificar Seguridad Puerta nivel 2 y Chapa nivel 2. El contrato que pide dejar el elemento físico abierto estaba en el mismo `user`.
+- Citas. `[2]` acompaña la distinción de secciones y el conteo de cinco chapas en la botonera. La página 6 no contiene Seguridad Puerta y sus cinco chapas están en Conexión sobre Cabina. La página 5 dice seis etiquetas Chapa nivel en la botonera.
+- Posprocesado de `a7efafb`. Aplicar `strip_markdown_headers`, `strip_markdown_labels`, el colapso de líneas en blanco y `strip` a la cruda reproduce la publicada, SHA-256 `822a12ea…`. Sin el patrón de rótulos no coincide. Ese patrón quitó «**Seguridad Puerta nivel 3**» y «**Chapa nivel 3**» al inicio de párrafo. La reparación local queda aparte y no corrige la identidad.
+- Historial. `SessionContextBuilder` pone todos los mensajes de usuario del episodio y después la última respuesta del asistente, truncada a 200 caracteres. `record_user_turn!` corre antes de armar ese contexto, así que la pregunta actual queda delante de la respuesta de la fase 4. El texto capturado termina en «la seguridad de la puerta ...». Es un defecto del request. Que haya causado la certeza de identidad no está demostrado: la observación del nivel 2 también está en la consulta y en `Active Field Problem`.
+- Representación de la página 6. «selector» y «potenciómetro» están en el cuerpo enviado y no en el PDF. La respuesta histórica no usa «selector». Las muestras posteriores del mismo cuerpo sí. Quitar esas palabras no crea la identidad que el PDF no trae.
+
+**Límites.** El log no trae excerpts ni el mapa de citas publicado. La numeración se lee de `<source>`. No se releyó el índice. Los puntos de unión de la botonera se contrastaron con los recortes y con la fila que el propio chunk marca como añadida; no hubo un trazado vectorial nuevo de cada nodo.
+
+**Hipótesis, sin medición nueva.** Que el orden del historial, la longitud, la posición final del contrato o la celda «selector» hayan causado la certeza de identidad. La longitud no truncó el contexto: `context_truncated` es falso y la salida fue `end_turn`, 468 tokens. Dos cambios de prompt ya medidos, el párrafo de B′ y la ablación de la frase directa, repitieron la identidad. Una muestra de cada uno no da frecuencia ni descarta toda intervención de prompt.
+
+**Siguiente intervención, sin ejecutarla.** No es otra cláusula ni una estructura nueva. La representación ya permite la respuesta fiel.
+
+Si se aísla el único defecto del request que esta revisión deja sin medir, la comparación mantiene modelo, temperatura, `max_tokens`, pregunta, instrucciones y chunks del body `9b0d8861…`. El único cambio es ordenar `Recent Conversation` en pares cronológicos, con la pregunta actual al final y la respuesta previa en su turno, truncada igual a 200 caracteres. Una muestra. Si la identidad se repite, ese orden no explica el fallo. Si no se repite, queda como contribución de esa muestra. No se mezcla con el párrafo de B′ ni con la ablación. No se autoriza aquí.
 
 ### Adaptación local de la comprobación web, 2026-10-14
 
@@ -2459,27 +3399,27 @@ Restauración. Un proceso nuevo, sin las exportaciones de la corrida, conectó a
 
 ### Fase 4. Identificación y selección documental
 
-1. Estado: preparación habilitada, sin implementación y sin corrida. El incremento mínimo está en «Decisión de Lahiri y preparación de la fase 4, 2026-10-14». No es `EPISODIO_VALIDADO`.
+1. Estado: aceptada con reservas por Lahiri para el recorrido manual en producción, imagen `a7efafb`, sesión 128, episodio `ep_660b9f6c5ab67a20`. El detalle está en «Decisión de Lahiri sobre la fase 4, 2026-10-14». La comprobación del servidor local no se ejecutó. No es `EPISODIO_VALIDADO`. Los puntos 4 a 7 conservan el texto de la preparación.
 2. Prerrequisitos. Hallazgos de las fases 0 a 3 y la decisión posterior de `20261014T194442Z`. La propuesta de «Ajustes a la propuesta (2026-10-09)» se conserva. No entra entera. No es prerrequisito de la fase 1.
 3. Pregunta. En una sesión distinta, sin pin, ¿el candidato de equipo Elemont MH se confirma con el botón vigente y la consulta siguiente queda dentro de ese manual?
 4. Acciones y límites. El recorrido es candidato, botón y consulta pineada. El predicado del candidato conserva el signo y usa el slot de equipo. El POST revalida, dentro del lock, autorización, id, uid, episodio y candidatura vigente. El pin se conserva si hay conflicto o si la búsqueda no trae evidencia. Seleccionar el manual no prueba compatibilidad ni que contenga la respuesta. Siguen fuera la confirmación por frase, reconfirmar un manual que ya no es candidato, seleccionar por marca o por falla, el slot de componente, el guidance, los prompts y cualquier cambio de Retrieve. No se implementa desde este texto.
 5. Entradas y resultados. El mensaje «El equipo es un Elemont MH.», la tarjeta del `document_uid` `dcc8e046-037d-48a6-8913-1992aed28507`, el POST del botón y el turno posterior con `pin_only`. Los criterios están en la sección de la decisión.
 6. Aceptación, fallo y detención. Aceptación de una implementación futura: la sesión nueva no queda pineada hasta el botón; el botón viejo o ajeno no escribe; la consulta posterior no abre el corpus; el pin sobrevive al vacío y al conflicto. Detención: codificar la propuesta diferida completa, tratar `known?` como compatibilidad, o cambiar prompt, modelo, ingesta o parámetros de Retrieve en ese corte.
 7. Evidencias. Diff de producto, cuando se autorice, y las pruebas con dobles nombradas en la decisión. Sin AWS en ese corte local.
-8. Hallazgos al cerrar. El contraste de código queda escrito en la decisión. La implementación sigue vacía.
-9. Fase siguiente. La fase 5 usa el foco explícito que esta fase deje disponible. Hasta esos resultados, la fase 5 no inventa otro mecanismo de selección.
+8. Hallazgos al cerrar. La implementación está en `a7efafb`. En producción, la sesión no quedó pineada hasta el botón y las dos búsquedas posteriores usaron solo la URI canónica con k=3. El botón viejo o ajeno y el pin ante vacío o conflicto solo tienen pruebas con dobles. La respuesta acierta la ubicación y la relación entre los niveles 3, 2 y 1, presenta los índices 7, 8 y 9 como ubicación y cita como `[1]` la inferencia de que la operación se detiene. Las reservas están en «Decisión de Lahiri sobre la fase 4, 2026-10-14».
+9. Fase siguiente. La fase 5 queda habilitada para preparación, sin ejecución. Usa el foco explícito por botón de esta fase y no inventa otro mecanismo de selección.
 
 ### Fase 5. Interpretación documental equivocada
 
-1. Estado: pendiente. Depende de los resultados de la fase 4. La preparación de esa fase no la abre.
-2. Prerrequisitos. Un pasaje real del plano y una conclusión del técnico que ese pasaje no sustenta. La referencia la escribe el evaluador al cerrar la fase anterior.
+1. Estado: ejecutada en producción el 2026-10-14, correlación `query:c80668ea…`, sesión 128. No aceptada en esta respuesta. El pin se conservó. El detalle está en «Corrida de fase 5 en producción, 2026-10-14». La preparación sigue en «Preparación de la fase 5, 2026-10-14». No es `EPISODIO_VALIDADO`.
+2. Prerrequisitos. Un pasaje real del plano y una conclusión del técnico que ese pasaje no sustenta. El evaluador eligió la página 5 y la confusión entre Chapa nivel 3 y Seguridad Puerta nivel 3.
 3. Pregunta. ¿Danebo explica que el diagrama no sustenta esa conclusión, revisa la documentación pertinente y propone cambiar o complementar el foco de forma explícita?
 4. Acciones y límites. No se reingiere ni se altera el índice para forzar la explicación. Una búsqueda diagnóstica no aprueba la consulta natural. No se enseña un procedimiento de otro equipo.
-5. Entradas y resultados. Se fijan con el pasaje recuperado. La afirmación que el pasaje no sostiene forma parte de la referencia y no se inyecta.
-6. Aceptación, fallo y detención. Aceptación: la respuesta nombra el límite y la acción explícita sobre el foco. Fallo: adopta la conclusión del técnico, o suelta el pin en silencio. Detención: el pasaje no está en la consulta natural.
+5. Entradas y resultados. Un mensaje, SHA-256 `659518bb…`, en la sesión 128 con el pin vigente. La afirmación que el pasaje no sostiene forma parte de la referencia y no se inyecta.
+6. Aceptación, fallo y detención. Aceptación: alcance pineado, cita de la página 5, y una respuesta que nombra el límite sin adoptar ni invertir la conclusión del técnico. Mantener el manual y pedir evidencia pertinente basta; cambiar el foco necesita una razón concreta y selección explícita. Fallo: adopta la equivalencia, afirma como documental que son físicamente distintas, inventa función, conexión, categoría de Dp3 o procedimiento, o suelta el pin en silencio. Detención: el pasaje no está en la consulta natural, o el turno no llega a Retrieve. El detalle está en la preparación.
 7. Evidencias. Recorrido correlacionado del turno y la referencia del evaluador.
-8. Hallazgos al cerrar. Vacío hasta la ejecución.
-9. Fase siguiente. No hay una fase 6 en esta ruta. El backlog sigue aparte.
+8. Hallazgos al cerrar. Alcance correcto: solo la URI canónica, k=3, `other_equipment` 0, y la página 5 entre los chunks recuperados. La generación afirma, con «Según el plano» y cita, que son dos componentes distintos, y sin cita que sus funciones son distintas. Prescribe verificar el nivel 2 desde esa certeza. Ubicación y recorrido salen bien. Dos sujetos faltan en el texto publicado. El registro de invocación confirma que estaban en la cruda y que los borró `strip_markdown_labels`. Las instrucciones son idénticas a las del resumen de la fase 3, que resolvió la misma relación en sentido contrario. El detalle está en «Registro de invocación de la generación de fase 5, 2026-10-14».
+9. Fase siguiente. No hay una fase 6. El cierre de esta fase ya no se persigue con otra variante del mismo request. El incremento siguiente está en «Dictamen de alcance, 2026-10-16»: commit de los dos arreglos deterministas y recorrido del tramo representativo de puertas. La fidelidad del resumen de la fase 3 se evalúa en el turno 7 de ese recorrido. El backlog de ingesta sigue aparte.
 
 ## Registro de revisión
 
@@ -2533,6 +3473,14 @@ Restauración. Un proceso nuevo, sin las exportaciones de la corrida, conectó a
 | Reparación local del turno 2, 2026-10-14, sobre `6bc5add`. | El payload observado afirma solo «Chapa nivel 3». El mensaje ya dice «no Chapa nivel 2», y ese es el único identificador negado. La percepción recupera esa negación. El reducer deja la etiqueta nueva vigente y la anterior rechazada, con el mismo episodio y el mismo pin. Una frase sin negación, con dos referentes o con un prefijo sigue en aclaración. | Local, con dobles. Semilla 184516: 60 corridas y 533 aserciones de percepción, 56 corridas y 575 aserciones de sesión. Cero fallos. No acepta la fase 3. No repite la corrida. El turno 3 conserva la ubicación incorrecta de Seguridad Puerta nivel 3. `PASS_CALL_CAP` sigue en 0. |
 | Corrida de fase 3, `20261014T194442Z`, sesión 15, sobre `0d53bee`. | Clon nuevo del estado de fase 2. El intérprete real omitió `negate` y `explicit_identifier_negation` dejó Chapa nivel 3 vigente. La consulta del resumen usa esa etiqueta. La respuesta no la ubica entre nivel 4 y nivel 1, y sí la mete en la cadena de seguridad y trata Dp3 como contacto. Seis intentos, US$0,050081. Cuatro físicas de `Retrieve`. | `turns_recorded` no acepta la fase 3. No es `EPISODIO_VALIDADO`. Las filas 13 y 14 no cambiaron. El sobrante queda cerrado. `PASS_CALL_CAP` sigue en 0. |
 | Decisión de Lahiri, 2026-10-14, sobre `ddb0f39`. | Las fases 1 y 2 conservan sus aceptaciones acotadas. La continuidad y la corrección de `20261014T194442Z` quedan aceptadas para esa corrida. La fidelidad del resumen sigue pendiente y la respuesta histórica sigue fallida. El replay `20261014T205958Z` queda como variación, no como frecuencia. | Preparación de la fase 4 habilitada, sin implementación. La propuesta diferida no se traslada entera. La fase 5 espera los resultados de la fase 4. No es `EPISODIO_VALIDADO`. `PASS_CALL_CAP` sigue en 0. |
+| Decisión de Lahiri sobre la fase 4, 2026-10-14, recorrido en producción sobre `a7efafb`. | Sesión 128, episodio `ep_660b9f6c5ab67a20`. Sesión sin pin hasta el botón; dos Retrieve posteriores con k=3 y solo la URI canónica. Botón viejo o ajeno y pin ante vacío o conflicto, solo con dobles. Reservas: índices 7, 8 y 9 como ubicación, inferencia de parada citada como `[1]`, export sin `force_entity_filter` ni `chunk_ids`, costo sin conciliar. | Fase 4 aceptada con reservas. La comprobación del servidor local no se ejecutó. Fase 5 habilitada para preparación, sin ejecución. Fidelidad del resumen de la fase 3 pendiente. No es `EPISODIO_VALIDADO`. `PASS_CALL_CAP` sigue en 0. |
+| Preparación de la fase 5, 2026-10-14, sobre `a7efafb`. | Caso del evaluador: página 5, Chapa nivel 3 frente a Seguridad Puerta nivel 3. El PDF y `chunk_p5_1.txt` (`bc6d057d…`) no contradicen la referencia. La página 6 repite Chapa nivel 3, y su chunk local añade «selector». La sesión 128 sigue como inicio, con el pin que sobrevive a la expiración del episodio. Un mensaje, con un intérprete, un Retrieve y una generación. | Preparada. Sin ejecución ni autorización. Fidelidad del resumen de la fase 3 pendiente. No es `EPISODIO_VALIDADO`. `PASS_CALL_CAP` sigue en 0. |
+| Corrida de fase 5 en producción, `query:c80668ea…`, sesión 128, sobre `a7efafb`. | Estado de partida `ba4f8157…`, intérprete en `meta_incompatible` con rescate, un Retrieve con solo la URI, chunks de las páginas 5, 6 y 2. La respuesta afirma con cita que son dos componentes distintos, sin cita que tienen funciones distintas, y prescribe verificar el nivel 2. Cuenta cinco chapas en la botonera, donde hay seis. Faltan dos sujetos; `strip_markdown_labels` es la causa probable. Los bloques siguen al marcador. `sources` de `[TURN_EVIDENCE]` son páginas recuperadas, no citadas. US$0,021016 atribuidos. | No aceptada. Pin conservado. Defecto de generación demostrado, de la misma familia que el resumen de la fase 3. Falta el registro de invocación de esa generación. Fase 4 no reabierta. No es `EPISODIO_VALIDADO`. `PASS_CALL_CAP` sigue en 0. |
+| Registro de invocación de esa generación, `requestId` `c1e4bdc5…`, objeto `20261015T005933932Z_5fdce188361808ea.json.gz`. | Un solo `user`, sin system. `[1]` es la página 5 y `[2]` la página 6. La cruda trae los sujetos y `sanitize_answer` reproduce la publicada byte a byte. Las instrucciones coinciden byte a byte con las del resumen de la fase 3. «Cinco etiquetas» queda en imprecisión de niveles frente a apariciones. | Posprocesado confirmado (`strip_markdown_labels`). Generación confirmada contra el contrato que llegó al prompt. Propuesto, sin autorizar: replay literal de tres muestras antes de cualquier cambio. No es `EPISODIO_VALIDADO`. |
+| Reparación local de `strip_markdown_labels` y paquete de revisión de generación. | El contrato de medición 10 y los casos capturados muestran rótulos de presentación y también sujetos y datos en negrita. La regla nueva conserva los sujetos, designadores y marcas de ausencia o inferencia. Concern: 120 corridas, 0 fallos. Suite: 4767, 0 fallos. RuboCop: 0 ofensas. Paquete de los casos A y B con hechos, hipótesis y criterios, `BRIEF.md` `8e3472a9…`. | Posprocesado reparado en local, sin commit ni deploy. Revisión de Opus preparada, sin lanzar. Replay sin ejecutar. Fase 4 con reservas. Fases 3 y 5 pendientes. No es `EPISODIO_VALIDADO`. |
+| Enmienda del sanitizador y preparación del replay B, 2026-10-15, sobre `a7efafb`. | Lahiri conserva las palabras del rótulo con dos puntos y quita la excepción por dígitos o por lista de palabras. CG-D19 queda enmendado; la medición 10 sigue como historia. El replay literal de `request_body.json` (`2f8e64af…`) admite como máximo dos llamadas, una por proceso, y la segunda solo tras una lectura humana de fallo. Concern: 121 corridas, 783 aserciones. Replay: 8 corridas, 152 aserciones. RuboCop: 0 ofensas. | Preparado, sin generación y sin autorizar. Una muestra que cumple no acepta las fases 3 o 5. Dos fallos no prueban determinismo. Fase 4 con reservas. Fases 3 y 5 pendientes. No es `EPISODIO_VALIDADO`. `PASS_CALL_CAP` sigue en 0. |
+| Muestra 1 del replay B, 2026-10-15. | `model` y `stream` son del registro. El body enviado quita esas claves y mide 47331 bytes, SHA `9b0d8861…`. Una llamada, `retry_limit` 0, `max_attempts` 1, 15881/534 tokens. La lectura no cumple: identidad física y función citadas de más. Dp queda como símbolo. No prescribe puente ni sustitución. | `reading.json` no escrito. Muestra 2 sin ejecutar. Fases 3 y 5 pendientes. Fase 4 con reservas. No es `EPISODIO_VALIDADO`. `PASS_CALL_CAP` sigue en 0. |
+| Muestra 2 del replay B, 2026-10-15. | `reading.json` registra la lectura de la muestra 1 con `meets_case_b` falso. El body es el mismo, SHA `9b0d8861…`. Una llamada, 15881/435 tokens. La muestra 2 atribuye al plano la no identidad y una frase conjunta de funciones, voltajes y conexiones. Dp queda como símbolo. No prescribe el nivel 2. | Cupo cerrado: `cap_reached`, cero llamadas siguientes. Fases 3 y 5 pendientes. Fase 4 con reservas. No es `EPISODIO_VALIDADO`. `PASS_CALL_CAP` sigue en 0. |
 | La corrida de la fase 1 no guardó el request del intérprete. | Sobre `danebo.audit.v1` y `interpreter_request` copiado antes de `converse`. | La corrida `20261009T221211Z` guardó el request. La de `20261009T194048Z` no se rellena. |
 | `prepared` se leía como envío, la respuesta del intérprete perdía el texto y la reentrada del guardia podía encolar. | `prepared`, `attempt_started`, `blocked`, `returned` y `error`. | En `20261009T221211Z` se observaron `prepared`, `attempt_started` y `returned`. El cuerpo de esa corrida no se modeló y no se rellena. La causa de `meta` sigue sin demostrar. |
 | Un `meta` incompatible descartaba la consulta técnica, y `Seahorse::Client::Response` quedaba como `unmodeled_type`. | Punto 13. Rechazo determinista hacia el fallback existente, y serialización solo del payload `data`. Dos diffs. Stubs. | En `49bd0d0`. Sin corrida de fase 1 después de ese commit y sin rellenar los sobres anteriores. La fase 1 no queda validada. |

@@ -134,7 +134,7 @@ Antes de cada ejecución, el preflight de `start_clean_case` identifica conexion
 
 No se modifica `.env` de forma permanente y no se conectan workers locales a las bases de producción. `APPLY` aborta si `Rails.env` es `production` o si algún nombre de base de ese entorno contiene `production`. `SharedSession::ENABLED` queda fijado al arrancar el proceso. `dotenv-rails` no pisa una variable que ya esté en el entorno, así que el prefijo tiene que existir antes del boot. Un prefijo puesto solo en el comando rake no cambia `bin/dev`, Puma ni `bin/jobs` si esos procesos ya nacieron. Los otros flags se leen de `ENV` en cada consulta, pero un proceso ya arrancado conserva el entorno con el que nació.
 
-Para la corrida local, parar primero cualquier `bin/dev`, `bin/rails server` o `bin/jobs` que siga vivo. Después arrancar web, CSS y worker con el mismo prefijo. `Procfile.dev` define `web: bin/rails server`, `css: bin/rails tailwindcss:watch` y `worker: bin/jobs start`. Foreman hereda el entorno del proceso padre:
+Para la corrida local, parar primero cualquier `bin/dev`, `bin/rails server` o `bin/jobs` que siga vivo. Después arrancar web, CSS y worker con el mismo prefijo. `Procfile.dev` define `web: bin/rails server`, `css: bin/rails tailwindcss:watch` y `worker: bin/jobs start`. `bin/dev` reenvía sus argumentos a Foreman. Foreman 0.90, si no recibe `-e`, carga `.env` y ese archivo pisa el prefijo en los hijos. `-e /dev/null` omite ese archivo y web y worker conservan el prefijo:
 
 ```
 SHARED_SESSION_ENABLED=false \
@@ -142,7 +142,7 @@ FIELD_COMPANION_EPISODE_ENABLED=true \
 FIELD_COMPANION_TURN_ENABLED=true \
 RAG_EPISODE_SCOPE_ENABLED=true \
 HAIKU_QUERY_ANALYSIS_MODE=owner \
-bin/dev
+bin/dev -e /dev/null
 ```
 
 En otra terminal, el mismo prefijo para la tarea. El slug y el correo son los que existen en la base de ese proceso. Sin `APPLY=true` es dry-run e imprime `no_comprobado`:

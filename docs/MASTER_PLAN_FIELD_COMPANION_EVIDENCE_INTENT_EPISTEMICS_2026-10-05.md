@@ -1,6 +1,6 @@
 # Master Plan — Field Companion: applicability, conversational intent and epistemic discipline
 
-**Ejecución vigente (2026-10-07):** evidencia histórica. La cola del companion es [PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md), acotada a un episodio completo y pendiente de la luz verde del fundador. F0–F5 de este archivo no se ejecutan desde aquí. El faltante de proyección de observaciones y la precedencia del turno actual quedaron en la etapa 1 de ese plan.
+**Ejecución vigente (2026-10-19):** evidencia histórica. La cola operativa es [PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md), sección «Estado actual, 2026-10-19». F0–F5 de este archivo no se reactivan. La correspondencia de sus requisitos materiales está en esa sección. Los resultados históricos de abajo quedan como se escribieron.
 
 Date: 2026-10-05
 

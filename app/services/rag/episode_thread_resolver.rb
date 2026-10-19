@@ -73,7 +73,7 @@ module Rag
     def episode_rows
       return [] unless @conversation_session.respond_to?(:conversation_history)
 
-      cutoff = @now - ConversationSession::EPISODE_WINDOW
+      cutoff = history_cutoff
       rows = []
       Array(@conversation_session.conversation_history).each_with_index do |message, index|
         row = stringify_message(message)
@@ -83,6 +83,18 @@ module Rag
         rows << row.merge("ts" => ts, "index" => index)
       end
       rows
+    end
+
+    # Same floor as FollowupQueryRewriter. A blank episode keeps the four-hour
+    # window. A live episode also drops rows stored before opened_at. A row
+    # whose timestamp equals opened_at stays, because the comparison is `ts < cutoff`.
+    def history_cutoff
+      session = @conversation_session
+      if session.respond_to?(:episode_history_cutoff)
+        session.episode_history_cutoff(@now)
+      else
+        @now - ConversationSession::EPISODE_WINDOW
+      end
     end
 
     def stringify_message(message)

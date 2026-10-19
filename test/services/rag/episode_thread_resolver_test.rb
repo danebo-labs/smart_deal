@@ -151,6 +151,37 @@ class Rag::EpisodeThreadResolverTest < ActiveSupport::TestCase
     assert_equal 2, result.recoverable_count
   end
 
+  test "a live episode excludes user rows stored before opened_at" do
+    session = build_session([
+      user_row(BRAKE, "2026-09-21T16:10:00-03:00", "query:brake"),
+      assistant_row("freno", "2026-09-21T16:10:05-03:00"),
+      user_row(DOOR, "2026-09-21T16:16:30-03:00", "query:door"),
+      assistant_row("puerta", "2026-09-21T16:16:35-03:00"),
+      user_row(CLARIFY, "2026-09-21T16:17:40-03:00", CID)
+    ])
+    session.update!(active_episode: live_episode("2026-09-21T16:16:00-03:00"))
+
+    result = resolve_session(session, CLARIFY)
+
+    assert_equal :join, result.outcome
+    assert_equal "#{DOOR}\n#{CLARIFY}", result.composed
+    assert_not_includes result.composed, BRAKE
+  end
+
+  test "a user row that shares the opened_at second stays inside the floor" do
+    session = build_session([
+      user_row(BRAKE, "2026-09-21T16:10:00-03:00", "query:brake"),
+      user_row(DOOR, "2026-09-21T16:16:00-03:00", "query:door"),
+      user_row(CLARIFY, "2026-09-21T16:17:40-03:00", CID)
+    ])
+    session.update!(active_episode: live_episode("2026-09-21T16:16:00-03:00"))
+
+    result = resolve_session(session, CLARIFY)
+
+    assert_equal "#{DOOR}\n#{CLARIFY}", result.composed
+    assert_not_includes result.composed, BRAKE
+  end
+
   test "duplicate correlation ids do not guess a thread" do
     history = menu_history
     history << history.last.merge("ts" => "2026-09-21T16:17:42-03:00")
@@ -212,6 +243,16 @@ class Rag::EpisodeThreadResolverTest < ActiveSupport::TestCase
       assistant_row("puerta", "2026-09-21T16:14:05-03:00"),
       user_row(CLARIFY, "2026-09-21T16:17:40-03:00", CID)
     ]
+  end
+
+  def live_episode(opened_at)
+    {
+      "v" => 1,
+      "episode_id" => "ep_floor",
+      "status" => "active",
+      "opened_at" => opened_at,
+      "updated_at" => "2026-09-21T16:17:40-03:00"
+    }
   end
 
   def user_row(content, ts, correlation_id)

@@ -83,6 +83,7 @@ class FieldCompanionResetTest < ActiveSupport::TestCase
 
     assert_includes output, "DRY RUN"
     assert_includes output, "no_comprobado"
+    assert_includes output, "flags_scope=este_proceso web_y_workers_no_inspeccionados"
     assert_includes output, "key account_id=#{@account.id} user_id=#{@user.id} identifier=#{@user.id} channel=web"
     assert_includes output, "session_id=#{runtime.id}"
     assert_not_includes output, "session_id=#{@session.id}"
@@ -92,11 +93,12 @@ class FieldCompanionResetTest < ActiveSupport::TestCase
     assert_not_includes output, ENV["DB_PASSWORD"].to_s if ENV["DB_PASSWORD"].present?
   end
 
-  test "apply keeps prior context out of the next turn and leaves other rows" do
+  test "apply backs up the previous case and empties the working context" do
     runtime = runtime_session
     photo_id = runtime.active_episode.dig("active_photo", "field_photo_id")
     expires_at = runtime.expires_at
-    entities = runtime.active_entities.deep_dup
+    created_at = runtime.created_at
+    row_id = runtime.id
     ENV["APPLY"] = "true"
 
     output = with_clean_flags { invoke_clean.first }
@@ -104,27 +106,48 @@ class FieldCompanionResetTest < ActiveSupport::TestCase
 
     assert_includes output, "APPLIED"
     assert_includes output, "cleanliness=limpio"
+    assert_includes output, "pending_work=0"
+    assert_includes output, "pending_work_reading=puntual no_impide_trabajo_posterior"
+    assert_includes output, "cleanliness_scope=fila_y_lectura_de_cola navegador_no_recorrido otros_procesos_no_inspeccionados no_impide_trabajo_posterior"
     assert_includes output, "attribution=consistent"
+    assert_includes output, "conversation_history=0"
+    assert_includes output, "session_status=procedure_in_progress kept"
     assert_not_equal "ep_old_case", runtime.active_episode["episode_id"]
     assert_equal [], runtime.document_focus
+    assert_equal [], runtime.conversation_history
+    assert_equal({}, runtime.active_entities)
     assert_equal({}, runtime.current_procedure)
-    assert_equal entities, runtime.active_entities
+    assert_equal({}, runtime.active_episode["facts"])
+    assert_nil runtime.active_episode["active_photo"]
+    assert_nil runtime.active_episode["goal"]
+    assert_equal "procedure_in_progress", runtime.session_status
+    assert_equal row_id, runtime.id
+    assert_equal @user.id, runtime.user_id
+    assert_equal @user.id.to_s, runtime.identifier
     assert_equal expires_at.to_i, runtime.expires_at.to_i
-    assert_includes runtime.conversation_history.to_json, MARKER
-    assert_equal "ep_reset_me", @session.reload.active_episode["episode_id"]
+    assert_equal created_at.to_i, runtime.created_at.to_i
+    assert_equal "keep me", @session.reload.conversation_history.dig(0, "content")
+    assert_equal "ep_reset_me", @session.active_episode["episode_id"]
     assert_equal "ep_keep_me", @other.reload.active_episode["episode_id"]
     assert_equal "PHOTO_BYTES_ZX9", FieldPhoto.find(photo_id).thumbnail_data
 
-    copy = JSON.parse(File.read(Dir.glob(@copy_dir.join("*.json")).sole))
+    copy_text = File.read(Dir.glob(@copy_dir.join("*.json")).sole)
+    copy = JSON.parse(copy_text)
     assert_equal "ep_old_case", copy.dig("replaced", "active_episode", "episode_id")
+    assert_equal MARKER, copy.dig("replaced", "active_episode", "facts", "manufacturer", "value")
     assert_equal "s3://manuals/#{MARKER}.pdf", copy.dig("replaced", "document_focus", 0, "source_uri")
-    assert_equal "Donde esta #{MARKER} ?", copy.dig("conversation_history", 0, "content")
-    assert_equal "query:old", copy.dig("conversation_history", 0, "correlation_id")
-    assert_equal 0, copy.dig("conversation_history", 0, "index")
+    assert_equal "Donde esta #{MARKER} ?", copy.dig("replaced", "conversation_history", 0, "content")
+    assert_equal "query:old", copy.dig("replaced", "conversation_history", 0, "correlation_id")
+    assert_equal 0, copy.dig("replaced", "conversation_history", 0, "index")
+    assert_equal "s3://manuals/#{MARKER}.pdf", copy.dig("replaced", "active_entities", "manual", "source_uri")
+    assert_equal MARKER, copy.dig("replaced", "current_procedure", "step")
+    assert_equal "procedure_in_progress", copy.dig("kept", "session_status")
     assert_equal photo_id, copy.dig("photos", 0, "id")
-    assert_not_includes File.read(Dir.glob(@copy_dir.join("*.json")).sole), "PHOTO_BYTES_ZX9"
-    assert_not_includes File.read(Dir.glob(@copy_dir.join("*.json")).sole), "super-secret-value"
-    assert_not_includes File.read(Dir.glob(@copy_dir.join("*.json")).sole), "X-Amz-Signature"
+    assert_equal "point_in_time", copy.dig("pending_work", "reading")
+    assert_equal 0, copy.dig("pending_work", "count")
+    assert_not_includes copy_text, "PHOTO_BYTES_ZX9"
+    assert_not_includes copy_text, "super-secret-value"
+    assert_not_includes copy_text, "X-Amz-Signature"
 
     with_clean_flags do
       assert_nil runtime.record_assistant_turn!(
@@ -142,6 +165,14 @@ class FieldCompanionResetTest < ActiveSupport::TestCase
     assert_not_includes runtime.conversation_history.to_json, "STALE_REPLY_ZX9"
     assert_nil runtime.active_episode["active_photo"]
     assert_equal [], runtime.document_focus
+    assert_not_includes runtime.active_episode.to_json, MARKER
+  end
+
+  test "the next owner turn route omits the previous case" do
+    runtime = runtime_session
+    ENV["APPLY"] = "true"
+    with_clean_flags { invoke_clean }
+    runtime.reload
 
     turn = nil
     events = with_clean_flags do
@@ -153,41 +184,12 @@ class FieldCompanionResetTest < ActiveSupport::TestCase
           interpreter_client: scripted_interpreter,
           now: Time.current
         )
-        context = SessionContextBuilder.build(runtime)
+        context = SessionContextBuilder.build(runtime.reload)
         uris = SessionContextBuilder.entity_s3_uris(runtime)
-        photo = Rag::PhotoObservationContinuity.decide(
-          question: "mira la foto", images: [], field_photo_id: nil, account: @account, session: runtime
-        )
-        service = BedrockRagService.new(account: @account, knowledge_base_id: "test-kb")
-        filter = service.send(
-          :retrieval_filter,
-          entity_s3_uris: uris, entity_sources: [], question: "la puerta del nivel 4 no cierra", apply_page_filter: false
-        )
-        prompt = service.send(
-          :load_generation_prompt_with_locale,
-          "la puerta del nivel 4 no cierra", session_context: context, output_channel: :web
-        )
         received = drive_query(runtime, turn, context, uris)
-        Rag::ValidationCapture.record(
-          "clean_start_sinks",
-          "provenance" => "observed",
-          "session_context" => context,
-          "generation_prompt" => prompt,
-          "retrieval_filter" => filter,
-          "photo_action" => photo.action.to_s,
-          "photo_id" => photo.photo&.id,
-          "orchestrator_question" => received[:question],
-          "orchestrator_uris" => received[:kwargs][:entity_s3_uris],
-          "orchestrator_photo_id" => received[:kwargs][:field_photo_id]
-        )
-        assert_equal :missing_photo, photo.action
-        assert_nil photo.photo
-        assert_empty service.send(:extract_constrained_uris, filter)
-        assert_includes JSON.generate(filter), "account_id"
-        assert_includes JSON.generate(filter), Rag::SharedManualCorpus::GENERAL
         assert_includes context, "nivel 4"
         assert_not_includes context, MARKER
-        assert_not_includes prompt, MARKER
+        assert_empty uris
         assert_empty Array(received[:kwargs][:entity_s3_uris])
         assert_nil received[:kwargs][:field_photo_id]
         assert_not_includes received[:question].to_s, MARKER
@@ -195,53 +197,68 @@ class FieldCompanionResetTest < ActiveSupport::TestCase
       end
     end
 
-    assert_not_includes JSON.generate(events), MARKER
-    assert_includes JSON.generate(events), "nivel 4"
+    blob = JSON.generate(events)
+    kinds = events.pluck("kind")
+    assert_includes kinds, "user_message"
+    assert_includes kinds, "interpreter_request"
+    assert_includes kinds, "effective_query"
+    assert_not_includes blob, MARKER
+    assert_includes blob, "nivel 4"
     assert turn.decision
     assert_not_includes %i[skipped no_episode], turn.decision
-    follow = followup_session(runtime)
-    leaked = followup_session(runtime, opened_at: 2.hours.ago.iso8601)
-    assert_not_includes resolver_text(follow), MARKER
-    assert_includes resolver_text(leaked), MARKER
+    runtime.reload
+    assert_equal [ "la puerta del nivel 4 no cierra" ], runtime.conversation_history.select { |row| row["role"] == "user" }.pluck("content")
+    assert_not_includes runtime.conversation_history.to_json, MARKER
   end
 
-  test "a shared history second is not treated as a new episode boundary" do
+  test "empty focus filter and photo continuity are component checks" do
+    runtime = runtime_session
+    ENV["APPLY"] = "true"
+    with_clean_flags { invoke_clean }
+    runtime.reload
+    context = SessionContextBuilder.build(runtime)
+    service = BedrockRagService.new(account: @account, knowledge_base_id: "test-kb")
+    filter = service.send(
+      :retrieval_filter,
+      entity_s3_uris: [], entity_sources: [], question: "la puerta del nivel 4 no cierra", apply_page_filter: false
+    )
+    prompt = service.send(
+      :load_generation_prompt_with_locale,
+      "la puerta del nivel 4 no cierra", session_context: context, output_channel: :web
+    )
+    photo = Rag::PhotoObservationContinuity.decide(
+      question: "mira la foto", images: [], field_photo_id: nil, account: @account, session: runtime
+    )
+
+    assert_empty service.send(:extract_constrained_uris, filter)
+    assert_includes JSON.generate(filter), "account_id"
+    assert_includes JSON.generate(filter), Rag::SharedManualCorpus::GENERAL
+    assert_not_includes context, MARKER
+    assert_not_includes prompt, MARKER
+    assert_equal :missing_photo, photo.action
+    assert_nil photo.photo
+  end
+
+  test "a history row in the current second does not delay the clear" do
     frozen = Time.zone.parse("2026-10-19T18:00:01-03:00")
     runtime = runtime_session(history_ts: frozen.iso8601)
-    with_clean_flags do
-      assert_raises(FieldCompanionCleanStart::Refused) do
-        FieldCompanionCleanStart.call(
-          account_slug: @account.slug, user_email: @user.email, apply: true,
-          clock: -> { frozen }, sleeper: ->(_seconds) { }
-        )
-      end
-    end
-    assert_equal "ep_old_case", runtime.reload.active_episode["episode_id"]
-    assert_predicate runtime.document_focus, :any?
-
-    now = frozen
     ENV["APPLY"] = "true"
+    io = StringIO.new
     with_clean_flags do
       FieldCompanionCleanStart.call(
         account_slug: @account.slug, user_email: @user.email, apply: true,
-        clock: -> { now }, sleeper: ->(seconds) { now += seconds }
+        io: io, clock: -> { frozen }
       )
     end
+
     runtime.reload
-    opened = Time.zone.parse(runtime.active_episode["opened_at"])
-    assert_operator opened, :>, frozen
-    travel_to(opened) do
-      with_clean_flags do
-        runtime.record_user_turn!(
-          "la puerta del nivel 4 no cierra",
-          user_id: @user.id, correlation_id: "query:after-floor",
-          interpreter_client: scripted_interpreter, now: Time.current
-        )
-      end
-      contents = runtime.episode_prompt_history.pluck(:content)
-      assert_includes contents, "la puerta del nivel 4 no cierra"
-      assert_not_includes contents.join("\n"), MARKER
-    end
+    assert_includes io.string, "APPLIED"
+    assert_not_includes io.string, "ABORT"
+    assert_equal [], runtime.conversation_history
+    assert_equal frozen.iso8601, runtime.active_episode["opened_at"]
+    assert_equal({}, runtime.active_episode["facts"])
+    assert_nil runtime.active_episode["active_photo"]
+    assert_not_equal "ep_old_case", runtime.active_episode["episode_id"]
   end
 
   test "a failed copy write does not change the row" do
@@ -261,6 +278,9 @@ class FieldCompanionResetTest < ActiveSupport::TestCase
     assert_includes stdout, "transition_failed"
     assert_equal "ep_old_case", runtime.reload.active_episode["episode_id"]
     assert_predicate runtime.document_focus, :any?
+    assert_includes runtime.conversation_history.to_json, MARKER
+    assert_includes runtime.active_entities.to_json, MARKER
+    assert_empty Dir.glob(@copy_dir.join("*.json").to_s)
   end
 
   test "a failed focus clear rolls back the new episode" do
@@ -283,7 +303,12 @@ class FieldCompanionResetTest < ActiveSupport::TestCase
     assert_includes stdout, "transition_failed"
     assert_equal "ep_old_case", runtime.active_episode["episode_id"]
     assert_predicate runtime.document_focus, :any?
+    assert_includes runtime.conversation_history.to_json, MARKER
+    assert_includes runtime.active_entities.to_json, MARKER
     assert_includes runtime.current_procedure.to_json, MARKER
+    copy = JSON.parse(File.read(Dir.glob(@copy_dir.join("*.json")).sole))
+    assert_equal "ep_old_case", copy.dig("replaced", "active_episode", "episode_id")
+    assert_equal "Donde esta #{MARKER} ?", copy.dig("replaced", "conversation_history", 0, "content")
   ensure
     ConversationSession.define_method(:update!, original) if original
   end
@@ -328,6 +353,8 @@ class FieldCompanionResetTest < ActiveSupport::TestCase
     assert_equal users(:two).id, runtime.user_id
     assert_equal @user.id.to_s, runtime.identifier
     assert_not_equal "ep_old_case", runtime.active_episode["episode_id"]
+    assert_equal [], runtime.conversation_history
+    assert_equal({}, runtime.active_entities)
   end
 
   test "apply refuses when the exclusion flags are off" do
@@ -339,27 +366,73 @@ class FieldCompanionResetTest < ActiveSupport::TestCase
     end
     assert_equal "ep_old_case", runtime.reload.active_episode["episode_id"]
     assert_predicate runtime.document_focus, :any?
+    assert_includes runtime.conversation_history.to_json, MARKER
   end
 
-  test "pending work for the workspace is reported and left in place" do
+  test "pending work counts the exact serialized session id past prefix matches" do
     runtime = runtime_session
-    job = FieldCompanionCleanStart::QueueJob.create!(
-      queue_name: "default",
-      class_name: "FieldPhotoAnalysisJob",
-      arguments: { "conversation_session_id" => runtime.id }.to_json,
-      priority: 0,
-      created_at: Time.current,
-      updated_at: Time.current
-    )
+    job_ids = []
+    exact_ids = []
+    prefix_ids = []
+    limit = FieldCompanionCleanStart::REFERENCE_LIMIT
+    limit.times do |index|
+      exact_ids << insert_serialized_job(photo_job(runtime.id, index))
+    end
+    exact_ids << insert_serialized_job(reply_job(runtime.id))
+    job_ids.concat(exact_ids)
+    51.times do |index|
+      prefix_ids << insert_serialized_job(photo_job("#{runtime.id}#{format('%02d', index)}".to_i, "prefix-#{index}"))
+    end
+    job_ids.concat(prefix_ids)
+    finished_id = insert_serialized_job(photo_job(runtime.id, "finished"), finished: true)
+    other_id = runtime.id + 1
+    decoy_id = insert_serialized_job(decoy_job(runtime.id, other_id))
+    job_ids << finished_id << decoy_id
+    prefix_text = FieldCompanionCleanStart::QueueJob.find(prefix_ids.first).arguments
+    exact_text = FieldCompanionCleanStart::QueueJob.find(exact_ids.first).arguments
+    assert_includes prefix_text, "\"conversation_session_id\":#{runtime.id}"
+    assert_includes exact_text, "\"conversation_session_id\":#{runtime.id}"
+    assert_match(/"conversation_session_id":#{runtime.id}([^0-9]|$)/, exact_text)
     ENV["APPLY"] = "true"
+
+    output = with_clean_flags { invoke_clean.first }
+    copy = JSON.parse(File.read(Dir.glob(@copy_dir.join("*.json")).sole))
+    shown = copy.dig("pending_work", "jobs").pluck("id")
+
+    assert_includes output, "pending_work=#{exact_ids.size}"
+    assert_includes output, "cleanliness=incompleto"
+    assert_includes output, "pending_work_reading=puntual no_impide_trabajo_posterior"
+    assert_equal exact_ids.size, copy.dig("pending_work", "count")
+    assert_equal limit, shown.size
+    assert_empty(shown - exact_ids)
+    assert_empty(shown & prefix_ids)
+    assert_not_includes shown, finished_id
+    assert_not_includes shown, decoy_id
+    assert shown.all? { |id| copy.dig("pending_work", "jobs").find { |job| job["id"] == id }["class_name"].present? }
+    assert_equal job_ids.size, FieldCompanionCleanStart::QueueJob.where(id: job_ids).count
+    assert_not_equal "ep_old_case", runtime.reload.active_episode["episode_id"]
+  ensure
+    FieldCompanionCleanStart::QueueJob.where(id: job_ids).delete_all if job_ids
+  end
+
+  test "an unreadable queue reports an incomplete start and still clears the row" do
+    runtime = runtime_session
+    ENV["APPLY"] = "true"
+    original = FieldCompanionCleanStart::QueueJob.method(:where)
+    FieldCompanionCleanStart::QueueJob.define_singleton_method(:where) { |*, **| raise "queue down" }
     output = with_clean_flags { invoke_clean.first }
 
-    assert_includes output, "pending_work=1"
+    assert_includes output, "pending_work=unreadable"
     assert_includes output, "cleanliness=incompleto"
-    assert_not_equal "ep_old_case", runtime.reload.active_episode["episode_id"]
-    assert FieldCompanionCleanStart::QueueJob.exists?(job.id)
+    assert_includes output, "no_impide_trabajo_posterior"
+    assert_equal [], runtime.reload.conversation_history
+    assert_not_equal "ep_old_case", runtime.active_episode["episode_id"]
   ensure
-    FieldCompanionCleanStart::QueueJob.where(id: job&.id).delete_all if job
+    if original
+      FieldCompanionCleanStart::QueueJob.define_singleton_method(:where) { |*args, **kwargs, &block|
+        original.call(*args, **kwargs, &block)
+      }
+    end
   end
 
   private
@@ -417,6 +490,7 @@ class FieldCompanionResetTest < ActiveSupport::TestCase
         "added_at" => history_ts
       } ],
       current_procedure: { "password" => "super-secret-value", "step" => MARKER },
+      session_status: "procedure_in_progress",
       active_episode: {
         "v" => 1,
         "episode_id" => "ep_old_case",
@@ -424,6 +498,9 @@ class FieldCompanionResetTest < ActiveSupport::TestCase
         "opened_at" => 2.hours.ago.iso8601,
         "updated_at" => 1.hour.ago.iso8601,
         "goal" => { "text" => "#{MARKER} objetivo", "correlation_id" => "query:old", "truncated" => false },
+        "facts" => { "manufacturer" => { "value" => MARKER } },
+        "identifiers" => [ { "value" => MARKER } ],
+        "observations" => [ { "text" => MARKER } ],
         "active_photo" => { "correlation_id" => "photo:old" }
       }
     )
@@ -492,33 +569,42 @@ class FieldCompanionResetTest < ActiveSupport::TestCase
     end
   end
 
-  def followup_session(session, opened_at: nil)
-    probe = session.dup
-    prior = session.conversation_history.select { |row| row["correlation_id"] == "query:old" }
-    probe.conversation_history = prior + [ {
-      "role" => "user",
-      "content" => "si, me refiero a la marca",
-      "ts" => Time.current.iso8601,
-      "correlation_id" => "query:follow"
-    } ]
-    if opened_at
-      probe.active_episode = session.active_episode.merge(
-        "opened_at" => opened_at,
-        "updated_at" => Time.current.iso8601
-      )
-    end
-    probe
+  def insert_serialized_job(job, finished: false)
+    FieldCompanionCleanStart::QueueJob.create!(
+      queue_name: job.queue_name.presence || "default",
+      class_name: job.class.name,
+      arguments: ActiveSupport::JSON.encode(job.serialize),
+      priority: job.priority || 0,
+      active_job_id: job.job_id,
+      created_at: Time.current,
+      updated_at: Time.current,
+      finished_at: (Time.current if finished)
+    ).id
   end
 
-  def resolver_text(session)
-    result = Rag::EpisodeThreadResolver.call(
-      question: "si, me refiero a la marca",
-      conversation_session: session,
-      correlation_id: "query:follow",
-      locale: :es,
-      now: Time.current
+  def photo_job(session_id, salt)
+    FieldPhotoAnalysisJob.new(
+      image_token: "tok-#{salt}",
+      image_sha256: "a" * 64,
+      filename: "a.jpg",
+      content_type: "image/jpeg",
+      account_id: @account.id,
+      conversation_session_id: session_id
     )
-    result.composed.to_s
+  end
+
+  def reply_job(session_id)
+    SendWhatsappReplyJob.new(to: "+100", from: "+200", body: "pendiente", conv_session_id: session_id)
+  end
+
+  def decoy_job(session_id, other_id)
+    TrackBedrockQueryJob.new(
+      model_id: "test-model",
+      user_query: "conversation_session_id #{session_id} pertenece a otro job",
+      latency_ms: 1,
+      account_id: session_id,
+      conversation_session_id: other_id
+    )
   end
 end
 

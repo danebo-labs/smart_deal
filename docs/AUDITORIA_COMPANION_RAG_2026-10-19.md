@@ -10,6 +10,7 @@ La lectura del mismo día cerró el encargo de la sección 10. El texto de abajo
 - H5 pierde el id explícito de foto. Tras un reset sin selección ese id falta. Tras pulsar reutilizar, viaja. La pérdida del identificador explícito está reproducida. No se ha determinado si intervino en el incidente posterior con foto, porque esa interacción no está incluida en el export disponible. Esa pérdida sigue distinta del fallo de generación de Chapa nivel 2.
 - Un reset correcto no resuelve la fidelidad de Chapa nivel 2 ni la del resumen.
 - La comparación de modelo propuesta por Opus permanece como intervención acotada pendiente. No equivale a migración ni a validación del Companion.
+- Enmienda posterior a `a545049`: `field_companion:start_clean_case` vacía `conversation_history`, `document_focus`, `active_entities` y `current_procedure` después de copiarlos, y abre un episodio sin hechos ni foto activa anterior. `session_status` se conserva. `reset_active_episode` no cambió. El contrato vigente está en «Debug inmediato» del plan operativo. Donde esta auditoría pide conservar el historial para que los lectores lo excluyan, esa frase queda sustituida para esta herramienta.
 
 Fecha: 19 de octubre de 2026. Repositorio: `danebo-labs/smart_deal`.
 
@@ -74,10 +75,10 @@ Esquema: `db/schema.rb`, tabla `conversation_sessions`. Rails agrega además `id
 | `user_id` | Atribución del dueño cuando aplica; shared puede ser nulo | Conservar. La tarea de reset filtra por este campo, mientras el runtime resuelve por `identifier` |
 | `active_episode` | JSON del caso actual: identidad, objetivo, observaciones, correcciones, pendientes y foto | Estado central del Companion; resetear o sustituir por episodio nuevo según contrato |
 | `document_focus` | Array de documentos de catálogo seleccionados en web y shared. Cada entrada guarda `kb_document_id`, `source_uri`, `display_name` y `added_at`. La foto de terreno no es una entrada de este array | Estado activo y necesario; vaciar para debug desde cero y luego seleccionar manual explícitamente |
-| `active_entities` | Hash de entidades y pines heredado; foco de WhatsApp y APIs de compatibilidad | No es foco web. Candidato a retirar solo junto con dependencias dormidas; para debug inventariar su presencia |
-| `conversation_history` | Últimas 20 entradas, no historial completo; contenido truncado, roles y metadatos | Estado activo. Conservar la columna y la evidencia previa. Excluirlo del intérprete, de la consulta efectiva y de la generación solo si los lectores y flags de la corrida lo demuestran |
-| `current_procedure` | Hash inicial vacío; reset y boundaries lo vacían | Candidato fuerte: no se encontró lector funcional en los archivos web examinados; no es el procedimiento que hoy guía al técnico |
-| `session_status` | Default `active`; `reset_procedure!` lo vuelve a ese valor | Candidato fuerte: `scope :active` usa `expires_at`, no este campo; falta cierre global de consumidores |
+| `active_entities` | Hash de entidades y pines heredado; foco de WhatsApp y APIs de compatibilidad | No es foco web. La columna se conserva. El debug `start_clean_case` la vacía en la fila de trabajo después de copiarla |
+| `conversation_history` | Últimas 20 entradas, no historial completo; contenido truncado, roles y metadatos | La columna se conserva. El debug `start_clean_case` la vacía después de copiarla. La exclusión de esa herramienta ya no depende de los lectores |
+| `current_procedure` | Hash inicial vacío; reset y boundaries lo vacían | Sin lector web identificado. El debug lo vacía junto con el episodio nuevo. La columna se conserva |
+| `session_status` | Default `active`; `reset_procedure!` lo vuelve a ese valor | Sin lector del Companion. El debug lo copia y lo deja como está |
 | `expires_at` | TTL deslizante de workspace, 30 días; si vence, `find_or_create_for` destruye y recrea la fila | Conservar; no usar expiración como sustituto del reset de prueba |
 | `created_at` | Creación física del workspace | Conservar y exportar |
 | `updated_at` | Última escritura convencional de la fila; `update_columns` del reset no lo modifica | No equivale a `active_episode.updated_at`; exportar ambos |
@@ -133,11 +134,11 @@ Nombre exacto: `field_companion:reset_active_episode[account_slug,user_email]`.
 - No exporta una copia previa, no limpia historial, foco, procedimiento, navegador, jobs ni caché; no selecciona por ID exacto de sesión.
 - No se ejecutó durante esta auditoría.
 
-`reset_active_episode!` del modelo también solo vacía el episodio. `reset_procedure!` solo vacía procedimiento y activa status. `start_new_case!` abre otro episodio y vacía procedimiento, manteniendo pines, historial y fotos; está descrito como futuro control explícito y no está conectado a una ruta en el código revisado.
+`reset_active_episode!` del modelo también solo vacía el episodio. `reset_procedure!` solo vacía procedimiento y activa status. `start_new_case!` abre otro episodio y vacía procedimiento, manteniendo pines, historial y fotos. `start_clean_case` lo llama y, en la misma transacción, vacía además historial, foco y entidades. Ese vaciado adicional no está dentro de `start_new_case!`.
 
-**Riesgo verificable por lectura:** si el episodio queda `{}`, `episode_history_cutoff` vuelve a `now - 4.hours`; no tiene un `opened_at` nuevo con el cual excluir el historial anterior. Una consulta significativa que abra un episodio nuevo puede cerrar ese acceso por su nuevo piso temporal, pero no se debe atribuir esa garantía al reset que solo vacía el JSON ni a todas las rutas.
+**Riesgo verificable por lectura:** si el episodio queda `{}`, `episode_history_cutoff` vuelve a `now - 4.hours`; no tiene un `opened_at` nuevo con el cual excluir el historial anterior. Ese riesgo sigue en `reset_active_episode`, que deja el historial. No se debe atribuir esa garantía al reset que solo vacía el JSON. `start_clean_case` no deja el historial anterior junto al episodio nuevo: lo vacía.
 
-`start_new_case!` crea el `opened_at` que excluye el historial previo del prompt y del rewriter. Conserva `document_focus`, así que el manual anterior sigue filtrando la recuperación. El resolver de hilo no usa ese piso. La tarea por `user_id` y canal web no es equivalente a la búsqueda del runtime.
+`start_new_case!`, llamado solo, crea el `opened_at` que excluye el historial previo del prompt y del rewriter, y conserva `document_focus`. `start_clean_case` vacía ese foco y el historial después de la copia. `EpisodeThreadResolver` usa el piso `opened_at`. La tarea `reset_active_episode` por `user_id` y canal web no es el selector del runtime.
 
 ## 6. Hallazgos funcionales y grado de certeza
 
@@ -191,21 +192,21 @@ Observaciones para limpieza posterior:
 
 ## 8. Contrato mínimo del debug propuesto
 
-Esto es una especificación para implementar/revisar, **no una herramienta ya construida o validada**.
+La herramienta es `field_companion:start_clean_case`. El contrato vigente está en «Debug inmediato» del plan operativo. Esta sección se escribió como especificación antes de construirla. La enmienda del encabezado sustituye, para esta herramienta, la instrucción de conservar el historial y dejar su exclusión a los lectores.
 
 **Preflight y evidencia**
 
 - Cuenta, usuario, identificador, canal y `conversation_session_id` exactos. Mostrar modo compartido y rechazar asumir dueño individual si no aplica.
 - Registrar commit local, diferencias relevantes sin commit, versión desplegada si se usa web, flags efectivos y modelos por rol. Registrar las conexiones resueltas sin credenciales.
 - Dentro del lock, y antes de modificar la fila, guardar una copia sanitizada y legible del estado que realmente se va a reemplazar. La copia lleva la identidad del workspace; `active_episode` completo; `document_focus`; el historial pertinente, con contenido, orden, timestamps y correlaciones; y los demás campos conversacionales que la operación vaya a modificar. Incluye referencias a fotos y al trabajo pendiente de ese workspace cuando correspondan. No copia secretos, bytes de foto ni archivos que la operación no necesite. Si la escritura de esa copia falla, el reset no se aplica y la fila queda como estaba. El mismo contrato está en «Debug inmediato» del plan operativo.
-- Detectar trabajo en vuelo de ese workspace. Preferir un caso estable sin trabajo pendiente para la prueba básica; si hay actividad, no declarar limpieza efectiva solo por terminar el UPDATE.
+- Detectar trabajo en vuelo de ese workspace por el id exacto en el JSON de ActiveJob. El tope de referencias no limita el conteo. Un prefijo como `120` no cuenta como `12`. Si hay actividad o la cola no se puede leer, la salida es `incompleto`. La lectura no impide un job posterior. No borrar jobs.
 
 **Aplicación del reset de debug**
 
 La transición empieza solo si la copia del preflight ya quedó escrita y corresponde a la fila bloqueada. Si esa escritura falló, la fila no se modifica.
 
 - Operación acotada, con dry-run y lock. Preservar la identidad de la fila salvo razón concreta para cambiarla; evitar dejar referencias huérfanas al destruirla.
-- Dentro del lock: `start_new_case!` y `document_focus = []` en la misma transición. Conservar la fila, las fotos, `active_entities` y el TTL. Conservar el historial de la columna solo si `episode_prompt_history` y el rewriter, con el alcance de episodio encendido, dejan fuera lo anterior. Si la ruta usa otro lector, el debug queda incompleto.
+- Dentro del lock, y solo después de que la copia quedó escrita: `start_new_case!` y el vaciado de `conversation_history`, `document_focus`, `active_entities` y `current_procedure` en la misma transición. Conservar la fila, la atribución, el TTL, `session_status`, los documentos, el corpus y las fotos almacenadas. El episodio nuevo no trae hechos ni la foto activa anterior. Si la copia o una actualización fallan, la fila queda como estaba.
 - Abrir un `episode_id` nuevo o aplicar una transición equivalente que excluya inequívocamente el caso anterior. Evitar el intervalo ambiguo de `{}` más historial antiguo. La alternativa elegida debe funcionar con el modo real de flags.
 - Invalidar ownership anterior: comprobar que un assistant, foto o auto-pin iniciado antes no repueble el nuevo caso. Los detalles de flags y writers con IDs ausentes son parte de la prueba.
 - Reinicializar la UI y su selección de foto/archivo/replay pendiente. Si hay pestañas viejas, impedir que su estado residual se confunda con el caso nuevo.
@@ -221,14 +222,14 @@ La transición empieza solo si la copia del preflight ya quedó escrita y corres
 
 `Rag::ValidationCapture` ya ofrece captura local activada explícitamente: contexto, requests, rutas, chunks, publicación y procedencia observada/reconstruida. Reutilizarla; no abrir otra tabla de auditoría ni otro pipeline para obtener la misma evidencia. Los arneses `Phase1PinnedTurn`, `Phase2PinnedTurn` y `Phase3PinnedTurn` ya resuelven aislamiento/captura en parte, pero tienen sesiones nuevas o clonadas y no sustituyen una comprobación web completa.
 
-La selección del debug aborta salvo una fila con cuenta, usuario, canal web e `identifier` igual al id de usuario. Dentro del lock, la herramienta escribe primero la copia del estado que va a reemplazar. Si esa escritura falla, no llama a `start_new_case!` ni vacía `document_focus`. Cuando la copia queda escrita, abre un episodio con `start_new_case!` y vacía `document_focus` en el mismo lock. El historial de la columna se conserva solo si los lectores y los flags de esa corrida demuestran la exclusión. La aceptación lee `ValidationCapture`: episodio nuevo, foco vacío, contexto reciente limitado al turno nuevo y filtro de recuperación vacío hasta el pin explícito. Esta herramienta sigue pendiente en el plan operativo. No está construida aquí.
+La selección del debug aborta salvo una fila con cuenta, canal web e `identifier` igual al id de usuario. Dentro del lock, la herramienta escribe primero la copia del estado que va a reemplazar. Si esa escritura falla, no llama a `start_new_case!` ni vacía el contexto. Cuando la copia queda escrita, abre un episodio con `start_new_case!` y vacía `conversation_history`, `document_focus`, `active_entities` y `current_procedure` en el mismo lock. `session_status` se conserva. La aceptación de este ajuste lee el turno que sí corre, con dobles en el intérprete y en el orquestador: episodio nuevo, hechos vacíos y antecedente anterior fuera del request. El filtro sin pin y la continuidad de foto son componentes. `limpio` no recorre el navegador ni inspecciona otros procesos. No es `EPISODIO_VALIDADO`.
 
 ## 9. Regresión y Plan B de demo
 
 Orden acordado por Lahiri: texto lineal → mismo caso con fotos → varios temas. Las consultas aisladas diagnostican bloqueos y vuelven después a la conversación.
 
 - Primero un recorrido mínimo útil, desde reset comprobado, selección del manual, síntoma, seguimiento, corrección y resumen. No imponer 14 turnos por historia.
-- Guardar la secuencia exacta, estado inicial, commit, flags y modelo; separar hechos, inferencias y ausencias esperadas. El primer recorrido completo aún está pendiente. Cuando Lahiri lo acepte según el plan operativo, esa aceptación es `EPISODIO_VALIDADO` del episodio de texto. Fotos y varios temas amplían el guion y no son requisito de esa declaración. Una pasada aceptada acredita el recorrido observado. Los fallos históricos quedan registrados.
+- Guardar la secuencia, el estado inicial, el commit, los flags y el modelo; separar hechos, inferencias y ausencias esperadas. La verificación compara comportamiento, continuidad y respaldo documental, no la igualdad literal de las respuestas. El primer recorrido completo aún está pendiente. Cuando Lahiri lo acepte según el plan operativo, esa aceptación es `EPISODIO_VALIDADO` del episodio de texto y pasa a ser la base de regresión. Cada interacción nueva aceptada se incorpora. Cada cambio posterior conserva los recorridos ya aceptados. Fotos y varios temas amplían el guion y no son requisito de esa declaración. Una pasada aceptada acredita el recorrido observado. Los fallos históricos quedan registrados. Todavía no hay guion completo aceptado.
 - A cada interacción nueva aceptada, añadir sus comprobaciones y volver a ejecutar la secuencia ampliada sin reset entre mensajes.
 - Dobles verifican lógica/estado/request. Modelo real verifica fidelidad y conducta antes de promover una ampliación de demo. No declarar fiabilidad estadística por una sola pasada.
 - Condiciones mínimas: preserva el pin, mantiene la corrección, no inventa observaciones, no contradice conexiones del plano, no atribuye una función como hecho sin respaldo y resume el caso sin fusionar referencias.

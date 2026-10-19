@@ -3,10 +3,11 @@
 require "json"
 require "open3"
 
-# Local clean start for one web workspace. Dry-run unless APPLY=true.
+# Local debug clean start for one web workspace. Dry-run unless APPLY=true.
 # Selects the runtime row (account, channel web, identifier = user id as text).
-# Writes a sanitized copy inside the row lock before start_new_case! and an
-# empty document_focus commit together. Does not call a model.
+# Inside the row lock, writes a sanitized copy first. Only after that copy is
+# on disk, opens a new episode and clears the working context. Page reload
+# does not call this task. Does not call a model.
 class FieldCompanionCleanStart
   class Refused < StandardError; end
 
@@ -22,12 +23,17 @@ class FieldCompanionCleanStart
   end
 
   COPY_DIR_ENV = "FIELD_COMPANION_CLEAN_START_COPY_DIR"
+  # Shown references only. Existence uses the full exact-id count.
+  REFERENCE_LIMIT = 20
+  # Keyword names ActiveJob writes into solid_queue_jobs.arguments.
+  SESSION_ARGUMENT_KEYS = %w[conversation_session_id conv_session_id].freeze
   MARKER_UI = "ui_reload: reload the workspace before the next question. " \
     "Stimulus keeps pendingFile, pendingFieldPhotoId and pendingPhotoCorrelationId until reload. " \
-    "A discarded late write does not clear a reply already painted in an open tab."
+    "A discarded late write does not clear a reply already painted in an open tab. " \
+    "Reloading the page does not open another case."
 
-  def self.call(account_slug:, user_email:, apply:, io: $stdout, clock: nil, sleeper: nil)
-    new(io: io, clock: clock, sleeper: sleeper).call(account_slug: account_slug, user_email: user_email, apply: apply)
+  def self.call(account_slug:, user_email:, apply:, io: $stdout, clock: nil)
+    new(io: io, clock: clock).call(account_slug: account_slug, user_email: user_email, apply: apply)
   end
 
   def self.rows_for(account, user)
@@ -38,10 +44,9 @@ class FieldCompanionCleanStart
     ).order(:id).to_a
   end
 
-  def initialize(io:, clock:, sleeper:)
+  def initialize(io:, clock:)
     @io = io
     @clock = clock || -> { Time.current }
-    @sleeper = sleeper || ->(seconds) { sleep(seconds) }
   end
 
   def call(account_slug:, user_email:, apply:)
@@ -72,7 +77,7 @@ class FieldCompanionCleanStart
     say(MARKER_UI)
 
     unless apply
-      say("DRY RUN no_comprobado. Re-run with APPLY=true to open a new episode and clear document_focus.")
+      say("DRY RUN no_comprobado. Re-run with APPLY=true to open a new episode and clear conversation_history, document_focus, active_entities, and current_procedure.")
       return :dry_run
     end
 
@@ -90,11 +95,16 @@ class FieldCompanionCleanStart
     begin
       session.with_lock do
         session.reload
-        opened = exclusive_opened_at(session)
+        opened = @clock.call
         snapshot = snapshot_for(session, account, user, opened)
         copy_path = write_snapshot!(snapshot)
         session.start_new_case!(now: opened, reason: "clean_start", correlation_id: "clean_start:#{SecureRandom.uuid}")
-        session.update!(document_focus: [])
+        session.update!(
+          conversation_history: [],
+          document_focus: [],
+          active_entities: {},
+          current_procedure: {}
+        )
       end
     rescue Refused
       raise
@@ -107,50 +117,16 @@ class FieldCompanionCleanStart
     say("APPLIED copy=#{copy_path}")
     say("episode_id=#{session.active_episode['episode_id']} opened_at=#{session.active_episode['opened_at']}")
     say("document_focus=#{session.document_focus.inspect}")
-    say("history_rows_kept=#{session.conversation_history.size}")
+    say("conversation_history=#{session.conversation_history.size}")
+    say("active_entities=#{session.active_entities.inspect}")
+    say("current_procedure=#{session.current_procedure.inspect}")
+    say("facts=#{session.active_episode['facts'].inspect}")
+    say("active_photo=#{session.active_episode['active_photo'].inspect}")
+    say("session_status=#{session.session_status} kept")
     say("pending_work=#{pending[:label]}")
+    say("pending_work_reading=puntual no_impide_trabajo_posterior")
     say("cleanliness=#{cleanliness_for(pending)}")
-  end
-
-  def exclusive_opened_at(session)
-    latest = latest_history_second(session)
-    now = @clock.call
-    return now if latest.nil?
-
-    now_second = second_floor(now)
-    return now if latest < now_second
-
-    boundary = latest + 1.second
-    delay = boundary - now
-    refuse!("ABORT history timestamp is more than 2 seconds ahead of the clock") if delay > 2
-    @sleeper.call(delay) if delay.positive?
-    opened = @clock.call
-    if second_floor(opened) <= latest
-      refuse!("ABORT opened_at would share a stored history second")
-    end
-    opened
-  end
-
-  def latest_history_second(session)
-    Array(session.conversation_history).filter_map { |message|
-      raw = message.is_a?(Hash) ? (message["ts"] || message[:ts]) : nil
-      parsed = parse_time(raw)
-      second_floor(parsed) if parsed
-    }.max
-  end
-
-  def second_floor(time)
-    return nil if time.nil?
-
-    parse_time(time.iso8601) || time.change(usec: 0)
-  end
-
-  def parse_time(value)
-    return nil if value.blank?
-
-    Time.zone.parse(value.to_s)
-  rescue ArgumentError, TypeError
-    nil
+    say("cleanliness_scope=fila_y_lectura_de_cola navegador_no_recorrido otros_procesos_no_inspeccionados no_impide_trabajo_posterior")
   end
 
   def snapshot_for(session, account, user, opened)
@@ -175,14 +151,20 @@ class FieldCompanionCleanStart
       "model" => BedrockClient::QUERY_MODEL_ID,
       "replaced" => {
         "active_episode" => session.active_episode,
+        "conversation_history" => history_copy(session),
         "document_focus" => session.document_focus,
+        "active_entities" => session.active_entities,
         "current_procedure" => session.current_procedure
       },
-      "conversation_history" => history_copy(session),
-      "preserved" => {
-        "active_entities" => session.active_entities,
+      "kept" => {
+        "id" => session.id,
+        "account_id" => session.account_id,
+        "user_id" => session.user_id,
+        "identifier" => session.identifier,
+        "channel" => session.channel,
         "expires_at" => session.expires_at.iso8601,
-        "history_kept" => true
+        "created_at" => session.created_at.iso8601,
+        "session_status" => session.session_status
       },
       "photos" => photo_references(session),
       "pending_work" => pending_work(session)
@@ -214,26 +196,36 @@ class FieldCompanionCleanStart
     }
   end
 
+  # Solid Queue stores ActiveJob#serialize as JSON text. A keyword id is a
+  # JSON number, for example "conversation_session_id":12. The next character
+  # has to be a non-digit so 120 does not count as 12. REFERENCE_LIMIT caps
+  # the copy; count does not.
   def pending_work(session)
-    id = session.id.to_i
-    jobs = QueueJob.where(finished_at: nil).where(
-      "arguments LIKE :conversation OR arguments LIKE :conversation_spaced OR arguments LIKE :legacy OR arguments LIKE :legacy_spaced",
-      conversation: "%\"conversation_session_id\":#{id}%",
-      conversation_spaced: "%\"conversation_session_id\": #{id}%",
-      legacy: "%\"conv_session_id\":#{id}%",
-      legacy_spaced: "%\"conv_session_id\": #{id}%"
-    )
-    refs = []
-    jobs.limit(50).pluck(:id, :class_name, :arguments).each do |job_id, class_name, arguments|
-      text = arguments.is_a?(String) ? arguments : JSON.generate(arguments)
-      next unless text.match?(/"(?:conversation_session_id|conv_session_id)"\s*:\s*#{id}(?!\d)/)
-
-      refs << { "id" => job_id, "class_name" => class_name }
-      break if refs.size >= 20
-    end
-    { "status" => "read", "jobs" => refs }
+    id = Integer(session.id)
+    scope = unfinished_session_jobs(id)
+    count = scope.count
+    refs = scope.order(:id).limit(REFERENCE_LIMIT).pluck(:id, :class_name).map { |job_id, class_name|
+      { "id" => job_id, "class_name" => class_name }
+    }
+    {
+      "status" => "read",
+      "count" => count,
+      "jobs" => refs,
+      "reading" => "point_in_time"
+    }
   rescue StandardError => error
-    { "status" => "unreadable", "error_class" => error.class.name, "jobs" => [] }
+    { "status" => "unreadable", "error_class" => error.class.name, "count" => nil, "jobs" => [], "reading" => "point_in_time" }
+  end
+
+  def unfinished_session_jobs(id)
+    QueueJob.where(finished_at: nil).where(
+      SESSION_ARGUMENT_KEYS.map { "arguments ~ ?" }.join(" OR "),
+      *SESSION_ARGUMENT_KEYS.map { |key| session_argument_pattern(key, id) }
+    )
+  end
+
+  def session_argument_pattern(key, id)
+    %("#{key}"[[:space:]]*:[[:space:]]*#{id}([^0-9]|$))
   end
 
   def write_snapshot!(snapshot)
@@ -253,15 +245,20 @@ class FieldCompanionCleanStart
   def snapshot_pending(path)
     data = JSON.parse(File.read(path))
     pending = data["pending_work"] || {}
-    jobs = Array(pending["jobs"])
-    label = pending["status"] == "read" ? jobs.size.to_s : "unreadable"
-    { label: label, count: jobs.size, status: pending["status"].to_s }
+    status = pending["status"].to_s
+    count = pending["count"]
+    readable = status == "read" && count.is_a?(Integer)
+    {
+      label: readable ? count.to_s : "unreadable",
+      count: readable ? count : nil,
+      status: status
+    }
   rescue StandardError
-    { label: "unreadable", count: 0, status: "unreadable" }
+    { label: "unreadable", count: nil, status: "unreadable" }
   end
 
   def cleanliness_for(pending)
-    return "incompleto" unless pending[:status] == "read" && pending[:count].zero?
+    return "incompleto" unless pending[:status] == "read" && pending[:count] == 0
 
     "limpio"
   end
@@ -270,6 +267,7 @@ class FieldCompanionCleanStart
     say("operation=start_clean_case rails_env=#{Rails.env} git=#{git_sha}")
     say("kb=#{ENV['BEDROCK_KNOWLEDGE_BASE_ID']} model=#{BedrockClient::QUERY_MODEL_ID}")
     say(flag_text)
+    say("flags_scope=este_proceso web_y_workers_no_inspeccionados")
     connection_rows.each do |row|
       say("connection name=#{row['name']} adapter=#{row['adapter']} host=#{row['host']} database=#{row['database']} username=#{row['username']}")
     end

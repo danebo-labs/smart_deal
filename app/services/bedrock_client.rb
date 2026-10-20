@@ -257,6 +257,7 @@ class BedrockClient
         "operation" => "generate_text",
         "answer" => nil,
         "error_class" => error.class.name,
+        "error_message" => error.message.to_s[0, 300],
         "documentary_context" => Rag::ValidationCapture.documentary_context(prompt)
       }.merge(generation_result_fields(model_id, max_tokens, temperature, prompt, system))
        .merge(capture_fields || {})

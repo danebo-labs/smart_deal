@@ -101,11 +101,12 @@ module Rag
     # One generation, with up to ATTEMPT_LIMIT physical tries for a transient
     # error. Configuration errors are not retried. Each try that enters the
     # client is reserved on spend first.
-    def self.run_sample(prepared:, model_id:, client:, spend:, output_dir:, run_id:, correlation_prefix: "vf5-benchmark", attempt_limit: ATTEMPT_LIMIT)
+    def self.run_sample(prepared:, model_id:, client:, spend:, output_dir:, run_id:, correlation_prefix: "vf5-benchmark", attempt_limit: ATTEMPT_LIMIT, backoff_seconds: [])
       runner = allocate
       runner.send(
         :initialize_runner,
-        prepared:, model_id:, client:, spend:, output_dir:, run_id:, correlation_prefix:, attempt_limit:
+        prepared:, model_id:, client:, spend:, output_dir:, run_id:,
+        correlation_prefix:, attempt_limit:, backoff_seconds:
       )
       runner.send(:run_sample)
     end
@@ -190,7 +191,7 @@ module Rag
 
     private
 
-    def initialize_runner(prepared:, model_id:, client:, spend:, output_dir:, run_id:, correlation_prefix: "vf5-benchmark", attempt_limit: self.class::ATTEMPT_LIMIT)
+    def initialize_runner(prepared:, model_id:, client:, spend:, output_dir:, run_id:, correlation_prefix: "vf5-benchmark", attempt_limit: self.class::ATTEMPT_LIMIT, backoff_seconds: [])
       @prepared = prepared
       @model_id = model_id
       @client = client
@@ -199,6 +200,7 @@ module Rag
       @run_id = run_id
       @correlation_prefix = correlation_prefix
       @attempt_limit = attempt_limit
+      @backoff_seconds = Array(backoff_seconds)
     end
 
     def run_sample
@@ -218,6 +220,9 @@ module Rag
         latency_ms = sample[:latency_ms]
         break if sample[:status] == "returned"
         break unless self.class.error_kind(error_class) == "transient"
+
+        wait = @backoff_seconds[index]
+        sleep(wait) if wait.respond_to?(:positive?) && wait.positive?
       end
       returned = attempts.last
       Sample.new(
@@ -285,7 +290,13 @@ module Rag
       error_class = result["error_class"].presence || raised&.class&.name || "blank"
       message = result["error_message"].to_s
       message = message[0, 300]
-      @spend.keep!(ticket, error_class: error_class)
+      # A 503 with no usage is the 2026-10-20 VF5 case: Bedrock billed 0/0.
+      # The byte-length ceiling is not that bill. The attempt still counts.
+      if usage.empty?
+        @spend.settle!(ticket, actual_usd: 0, error_class: error_class)
+      else
+        @spend.keep!(ticket, error_class: error_class)
+      end
       attempt_row("error", nil, error_class, message, usage, latency_ms, nil)
     end
 

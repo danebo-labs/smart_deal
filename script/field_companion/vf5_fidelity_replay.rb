@@ -59,7 +59,8 @@ def vf5_fidelity_replay_main
       spend: spend,
       output_dir: output.join(run_id, "t#{turn.turn}"),
       run_id: run_id,
-      correlation_prefix: "vf5-fidelity:#{variant}"
+      correlation_prefix: "vf5-fidelity:#{variant}",
+      attempt_limit: 1
     )
     results << sample
     break unless sample.status == "returned"

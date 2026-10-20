@@ -101,11 +101,11 @@ module Rag
     # One generation, with up to ATTEMPT_LIMIT physical tries for a transient
     # error. Configuration errors are not retried. Each try that enters the
     # client is reserved on spend first.
-    def self.run_sample(prepared:, model_id:, client:, spend:, output_dir:, run_id:, correlation_prefix: "vf5-benchmark")
+    def self.run_sample(prepared:, model_id:, client:, spend:, output_dir:, run_id:, correlation_prefix: "vf5-benchmark", attempt_limit: ATTEMPT_LIMIT)
       runner = allocate
       runner.send(
         :initialize_runner,
-        prepared:, model_id:, client:, spend:, output_dir:, run_id:, correlation_prefix:
+        prepared:, model_id:, client:, spend:, output_dir:, run_id:, correlation_prefix:, attempt_limit:
       )
       runner.send(:run_sample)
     end
@@ -190,7 +190,7 @@ module Rag
 
     private
 
-    def initialize_runner(prepared:, model_id:, client:, spend:, output_dir:, run_id:, correlation_prefix: "vf5-benchmark")
+    def initialize_runner(prepared:, model_id:, client:, spend:, output_dir:, run_id:, correlation_prefix: "vf5-benchmark", attempt_limit: self.class::ATTEMPT_LIMIT)
       @prepared = prepared
       @model_id = model_id
       @client = client
@@ -198,6 +198,7 @@ module Rag
       @output_dir = Pathname(output_dir)
       @run_id = run_id
       @correlation_prefix = correlation_prefix
+      @attempt_limit = attempt_limit
     end
 
     def run_sample
@@ -207,7 +208,7 @@ module Rag
       error_message = nil
       usage = {}
       latency_ms = nil
-      ATTEMPT_LIMIT.times do |index|
+      @attempt_limit.times do |index|
         sample = one_attempt(index + 1)
         attempts << sample
         text = sample[:text]

@@ -2,7 +2,7 @@
 
 ## Estado actual, 2026-10-19
 
-Cola operativa de este documento. Los registros de «Estado de este corte, 2026-10-14», de las fases 0 a 5 y del registro de revisión se conservan, incluidos los del 16 de octubre que estaban sin commit. Esta sección no los reabre y no añade otra numeración de fases. Esta reconciliación no declara `EPISODIO_VALIDADO`. El criterio del orden 2 dice cuándo Lahiri puede declararlo.
+Cola operativa de este documento. Los registros de «Estado de este corte, 2026-10-14», de las fases 0 a 5 y del registro de revisión se conservan, incluidos los del 16 de octubre que estaban sin commit. Esta sección no los reabre y no añade otra numeración de fases. Esta reconciliación no declara `EPISODIO_VALIDADO`. Ese nombre sigue reservado al episodio del plano Elemont, fases 0 a 5, y una aceptación del manual textual no lo otorga.
 
 HEAD y `origin/main` en esta reconciliación: `0b97c964dab3a6cb2714d6a5b076000d28f394d7`. La última imagen comprobada en un export es esa, en `tmp/pilot_exports/2026-10-16_2026-10-16_danebo-legacy/manifest.json`, generada `2026-10-16T18:05:36Z`. Qué imagen corre el 19 de octubre no está en los artefactos locales.
 
@@ -12,23 +12,23 @@ El viernes 23 de octubre de 2026 sigue siendo el compromiso de mostrar el compan
 
 ### Secuencia de ejecución
 
-La numeración de abajo es el orden de trabajo. Las fases siguen siendo 0 a 5. La regresión empieza con el primer recorrido completo aceptado y se amplía con cada interacción nueva aceptada. No queda para el final. El entorno de cada ejecución está en «Entorno de validación». Los encargos siguientes citan esa sección y no reescriben el contrato.
+La numeración de abajo es el orden de trabajo. Las fases siguen siendo 0 a 5 del plano Elemont. El ajuste del 19 de octubre pone antes un manual principalmente textual. No borra las fases ni sus aceptaciones. El guion de respaldo sigue sin existir y no es una fila de esta tabla. Journey A no es ese guion. El entorno de cada ejecución está en «Entorno de validación». Los encargos siguientes citan esa sección y no reescriben el contrato.
 
 | Orden | Trabajo | Fases que usa |
 |---|---|---|
-| 1 | Debug: inicio limpio y comprobación del contexto efectivo | Prepara cualquier recorrido posterior. No reabre la fase 0, cerrada el 9 de octubre. |
-| 2 | Resolver el bloqueo de fidelidad y completar una conversación lineal de texto | Usa las fases 1 a 5 en una sola conversación. Conserva las aceptaciones acotadas ya escritas. |
-| 3 | Fijar ese recorrido como regresión y guion mínimo de respaldo | Empieza cuando el orden 2 quede aceptado. Journey A no es ese guion. |
-| 4 | Incorporar fotos al mismo recorrido | Ampliación del guion del orden 3. No reanuda Journey B. |
-| 5 | Incorporar cambios de tema y retorno al tema anterior | Ampliación posterior a las fotos. No es una fase 6. |
+| 1 | Debug: inicio limpio y comprobación del contexto efectivo | Conservado. Prepara los recorridos posteriores. No reabre la fase 0, cerrada el 9 de octubre. |
+| 2 | Conversación lineal con un manual principalmente textual | No usa las fases del plano. La selección está enlazada en este orden. No declara `EPISODIO_VALIDADO`. |
+| 3 | Caso del plano Elemont MH | Las fases siguen siendo 0 a 5 de ese plano. Pendiente de ejecución. Una aceptación del orden 2 no las cierra. |
+| 4 | Incorporar fotos | Después del caso del plano. No reanuda Journey B. |
+| 5 | Varios temas: cambio de tema y retorno al tema anterior | Después de las fotos. No es una fase 6. |
 
 ### 1. Debug: inicio limpio y contexto efectivo
 
 **Estado y evidencia.** `a545049a9041bbecc54984ff588e12b9875bffbe` abrió el episodio y vació el foco, y dejó `conversation_history` y `active_entities` en la fila. Este ajuste sustituye ese contrato para la herramienta de debug. `field_companion:start_clean_case` selecciona la fila web por cuenta, canal `web` e `identifier` igual al id del usuario. Dentro del lock escribe primero la copia sanitizada. Solo si esa copia quedó escrita, abre el episodio con `start_new_case!` y vacía `conversation_history`, `document_focus`, `active_entities` y `current_procedure`. Conserva la identidad de la fila, la atribución, el TTL, `session_status`, los documentos, el corpus y los archivos de foto. El episodio nuevo no trae hechos ni la foto activa anterior. `session_status` se revisó y se conserva: el recorrido web no lo lee; `reset_procedure!` lo escribe. `created_at` no cambia. `updated_at` sí, porque la escritura usa `update!`; no es contexto del caso. La espera para separar `opened_at` del último `ts` sale de esta operación: el historial vaciado ya no puede compartir ese segundo. `EpisodeThreadResolver` conserva el piso `ts < opened_at`. Un episodio en blanco sigue con la ventana de cuatro horas. Una fila que comparte el segundo de `opened_at` sigue dentro. `field_companion:reset_active_episode` no cambia y sigue vaciando solo `active_episode`. Recargar la página no abre otro caso. El dry-run es el default y `APPLY=true` escribe. Pruebas: `test/tasks/field_companion_reset_test.rb` y `test/services/rag/episode_thread_resolver_test.rb`, una corrida, 28 tests, 273 aserciones, 0 fallos, semilla 50163. Dobles, sobre `smart_deal_test` y sus bases de cola, caché y cable. Cero llamadas a AWS y cero generaciones. No es `EPISODIO_VALIDADO` ni conducta del modelo. H5 sigue fuera de este corte.
 
-**Bloqueo.** Esta operación no bloquea la cola. Sigue abierto el bloqueo de fidelidad del orden 2, incluida `query:4bcf7953…`. El `.env` local no es la configuración de la corrida: `SHARED_SESSION_ENABLED=true`, y episodio, turno y `HAIKU_QUERY_ANALYSIS_MODE` no están definidos. Un prefijo en el comando rake solo cubre ese proceso. No cambia un web o un worker ya arrancados. La KB de ese archivo es `QGVYLPTEGT`. Las corridas históricas de producción usaron `Y7RZWMFJSR`. No se asume que sean la misma base. Este corte no consulta la KB ni ingesta.
+**Bloqueo.** Esta operación no bloquea la cola. Sigue abierto el bloqueo de fidelidad del plano Elemont, incluida `query:4bcf7953…`. Ese bloqueo pertenece al orden 3. El orden 2 es el manual textual y no lo da por resuelto. El `.env` local no es la configuración de la corrida: `SHARED_SESSION_ENABLED=true`, y episodio, turno y `HAIKU_QUERY_ANALYSIS_MODE` no están definidos. Un prefijo en el comando rake solo cubre ese proceso. No cambia un web o un worker ya arrancados. La KB de ese archivo es `QGVYLPTEGT`. Las corridas históricas de producción usaron `Y7RZWMFJSR`. No se asume que sean la misma base. Este corte no consulta la KB ni ingesta.
 
-**Siguiente acción.** El orden 2, bajo «Entorno de validación», con el manual seleccionado en esa sesión. El caso propuesto para esa corrida está enlazado ahí. Ese encargo incorpora la consideración de español para el MVP. Este corte no la abre y no llama a un modelo.
+**Siguiente acción.** El orden 2: revisar con Lahiri y ChatGPT el manual textual elegido y el bosquejo, antes de armar la matriz y de ejecutar la corrida. El caso del plano queda en el orden 3.
 
 **Criterio.** Una sola fila seleccionada por esa clave. La copia existe, es legible y corresponde al estado reemplazado; si no se escribió, la fila no cambió. En la misma transición quedan el episodio nuevo, el historial vacío, el foco vacío, las entidades vacías y el procedimiento vacío. El episodio nuevo no arrastra hechos ni foto activa. La fila, la atribución, el TTL, `session_status`, los documentos, el corpus y las fotos almacenadas siguen. Tras recargar la interfaz, el panel, el id de foto pendiente y la espera de Cable nacen vacíos; esa recarga no es otro caso y esta tarea no la recorre. El turno siguiente, por `record_user_turn!` y `execute_rag_query` con dobles en el intérprete y en el orquestador, no lleva el antecedente anterior al request del intérprete ni a la consulta efectiva. El filtro de recuperación sin pin y la continuidad de foto son comprobaciones de componente: no sustituyen la generación ni una conversación integrada. Una captura armada a mano no acredita una ruta que no se ejecutó. Otra sesión permanece intacta. Un writer con el id de episodio anterior no repuebla el caso. Esta aceptación no cierra la fidelidad ni ninguna fase.
 
@@ -48,33 +48,37 @@ La numeración de abajo es el orden de trabajo. Las fases siguen siendo 0 a 5. L
 
 **Bloqueo.** Sigue abierta la inferencia sacada de la sección o del nivel, presentada como hecho del plano, con cita, y la prescripción apoyada en esa inferencia. Atraviesa el resumen de la fase 3, la reserva de parada citada como `[1]` en la fase 4, la fase 5 y `query:4bcf7953…`. En esa última, con el sanitizador y el orden cronológico ya desplegados, la cruda `c7fd30c6…` atribuye selector, cadena, conexión y autorización. El posprocesado de esa respuesta solo quita `# Respuesta` y una negrita. Un inicio limpio no corrige este defecto.
 
-**Siguiente acción.** Una sola conversación de texto, con el manual seleccionado en esa sesión: identificación, selección, síntoma, seguimiento, corrección, consulta fiel y resumen. Ese encargo incorpora la consideración de español para el MVP. La comparación de modelo propuesta por Opus permanece pendiente y acotada al body capturado de `query:4bcf7953…`, cambiando solo `modelId`. No es migración, no sustituye esa conversación y no valida el Companion.
+**Siguiente acción.** Revisar la selección y el bosquejo de [field_companion/SELECCION_MANUAL_TEXTUAL_2026-10-19.md](field_companion/SELECCION_MANUAL_TEXTUAL_2026-10-19.md) antes de escribir la matriz y de ejecutar la corrida. El manual recomendado es el Fermator VF5+, en español. La corrida, cuando se autorice, usa el entorno de validación y no se lanza desde este párrafo. La comparación de modelo propuesta por Opus permanece pendiente y acotada al body capturado de `query:4bcf7953…`, cambiando solo `modelId`. No es migración, no sustituye esta conversación y no valida el Companion. Tampoco cierra el plano.
 
-**Caso propuesto, 2026-10-19.** El guion para revisar antes de la corrida está en [field_companion/CASO_ELEMONT_MH_LINEAL_2026-10-19.md](field_companion/CASO_ELEMONT_MH_LINEAL_2026-10-19.md). Estado: propuesto, pendiente de revisión y ejecución. No se ejecutó. No es `EPISODIO_VALIDADO` ni el guion de respaldo del orden 3. Las respuestas de referencia quedan en ese artefacto para el evaluador. No entran al prompt, al historial del técnico ni a los documentos recuperables.
+**Selección, 2026-10-19.** El artefacto de arriba propone el VF5+ y deja YS-K01 y el capítulo 9 de Monarch como alternativas leídas. Estado: pendiente de revisión por Lahiri y ChatGPT. No se ejecutó. No es `EPISODIO_VALIDADO` ni el guion de respaldo. Las respuestas del bosquejo quedan en ese artefacto para el evaluador. No entran al prompt, al historial del técnico ni a los documentos recuperables.
 
-**Criterio.** `EPISODIO_VALIDADO` es el nombre de este episodio de texto: fases 0 a 5 del plano Elemont, manual seleccionado, una sesión y un episodio. Fotos y cambio de tema quedan en los órdenes 4 y 5. Su ausencia no impide esta declaración. El compromiso del viernes 23 puede pedir esas ampliaciones y no se cumple solo con este nombre.
+**Caso del plano, orden 3.** La matriz corregida está en [field_companion/CASO_ELEMONT_MH_LINEAL_2026-10-19.md](field_companion/CASO_ELEMONT_MH_LINEAL_2026-10-19.md). Sigue pendiente de ejecución. Las aceptaciones parciales y los fallos históricos del plano se conservan. Una aceptación del manual textual no los resuelve.
 
-La pasada se acepta cuando, en esa misma sesión y ese mismo episodio, el pin se conserva y el recorrido cubre identificación, selección, síntoma, seguimiento, corrección, consulta fiel y resumen. Cada afirmación documental nueva señala su pasaje. La corrección vigente no vuelve. El resumen no fusiona la chapa con la cadena de seguridad ni trata Dp como contacto. El juicio es por significado y respaldo. No se exige coincidencia literal ni otra pasada. Una pasada aceptada acredita ese recorrido observado.
+**Criterio del orden 2.** La pasada del manual textual, si Lahiri la acepta después, acredita ese recorrido: mismo episodio abierto por `start_clean_case`, manual seleccionado, identificación, síntoma, pregunta aclaratoria, consulta con pasaje, dato simulado, corrección conservada y resumen con diagnóstico pendiente. Cada afirmación documental nueva señala su sección. Un procedimiento del manual no demuestra que se haya ejecutado ni que haya resuelto una falla real. Esa aceptación no declara `EPISODIO_VALIDADO`.
 
-Lahiri da la aceptación y queda escrita en esta sección. Hace falta la evidencia de esa pasada: estado inicial, secuencia, commit, flags, modelo, sesión, episodio y pin; trazas correlacionadas de filtro, chunks, prompt, respuesta publicada y delta del episodio; y qué funcionó, qué falló y qué no se probó. `completed` no la sustituye. Con esa aceptación y esa evidencia, esta sección declara `EPISODIO_VALIDADO`. El orden 3 guarda entonces ese recorrido como regresión.
+**Criterio del orden 3.** `EPISODIO_VALIDADO` sigue siendo el nombre del episodio del plano Elemont: fases 0 a 5, manual seleccionado, una sesión y un episodio. Fotos y varios temas quedan en los órdenes 4 y 5. Su ausencia no se cubre con el manual textual. El compromiso del viernes 23 puede pedir esas ampliaciones y no se cumple con ninguno de los dos nombres todavía.
 
-La fase 5, la respuesta de `query:4bcf7953…`, el resumen histórico de `20261014T194442Z` y el veredicto `ETAPA_2_BLOQUEADA` siguen como están. Aceptar esta pasada no convierte esas respuestas anteriores en correctas.
+La pasada del plano se acepta cuando, en esa misma sesión y ese mismo episodio, el pin se conserva y el recorrido cubre identificación, selección, síntoma, seguimiento, corrección, consulta fiel y resumen. Cada afirmación documental nueva señala su pasaje. La corrección vigente no vuelve. El resumen no fusiona la chapa con la cadena de seguridad, no trata Dp como contacto y no llama bobina a LC2 ni a LC7. El juicio es por significado y respaldo. No se exige coincidencia literal ni otra pasada. Una pasada aceptada acredita ese recorrido observado del plano.
+
+Lahiri da la aceptación y queda escrita en esta sección. Hace falta la evidencia de esa pasada: estado inicial, secuencia, commit, flags, modelo, sesión, episodio y pin; trazas correlacionadas de filtro, chunks, prompt, respuesta publicada y delta del episodio; y qué funcionó, qué falló y qué no se probó. `completed` no la sustituye. Con esa aceptación y esa evidencia del plano, esta sección declara `EPISODIO_VALIDADO`. El guion de respaldo puede guardar entonces ese recorrido, sin borrar el recorrido textual si ya fue aceptado.
+
+La fase 5, la respuesta de `query:4bcf7953…`, el resumen histórico de `20261014T194442Z` y el veredicto `ETAPA_2_BLOQUEADA` siguen como están. Aceptar el manual textual, o aceptar después el plano, no convierte esas respuestas anteriores en correctas.
 
 ### 3. Regresión y guion mínimo de respaldo
 
 **Estado y evidencia.** No existe un recorrido completo aceptado que sirva de guion de respaldo. Los 14 turnos de Journey A siguen como evidencia de continuidad: sesión aislada 3, episodio `ep_60ed345c266abc03`, 9 de octubre, runner local, sin pin. Conservan la identidad declarada, el código 18, la planta 2 y el estado después del recorte. Veredicto de esa pasada: `ETAPA_2_BLOQUEADA`. No son la duración obligatoria de esta cola. El detalle está en «Rumbo» y en «Trazabilidad del recorrido».
 
-**Bloqueo.** Falta el primer recorrido completo aceptado del orden 2.
+**Bloqueo.** Falta un recorrido completo aceptado. El del orden 2 todavía no se ha ejecutado. El del plano tampoco.
 
-**Siguiente acción.** En cuanto ese recorrido quede aceptado, guardarlo como regresión y como guion mínimo antes de incorporar fotos. El detalle de lo que se guarda está en «Plan B y regresión».
+**Siguiente acción.** Cuando Lahiri acepte el recorrido del manual textual, guardarlo como base de ese caso. Eso no adelanta las fotos ni cierra el plano. El detalle de lo que se guarda está en «Plan B y regresión».
 
-**Criterio.** Quedan registrados la secuencia, el estado inicial, el commit, los flags y el modelo; qué funciona, qué falla y qué no está probado. El primer recorrido completo de texto que Lahiri acepte es la base de regresión y el posible guion de respaldo. Cada interacción nueva aceptada se incorpora a esa base. Cada cambio posterior conserva los recorridos ya aceptados. Las verificaciones miran comportamiento, continuidad y respaldo documental, y no exigen igualdad literal de las respuestas. Cada ampliación posterior vuelve a recorrer esa secuencia, sin reset entre mensajes, y solo entra a la demo si la conserva. La versión y la configuración anteriores permanecen recuperables. Las pruebas con dobles quedan separadas de la conducta comprobada con el modelo real. Todavía no existe un guion completo aceptado y no corresponde declarar `EPISODIO_VALIDADO`.
+**Criterio.** Quedan registrados la secuencia, el estado inicial, el commit, los flags y el modelo; qué funciona, qué falla y qué no está probado. El primer recorrido completo que Lahiri acepte puede guardarse como base de ese caso. El manual textual y el plano se guardan por separado. Cada interacción nueva aceptada se incorpora a la base que le corresponde. Cada cambio posterior conserva los recorridos ya aceptados. Las verificaciones miran comportamiento, continuidad y respaldo documental, y no exigen igualdad literal de las respuestas. Cada ampliación posterior vuelve a recorrer la secuencia ya aceptada, sin reset entre mensajes, y solo entra a la demo si la conserva. La versión y la configuración anteriores permanecen recuperables. Las pruebas con dobles quedan separadas de la conducta comprobada con el modelo real. Todavía no existe un guion completo aceptado y no corresponde declarar `EPISODIO_VALIDADO`.
 
 ### 4. Fotos en el mismo recorrido
 
 **Estado y evidencia.** No hay fotos dentro de un recorrido aceptado. Journey B sigue fuera de esta cola como guion histórico. El export disponible del viernes, generado `2026-10-16T18:05:36Z`, termina en el pegado `query:882b6872…` y no contiene el incidente posterior con foto. `photo_requests` de ese export es 0. Ese incidente conserva causa no determinada. La pérdida del identificador explícito de H5 está reproducida. No se ha determinado si intervino en ese incidente, porque esa interacción no está incluida en el export disponible. H5 sigue distinto del fallo de generación de Chapa nivel 2, `query:4bcf7953…`.
 
-**Bloqueo.** Falta el guion de texto del orden 3. La ausencia del request histórico de la foto no es una compuerta de este orden.
+**Bloqueo.** Falta el caso del plano, que está antes en la tabla, y sigue sin recorrido completo aceptado. La ausencia del request histórico de la foto no es una compuerta de este orden.
 
 **Siguiente acción.** Con el guion de texto ya fijado, repetirlo añadiendo una foto aportada en el mismo caso y con captura completa. Si el request histórico está disponible, se revisa. Si no se consigue, el recorrido nuevo se ejecuta igual. No se pide otra exportación por defecto cuando los artefactos ya disponibles permiten avanzar. Corregir el transporte de H5 en ese incremento: tras el reset, sin selección, el payload no lleva `field_photo_id`; tras pulsar reutilizar, ese id viaja. No se borran la fila `FieldPhoto` ni el objeto en S3. El resultado nuevo no explica ni borra el incidente histórico.
 
@@ -166,21 +170,22 @@ Este apartado no autoriza llamadas reales, reset de producción ni deploy. La co
 
 ### Plan B y regresión
 
-Todavía no existe un recorrido completo aceptado como guion de respaldo. No corresponde declarar `EPISODIO_VALIDADO`. El caso propuesto el 19 de octubre, enlazado en el orden 2, está pendiente de revisión y ejecución. No es esta base.
+Todavía no existe un recorrido completo aceptado como guion de respaldo. No corresponde declarar `EPISODIO_VALIDADO`. La selección del manual textual, enlazada en el orden 2, y la matriz del plano, en el orden 3, están pendientes de revisión o de ejecución. Ninguna de las dos es esta base.
 
-Regla de la base, desde el primer recorrido de texto que Lahiri acepte:
+Regla de la base, desde el primer recorrido que Lahiri acepte:
 
-- Ese recorrido se convierte en la base de regresión y en el posible guion de respaldo.
-- Cada interacción nueva aceptada se incorpora a esa base.
+- Ese recorrido se guarda como base del caso al que pertenece.
+- El manual textual y el plano no se sustituyen entre sí.
+- Cada interacción nueva aceptada se incorpora a la base que le corresponde.
 - Cada cambio posterior conserva los recorridos ya aceptados.
 - Las verificaciones evalúan comportamiento, continuidad y respaldo documental. No exigen igualdad literal de las respuestas.
 - Las pruebas con dobles de este debug no son esa conversación. Una captura armada a mano no acredita una ruta que no se ejecutó.
 
-Cuando Lahiri acepte el orden 2, esa aceptación es `EPISODIO_VALIDADO` del episodio de texto. Ese recorrido se guarda antes de ampliarlo:
+Aceptar el orden 2 no declara `EPISODIO_VALIDADO`. Ese nombre queda para la pasada del plano, orden 3, y esta sección no lo declara ahora. El recorrido aceptado se guarda antes de ampliarlo:
 
 - Secuencia, estado inicial, commit, flags y modelo.
 - Qué funciona, qué falla y qué no está probado.
-- Cada ampliación, primero las fotos y después el cambio de tema, se comprueba sobre el recorrido anterior antes de incorporarla a la demo.
+- Las fotos van después del caso del plano. El cambio de tema va después de las fotos. Cada ampliación se comprueba sobre el recorrido anterior antes de incorporarla a la demo.
 - La versión y la configuración anteriores permanecen recuperables. Si la ampliación falla, el fallo queda registrado y la anterior sigue siendo la recuperable.
 - Las pruebas con dobles verifican estado, locks y requests. La fidelidad y la conducta de la respuesta se comprueban con el modelo real de esa corrida. Una pasada no declara frecuencia.
 
@@ -2157,9 +2162,9 @@ Cada fila conserva el trabajo y la evidencia de ese archivo. La sustitución alc
 
 ## Alcance de esta ruta
 
-La cola vigente es «Estado actual, 2026-10-19». El alcance de las fases sigue siendo el caso del plano Elemont, de la fase 0 a la 5, en ese orden. Cada pregunta tiene que reducir una incertidumbre relevante. Journey A no se alarga ni se reescribe para aprobar un caso.
+La cola vigente es «Estado actual, 2026-10-19». La numeración de fases sigue siendo la del plano Elemont, de la 0 a la 5. El orden de ejecución de esa sección pone antes el manual textual. Cada pregunta tiene que reducir una incertidumbre relevante. Journey A no se alarga ni se reescribe para aprobar un caso.
 
-El 7 de octubre quedaron fuera de la autorización de esas fases: cambio explícito de caso, cambio ambiguo, regreso tras una pausa, journey B, T-F y recuperar un caso anterior. El detalle histórico de esos seis escenarios está en la referencia. La cola del 19 de octubre no los adelanta ni los reanuda como guion: las fotos y el retorno al tema anterior entran después del primer recorrido de texto aceptado. Journey B, T-F, O-P2 a O-P5, F3b y F4 del recovery siguen fuera de esta ejecución. También quedan ahí, y no son condición de la consulta de Elemont, la literalidad de la publicación del contraste y la posible coincidencia por subcadena. El detalle está en «Contraste documental sin identidad de placa, 2026-10-10».
+El 7 de octubre quedaron fuera de la autorización de esas fases: cambio explícito de caso, cambio ambiguo, regreso tras una pausa, journey B, T-F y recuperar un caso anterior. El detalle histórico de esos seis escenarios está en la referencia. La cola del 19 de octubre no los adelanta ni los reanuda como guion: el manual textual va primero, el plano después, las fotos después del plano y el retorno al tema anterior después de las fotos. Sigue sin recorrido completo aceptado. Journey B, T-F, O-P2 a O-P5, F3b y F4 del recovery siguen fuera de esta ejecución. También quedan ahí, y no son condición de la consulta de Elemont, la literalidad de la publicación del contraste y la posible coincidencia por subcadena. El detalle está en «Contraste documental sin identidad de placa, 2026-10-10».
 
 ## Estado real
 

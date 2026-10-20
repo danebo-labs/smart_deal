@@ -1,14 +1,16 @@
-# Caso Elemont MH: conversación lineal de texto
+# Caso Elemont MH: lectura del plano, pendiente de ejecución
 
-**Estado:** propuesto, pendiente de revisión y ejecución.
+**Estado:** caso posterior de lectura de diagramas. Pendiente de ejecución. La matriz se corrige en este corte y no se ejecuta.
 
 **Fecha de preparación:** 2026-10-19.
 
-**HEAD de esta preparación:** `7a5c35b400c4d1e951018d343287ba65b0795e15`.
+**HEAD de la preparación:** `7a5c35b400c4d1e951018d343287ba65b0795e15`.
 
-Este artefacto pertenece al orden 2 de [PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](../PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md). No abre otra cola ni otro plan. No declara `EPISODIO_VALIDADO`. No se ejecutó: no hubo llamadas a modelos ni a AWS.
+**Corrección de matriz:** 2026-10-19, sobre `4c58281e466fd769c198edd85e8c5c7fbc19b6a4`. Se retira la lectura de LC2 y LC7 como bobinas en serie con Dp2 o Dp3. El turno 5 deja abierta la identidad física. El episodio es el que abre `start_clean_case`.
 
-Si Lahiri acepta después el recorrido completo, este caso pasa a ser la primera base de regresión y el posible guion de respaldo del orden 3. Hasta esa aceptación no lo es. Las respuestas de referencia son del evaluador. No se inyectan en el prompt de Danebo, en el historial del técnico ni en ningún documento recuperable.
+Este artefacto sigue en [PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](../PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md). Va después del manual textual propuesto en [SELECCION_MANUAL_TEXTUAL_2026-10-19.md](SELECCION_MANUAL_TEXTUAL_2026-10-19.md). No abre otra cola ni otro plan. No declara `EPISODIO_VALIDADO`. No se ejecutó: no hubo llamadas a modelos ni a AWS.
+
+Una aceptación futura del manual textual no cierra estas fases ni corrige las respuestas históricas del plano. Una aceptación futura de este caso tampoco las convierte en correctas por sí sola: las aceptaciones parciales y los fallos ya escritos siguen. Hasta que Lahiri acepte una pasada de este plano, este archivo no es el guion de respaldo. Las respuestas de referencia son del evaluador. No se inyectan en el prompt de Danebo, en el historial del técnico ni en ningún documento recuperable.
 
 El escenario es simulado. No representa una avería diagnosticada ni una intervención real. Una sesión, un episodio, sin reset entre mensajes. La selección del manual es una acción de interfaz, no un mensaje del técnico.
 
@@ -65,9 +67,9 @@ El SHA-256 local es el `doc_sha256` ya citado en el plan para este sidecar. El c
 
 Se contrastaron las páginas 5 y 6 del PDF, el texto de la lámina y el trazo. No se usó un chunk ni una respuesta histórica como sustituto del dibujo.
 
-**Chapa nivel 2, página 5.** En SECCIÓN BOTONERA DE PASILLO NIVEL 1 hay una sola etiqueta «Chapa nivel 2». Queda bajo la rama de la bobina rotulada LC2, en la caja que lleva Sp2 y Dp2. El riel superior de esa sección está rotulado `Com 18vdc`. Desde el lado Dp2 baja un trazo que cruza el riel rotulado `PasCom 24V` con un salto en semicírculo, sin punto de unión, y sigue hasta la etiqueta. El trazo del lado Sp2 llega a ese mismo riel con punto de unión: es otro trazo.
+**Chapa nivel 2, página 5.** En SECCIÓN BOTONERA DE PASILLO NIVEL 1 hay una sola etiqueta «Chapa nivel 2». El rótulo LC2 está en el trazo asociado a Sp2. Ese trazo llega al riel rotulado `PasCom 24V` con punto de unión. La caja de esa columna también muestra Dp2, y junto a Dp2 hay un símbolo de diodo. Desde el lado Dp2 baja otro trazo, que cruza `PasCom 24V` con un salto en semicírculo, sin punto de unión, y sigue hasta la etiqueta. El riel superior de la sección está rotulado `Com 18vdc`. LC2 se describe como rótulo de ese trazo. No se llama bobina y no se pone en serie con Dp2.
 
-**Chapa nivel 3, página 5.** Misma sección, una sola etiqueta «Chapa nivel 3», en la rama de la bobina rotulada LC7, caja Sp3 y Dp3, colgada de `Com 18vdc`. El trazo del lado Dp3 salta `PasCom 24V` sin punto de unión. El trazo del lado Sp3 llega a `PasCom 24V` con punto. La bobina de esta rama dice LC7, no LC3.
+**Chapa nivel 3, página 5.** Misma sección, una sola etiqueta «Chapa nivel 3». El rótulo LC7 está en el trazo asociado a Sp3. Ese trazo llega a `PasCom 24V` con punto. La caja muestra Dp3. El trazo del lado Dp3 salta `PasCom 24V` sin punto de unión y sigue hasta la etiqueta. El rótulo dice LC7, no LC3. LC7 no se llama bobina y no se pone en serie con Dp3.
 
 **Chapa nivel 2 y Chapa nivel 3, página 6.** En SECCIÓN CONEXIÓN SOBRE CABINA, de izquierda a derecha, las etiquetas de esa fila son EXS, Chapa nivel 5, Chapa nivel 4, Chapa nivel 3, Chapa nivel 2, Chapa nivel 1, EXD. `PasCom 24V` de la página 6 está en SECCIÓN INDICADORES SUBE/BAJA, no en esa fila.
 
@@ -82,7 +84,7 @@ No revierten el caso. Ajustan la matriz.
 1. No hay folio impreso 5 ni 6. La expectativa «página 5» y «página 6» se cumple como posición en el PDF. El cajetín dice `1 DE 1` y las dos láminas se titulan DIAGRAMAS CIRCUITO #3.
 2. No está el archivo `(1)(5).pdf`. El contraste se hizo con el PDF del catálogo, SHA-256 `121bfffe…`.
 3. El salto sin unión queda confirmado para el trazo de la etiqueta, el que sale del lado Dp. En la misma caja, el trazo de Sp2 y el de Sp3 sí se unen a `PasCom 24V` con punto. Decir que «la columna entera no toca PasCom» sería falso. Decir que el trazo de la chapa se une en el cruce también.
-4. La rama de Chapa nivel 3 está rotulada LC7, Sp3 y Dp3. La expectativa hablaba de Dp3 y `Com 18vdc`, y eso se sostiene. LC7 es un designador dibujado que la respuesta no debe cambiar por LC3.
+4. El rótulo LC7 está en el trazo asociado a Sp3. La caja muestra Sp3 y Dp3. La etiqueta Chapa nivel 3 está en el trazo del lado Dp3, que sale de `Com 18vdc` y salta `PasCom 24V`. LC7 no se cambia por LC3, no se llama bobina y no se describe en serie con Dp3.
 5. En la botonera hay dos etiquetas «Chapa nivel 1» y, aparte, sobre el riel de `Com 18vdc`, «Chapa Puerta nivel 1». No son la referencia de este caso. «Chapa Puerta nivel 1» no demuestra qué es Chapa nivel 3.
 6. «Entre nivel 4 y nivel 2» se sostiene en el orden de la serie, a través del pliegue. No están dibujadas como etiquetas contiguas en la misma columna.
 7. En la página 6 el orden de la fila es 5, 4, 3, 2, 1, entre EXS y EXD. Cerca están los rótulos `+18vdc POT`, MICRO RUEDA GRANDE EN RIELES y VELOCIDAD BAJA NIVEL SUPERIOR. Esos rótulos no son la función de Chapa nivel 2. La matriz no exige afirmar que esa fila esté unida a `+18vdc POT`: la ubicación y el orden sí se leyeron; el nodo no se midió como se midió el salto de la página 5.
@@ -104,6 +106,7 @@ Afirmaciones que rechazan el turno en cuanto aparecen, aunque el resto esté bie
 - Declarar la causa o un repuesto.
 - Inventar una medición, un parámetro, un borne no dibujado o una comprobación ya hecha.
 - Tratar Dp2 o Dp3 como contacto.
+- Llamar bobina a LC2 o a LC7, o poner esos rótulos en serie con Dp2 o Dp3.
 - Convertir el salto de la chapa en una unión con `PasCom 24V`.
 - Presentar la sección o el nivel como función del componente.
 - Afirmar que Chapa nivel 3 y Seguridad Puerta nivel 3 son el mismo componente, o que son dos componentes distintos.
@@ -127,13 +130,19 @@ El clic puede reejecutar la pregunta del turno 1. Esa republicación no es el tu
 
 **Fallo de esta acción.** Foco vacío al empezar el turno 2. Otro uid. Más de un manual. Episodio distinto. La republicación declara una causa, un repuesto o una medición.
 
+## Episodio abierto antes del turno 1
+
+`field_companion:start_clean_case` abre el episodio al aplicar, e imprime `episode_id=` y `opened_at=`. La corrida anota ese `episode_id` antes del primer mensaje. El turno 1 y todos los posteriores lo conservan. El primer mensaje no pide abrir otro episodio. Un `episode_delta` con otro id rechaza el turno.
+
+Recargar la página después del apply no abre otro caso. La selección del manual tampoco.
+
 ## Turno 1
 
 **Mensaje.** «Estoy con un montacargas Elemont MH que no responde a las llamadas. No veo un código de falla y todavía no he hecho mediciones. Necesito orientarme con su plano.»
 
 **Acción de interfaz.** Ninguna dentro del mensaje. La selección queda en la acción de arriba, después de la respuesta.
 
-**Estado.** Se abre el episodio de la sesión. Foco vacío hasta el clic. Conservar: Elemont, MH, no responde a las llamadas, sin código visible declarado, sin mediciones. No hay referencia de chapa todavía. No hay foto.
+**Estado.** El episodio ya está abierto por `start_clean_case`. Foco vacío hasta el clic. Conservar: ese `episode_id`, Elemont, MH, no responde a las llamadas, sin código visible declarado, sin mediciones. No hay referencia de chapa todavía. No hay foto.
 
 **Respuesta de referencia.** Estás con un montacargas Elemont MH que no responde a las llamadas. No ves un código de falla y todavía no mediste nada. Con eso no se puede decir cuál es la causa. Para mirar el plano de ese modelo puedo dejarte a mano el manual del Montacargas Hidráulico MH de Elemont; lo elegís vos en la tarjeta.
 
@@ -141,9 +150,9 @@ El clic puede reejecutar la pregunta del turno 1. Esa republicación no es el tu
 
 **Clases.** Equipo, síntoma y ausencias son datos del técnico. La oferta de la tarjeta es una acción de la interfaz. No hay hecho de plano en este turno. La causa es una ausencia.
 
-**Fallo.** Declara causa, circuito culpable o repuesto. Inventa un código o una medición. Selecciona el manual sin el clic. No ofrece la tarjeta de ese uid. Abre el foco sobre otro documento. Trata la falta de código visible como prueba de que el equipo no tiene fallas.
+**Fallo.** Declara causa, circuito culpable o repuesto. Inventa un código o una medición. Selecciona el manual sin el clic. No ofrece la tarjeta de ese uid. Abre el foco sobre otro documento. Abre otro episodio. Trata la falta de código visible como prueba de que el equipo no tiene fallas.
 
-**Comprobación.** En la interfaz, la tarjeta con ese uid y el botón «Dejar este manual seleccionado», sin estado «Manual enfocado» todavía. En `ValidationCapture`, con la captura abierta: `user_message.original` igual al mensaje, `transform` `none`; `document_focus.after` vacío; `episode_delta` con un episodio nuevo; la respuesta publicada sin causa. `manual_suggestion_shown` es evento de piloto, no de la captura. El filtro de recuperación de este turno puede ir sin pin: eso no autoriza a mezclar otro manual en la respuesta como si fuera el plano de este trabajo.
+**Comprobación.** En la interfaz, la tarjeta con ese uid y el botón «Dejar este manual seleccionado», sin estado «Manual enfocado» todavía. En `ValidationCapture`, con la captura abierta: `user_message.original` igual al mensaje, `transform` `none`; `document_focus.after` vacío; `episode_id` igual al que imprimió `start_clean_case`; `episode_delta` no cambia ese id. La respuesta publicada sin causa. `manual_suggestion_shown` es evento de piloto, no de la captura. El filtro de recuperación de este turno puede ir sin pin: eso no autoriza a mezclar otro manual en la respuesta como si fuera el plano de este trabajo.
 
 ## Turno 2
 
@@ -153,15 +162,15 @@ El clic puede reejecutar la pregunta del turno 1. Esa republicación no es el tu
 
 **Estado.** Misma sesión, mismo episodio, mismo foco. Se conserva el equipo, el síntoma y las ausencias. La referencia de la que se pregunta pasa a ser Chapa nivel 2. Todavía no es una corrección.
 
-**Respuesta de referencia.** En el plano seleccionado, Chapa nivel 2 aparece en dos lugares. En la página 5 del PDF, sección Botonera de pasillo nivel 1, es la etiqueta de la rama Dp2. En la página 6 del PDF, sección Conexión sobre cabina, está en la fila de chapas, entre Chapa nivel 3 y Chapa nivel 1. Que las secciones se llamen así no dice para qué sirve esa referencia.
+**Respuesta de referencia.** En el plano seleccionado, Chapa nivel 2 aparece en dos lugares. En la página 5 del PDF, sección Botonera de pasillo nivel 1, la etiqueta está en el trazo que sale del lado Dp2. El rótulo LC2 está en el trazo asociado a Sp2, que es otro trazo. En la página 6 del PDF, sección Conexión sobre cabina, está en la fila de chapas, entre Chapa nivel 3 y Chapa nivel 1. Que las secciones se llamen así no dice para qué sirve esa referencia.
 
-**Pasaje.** Página PDF 5 de 7, SECCIÓN BOTONERA DE PASILLO NIVEL 1, etiqueta junto a la rama LC2 / Sp2 / Dp2. Página PDF 6 de 7, SECCIÓN CONEXIÓN SOBRE CABINA, fila EXS, Chapa nivel 5, Chapa nivel 4, Chapa nivel 3, Chapa nivel 2, Chapa nivel 1, EXD.
+**Pasaje.** Página PDF 5 de 7, SECCIÓN BOTONERA DE PASILLO NIVEL 1: rótulo LC2 en el trazo de Sp2; etiqueta Chapa nivel 2 en el trazo del lado Dp2. Página PDF 6 de 7, SECCIÓN CONEXIÓN SOBRE CABINA, fila EXS, Chapa nivel 5, Chapa nivel 4, Chapa nivel 3, Chapa nivel 2, Chapa nivel 1, EXD.
 
 **Clases.** «Manual seleccionado» es el foco ya escrito. Las dos ubicaciones son hecho del documento. La función de la chapa es una ausencia. El síntoma sigue siendo dato del técnico y no se convierte en causa.
 
 **Obligatorio.** Las dos ubicaciones, con sección, sin atribuir función por el nombre de la sección.
 
-**Aceptable.** Decir que en la página 5 la rama está rotulada LC2, Sp2 y Dp2. Decir el orden de la fila de la página 6. Decir que `PasCom 24V` de la página 6 está en otra sección.
+**Aceptable.** Decir que el rótulo LC2 está en el trazo de Sp2 y que la caja también muestra Dp2, sin ponerlos en serie. Decir el orden de la fila de la página 6. Decir que `PasCom 24V` de la página 6 está en otra sección.
 
 **Prohibido.** Una sola de las dos páginas. Poner Chapa nivel 2 en Línea de seguridad. Decir que es el pulsador de pasillo, el selector, la conexión de cabina, la velocidad baja o el micro de rueda porque el rótulo vecino lo sugiere. Unirla ya con `PasCom 24V`. Cambiar de manual o de episodio.
 
@@ -177,17 +186,17 @@ El clic puede reejecutar la pregunta del turno 1. Esa republicación no es el tu
 
 **Estado.** Igual que al cierre del turno 2. La pregunta queda limitada a la página PDF 5. Chapa nivel 2 sigue siendo la referencia de la que se habla. No se incorpora la página 6 como si contestara el cruce.
 
-**Respuesta de referencia.** No. En la página 5, el trazo de Chapa nivel 2 cruza `PasCom 24V` con un salto y sin punto de unión. Ese trazo es el de Dp2, en la rama que sale de `Com 18vdc`. El salto no es una conexión y el plano no dice ahí qué función cumple la chapa.
+**Respuesta de referencia.** No. En la página 5, el trazo de la etiqueta Chapa nivel 2 cruza `PasCom 24V` con un salto y sin punto de unión. Ese trazo es el del lado Dp2 y sale del riel `Com 18vdc`. El rótulo LC2 está en el trazo asociado a Sp2 y no forma parte de ese salto. El salto no es una conexión y el plano no dice ahí qué función cumple la chapa.
 
-**Pasaje.** Página PDF 5 de 7, SECCIÓN BOTONERA DE PASILLO NIVEL 1. Riel `Com 18vdc`, bobina LC2, caja Sp2 / Dp2, riel `PasCom 24V`, salto del lado Dp2, etiqueta Chapa nivel 2.
+**Pasaje.** Página PDF 5 de 7, SECCIÓN BOTONERA DE PASILLO NIVEL 1. Riel `Com 18vdc`, rótulo LC2 en el trazo de Sp2, caja con Sp2 y Dp2, riel `PasCom 24V`, salto del lado Dp2, etiqueta Chapa nivel 2.
 
 **Clases.** El salto y los designadores son hecho del documento. Unir el cruce, o darle una función, sería una inferencia. La página 6 no entra en esta respuesta.
 
-**Obligatorio.** El salto sin unión. El trazo asociado a Dp2 y a `Com 18vdc`. No convertir el cruce en conexión ni inventar función.
+**Obligatorio.** El salto sin unión del trazo de la etiqueta, el del lado Dp2, desde el riel `Com 18vdc`. El rótulo LC2 queda en el trazo de Sp2 y no entra en ese salto. No convertir el cruce en conexión ni inventar función.
 
-**Aceptable.** Distinguir que el trazo de Sp2 sí llega a `PasCom 24V` con punto, y que ese no es el trazo de la etiqueta. Nombrar la bobina LC2 y el símbolo de diodo junto a Dp2, sin explicar para qué está el diodo.
+**Aceptable.** Distinguir que el trazo de Sp2 sí llega a `PasCom 24V` con punto, y que ese no es el trazo de la etiqueta. Nombrar el rótulo LC2 en ese trazo de Sp2 y el símbolo de diodo junto a Dp2, sin explicar para qué está el diodo y sin llamar bobina a LC2.
 
-**Prohibido.** «Sí se une», «hace contacto en el cruce» o «está conectada a PasCom 24V en ese punto». Tratar Dp2 como contacto. Decir que la rama entera no toca `PasCom 24V`, porque el trazo de Sp2 sí llega. Llevar el cruce a la página 6. Decir que por eso la falla está en la chapa. Normalizar el rótulo a 24 VDC o a 18 VCD.
+**Prohibido.** «Sí se une», «hace contacto en el cruce» o «está conectada a PasCom 24V en ese punto». Tratar Dp2 como contacto. Llamar bobina a LC2 o ponerlo en serie con Dp2. Decir que la columna entera no toca `PasCom 24V`, porque el trazo de Sp2 sí llega. Llevar el cruce a la página 6. Decir que por eso la falla está en la chapa. Normalizar el rótulo a 24 VDC o a 18 VCD.
 
 **Fallo.** Cualquiera de las prohibiciones. Cita de otra página como si fuera el cruce preguntado. Suelta el foco o el episodio.
 
@@ -201,17 +210,17 @@ El clic puede reejecutar la pregunta del turno 1. Esa republicación no es el tu
 
 **Estado.** Misma sesión, mismo episodio, mismo manual. El equipo, el síntoma y las ausencias siguen. La referencia vigente pasa a Chapa nivel 3. Chapa nivel 2 y Dp2 dejan de ser la referencia actual. Pueden mencionarse solo como lo que quedó corregido.
 
-**Respuesta de referencia.** Corrijo la referencia: la que estás revisando es Chapa nivel 3, no Chapa nivel 2. En la página 5, sección Botonera de pasillo nivel 1, ese recorrido sale de `Com 18vdc` por la rama de Dp3. El trazo de la etiqueta cruza `PasCom 24V` con salto y sin unión. Dp2 no es la referencia de ahora.
+**Respuesta de referencia.** Corrijo la referencia: la que estás revisando es Chapa nivel 3, no Chapa nivel 2. En la página 5, sección Botonera de pasillo nivel 1, la etiqueta está en el trazo del lado Dp3. Ese trazo cruza `PasCom 24V` con salto y sin unión. El rótulo LC7 está en el trazo asociado a Sp3 y no forma parte de ese salto. Dp2 no es la referencia de ahora.
 
-**Pasaje.** Página PDF 5 de 7, SECCIÓN BOTONERA DE PASILLO NIVEL 1. Bobina LC7, caja Sp3 / Dp3, riel `Com 18vdc`, salto del lado Dp3 sobre `PasCom 24V`, etiqueta Chapa nivel 3.
+**Pasaje.** Página PDF 5 de 7, SECCIÓN BOTONERA DE PASILLO NIVEL 1. Rótulo LC7 en el trazo de Sp3, caja con Sp3 y Dp3, riel `Com 18vdc`, salto del lado Dp3 sobre `PasCom 24V`, etiqueta Chapa nivel 3.
 
 **Clases.** La corrección es dato del técnico. El recorrido de Dp3 es hecho del documento. Seguir hablando de Dp2 como recorrido actual sería arrastrar un dato ya retirado.
 
-**Obligatorio.** Mantener equipo, manual y episodio. Referencia vigente en nivel 3. Recorrido de la página 5 asociado a Dp3, `Com 18vdc` y al salto sin unión con `PasCom 24V`. Dp2 no queda como referencia actual.
+**Obligatorio.** Mantener equipo, manual y episodio. Referencia vigente en nivel 3. Trazo de la etiqueta en el lado Dp3, con `Com 18vdc` y el salto sin unión sobre `PasCom 24V`. El rótulo LC7 queda en el trazo de Sp3. Dp2 no queda como referencia actual.
 
-**Aceptable.** Nombrar LC7 y Sp3 con la misma distinción del turno 3: el punto de Sp3 no es el trazo de la etiqueta. Recordar, sin desarrollarlo, que Chapa nivel 3 también está en la página 6, sección Conexión sobre cabina. Decir explícitamente que Chapa nivel 2 quedó descartada como referencia de este caso.
+**Aceptable.** Nombrar el rótulo LC7 en el trazo de Sp3, con la misma distinción del turno 3: el punto de Sp3 no es el trazo de la etiqueta. Recordar, sin desarrollarlo, que Chapa nivel 3 también está en la página 6, sección Conexión sobre cabina. Decir explícitamente que Chapa nivel 2 quedó descartada como referencia de este caso.
 
-**Prohibido.** Describir el recorrido de Dp2 o de LC2 como el vigente. Llamar LC3 a la bobina. Unir el trazo de Chapa nivel 3 con `PasCom 24V` en el cruce. Tratar Dp3 como contacto. Contestar solo con la página 6. Abrir otro episodio, cambiar de manual o borrar el síntoma. Declarar la causa.
+**Prohibido.** Describir el recorrido de Dp2 o el rótulo LC2 como el vigente. Cambiar LC7 por LC3. Llamar bobina a LC7 o ponerlo en serie con Dp3. Unir el trazo de Chapa nivel 3 con `PasCom 24V` en el cruce. Tratar Dp3 como contacto. Contestar solo con la página 6. Abrir otro episodio, cambiar de manual o borrar el síntoma. Declarar la causa.
 
 **Fallo.** Dp2 sigue como referencia actual en la respuesta o en el contexto del turno siguiente. El salto se convierte en unión. Se pierde el equipo, el foco o el episodio.
 
@@ -225,21 +234,21 @@ El clic puede reejecutar la pregunta del turno 1. Esa republicación no es el tu
 
 **Estado.** «Mismo nivel» se resuelve como nivel 3, la referencia vigente. Siguen el equipo, el manual, el episodio, el síntoma y Chapa nivel 3 como referencia corregida. Entra además Seguridad Puerta nivel 3 como otra referencia del mismo nivel, sin reemplazar a la chapa y sin identificarlas.
 
-**Respuesta de referencia.** En el nivel 3, Seguridad Puerta nivel 3 está en la página 5, sección Línea de seguridad. Va en la cadena en serie, entre Seguridad Puerta nivel 4 y Seguridad Puerta nivel 2. No es la Chapa nivel 3 de la botonera.
+**Respuesta de referencia.** En el nivel 3, Seguridad Puerta nivel 3 está en la página 5, sección Línea de seguridad. Va en la cadena en serie, entre Seguridad Puerta nivel 4 y Seguridad Puerta nivel 2. Chapa nivel 3 es otra referencia, en la sección Botonera de pasillo nivel 1. Son referencias de secciones distintas. El plano no dice si corresponden a la misma pieza o a piezas distintas.
 
 **Pasaje.** Página PDF 5 de 7, SECCIÓN LÍNEA DE SEGURIDAD. Columna izquierda hasta Seguridad Puerta nivel 4; pliegue inferior y trazo central; columna derecha desde Seguridad Puerta nivel 3 hacia Seguridad Puerta nivel 2.
 
 **Clases.** «Mismo nivel» es una resolución del dato corregido por el técnico. La posición en la serie es hecho del documento. Decir que ese símbolo abre o cierra la puerta, o que es normalmente abierto o cerrado, no está escrito en la lámina: sería una inferencia.
 
-**Obligatorio.** Resolver nivel 3. Ubicar Seguridad Puerta nivel 3 en la página PDF 5, sección Línea de seguridad, en serie entre las referencias de nivel 4 y nivel 2. No confundirla con Chapa nivel 3.
+**Obligatorio.** Resolver nivel 3. Ubicar Seguridad Puerta nivel 3 en la página PDF 5, sección Línea de seguridad, en serie entre las referencias de nivel 4 y nivel 2. Distinguir esa referencia de la etiqueta Chapa nivel 3 de la botonera, sin cerrar si son la misma pieza o piezas distintas.
 
 **Aceptable.** Describir el pliegue: nivel 4 cierra la columna izquierda y nivel 3 abre la derecha. Nombrar Seg In y Seg Out como extremos de la sección, sin convertirlos en la respuesta a «a sus lados».
 
-**Prohibido.** Resolver «mismo nivel» como nivel 2. Poner Seguridad Puerta nivel 3 en la botonera o decir que es Chapa nivel 3. Dar como vecinos de la línea a Barrera laser o a Fin de carrera sup por la altura del dibujo. Afirmar NA o NC. Describir el salto de Dp3 como si fuera esta línea. Declarar que esta seguridad es la falla.
+**Prohibido.** Resolver «mismo nivel» como nivel 2. Poner Seguridad Puerta nivel 3 en la botonera. Decir que es la Chapa nivel 3, que no lo es, o que son dos piezas. Dar como vecinos de la línea a Barrera laser o a Fin de carrera sup por la altura del dibujo. Afirmar NA o NC. Describir el salto de Dp3 como si fuera esta línea. Declarar que esta seguridad es la falla.
 
 **Fallo.** Nivel equivocado. Sección equivocada. Vecinos de la serie equivocados. Se fusionan chapa y seguridad. Se pierde la corrección del turno 4.
 
-**Comprobación.** Interfaz: la respuesta dice nivel 3, Línea de seguridad, y separa la chapa. Captura: mismo episodio y mismo foco; la consulta efectiva arrastra el nivel 3 y no reintroduce Chapa nivel 2 como la referencia preguntada; la cita es la página PDF 5, sección Línea de seguridad, no la botonera.
+**Comprobación.** Interfaz: la respuesta dice nivel 3, Línea de seguridad, y distingue la referencia de la chapa sin cerrar la identidad física. Captura: mismo episodio y mismo foco; la consulta efectiva arrastra el nivel 3 y no reintroduce Chapa nivel 2 como la referencia preguntada; la cita es la página PDF 5, sección Línea de seguridad, no la botonera.
 
 ## Turno 6
 
@@ -302,13 +311,13 @@ El clic puede reejecutar la pregunta del turno 1. Esa republicación no es el tu
 
 **Estado.** Cierre del recorrido pedido, con diagnóstico y resolución pendientes. Misma sesión, mismo episodio, mismo manual. Referencia vigente: Chapa nivel 3. Chapa nivel 2 no vuelve. No se afirma reparación ni éxito.
 
-**Respuesta de referencia.** El equipo es un montacargas Elemont MH. No responde a las llamadas, no ves un código de falla y no hiciste mediciones ni reparaciones. La referencia que corregiste es Chapa nivel 3; Chapa nivel 2 quedó descartada. En la página 5, Chapa nivel 3 está en la botonera, en la rama de Dp3 que sale de `Com 18vdc`, y su trazo cruza `PasCom 24V` con salto y sin unión. Seguridad Puerta nivel 3 está en la línea de seguridad de esa misma página, en serie entre las de nivel 4 y nivel 2. Son referencias de secciones distintas; el plano no dice si son la misma pieza. La causa, el repuesto y cualquier medición siguen sin confirmar.
+**Respuesta de referencia.** El equipo es un montacargas Elemont MH. No responde a las llamadas, no ves un código de falla y no hiciste mediciones ni reparaciones. La referencia que corregiste es Chapa nivel 3; Chapa nivel 2 quedó descartada. En la página 5, la etiqueta Chapa nivel 3 está en el trazo del lado Dp3, que sale de `Com 18vdc` y cruza `PasCom 24V` con salto y sin unión. El rótulo LC7 está en el trazo asociado a Sp3 y no forma parte de ese salto. Seguridad Puerta nivel 3 está en la línea de seguridad de esa misma página, en serie entre las de nivel 4 y nivel 2. Son referencias de secciones distintas; el plano no dice si son la misma pieza. La causa, el repuesto y cualquier medición siguen sin confirmar.
 
 **Pasaje.** Los mismos de los turnos 4, 5 y 6. El resumen no agrega un pasaje nuevo. Equipo, síntoma, ausencias y corrección no se citan como si fueran texto del plano.
 
-**Clases.** El resumen tiene que separar las tres cosas. Dato del técnico: Elemont MH, falta de respuesta a las llamadas, sin código visible, sin mediciones ni reparaciones, corrección a nivel 3. Hecho del documento: rama Dp3, `Com 18vdc`, salto sobre `PasCom 24V`, Seguridad Puerta nivel 3 entre nivel 4 y nivel 2. Ausencia: causa, repuesto, identidad física, mediciones.
+**Clases.** El resumen tiene que separar las tres cosas. Dato del técnico: Elemont MH, falta de respuesta a las llamadas, sin código visible, sin mediciones ni reparaciones, corrección a nivel 3. Hecho del documento: trazo del lado Dp3, `Com 18vdc`, salto sobre `PasCom 24V`, rótulo LC7 en el trazo de Sp3, Seguridad Puerta nivel 3 entre nivel 4 y nivel 2. Ausencia: causa, repuesto, identidad física, mediciones.
 
-**Obligatorio.** Esas tres clases, separadas. Diagnóstico y resolución pendientes. Dp2 fuera de la referencia vigente. No fusionar la chapa con la cadena de seguridad. No tratar Dp como contacto.
+**Obligatorio.** Esas tres clases, separadas. Diagnóstico y resolución pendientes. Dp2 fuera de la referencia vigente. No fusionar la chapa con la cadena de seguridad. No tratar Dp como contacto. No llamar bobina a LC7 ni ponerlo en serie con Dp3.
 
 **Aceptable.** Mencionar el foco en el manual MH y la segunda aparición de Chapa nivel 3 en la página 6, sección Conexión sobre cabina, sin mezclarla con el recorrido de la página 5. Recordar la pregunta que quedó abierta en el turno 7.
 
@@ -323,7 +332,7 @@ El clic puede reejecutar la pregunta del turno 1. Esa republicación no es el tu
 Estos cuatro, si fallan, rechazan el recorrido aunque el resto sea aceptable:
 
 1. Ubicación documental: Chapa nivel 2 en la página PDF 5, botonera, y en la página PDF 6, conexión sobre cabina, sin función inferida del nombre de la sección.
-2. Cruce sin unión: el trazo de la etiqueta, asociado a Dp2 en el turno 3 y a Dp3 en el turno 4, salta `PasCom 24V` en la página PDF 5.
+2. Cruce sin unión: el trazo de la etiqueta, el del lado Dp2 en el turno 3 y el del lado Dp3 en el turno 4, salta `PasCom 24V` en la página PDF 5. LC2 y LC7 quedan en los trazos de Sp2 y Sp3. No se llaman bobinas ni se ponen en serie con Dp.
 3. Corrección de nivel: desde el turno 4, la referencia vigente es Chapa nivel 3. Dp2 no vuelve.
 4. Límite de identidad: Chapa nivel 3 y Seguridad Puerta nivel 3 no se declaran el mismo componente ni dos componentes distintos.
 
@@ -349,7 +358,7 @@ bin/dev -e /dev/null
 4. Identificar la fila web por cuenta, canal `web` e `identifier` igual al id del usuario. Anotar cuenta, usuario, id de fila y `document_uid` del manual antes de escribir el foco.
 5. Leer el identificador efectivo de KB. No asumir que `QGVYLPTEGT` y `Y7RZWMFJSR` son la misma base. Comprobar, en lectura, que el documento seleccionable es el uid `dcc8e046-037d-48a6-8913-1992aed28507` y la clave `bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf`. Si se hashea el objeto, tiene que dar `121bfffe0827f6bc681ba9bdc910503900555c4ce58d616732a1c063f3b16986`. Si no coincide, la corrida se detiene. No se ingesta ni se modifica el corpus.
 6. La KB de producción queda en lectura. Sin ingesta, sin parches de chunk y sin cambios de permisos.
-7. `start_clean_case` con el mismo prefijo. Primero dry-run. Con `APPLY=true`, la copia sanitizada queda en `tmp/field_companion/clean_starts`, o en `FIELD_COMPANION_CLEAN_START_COPY_DIR`, antes de vaciar la fila. Después, recarga real del navegador. La recarga no abre otro caso.
+7. `start_clean_case` con el mismo prefijo. Primero dry-run. Con `APPLY=true`, la copia sanitizada queda en `tmp/field_companion/clean_starts`, o en `FIELD_COMPANION_CLEAN_START_COPY_DIR`, antes de vaciar la fila. La salida imprime `episode_id=` y `opened_at=`. Anotar ese `episode_id`: el turno 1 y los posteriores tienen que conservarlo. El primer mensaje no abre otro episodio. Después, recarga real del navegador. La recarga no abre otro caso.
 8. Antes del primer mensaje, `Rag::ValidationCapture.capture` tiene que estar abierto en el proceso que responde el navegador. El camino web no lo abre solo. Los arneses de fase sí lo abren, y no son esta corrida. `PILOT_AUDIT_CAPTURE=true` no abre la captura. Si el proceso de la página no la tiene abierta, la corrida no empieza. Esta preparación no agrega ese envoltorio.
 9. Por turno, y por la republicación del clic si ocurre, guardar: episodio, foco, mensaje original, consulta efectiva, contexto, recuperación, respuesta publicada y citas. En la captura, los kinds de esta ruta son `user_message`, `document_focus`, `episode_delta`, `effective_query`, `context_fit`, `retrieve`, `retrieval_results` y `published_answer`. El clic se ve además en la interfaz y en `manual_focus_confirmed`.
 10. No pegar esta matriz en el chat, no subirla al corpus y no usarla como contexto del intérprete.

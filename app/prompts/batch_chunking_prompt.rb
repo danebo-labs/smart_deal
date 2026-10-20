@@ -261,6 +261,10 @@ module BatchChunkingPrompt
         - Result lines at the top of a page ("Resultado: ...") belong to the
           action listed immediately before them in the source flow; extract the
           action/result pair the page makes visible, and only what it makes visible.
+        - The opening lines of this page are the opening lines of its first chunk,
+          verbatim, including a dash or sentence that continues the previous page
+          before the next visible heading. Do not replace them with a continuation
+          title, a summary, or a heading you composed.
         - Symmetrically, when a section's results continue on the NEXT page, keep
           the actions of this page with r=DATA_NOT_AVAILABLE and note the
           continuation in u. Do not invent the missing result.
@@ -294,10 +298,12 @@ module BatchChunkingPrompt
           emit S0 as chunks[0], emit `summary` and `companion_offer`.
 
         # STRUCTURED EXTRACTION (one chunk per section when content is present)
-        Emit chunks for as many of these sections as the document supports, one
-        chunk per section, its body starting directly at the section title below —
-        no **Document:** header or other identity marker of any kind precedes it;
-        identity is already 100% Rails-injected outside this prompt (see header note):
+        Classify a section with one of the labels below when the page supports it.
+        The chunk body starts at the heading printed on the page, copied verbatim.
+        A label in this list is a classification, not text to insert. Do not write
+        that label unless the page prints it. No **Document:** header or other
+        identity marker of any kind precedes the body; identity is already
+        Rails-injected outside this prompt (see header note):
           S0  — DOCUMENT IDENTIFICATION   (mandatory; chunk[0]; ANCHOR_PAGE only for multi-page parses)
           S4  — SAFETY SYSTEM
           S6  — ELECTRICAL
@@ -366,6 +372,9 @@ module BatchChunkingPrompt
         - Do not add PPE, helmets, harnesses, certificates, standards compliance
           checks, tools, procedures, or stop conditions unless the visible source
           explicitly requires them.
+        - Do not add a heading, a safety note, or a warning the page does not print.
+        - A sentence marked as an example stays an example in the narrative. Do not
+          rewrite it as a general instruction.
         - A standard mentioned by the source is informational unless the same visible
           source explicitly turns it into an operator action or requirement.
         - REQUIRES_FIELD_VERIFICATION may describe illegible text or images, an
@@ -424,6 +433,9 @@ module BatchChunkingPrompt
           require independently verifiable records.
         - SCHEMATIC_LABEL keeps the literal label; undocumented meaning stays unavailable.
         - Keep narrative orienting, not duplicative; records hold atomic evidence.
+        - When the visible support is an example, the record keeps the example
+          wording and the word that marks it as an example. Omit the record
+          rather than turn that example into a general instruction.
 
         # TECHNICAL TAXONOMY (use these labels verbatim when classifying)
         SUBSYSTEMS: SAFETY_CHAIN | BRAKE_SYSTEM | DOOR_OPERATOR | MOTOR_DRIVE |

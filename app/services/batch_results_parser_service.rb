@@ -551,7 +551,10 @@ class BatchResultsParserService
 
   def append_field_records(text, records, page:)
     rendered = Array(records).filter_map do |record|
-      render_field_record(record, page: page) if record.is_a?(Hash)
+      next unless record.is_a?(Hash)
+      next if Rag::PageChunkFidelity.promoted_example?(record, text)
+
+      render_field_record(record, page: page)
     end
     return text.to_s if rendered.empty?
 

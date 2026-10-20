@@ -101,9 +101,12 @@ module Rag
     # One generation, with up to ATTEMPT_LIMIT physical tries for a transient
     # error. Configuration errors are not retried. Each try that enters the
     # client is reserved on spend first.
-    def self.run_sample(prepared:, model_id:, client:, spend:, output_dir:, run_id:)
+    def self.run_sample(prepared:, model_id:, client:, spend:, output_dir:, run_id:, correlation_prefix: "vf5-benchmark")
       runner = allocate
-      runner.send(:initialize_runner, prepared:, model_id:, client:, spend:, output_dir:, run_id:)
+      runner.send(
+        :initialize_runner,
+        prepared:, model_id:, client:, spend:, output_dir:, run_id:, correlation_prefix:
+      )
       runner.send(:run_sample)
     end
 
@@ -187,13 +190,14 @@ module Rag
 
     private
 
-    def initialize_runner(prepared:, model_id:, client:, spend:, output_dir:, run_id:)
+    def initialize_runner(prepared:, model_id:, client:, spend:, output_dir:, run_id:, correlation_prefix: "vf5-benchmark")
       @prepared = prepared
       @model_id = model_id
       @client = client
       @spend = spend
       @output_dir = Pathname(output_dir)
       @run_id = run_id
+      @correlation_prefix = correlation_prefix
     end
 
     def run_sample
@@ -309,7 +313,7 @@ module Rag
     end
 
     def correlation_for(attempt)
-      "vf5-benchmark:t#{@prepared.turn}:a#{attempt}:#{@model_id}"
+      "#{@correlation_prefix}:t#{@prepared.turn}:a#{attempt}:#{@model_id}"
     end
 
     def export(events, directory)

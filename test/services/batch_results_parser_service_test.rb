@@ -195,6 +195,25 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     assert_includes chunk, "END_FIELD_RECORD"
   end
 
+  test "does not render an example as a general field action" do
+    parser = build_parser
+    narrative = "OFF: Esclavo. Ejemplo: con la fotocélula obstruida la unidad enviará una señal. Entonces, la maniobra desactivara la señal de cerrar."
+    records = [
+      {
+        "k" => "COMMISSIONING_STEP",
+        "h" => "SW4",
+        "a" => "Configurar en OFF: la unidad enviará una señal cuando la fotocélula está obstruida y la maniobra desactivara la señal de cerrar",
+        "r" => "DATA_NOT_AVAILABLE",
+        "ev" => "la unidad enviará una señal"
+      }
+    ]
+
+    rendered = parser.send(:append_field_records, narrative, records, page: 5)
+
+    assert_equal narrative, rendered
+    assert_not_includes rendered, "FIELD_RECORD:"
+  end
+
   test "repairs unescaped quoted words in chunk text before writing chunks" do
     raw_json = '{"document_name":"Hydraulic Pump Manual","aliases":["HPM-400"],' \
       '"chunks":[{"text":"Presione a posición "encendido" y consulte "Etiquetas".","page":1,"field_records":[]}]}'

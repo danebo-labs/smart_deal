@@ -27,6 +27,15 @@ class BatchChunkingPromptTest < ActiveSupport::TestCase
     assert_match(/Never split a shared chain into one component per terminal/, prompt)
   end
 
+  test "printed headings and examples stay in the chunk body" do
+    assert_match(/classification, not text to insert/, prompt)
+    assert_match(/Do not write\s+that label unless the page prints it/, prompt)
+    assert_match(/opening lines of this page are the opening lines of its first chunk/, prompt)
+    assert_match(/Do not add a heading, a safety note/, prompt)
+    assert_match(/sentence marked as an example stays an example/, prompt)
+    assert_match(/Omit the record\s+rather than turn that example into a general instruction/, prompt)
+  end
+
   test "section identity is declared only from a visible section heading" do
     assert_includes prompt, "SECTION IDENTITY (multi-brand compendia)"
     assert_includes prompt, "section_identity"

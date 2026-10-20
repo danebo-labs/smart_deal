@@ -394,7 +394,7 @@ module Rag
     # A label is one line before that chunk's body.
     def self.generation_context(chunks, labels = [])
       body = Array(chunks).each_with_index.map { |chunk, index|
-        content = chunk[:content].to_s
+        content = apply_local_page_fidelity(chunk, chunk[:content].to_s)
         label = labels[index]
         content = "#{label}\n#{content}" if label.present?
         [
@@ -1449,5 +1449,41 @@ module Rag
       chunk[:metadata].to_h.stringify_keys
     end
     private_class_method :metadata_of
+
+    # Local evaluation only. RAG_LOCAL_PAGE_FIDELITY=1 and a page-text directory
+    # whose document_id.txt matches this chunk replace the body with that page.
+    # The indexed chunk and the shared knowledge base stay as they are.
+    def self.apply_local_page_fidelity(chunk, content)
+      return content unless ENV["RAG_LOCAL_PAGE_FIDELITY"] == "1"
+
+      path = local_page_file(chunk)
+      return content if path.nil?
+
+      PageChunkFidelity.correct(content, path.read)
+    end
+    private_class_method :apply_local_page_fidelity
+
+    def self.local_page_file(chunk)
+      root = ENV["RAG_LOCAL_PAGE_TEXT"].to_s
+      return nil if root.blank?
+
+      meta = metadata_of(chunk)
+      document_id = meta["document_id"].to_s
+      page = meta["page_number"].to_i
+      return nil if document_id.blank? || page <= 0
+
+      base = Pathname(root)
+      marker = base.join("document_id.txt")
+      return nil unless marker.file?
+
+      expected = marker.read.strip
+      shared = expected[0, 16]
+      return nil if shared.blank?
+      return nil unless document_id.start_with?(shared) || expected.start_with?(document_id[0, 16].to_s)
+
+      path = base.join("p#{page}.txt")
+      path.file? ? path : nil
+    end
+    private_class_method :local_page_file
   end
 end

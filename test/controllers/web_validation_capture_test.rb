@@ -11,6 +11,10 @@ class WebValidationCaptureTest < ActionDispatch::IntegrationTest
     RAG_LOCAL_PASS_CALL_CAP
     RAG_LOCAL_PASS_COST_CAP_USD
     AWS_MAX_ATTEMPTS
+    HAIKU_QUERY_ANALYSIS_MODE
+    FIELD_COMPANION_EPISODE_ENABLED
+    FIELD_COMPANION_TURN_ENABLED
+    RAG_EPISODE_SCOPE_ENABLED
   ].freeze
 
   setup do
@@ -18,6 +22,7 @@ class WebValidationCaptureTest < ActionDispatch::IntegrationTest
     @account = accounts(:legacy)
     @user.update!(account: @account)
     @previous = ENV_KEYS.index_with { |key| ENV[key] }
+    ENV_KEYS.each { |key| ENV.delete(key) }
     @run_id = "webreq#{SecureRandom.hex(4)}"
     Rag::LocalPassLedger.reset!
     Rag::LocalPassLedger.reset_local_process!

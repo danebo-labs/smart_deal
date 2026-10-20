@@ -10,6 +10,8 @@
 
 La matriz sigue siendo la expectativa del evaluador. Este archivo registra lo observado. No hubo navegador, no hubo `APPLY=true` y no hubo generación. La aceptación textual no cierra los fallos históricos del plano Elemont.
 
+**Aclaración posterior.** La detención es el hecho histórico y se conserva. La autorización para consultar `Y7RZWMFJSR` desde la aplicación y las bases locales ya existía cuando esta pasada se detuvo. Este registro la trató como una decisión todavía pendiente y por eso no creó la fila local ni arrancó la web con esa base. Preparar en la base local los metadatos del manual ya existente no era ingerir otro documento. La ingesta, la escritura en producción y el cambio del corpus seguían fuera de autorización. La pasada que usó la lectura ya autorizada está en [EJECUCION_FERMATOR_VF5_REABRE_SOLA_2026-10-20.md](EJECUCION_FERMATOR_VF5_REABRE_SOLA_2026-10-20.md). Este archivo no se reescribe como si aquella web se hubiera recorrido.
+
 ## 1. Veredicto provisional
 
 Recorrido detenido antes del primer mensaje.
@@ -57,7 +59,7 @@ Las respuestas de referencia siguen solo en la matriz.
 
 El bloqueo es de correspondencia, anterior a la interpretación y a la generación. No es un fallo semántico del modelo.
 
-1. **Catálogo que pinta la tarjeta.** `Rag::DocumentDiscovery` ofrece la tarjeta solo si `Rag::KnowledgeScopePolicy.bind_catalog_candidate` encuentra una fila de `kb_documents` con la misma clave canónica, el mismo `document_uid` y la cuenta resoluble. En `smart_deal_development` hay 25 documentos. La consulta por uid `126cda62-64ad-4469-8674-a29f12e38d48`, por `VF5` en el nombre y por la clave devolvió cero filas. `bulk_upload_assets` tampoco tiene ese nombre, esa clave ni ese SHA. La identidad YAML sí tiene la fila, con cuenta de catálogo `1`. Crear o ingerir el documento para cerrar esa diferencia quedó fuera de la autorización, y no se hizo.
+1. **Catálogo que pinta la tarjeta.** `Rag::DocumentDiscovery` ofrece la tarjeta solo si `Rag::KnowledgeScopePolicy.bind_catalog_candidate` encuentra una fila de `kb_documents` con la misma clave canónica, el mismo `document_uid` y la cuenta resoluble. En `smart_deal_development` hay 25 documentos. La consulta por uid `126cda62-64ad-4469-8674-a29f12e38d48`, por `VF5` en el nombre y por la clave devolvió cero filas. `bulk_upload_assets` tampoco tiene ese nombre, esa clave ni ese SHA. La identidad YAML sí tiene la fila, con cuenta de catálogo `1`. Esta ejecución trató crear la fila local como fuera de autorización y no la escribió. Esa lectura mezclaba la fila de metadatos con una ingesta. La ingesta sí seguía fuera de autorización. La fila local se preparó en la pasada posterior, sin ingesta.
 
 2. **Documento recuperable.** El objeto de `multimodal-source-destination` coincide con el PDF del repositorio. En `smart-deal-dev-kb` la misma clave responde `NotFound`. `GetKnowledgeBase` devolvió `QGVYLPTEGT` = `danebo-rag-dev`, data source `1ICX1LL7A5`, bucket `smart-deal-dev-kb`, prefijo `bulk_chunks/`. `Y7RZWMFJSR` = `danebo-rag-prod`, data source `PJ0N58DMHG`, bucket `multimodal-source-destination`, prefijo `bulk_chunks/`. Un `Retrieve` sin filtro, consulta «Módulo electrónico VF5+ Fermator la puerta se reabre sola», cinco resultados: en `QGVYLPTEGT` los archivos fueron `original.pdf` y `manual_plataforma_tijera_24_paginas.pdf`; en `Y7RZWMFJSR` los cinco fueron `VF5.pdf`. Un filtro `equals` sobre `original_source_uri` devolvió `ValidationException` en las dos bases y no se repitió con otra clave. Esa lectura sin filtro no demuestra que `QGVYLPTEGT` carezca de cualquier chunk homónimo; demuestra que esa consulta no lo trajo y que el objeto no está en el bucket de su data source.
 
@@ -112,4 +114,4 @@ Código de la captura, del cupo local y del arranque de la tarea. Documentación
 
 ## 9. Siguiente acción mínima
 
-Lahiri decide de dónde puede salir, ya existente, la fila local de `126cda62-64ad-4469-8674-a29f12e38d48` y si una corrida posterior tiene autorización explícita para leer `Y7RZWMFJSR` en vez de la KB del proceso. Hace falta también una fila web cuyo `identifier` sea el id del usuario, porque `start_clean_case` no la crea. Esta pasada no se repite desde aquí.
+Esta pasada no se repite desde aquí. La autorización para leer `Y7RZWMFJSR` ya existía; este cierre la dejó como si todavía hubiera que decidirla. La pasada posterior creó la fila local del uid ya existente, abrió la sesión web y ejecutó los siete mensajes. Su resultado no es una aceptación: [EJECUCION_FERMATOR_VF5_REABRE_SOLA_2026-10-20.md](EJECUCION_FERMATOR_VF5_REABRE_SOLA_2026-10-20.md).

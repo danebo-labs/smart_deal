@@ -1,6 +1,6 @@
 # Caso Fermator VF5+: la puerta se reabre sola
 
-**Estado:** matriz del evaluador. Se conserva como expectativa. La pasada local del 19 de octubre se detuvo en el preflight, antes de generar: [EJECUCION_FERMATOR_VF5_REABRE_SOLA_2026-10-19.md](EJECUCION_FERMATOR_VF5_REABRE_SOLA_2026-10-19.md). No es un recorrido aceptado ni `EPISODIO_VALIDADO`.
+**Estado:** matriz del evaluador. Se conserva como expectativa. La pasada del 19 de octubre se detuvo en el preflight: [EJECUCION_FERMATOR_VF5_REABRE_SOLA_2026-10-19.md](EJECUCION_FERMATOR_VF5_REABRE_SOLA_2026-10-19.md). La pasada posterior recorrió los siete mensajes y no cumple la matriz: [EJECUCION_FERMATOR_VF5_REABRE_SOLA_2026-10-20.md](EJECUCION_FERMATOR_VF5_REABRE_SOLA_2026-10-20.md). No es un recorrido aceptado ni `EPISODIO_VALIDADO`.
 
 **Fecha de preparación:** 2026-10-19.
 

@@ -1878,12 +1878,65 @@ class BedrockRagService
   # this call and refuses it before the SDK. Aurora retries call it again.
   def local_retrieve_and_generate(params)
     Rag::LocalPassLedger.single_attempt!(@client)
-    Rag::LocalPassLedger.protect!(
+    result = Rag::LocalPassLedger.protect!(
       operation: "retrieve_and_generate",
       model_id: @model_ref.to_s,
       input_tokens: ContractualLimits::QUERY[:max_input_tokens],
       output_tokens: Rag::LocalPassLedger.output_tokens_from(params)
     ) { @client.retrieve_and_generate(params) }
+    settle_local_retrieve_and_generate!(result, params)
+    result
+  end
+
+  # The API returns no usage block. Replace the contractual hold with the
+  # same LocalTokenizer estimate BedrockQuery already records. Provider usage,
+  # when present, wins. A zero estimate leaves the hold.
+  def settle_local_retrieve_and_generate!(result, params)
+    return if Rag::LocalPassLedger.settle_usage!(result, model_id: @model_ref.to_s)
+
+    cited = retrieve_and_generate_citation_text(result)
+    Rag::LocalPassLedger.settle_estimate!(
+      model_id: @model_ref.to_s,
+      input_tokens: AnthropicTokenCounter::LocalTokenizer.estimate(
+        [ string_leaves(params), cited ].compact_blank.join("\n")
+      ),
+      output_tokens: AnthropicTokenCounter::LocalTokenizer.estimate(retrieve_and_generate_output_text(result))
+    )
+  end
+
+  def retrieve_and_generate_output_text(result)
+    output = result.respond_to?(:output) ? result.output : nil
+    return output.text if output.respond_to?(:text)
+    return output[:text] || output["text"] if output.is_a?(Hash)
+
+    nil
+  end
+
+  def retrieve_and_generate_citation_text(result)
+    citations = result.respond_to?(:citations) ? result.citations : nil
+    parts = []
+    Array(citations).each do |citation|
+      refs = citation.respond_to?(:retrieved_references) ? citation.retrieved_references : nil
+      Array(refs).each do |ref|
+        content = ref.respond_to?(:content) ? ref.content : nil
+        text = content.respond_to?(:text) ? content.text : content
+        parts << text if text.is_a?(String)
+      end
+    end
+    parts.join("\n")
+  end
+
+  def string_leaves(value)
+    case value
+    when String
+      value
+    when Hash
+      value.values.map { |item| string_leaves(item) }.compact_blank.join("\n")
+    when Array
+      value.map { |item| string_leaves(item) }.compact_blank.join("\n")
+    else
+      ""
+    end
   end
 
   def retrieve_with_retry(params)

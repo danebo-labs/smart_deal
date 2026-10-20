@@ -1,16 +1,22 @@
 # frozen_string_literal: true
 
 module Rag
-  # Process-local ceiling for one explicit local pass. Disarmed unless the
-  # process exported the guard and is on a local, non-production database.
-  # Does not replace Stage2RunBudget and does not change a disarmed call.
+  # Process-local ceiling for one explicit local pass. Does not replace
+  # Stage2RunBudget. An unset guard yields and does not count.
+  #
+  # RAG_LOCAL_PASS_GUARD=1 is the request, even when a cap is absent or
+  # malformed. That request yields only when the call cap, the cost cap,
+  # AWS_MAX_ATTEMPTS=1, and a local non-production database are all present.
+  # Otherwise Stop is raised before the SDK and names the missing requirement.
   #
   # A refused call is not sent. An admitted call counts even when it fails.
-  # Provider usage replaces the pre-call ceiling. A call without usage keeps
-  # that ceiling as a hold so a later call cannot assume the spend was zero.
-  # Prices come from BedrockQuery::BEDROCK_PRICING. Token ceilings are bounds,
-  # not a second price list: one token per character when the text is local,
-  # and ContractualLimits::QUERY when retrieve_and_generate adds chunks later.
+  # Provider usage replaces the pre-call ceiling. retrieve_and_generate has
+  # no usage block; the caller may replace that hold with the LocalTokenizer
+  # estimate already used for BedrockQuery. A zero estimate leaves the hold,
+  # so a later call cannot assume the spend was zero. Prices come from
+  # BedrockQuery::BEDROCK_PRICING. Token ceilings are bounds, not a second
+  # price list: one token per character when the text is local, and
+  # ContractualLimits::QUERY when retrieve_and_generate adds chunks later.
   class LocalPassLedger
     GUARD_ENV = "RAG_LOCAL_PASS_GUARD"
     CALL_CAP_ENV = "RAG_LOCAL_PASS_CALL_CAP"
@@ -26,11 +32,23 @@ module Rag
 
     class << self
       def armed?
-        guard_requested? && single_attempt_process? && local_process?
+        guard_requested? && missing_requirements.empty?
       end
 
+      # The guard flag alone. Absent or malformed caps still count as requested.
       def guard_requested?
-        ENV[GUARD_ENV] == "1" && call_cap && cost_cap
+        ENV[GUARD_ENV] == "1"
+      end
+
+      def missing_requirements
+        return [] unless guard_requested?
+
+        missing = []
+        missing << CALL_CAP_ENV unless call_cap
+        missing << COST_CAP_ENV unless cost_cap
+        missing << ATTEMPTS_ENV unless single_attempt_process?
+        missing << "local_process" unless local_process?
+        missing
       end
 
       def single_attempt_process?
@@ -66,7 +84,8 @@ module Rag
           "local_process" => local_process?,
           "aws_max_attempts" => ENV[ATTEMPTS_ENV].to_s,
           "call_cap" => call_cap,
-          "cost_cap_usd" => cost_cap&.to_s("F")
+          "cost_cap_usd" => cost_cap&.to_s("F"),
+          "missing" => missing_requirements
         }
       end
 
@@ -85,7 +104,8 @@ module Rag
           "held_usd" => money(open.values.sum(BigDecimal("0"))),
           "call_cap" => call_cap,
           "cost_cap_usd" => cost_cap&.to_s("F"),
-          "aws_max_attempts" => ENV[ATTEMPTS_ENV].to_s
+          "aws_max_attempts" => ENV[ATTEMPTS_ENV].to_s,
+          "missing" => missing_requirements
         }
       end
 
@@ -99,6 +119,7 @@ module Rag
       # call is the one invocation that counts. The caller settles provider
       # usage on the same thread. Another thread does not see these tickets.
       def protect!(operation:, model_id:, input_tokens:, output_tokens:)
+        refuse_unarmed_guard!(operation)
         return yield unless armed?
 
         ticket = nil
@@ -127,18 +148,33 @@ module Rag
       end
 
       def settle_usage!(response, model_id:)
-        return unless armed?
-
-        ticket = Array(Thread.current[TICKETS]).pop
-        Thread.current[TICKETS] = Array(Thread.current[TICKETS])
-        return unless ticket
+        return false unless armed?
 
         tokens = read_usage(response)
-        return unless tokens
+        return false unless tokens
+
+        ticket = pop_ticket
+        return false unless ticket
 
         commit(ticket, price(model_id, tokens[0], tokens[1]))
+        true
       rescue StandardError
-        nil
+        false
+      end
+
+      # Replaces this thread's open hold with the existing token estimate.
+      # Zero on both sides leaves the hold. Does not invent a price.
+      def settle_estimate!(model_id:, input_tokens:, output_tokens:)
+        return false unless armed?
+        return false if input_tokens.to_i <= 0 && output_tokens.to_i <= 0
+
+        ticket = pop_ticket
+        return false unless ticket
+
+        commit(ticket, price(model_id, input_tokens, output_tokens))
+        true
+      rescue StandardError
+        false
       end
 
       # Drops this thread's unsettled tickets from the stack. Their ceilings
@@ -149,6 +185,7 @@ module Rag
       end
 
       def single_attempt!(client)
+        refuse_unarmed_guard!("max_attempts")
         return unless armed?
         return unless client.respond_to?(:config)
 
@@ -218,6 +255,19 @@ module Rag
           host = hash[:host].to_s
           database.present? && database.downcase.exclude?("production") && LOCAL_HOSTS.include?(host)
         end
+      end
+
+      def refuse_unarmed_guard!(operation)
+        return if armed? || !guard_requested?
+
+        note(operation, "refused", BigDecimal("0"))
+        raise Stop, "guard_requested missing #{missing_requirements.join(' ')}"
+      end
+
+      def pop_ticket
+        ticket = Array(Thread.current[TICKETS]).pop
+        Thread.current[TICKETS] = Array(Thread.current[TICKETS])
+        ticket
       end
 
       def integer_env(key)

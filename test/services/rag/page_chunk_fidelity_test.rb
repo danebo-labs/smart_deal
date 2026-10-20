@@ -57,6 +57,22 @@ class Rag::PageChunkFidelityTest < ActiveSupport::TestCase
     – Verificar los ajustes mecánicos de la puerta.
   TEXT
 
+  test "the field report paragraph is part of the attribution contract only" do
+    paragraph = BedrockRagService::FIELD_REPORT_PARAGRAPH
+    contract = BedrockRagService::DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT
+
+    assert_includes paragraph, "A visual observation does not by itself"
+    assert_includes paragraph, "stays an example"
+    assert_includes paragraph, "Earlier assistant lines"
+    assert_not_includes paragraph.downcase, "fermator"
+    assert_includes contract, paragraph
+    assert_equal 1, contract.scan(paragraph).size
+    assert contract.end_with?(Rag::LabelComparisonVariant::HISTORICAL_PARAGRAPH)
+    assert_nil Rag::LabelComparisonVariant.production_problem(contract)
+    template = BedrockRagService.load_generation_prompt_template
+    assert_not_includes template, "A visual observation does not by itself"
+  end
+
   test "drops an inserted heading and note and keeps the example verbatim" do
     corrected = Rag::PageChunkFidelity.correct(SW4_CHUNK, SW4_PAGE)
 

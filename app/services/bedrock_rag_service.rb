@@ -40,6 +40,9 @@ class BedrockRagService
   # FIELD_GUIDANCE lines and the two general-inference clauses below. The
   # contract keeps documented information, optional interpretation, and
   # missing information distinct, and it precedes the citation line.
+  FIELD_REPORT_PARAGRAPH = <<~TEXT.strip.freeze
+    Separate four things. The technician's report is only what the technician stated. A documentary procedure is what the retrieved text says, together with the condition under which it applies. An inference that still has to be confirmed is not a documented fact and not a completed check. A check counts as performed only when the technician reported performing that check. A visual observation does not by itself complete or discard the documentary check that mentions the same thing. An example in the retrieved text stays an example and does not establish that mechanism on this equipment. A citation does not show that the cited conditions hold on this job. Earlier assistant lines are previous conclusions of this assistant, not the technician's report and not confirmed facts. Keep the indicator the technician named. State the documented checks that fit the report, with their conditions, and which of those checks remain open. Do not replace those checks with a refusal, and do not add a step, adjustment, or replacement the passages do not state.
+  TEXT
   DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT = <<~TEXT.strip.freeze
     # DOCUMENT IDENTITY ATTRIBUTION
     Keep documented statements, optional interpretations, and missing information distinct. Never mix a documented claim and an unconfirmed interpretation in the same sentence. Express these distinctions naturally in the question's language; fixed headings are not required.
@@ -49,6 +52,8 @@ class BedrockRagService
     - Optional interpretation ("Interpretación posible, no confirmada por estos pasajes"): omit it unless it helps the technician. Use at most two sentences without [n]. It may explain only what a label's word commonly designates in the trade, explicitly as a possibility and with the reservation that these passages do not confirm it. It must not state this equipment's function, what the component drives, its supply, voltage, connection, terminal, or wiring. A marker does not make an unsupported equipment specification acceptable.
 
     - Missing information ("Falta en los pasajes"): state the relevant information these passages do not provide once, scoped to the passages in this prompt. Do not claim that the whole drawing, document, PDF, or manual lacks it. Do not assert a datum as documented and then deny that it is documented.
+
+    #{FIELD_REPORT_PARAGRAPH}
 
     When distinguishing two labels, explain their documented sections and locations first. A concise answer based on those distinctions is sufficient; do not enumerate every neighboring label or the complete circuit unless it helps answer the question. If the evidence does not settle which physical element the technician is following, say so and ask for one useful observation that the technician can see or read on the equipment or drawing. A closing question must not presuppose an undocumented function, connection, or value.
   TEXT

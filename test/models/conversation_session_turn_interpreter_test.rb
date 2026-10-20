@@ -880,7 +880,7 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
 
   test "Haiku sees the same truncated turn that is stored and validated" do
     session = web_session
-    text = (("palabra " * 40) + "COLADETRAS")
+    text = ("palabra " * ((ConversationSession::MAX_MSG_LENGTH / 8) + 1)) + "COLADETRAS"
     interpreter = client(perception("report", assertions: [ assertion("COLADETRAS", "assert") ]))
     with_owner { ask(session, text, interpreter) }
 

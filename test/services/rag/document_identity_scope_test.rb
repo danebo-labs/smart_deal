@@ -253,6 +253,15 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       – Comprobar que la fotocélula no esté activada.
       – Comprobar que no hay una obstrucción mecánica en la puerta.
   TEXT
+  VF5_PAGE_5 = <<~TEXT.freeze
+    4. Conexiones
+    SW4 Máster y Esclavo
+    ON: Máster. La activación de la fotocélula provoca una reapertura inmediata.
+    OFF: Esclavo. No hay movimientos de re-apertura automáticos. Las puerta solo responden a las instrucciones dadas por el módulo de control del ascensor. Ejemplo: con la fotocélula obstruida la unidad enviará una señal a la maniobra mediante la salida FOTOCÉLULA (36, 37, 38).
+  TEXT
+  VF5_DENSE_TURN = "Prueba simulada. Estoy con un operador Fermator VF5+: en funcionamiento normal la puerta empieza a cerrar y vuelve a abrirse sola. El LED de fotocélula está encendido, no observo una obstrucción mecánica y no he revisado la sensibilidad de reapertura. SW4 está en OFF, modo esclavo. No hice mediciones ni reparaciones. Según el manual, ¿cómo me orientas y qué falta comprobar?".freeze
+  VF5_CORRECTION_TURN = "Corrijo solo un dato de la simulación: el LED está apagado, no encendido. SW4 sigue en OFF y lo demás se mantiene. ¿Qué cambia en tu orientación?".freeze
+  VF5_SUMMARY_TURN = "Resume el caso con los datos vigentes, distingue lo que dice el manual de lo que yo reporté y señala qué falta confirmar. No se ha realizado ninguna reparación.".freeze
 
   test "known Fermator with the authorized VF5 pin retrieves that manual and generates" do
     account = accounts(:legacy)
@@ -395,6 +404,159 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_equal :no_compatible, result.status
     assert_equal [ "reference_only" ], result.applicability
     assert_not_includes result.chunks.sole[:content], "fotocélula"
+  end
+
+  test "VF5+X is not the confirmed VF5+ manual" do
+    account = accounts(:legacy)
+    document = vf5_catalog_document(account)
+    uri = document.canonical_uri
+    selected = vf5_captured_chunk(uri)
+    longer = fermator_vf5_episode
+    longer["identifiers"] = [
+      { "value" => "VF5+X", "source" => "user", "correlation_id" => "query:turn" }
+    ]
+
+    result = Rag::DocumentIdentityScope.apply(
+      [ selected ], longer, focus_uris: [ uri ], viewer_account: account
+    )
+
+    assert_equal :no_compatible, result.status
+    assert_equal [ "reference_only" ], result.applicability
+    assert_not_includes result.chunks.sole[:content], "fotocélula"
+  end
+
+  test "a chunk titled VF5+X is not this VF5+ job" do
+    account = accounts(:legacy)
+    document = vf5_catalog_document(account)
+    uri = document.canonical_uri
+    selected = vf5_captured_chunk(uri, "canonical_name" => "VF5+X")
+
+    result = Rag::DocumentIdentityScope.apply(
+      [ selected ], fermator_vf5_episode, focus_uris: [ uri ], viewer_account: account
+    )
+
+    assert_equal :no_compatible, result.status
+    assert_not_includes result.chunks.sole[:content], "fotocélula"
+  end
+
+  test "a chunk titled VF5A is not the abbreviated VF5 title" do
+    account = accounts(:legacy)
+    document = vf5_catalog_document(account)
+    uri = document.canonical_uri
+    selected = vf5_captured_chunk(uri, "canonical_name" => "VF5A")
+
+    result = Rag::DocumentIdentityScope.apply(
+      [ selected ], fermator_vf5_episode, focus_uris: [ uri ], viewer_account: account
+    )
+
+    assert_equal :no_compatible, result.status
+    assert_not_includes result.chunks.sole[:content], "fotocélula"
+  end
+
+  test "ABCD12345 does not authorize the catalog designator ABCD1234" do
+    account = accounts(:legacy)
+    uid = SecureRandom.uuid
+    key = "bulk_uploads/1/abcd1234.pdf"
+    document = KbDocument.create!(
+      account: account, s3_key: key, display_name: "ABCD1234", document_uid: uid, aliases: []
+    )
+    uri = document.canonical_uri
+    selected = chunk(
+      "abcd-page", "cuerpo reservado del manual",
+      canonical_name: "ABCD1234", original_filename: "ABCD1234.pdf", page: 2
+    )
+    selected[:original_source_uri] = uri
+    selected[:metadata]["original_source_uri"] = uri
+    catalog = Rag::DocumentIdentityCatalog.new({
+      "documents" => [
+        {
+          "account_id" => "1",
+          "document_id" => uid,
+          "s3_key" => key,
+          "display_name" => "ABCD1234",
+          "brands" => [ "Norte" ],
+          "designators" => [ "ABCD1234" ],
+          "confirmed" => true,
+          "evidence_page" => 1,
+          "evidence_text" => "ABCD1234"
+        }
+      ]
+    })
+    job = {
+      "v" => 1,
+      "episode_id" => "ep-abcd",
+      "updated_at" => Time.current.iso8601,
+      "facts" => {
+        "manufacturer" => {
+          "status" => "known", "source" => "user", "value" => "Norte", "correlation_id" => "query:turn"
+        }
+      },
+      "identifiers" => [
+        { "value" => "ABCD12345", "source" => "user", "correlation_id" => "query:turn" }
+      ]
+    }
+
+    result = Rag::DocumentIdentityCatalog.with_catalog(catalog) do
+      Rag::DocumentIdentityScope.apply(
+        [ selected ], job, focus_uris: [ uri ], viewer_account: account
+      )
+    end
+
+    assert_equal :no_compatible, result.status
+    assert_not_includes result.chunks.sole[:content], "cuerpo reservado"
+  end
+
+  test "a chunk titled ABCD12345 is not the ABCD1234 job" do
+    account = accounts(:legacy)
+    uid = SecureRandom.uuid
+    key = "bulk_uploads/1/abcd1234-long.pdf"
+    document = KbDocument.create!(
+      account: account, s3_key: key, display_name: "ABCD1234", document_uid: uid, aliases: []
+    )
+    uri = document.canonical_uri
+    selected = chunk(
+      "abcd-long", "cuerpo reservado del manual largo",
+      canonical_name: "ABCD12345", original_filename: "ABCD12345.pdf", page: 2
+    )
+    selected[:original_source_uri] = uri
+    selected[:metadata]["original_source_uri"] = uri
+    catalog = Rag::DocumentIdentityCatalog.new({
+      "documents" => [
+        {
+          "account_id" => "1",
+          "document_id" => uid,
+          "s3_key" => key,
+          "display_name" => "ABCD1234",
+          "brands" => [ "Norte" ],
+          "designators" => [ "ABCD1234" ],
+          "confirmed" => true,
+          "evidence_page" => 1,
+          "evidence_text" => "ABCD1234"
+        }
+      ]
+    })
+    job = {
+      "v" => 1,
+      "episode_id" => "ep-abcd-short",
+      "updated_at" => Time.current.iso8601,
+      "facts" => {
+        "manufacturer" => {
+          "status" => "known", "source" => "user", "value" => "Norte", "correlation_id" => "query:turn"
+        }
+      },
+      "identifiers" => [
+        { "value" => "ABCD1234", "source" => "user", "correlation_id" => "query:turn" }
+      ]
+    }
+
+    result = Rag::DocumentIdentityCatalog.with_catalog(catalog) do
+      Rag::DocumentIdentityScope.apply(
+        [ selected ], job, focus_uris: [ uri ], viewer_account: account
+      )
+    end
+
+    assert_equal :no_compatible, result.status
+    assert_not_includes result.chunks.sole[:content], "cuerpo reservado del manual largo"
   end
 
   test "a catalog designator without the plus does not match VF5+" do
@@ -2880,6 +3042,151 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     selected
   end
 
+  test "the detailed Fermator turn keeps identity, passages, and the corrected LED through generation" do
+    account = accounts(:legacy)
+    document = KbDocument.create!(
+      account: account, s3_key: "bulk_uploads/1/2026-08-31/VF5.pdf",
+      display_name: "VF5", document_uid: VF5_DOCUMENT_UID, aliases: []
+    )
+    uri = document.canonical_uri
+    session = ConversationSession.create!(
+      identifier: "web:#{SecureRandom.hex(4)}",
+      channel: "web",
+      expires_at: 1.hour.from_now,
+      user: users(:one),
+      account: account
+    )
+    session.update!(document_focus: [ {
+      "kb_document_id" => document.id,
+      "source_uri" => uri,
+      "display_name" => "VF5",
+      "added_at" => Time.current.iso8601
+    } ])
+    interpreter = Vf5ScriptedInterpreter.new([
+      vf5_dense_tool,
+      vf5_correction_tool,
+      vf5_summary_tool
+    ])
+    service, retrieves, prompts, rag_calls = vf5_scope_service(
+      account, VF5_PAGE_12, uri,
+      passages: [ { text: VF5_PAGE_12, page: 12 }, { text: VF5_PAGE_5, page: 5 } ]
+    )
+
+    with_product_turn do
+      assert_operator VF5_DENSE_TURN.length, :>, 300
+      assert_operator VF5_DENSE_TURN.length, :<=, ConversationSession::MAX_MSG_LENGTH
+
+      first = session.record_user_turn!(
+        VF5_DENSE_TURN, user_id: users(:one).id, correlation_id: "query:vf5-1", interpreter_client: interpreter
+      )
+      session.reload
+      episode_id = session.live_episode_id
+      assert_equal "ready", first.understanding.decision
+      assert_equal "none", vf5_history_transform(VF5_DENSE_TURN, session)
+      assert_equal VF5_DENSE_TURN, session.conversation_history.first["content"]
+      assert_equal "Fermator", session.active_episode.dig("facts", "manufacturer", "value")
+      assert_equal "user", session.active_episode.dig("facts", "manufacturer", "source")
+      assert_equal [ "Fermator VF5+" ], session.active_episode["identifiers"].pluck("value")
+      assert_includes first.composed, "Prueba simulada"
+      assert_includes first.composed, "no observo una obstrucción mecánica"
+      assert_includes first.composed, "no he revisado la sensibilidad de reapertura"
+      assert_includes first.composed, "SW4 está en OFF"
+      assert_includes first.composed, "Según el manual"
+      assert_not_includes first.composed, "obstrucción descartada"
+      assert_not_includes first.composed, "fotocélula obstruida"
+
+      ask_vf5(service, session, first.composed, uri)
+      opening = prompts.last
+      problem = vf5_field_problem(opening)
+      passages = vf5_search_results(opening)
+      assert_equal 1, retrieves.size
+      assert_includes retrieves.first.to_s, uri
+      assert_not_includes retrieves.first.to_s, "account_id"
+      assert_includes passages, "potenciómetro de regulación de fuerza de re-apertura"
+      assert_includes passages, "No hay movimientos de re-apertura automáticos"
+      assert_includes passages, "fotocélula obstruida"
+      assert_includes passages, "THIS JOB'S EQUIPMENT: VF5"
+      assert_includes problem, "Manufacturer: Fermator (technician)"
+      assert_includes problem, "Fermator VF5+"
+      assert_includes problem, "no observo una obstrucción mecánica"
+      assert_includes problem, "encendido"
+      assert_not_includes problem, "obstrucción descartada"
+      assert_not_includes problem, "fotocélula obstruida"
+      assert_not_includes problem, "36, 37, 38"
+      assert_includes opening, "Prueba simulada"
+      assert_includes opening, "no he revisado la sensibilidad de reapertura"
+      assert_equal 0, rag_calls.call
+
+      session.record_assistant_turn!(
+        "Reviso el manual seleccionado.",
+        user_id: users(:one).id, correlation_id: "query:vf5-a1", expected_episode_id: episode_id
+      )
+      second = session.record_user_turn!(
+        VF5_CORRECTION_TURN, user_id: users(:one).id, correlation_id: "query:vf5-2", interpreter_client: interpreter
+      )
+      session.reload
+      assert_equal episode_id, session.live_episode_id
+      texts = session.active_episode["observations"].pluck("text")
+      assert texts.any? { |text| text.include?("apagado") }
+      assert texts.none? { |text| text.match?(/encendido/) }
+      assert texts.any? { |text| text.include?("no observo una obstrucción") }
+      assert texts.any? { |text| text.downcase.include?("abrirse") || text.downcase.include?("reabre") }
+      assert texts.none? { |text| text.include?("fotocélula obstruida") }
+      assert texts.none? { |text| text.match?(/sensibilidad revisada|revisé la sensibilidad/i) }
+      assert_equal "Fermator", session.active_episode.dig("facts", "manufacturer", "value")
+      assert_equal [ "Fermator VF5+" ], session.active_episode["identifiers"].pluck("value")
+      assert_includes second.composed, "apagado"
+      assert_includes second.composed, "SW4 sigue en OFF"
+      assert_includes second.composed, "simulación"
+      assert_not_includes second.composed, "obstrucción descartada"
+
+      ask_vf5(service, session, second.composed, uri)
+      corrected = prompts.last
+      corrected_problem = vf5_field_problem(corrected)
+      assert_includes corrected_problem, "apagado"
+      assert_not_includes corrected_problem, "encendido"
+      assert_includes corrected_problem, "no observo una obstrucción mecánica"
+      assert_not_includes corrected_problem, "fotocélula obstruida"
+      assert_includes vf5_search_results(corrected), "potenciómetro de regulación de fuerza de re-apertura"
+      assert_includes vf5_search_results(corrected), "No hay movimientos de re-apertura automáticos"
+      assert_includes corrected, VF5_DENSE_TURN
+      assert_includes corrected, "no he revisado la sensibilidad de reapertura"
+      assert_includes corrected, "Prueba simulada"
+      assert_includes corrected, VF5_CORRECTION_TURN
+
+      session.record_assistant_turn!(
+        "El LED vigente queda apagado.",
+        user_id: users(:one).id, correlation_id: "query:vf5-a2", expected_episode_id: episode_id
+      )
+      third = session.record_user_turn!(
+        VF5_SUMMARY_TURN, user_id: users(:one).id, correlation_id: "query:vf5-3", interpreter_client: interpreter
+      )
+      session.reload
+      assert_equal episode_id, session.live_episode_id
+      assert_equal VF5_SUMMARY_TURN, session.conversation_history.reverse.find { |row| row["role"] == "user" }["content"]
+      kept = session.active_episode["observations"].pluck("text")
+      assert kept.any? { |text| text.include?("apagado") }
+      assert kept.none? { |text| text.match?(/encendido/) }
+      assert kept.any? { |text| text.include?("no observo una obstrucción") }
+      assert_equal [ "Fermator VF5+" ], session.active_episode["identifiers"].pluck("value")
+
+      ask_vf5(service, session, third.composed, uri)
+      summary = prompts.last
+      assert_includes summary, VF5_DENSE_TURN
+      assert_includes summary, VF5_CORRECTION_TURN
+      assert_includes summary, VF5_SUMMARY_TURN
+      assert_includes summary, "No se ha realizado ninguna reparación"
+      assert_includes summary, "no he revisado la sensibilidad de reapertura"
+      assert_includes vf5_field_problem(summary), "apagado"
+      assert_not_includes vf5_field_problem(summary), "encendido"
+      assert_not_includes vf5_field_problem(summary), "fotocélula obstruida"
+      assert_includes vf5_search_results(summary), "Comprobar que la fotocélula no esté activada"
+      assert_includes vf5_search_results(summary), "Ejemplo: con la fotocélula obstruida"
+      assert_equal 3, retrieves.size
+      assert_equal 0, rag_calls.call
+    end
+  end
+
   def chunk(document_id, content, account_id: "1", canonical_name: document_id, page: 1,
             section_identity: nil, original_filename: nil, aliases: nil)
     metadata = {
@@ -3001,31 +3308,32 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     }
   end
 
-  def vf5_scope_service(account, body, uri)
+  def vf5_scope_service(account, body, uri, passages: nil)
     service = BedrockRagService.new(account: account, knowledge_base_id: "test-kb")
     retrieves = []
     prompts = []
     rag_calls = 0
+    rows = passages || [ { text: body, page: 12 } ]
     client = Object.new
     client.define_singleton_method(:retrieve) do |params|
       retrieves << params
       OpenStruct.new(
-        retrieval_results: [
+        retrieval_results: rows.each_with_index.map { |row, index|
           OpenStruct.new(
-            content: OpenStruct.new(text: body),
+            content: OpenStruct.new(text: row[:text]),
             score: 0.5,
-            location: OpenStruct.new(s3_location: OpenStruct.new(uri: "#{uri}#chunk")),
+            location: OpenStruct.new(s3_location: OpenStruct.new(uri: "#{uri}#chunk-#{index}")),
             metadata: {
               "canonical_name" => "VF5",
               "original_filename" => "VF5.pdf",
               "original_source_uri" => uri,
               "document_id" => VF5_CHUNK_DOCUMENT_ID,
-              "page_number" => 12,
+              "page_number" => row[:page],
               "doc_type" => "manual",
               "account_id" => account.id.to_s
             }
           )
-        ]
+        }
       )
     end
     service.instance_variable_set(:@client, client)
@@ -3037,6 +3345,108 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     end
     service.define_singleton_method(:document_identity_generator) { generator }
     [ service, retrieves, prompts, -> { rag_calls } ]
+  end
+
+  def with_product_turn
+    keys = %w[
+      FIELD_COMPANION_EPISODE_ENABLED
+      FIELD_COMPANION_TURN_ENABLED
+      HAIKU_QUERY_ANALYSIS_MODE
+      RAG_EPISODE_SCOPE_ENABLED
+      DOCUMENT_IDENTITY_SCOPE_ENABLED
+    ]
+    previous = keys.index_with { |key| ENV.fetch(key, nil) }
+    ENV["FIELD_COMPANION_EPISODE_ENABLED"] = "true"
+    ENV["FIELD_COMPANION_TURN_ENABLED"] = "true"
+    ENV["HAIKU_QUERY_ANALYSIS_MODE"] = "owner"
+    ENV["RAG_EPISODE_SCOPE_ENABLED"] = "true"
+    ENV["DOCUMENT_IDENTITY_SCOPE_ENABLED"] = "true"
+    yield
+  ensure
+    keys.each { |key| restore_env(key, previous[key]) } if previous
+  end
+
+  def ask_vf5(service, session, question, uri)
+    service.query(
+      question,
+      raw_question: session.conversation_history.reverse.find { |row| row["role"] == "user" }["content"],
+      episode: session.active_episode,
+      session_context: SessionContextBuilder.build(session),
+      entity_s3_uris: [ uri ],
+      force_entity_filter: true,
+      output_channel: :web,
+      response_locale: :es,
+      account_id: session.account_id
+    )
+  end
+
+  def vf5_history_transform(original, session)
+    original == session.conversation_history.first["content"] ? "none" : "truncate"
+  end
+
+  def vf5_field_problem(prompt)
+    prompt[/## Active Field Problem\n.*?Ignore for other equipment\./m].to_s
+  end
+
+  def vf5_search_results(prompt)
+    prompt.scan(/<search_result>.*?<\/search_result>/m).join("\n")
+  end
+
+  def vf5_dense_tool
+    {
+      "move" => "report",
+      "assertions" => [
+        { "span" => "operador Fermator VF5+", "act" => "assert", "slot_hint" => "manufacturer" },
+        { "span" => "puerta empieza a cerrar y vuelve a abrirse sola", "act" => "assert", "slot_hint" => nil },
+        { "span" => "LED de fotocélula está encendido", "act" => "assert", "slot_hint" => nil },
+        { "span" => "no observo una obstrucción mecánica", "act" => "negate", "slot_hint" => nil },
+        { "span" => "SW4 está en OFF", "act" => "assert", "slot_hint" => nil }
+      ],
+      "observations" => [
+        "puerta empieza a cerrar y vuelve a abrirse sola",
+        "LED de fotocélula está encendido",
+        "no observo una obstrucción mecánica"
+      ],
+      "pending_resolution" => nil,
+      "clarification_target" => nil
+    }
+  end
+
+  def vf5_correction_tool
+    {
+      "move" => "correct",
+      "assertions" => [
+        { "span" => "el LED está apagado", "act" => "assert", "slot_hint" => nil }
+      ],
+      "observations" => [ "el LED está apagado" ],
+      "pending_resolution" => nil,
+      "clarification_target" => nil
+    }
+  end
+
+  def vf5_summary_tool
+    {
+      "move" => "follow_up",
+      "assertions" => [],
+      "observations" => [],
+      "pending_resolution" => nil,
+      "clarification_target" => nil
+    }
+  end
+
+  class Vf5ScriptedInterpreter
+    def initialize(responses)
+      @responses = responses.dup
+    end
+
+    def converse(_params)
+      tool = Struct.new(:name, :input).new("turn_perception", @responses.shift)
+      block = Struct.new(:tool_use).new(tool)
+      message = Struct.new(:content).new([ block ])
+      output = Struct.new(:message).new(message)
+      usage = Struct.new(:input_tokens, :output_tokens).new(4, 2)
+      Struct.new(:output, :usage).new(output, usage)
+    end
   end
 
   def with_flag(value)

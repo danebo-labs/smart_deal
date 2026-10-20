@@ -115,6 +115,32 @@ class Rag::QueryComposerTest < ActiveSupport::TestCase
     )
   end
 
+  test "a slotless negation that is also an observation stays in the turn" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: @now)
+    sentence = "no observo una obstrucción mecánica"
+    turn = "El LED de fotocélula está encendido, #{sentence} y no he revisado la sensibilidad de reapertura"
+    perception = report.with(
+      move: "report",
+      observations: [ sentence ],
+      identities: [
+        Rag::TurnPerception::Identity.new(
+          span: sentence, act: "negate", kind: "negate", slot: nil,
+          value: sentence, source: nil, manufacturer: nil
+        )
+      ]
+    )
+
+    explained = Rag::QueryComposer.explain(
+      state: episode, turn: turn, perception: perception, decision: decision_for("ready")
+    )
+
+    assert_includes explained[:query], sentence
+    assert_includes explained[:query], "no he revisado la sensibilidad de reapertura"
+    assert_includes explained[:query], "está encendido"
+    assert_not_includes explained[:query], "obstrucción descartada"
+    assert_not_includes explained[:components], "current_turn:dropped"
+  end
+
   test "a rejected 8 does not rewrite código 18 and a later turn still shows that code" do
     episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: @now)
     episode.write_fact!(

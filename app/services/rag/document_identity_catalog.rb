@@ -36,8 +36,8 @@ module Rag
 
     Resolution = Data.define(:status, :value, :type, :manufacturer, :candidates)
     # Brand plus designator of one visible entry. Exact tokens only: a shorter
-    # token does not select a longer designator.
-    CompoundBrand = Data.define(:brand, :designator)
+    # token does not select a longer designator. text is the matched window.
+    CompoundBrand = Data.define(:brand, :designator, :text)
 
     def initialize(raw, loaded: true)
       @loaded = loaded
@@ -90,39 +90,24 @@ module Rag
       designator_resolution(prefixed.select { |row| row[:norm] == canons.first[:norm] }, :prefix)
     end
 
-    # First token is one exact brand and the remainder is one exact designator
-    # of that same visible, confirmed entry. Two entries, an ambiguous brand,
-    # or a designator of a different entry return nil. No prefix match.
+    # One contiguous window is one exact brand and one exact designator of that
+    # same visible, confirmed entry. Words around that window do not hide it.
+    # Two different pairs return nil. A shorter token does not select a longer
+    # designator. No prefix match.
     def resolve_compound_brand(span, viewer_account: nil)
       tokens = span.to_s.squish.split(/\s+/)
       return nil if tokens.size < 2
 
-      brand_norm = FollowupQueryRewriter.normalize_label(tokens.first)
-      rest_norm = designator_label(tokens.drop(1).join(" "))
-      return nil if brand_norm.blank? || rest_norm.blank?
+      windows = compound_windows(tokens)
+      return nil if windows.empty?
 
-      brand_matches = entries.filter_map { |entry|
-        brand = Array(entry.brands).find { |item| FollowupQueryRewriter.normalize_label(item) == brand_norm }
-        next if brand.blank? || !entry.confirmed
-
-        { entry: entry, brand: brand }
+      hits = windows.filter_map { |window| compound_brand_window(window, viewer_account) }
+      chosen = hits.uniq { |hit|
+        [ FollowupQueryRewriter.normalize_label(hit.brand), designator_label(hit.designator) ]
       }
-      brand_matches = visible_entry_matches(brand_matches, viewer_account)
-      return nil unless brand_matches.map { |row| row[:brand].downcase }.uniq.one?
+      return nil unless chosen.one?
 
-      hits = visible_rows(
-        designator_rows.select { |row| row[:norm] == rest_norm && row[:entry].confirmed },
-        viewer_account
-      )
-      brand_keys = brand_matches.map { |row| entry_key(row[:entry]) }
-      shared = hits.select { |row| brand_keys.include?(entry_key(row[:entry])) }
-      return nil unless shared.uniq { |row| entry_key(row[:entry]) }.one?
-
-      entry = shared.first[:entry]
-      brand = Array(entry.brands).find { |item| FollowupQueryRewriter.normalize_label(item) == brand_norm }
-      return nil if brand.blank?
-
-      CompoundBrand.new(brand: brand, designator: shared.first[:value])
+      chosen.first
     end
 
     # Exact brand only. No prefix and no fuzzy match. One canonical brand
@@ -305,6 +290,62 @@ module Rag
 
     def designator_label(value)
       self.class.designator_label(value)
+    end
+
+    # Brand plus at most three designator tokens. The catalog comparison is in
+    # memory; only a window that already matches one entry asks the database.
+    def compound_windows(tokens)
+      windows = []
+      tokens.each_index do |start_at|
+        limit = [ tokens.size, start_at + 4 ].min
+        ((start_at + 1)...limit).each do |end_at|
+          window = tokens[start_at..end_at]
+          windows << window if in_memory_compound?(window)
+        end
+      end
+      windows
+    end
+
+    def in_memory_compound?(tokens)
+      brand_norm = FollowupQueryRewriter.normalize_label(tokens.first)
+      rest_norm = designator_label(tokens.drop(1).join(" "))
+      return false if brand_norm.blank? || rest_norm.blank?
+
+      entries.any? { |entry|
+        next false unless entry.confirmed
+
+        Array(entry.brands).any? { |item| FollowupQueryRewriter.normalize_label(item) == brand_norm } &&
+          Array(entry.designators).any? { |value| designator_label(value) == rest_norm }
+      }
+    end
+
+    def compound_brand_window(tokens, viewer_account)
+      brand_norm = FollowupQueryRewriter.normalize_label(tokens.first)
+      rest_norm = designator_label(tokens.drop(1).join(" "))
+      return nil if brand_norm.blank? || rest_norm.blank?
+
+      brand_matches = entries.filter_map { |entry|
+        brand = Array(entry.brands).find { |item| FollowupQueryRewriter.normalize_label(item) == brand_norm }
+        next if brand.blank? || !entry.confirmed
+
+        { entry: entry, brand: brand }
+      }
+      brand_matches = visible_entry_matches(brand_matches, viewer_account)
+      return nil unless brand_matches.map { |row| row[:brand].downcase }.uniq.one?
+
+      hits = visible_rows(
+        designator_rows.select { |row| row[:norm] == rest_norm && row[:entry].confirmed },
+        viewer_account
+      )
+      brand_keys = brand_matches.map { |row| entry_key(row[:entry]) }
+      shared = hits.select { |row| brand_keys.include?(entry_key(row[:entry])) }
+      return nil unless shared.uniq { |row| entry_key(row[:entry]) }.one?
+
+      entry = shared.first[:entry]
+      brand = Array(entry.brands).find { |item| FollowupQueryRewriter.normalize_label(item) == brand_norm }
+      return nil if brand.blank?
+
+      CompoundBrand.new(brand: brand, designator: shared.first[:value], text: tokens.join(" "))
     end
 
     def unresolved

@@ -4,7 +4,9 @@ class ConversationSession < ApplicationRecord
   EXPIRY_DURATION = 30.days  # web workspace TTL; sliding window via refresh!
   MAX_HISTORY    = 20
   MAX_ENTITIES   = ENV.fetch('SESSION_MAX_ENTITIES', 10).to_i
-  MAX_MSG_LENGTH = 300
+  # One technician turn can carry the equipment, the symptom, the observations,
+  # and the question. History, the interpreter, and span checks share this cut.
+  MAX_MSG_LENGTH = 600
   EPISODE_WINDOW = 4.hours
   EPISODE_MAX_USER_MESSAGES = 3
   CaseBoundary = Data.define(:attributes, :case_boundary_reason, :pin_release_reason)

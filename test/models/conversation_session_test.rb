@@ -237,11 +237,11 @@ class ConversationSessionTest < ActiveSupport::TestCase
       channel:    'whatsapp',
       expires_at: 30.minutes.from_now
     )
-    long_msg = 'x' * 500
+    long_msg = "x" * (ConversationSession::MAX_MSG_LENGTH + 40)
     s.add_to_history('user', long_msg)
     s.reload
 
-    assert s.conversation_history.first['content'].length <= ConversationSession::MAX_MSG_LENGTH
+    assert_equal ConversationSession::MAX_MSG_LENGTH, s.conversation_history.first["content"].length
   end
 
   # ─── recent_history_for_prompt ──────────────────────────────────────────────
@@ -1071,7 +1071,7 @@ class ConversationSessionTest < ActiveSupport::TestCase
   test "record_assistant_turn! reads pending_fact from the full reply and stores the truncated history" do
     session = web_episode_session
     question = "Cómo se ajustan los resortes de la fijación de cables ?"
-    reply = ("contexto " * 40) + "¿Sabes el modelo del equipo?"
+    reply = ("contexto " * ((ConversationSession::MAX_MSG_LENGTH / 9) + 1)) + "¿Sabes el modelo del equipo?"
     assert reply.length > ConversationSession::MAX_MSG_LENGTH
 
     with_episode_flag("true") do

@@ -741,11 +741,11 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
   end
 
   test "span validation uses the same truncated turn history persists" do
-    body = "#{'A' * 280} KEEP #{'B' * 40} ABC900"
+    body = ("A" * (ConversationSession::MAX_MSG_LENGTH - 20)) + " KEEP " + ("B" * 80) + " ABC900"
     truncated = Rag::TurnText.truncate(body)
 
     assert_equal body.truncate(ConversationSession::MAX_MSG_LENGTH), truncated
-    assert_equal 300, truncated.length
+    assert_equal ConversationSession::MAX_MSG_LENGTH, truncated.length
     assert truncated.end_with?("...")
     assert_not_includes truncated, "ABC900"
     assert_includes truncated, "KEEP"
@@ -1175,6 +1175,67 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert result.identifiers.any? { |item| item.value == "Elemont MH+" }
     assert_equal "Elemont", episode.fact("manufacturer")["value"]
     assert_equal "user", episode.fact("manufacturer")["source"]
+    assert Rag::EquipmentIdentity.from_episode(episode).known?
+  end
+
+  test "a role word does not hide one brand and designator window" do
+    catalog = equipment_catalog([
+      equipment_row(brand: "Norte", designators: [ "QX7+" ])
+    ])
+    turn = "Estoy con un operador Norte QX7+"
+    result = perceive_with(catalog, report([ assert_span("operador Norte QX7+", "manufacturer") ]), turn)
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    settle(episode, result, turn)
+
+    assert_equal "Norte", episode.fact("manufacturer")["value"]
+    assert_equal "user", episode.fact("manufacturer")["source"]
+    assert_equal [ "Norte QX7+" ], episode.identifiers.pluck("value")
+    assert_equal "operador Norte QX7+", result.facts.find { |item| item.slot == "manufacturer" }.span
+    assert Rag::EquipmentIdentity.from_episode(episode).known?
+  end
+
+  test "two brand and designator pairs in one span write no manufacturer" do
+    catalog = equipment_catalog([
+      equipment_row(brand: "Norte", designators: [ "QX7+" ]),
+      equipment_row(brand: "Sur", designators: [ "QX7+" ])
+    ])
+    turn = "operador Norte QX7+ y Sur QX7+"
+    result = perceive_with(catalog, report([ assert_span(turn, "manufacturer") ]), turn)
+
+    assert_empty result.facts
+    assert result.identities.none? { |item| item.slot == "manufacturer" }
+  end
+
+  test "a longer designator token does not resolve as the shorter catalog designator" do
+    catalog = equipment_catalog([
+      equipment_row(brand: "Norte", designators: [ "VF5+" ])
+    ])
+    turn = "operador Norte VF5+X"
+    result = perceive_with(catalog, report([ assert_span(turn, "manufacturer") ]), turn)
+
+    assert_empty result.facts
+    assert result.identities.none? { |item| item.value == "VF5+" || item.value == "Norte VF5+" }
+  end
+
+  test "the detailed Fermator span records the manufacturer and the model window" do
+    KbDocument.create!(
+      account: @owner, s3_key: "bulk_uploads/1/2026-08-31/VF5.pdf",
+      display_name: "VF5", document_uid: "126cda62-64ad-4469-8674-a29f12e38d48", aliases: []
+    )
+    turn = "Estoy con un operador Fermator VF5+"
+    result = Rag::TurnPerception.build(
+      report([ assert_span("operador Fermator VF5+", "manufacturer") ]),
+      turn: turn,
+      episode: Rag::ActiveEpisode.new,
+      catalog: Rag::DocumentIdentityCatalog.current,
+      viewer_account: @owner
+    )
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    settle(episode, result, turn)
+
+    assert_equal "Fermator", episode.fact("manufacturer")["value"]
+    assert_equal "user", episode.fact("manufacturer")["source"]
+    assert_equal [ "Fermator VF5+" ], episode.identifiers.pluck("value")
     assert Rag::EquipmentIdentity.from_episode(episode).known?
   end
 

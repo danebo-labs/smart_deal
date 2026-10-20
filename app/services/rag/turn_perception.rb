@@ -321,9 +321,10 @@ module Rag
       [ identities, ambiguities ]
     end
 
-    # The span stays an identifier. A matching brand and designator also
-    # record the manufacturer the way a lone brand does. Negating that span
-    # drops this manufacturer only when it is the one stored.
+    # The matched window is the identifier. Words around the brand and the
+    # designator stay out of that token. The pair also records the manufacturer
+    # the way a lone brand does. Negating it drops this manufacturer only when
+    # it is the one stored.
     def compound_identities(item)
       return nil unless %w[assert negate].include?(item["act"])
 
@@ -331,17 +332,17 @@ module Rag
       return nil if match.nil?
 
       if item["act"] == "negate"
-        note_rule("compound_brand", item["span"], "negated_same_entry", { "brand" => match.brand })
-        rows = [ identifier_negation(item["span"]) ]
+        note_rule("compound_brand", match.text, "negated_same_entry", { "brand" => match.brand })
+        rows = [ identifier_negation(match.text) ]
         rows.unshift(manufacturer_negation(item["span"], match.brand)) if stored_brand?(match.brand)
         return rows
       end
 
       disagree(item["span"], item["slot_hint"], "manufacturer")
-      note_rule("compound_brand", item["span"], "same_entry", { "brand" => match.brand })
+      note_rule("compound_brand", match.text, "same_entry", { "brand" => match.brand })
       [
         fact(item["span"], "assert", "manufacturer", match.brand, declared_source(item["span"], match.brand), match.brand),
-        identifier(item["span"], "assert")
+        identifier(match.text, "assert")
       ]
     end
 

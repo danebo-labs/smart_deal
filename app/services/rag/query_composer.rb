@@ -75,7 +75,10 @@ module Rag
       return nil if @perception&.move == "answer_pending" && %w[unknown absent seek].include?(@perception.pending_resolution)
 
       text = @turn.dup
+      retained = retained_observation_labels
       Array(@perception&.identities).select { |item| item.kind == "negate" }.each do |item|
+        next if retained_observation_negation?(item, retained)
+
         text = excise_negation(text, item)
       end
       text = strip_rejected_phrases(text)
@@ -88,6 +91,19 @@ module Rag
       return text if value.to_s.match?(/\A\d+\z/)
 
       excise(text, item.span.presence || value)
+    end
+
+    # A slotless negation that is also a stored observation is evidence of
+    # what the technician saw. It stays in the turn. A negation that consumes
+    # the turn and is not an observation is still removed.
+    def retained_observation_labels
+      Array(@perception&.observations).map { |text| ObservationText.normalize(text) }
+    end
+
+    def retained_observation_negation?(item, labels)
+      return false if item.slot.present?
+
+      labels.include?(ObservationText.normalize(item.span.presence || item.value))
     end
 
     def strip_rejected_phrases(text)

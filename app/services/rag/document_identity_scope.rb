@@ -275,9 +275,9 @@ module Rag
           according\s+to|the\s+manual)\b
     /ix
     CHUNK_DESIGNATOR_PATTERN = /\b[A-Z]{1,4}-?\d{1,4}\b/
-    # Keeps "+". CHUNK_DESIGNATOR_PATTERN stops before it, so a shorter form
-    # is not the same model.
-    REVISION_DESIGNATOR = /\b[A-Z]{1,4}-?\d{1,4}\+?/
+    # The whole token. A shorter prefix is not this designator: VF5+X is not
+    # VF5+, VF5A is not VF5, and ABCD12345 is not ABCD1234. "+" stays on VF5+.
+    REVISION_DESIGNATOR = /\b[A-Z]{1,4}-?\d[A-Z\d+\-]*/
     UUID_DOCUMENT_ID = /\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i
     # "=" promotes a code the way "significa" does. The code itself is not hardcoded.
     EQUALITY_CODE_MEANING_PATTERN = /
@@ -1253,13 +1253,15 @@ module Rag
     private_class_method :revision_designators
 
     # A model-shaped token in the identity fields is equipment identity.
-    # Absence from KbDocumentResolver::BRANDS does not make it missing.
-    # Caller already rejected a needle match, so the designator is not this job.
+    # The token is the whole designator. ABCD12345 is not invisible just because
+    # ABCD1234 would have ended at four digits. Absence from
+    # KbDocumentResolver::BRANDS does not make it missing. Caller already
+    # rejected a needle match, so the designator is not this job.
     def self.explicit_unmatched_identity?(chunk)
       text = IDENTITY_FIELDS.filter_map { |field| metadata_of(chunk)[field].presence }.join("\n")
       return false if text.blank?
 
-      text.upcase.match?(CHUNK_DESIGNATOR_PATTERN)
+      text.upcase.match?(REVISION_DESIGNATOR)
     end
     private_class_method :explicit_unmatched_identity?
 

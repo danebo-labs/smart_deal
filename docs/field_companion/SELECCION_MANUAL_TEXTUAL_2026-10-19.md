@@ -1,16 +1,16 @@
 # Selección de manual textual para la conversación lineal
 
-**Estado:** selección para revisión. No es la matriz. No se ejecutó.
+**Estado:** manual elegido. El caso recomendado es «La puerta se re-abre sola». La matriz está en [CASO_FERMATOR_VF5_REABRE_SOLA_2026-10-19.md](CASO_FERMATOR_VF5_REABRE_SOLA_2026-10-19.md). No se ejecutó.
 
 **Fecha:** 2026-10-19.
 
-**HEAD de esta selección:** `4c58281e466fd769c198edd85e8c5c7fbc19b6a4`.
+**HEAD de la selección original:** `4c58281e466fd769c198edd85e8c5c7fbc19b6a4`. El PDF del catálogo quedó en el repositorio en `5a40f9a3524bcc8a33471317a36734ac5afb8ceb`. Este corte, sobre ese HEAD, cambia el síntoma recomendado.
 
 Este artefacto ajusta el orden vigente de [PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](../PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md). No abre otra cola ni otro plan. No declara `EPISODIO_VALIDADO`. No llama modelos ni consulta AWS.
 
-El recorrido de este manual es anterior al caso del plano. No sustituye las fases 0 a 5 del Elemont MH ni convierte en correctas las respuestas históricas de ese plano. El caso del plano sigue en [CASO_ELEMONT_MH_LINEAL_2026-10-19.md](CASO_ELEMONT_MH_LINEAL_2026-10-19.md), pendiente de ejecución.
+El recorrido de este manual es el orden 2 y es anterior al caso del plano. No sustituye las fases 0 a 5 del Elemont MH ni convierte en correctas las respuestas históricas de ese plano. El caso del plano sigue en el orden 3, [CASO_ELEMONT_MH_LINEAL_2026-10-19.md](CASO_ELEMONT_MH_LINEAL_2026-10-19.md), pendiente de ejecución. Aceptar después el recorrido textual no cierra esas fases.
 
-Las respuestas de este bosquejo son del evaluador. No entran al prompt, al historial del técnico ni a los documentos recuperables. El escenario es simulado. Un procedimiento escrito en el manual no demuestra que se haya ejecutado ni que haya resuelto una falla real.
+Las respuestas de la matriz son del evaluador. No entran al prompt, al historial del técnico ni a los documentos recuperables. El escenario es simulado. Un procedimiento escrito en el manual no demuestra que se haya ejecutado ni que haya resuelto una falla real.
 
 ## Cómo se midió
 
@@ -26,7 +26,7 @@ Se dejó fuera, después de medirlo, el manual de puerta Excelsior 40/10 PM (`Ma
 | Tamaño | 1,21 MB (1 271 591 bytes) | 0,57 MB (597 713 bytes); el confirmado, 0,80 MB (837 341 bytes) | 0,23 MB (243 895 bytes) |
 | Idioma | Español | Inglés | Español |
 | Equipo | Módulo de puerta | Variador de puerta | Variador del control, no puerta |
-| Caso | Síntoma con comprobaciones en una sección | Código de falla en una tabla | Código de falla; la columna de solución se mezcla entre filas |
+| Caso | «La puerta se re-abre sola», tres comprobaciones en 8.2 | Código de falla en una tabla | Código de falla; la columna de solución se mezcla entre filas |
 | KB, evidencia existente | Corpus Jesús, cuenta 1, ingesta cerrada 16/16 hacia `Y7RZWMFJSR` | Corpus Gonzalo, cuenta 3 | El mismo corpus Jesús que VF5 |
 | Correspondencia | Título local comprobado. Objeto en la KB, pendiente | Dos filas con el mismo nombre. Objeto en la KB, pendiente | Nombre de archivo comprobado. `evidence_text` de la página 1, no comprobado. KB, pendiente |
 
@@ -47,19 +47,13 @@ Se dejó fuera, después de medirlo, el manual de puerta Excelsior 40/10 PM (`Ma
 
 La copia del repositorio es el objeto leído de S3. Su SHA-256 coincide con el PDF local de la carpeta de Jesús. La portada y el índice imprimen ese título y esa versión. `evidence_text` coincide con ese PDF. Esta lectura no modificó el objeto ni el corpus. La ingesta de Jesús quedó cerrada con 16/16 assets hacia la KB `Y7RZWMFJSR`; `VF5.pdf` es uno de los 16 archivos de esa carpeta y de ese prefijo de catálogo. Que la corrida recupere este mismo archivo sigue en el preflight: no se consultó la KB.
 
-Secciones que sostienen el caso: 8.2 Funcionamiento normal, en las páginas PDF 12 y 13 de 22. El pie de la 12 dice `Pág. 11 / 21` y el de la 13 dice `Pág. 12 / 21`. El índice impreso apunta la sección 8 a la página 12. Para juzgar manda la sección, y se anota el índice del PDF.
+Sección que sostiene el caso: 8.2 Funcionamiento normal, «La puerta se re-abre sola», página PDF 12 de 22, con una raya que continúa en la página PDF 13. El pie de la 12 dice `Pág. 11 / 21` y el de la 13 dice `Pág. 12 / 21`. El índice impreso apunta la sección 8 a la página 12. Para juzgar manda la sección, y se anota el índice del PDF. La diferencia máster/esclavo está en la página PDF 5, sección 4, SW4; el pie de esa página dice `Pág. 4 / 21` y el índice apunta la sección 4 a la página 5.
 
-Síntoma utilizable: «La puerta se abre pero no se cierra». El manual escribe cuatro comprobaciones: LED de fotocélula, señal de cerrado `#12`, señal de re-apertura `#21`, y voltaje en la señal de apertura. El reemplazo del control VF queda escrito solo para el caso en que la tensión llega y la puerta sigue sin cerrarse.
+Síntoma del primer recorrido: «La puerta se re-abre sola». El manual escribe tres comprobaciones en la página PDF 12: sensibilidad del potenciómetro de regulación de fuerza de re-apertura `#54`, fotocélula no activada y obstrucción mecánica. La página PDF 13 añade, si el problema persista, desconectar la fotocélula y pulsar TEST. El contraste visual y el texto están en la matriz. Este caso no usa valores de fuerza.
 
-Consulta corta: «La puerta abre y no cierra, y el LED de fotocélula está encendido. ¿Qué comprueba el manual?»
+El apartado vecino «La puerta se abre pero no se cierra», en la misma 8.2, queda fuera del primer recorrido. ChatGPT contrastó el documento original: ese apartado llama OPEN a `(#8)` y señal de cerrado a `(#12)`. La sección 4, en el esquema de dos entradas, rotula cerrar en el terminal 8 y abrir en el 12. La sección 5.2 llama al 12 «Señal abrir» y al 8 «Señal cerrar». La inversión queda registrada para una prueba posterior. Detectarla no se penaliza. Esta selección no modifica el PDF ni los chunks para ocultarla. El bosquejo de siete turnos que usaba «abre y no cierra» queda retirado como primer recorrido; el guion vigente es la matriz.
 
-Respuesta esperada: en 8.2, si el LED de fotocélula está activado, verificar que la fotocélula no está bloqueada o que la entrada OPEN `(#8)` está activa continuamente. Eso es una comprobación, no un resultado ya obtenido.
-
-Pasaje, página PDF 12 de 22, sección 8.2:
-
-> La puerta se abre pero no se cierra. Comprobar si el LED de la fotocélula esta activado. Si lo está, verificar que la fotocélula no está bloqueada, o la entrada OPEN está activa (#8) continuamente.
-
-Partes que no sostienen solas la respuesta: la página PDF 4, sección 3 Conexionado, solo tiene encabezado seleccionable. SW3 dice «Observar la imagen» para la posición del patín y del motor; el texto también enumera esas posiciones. El autoajuste del patín remite al manual de montaje, que es otro documento. La sección 5.11 regula la fuerza «de 60 a 150Nm» y la tabla de desempeño dice «60» a «150» N. Esta selección no usa esa cifra.
+Partes que no sostienen solas la respuesta: la página PDF 4, sección 3 Conexionado, solo tiene encabezado seleccionable. SW3 dice «Observar la imagen» para la posición del patín y del motor; el texto también enumera esas posiciones. El autoajuste del patín remite al manual de montaje, que es otro documento. La sección 5.11 regula la fuerza «de 60 a 150Nm» y la tabla de desempeño dice «60» a «150» N. Esta selección no usa esa cifra. El síntoma «La puerta se vuelve a abrir cuando el patín está cerrando», en la página PDF 13, es otro apartado.
 
 ### YS-K01
 
@@ -116,76 +110,18 @@ Es un buen texto de fallas y no es un manual de puertas. El caso queda repartido
 
 El manual para revisar primero es el Fermator VF5+, `DOC-FE.IE.IN.016172.ES`, versión 0.4.
 
-Está en español, trata de la puerta, cabe en 22 páginas y concentra el síntoma «abre y no cierra» en la sección 8.2, con comprobaciones y un límite explícito para cambiar el control. Hay una sola fila de catálogo con ese designador. El YS-K01 también es de puerta y tiene códigos claros, en inglés, más largo y duplicado en el catálogo. El capítulo 9 de Monarch es textual y corto, y no es puerta; además la solución de Err02 no queda aislada en la tabla.
+Está en español, trata de la puerta, cabe en 22 páginas y concentra «La puerta se re-abre sola» en la sección 8.2, con tres comprobaciones en una sola página del PDF. Hay una sola fila de catálogo con ese designador. El síntoma «abre y no cierra» del mismo apartado queda para después, porque invierte apertura y cierre respecto de las secciones 4 y 5.2. El YS-K01 también es de puerta y tiene códigos claros, en inglés, más largo y duplicado en el catálogo. El capítulo 9 de Monarch es textual y corto, y no es puerta; además la solución de Err02 no queda aislada en la tabla.
 
-## Bosquejo de siete turnos
+## Guion vigente
 
-Una sesión. El episodio es el que abre `field_companion:start_clean_case` antes del primer mensaje. El turno 1 y los siguientes conservan ese `episode_id`. El primer mensaje no pide abrir otro. Sin reset entre mensajes. La selección del manual es un clic, no un turno.
-
-Entre el turno 1 y el turno 2, en la tarjeta cuyo `document_id` sea `126cda62-64ad-4469-8674-a29f12e38d48`, pulsar una vez «Dejar este manual seleccionado». Si esa tarjeta no está, el turno 1 queda rechazado y no se sigue.
-
-### Turno 1
-
-**Mensaje.** «Estoy con un operador de puerta Fermator VF5+. La puerta de cabina abre y no cierra. No veo un código de falla y todavía no he medido.»
-
-**Conducta esperada.** Conserva Fermator, VF5+, el síntoma, la ausencia de código y la ausencia de mediciones. Ofrece la tarjeta de ese uid. Puede preguntar solo si el LED de fotocélula está encendido, porque la primera comprobación de 8.2 depende de eso. No declara causa ni pide cambiar el control.
-
-**Respaldo.** Ninguna afirmación documental todavía. El síntoma y las ausencias son del técnico. Aceptación: mismo `episode_id` que imprimió `start_clean_case`; foco vacío hasta el clic.
-
-### Turno 2
-
-**Mensaje.** «En el manual seleccionado, ¿qué comprobaciones escribe si la puerta abre y no cierra?»
-
-**Conducta esperada.** Cita la sección 8.2 y enumera las comprobaciones como procedimiento, no como resultados. Si el LED de fotocélula sigue sin observarse, lo pide y no elige la rama. Conserva `#8`, `#12` y `#21` como están escritos en 8.2. No reescribe `#8` con el mapa de terminales de la sección 5.2.
-
-**Respaldo.** Página PDF 12, sección 8.2, el párrafo citado arriba y las tres comprobaciones que lo siguen. Aceptación: mismo episodio y mismo foco; una afirmación de 8.2 sin su sección se rechaza.
-
-### Turno 3
-
-**Mensaje.** «Dato simulado de esta prueba: el LED de fotocélula está encendido y el haz no está tapado.»
-
-**Conducta esperada.** Aplica la rama escrita: con el LED activado, la fotocélula bloqueada o la entrada OPEN `(#8)` activa de forma continua. El haz destapado ya está dicho. Puede pedir si `#8` está activa de forma continua. No trata el dato simulado como una reparación hecha ni manda cambiar el módulo.
-
-**Respaldo.** La misma frase de 8.2. Aceptación: el dato queda marcado como simulado; `#8` no se convierte en el terminal 12 de la sección 5.2.
-
-### Turno 4
-
-**Mensaje.** «Otro dato simulado: en el terminal 12 no llega la señal de cerrado.»
-
-**Conducta esperada.** Registra que la señal de cerrado `#12` no llega, como dato simulado. El manual manda cambiar el control VF si la tensión llega y la puerta no se cierra. Esa condición no está cumplida. El manual no nombra el borne de la maniobra que debería alimentar el terminal 12. Conserva el LED de fotocélula encendido mientras no se corrija.
-
-**Respaldo.** Página PDF 12, sección 8.2: «Comprobar que la señal de cerrado (#12) llega al sistema, utilizando un multímetro o la consola. Cambiar el control VF si la tensión llega pero la puerta no se cierra.»
-
-### Turno 5
-
-**Mensaje.** «Corrijo un antecedente: el LED de fotocélula está apagado, no encendido. El dato del terminal 12 se mantiene.»
-
-**Conducta esperada.** Retira el LED encendido como observación vigente. La rama de fotocélula bloqueada o de `#8` continua deja de ser la condición observada. Conserva el síntoma, el manual, el episodio y el dato simulado del terminal 12. No aplica la comprobación del LED STATUS ni la de los fusibles: ese LED no fue observado. No cambia de modelo ni de documento.
-
-**Respaldo.** La corrección es del técnico. La señal `#12` sigue siendo la frase de 8.2. Aceptación: el turno siguiente no repone el LED de fotocélula como encendido.
-
-### Turno 6
-
-**Mensaje.** «¿Entonces cambio el controlador VF?»
-
-**Conducta esperada.** No lo indica. El cambio del control VF está escrito para cuando la tensión llega y la puerta sigue sin cerrarse. El dato simulado dice que la señal no llega. La causa y el reemplazo quedan sin confirmar. No inventa que el fallo esté en el fusible, el motor o el encoder.
-
-**Respaldo.** La misma frase de `#12`. Aceptación: la respuesta separa el procedimiento escrito del dato simulado y no cierra el diagnóstico.
-
-### Turno 7
-
-**Mensaje.** «Resume el caso y en qué estado queda.»
-
-**Conducta esperada.** Equipo Fermator VF5+. Síntoma: la puerta abre y no cierra. Sin código y sin reparación. Datos simulados vigentes: LED de fotocélula apagado, después de la corrección; señal de cerrado ausente en el terminal 12. El manual no ordena cambiar el control VF con esa observación. Diagnóstico pendiente. Mismo episodio y mismo foco.
-
-**Respaldo.** No agrega un pasaje distinto de 8.2. Aceptación: el `episode_id` del turno 7 es el de `start_clean_case`; el resumen no dice que se haya reparado la puerta.
+El bosquejo de «abre y no cierra» no se ejecuta. Los siete turnos, las respuestas de referencia y las causas de rechazo están en [CASO_FERMATOR_VF5_REABRE_SOLA_2026-10-19.md](CASO_FERMATOR_VF5_REABRE_SOLA_2026-10-19.md). Una sesión. El episodio es el que abre `field_companion:start_clean_case`. El clic sobre `126cda62-64ad-4469-8674-a29f12e38d48` no es un turno.
 
 ## Gaps y correspondencias pendientes
 
 - Presencia del PDF en la KB que lea la corrida. La evidencia de ingesta apunta a `Y7RZWMFJSR` para la cuenta 1. El `.env` local cita `QGVYLPTEGT`. No se asume que sean la misma base. El preflight tiene que leer el identificador efectivo y, en lectura, el uid `126cda62-64ad-4469-8674-a29f12e38d48` y el SHA de arriba.
-- El índice impreso y el pie de página no usan el mismo número. Manda la sección 8.2 y la posición en el PDF.
-- La sección 8.2 llama OPEN a `(#8)` y señal de cerrado a `(#12)`. La sección 5.2 llama señal abrir al terminal 12, y el cierre por los terminales 8 y 10 cuando SW1 está en dos entradas. El bosquejo no pide reconciliarlos. Una respuesta que corrija `#8` con 5.2 se sale de este caso.
+- El índice impreso y el pie de página no usan el mismo número. Manda la sección, y se anota el índice del PDF.
+- La inversión de `#8` y `#12` queda para una prueba posterior. Detectarla en el recorrido de la reapertura no se penaliza. Sustituir con ella las comprobaciones de «se re-abre sola» sí se rechaza, y el criterio está en la matriz.
 - La página de conexionado y la figura de SW3 no aportan el texto de las comprobaciones.
-- La unidad de la fuerza, Nm en 5.11 y N en la tabla de desempeño, queda fuera del bosquejo.
+- La unidad de la fuerza, Nm en 5.11 y N en la tabla de desempeño, queda fuera de este recorrido.
 - Una copia local `Fermator vf5+.pdf`, SHA-256 `1586bc3f31991c257efcfe8a6eff4d2f1fa2407fb823a424aba05351165249ff`, 16 páginas, no es el archivo del catálogo `VF5.pdf`. No se selecciona.
-- No hay matriz de aceptación ni corrida. El paso siguiente es la revisión de Lahiri y ChatGPT.
+- La matriz está escrita y no hubo corrida. El paso siguiente es la revisión de Lahiri y ChatGPT, y después una pasada con captura y presupuesto acotado. Todavía no corresponde declarar un recorrido aceptado ni `EPISODIO_VALIDADO`.

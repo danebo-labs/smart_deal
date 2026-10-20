@@ -8,7 +8,7 @@
 
 **Corrección de matriz:** 2026-10-19, sobre `4c58281e466fd769c198edd85e8c5c7fbc19b6a4`. Se retira la lectura de LC2 y LC7 como bobinas en serie con Dp2 o Dp3. El turno 5 deja abierta la identidad física. El episodio es el que abre `start_clean_case`.
 
-Este artefacto sigue en [PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](../PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md). Va después del manual textual propuesto en [SELECCION_MANUAL_TEXTUAL_2026-10-19.md](SELECCION_MANUAL_TEXTUAL_2026-10-19.md). No abre otra cola ni otro plan. No declara `EPISODIO_VALIDADO`. No se ejecutó: no hubo llamadas a modelos ni a AWS.
+Este artefacto sigue en [PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](../PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md). Va en el orden 3, después de la matriz textual del VF5+ en [CASO_FERMATOR_VF5_REABRE_SOLA_2026-10-19.md](CASO_FERMATOR_VF5_REABRE_SOLA_2026-10-19.md). La selección del manual está en [SELECCION_MANUAL_TEXTUAL_2026-10-19.md](SELECCION_MANUAL_TEXTUAL_2026-10-19.md). No abre otra cola ni otro plan. No declara `EPISODIO_VALIDADO`. No se ejecutó: no hubo llamadas a modelos ni a AWS. Las correcciones de esta matriz y los resultados históricos del plano se conservan.
 
 Una aceptación futura del manual textual no cierra estas fases ni corrige las respuestas históricas del plano. Una aceptación futura de este caso tampoco las convierte en correctas por sí sola: las aceptaciones parciales y los fallos ya escritos siguen. Hasta que Lahiri acepte una pasada de este plano, este archivo no es el guion de respaldo. Las respuestas de referencia son del evaluador. No se inyectan en el prompt de Danebo, en el historial del técnico ni en ningún documento recuperable.
 

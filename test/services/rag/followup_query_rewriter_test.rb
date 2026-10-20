@@ -144,7 +144,7 @@ class Rag::FollowupQueryRewriterTest < ActiveSupport::TestCase
 
   test "a technical question that was not stored whole is not continued" do
     create_guide(display_name: "Fuji Yida Guia del Usuario", aliases: [ "Fuji Yida" ])
-    truncated = "¿#{'a' * 296}..."
+    truncated = "¿#{'a' * (ConversationSession::MAX_MSG_LENGTH - 4)}..."
     assert_equal ConversationSession::MAX_MSG_LENGTH, truncated.length
     history = pair_history(assistant: ASSISTANT).map do |row|
       row["correlation_id"] == "photo:spring" && row["role"] == "user" ? row.merge("content" => truncated) : row
@@ -201,9 +201,11 @@ class Rag::FollowupQueryRewriterTest < ActiveSupport::TestCase
   end
 
   test "the longest eligible composition stays inside the character and token caps" do
-    previous = "¿#{'a' * 299}"
     identifier = "B" * Rag::FollowupQueryRewriter::MAX_FOLLOWUP_CHARS
-    assert_equal ConversationSession::MAX_MSG_LENGTH, previous.length
+    previous = "¿#{'a' * (Rag::FollowupQueryRewriter::MAX_COMPOSED_CHARS - identifier.length - 2)}"
+    assert_operator previous.length, :<, ConversationSession::MAX_MSG_LENGTH
+    assert_equal Rag::FollowupQueryRewriter::MAX_COMPOSED_CHARS, "#{previous}\n#{identifier}".length
+    assert Rag::FollowupQueryRewriter.stored_whole?(previous)
     create_guide(display_name: identifier, aliases: [])
     history = [
       user_row(previous, "2026-09-18T13:49:25-03:00", "photo:spring"),

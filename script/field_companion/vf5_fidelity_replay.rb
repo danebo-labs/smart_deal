@@ -33,6 +33,7 @@ def vf5_fidelity_replay_main
 
   ENV.delete("RAG_ASSIGNMENT_SPEND_PATH")
   spend = Rag::AssignmentSpend.new(path: spend_path, call_cap: replay::CALL_CAP, cost_cap_usd: replay::COST_CAP_USD)
+  spend.sync_caps!
   balance = vf5_fidelity_balance(spend)
   puts JSON.generate("status" => "balance", "balance" => balance)
   unless balance["fits"]
@@ -48,27 +49,26 @@ def vf5_fidelity_replay_main
     return 2
   end
 
-  variant = ENV["VF5_FIDELITY_CONTRACT"] == "1" ? "B" : "A"
-  run_id = "vf5-fidelity-#{variant}-#{Time.now.utc.strftime('%Y%m%dT%H%M%SZ')}"
+  variant = ENV["VF5_FIDELITY_CONTRACT"] == "1" ? "D" : "A"
+  route = if ENV["VF5_FIDELITY_INGESTION"] == "1"
+    "ingesta"
+  elsif ENV["VF5_FIDELITY_ROUTE"] == "vigente"
+    "vigente"
+  else
+    "historico"
+  end
+  run_id = "vf5-fidelity-#{variant}-#{route}-#{Time.now.utc.strftime('%Y%m%dT%H%M%SZ')}"
   results = []
   prepared.each do |turn|
-    sample = replay.run_sample(
-      prepared: turn,
-      model_id: replay::HAIKU_45,
-      client: client,
-      spend: spend,
-      output_dir: output.join(run_id, "t#{turn.turn}"),
-      run_id: run_id,
-      correlation_prefix: "vf5-fidelity:#{variant}",
-      attempt_limit: 3,
-      backoff_seconds: [ 0.4, 1.2 ]
-    )
+    sample = vf5_fidelity_invoke(replay, turn, client, spend, output.join(run_id, "t#{turn.turn}"), run_id, variant)
     results << sample
     break unless sample.status == "returned"
   end
   manifest = {
     "run_id" => run_id,
     "variant" => variant,
+    "route" => route,
+    "hypothesis" => "The opening role treated explicit user input as an answer source and overrode the check-stays-open rule. That sentence is replaced. The field rule stays where variant C placed it.",
     "model_id" => replay::HAIKU_45,
     "criteria" => replay::CRITERIA,
     "turns" => preview,
@@ -99,6 +99,8 @@ end
 def vf5_fidelity_prepare(original, pages)
   prompt = Rag::PageChunkFidelity.rewrite_search_results(original.prompt, pages)
   prompt = vf5_fidelity_contract(prompt) if ENV["VF5_FIDELITY_CONTRACT"] == "1"
+  prompt = vf5_fidelity_current_state(prompt) if ENV["VF5_FIDELITY_ROUTE"] == "vigente" || ENV["VF5_FIDELITY_INGESTION"] == "1"
+  prompt = vf5_fidelity_ingested(prompt) if ENV["VF5_FIDELITY_INGESTION"] == "1"
   body = Rag::CapturedGenerationReplay.invoke_body_json(
     prompt: prompt,
     max_tokens: original.max_tokens,
@@ -115,13 +117,82 @@ def vf5_fidelity_prepare(original, pages)
 end
 
 def vf5_fidelity_contract(prompt)
-  paragraph = BedrockRagService::FIELD_REPORT_PARAGRAPH
-  return prompt if prompt.include?(paragraph)
+  start = prompt.index("# DOCUMENT IDENTITY ATTRIBUTION")
+  raise "attribution marker missing" unless start
 
-  marker = "When distinguishing two labels"
-  raise "attribution marker missing" unless prompt.include?(marker)
+  contract = [
+    BedrockRagService::DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT,
+    BedrockRagService::DOCUMENT_IDENTITY_CITATION_INSTRUCTIONS
+  ].join("\n\n")
+  rewritten = "#{prompt[0...start]}#{contract}\n"
+  rewritten.sub(
+    BedrockRagService::DOCUMENT_IDENTITY_ROLE_SENTENCE,
+    BedrockRagService::DOCUMENT_IDENTITY_ROLE_REPLACEMENT
+  )
+end
 
-  prompt.sub(marker, "#{paragraph}\n\n#{marker}")
+def vf5_fidelity_ingested(prompt)
+  root = Rails.root.join("tmp/field_companion/local_ingestion")
+  page5 = (0..2).map { |index| root.join("chunk-p5-#{index}.txt").read }.join("\n\n")
+  page13 = (0..2).map { |index| root.join("chunk-p13-#{index}.txt").read }.join("\n\n")
+  prompt.gsub(%r{<content>\n(.*?)\n</content>}m) do |block|
+    body = Regexp.last_match(1)
+    replacement = if body.include?("Máster y Esclavo") || body.include?("S4 — SAFETY SYSTEM")
+      page5
+    elsif body.include?("LED STATUS") || body.include?("problema persista") || body.include?("Problemas adicionales")
+      page13
+    end
+    next block unless replacement
+
+    lines = body.lines
+    cut = lines.index { |line| line.include?("[SEARCH_ALIASES:") }
+    head = cut ? lines[0..cut].join : ""
+    "<content>\n#{head}\n#{replacement.strip}\n</content>"
+  end
+end
+
+def vf5_fidelity_current_state(prompt)
+  source = "El LED de fotocélula está encendido"
+  prompt.sub(/^Obs: .*$/) { |line|
+    body = line.delete_prefix("Obs: ")
+    parts = body.split("; ").map { |part| Rag::WorkContextReducer.qualify_generic_led(part, source) }
+    "Obs: #{parts.join('; ')}"
+  }
+end
+
+def vf5_fidelity_invoke(replay, turn, client, spend, directory, run_id, variant)
+  sample = replay.run_sample(
+    prepared: turn,
+    model_id: replay::HAIKU_45,
+    client: client,
+    spend: spend,
+    output_dir: directory,
+    run_id: run_id,
+    correlation_prefix: "vf5-fidelity:#{variant}",
+    attempt_limit: Rag::TransientBackoff.limit
+  )
+  return sample if sample.status == "returned"
+
+  pause = Rag::TransientBackoff.recovery_pause
+  directory.join("checkpoint.json").write(JSON.generate(
+    "status" => sample.status,
+    "error_class" => sample.error_class,
+    "error_message" => sample.error_message,
+    "attempts" => sample.attempts,
+    "prompt_sha256" => sample.prompt_sha256,
+    "recovery_pause_seconds" => pause
+  ))
+  sleep(pause)
+  replay.run_sample(
+    prepared: turn,
+    model_id: replay::HAIKU_45,
+    client: client,
+    spend: spend,
+    output_dir: directory.join("probe"),
+    run_id: run_id,
+    correlation_prefix: "vf5-fidelity:#{variant}:probe",
+    attempt_limit: 1
+  )
 end
 
 def vf5_fidelity_preview(turn)
@@ -141,16 +212,18 @@ def vf5_fidelity_balance(spend)
   replay = Rag::CapturedGenerationReplay
   snap = spend.snapshot
   remaining_calls = replay::CALL_CAP - snap["attempts"].to_i
-  remaining_usd = BigDecimal(replay::COST_CAP_USD) - BigDecimal(snap["committed_usd"]) - BigDecimal(snap["held_usd"])
+  remaining_usd = BigDecimal(replay::COST_CAP_USD) - BigDecimal(snap["committed_usd"]) - BigDecimal(snap["unknown_usd"].to_s.presence || "0") - BigDecimal(snap["held_usd"])
   reserved_calls = 3 + 14
+  eval_calls = (3 * Rag::TransientBackoff.limit) + 3
   {
     "attempts" => snap["attempts"],
     "committed_usd" => snap["committed_usd"],
+    "unknown_usd" => snap["unknown_usd"],
     "held_usd" => snap["held_usd"],
     "remaining_calls" => remaining_calls,
     "remaining_usd" => format("%.6f", remaining_usd),
     "reserved_calls" => reserved_calls,
-    "fits" => remaining_calls >= 3 + reserved_calls && remaining_usd >= BigDecimal("0.20")
+    "fits" => remaining_calls >= eval_calls + reserved_calls && remaining_usd >= BigDecimal("0.20")
   }
 end
 
@@ -158,7 +231,7 @@ def vf5_arm_ledger!(spend)
   replay = Rag::CapturedGenerationReplay
   snap = spend.snapshot
   remaining_calls = replay::CALL_CAP - snap["attempts"].to_i
-  remaining = BigDecimal(replay::COST_CAP_USD) - BigDecimal(snap["committed_usd"]) - BigDecimal(snap["held_usd"])
+  remaining = BigDecimal(replay::COST_CAP_USD) - BigDecimal(snap["committed_usd"]) - BigDecimal(snap["unknown_usd"].to_s.presence || "0") - BigDecimal(snap["held_usd"])
   raise Rag::AssignmentSpend::Stop, "assignment_spend" if remaining_calls < 1 || remaining <= 0
 
   ENV["RAG_LOCAL_PASS_GUARD"] = "1"

@@ -66,6 +66,26 @@ class Rag::CapturedGenerationReplayTest < ActiveSupport::TestCase
     assert_equal prepared.body_sha256, Digest::SHA256.hexdigest(haiku)
   end
 
+  test "an error without usage is unknown cost and is not settled at zero" do
+    prepared = Rag::CapturedGenerationReplay.prepare(**capture(prompt: "sin uso"))
+    client, _calls = fake_client([
+      ServiceUnavailableException.new("Bedrock is unable to process your request.")
+    ])
+    book = spend_book
+    sample = replay_sample(prepared, client, output: "unknown", book: book, attempt_limit: 1)
+
+    assert_equal "error", sample.status
+    assert_nil sample.cost_usd
+    snapshot = book.snapshot
+    assert_equal "0.000000", snapshot["committed_usd"]
+    assert_operator BigDecimal(snapshot["unknown_usd"]), :>, 0
+    assert_equal "unknown", snapshot["entries"].last["status"]
+    assert_nil snapshot["entries"].last["actual_usd"]
+    attempt = JSON.parse(File.read(File.join(@dir, "unknown", "attempt-1", "attempt.json")))
+    assert_equal "unknown", attempt["cost_kind"]
+    assert_equal 0.0, attempt["wait_seconds"]
+  end
+
   test "a transient error is retried and a configuration error is not" do
     prepared = Rag::CapturedGenerationReplay.prepare(**capture(prompt: "reintento"))
     client, calls = fake_client([
@@ -222,15 +242,24 @@ class Rag::CapturedGenerationReplayTest < ActiveSupport::TestCase
     Rag::AssignmentSpend.new(path: File.join(@dir, "spend.json"), call_cap: 48, cost_cap_usd: cost_cap)
   end
 
-  def replay_sample(prepared, client, output: "out")
+  def replay_sample(prepared, client, output: "out", book: nil, attempt_limit: Rag::CapturedGenerationReplay::ATTEMPT_LIMIT)
     Rag::CapturedGenerationReplay.run_sample(
       prepared: prepared,
       model_id: Rag::CapturedGenerationReplay::HAIKU_45,
       client: client,
-      spend: spend_book,
+      spend: book || spend_book,
       output_dir: File.join(@dir, output),
-      run_id: "replay-test"
+      run_id: "replay-test",
+      attempt_limit: attempt_limit,
+      sleeper: ->(_seconds) { },
+      rng: ZeroRng.new
     )
+  end
+
+  class ZeroRng
+    def rand(*)
+      0.0
+    end
   end
 
   def body_for(prepared, model_id)

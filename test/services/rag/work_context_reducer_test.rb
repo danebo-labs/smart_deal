@@ -421,6 +421,16 @@ class Rag::WorkContextReducerTest < ActiveSupport::TestCase
     }
   end
 
+  test "a generic led correction keeps the single retracted qualifier" do
+    qualified = Rag::WorkContextReducer.qualify_generic_led(
+      "el LED está apagado",
+      "El LED de fotocélula está encendido"
+    )
+
+    assert_equal "LED de fotocélula está apagado", qualified
+    assert_equal "SW4 sigue en OFF", Rag::WorkContextReducer.qualify_generic_led("SW4 sigue en OFF", "El LED de fotocélula está encendido")
+  end
+
   def report_payload(observations, assertions = [])
     {
       "move" => "report",

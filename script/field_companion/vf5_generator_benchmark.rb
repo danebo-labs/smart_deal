@@ -3,7 +3,7 @@
 # Replays the three captured VF5 generation prompts on an explicit model id.
 # VF5_GENERATOR_BENCHMARK=1 sends them. Without that variable this prints the
 # prepared hashes and does not call Bedrock. The production query model is not
-# read from BEDROCK_MODEL_ID. The assignment file keeps the 48-call and US$4
+# read from BEDROCK_MODEL_ID. The assignment file keeps the 96-call and US$4
 # ceiling across processes.
 
 def vf5_generator_benchmark_main
@@ -75,7 +75,7 @@ end
 def vf5_preflight(turns, spend)
   replay = Rag::CapturedGenerationReplay
   snap = spend.snapshot
-  remaining = BigDecimal(replay::COST_CAP_USD) - BigDecimal(snap["committed_usd"]) - BigDecimal(snap["held_usd"])
+  remaining = BigDecimal(replay::COST_CAP_USD) - BigDecimal(snap["committed_usd"]) - BigDecimal(snap["unknown_usd"].to_s.presence || "0") - BigDecimal(snap["held_usd"])
   models = [ replay::HAIKU_45, replay::SONNET_45_GLOBAL, replay::SONNET_45_US ]
   turns.flat_map { |turn|
     models.map { |model_id|
@@ -129,7 +129,7 @@ def vf5_arm_ledger!(spend)
   replay = Rag::CapturedGenerationReplay
   snap = spend.snapshot
   remaining_calls = replay::CALL_CAP - snap["attempts"].to_i
-  remaining = BigDecimal(replay::COST_CAP_USD) - BigDecimal(snap["committed_usd"]) - BigDecimal(snap["held_usd"])
+  remaining = BigDecimal(replay::COST_CAP_USD) - BigDecimal(snap["committed_usd"]) - BigDecimal(snap["unknown_usd"].to_s.presence || "0") - BigDecimal(snap["held_usd"])
   raise Rag::AssignmentSpend::Stop, "assignment_spend" if remaining_calls < 1 || remaining <= 0
 
   ENV["RAG_LOCAL_PASS_GUARD"] = "1"

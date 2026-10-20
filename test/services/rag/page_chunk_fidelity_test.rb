@@ -61,16 +61,22 @@ class Rag::PageChunkFidelityTest < ActiveSupport::TestCase
     paragraph = BedrockRagService::FIELD_REPORT_PARAGRAPH
     contract = BedrockRagService::DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT
 
-    assert_includes paragraph, "A visual observation does not by itself"
+    assert_includes paragraph, "leaves the documentary check about that thing open"
+    assert_not_includes paragraph, "only when the technician reported performing"
     assert_includes paragraph, "stays an example"
     assert_includes paragraph, "Earlier assistant lines"
+    assert contract.index(paragraph) < contract.index("- Documented information")
     assert_not_includes paragraph.downcase, "fermator"
     assert_includes contract, paragraph
     assert_equal 1, contract.scan(paragraph).size
     assert contract.end_with?(Rag::LabelComparisonVariant::HISTORICAL_PARAGRAPH)
     assert_nil Rag::LabelComparisonVariant.production_problem(contract)
     template = BedrockRagService.load_generation_prompt_template
-    assert_not_includes template, "A visual observation does not by itself"
+    assert_not_includes template, "leaves the documentary check about that thing open"
+    withheld = BedrockRagService.withhold_document_identity_inference(template)
+    assert_includes withheld, BedrockRagService::DOCUMENT_IDENTITY_ROLE_REPLACEMENT
+    assert_not_includes withheld, "explicit user input"
+    assert_includes template, "explicit user input"
   end
 
   test "drops an inserted heading and note and keeps the example verbatim" do

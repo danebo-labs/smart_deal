@@ -312,12 +312,16 @@ module Rag
       correction.asserted.map { |phrase| preserve_led_referent(phrase, source) }
     end
 
-    def preserve_led_referent(phrase, source)
+    def self.qualify_generic_led(phrase, source)
       state = phrase.to_s.squish[GENERIC_LED_STATE, 1]
       qualifier = source.to_s.squish[QUALIFIED_LED, 1]
       return phrase if state.blank? || qualifier.blank?
 
       "LED #{qualifier} está #{state}"
+    end
+
+    def preserve_led_referent(phrase, source)
+      self.class.qualify_generic_led(phrase, source)
     end
 
     def drop_unqualified_led!(phrases)

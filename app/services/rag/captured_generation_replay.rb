@@ -15,7 +15,7 @@ module Rag
     HAIKU_45 = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
     SONNET_45_GLOBAL = "global.anthropic.claude-sonnet-4-5-20250929-v1:0"
     SONNET_45_US = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
-    CALL_CAP = 48
+    CALL_CAP = 96
     COST_CAP_USD = "4"
     VF5_RUN = "vf5-bound-20261020T1728Z"
     VF5_TURNS = [
@@ -101,12 +101,12 @@ module Rag
     # One generation, with up to ATTEMPT_LIMIT physical tries for a transient
     # error. Configuration errors are not retried. Each try that enters the
     # client is reserved on spend first.
-    def self.run_sample(prepared:, model_id:, client:, spend:, output_dir:, run_id:, correlation_prefix: "vf5-benchmark", attempt_limit: ATTEMPT_LIMIT, backoff_seconds: [])
+    def self.run_sample(prepared:, model_id:, client:, spend:, output_dir:, run_id:, correlation_prefix: "vf5-benchmark", attempt_limit: ATTEMPT_LIMIT, backoff_seconds: nil, sleeper: nil, rng: nil)
       runner = allocate
       runner.send(
         :initialize_runner,
         prepared:, model_id:, client:, spend:, output_dir:, run_id:,
-        correlation_prefix:, attempt_limit:, backoff_seconds:
+        correlation_prefix:, attempt_limit:, backoff_seconds:, sleeper:, rng:
       )
       runner.send(:run_sample)
     end
@@ -191,7 +191,7 @@ module Rag
 
     private
 
-    def initialize_runner(prepared:, model_id:, client:, spend:, output_dir:, run_id:, correlation_prefix: "vf5-benchmark", attempt_limit: self.class::ATTEMPT_LIMIT, backoff_seconds: [])
+    def initialize_runner(prepared:, model_id:, client:, spend:, output_dir:, run_id:, correlation_prefix: "vf5-benchmark", attempt_limit: self.class::ATTEMPT_LIMIT, backoff_seconds: nil, sleeper: nil, rng: nil)
       @prepared = prepared
       @model_id = model_id
       @client = client
@@ -200,7 +200,9 @@ module Rag
       @run_id = run_id
       @correlation_prefix = correlation_prefix
       @attempt_limit = attempt_limit
-      @backoff_seconds = Array(backoff_seconds)
+      @backoff_seconds = backoff_seconds
+      @sleeper = sleeper || ->(seconds) { sleep(seconds) }
+      @rng = rng || Random.new
     end
 
     def run_sample
@@ -211,7 +213,9 @@ module Rag
       usage = {}
       latency_ms = nil
       @attempt_limit.times do |index|
-        sample = one_attempt(index + 1)
+        wait = index.zero? ? 0.0 : scheduled_wait(index - 1)
+        @sleeper.call(wait) if wait.positive?
+        sample = one_attempt(index + 1, wait_seconds: wait)
         attempts << sample
         text = sample[:text]
         error_class = sample[:error_class]
@@ -220,9 +224,6 @@ module Rag
         latency_ms = sample[:latency_ms]
         break if sample[:status] == "returned"
         break unless self.class.error_kind(error_class) == "transient"
-
-        wait = @backoff_seconds[index]
-        sleep(wait) if wait.respond_to?(:positive?) && wait.positive?
       end
       returned = attempts.last
       Sample.new(
@@ -243,7 +244,7 @@ module Rag
       )
     end
 
-    def one_attempt(attempt)
+    def one_attempt(attempt, wait_seconds:)
       ceiling = LocalPassLedger.price(@model_id, @prepared.prompt.to_s.bytesize + @prepared.system.to_s.bytesize, @prepared.max_tokens)
       ticket = @spend.reserve!(ceiling_usd: ceiling, model_id: @model_id, turn: @prepared.turn)
       directory = @output_dir.join(format("attempt-%d", attempt))
@@ -284,23 +285,36 @@ module Rag
         cost = usage_cost(usage)
         @spend.settle!(ticket, actual_usd: cost, input_tokens: usage["input_tokens"], output_tokens: usage["output_tokens"])
         write_answer(directory, text)
-        return attempt_row("returned", text, nil, nil, usage, latency_ms, cost)
+        row = attempt_row("returned", text, nil, nil, usage, latency_ms, cost, cost_kind: "calculated")
+        write_attempt(directory, row.merge(attempt: attempt, wait_seconds: wait_seconds))
+        return row
       end
 
       error_class = result["error_class"].presence || raised&.class&.name || "blank"
       message = result["error_message"].to_s
       message = message[0, 300]
-      # A 503 with no usage is the 2026-10-20 VF5 case: Bedrock billed 0/0.
-      # The byte-length ceiling is not that bill. The attempt still counts.
       if usage.empty?
-        @spend.settle!(ticket, actual_usd: 0, error_class: error_class)
+        @spend.unknown!(ticket, error_class: error_class, error_message: message)
+        row = attempt_row("error", nil, error_class, message, usage, latency_ms, nil, cost_kind: "unknown", reserved_usd: ceiling)
       else
-        @spend.keep!(ticket, error_class: error_class)
+        cost = usage_cost(usage)
+        @spend.settle!(ticket, actual_usd: cost, input_tokens: usage["input_tokens"], output_tokens: usage["output_tokens"], error_class: error_class)
+        row = attempt_row("error", nil, error_class, message, usage, latency_ms, cost, cost_kind: "calculated")
       end
-      attempt_row("error", nil, error_class, message, usage, latency_ms, nil)
+      write_attempt(directory, row.merge(attempt: attempt, wait_seconds: wait_seconds))
+      row
     end
 
-    def attempt_row(status, text, error_class, error_message, usage, latency_ms, cost)
+    def scheduled_wait(index)
+      if @backoff_seconds
+        value = Array(@backoff_seconds)[index]
+        return value.to_f
+      end
+
+      TransientBackoff.wait_seconds(index, rng: @rng)
+    end
+
+    def attempt_row(status, text, error_class, error_message, usage, latency_ms, cost, cost_kind: nil, reserved_usd: nil)
       {
         status: status,
         text: text,
@@ -308,7 +322,9 @@ module Rag
         error_message: error_message,
         usage: usage,
         latency_ms: latency_ms,
-        cost_usd: cost&.to_s("F")
+        cost_usd: cost&.to_s("F"),
+        cost_kind: cost_kind,
+        reserved_usd: reserved_usd&.to_s("F")
       }
     end
 
@@ -338,6 +354,11 @@ module Rag
     def write_answer(directory, text)
       directory.mkpath
       directory.join("answer.txt").binwrite(text.to_s)
+    end
+
+    def write_attempt(directory, row)
+      directory.mkpath
+      directory.join("attempt.json").write(JSON.generate(row.except(:text, :usage)))
     end
 
     def prepared_event(capture)

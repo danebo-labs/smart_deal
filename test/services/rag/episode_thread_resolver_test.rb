@@ -95,7 +95,7 @@ class Rag::EpisodeThreadResolverTest < ActiveSupport::TestCase
   end
 
   test "an oversized segment does not join and does not open a menu" do
-    long_question = "¿#{'a' * 299}"
+    long_question = "¿#{'a' * (ConversationSession::MAX_MSG_LENGTH - 1)}"
     continuation = "b" * 200
     assert_equal ConversationSession::MAX_MSG_LENGTH, long_question.length
     history = [

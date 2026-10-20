@@ -46,7 +46,7 @@ class Rag::Phase2PinnedTurnTest < ActiveSupport::TestCase
       message["content"] if message["role"] == "user"
     }
     assistant = session.conversation_history.find { |message| message["role"] == "assistant" }
-    assert_operator assistant["content"].length, :<, ANSWER.length
+    assert_equal ANSWER, assistant["content"]
     assert session.conversation_history.none? { |message| message.key?("mark") }
     pause = JSON.parse(File.read(first.pause_path))
     assert_equal true, pause["evaluator_simulation"]

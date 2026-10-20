@@ -25,7 +25,7 @@ module Rag
     TICKETS = :rag_local_pass_tickets
     ASSIGNMENT_PATH_ENV = "RAG_ASSIGNMENT_SPEND_PATH"
     ASSIGNMENT_IDS = :rag_assignment_spend_ids
-    ASSIGNMENT_CALL_CAP = 48
+    ASSIGNMENT_CALL_CAP = 96
     ASSIGNMENT_COST_CAP_USD = "4"
     LOCAL_HOSTS = [ "", "localhost", "127.0.0.1", "::1" ].freeze
     MUTEX = Mutex.new
@@ -155,7 +155,7 @@ module Rag
         begin
           yield
         rescue Exception
-          keep_assignment!(file_id)
+          unknown_assignment!(file_id)
           raise
         end
       end
@@ -337,13 +337,15 @@ module Rag
         assignment_ledger.settle!(file_id, actual_usd: actual)
       end
 
-      def keep_assignment!(file_id)
+      # The call left without token usage. The ceiling stays as unknown
+      # exposure. It is not a calculated bill and it is not recorded as zero.
+      def unknown_assignment!(file_id)
         return if file_id.nil?
 
         ids = Array(Thread.current[ASSIGNMENT_IDS])
         ids.pop if ids.last == file_id
         Thread.current[ASSIGNMENT_IDS] = ids
-        assignment_ledger&.keep!(file_id)
+        assignment_ledger&.unknown!(file_id)
       end
 
       def release_assignment!(file_id)

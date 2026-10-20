@@ -124,13 +124,14 @@ class Rag::TurnInterpreterFailureTest < ActiveSupport::TestCase
           "la puerta no cierra",
           client: client,
           sleeper: ->(seconds) { waits << seconds },
+          rng: ZeroRng.new,
           correlation_id: "cid-retry"
         )
       end
     end
 
     assert_equal "ok", result.status
-    assert_equal [ 0.4, 1.2 ], waits
+    assert_equal [ 0.4, 0.8 ], waits
     assert_equal 3, client.calls
     assert_equal [ "retry", "retry" ], events.select { |row| row["kind"] == "interpreter_failure" }.pluck("result")
     assert_equal 1, events.count { |row| row["kind"] == "interpreter_response" }
@@ -237,7 +238,7 @@ class Rag::TurnInterpreterFailureTest < ActiveSupport::TestCase
 
   private
 
-  def interpret(turn, client:, correlation_id: "cid-timeout", sleeper: nil)
+  def interpret(turn, client:, correlation_id: "cid-timeout", sleeper: nil, rng: nil)
     Rag::TurnInterpreter.call(
       turn: turn,
       episode: Rag::ActiveEpisode.new,
@@ -245,8 +246,15 @@ class Rag::TurnInterpreterFailureTest < ActiveSupport::TestCase
       correlation_id: correlation_id,
       attribution: {},
       client: client,
-      sleeper: sleeper
+      sleeper: sleeper,
+      rng: rng
     )
+  end
+
+  class ZeroRng
+    def rand(*)
+      0.0
+    end
   end
 
   def valid_tool

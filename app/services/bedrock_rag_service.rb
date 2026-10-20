@@ -40,20 +40,22 @@ class BedrockRagService
   # FIELD_GUIDANCE lines and the two general-inference clauses below. The
   # contract keeps documented information, optional interpretation, and
   # missing information distinct, and it precedes the citation line.
+  # Replaces the previous field-report paragraph. A report that something was
+  # not seen leaves that check open. It does not count as performing the check.
   FIELD_REPORT_PARAGRAPH = <<~TEXT.strip.freeze
-    Separate four things. The technician's report is only what the technician stated. A documentary procedure is what the retrieved text says, together with the condition under which it applies. An inference that still has to be confirmed is not a documented fact and not a completed check. A check counts as performed only when the technician reported performing that check. A visual observation does not by itself complete or discard the documentary check that mentions the same thing. An example in the retrieved text stays an example and does not establish that mechanism on this equipment. A citation does not show that the cited conditions hold on this job. Earlier assistant lines are previous conclusions of this assistant, not the technician's report and not confirmed facts. Keep the indicator the technician named. State the documented checks that fit the report, with their conditions, and which of those checks remain open. Do not replace those checks with a refusal, and do not add a step, adjustment, or replacement the passages do not state.
+    The technician's report records what was stated, including what was not seen, not measured, and not done. A report that something was not seen leaves the documentary check about that thing open: state the check and the condition the passage gives, and do not mark it done or discarded. Do not rank a cause the passages do not rank. An example in the retrieved text stays an example and does not establish that mechanism on this equipment. Keep the indicator name the technician used; a different indicator named in a passage is a different indicator. Earlier assistant lines are previous conclusions of this assistant, not the technician's report and not confirmed facts. State the documented checks that fit the report, with their conditions, and which remain open. Do not replace those checks with a refusal, and do not add a step, adjustment, or replacement the passages do not state.
   TEXT
   DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT = <<~TEXT.strip.freeze
     # DOCUMENT IDENTITY ATTRIBUTION
     Keep documented statements, optional interpretations, and missing information distinct. Never mix a documented claim and an unconfirmed interpretation in the same sentence. Express these distinctions naturally in the question's language; fixed headings are not required.
+
+    #{FIELD_REPORT_PARAGRAPH}
 
     - Documented information ("Según el plano" for this drawing): state only what the retrieved body text supports and links to the component asked about, with [n]. Compatible fragments of the same document may be combined when they support that same link. A printed label, a column heading, or a bus name supports the label and its documented section, location, and neighboring labels; it does not by itself establish the component's function, supply, voltage, or connection. ACTION and EXPECTED_RESULT lines in FIELD_RECORD are extraction annotations, not independent evidence from the original document. They must not by themselves establish a function, supply, voltage, or connection. The physical-connection rule and TOPOLOGY_EDGE records above remain in force. Do not transfer a fact from another label. Distinguish extracted table indices from numbering printed on the drawing.
 
     - Optional interpretation ("Interpretación posible, no confirmada por estos pasajes"): omit it unless it helps the technician. Use at most two sentences without [n]. It may explain only what a label's word commonly designates in the trade, explicitly as a possibility and with the reservation that these passages do not confirm it. It must not state this equipment's function, what the component drives, its supply, voltage, connection, terminal, or wiring. A marker does not make an unsupported equipment specification acceptable.
 
     - Missing information ("Falta en los pasajes"): state the relevant information these passages do not provide once, scoped to the passages in this prompt. Do not claim that the whole drawing, document, PDF, or manual lacks it. Do not assert a datum as documented and then deny that it is documented.
-
-    #{FIELD_REPORT_PARAGRAPH}
 
     When distinguishing two labels, explain their documented sections and locations first. A concise answer based on those distinctions is sufficient; do not enumerate every neighboring label or the complete circuit unless it helps answer the question. If the evidence does not settle which physical element the technician is following, say so and ask for one useful observation that the technician can see or read on the equipment or drawing. A closing question must not presuppose an undocumented function, connection, or value.
   TEXT
@@ -63,6 +65,16 @@ class BedrockRagService
   # Removed only by document_identity_generation_prompt. The same lines keep
   # compatible documented facts, the manual-citation voice, and the ban on
   # invented values and procedures. Other routes keep both clauses.
+  # The shared role says explicit user input is an answer source. On this route
+  # that sentence makes a report of what was not seen look like a finished check.
+  DOCUMENT_IDENTITY_ROLE_SENTENCE = <<~TEXT.strip.freeze
+    Answer only from the retrieved documentation and explicit user input. Your job is
+    to make documented information clear and actionable without adding technical
+    knowledge, requirements, procedures, or safety judgments from memory.
+  TEXT
+  DOCUMENT_IDENTITY_ROLE_REPLACEMENT = <<~TEXT.strip.freeze
+    Answer from the retrieved documentation. The technician's words are the report of this job, not a completed check and not a documented procedure. State the documented checks and their conditions. Do not add technical knowledge, requirements, procedures, or safety judgments from memory.
+  TEXT
   DOCUMENT_IDENTITY_INFERENCE_CLAUSES = [
     "Reason, infer, and conclude from chunks. ",
     " A field check that is inference says so (\"Como verificación de campo …\")."
@@ -2466,7 +2478,8 @@ class BedrockRagService
   end
 
   def self.withhold_document_identity_inference(text)
-    DOCUMENT_IDENTITY_INFERENCE_CLAUSES.reduce(text.to_s) { |current, clause| current.sub(clause, "") }
+    replaced = DOCUMENT_IDENTITY_INFERENCE_CLAUSES.reduce(text.to_s) { |current, clause| current.sub(clause, "") }
+    replaced.sub(DOCUMENT_IDENTITY_ROLE_SENTENCE, DOCUMENT_IDENTITY_ROLE_REPLACEMENT)
   end
 
   # Reads `app/prompts/bedrock/generation.txt` once per process in production

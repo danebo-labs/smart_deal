@@ -7,9 +7,11 @@ module Rag
     MODEL_ID = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
     TOOL_NAME = "turn_perception"
     MAX_TOKENS = 512
-    # One initial converse plus two retries. The SDK client stays at one HTTP try.
-    MAX_TRANSIENT_ATTEMPTS = 3
-    BACKOFF_SECONDS = [ 0.4, 1.2 ].freeze
+    # One initial converse plus retries from TransientBackoff. The SDK client
+    # stays at one HTTP try. This class does not add a second retry loop.
+    def self.transient_attempt_limit
+      TransientBackoff.limit
+    end
     STAGE_PREPARE = "prepare"
     STAGE_CONVERSE = "converse"
     STAGE_EXTRACT = "extract"
@@ -51,11 +53,11 @@ module Rag
       :error_class, :error_reason, :stage
     )
 
-    def self.call(turn:, episode:, viewer_account:, correlation_id:, attribution: nil, client: nil, catalog: nil, active_photo_context: nil, sleeper: nil)
+    def self.call(turn:, episode:, viewer_account:, correlation_id:, attribution: nil, client: nil, catalog: nil, active_photo_context: nil, sleeper: nil, rng: nil)
       new(
         turn: turn, episode: episode, viewer_account: viewer_account,
         correlation_id: correlation_id, attribution: attribution, client: client, catalog: catalog,
-        active_photo_context: active_photo_context, sleeper: sleeper
+        active_photo_context: active_photo_context, sleeper: sleeper, rng: rng
       ).call
     end
 
@@ -75,7 +77,7 @@ module Rag
       )
     end
 
-    def initialize(turn:, episode:, viewer_account:, correlation_id:, attribution:, client:, catalog:, active_photo_context: nil, sleeper: nil)
+    def initialize(turn:, episode:, viewer_account:, correlation_id:, attribution:, client:, catalog:, active_photo_context: nil, sleeper: nil, rng: nil)
       @turn_input = turn
       @turn = TurnText.truncate(turn)
       @episode = episode || ActiveEpisode.new
@@ -86,6 +88,7 @@ module Rag
       @catalog = catalog || DocumentIdentityCatalog.current
       @active_photo_context = active_photo_context
       @sleeper = sleeper || ->(seconds) { sleep(seconds) }
+      @rng = rng || Random.new
       @converse_attempts = 0
       @terminal_failure_result = "error"
       @attempt_latency_ms = nil
@@ -215,7 +218,7 @@ module Rag
     # three attempts. A later local error is not tried again. Budget Stop is
     # not a StandardError and leaves this method.
     def converse_with_recovery(client, params)
-      MAX_TRANSIENT_ATTEMPTS.times do |index|
+      self.class.transient_attempt_limit.times do |index|
         attempt = index + 1
         @converse_attempts = attempt
         ValidationCapture.attempt = attempt
@@ -224,9 +227,10 @@ module Rag
           return invoke_converse(client, params)
         rescue StandardError => error
           @attempt_latency_ms = elapsed_since(attempt_started)
-          if transient_converse?(error) && attempt < MAX_TRANSIENT_ATTEMPTS
-            record_interpreter_failure(error, failure_reason(error), STAGE_CONVERSE, result: "retry")
-            @sleeper.call(BACKOFF_SECONDS[attempt - 1])
+          if transient_converse?(error) && attempt < self.class.transient_attempt_limit
+            wait = TransientBackoff.wait_seconds(attempt - 1, rng: @rng)
+            record_interpreter_failure(error, failure_reason(error), STAGE_CONVERSE, result: "retry", wait_seconds: wait)
+            @sleeper.call(wait)
           else
             @terminal_failure_result = transient_converse?(error) ? "exhausted" : "error"
             raise
@@ -252,7 +256,7 @@ module Rag
     # intermediate converse failure. The terminal record is written once,
     # when the turn stops. The reason is the exception message with
     # credentials removed.
-    def record_interpreter_failure(error, reason, stage, result:)
+    def record_interpreter_failure(error, reason, stage, result:, wait_seconds: nil)
       return unless ValidationCapture.active?
 
       full = scrubbed_failure_text(error)
@@ -265,8 +269,9 @@ module Rag
         "correlation_id" => @correlation_id,
         "failure_kind" => failure_kind(error, stage),
         "retryable" => stage == STAGE_CONVERSE && transient_converse?(error),
-        "attempt_limit" => MAX_TRANSIENT_ATTEMPTS,
-        "attempt_latency_ms" => @attempt_latency_ms
+        "attempt_limit" => self.class.transient_attempt_limit,
+        "attempt_latency_ms" => @attempt_latency_ms,
+        "wait_seconds" => wait_seconds
       }
       if full != reason
         payload["reason_summary"] = reason
@@ -278,7 +283,7 @@ module Rag
 
     def failure_status(error, stage)
       return LOCAL_FAILURE unless stage == STAGE_CONVERSE
-      return "service_failure" if transient_converse?(error) && @converse_attempts >= MAX_TRANSIENT_ATTEMPTS
+      return "service_failure" if transient_converse?(error) && @converse_attempts >= self.class.transient_attempt_limit
 
       case failure_kind(error, stage)
       when "timeout" then "timeout"

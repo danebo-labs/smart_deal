@@ -813,7 +813,10 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     end
 
     episode = session.reload.active_episode
-    assert_equal [ 0.4, 1.2 ], waits
+    assert_equal 2, waits.size
+    assert_operator waits[1], :>, waits[0]
+    assert_operator waits[0], :>=, 0.4
+    assert_operator waits[1], :<=, 8.0
     assert_equal 3, interpreter.calls
     assert_equal 1, session.conversation_history.count { |row| row["role"] == "user" }
     assert_equal [ "la puerta no cierra" ], episode["observations"].pluck("text")

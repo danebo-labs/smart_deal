@@ -52,8 +52,8 @@ class Rag::LabelComparisonVariantTest < ActiveSupport::TestCase
     assert_not_equal HISTORICAL, CANDIDATE
 
     attribution = Rails.root.join("test/services/rag/attribution_generation_replay_test.rb").read
-    assert_includes attribution, "5c1d427390843f6ee3595d3ed0ae51b15c9486bb311b3789b7033c7196e4594e"
-    assert_includes attribution, "81a7dfd85e2415d2527a6537b35b540aa03a5a69b2bd06f643c8479ff0031024"
+    assert_includes attribution, "09bf470335afbb3d526356034a2fa410642262f3d764d4f35675ff09329c9fa6"
+    assert_includes attribution, "8b40b274a9eac2597bd0e9afbce7d60afde3c16b38122477a33c521e9303947a"
     scope = Rails.root.join("test/services/rag/document_identity_scope_test.rb").read
     assert_includes scope, "When distinguishing two labels, explain their documented sections and locations first"
     assert_not_includes scope, "When the question compares two labels"

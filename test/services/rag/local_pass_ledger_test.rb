@@ -263,12 +263,15 @@ class Rag::LocalPassLedgerTest < ActiveSupport::TestCase
     end
     spend = Rag::AssignmentSpend.new(path: path, call_cap: 48, cost_cap_usd: "4")
     assert_equal 1, spend.snapshot["attempts"]
-    assert_equal 1, spend.snapshot["priced"]
+    assert_equal 0, spend.snapshot["priced"]
+    assert_equal "0.000000", spend.snapshot["committed_usd"]
+    assert_operator BigDecimal(spend.snapshot["unknown_usd"]), :>, 0
     assert_equal "0.000000", spend.snapshot["held_usd"]
 
+    cap = Rag::LocalPassLedger::ASSIGNMENT_CALL_CAP
     File.write(path, JSON.generate(
-      "attempts" => 48, "blocked" => 0, "priced" => 48, "seq" => 48,
-      "committed" => "1.000000", "open" => {}, "entries" => []
+      "attempts" => cap, "blocked" => 0, "priced" => cap, "seq" => cap,
+      "committed" => "1.000000", "unknown" => "0.000000", "open" => {}, "entries" => []
     ))
     calls = 0
     assert_raises(Rag::LocalPassLedger::Stop) do

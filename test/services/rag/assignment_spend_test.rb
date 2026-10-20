@@ -42,6 +42,22 @@ class Rag::AssignmentSpendTest < ActiveSupport::TestCase
     assert book.reserve!(ceiling_usd: "0.100000", model_id: "haiku", turn: 1)
   end
 
+  test "an error without usage keeps the ceiling as unknown and does not settle zero" do
+    book = spend
+    id = book.reserve!(ceiling_usd: "0.125000", model_id: "haiku", turn: 1)
+    assert book.unknown!(id, error_class: "ServiceUnavailableException")
+
+    snapshot = book.snapshot
+    row = snapshot["entries"].last
+    assert_equal 1, snapshot["attempts"]
+    assert_equal "0.000000", snapshot["committed_usd"]
+    assert_equal "0.125000", snapshot["unknown_usd"]
+    assert_equal "0.000000", snapshot["held_usd"]
+    assert_equal "unknown", row["status"]
+    assert_nil row["actual_usd"]
+    assert_equal "0.125000", row["reserved_usd"]
+  end
+
   test "an unpriced error keeps the ceiling" do
     book = spend
     id = book.reserve!(ceiling_usd: "0.125000", model_id: "sonnet", turn: 1)

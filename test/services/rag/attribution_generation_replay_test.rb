@@ -266,8 +266,8 @@ class Rag::AttributionGenerationReplayTest < ActiveSupport::TestCase
     end
 
     assert preview.allowed?, preview.reason
-    assert_equal "5c1d427390843f6ee3595d3ed0ae51b15c9486bb311b3789b7033c7196e4594e", preview.prompt_sha256
-    assert_equal 35087, preview.prompt.bytesize
+    assert_equal "09bf470335afbb3d526356034a2fa410642262f3d764d4f35675ff09329c9fa6", preview.prompt_sha256
+    assert_equal 36034, preview.prompt.bytesize
     assert_nil preview.system_sha256
 
     partitioned = isolate_env("RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE", "1") do
@@ -275,10 +275,10 @@ class Rag::AttributionGenerationReplayTest < ActiveSupport::TestCase
     end
 
     assert partitioned.allowed?, partitioned.reason
-    assert_equal "5c1d427390843f6ee3595d3ed0ae51b15c9486bb311b3789b7033c7196e4594e", partitioned.prompt_sha256
-    assert_equal "81a7dfd85e2415d2527a6537b35b540aa03a5a69b2bd06f643c8479ff0031024", partitioned.system_sha256
+    assert_equal "09bf470335afbb3d526356034a2fa410642262f3d764d4f35675ff09329c9fa6", partitioned.prompt_sha256
+    assert_equal "8b40b274a9eac2597bd0e9afbce7d60afde3c16b38122477a33c521e9303947a", partitioned.system_sha256
     assert_equal "655e1c29acb311b9af4ea75e45f9b4edd02f781de7ddcbc76cc348d7843f2fb3", partitioned.user_sha256
-    assert_equal 13668, partitioned.prompt.system.bytesize
+    assert_equal 14615, partitioned.prompt.system.bytesize
     assert_equal 21419, partitioned.prompt.user.bytesize
     assert_equal 3, partitioned.prompt.user.scan("<search_result>").size
     assert_includes partitioned.prompt.user, "Query: La etiqueta Chapa nivel 2 Elemont MH"

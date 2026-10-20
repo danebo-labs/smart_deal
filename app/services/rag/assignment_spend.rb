@@ -53,6 +53,18 @@ module Rag
       end
     end
 
+    # Writes the active caps onto an existing file. Attempts, committed
+    # amounts, and entries stay as they were.
+    def sync_caps!
+      with_lock do |state, file|
+        state["call_cap"] = @call_cap
+        state["cost_cap_usd"] = @cost_cap.to_s("F")
+        state["unknown"] = format_money(state["unknown"])
+        write!(file, state)
+        public_snapshot(state)
+      end
+    end
+
     # The call left this process and came back without a usable price.
     # The reserved ceiling stays consumed.
     def keep!(id, **meta)
@@ -63,6 +75,21 @@ module Rag
         state["committed"] = format_money(decimal(state["committed"]) + decimal(held))
         state["priced"] = state["priced"].to_i + 1
         replace_entry(state, id, meta.merge("status" => "kept", "actual_usd" => decimal(held).to_s("F")))
+        write!(file, state)
+        true
+      end
+    end
+
+    # No token usage came back. The ceiling moves out of the open hold into
+    # unknown exposure. committed stays the calculated total. actual_usd is
+    # not set, because this is not evidence of a zero bill.
+    def unknown!(id, **meta)
+      with_lock do |state, file|
+        held = state["open"].delete(id.to_s)
+        return false unless held
+
+        state["unknown"] = format_money(decimal(state["unknown"]) + decimal(held))
+        replace_entry(state, id, meta.merge("status" => "unknown", "cost_kind" => "unknown", "reserved_usd" => format_money(held)))
         write!(file, state)
         true
       end
@@ -102,6 +129,7 @@ module Rag
       state["priced"] = state["priced"].to_i
       state["seq"] = state["seq"].to_i
       state["committed"] = decimal(state["committed"]).to_s("F")
+      state["unknown"] = decimal(state["unknown"]).to_s("F")
       state["open"] = state["open"].is_a?(Hash) ? state["open"] : {}
       state["entries"] = state["entries"].is_a?(Array) ? state["entries"] : []
       state
@@ -124,6 +152,7 @@ module Rag
         "priced" => 0,
         "seq" => 0,
         "committed" => format_money(0),
+        "unknown" => format_money(0),
         "open" => {},
         "entries" => []
       }
@@ -135,6 +164,7 @@ module Rag
         "blocked" => state["blocked"],
         "priced" => state["priced"],
         "committed_usd" => format_money(state["committed"]),
+        "unknown_usd" => format_money(state["unknown"]),
         "held_usd" => format_money(state["open"].values.sum(BigDecimal("0")) { |amount| decimal(amount) }),
         "call_cap" => @call_cap,
         "cost_cap_usd" => @cost_cap.to_s("F"),
@@ -143,7 +173,7 @@ module Rag
     end
 
     def exposure(state)
-      decimal(state["committed"]) + state["open"].values.sum(BigDecimal("0")) { |amount| decimal(amount) }
+      decimal(state["committed"]) + decimal(state["unknown"]) + state["open"].values.sum(BigDecimal("0")) { |amount| decimal(amount) }
     end
 
     def entry(meta, id:, status:, ceiling_usd:)

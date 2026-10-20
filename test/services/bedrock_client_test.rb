@@ -157,7 +157,9 @@ class BedrockClientTest < ActiveJob::TestCase
     assert_equal Digest::SHA256.hexdigest("rol"), error["system_sha256"]
     assert events.none? { |event| event["result"] == "returned" }
     assert events.none? { |event| event["result"] == "blocked" }
-    assert_not_includes events.to_s, "model down"
+    assert_equal "model down", error["error_message"]
+    assert_nil prepared["error_message"]
+    assert_not_includes prepared.fetch("prompt"), "model down"
   end
 
   test "a long system and user export to relative files that keep every byte" do

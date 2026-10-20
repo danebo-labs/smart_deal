@@ -4,6 +4,9 @@ module Rag
   # The only linguistic writer of the episode in owner mode. It does not write
   # Document Focus.
   class WorkContextReducer
+    GENERIC_LED_STATE = /\A(?:el\s+)?led\s+est[aá]\s+(encendido|apagado)\z/i
+    QUALIFIED_LED = /\A(?:el\s+)?led\s+(.+?)\s+est[aá]\s+(encendido|apagado)\z/i
+
     # A failed interpretation did not classify the turn. Keep the literal
     # report so the next turn still has this job. Do not write manufacturer,
     # model, controller, or any other extracted identity.
@@ -267,16 +270,18 @@ module Rag
         targets = ObservationCorrection.targets(@episode.observations, correction)
         return if targets == :ambiguous
 
-        correction.asserted.each { |phrase| remember_asserted!(phrase) }
-        if correction.asserted.any? { |phrase| asserted_stored?(phrase) }
+        phrases = remembered_assertions(correction, targets)
+        phrases.each { |phrase| remember_asserted!(phrase) }
+        drop_unqualified_led!(phrases)
+        if phrases.any? { |phrase| asserted_stored?(phrase) }
           if targets.one?
-            correction.retracted.each { |phrase| excise_selected_observation(targets.first, phrase, correction.asserted) }
+            correction.retracted.each { |phrase| excise_selected_observation(targets.first, phrase, phrases) }
           else
-            correction.retracted.each { |phrase| excise_retracted_phrase(phrase, correction.asserted) }
+            correction.retracted.each { |phrase| excise_retracted_phrase(phrase, phrases) }
           end
-          correction.retracted.each { |phrase| excise_retracted_goal(phrase, correction.asserted) }
-          drop_replaced_observations(correction.asserted)
-          adopt_problem_goal!(correction.asserted)
+          correction.retracted.each { |phrase| excise_retracted_goal(phrase, phrases) }
+          drop_replaced_observations(phrases)
+          adopt_problem_goal!(phrases)
         end
         return
       end
@@ -296,6 +301,32 @@ module Rag
         next false if fresh.any? { |phrase| same_label?(phrase, text) }
 
         fresh.any? { |phrase| observation_replaced?(text, phrase) }
+      }
+    end
+
+    # A generic "el LED está apagado" keeps the single retracted LED's
+    # qualifier. Two qualified LEDs, or an assertion that already names one,
+    # stay as the technician wrote them.
+    def remembered_assertions(correction, targets)
+      source = targets.one? ? targets.first : nil
+      correction.asserted.map { |phrase| preserve_led_referent(phrase, source) }
+    end
+
+    def preserve_led_referent(phrase, source)
+      state = phrase.to_s.squish[GENERIC_LED_STATE, 1]
+      qualifier = source.to_s.squish[QUALIFIED_LED, 1]
+      return phrase if state.blank? || qualifier.blank?
+
+      "LED #{qualifier} está #{state}"
+    end
+
+    def drop_unqualified_led!(phrases)
+      states = phrases.filter_map { |phrase| phrase.to_s.squish[QUALIFIED_LED, 2] }
+      return if states.empty?
+
+      @episode.observations.reject! { |item|
+        state = item["text"].to_s.squish[GENERIC_LED_STATE, 1]
+        state.present? && states.any? { |kept| kept.casecmp?(state) }
       }
     end
 
@@ -354,7 +385,7 @@ module Rag
       text = @episode.goal["text"].to_s
       return unless ObservationCorrection.retracted?(text, phrase, asserted)
 
-      kept = independent_clauses(text).reject { |clause|
+      kept = goal_clauses(text).reject { |clause|
         ObservationCorrection.retracted?(clause, phrase, asserted)
       }
       if kept.empty? || kept.none? { |clause| problem_statement?(clause) }
@@ -366,6 +397,33 @@ module Rag
 
     def independent_clauses(text)
       text.to_s.split(/\s+y\s+/i).map(&:squish).compact_blank
+    end
+
+    # A stored observation is one clause. " y " inside that sentence is not
+    # the boundary that separates it from the next observation.
+    def goal_clauses(text)
+      protected_text, masks = mask_goal_observations(text)
+      pieces = protected_text.split(/\s+y\s+/i).map(&:squish).compact_blank
+      pieces.map { |piece| unmask_goal(piece, masks) }
+    end
+
+    def mask_goal_observations(text)
+      protected_text = text.to_s.dup
+      masks = []
+      phrases = @episode.observations.filter_map { |item| item["text"].to_s.squish.presence }.uniq
+      phrases.sort_by! { |phrase| -phrase.length }
+      phrases.each_with_index do |phrase, index|
+        next unless protected_text.include?(phrase)
+
+        token = "\u0000OBS#{index}\u0000"
+        protected_text = protected_text.sub(phrase, token)
+        masks << [ token, phrase ]
+      end
+      [ protected_text, masks ]
+    end
+
+    def unmask_goal(piece, masks)
+      masks.reduce(piece) { |current, (token, phrase)| current.gsub(token, phrase) }
     end
 
     def same_label?(left, right)

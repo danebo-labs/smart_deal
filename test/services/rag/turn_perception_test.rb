@@ -454,6 +454,50 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_nil episode.pending_question
   end
 
+  test "a generic LED correction keeps the referent and the symptom inside the goal" do
+    episode = fermator_door_episode
+    symptom = "en funcionamiento normal la puerta empieza a cerrar y vuelve a abrirse sola"
+    obstruction = "no observo una obstrucción mecánica"
+    led = "LED de fotocélula está encendido"
+    episode.clear_observations!
+    [ symptom, led, obstruction ].each do |text|
+      episode.append_observation!(text, correlation_id: "seed")
+    end
+    episode.assign_goal!("#{symptom} #{led} #{obstruction}", correlation_id: "seed")
+    turn = "Corrijo solo un dato de la simulación: el LED está apagado, no encendido. SW4 sigue en OFF y lo demás se mantiene. ¿Qué cambia en tu orientación?"
+    result = perceive(
+      {
+        "move" => "correct",
+        "assertions" => [ { "span" => "el LED está apagado", "act" => "assert", "slot_hint" => "fault_code" } ],
+        "observations" => [ "SW4 sigue en OFF y lo demás se mantiene" ],
+        "pending_resolution" => nil,
+        "clarification_target" => nil
+      },
+      turn,
+      episode: episode
+    )
+    decision = Rag::RoutePolicy.call(
+      previous: episode, perception: result, focus_count: 1, turn: turn,
+      focus_document_ids: [ 122 ],
+      focus_uris: [ "s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf" ]
+    )
+    Rag::WorkContextReducer.apply!(
+      episode: episode, perception: result, decision: decision,
+      turn: turn, correlation_id: "query:led", now: Time.current
+    )
+
+    texts = episode.observations.pluck("text")
+    assert_equal "correct", result.move
+    assert_includes texts, "LED de fotocélula está apagado"
+    assert texts.none? { |text| text.match?(/encendido/i) }
+    assert texts.none? { |text| text.match?(/\Ael LED está apagado\z/i) }
+    assert_includes texts, symptom
+    assert_includes texts, obstruction
+    assert_includes episode.goal["text"], "vuelve a abrirse sola"
+    assert_not_includes episode.goal["text"], "encendido"
+    assert_not_includes episode.goal["text"], "apagado"
+  end
+
   test "an explicit state correction that matches two observations asks which one" do
     episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
     episode.append_observation!("el sensor de puerta está apagado", correlation_id: "seed")

@@ -106,6 +106,7 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
     assert_includes context, 'Recent Conversation'
     assert_includes context, 'User: Hello'
     assert_includes context, 'Assistant: Hi there'
+    assert_includes context, SessionContextBuilder::ASSISTANT_HISTORY_NOTE
   end
 
   test 'only includes last 3 history turns' do
@@ -116,6 +117,7 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
 
     assert_not_includes context, 'msg 0'
     assert_includes context, 'msg 5'
+    assert_not_includes context, SessionContextBuilder::ASSISTANT_HISTORY_NOTE
   end
 
   test 'includes both blocks when session has entities and history' do
@@ -379,6 +381,7 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
       truncated = long_assistant.truncate(200)
       assert_equal 200, truncated.length
       assert_equal [
+        SessionContextBuilder::ASSISTANT_HISTORY_NOTE,
         "User: Hola, tengo una falla eléctrica en un elevador hidráulico Elemont, con imanes y tarjeta Cea15",
         "User: La falla es en la puerta número 1 el equipo no magnetiza bien el imán de la puerta para que inicie movimiento.",
         "Assistant: #{truncated}",
@@ -417,6 +420,7 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
       assert_equal long_assistant, session.last_assistant_message
       assert_equal SessionContextBuilder::MAX_CONTEXT_CHARS, 2000
       assert_equal [
+        SessionContextBuilder::ASSISTANT_HISTORY_NOTE,
         "User: pregunta dos",
         "Assistant: #{truncated}",
         "User: pregunta tres sin respuesta",
@@ -451,6 +455,7 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
       assert_equal [ "segunda", "tercera", "actual" ], session.episode_user_messages
       assert_equal "respuesta previa", session.last_assistant_message
       assert_equal [
+        SessionContextBuilder::ASSISTANT_HISTORY_NOTE,
         "Assistant: respuesta previa",
         "User: segunda",
         "User: tercera",

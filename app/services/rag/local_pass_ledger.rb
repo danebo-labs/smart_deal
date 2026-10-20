@@ -23,6 +23,10 @@ module Rag
     COST_CAP_ENV = "RAG_LOCAL_PASS_COST_CAP_USD"
     ATTEMPTS_ENV = "AWS_MAX_ATTEMPTS"
     TICKETS = :rag_local_pass_tickets
+    ASSIGNMENT_PATH_ENV = "RAG_ASSIGNMENT_SPEND_PATH"
+    ASSIGNMENT_IDS = :rag_assignment_spend_ids
+    ASSIGNMENT_CALL_CAP = 48
+    ASSIGNMENT_COST_CAP_USD = "4"
     LOCAL_HOSTS = [ "", "localhost", "127.0.0.1", "::1" ].freeze
     MUTEX = Mutex.new
 
@@ -113,6 +117,7 @@ module Rag
       def reset!
         MUTEX.synchronize { @state = nil }
         Thread.current[TICKETS] = nil
+        Thread.current[ASSIGNMENT_IDS] = nil
         nil
       end
 
@@ -123,11 +128,11 @@ module Rag
         refuse_unarmed_guard!(operation)
         return yield unless armed?
 
+        ceiling = price(model_id, input_tokens, output_tokens)
+        file_id = reserve_assignment!(operation, model_id, ceiling)
         ticket = nil
-        ceiling = nil
         decision = MUTEX.synchronize do
           state = (@state ||= empty_state)
-          ceiling = price(model_id, input_tokens, output_tokens)
           if state[:attempts] + 1 > call_cap || exposure_locked(state) + ceiling > cost_cap
             state[:blocked] += 1
             :blocked
@@ -139,13 +144,20 @@ module Rag
           end
         end
         if decision == :blocked
+          release_assignment!(file_id)
           note(operation, "blocked", ceiling)
           raise Stop, operation.to_s
         end
 
         note(operation, "admitted", ceiling)
         (Thread.current[TICKETS] ||= []) << ticket
-        yield
+        (Thread.current[ASSIGNMENT_IDS] ||= []) << file_id if file_id
+        begin
+          yield
+        rescue Exception
+          keep_assignment!(file_id)
+          raise
+        end
       end
 
       def settle_usage!(response, model_id:)
@@ -157,7 +169,9 @@ module Rag
         ticket = pop_ticket
         return false unless ticket
 
-        commit(ticket, price(model_id, tokens[0], tokens[1]))
+        actual = price(model_id, tokens[0], tokens[1])
+        commit(ticket, actual)
+        settle_assignment!(actual)
         true
       rescue StandardError
         false
@@ -288,6 +302,54 @@ module Rag
         ticket = Array(Thread.current[TICKETS]).pop
         Thread.current[TICKETS] = Array(Thread.current[TICKETS])
         ticket
+      end
+
+      def assignment_configured?
+        ENV[ASSIGNMENT_PATH_ENV].to_s.present?
+      end
+
+      def assignment_ledger
+        return nil unless assignment_configured?
+
+        AssignmentSpend.new(
+          path: ENV[ASSIGNMENT_PATH_ENV],
+          call_cap: ASSIGNMENT_CALL_CAP,
+          cost_cap_usd: ASSIGNMENT_COST_CAP_USD
+        )
+      end
+
+      def reserve_assignment!(operation, model_id, ceiling)
+        ledger = assignment_ledger
+        return nil unless ledger
+
+        ledger.reserve!(ceiling_usd: ceiling, model_id: model_id, turn: operation)
+      rescue AssignmentSpend::Stop
+        raise Stop, operation.to_s
+      end
+
+      def settle_assignment!(actual)
+        return unless assignment_configured?
+
+        file_id = Array(Thread.current[ASSIGNMENT_IDS]).pop
+        Thread.current[ASSIGNMENT_IDS] = Array(Thread.current[ASSIGNMENT_IDS])
+        return if file_id.nil?
+
+        assignment_ledger.settle!(file_id, actual_usd: actual)
+      end
+
+      def keep_assignment!(file_id)
+        return if file_id.nil?
+
+        ids = Array(Thread.current[ASSIGNMENT_IDS])
+        ids.pop if ids.last == file_id
+        Thread.current[ASSIGNMENT_IDS] = ids
+        assignment_ledger&.keep!(file_id)
+      end
+
+      def release_assignment!(file_id)
+        return if file_id.nil?
+
+        assignment_ledger&.release!(file_id)
       end
 
       def integer_env(key)

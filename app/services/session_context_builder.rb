@@ -14,6 +14,7 @@ class SessionContextBuilder
   # Prevents runaway entity lists + long histories from blowing the input budget.
   # ~500 tokens at Haiku tokenization rates; covers ~3 pinned docs + 3 turns comfortably.
   MAX_CONTEXT_CHARS = 2000
+  ASSISTANT_HISTORY_NOTE = "User lines are technician reports. Assistant lines are earlier conclusions of this assistant, not technician reports and not confirmed facts. A later technician message can correct them."
   MAX_ALIASES_PER_ENTITY = 5
   MAX_PROBLEM_CHARS = 600
   PROBLEM_HEADER = "## Active Field Problem"
@@ -71,9 +72,10 @@ class SessionContextBuilder
       end
     if history.any?
       history_lines = history.map { |h| "#{h[:role].capitalize}: #{h[:content]}" }.join("\n")
+      assistant_note = history.any? { |turn| turn[:role].to_s == "assistant" } ? "#{ASSISTANT_HISTORY_NOTE}\n" : ""
       parts << <<~BLOCK.strip
         ## Recent Conversation
-        #{history_lines}
+        #{assistant_note}#{history_lines}
       BLOCK
     end
 

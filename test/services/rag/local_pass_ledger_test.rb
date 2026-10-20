@@ -9,6 +9,7 @@ class Rag::LocalPassLedgerTest < ActiveSupport::TestCase
     RAG_LOCAL_PASS_COST_CAP_USD
     AWS_MAX_ATTEMPTS
     RAG_VALIDATION_CAPTURE_RUN
+    RAG_ASSIGNMENT_SPEND_PATH
   ].freeze
 
   setup do
@@ -229,6 +230,56 @@ class Rag::LocalPassLedgerTest < ActiveSupport::TestCase
     end
     assert_equal 0, calls
     assert_equal 0, Rag::LocalPassLedger.snapshot["attempts"]
+  end
+
+  test "an armed call settles the shared assignment file" do
+    dir = Dir.mktmpdir
+    path = File.join(dir, "spend.json")
+    ENV["RAG_ASSIGNMENT_SPEND_PATH"] = path
+    arm!(call_cap: 4, cost_cap: "1")
+    response = { "usage" => { "input_tokens" => 1_000, "output_tokens" => 100 } }
+    Rag::LocalPassLedger.protect!(
+      operation: "generate_text", model_id: model_id, input_tokens: 1_000, output_tokens: 100
+    ) { Rag::LocalPassLedger.settle_usage!(response, model_id: model_id) }
+
+    spend = Rag::AssignmentSpend.new(path: path, call_cap: 48, cost_cap_usd: "4")
+    expected = Rag::LocalPassLedger.price(model_id, 1_000, 100)
+    assert_equal 1, spend.snapshot["attempts"]
+    assert_equal format("%.6f", expected), spend.snapshot["committed_usd"]
+    assert_equal "0.000000", spend.snapshot["held_usd"]
+  ensure
+    FileUtils.remove_entry(dir) if dir
+  end
+
+  test "a provider error keeps the assignment ceiling and a full file blocks the next call" do
+    dir = Dir.mktmpdir
+    path = File.join(dir, "spend.json")
+    ENV["RAG_ASSIGNMENT_SPEND_PATH"] = path
+    arm!(call_cap: 4, cost_cap: "1")
+    assert_raises(RuntimeError) do
+      Rag::LocalPassLedger.protect!(
+        operation: "generate_text", model_id: model_id, input_tokens: 1_000, output_tokens: 100
+      ) { raise "boom" }
+    end
+    spend = Rag::AssignmentSpend.new(path: path, call_cap: 48, cost_cap_usd: "4")
+    assert_equal 1, spend.snapshot["attempts"]
+    assert_equal 1, spend.snapshot["priced"]
+    assert_equal "0.000000", spend.snapshot["held_usd"]
+
+    File.write(path, JSON.generate(
+      "attempts" => 48, "blocked" => 0, "priced" => 48, "seq" => 48,
+      "committed" => "1.000000", "open" => {}, "entries" => []
+    ))
+    calls = 0
+    assert_raises(Rag::LocalPassLedger::Stop) do
+      Rag::LocalPassLedger.protect!(
+        operation: "converse", model_id: model_id, input_tokens: 10, output_tokens: 10
+      ) { calls += 1 }
+    end
+    assert_equal 0, calls
+    assert_equal 1, Rag::LocalPassLedger.snapshot["attempts"]
+  ensure
+    FileUtils.remove_entry(dir) if dir
   end
 
   private

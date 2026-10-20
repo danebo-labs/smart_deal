@@ -28,7 +28,7 @@ La numeración de abajo es el orden de trabajo. Las fases siguen siendo 0 a 5. L
 
 **Bloqueo.** Esta operación no bloquea la cola. Sigue abierto el bloqueo de fidelidad del orden 2, incluida `query:4bcf7953…`. El `.env` local no es la configuración de la corrida: `SHARED_SESSION_ENABLED=true`, y episodio, turno y `HAIKU_QUERY_ANALYSIS_MODE` no están definidos. Un prefijo en el comando rake solo cubre ese proceso. No cambia un web o un worker ya arrancados. La KB de ese archivo es `QGVYLPTEGT`. Las corridas históricas de producción usaron `Y7RZWMFJSR`. No se asume que sean la misma base. Este corte no consulta la KB ni ingesta.
 
-**Siguiente acción.** El orden 2, bajo «Entorno de validación», con el manual seleccionado en esa sesión. Ese encargo incorpora la consideración de español para el MVP. Este corte no la abre y no llama a un modelo.
+**Siguiente acción.** El orden 2, bajo «Entorno de validación», con el manual seleccionado en esa sesión. El caso propuesto para esa corrida está enlazado ahí. Ese encargo incorpora la consideración de español para el MVP. Este corte no la abre y no llama a un modelo.
 
 **Criterio.** Una sola fila seleccionada por esa clave. La copia existe, es legible y corresponde al estado reemplazado; si no se escribió, la fila no cambió. En la misma transición quedan el episodio nuevo, el historial vacío, el foco vacío, las entidades vacías y el procedimiento vacío. El episodio nuevo no arrastra hechos ni foto activa. La fila, la atribución, el TTL, `session_status`, los documentos, el corpus y las fotos almacenadas siguen. Tras recargar la interfaz, el panel, el id de foto pendiente y la espera de Cable nacen vacíos; esa recarga no es otro caso y esta tarea no la recorre. El turno siguiente, por `record_user_turn!` y `execute_rag_query` con dobles en el intérprete y en el orquestador, no lleva el antecedente anterior al request del intérprete ni a la consulta efectiva. El filtro de recuperación sin pin y la continuidad de foto son comprobaciones de componente: no sustituyen la generación ni una conversación integrada. Una captura armada a mano no acredita una ruta que no se ejecutó. Otra sesión permanece intacta. Un writer con el id de episodio anterior no repuebla el caso. Esta aceptación no cierra la fidelidad ni ninguna fase.
 
@@ -49,6 +49,8 @@ La numeración de abajo es el orden de trabajo. Las fases siguen siendo 0 a 5. L
 **Bloqueo.** Sigue abierta la inferencia sacada de la sección o del nivel, presentada como hecho del plano, con cita, y la prescripción apoyada en esa inferencia. Atraviesa el resumen de la fase 3, la reserva de parada citada como `[1]` en la fase 4, la fase 5 y `query:4bcf7953…`. En esa última, con el sanitizador y el orden cronológico ya desplegados, la cruda `c7fd30c6…` atribuye selector, cadena, conexión y autorización. El posprocesado de esa respuesta solo quita `# Respuesta` y una negrita. Un inicio limpio no corrige este defecto.
 
 **Siguiente acción.** Una sola conversación de texto, con el manual seleccionado en esa sesión: identificación, selección, síntoma, seguimiento, corrección, consulta fiel y resumen. Ese encargo incorpora la consideración de español para el MVP. La comparación de modelo propuesta por Opus permanece pendiente y acotada al body capturado de `query:4bcf7953…`, cambiando solo `modelId`. No es migración, no sustituye esa conversación y no valida el Companion.
+
+**Caso propuesto, 2026-10-19.** El guion para revisar antes de la corrida está en [field_companion/CASO_ELEMONT_MH_LINEAL_2026-10-19.md](field_companion/CASO_ELEMONT_MH_LINEAL_2026-10-19.md). Estado: propuesto, pendiente de revisión y ejecución. No se ejecutó. No es `EPISODIO_VALIDADO` ni el guion de respaldo del orden 3. Las respuestas de referencia quedan en ese artefacto para el evaluador. No entran al prompt, al historial del técnico ni a los documentos recuperables.
 
 **Criterio.** `EPISODIO_VALIDADO` es el nombre de este episodio de texto: fases 0 a 5 del plano Elemont, manual seleccionado, una sesión y un episodio. Fotos y cambio de tema quedan en los órdenes 4 y 5. Su ausencia no impide esta declaración. El compromiso del viernes 23 puede pedir esas ampliaciones y no se cumple solo con este nombre.
 
@@ -164,7 +166,7 @@ Este apartado no autoriza llamadas reales, reset de producción ni deploy. La co
 
 ### Plan B y regresión
 
-Todavía no existe un recorrido completo aceptado como guion de respaldo. No corresponde declarar `EPISODIO_VALIDADO`.
+Todavía no existe un recorrido completo aceptado como guion de respaldo. No corresponde declarar `EPISODIO_VALIDADO`. El caso propuesto el 19 de octubre, enlazado en el orden 2, está pendiente de revisión y ejecución. No es esta base.
 
 Regla de la base, desde el primer recorrido de texto que Lahiri acepte:
 

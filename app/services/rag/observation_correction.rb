@@ -11,6 +11,13 @@ module Rag
       (?:[,;:]\s*|\s+y\s+)
       no\s+(de|del|en|el|la|los|las|es|era)\s+([^.;!?\n]+)
     /ix
+    # A bare state is one word and then the sentence ends. "no apagado."
+    # "no Chapa nivel 2" and "no Tablero norte" stay identifier contrasts.
+    BARE_STATE = /
+      (?:[,;:]\s*|\s+y\s+)
+      no\s+(\p{L}{3,})
+      (?=\s*[.;!?]|\s*\z)
+    /ix
     CUE_PREFIX = /
       \A(?:corrijo(?:\s+algo\s+de\s+antes)?|correcci\p{L}*|me\s+equivoqu\p{L}*|
       en\s+realidad|le[ií]\s+mal|instead|actually)\b\s*:?\s*
@@ -76,6 +83,34 @@ module Rag
       }.uniq
     end
 
+    # Stored observations the retraction can replace. One match is that
+    # observation. Several matches stay one observation when the replacement
+    # shares a content word with exactly one of them. Several matches and no
+    # such word are ambiguous: the caller asks which datum changed.
+    def self.targets(observations, correction)
+      return [] unless correction&.active?
+
+      texts = Array(observations).filter_map { |item|
+        text = item.is_a?(Hash) ? item["text"].to_s : item.to_s
+        text.presence
+      }
+      matches = texts.select { |text|
+        correction.retracted.any? { |nucleus| retracted?(text, nucleus, correction.asserted) }
+      }
+      return matches if matches.size <= 1
+
+      words = content_words(correction.asserted)
+      selected = matches.select { |text|
+        label = normalize(text)
+        words.any? { |word|
+          word_in?(label, word) && matches.one? { |other| word_in?(normalize(other), word) }
+        }
+      }
+      return :ambiguous unless selected.one?
+
+      selected
+    end
+
     def initialize(turn:, observations:, assertions:)
       @turn = turn.to_s
       @observations = Array(observations)
@@ -83,6 +118,9 @@ module Rag
     end
 
     def resolve
+      bare = bare_state
+      return bare if bare
+
       match = @turn.match(TAIL)
       return self.class.none if match.nil?
 
@@ -97,6 +135,21 @@ module Rag
     end
 
     private
+
+    def bare_state
+      match = @turn.match(BARE_STATE)
+      return nil if match.nil? || !@turn.match?(CUE)
+
+      value = nucleus(match[1])
+      return nil if value.blank?
+
+      clause = clause_before(match)
+      retracted = [ value ]
+      asserted = asserted_phrases(clause, retracted)
+      return nil if asserted.empty?
+
+      self.class::Result.new(asserted: asserted, retracted: retracted)
+    end
 
     def nuclei(clause)
       cue = @turn.match?(CUE)

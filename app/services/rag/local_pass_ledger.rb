@@ -11,9 +11,9 @@ module Rag
   #
   # A refused call is not sent. An admitted call counts even when it fails.
   # Provider usage replaces the pre-call ceiling. retrieve_and_generate has
-  # no usage block; the caller may replace that hold with the LocalTokenizer
-  # estimate already used for BedrockQuery. A zero estimate leaves the hold,
-  # so a later call cannot assume the spend was zero. Prices come from
+  # no usage block. Request text and cited passages are a partial estimate:
+  # they stay off the available balance and do not replace the ceiling.
+  # A zero estimate also leaves the hold. Prices come from
   # BedrockQuery::BEDROCK_PRICING. Token ceilings are bounds, not a second
   # price list: one token per character when the text is local, and
   # ContractualLimits::QUERY when retrieve_and_generate adds chunks later.
@@ -102,6 +102,7 @@ module Rag
           "priced" => state[:priced].to_i,
           "committed_usd" => money(state[:committed]),
           "held_usd" => money(open.values.sum(BigDecimal("0"))),
+          "partial_estimate_usd" => money(state[:partial_estimate] || 0),
           "call_cap" => call_cap,
           "cost_cap_usd" => cost_cap&.to_s("F"),
           "aws_max_attempts" => ENV[ATTEMPTS_ENV].to_s,
@@ -162,8 +163,27 @@ module Rag
         false
       end
 
+      # Records a partial token estimate beside the open hold. The hold stays
+      # reserved. The estimate is not committed and does not free budget.
+      def note_partial_estimate!(model_id:, input_tokens:, output_tokens:, operation: "retrieve_and_generate")
+        return false unless armed?
+        return false if input_tokens.to_i <= 0 && output_tokens.to_i <= 0
+
+        amount = price(model_id, input_tokens, output_tokens)
+        MUTEX.synchronize do
+          state = (@state ||= empty_state)
+          state[:partial_estimate] += amount
+        end
+        note(operation, "partial_estimate", amount)
+        true
+      rescue StandardError
+        false
+      end
+
       # Replaces this thread's open hold with the existing token estimate.
       # Zero on both sides leaves the hold. Does not invent a price.
+      # retrieve_and_generate does not call this: its request leaves and
+      # cited text are not a complete bound.
       def settle_estimate!(model_id:, input_tokens:, output_tokens:)
         return false unless armed?
         return false if input_tokens.to_i <= 0 && output_tokens.to_i <= 0
@@ -278,7 +298,7 @@ module Rag
       end
 
       def empty_state
-        { attempts: 0, blocked: 0, priced: 0, seq: 0, committed: BigDecimal("0"), open: {} }
+        { attempts: 0, blocked: 0, priced: 0, seq: 0, committed: BigDecimal("0"), partial_estimate: BigDecimal("0"), open: {} }
       end
 
       def exposure_locked(state)

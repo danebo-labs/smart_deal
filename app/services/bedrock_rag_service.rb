@@ -1888,14 +1888,16 @@ class BedrockRagService
     result
   end
 
-  # The API returns no usage block. Replace the contractual hold with the
-  # same LocalTokenizer estimate BedrockQuery already records. Provider usage,
-  # when present, wins. A zero estimate leaves the hold.
+  # The API returns no usage block. Provider usage, when present, replaces
+  # the contractual hold. Request leaves and cited passages omit the chunks
+  # the provider retrieved, so that estimate is recorded beside the hold and
+  # does not release it. A response with no citations is not treated as a
+  # near-zero input.
   def settle_local_retrieve_and_generate!(result, params)
     return if Rag::LocalPassLedger.settle_usage!(result, model_id: @model_ref.to_s)
 
     cited = retrieve_and_generate_citation_text(result)
-    Rag::LocalPassLedger.settle_estimate!(
+    Rag::LocalPassLedger.note_partial_estimate!(
       model_id: @model_ref.to_s,
       input_tokens: AnthropicTokenCounter::LocalTokenizer.estimate(
         [ string_leaves(params), cited ].compact_blank.join("\n")

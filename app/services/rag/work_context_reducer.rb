@@ -264,9 +264,17 @@ module Rag
     def supersede_retracted_observations
       correction = @perception.respond_to?(:correction) ? @perception.correction : nil
       if correction&.active?
+        targets = ObservationCorrection.targets(@episode.observations, correction)
+        return if targets == :ambiguous
+
         correction.asserted.each { |phrase| remember_asserted!(phrase) }
         if correction.asserted.any? { |phrase| asserted_stored?(phrase) }
-          correction.retracted.each { |phrase| excise_retracted_phrase(phrase, correction.asserted) }
+          if targets.one?
+            correction.retracted.each { |phrase| excise_selected_observation(targets.first, phrase, correction.asserted) }
+          else
+            correction.retracted.each { |phrase| excise_retracted_phrase(phrase, correction.asserted) }
+          end
+          correction.retracted.each { |phrase| excise_retracted_goal(phrase, correction.asserted) }
           drop_replaced_observations(correction.asserted)
           adopt_problem_goal!(correction.asserted)
         end
@@ -315,15 +323,29 @@ module Rag
 
     def excise_retracted_phrase(phrase, asserted)
       @episode.observations.map! { |item|
-        kept = independent_clauses(item["text"]).reject { |clause|
-          ObservationCorrection.retracted?(clause, phrase, asserted)
-        }
-        next if kept.empty?
+        next item unless ObservationCorrection.retracted?(item["text"], phrase, asserted)
 
-        item.merge("text" => kept.join(" y "))
+        excise_observation_clauses(item, phrase, asserted)
       }
       @episode.observations.compact!
-      excise_retracted_goal(phrase, asserted)
+    end
+
+    def excise_selected_observation(selected, phrase, asserted)
+      @episode.observations.map! { |item|
+        next item unless item["text"] == selected
+
+        excise_observation_clauses(item, phrase, asserted)
+      }
+      @episode.observations.compact!
+    end
+
+    def excise_observation_clauses(item, phrase, asserted)
+      kept = independent_clauses(item["text"]).reject { |clause|
+        ObservationCorrection.retracted?(clause, phrase, asserted)
+      }
+      return if kept.empty?
+
+      item.merge("text" => kept.join(" y "))
     end
 
     def excise_retracted_goal(phrase, asserted)

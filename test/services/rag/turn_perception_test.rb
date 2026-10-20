@@ -353,6 +353,104 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_empty episode.rejected
   end
 
+  test "the observed photocell correction replaces the stored state and keeps the job" do
+    episode = fermator_door_episode
+    episode_id = episode.episode_id
+    focus_ids = [ 122 ]
+    focus_uri = "s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf"
+    turn = "Corrijo un dato: el LED de fotocélula está encendido, no apagado. Lo demás se mantiene."
+    result = perceive(
+      {
+        "move" => "correct",
+        "assertions" => [ { "span" => "el LED de fotocélula está encendido", "act" => "assert" } ],
+        "observations" => [],
+        "pending_resolution" => nil,
+        "clarification_target" => nil
+      },
+      turn,
+      episode: episode
+    )
+    decision = Rag::RoutePolicy.call(
+      previous: episode, perception: result, focus_count: 1, turn: turn,
+      focus_document_ids: focus_ids, focus_uris: [ focus_uri ]
+    )
+    Rag::WorkContextReducer.apply!(
+      episode: episode, perception: result, decision: decision,
+      turn: turn, correlation_id: "query:82df46a4-8104-4038-8f58-7c22a17a6099", now: Time.current
+    )
+
+    texts = episode.observations.pluck("text")
+    assert_equal "correct", result.move
+    assert_nil result.clarification_target
+    assert_not_equal "clarify_first", decision.decision
+    assert_not_equal "¿Qué dato del equipo quieres corregir?", decision.clarification.to_s
+    assert_includes texts, "el LED de fotocélula está encendido"
+    assert texts.none? { |text| text.match?(/apagado/i) }
+    assert_includes texts, "la puerta empieza a cerrar y vuelve a abrirse sola"
+    assert_includes texts, "no observo una obstrucción mecánica"
+    assert_includes texts, "No he revisado la sensibilidad de reapertura"
+    assert_equal episode_id, episode.episode_id
+    assert_equal "Fermator", episode.fact("manufacturer")["value"]
+    assert_equal [ "Fermator VF5+", "operador de puerta" ], episode.identifiers.pluck("value")
+    assert_equal focus_ids, decision.focus_document_ids
+    assert_equal [ focus_uri ], decision.focus_uris
+    assert result.identities.none? { |item| item.kind == "identifier" }
+    assert_nil episode.pending_question
+  end
+
+  test "an explicit state correction that matches two observations asks which one" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    episode.append_observation!("el sensor de puerta está apagado", correlation_id: "seed")
+    episode.append_observation!("el indicador de piso está apagado", correlation_id: "seed")
+    turn = "Corrijo un dato: está encendido, no apagado."
+    result = perceive(
+      {
+        "move" => "correct",
+        "assertions" => [ assert_span("está encendido") ],
+        "observations" => [],
+        "pending_resolution" => nil,
+        "clarification_target" => nil
+      },
+      turn,
+      episode: episode
+    )
+    decision = settle(episode, result, turn)
+
+    assert_equal "unclear", result.move
+    assert_equal "correction_target", result.clarification_target
+    assert_equal "clarify_first", decision.decision
+    assert_equal [ "el sensor de puerta está apagado", "el indicador de piso está apagado" ], episode.observations.pluck("text")
+    assert_empty episode.identifiers
+    assert_equal "correction_target", episode.pending_question["type"]
+  end
+
+  test "a named state correction replaces only the observation it identifies" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    episode.append_observation!("el sensor de puerta está apagado", correlation_id: "seed")
+    episode.append_observation!("el indicador de piso está apagado", correlation_id: "seed")
+    turn = "Corrijo: el sensor de puerta está encendido, no apagado."
+    result = perceive(
+      {
+        "move" => "correct",
+        "assertions" => [ assert_span("el sensor de puerta está encendido") ],
+        "observations" => [],
+        "pending_resolution" => nil,
+        "clarification_target" => nil
+      },
+      turn,
+      episode: episode
+    )
+    settle(episode, result, turn)
+
+    texts = episode.observations.pluck("text")
+    assert_equal "correct", result.move
+    assert_nil result.clarification_target
+    assert_includes texts, "el sensor de puerta está encendido"
+    assert_includes texts, "el indicador de piso está apagado"
+    assert texts.none? { |text| text == "el sensor de puerta está apagado" }
+    assert_empty episode.identifiers
+  end
+
   test "an observation correction stays correct and keeps the replacement" do
     episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
     episode.append_observation!("detenida cerca de planta 1", correlation_id: "seed")
@@ -796,6 +894,35 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
       "pending_resolution" => nil,
       "clarification_target" => nil
     }
+  end
+
+  def fermator_door_episode
+    episode = Rag::ActiveEpisode.open(
+      correlation_id: "query:717a8c06-e9d8-4697-b7d0-217232312ad3", now: Time.current
+    )
+    episode.write_fact!(
+      "manufacturer", status: "known", value: "Fermator", source: "user",
+      correlation_id: "query:717a8c06-e9d8-4697-b7d0-217232312ad3", at: Time.current.iso8601
+    )
+    episode.append_identifier!(
+      "Fermator VF5+", correlation_id: "query:717a8c06-e9d8-4697-b7d0-217232312ad3", source: "user"
+    )
+    episode.append_identifier!(
+      "operador de puerta", correlation_id: "query:717a8c06-e9d8-4697-b7d0-217232312ad3", source: "user"
+    )
+    episode.assign_goal!(
+      "la puerta empieza a cerrar y vuelve a abrirse sola",
+      correlation_id: "query:717a8c06-e9d8-4697-b7d0-217232312ad3"
+    )
+    [
+      "la puerta empieza a cerrar y vuelve a abrirse sola",
+      "el LED de fotocélula está apagado",
+      "no observo una obstrucción mecánica",
+      "No he revisado la sensibilidad de reapertura"
+    ].each do |text|
+      episode.append_observation!(text, correlation_id: "query:decbf774-95b3-4959-a9a7-ff72789c7c18")
+    end
+    episode
   end
 
   def plant_episode

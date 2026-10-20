@@ -552,6 +552,12 @@ module Rag
         return [ "correct", nil, identities, observations, ambiguities, nil ]
       end
 
+      if ambiguous_observation_correction?
+        @correction = ObservationCorrection.none
+        note_rule("recover_stated_correction", "observation", "ambiguous_observation_correction")
+        return [ "unclear", nil, [], [], ambiguities, "correction_target" ]
+      end
+
       phrase = keep_stated_correction
       if phrase && %w[unclear correct report follow_up].include?(move)
         # The interpreter may return the entire correction as an observation.
@@ -631,6 +637,13 @@ module Rag
 
         contained_phrase?(label, FollowupQueryRewriter.normalize_label(other))
       }
+    end
+
+    def ambiguous_observation_correction?
+      return false unless @correction&.active?
+      return false unless @episode.respond_to?(:observations)
+
+      ObservationCorrection.targets(@episode.observations, @correction) == :ambiguous
     end
 
     def keep_stated_correction

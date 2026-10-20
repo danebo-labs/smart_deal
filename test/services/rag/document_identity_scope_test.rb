@@ -239,6 +239,92 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     end
   end
 
+  VF5_PIN_URI = "s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf"
+  VF5_DOCUMENT_UID = "126cda62-64ad-4469-8674-a29f12e38d48"
+
+  test "known Fermator with the authorized VF5 pin retrieves that manual and generates" do
+    account = accounts(:legacy)
+    document = KbDocument.create!(
+      account: account, s3_key: VF5_PIN_URI, display_name: "VF5",
+      document_uid: VF5_DOCUMENT_UID, aliases: []
+    )
+    uri = document.canonical_uri
+    body = "Comprobar que la fotocélula no esté activada."
+    service, retrieves, prompts, rag_calls = vf5_scope_service(account, body, uri)
+    result = nil
+    with_flag("true") do
+      result = service.query(
+        "¿Qué comprobaciones aparecen para la puerta que se reabre sola?",
+        episode: fermator_vf5_episode,
+        entity_s3_uris: [ uri ],
+        force_entity_filter: true,
+        output_channel: :web,
+        response_locale: :es,
+        account_id: account.id
+      )
+    end
+
+    assert_equal 1, retrieves.size
+    assert_equal 0, rag_calls.call
+    filter = retrieves.first.dig(:retrieval_configuration, :vector_search_configuration, :filter)
+    assert_includes filter.to_s, uri
+    assert_not_includes filter.to_s, "account_id"
+    assert_includes prompts.sole, body
+    assert_equal "document_identity_scope", result[:generation_mode]
+    assert_equal true, result[:model_invoked]
+    assert_equal "scoped", result[:equipment_identity_status]
+    assert_includes result[:answer], "fotocélula"
+  end
+
+  test "known identity with the document flag off closes before retrieval" do
+    account = accounts(:legacy)
+    document = KbDocument.create!(
+      account: account, s3_key: VF5_PIN_URI, display_name: "VF5",
+      document_uid: VF5_DOCUMENT_UID, aliases: []
+    )
+    service, retrieves, = vf5_scope_service(account, "cuerpo", document.canonical_uri)
+    result = nil
+    with_flag(nil) do
+      result = service.query(
+        "¿Qué comprobaciones aparecen?",
+        episode: fermator_vf5_episode,
+        entity_s3_uris: [ document.canonical_uri ],
+        force_entity_filter: true,
+        output_channel: :web,
+        response_locale: :es,
+        account_id: account.id
+      )
+    end
+
+    assert_empty retrieves
+    assert_equal "unavailable", result[:equipment_identity_status]
+    assert_equal "scope_disabled", result[:equipment_identity_reason]
+  end
+
+  test "a private manual of another account is not retrieved for this pin" do
+    account = accounts(:legacy)
+    foreign = KbDocument.create!(
+      account: accounts(:climb), s3_key: "s3://bucket/other-private.pdf",
+      display_name: "Otro", document_uid: SecureRandom.uuid, aliases: []
+    )
+    service, retrieves, = vf5_scope_service(account, "cuerpo", foreign.canonical_uri)
+    result = nil
+    with_flag("true") do
+      result = service.query(
+        "¿Qué comprobaciones aparecen?",
+        episode: fermator_vf5_episode,
+        entity_s3_uris: [ foreign.canonical_uri ],
+        force_entity_filter: true,
+        output_channel: :web,
+        response_locale: :es,
+        account_id: account.id
+      )
+    end
+
+    assert_empty retrieves
+    assert_equal "DENY_RETRIEVAL", result[:retrieval]
+  end
+
   test "flag off does not retrieve" do
     with_flag(nil) do
       assert_not Rag::DocumentIdentityScope.applicable?(episode)
@@ -2614,6 +2700,61 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     else
       ENV["RAG_GROUNDED_SYNTHESIS_ACCOUNT_IDS"] = account_ids
     end
+  end
+
+  def fermator_vf5_episode
+    {
+      "v" => 1,
+      "episode_id" => "ep-vf5",
+      "updated_at" => Time.current.iso8601,
+      "facts" => {
+        "manufacturer" => {
+          "status" => "known",
+          "source" => "user",
+          "value" => "Fermator",
+          "correlation_id" => "query:turn"
+        }
+      },
+      "identifiers" => [
+        { "value" => "Fermator VF5+", "source" => "user", "correlation_id" => "query:turn" }
+      ]
+    }
+  end
+
+  def vf5_scope_service(account, body, uri)
+    service = BedrockRagService.new(account: account, knowledge_base_id: "test-kb")
+    retrieves = []
+    prompts = []
+    rag_calls = 0
+    client = Object.new
+    client.define_singleton_method(:retrieve) do |params|
+      retrieves << params
+      OpenStruct.new(
+        retrieval_results: [
+          OpenStruct.new(
+            content: OpenStruct.new(text: body),
+            score: 0.5,
+            location: OpenStruct.new(s3_location: OpenStruct.new(uri: "#{uri}#chunk")),
+            metadata: {
+              "canonical_name" => "Fermator VF5",
+              "original_source_uri" => uri,
+              "page_number" => 12,
+              "doc_type" => "manual",
+              "account_id" => account.id.to_s
+            }
+          )
+        ]
+      )
+    end
+    service.instance_variable_set(:@client, client)
+    service.define_singleton_method(:retrieve_and_generate_with_retry) { |_params| rag_calls += 1 }
+    generator = Object.new
+    generator.define_singleton_method(:query) do |prompt, **|
+      prompts << prompt.to_s
+      "#{body} [1]"
+    end
+    service.define_singleton_method(:document_identity_generator) { generator }
+    [ service, retrieves, prompts, -> { rag_calls } ]
   end
 
   def with_flag(value)

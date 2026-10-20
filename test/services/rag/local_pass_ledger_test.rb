@@ -158,31 +158,60 @@ class Rag::LocalPassLedgerTest < ActiveSupport::TestCase
     assert_operator BigDecimal(Rag::LocalPassLedger.snapshot["held_usd"]), :>, 0
   end
 
-  test "the local tokenizer estimate replaces the contractual hold" do
+  test "a response without provider usage keeps the hold when citations are empty or partial" do
+    ceiling = Rag::LocalPassLedger.price(
+      model_id,
+      ContractualLimits::QUERY[:max_input_tokens],
+      ContractualLimits::QUERY[:max_output_tokens]
+    )
+    arm!(call_cap: 2, cost_cap: format("%.6f", ceiling + BigDecimal("0.01")))
+    service = BedrockRagService.allocate
+    service.instance_variable_set(:@model_ref, model_id)
+    [ [], [ Struct.new(:retrieved_references).new([ Struct.new(:content).new(Struct.new(:text).new("fotocelula")) ]) ] ].each do |citations|
+      Rag::LocalPassLedger.reset!
+      calls = 0
+      response = Struct.new(:output, :citations).new(Struct.new(:text).new("tres comprobaciones"), citations)
+      runtime = Object.new
+      runtime.define_singleton_method(:config) { Struct.new(:max_attempts).new(1) }
+      runtime.define_singleton_method(:retrieve_and_generate) do |_params|
+        calls += 1
+        response
+      end
+      service.instance_variable_set(:@client, runtime)
+
+      service.send(:local_retrieve_and_generate, { input: { text: "pregunta VF5+" } })
+      held = BigDecimal(Rag::LocalPassLedger.snapshot["held_usd"])
+      partial = BigDecimal(Rag::LocalPassLedger.snapshot["partial_estimate_usd"])
+
+      assert_equal 1, calls
+      assert_equal "0.000000", Rag::LocalPassLedger.snapshot["committed_usd"]
+      assert_equal format("%.6f", ceiling), Rag::LocalPassLedger.snapshot["held_usd"]
+      assert_operator partial, :>, 0
+      assert_operator partial, :<, held
+      assert_equal 0, Rag::LocalPassLedger.snapshot["priced"]
+      error = assert_raises(Rag::LocalPassLedger::Stop) do
+        service.send(:local_retrieve_and_generate, { input: { text: "segunda" } })
+      end
+      assert_equal "retrieve_and_generate", error.message
+    end
+  end
+
+  test "provider usage on retrieve and generate replaces the hold" do
     arm!(call_cap: 2, cost_cap: "1")
     service = BedrockRagService.allocate
-    calls = 0
-    content = Struct.new(:text).new("fotocelula y obstruccion")
-    reference = Struct.new(:content).new(content)
-    citation = Struct.new(:retrieved_references).new([ reference ])
-    response = Struct.new(:output, :citations).new(Struct.new(:text).new("tres comprobaciones"), [ citation ])
+    usage = { input_tokens: 100, output_tokens: 20 }
+    response = Struct.new(:output, :citations, :usage).new(Struct.new(:text).new("respuesta"), [], usage)
     runtime = Object.new
     runtime.define_singleton_method(:config) { Struct.new(:max_attempts).new(1) }
-    runtime.define_singleton_method(:retrieve_and_generate) do |_params|
-      calls += 1
-      response
-    end
+    runtime.define_singleton_method(:retrieve_and_generate) { |_params| response }
     service.instance_variable_set(:@client, runtime)
     service.instance_variable_set(:@model_ref, model_id)
 
-    service.send(:local_retrieve_and_generate, { input: { text: "pregunta VF5+" } })
+    service.send(:local_retrieve_and_generate, { input: { text: "pregunta" } })
 
-    expected_input = AnthropicTokenCounter::LocalTokenizer.estimate("pregunta VF5+\nfotocelula y obstruccion")
-    expected_output = AnthropicTokenCounter::LocalTokenizer.estimate("tres comprobaciones")
-    expected = Rag::LocalPassLedger.price(model_id, expected_input, expected_output)
-    assert_equal 1, calls
-    assert_equal format("%.6f", expected), Rag::LocalPassLedger.snapshot["committed_usd"]
+    assert_equal format("%.6f", Rag::LocalPassLedger.price(model_id, 100, 20)), Rag::LocalPassLedger.snapshot["committed_usd"]
     assert_equal "0.000000", Rag::LocalPassLedger.snapshot["held_usd"]
+    assert_equal "0.000000", Rag::LocalPassLedger.snapshot["partial_estimate_usd"]
     assert_equal 1, Rag::LocalPassLedger.snapshot["priced"]
   end
 

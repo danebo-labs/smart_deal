@@ -28,6 +28,44 @@ class Rag::ObservationCorrectionTest < ActiveSupport::TestCase
     assert_not Rag::ObservationCorrection.retracted?("el LED que está apagado es el 5", "7", asserted)
   end
 
+  test "an explicit cue and a bare state contrast retracts that state" do
+    turn = "Corrijo un dato: el LED de fotocélula está encendido, no apagado. Lo demás se mantiene."
+    correction = Rag::ObservationCorrection.resolve(
+      turn: turn,
+      assertions: [ { "span" => "el LED de fotocélula está encendido", "act" => "assert" } ]
+    )
+
+    assert_includes correction.asserted, "el LED de fotocélula está encendido"
+    assert_includes correction.retracted, "apagado"
+    assert correction.retracted.none? { |item| item.include?("mantiene") }
+  end
+
+  test "a bare state contrast without a correction cue is not a retraction" do
+    correction = Rag::ObservationCorrection.resolve(turn: "El indicador está encendido, no apagado.")
+
+    assert_empty correction.asserted
+    assert_empty correction.retracted
+  end
+
+  test "a report that contrasts two actions without a cue is not a retraction" do
+    correction = Rag::ObservationCorrection.resolve(turn: "La puerta llega al marco, no retiene el imán.")
+
+    assert_empty correction.asserted
+    assert_empty correction.retracted
+  end
+
+  test "several matching observations stay ambiguous until the replacement names one" do
+    stored = [
+      { "text" => "el sensor de puerta está apagado" },
+      { "text" => "el indicador de piso está apagado" }
+    ]
+    vague = Rag::ObservationCorrection.resolve(turn: "Corrijo un dato: está encendido, no apagado.")
+    named = Rag::ObservationCorrection.resolve(turn: "Corrijo: el sensor de puerta está encendido, no apagado.")
+
+    assert_equal :ambiguous, Rag::ObservationCorrection.targets(stored, vague)
+    assert_equal [ "el sensor de puerta está apagado" ], Rag::ObservationCorrection.targets(stored, named)
+  end
+
   test "a turn without a retractive tail is not a correction" do
     correction = Rag::ObservationCorrection.resolve(turn: "No veo una obstrucción en la guía.")
 

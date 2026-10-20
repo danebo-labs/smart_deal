@@ -104,6 +104,12 @@ class BedrockQuery < ApplicationRecord
     'global.anthropic.claude-opus-4-6-v1'              => { input: 0.005,  output: 0.025  },
     'global.anthropic.claude-haiku-4-5-20251001-v1:0'  => { input: 0.001,  output: 0.005  },
     'us.anthropic.claude-haiku-4-5-20251001-v1:0'      => { input: 0.0011, output: 0.0055 },
+    # Sonnet 4.5 on-demand. Global CRIS is $3 / $15 per 1M tokens.
+    # https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-5.html
+    # A geographic profile (us.) is the documented +10% over that global rate.
+    # These keys are not a prefix of claude-sonnet-5-5 and must not fall through to Haiku.
+    'global.anthropic.claude-sonnet-4-5-20250929-v1:0' => { input: 0.003,  output: 0.015  },
+    'us.anthropic.claude-sonnet-4-5-20250929-v1:0'     => { input: 0.0033, output: 0.0165 },
     # Grok 4.7 Global CRIS, Standard tier. Not the Field Companion query default.
     # Input $2 / output $6 / cache read $0.50 per 1M tokens.
     # https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-xai-grok-4-7.html

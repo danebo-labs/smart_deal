@@ -243,4 +243,30 @@ class BedrockQueryTest < ActiveSupport::TestCase
     assert_not_equal haiku.cost, sonnet.cost
     assert_not_equal BedrockQuery::BEDROCK_PRICING.fetch("default"), sonnet.pricing_for
   end
+
+  test "sonnet 4.5 global and us profiles do not use the haiku or sonnet 5.5 rate" do
+    global_id = "global.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    us_id = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    global = BedrockQuery.new(model_id: global_id, input_tokens: 1000, output_tokens: 1000)
+    us = BedrockQuery.new(model_id: us_id, input_tokens: 1000, output_tokens: 1000)
+    haiku = BedrockQuery.new(
+      model_id: "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+      input_tokens: 1000,
+      output_tokens: 1000
+    )
+    sonnet55 = BedrockQuery.new(
+      model_id: "global.anthropic.claude-sonnet-5-5",
+      input_tokens: 1000,
+      output_tokens: 1000
+    )
+
+    assert_equal 0.018, global.cost
+    assert_equal 0.0198, us.cost
+    assert_equal BedrockQuery::BEDROCK_PRICING.fetch(global_id), global.pricing_for
+    assert_equal BedrockQuery::BEDROCK_PRICING.fetch(us_id), us.pricing_for
+    assert_not_equal haiku.pricing_for, global.pricing_for
+    assert_not_equal sonnet55.pricing_for, global.pricing_for
+    assert_equal BigDecimal("0.018"), Rag::LocalPassLedger.price(global_id, 1000, 1000)
+    assert_not_equal Rag::LocalPassLedger.price(haiku.model_id, 1000, 1000), Rag::LocalPassLedger.price(global_id, 1000, 1000)
+  end
 end

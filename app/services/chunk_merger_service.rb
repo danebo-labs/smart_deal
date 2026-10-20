@@ -30,6 +30,9 @@
 #     IngestionLayoutFlag is off) lands on that page's FIRST surviving chunk
 #     only — an edge lives in exactly one chunk body, never duplicated
 #     across a page's other chunks.
+#   - A page that opens mid-item is stitched onto the previous page's open
+#     item by SectionPageContinuity. The continuation does not keep the next
+#     item's aliases. Optional page_texts supply the printed page number.
 class ChunkMergerService
   DOCUMENT_ALIAS_LIMIT = 15
   CHUNK_ALIAS_LIMIT    = 8
@@ -55,13 +58,16 @@ class ChunkMergerService
     merge_with_report(page_results)[:json]
   end
 
+  # @param page_texts [Hash, nil] PDF index => raw page text. Printed page
+  #   numbers are read from that text and are not the PDF index.
   # @return [Hash] { json: String, degraded_pages: Array<Integer> }
-  def self.merge_with_report(page_results)
-    new(page_results).merge_with_report
+  def self.merge_with_report(page_results, page_texts: nil)
+    new(page_results, page_texts: page_texts).merge_with_report
   end
 
-  def initialize(page_results)
+  def initialize(page_results, page_texts: nil)
     @page_results = page_results.sort_by { |r| r[:page_number] }
+    @page_texts = page_texts || {}
   end
 
   def merge_with_report
@@ -122,6 +128,8 @@ class ChunkMergerService
         "ChunkMergerService: anchor page (idx=#{chosen_idx}) has no summary — using deterministic fallback"
       )
     end
+
+    SectionPageContinuity.apply!(all_chunks, page_texts: @page_texts)
 
     json = JSON.generate({
       "document_name"   => doc_name,

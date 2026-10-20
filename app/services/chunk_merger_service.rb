@@ -31,8 +31,11 @@
 #     only — an edge lives in exactly one chunk body, never duplicated
 #     across a page's other chunks.
 #   - A page that opens mid-item is stitched onto the previous page's open
-#     item by SectionPageContinuity. The continuation does not keep the next
-#     item's aliases. Optional page_texts supply the printed page number.
+#     item by SectionPageContinuity only when page_texts is present. Without
+#     that text the merger does not apply the repair: a hyphen prefix is not
+#     checked against the original page. The continuation does not keep the
+#     next item's aliases. Printed page numbers come from page_texts and are
+#     not the PDF index.
 class ChunkMergerService
   DOCUMENT_ALIAS_LIMIT = 15
   CHUNK_ALIAS_LIMIT    = 8
@@ -58,8 +61,9 @@ class ChunkMergerService
     merge_with_report(page_results)[:json]
   end
 
-  # @param page_texts [Hash, nil] PDF index => raw page text. Printed page
-  #   numbers are read from that text and are not the PDF index.
+  # @param page_texts [Hash, nil] PDF index => raw page text. Required for the
+  #   cross-page stitch. Printed page numbers are read from that text and are
+  #   not the PDF index. An empty hash skips the stitch.
   # @return [Hash] { json: String, degraded_pages: Array<Integer> }
   def self.merge_with_report(page_results, page_texts: nil)
     new(page_results, page_texts: page_texts).merge_with_report
@@ -129,7 +133,8 @@ class ChunkMergerService
       )
     end
 
-    SectionPageContinuity.apply!(all_chunks, page_texts: @page_texts)
+    # The stitch needs the original page text. Skip it while that text is absent.
+    SectionPageContinuity.apply!(all_chunks, page_texts: @page_texts) if @page_texts.present?
 
     json = JSON.generate({
       "document_name"   => doc_name,

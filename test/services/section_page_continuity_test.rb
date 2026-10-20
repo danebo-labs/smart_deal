@@ -168,6 +168,26 @@ class SectionPageContinuityTest < ActiveSupport::TestCase
     assert_not parent["field_records"].last.key?("_page")
   end
 
+  test "the merger leaves a hyphen prefix unchanged when page texts are absent" do
+    parent_text = "• La unidad se detiene.\n– Revisar el tope.\n– Revisar el sensor."
+    child_text = "#{CONTINUATION}\n• La unidad no arranca.\n– Revisar la alimentacion."
+
+    [ nil, {} ].each do |page_texts|
+      parsed = JSON.parse(ChunkMergerService.merge_with_report(opening_pages, page_texts: page_texts)[:json])
+      parent = parsed["chunks"][0]
+      child = parsed["chunks"][1]
+
+      assert_equal parent_text, parent["text"]
+      assert_equal child_text, child["text"]
+      assert_equal [], parent["field_records"]
+      assert_equal CONTINUATION_RECORD, child["field_records"].first
+      assert_equal [ "tope" ], parent["aliases"]
+      assert_equal [ "arranque" ], child["aliases"]
+      assert_equal 2, parent["page"]
+      assert_equal 3, child["page"]
+    end
+  end
+
   test "the continuity class does not name this manual" do
     source = Rails.root.join("app/services/section_page_continuity.rb").read.downcase
 

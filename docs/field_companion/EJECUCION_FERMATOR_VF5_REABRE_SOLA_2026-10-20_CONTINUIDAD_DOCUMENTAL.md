@@ -10,7 +10,9 @@ Mejora documental, y en conjunto mejora parcial. Las tres muestras conservan las
 
 El apartado «La puerta se re-abre sola» de la sección 8.2, «Funcionamiento normal», queda unido entre la página PDF 12 (impresa 11/21) y la página PDF 13 (impresa 12/21). El encabezado, las tres comprobaciones y la continuación condicionada viajan juntos. La continuación deja de heredar los aliases de LED STATUS, fusibles y los demás síntomas. El cuarto guion sale de un `FIELD_RECORD` ya parseado, vuelto a renderizar por `BatchResultsParserService`, con la condición en la acción y el resultado condicional. No se reescribió la acción ni el resultado a mano.
 
-La unión es general: una página que abre a mitad de un ítem se cose al ítem abierto de la página anterior. El código no nombra este manual ni este síntoma. `ChunkMergerService` la aplica cuando recibe el texto de página. Sin ese texto, las páginas ordinarias siguen igual.
+La unión es general: una página que abre a mitad de un ítem se cose al ítem abierto de la página anterior. El código no nombra este manual ni este síntoma. `ChunkMergerService` la aplica cuando recibe el texto de página.
+
+**Corrección, 2026-10-20.** Este informe decía que, sin texto de página, el gancho no cose nada. Era falso. `merge_with_report` llamaba siempre a `SectionPageContinuity.apply!`. Sin `@page_texts`, un segundo fragmento que empieza con guion se unía sin contrastar el original. Desde esta corrección el merger no aplica esa reparación si `@page_texts` está vacío. Con texto de página, la unión positiva sigue. Este guard no resuelve la generalidad del algoritmo ni la procedencia por registro.
 
 El prompt enviado usa el modo aislado. Del segundo resultado solo se retira la frase de continuación. Sus aliases y sus registros quedan byte a byte. La fusión completa, que sí reetiqueta los encabezados de los otros síntomas, queda guardada y no se envió.
 
@@ -157,7 +159,7 @@ El registro del cuarto guion sale de `tmp/field_companion/local_ingestion/raw-p1
 
 Los originales de `tmp/field_companion/local_ingestion/` no se sobrescribieron. El artefacto regenerado es el prompt del replay.
 
-`SectionPageContinuity` une el fragmento. `ChunkMergerService#merge_with_report` acepta `page_texts` y llama a esa clase antes de serializar. Sin texto de página, el gancho no cose nada.
+`SectionPageContinuity` une el fragmento. `ChunkMergerService#merge_with_report` acepta `page_texts` y llama a esa clase antes de serializar. **Corrección, 2026-10-20.** La frase que estaba aquí, «sin texto de página, el gancho no cose nada», queda retirada. El merger solo llama a la reparación si `@page_texts` está presente. El detalle está en «Qué se reparó».
 
 ## Diff
 
@@ -205,6 +207,8 @@ Este encargo: 3 intentos, US$0,031855. s1 US$0,010720 (8020/540). s2 US$0,010470
 ## Comprobación local
 
 `bin/rails test test/services/section_page_continuity_test.rb test/services/chunk_merger_service_test.rb`, semilla 57894: 50 corridas, 259 aserciones, 0 fallos. Eso cubre la unión, el rechazo de un registro que pierde la condición, la página que abre con encabezado, las páginas no consecutivas y el gancho del merger. No valida al asistente ni la KB.
+
+**Corrección, 2026-10-20.** La prueba nueva, páginas consecutivas y segundo fragmento con guion, falló antes del guard: el texto del padre quedó unido y recibió `[PDF_PAGE: 3]` sin `page_texts`. Semilla de ese fallo: 57869. Con el guard, la misma prueba pasa para `page_texts` nulo y para `{}`: los dos fragmentos, los alias y el registro quedan como entraron. La unión con texto de página sigue en la prueba anterior. Repetición de los dos archivos, semilla 61731: 51 corridas, 275 aserciones, 0 fallos, 0 errores. Eso no valida al asistente ni la KB.
 
 ## Siguiente paso
 

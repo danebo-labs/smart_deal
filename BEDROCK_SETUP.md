@@ -68,7 +68,7 @@ KNOWLEDGE_BASE_S3_BUCKET=your-bucket-name
 
 ### RAG retrieve_and_generate (optional)
 
-Retrieval and generation parameters. Defaults are tuned for safety-critical domains such as elevator field support. In multi-tenant mode, each tenant can override them through `bedrock_config.rag_config`.
+Retrieval and generation parameters. Defaults are tuned for safety-critical domains such as elevator field support. Behavior switches, including which of these knobs are only parameters, are catalogued in [docs/INVENTARIO_FLAGS_DE_COMPORTAMIENTO.md](docs/INVENTARIO_FLAGS_DE_COMPORTAMIENTO.md). `Account` has no `bedrock_config` method in the current model, so a per-account `rag_config` override has no row to read.
 
 | Variable | Default | Description |
 |----------|---------|-------------|

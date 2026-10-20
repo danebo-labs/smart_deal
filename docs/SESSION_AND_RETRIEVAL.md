@@ -153,6 +153,8 @@ Earlier notes that a new case, expiry, or an invalid episode released pins descr
 
 ### Late writers
 
+The activation flags below describe the code as it is. The product target, which is not implemented in that code, and the full control catalog are in [INVENTARIO_FLAGS_DE_COMPORTAMIENTO.md](INVENTARIO_FLAGS_DE_COMPORTAMIENTO.md).
+
 `expected_episode_id` is the ownership guard when episode recording is on: `FIELD_COMPANION_EPISODE_ENABLED=true`, channel `web`, and not a shared session. It is captured when the work starts. A photo with no live case opens and persists its case before the analysis job is enqueued, and that id is the owner. Inside the session lock, a later assistant reply, photo observation, or auto-pin writes only when that id is still the live case. For an assistant reply, a blank expected id matches a blank live id. A photo observation requires a present id. A mismatch does not change episode state, pending, facts, identifiers, conflicts, `active_photo`, `current_procedure`, pins, or `conversation_history`. Telemetry and `correlation_id` continue. The drop is `stale_case_write_dropped`. With the episode flag off, the assistant path writes history without that check, and the photo case opener does not run.
 
 ### Auto-pin

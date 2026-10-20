@@ -17,6 +17,31 @@ RAG platform for **field elevator technicians**, delivered today through the **s
   [docs/WHATSAPP.md](docs/WHATSAPP.md).
 - **Tests:** `WHATSAPP_CHANNEL_DISABLED=true` by default skips `Whatsapp`/`Twilio` test classes.
 
+## Companion
+
+The field Companion is part of the product by default. It is not an optional
+capability and it will not keep a switch to turn it off. The target is to
+remove the historical activation flags and the obsolete alternatives that
+sit beside them. WhatsApp stays disabled. Capture, budget, retry,
+authorization, and data-protection controls stay configurable.
+
+That target is not the code at the current SHA. A normal boot still depends
+on exported flags. Shared session blocks episode recording. The `.env`
+observed in this checkout on 2026-10-20 sets `SHARED_SESSION_ENABLED=true`
+and does not set the Companion flags. The deploy template sets Haiku mode
+`conditional`; the path exercised by the phase harnesses and the VF5+ textual
+pass is `owner`. Known equipment with `DOCUMENT_IDENTITY_SCOPE_ENABLED` unset
+abstains before generation retrieval.
+
+Canonical catalog, effects, and the retirement proposal:
+**[docs/INVENTARIO_FLAGS_DE_COMPORTAMIENTO.md](docs/INVENTARIO_FLAGS_DE_COMPORTAMIENTO.md)**.
+
+| Kind | What stays configurable |
+|---|---|
+| Channel | Web is the product session, one per user. WhatsApp stays unmounted. Shared session is incompatible with the Companion |
+| Operation | Activity view, usage footer, batch thresholds, retention, dictation provider, local-pass budget |
+| Protection | `PILOT_AUDIT_CAPTURE` for raw technician text. `PILOT_EVENTS_PERSIST` for the event insert |
+
 ## Capabilities
 
 | Area | Summary |
@@ -53,6 +78,7 @@ Foreman / `Procfile.dev`.
 | Topic | Document |
 |-------|----------|
 | **Complete documentation index** | [docs/README.md](docs/README.md) |
+| **Behavior flags and Companion default** | [docs/INVENTARIO_FLAGS_DE_COMPORTAMIENTO.md](docs/INVENTARIO_FLAGS_DE_COMPORTAMIENTO.md) |
 | Product stage and roadmap | [docs/PRODUCT_ROADMAP.md](docs/PRODUCT_ROADMAP.md) |
 | Active architecture | [docs/ACTIVE_ARCHITECTURE.md](docs/ACTIVE_ARCHITECTURE.md) |
 | Production / Kamal / AWS | [docs/PRODUCTION.md](docs/PRODUCTION.md) |
@@ -90,32 +116,21 @@ EDITOR="cursor --wait" bin/rails credentials:edit
 
 Bedrock IDs and RAG knobs: [BEDROCK_SETUP.md](BEDROCK_SETUP.md). Pilot snapshot: `bin/rails kb:config`.
 
-## Configuration flags
+## Configuration
 
-Restart **web and workers** after changing `.env`.
+Behavior switches, their real defaults, and the Companion retirement proposal
+live in one place:
+**[docs/INVENTARIO_FLAGS_DE_COMPORTAMIENTO.md](docs/INVENTARIO_FLAGS_DE_COMPORTAMIENTO.md)**.
+Do not keep a second default table here.
 
-| Variable | Default | Notes |
-|----------|---------|-------|
-| `SHARED_SESSION_ENABLED` | off | `false` uses per-user sessions; `true` is available for a local/shared demo thread |
-| `SHOW_USAGE_METRICS` | off | Shows the internal token/cost footer; keep hidden in customer demos unless explicitly needed |
-| `BEDROCK_BULK_DATA_SOURCE_ID` | optional | Shared no-chunking data source for bulk ZIP + web uploads; must include only `bulk_chunks/` |
-| `ANTHROPIC_API_KEY` | — | Required for bulk ZIP and web uploads |
-| `INGESTION_BATCH_TARGET_MB` | `50` | Raw-byte target per Anthropic Batch group; long manuals are submitted as multiple groups |
-| `INGESTION_MAX_BATCH_PAYLOAD_MB` | `150` | Per-request raw-byte guardrail before base64/JSON serialization |
-| `APPSIGNAL_PUSH_API_KEY` | — | Required only for AppSignal production error/performance monitoring |
-| `INGESTION_REENQUEUE` | — | See [docs/PRODUCTION.md](docs/PRODUCTION.md) |
+Restart **web and workers** after changing `.env`. `SHARED_SESSION_ENABLED`
+and the knowledge-base bucket are read at boot.
 
-Full list including dormant WhatsApp flags: [`.env.sample`](.env.sample).
-
-### MVP shared session
-
-```bash
-SHARED_SESSION_ENABLED=true
-# SHARED_SESSION_IDENTIFIER=mvp-shared
-# SHARED_SESSION_CHANNEL=shared
-```
-
-Per-user sessions: omit `SHARED_SESSION_ENABLED` or set `false`. In **test**, shared mode is forced off unless a spec stubs it.
+Models, buckets, database names, and credentials stay in
+[`.env.sample`](.env.sample) and [BEDROCK_SETUP.md](BEDROCK_SETUP.md).
+`BEDROCK_BULK_DATA_SOURCE_ID` is the shared no-chunking data source and must
+include only `bulk_chunks/`. `INGESTION_REENQUEUE` is documented in
+[docs/PRODUCTION.md](docs/PRODUCTION.md).
 
 ## Usage
 

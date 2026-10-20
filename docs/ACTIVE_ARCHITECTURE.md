@@ -14,7 +14,7 @@ architecture priorities and retrieval contract.
 | If you need… | Read |
 |--------------|------|
 | **Product stage and roadmap** — MVP boundaries and next-stage triggers | [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md) |
-| Clone, run locally, essential flags | [README.md](../README.md) |
+| Clone, run locally, and the behavior-flag catalog | [README.md](../README.md) and [INVENTARIO_FLAGS_DE_COMPORTAMIENTO.md](INVENTARIO_FLAGS_DE_COMPORTAMIENTO.md) |
 | Bedrock KB, models, env vars | [BEDROCK_SETUP.md](../BEDROCK_SETUP.md) |
 | Deploy / Kamal / EC2 / RDS | [PRODUCTION.md](PRODUCTION.md) |
 | Current RAG closure evidence | [GATE9R_STATUS.md](GATE9R_STATUS.md) |

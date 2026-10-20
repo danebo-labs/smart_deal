@@ -11,6 +11,7 @@ evidence and are not descriptions of the active product.
 | Product stage, MVP boundaries, and next stage | [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md) |
 | Knowledge model and unpinned retrieval | Catalog and pin vocabulary: [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md#knowledge-model-29-sep-2026). Unpinned filter: [SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md#shared-corpus-current-contract). The discovery cycle F0–F8 is closed in [PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md](PLAN_FIELD_COMPANION_DISCOVERY_2026-09-29.md). Recovery after the failed product smoke is [PLAN_FIELD_COMPANION_RECOVERY_2026-09-30.md](PLAN_FIELD_COMPANION_RECOVERY_2026-09-30.md). Current companion queue: [PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md#estado-actual-2026-10-19). The 9 Oct isolated pass stays `ETAPA_2_BLOQUEADA` and is not that queue. |
 | Active architecture and engineering priorities | [ACTIVE_ARCHITECTURE.md](ACTIVE_ARCHITECTURE.md) |
+| Behavior flags, Companion dependencies, and proposed retirement | [INVENTARIO_FLAGS_DE_COMPORTAMIENTO.md](INVENTARIO_FLAGS_DE_COMPORTAMIENTO.md) |
 | Local setup and configuration | [README.md](../README.md) |
 | Production deployment and AWS operations | [PRODUCTION.md](PRODUCTION.md) |
 | Current RAG closure checkpoint | [GATE9R_STATUS.md](GATE9R_STATUS.md) |
@@ -39,6 +40,7 @@ Spanish, only weekdays are planned, and `SAAS_COST_MODEL_2026-06-12.md` plus
 
 | Area | Document | Status |
 |---|---|---|
+| Behavior flags and Companion controls | [INVENTARIO_FLAGS_DE_COMPORTAMIENTO.md](INVENTARIO_FLAGS_DE_COMPORTAMIENTO.md) | Active catalog. Product target is not implemented yet |
 | Web home and mobile UX | [WEB_HOME.md](WEB_HOME.md) | Active |
 | Sessions, pins, and retrieval scope | [SESSION_AND_RETRIEVAL.md](SESSION_AND_RETRIEVAL.md) | Active |
 | Query orchestration | [QUERY_ORCHESTRATOR.md](QUERY_ORCHESTRATOR.md) | Active |

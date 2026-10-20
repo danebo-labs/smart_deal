@@ -10,6 +10,8 @@ El plan padre sigue siendo evidencia histórica. Sus F0–F5 no se reactivan: [M
 
 El viernes 23 de octubre de 2026 sigue siendo el compromiso de mostrar el companion a Gonzalo. El registro no contiene un episodio completo aceptado. Este texto no declara viable esa fecha.
 
+**Inventario de controles, 2026-10-20.** El catálogo de flags, la diferencia entre el código y la decisión de producto, y la propuesta de retiro están en [INVENTARIO_FLAGS_DE_COMPORTAMIENTO.md](INVENTARIO_FLAGS_DE_COMPORTAMIENTO.md). Ese documento no cambia esta cola, no es requisito para medir el Companion y no altera la corrida VF5+. Los registros de las fases y de las pasadas siguen siendo históricos.
+
 ### Secuencia de ejecución
 
 La numeración de abajo es el orden de trabajo. Las fases siguen siendo 0 a 5 del plano Elemont. El ajuste del 19 de octubre pone antes un manual principalmente textual. No borra las fases ni sus aceptaciones. El orden 2 es la conversación textual. El orden 3 es el plano Elemont. La regresión y el guion de respaldo no ocupan un número de esta tabla: son actividad transversal desde el primer recorrido que Lahiri acepte, y no compiten con el orden 3. Ese guion sigue sin existir. Journey A no es ese guion. El entorno de cada ejecución está en «Entorno de validación». Los encargos siguientes citan esa sección y no reescriben el contrato.

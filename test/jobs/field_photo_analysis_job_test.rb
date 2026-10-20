@@ -2610,8 +2610,8 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
   def with_foreign_retrieval_probe(probe)
     original_apply = Rag::DocumentIdentityScope.method(:apply)
     original_new = BedrockRagService.method(:new)
-    Rag::DocumentIdentityScope.define_singleton_method(:apply) do |chunks, identity, focus_uris: []|
-      result = original_apply.call(chunks, identity, focus_uris: focus_uris)
+    Rag::DocumentIdentityScope.define_singleton_method(:apply) do |chunks, identity, focus_uris: [], viewer_account: nil|
+      result = original_apply.call(chunks, identity, focus_uris: focus_uris, viewer_account: viewer_account)
       prompt = Rag::DocumentIdentityScope.generation_context(result.chunks, result.labels)
       probe[:scopes] << { identity: identity, labels: result.labels, chunks: result.chunks }
       probe[:prompts] << prompt

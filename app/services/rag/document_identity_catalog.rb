@@ -155,6 +155,13 @@ module Rag
       @entries[[ account_id.to_s, document_id.to_s ]]
     end
 
+    def entries_for_object_key(key)
+      wanted = key.to_s
+      return [] if wanted.blank?
+
+      entries.select { |entry| KbDocument.object_key_for_match(entry.s3_key) == wanted }
+    end
+
     def for_document(document)
       key = document.respond_to?(:s3_key) ? document.s3_key : nil
       found = for_s3_key(key)

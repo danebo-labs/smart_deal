@@ -241,6 +241,18 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
 
   VF5_PIN_URI = "s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf"
   VF5_DOCUMENT_UID = "126cda62-64ad-4469-8674-a29f12e38d48"
+  VF5_CHUNK_DOCUMENT_ID = "be7a39a3490c92c8381cb883402760cb07d1"
+  VF5_PAGE_12 = <<~TEXT.freeze
+    [DOCUMENT: VF5.pdf]
+    [SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+
+    8.2 Funcionamiento normal (continuación)
+
+    • La puerta se re-abre sola.
+      – Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54).
+      – Comprobar que la fotocélula no esté activada.
+      – Comprobar que no hay una obstrucción mecánica en la puerta.
+  TEXT
 
   test "known Fermator with the authorized VF5 pin retrieves that manual and generates" do
     account = accounts(:legacy)
@@ -249,7 +261,7 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       document_uid: VF5_DOCUMENT_UID, aliases: []
     )
     uri = document.canonical_uri
-    body = "Comprobar que la fotocélula no esté activada."
+    body = VF5_PAGE_12
     service, retrieves, prompts, rag_calls = vf5_scope_service(account, body, uri)
     result = nil
     with_flag("true") do
@@ -270,10 +282,230 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_includes filter.to_s, uri
     assert_not_includes filter.to_s, "account_id"
     assert_includes prompts.sole, body
+    assert_includes prompts.sole, "¿Qué comprobaciones aparecen para la puerta que se reabre sola?"
+    assert_not_includes prompts.sole, "No compatible manufacturer manual was found."
     assert_equal "document_identity_scope", result[:generation_mode]
     assert_equal true, result[:model_invoked]
     assert_equal "scoped", result[:equipment_identity_status]
     assert_includes result[:answer], "fotocélula"
+    delivered = Array(result[:retrieved_citations]).compact
+    assert delivered.any? { |record| record[:content].to_s.include?("potenciómetro de regulación de fuerza de re-apertura") }
+    assert_includes result[:citations].to_s, "La puerta se re-abre sola"
+  end
+
+  test "the same abbreviated VF5 title keeps the question, the LED, SW4, and the obstruction observation" do
+    account = accounts(:legacy)
+    document = KbDocument.create!(
+      account: account, s3_key: VF5_PIN_URI, display_name: "VF5",
+      document_uid: VF5_DOCUMENT_UID, aliases: []
+    )
+    uri = document.canonical_uri
+    question = "En el manual seleccionado, ¿qué comprobaciones aparecen para “la puerta se reabre sola”?"
+    episode_flag = ENV.fetch("FIELD_COMPANION_EPISODE_ENABLED", nil)
+    turn_flag = ENV.fetch("FIELD_COMPANION_TURN_ENABLED", nil)
+    session = ConversationSession.create!(
+      identifier: "web:#{SecureRandom.hex(4)}",
+      channel: "web",
+      expires_at: 1.hour.from_now,
+      user: users(:one),
+      account: account,
+      active_episode: fermator_context_episode
+    )
+    ENV["FIELD_COMPANION_EPISODE_ENABLED"] = "true"
+    ENV["FIELD_COMPANION_TURN_ENABLED"] = "true"
+    context = SessionContextBuilder.build(session)
+    state = Rag::ActiveEpisode.parse(session.active_episode)
+    composed = Rag::QueryComposer.call(
+      state: state, turn: question, perception: nil, decision: retrieval_decision
+    )
+    service, _retrieves, prompts, = vf5_scope_service(account, VF5_PAGE_12, uri)
+    result = nil
+    with_flag("true") do
+      result = service.query(
+        composed,
+        raw_question: question,
+        episode: session.active_episode,
+        session_context: context,
+        entity_s3_uris: [ uri ],
+        force_entity_filter: true,
+        output_channel: :web,
+        response_locale: :es,
+        account_id: account.id
+      )
+    end
+
+    assert_includes composed, question
+    assert_includes composed, "el LED de fotocélula está encendido"
+    assert_includes composed, "SW4 está en OFF, modo esclavo"
+    assert_includes composed, "no observo una obstrucción mecánica"
+    assert_not_includes composed, "obstrucción descartada"
+    prompt = prompts.sole
+    assert_includes prompt, VF5_PAGE_12
+    assert_includes prompt, question
+    assert_includes prompt, "el LED de fotocélula está encendido"
+    assert_includes prompt, "SW4 está en OFF, modo esclavo"
+    assert_includes prompt, "no observo una obstrucción mecánica"
+    assert_not_includes prompt, "No compatible manufacturer manual was found."
+    assert_not_includes prompt, "obstrucción descartada"
+    assert_equal "scoped", result[:equipment_identity_status]
+    assert_includes result[:retrieved_citations].to_s, "Comprobar que la fotocélula no esté activada."
+  ensure
+    restore_env("FIELD_COMPANION_EPISODE_ENABLED", episode_flag)
+    restore_env("FIELD_COMPANION_TURN_ENABLED", turn_flag)
+  end
+
+  test "an abbreviated title of another confirmed manual stays reference-only" do
+    account = accounts(:legacy)
+    document = KbDocument.create!(
+      account: account,
+      s3_key: "bulk_uploads/3/2026-08-20/codigos error BL6.pdf",
+      display_name: "Codigos de Error BL6",
+      document_uid: "01f154a7-bbde-4ce4-9ddf-c5883863fe75",
+      aliases: []
+    )
+    uri = document.canonical_uri
+    body = "El código BL6 abre el freno."
+    selected = chunk("bl6", body, canonical_name: "BL6", original_filename: "codigos error BL6.pdf")
+    selected[:original_source_uri] = uri
+    selected[:metadata]["original_source_uri"] = uri
+
+    result = Rag::DocumentIdentityScope.apply(
+      [ selected ], fermator_vf5_episode, focus_uris: [ uri ], viewer_account: account
+    )
+
+    assert_equal :no_compatible, result.status
+    assert_equal [ "reference_only" ], result.applicability
+    assert_not_includes result.chunks.sole[:content], body
+  end
+
+  test "Fermator VF5 without the plus is not the confirmed VF5+ manual" do
+    account = accounts(:legacy)
+    document = vf5_catalog_document(account)
+    uri = document.canonical_uri
+    selected = vf5_captured_chunk(uri)
+    shorter = fermator_vf5_episode
+    shorter["identifiers"] = [
+      { "value" => "Fermator VF5", "source" => "user", "correlation_id" => "query:turn" }
+    ]
+
+    result = Rag::DocumentIdentityScope.apply(
+      [ selected ], shorter, focus_uris: [ uri ], viewer_account: account
+    )
+
+    assert_equal :no_compatible, result.status
+    assert_equal [ "reference_only" ], result.applicability
+    assert_not_includes result.chunks.sole[:content], "fotocélula"
+  end
+
+  test "a catalog designator without the plus does not match VF5+" do
+    account = accounts(:legacy)
+    uid = SecureRandom.uuid
+    key = "bulk_uploads/1/plain-vf5.pdf"
+    document = KbDocument.create!(
+      account: account, s3_key: key, display_name: "VF5", document_uid: uid, aliases: []
+    )
+    uri = document.canonical_uri
+    selected = vf5_captured_chunk(uri)
+    catalog = Rag::DocumentIdentityCatalog.new({
+      "documents" => [
+        {
+          "account_id" => "1",
+          "document_id" => uid,
+          "s3_key" => key,
+          "display_name" => "VF5",
+          "brands" => [ "Fermator" ],
+          "designators" => [ "VF5" ],
+          "confirmed" => true,
+          "evidence_page" => 1,
+          "evidence_text" => "VF5"
+        }
+      ]
+    })
+
+    result = Rag::DocumentIdentityCatalog.with_catalog(catalog) do
+      Rag::DocumentIdentityScope.apply(
+        [ selected ], fermator_vf5_episode, focus_uris: [ uri ], viewer_account: account
+      )
+    end
+
+    assert_equal :no_compatible, result.status
+    assert_not_includes result.chunks.sole[:content], "fotocélula"
+  end
+
+  test "an explicit designator on the VF5 chunk is not this job" do
+    account = accounts(:legacy)
+    document = vf5_catalog_document(account)
+    uri = document.canonical_uri
+    selected = vf5_captured_chunk(uri, "section_identity" => "CEA15")
+
+    result = Rag::DocumentIdentityScope.apply(
+      [ selected ], fermator_vf5_episode, focus_uris: [ uri ], viewer_account: account
+    )
+
+    assert_equal :no_compatible, result.status
+    assert_not_includes result.chunks.sole[:content], "fotocélula"
+  end
+
+  test "a UUID that names another document blocks the abbreviated title" do
+    account = accounts(:legacy)
+    document = vf5_catalog_document(account)
+    uri = document.canonical_uri
+    selected = vf5_captured_chunk(uri, "document_id" => SecureRandom.uuid)
+
+    result = Rag::DocumentIdentityScope.apply(
+      [ selected ], fermator_vf5_episode, focus_uris: [ uri ], viewer_account: account
+    )
+
+    assert_equal :no_compatible, result.status
+    assert_not_includes result.chunks.sole[:content], "fotocélula"
+  end
+
+  test "the abbreviated VF5 title stays reference-only for another account" do
+    owner = accounts(:climb)
+    document = vf5_catalog_document(owner)
+    uri = document.canonical_uri
+    selected = vf5_captured_chunk(uri)
+
+    result = Rag::DocumentIdentityScope.apply(
+      [ selected ], fermator_vf5_episode, focus_uris: [ uri ], viewer_account: accounts(:legacy)
+    )
+
+    assert_equal :no_compatible, result.status
+    assert_not_includes result.chunks.sole[:content], "fotocélula"
+  end
+
+  test "a pin without a confirmed catalog row does not make the abbreviated title applicable" do
+    account = accounts(:legacy)
+    uri = VF5_PIN_URI
+    selected = vf5_captured_chunk(uri)
+
+    result = Rag::DocumentIdentityScope.apply(
+      [ selected ], fermator_vf5_episode, focus_uris: [ uri ], viewer_account: account
+    )
+
+    assert_equal :no_compatible, result.status
+    assert_not_includes result.chunks.sole[:content], "fotocélula"
+  end
+
+  test "an unconfirmed catalog entry does not promote the abbreviated title" do
+    account = accounts(:legacy)
+    document = vf5_catalog_document(account)
+    uri = document.canonical_uri
+    selected = vf5_captured_chunk(uri)
+    raw = YAML.safe_load_file(Rag::DocumentIdentityCatalog::PATH, permitted_classes: [], aliases: false)
+    row = raw["documents"].find { |item| item["document_id"] == VF5_DOCUMENT_UID }
+    row = row.merge("confirmed" => false)
+    raw["documents"] = [ row ]
+    catalog = Rag::DocumentIdentityCatalog.new(raw)
+
+    result = Rag::DocumentIdentityCatalog.with_catalog(catalog) do
+      Rag::DocumentIdentityScope.apply(
+        [ selected ], fermator_vf5_episode, focus_uris: [ uri ], viewer_account: account
+      )
+    end
+
+    assert_equal :no_compatible, result.status
+    assert_not_includes result.chunks.sole[:content], "fotocélula"
   end
 
   test "known identity with the document flag off closes before retrieval" do
@@ -1047,9 +1279,9 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
       { chunks: [ yida ], retrieval_trace: {} }
     end
     original_apply = Rag::DocumentIdentityScope.method(:apply)
-    Rag::DocumentIdentityScope.define_singleton_method(:apply) do |chunks, identity, focus_uris: []|
+    Rag::DocumentIdentityScope.define_singleton_method(:apply) do |chunks, identity, focus_uris: [], viewer_account: nil|
       seen = identity
-      original_apply.call(chunks, identity, focus_uris: focus_uris)
+      original_apply.call(chunks, identity, focus_uris: focus_uris, viewer_account: viewer_account)
     end
     generator = Object.new
     generator.define_singleton_method(:query) { |_prompt, **| "clasificado [1]" }
@@ -2667,6 +2899,54 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     }
   end
 
+  def vf5_catalog_document(account)
+    KbDocument.create!(
+      account: account, s3_key: VF5_PIN_URI, display_name: "VF5",
+      document_uid: VF5_DOCUMENT_UID, aliases: []
+    )
+  end
+
+  def vf5_captured_chunk(uri, metadata = {})
+    selected = chunk(
+      "vf5-page-12", VF5_PAGE_12,
+      canonical_name: "VF5", original_filename: "VF5.pdf", page: 12
+    )
+    selected[:original_source_uri] = uri
+    selected[:metadata]["original_source_uri"] = uri
+    selected[:metadata]["document_id"] = VF5_CHUNK_DOCUMENT_ID
+    metadata.each { |key, value| selected[:metadata][key.to_s] = value }
+    selected
+  end
+
+  def fermator_context_episode
+    fermator_vf5_episode.merge(
+      "episode_id" => "ep-vf5-context",
+      "goal" => { "text" => "la puerta empieza a cerrar y vuelve a abrirse sola" },
+      "observations" => [
+        { "text" => "el LED de fotocélula está encendido", "correlation_id" => "query:4" },
+        { "text" => "no observo una obstrucción mecánica", "correlation_id" => "query:3" },
+        { "text" => "SW4 está en OFF, modo esclavo", "correlation_id" => "query:6" }
+      ]
+    )
+  end
+
+  def retrieval_decision
+    Rag::RoutePolicy::Decision.new(
+      decision: "ready", retrieval_query: nil, clarification: nil, pending_subject: nil,
+      outside_discovery: false, owns_query: true, bare_identifier: nil, ask_when: nil,
+      mutations: [], dialogue_function: "follow_up", context_carry: false, focus_uris: [],
+      focus_document_ids: [], pending_question: nil, fallback: false
+    )
+  end
+
+  def restore_env(key, value)
+    if value.nil?
+      ENV.delete(key)
+    else
+      ENV[key] = value
+    end
+  end
+
   def capture_pilot_events
     output = StringIO.new
     logger = ActiveSupport::Logger.new(output)
@@ -2736,8 +3016,10 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
             score: 0.5,
             location: OpenStruct.new(s3_location: OpenStruct.new(uri: "#{uri}#chunk")),
             metadata: {
-              "canonical_name" => "Fermator VF5",
+              "canonical_name" => "VF5",
+              "original_filename" => "VF5.pdf",
               "original_source_uri" => uri,
+              "document_id" => VF5_CHUNK_DOCUMENT_ID,
               "page_number" => 12,
               "doc_type" => "manual",
               "account_id" => account.id.to_s

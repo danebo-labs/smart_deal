@@ -502,7 +502,9 @@ class BedrockRagService
     enforce_phase2_retrieved_body!(retrieval[:chunks], correlation_id: correlation_id)
 
     original = Array(retrieval[:chunks])
-    applied = Rag::DocumentIdentityScope.apply(original, identity, focus_uris: entity_s3_uris)
+    applied = Rag::DocumentIdentityScope.apply(
+      original, identity, focus_uris: entity_s3_uris, viewer_account: @account
+    )
     record_document_identity_scope(original, applied, path: "document_identity")
     delivered_chunks = applied.status == :scoped ? applied.chunks.size : 0
     Rag::DocumentIdentityScopeEvent.record(

@@ -627,7 +627,9 @@ module Rag
         return Array(chunks)
       end
 
-      applied = DocumentIdentityScope.apply(chunks, identity, focus_uris: @entity_s3_uris)
+      applied = DocumentIdentityScope.apply(
+        chunks, identity, focus_uris: @entity_s3_uris, viewer_account: @account
+      )
       if applied.status == :no_compatible || applied.status == :unavailable
         @identity_closure = { status: applied.status, reason: applied.reason }
       end

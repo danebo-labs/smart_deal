@@ -275,6 +275,10 @@ module Rag
           according\s+to|the\s+manual)\b
     /ix
     CHUNK_DESIGNATOR_PATTERN = /\b[A-Z]{1,4}-?\d{1,4}\b/
+    # Keeps "+". CHUNK_DESIGNATOR_PATTERN stops before it, so a shorter form
+    # is not the same model.
+    REVISION_DESIGNATOR = /\b[A-Z]{1,4}-?\d{1,4}\+?/
+    UUID_DOCUMENT_ID = /\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i
     # "=" promotes a code the way "significa" does. The code itself is not hardcoded.
     EQUALITY_CODE_MEANING_PATTERN = /
       (?:#{CHUNK_DESIGNATOR_PATTERN}|#{AnswerSafetyProcessor::FAULT_CODE_PATTERN})
@@ -329,7 +333,7 @@ module Rag
       resolve_needles(identity).values
     end
 
-    def self.apply(chunks, identity_or_episode, focus_uris: [])
+    def self.apply(chunks, identity_or_episode, focus_uris: [], viewer_account: nil)
       identity = coerce_identity(identity_or_episode)
       if identity == :malformed
         return build_result(
@@ -347,8 +351,11 @@ module Rag
 
       labels = []
       applicability = []
+      proven = {}
       scoped_chunks = Array(chunks).map do |chunk|
-        kind = chunk_applicability(chunk, needles, focus_membership(chunk, uris), identity, resolution)
+        kind = chunk_applicability(
+          chunk, needles, focus_membership(chunk, uris), identity, resolution, viewer_account, proven
+        )
         case kind
         when :compatible, :neutral
           labels << this_job_line(document_name(chunk))
@@ -1087,25 +1094,163 @@ module Rag
     # designator in the identity fields, whether or not its manufacturer is in
     # that brand list. A title with no designator, such as "Elemont montacargas",
     # stays neutral: the pin is covering metadata that does not identify a model.
-    def self.chunk_applicability(chunk, needles, membership, identity, resolution)
+    # A designator that only repeats the confirmed catalog title is missing
+    # detail, not a conflicting model. The pin does not supply that proof.
+    def self.chunk_applicability(chunk, needles, membership, identity, resolution, viewer_account, proven)
       return :reference_only if membership == :out
       return :reference_only if resolution.conflict
       return :compatible if needles.any? && identity_matches?(chunk, needles)
-      return conflicting_or_neutral(chunk, identity, resolution) if membership == :in
+      return conflicting_or_neutral(chunk, identity, resolution, viewer_account, proven) if membership == :in
       return nil if needles.empty?
 
       :reference_only
     end
     private_class_method :chunk_applicability
 
-    def self.conflicting_or_neutral(chunk, identity, resolution)
+    def self.conflicting_or_neutral(chunk, identity, resolution, viewer_account, proven)
       return :neutral unless identity&.known?
       return :reference_only if conflicting_brand?(chunk, resolution)
-      return :reference_only if explicit_unmatched_identity?(chunk)
+      return proven_title_applicability(chunk, resolution, viewer_account, proven) if explicit_unmatched_identity?(chunk)
 
       :neutral
     end
     private_class_method :conflicting_or_neutral
+
+    def self.proven_title_applicability(chunk, resolution, viewer_account, proven)
+      entry = proven_catalog_entry(chunk, viewer_account, proven)
+      return :reference_only unless entry
+      return :reference_only if foreign_revision?(chunk, entry)
+      return :reference_only if catalog_brand_conflict?(entry, resolution)
+      return :reference_only unless job_matches_catalog_designator?(resolution, entry)
+
+      :compatible
+    end
+    private_class_method :proven_title_applicability
+
+    def self.proven_catalog_entry(chunk, viewer_account, proven)
+      return nil if viewer_account.nil?
+
+      source = document_source(chunk)
+      return nil if source.nil?
+
+      proven[source] = load_proven_catalog_entry(source, viewer_account) unless proven.key?(source)
+      entry = proven[source]
+      return nil unless entry
+      return nil if conflicting_document_uid?(chunk, entry)
+
+      entry
+    end
+    private_class_method :proven_catalog_entry
+
+    def self.load_proven_catalog_entry(source, viewer_account)
+      _bucket, key = source
+      entries = DocumentIdentityCatalog.current.entries_for_object_key(key).select { |entry|
+        DocumentIdentityCatalog.effectively_confirmed?(entry)
+      }
+      return nil unless entries.one?
+
+      entry = entries.first
+      authorized_catalog_row(entry, source, viewer_account) ? entry : nil
+    end
+    private_class_method :load_proven_catalog_entry
+
+    def self.authorized_catalog_row(entry, source, viewer_account)
+      bucket, key = source
+      rows = KbDocument.where(
+        document_uid: entry.document_id,
+        s3_key: [ key, "s3://#{bucket}/#{key}" ]
+      ).to_a
+      rows.select! { |row| row.canonical_source == source }
+      return nil unless rows.one?
+      return nil unless KnowledgeScopePolicy.authorized?(rows.first, viewer_account: viewer_account)
+
+      rows.first
+    end
+    private_class_method :authorized_catalog_row
+
+    def self.document_source(chunk)
+      metadata = metadata_of(chunk)
+      raw = [
+        chunk[:original_source_uri], chunk["original_source_uri"], metadata["original_source_uri"]
+      ].map { |value| value.to_s.strip }.find(&:present?)
+      if raw.blank?
+        raw = [
+          chunk[:bedrock_source_uri], chunk["bedrock_source_uri"], metadata["x-amz-bedrock-kb-source-uri"]
+        ].map { |value| value.to_s.strip }.find(&:present?)
+      end
+      KbDocument.canonical_source(raw)
+    end
+    private_class_method :document_source
+
+    # The sidecar document_id is sha256[0,36], not the catalog UID. A real UUID
+    # that names another document is a conflict. The hash is missing the UID.
+    def self.conflicting_document_uid?(chunk, entry)
+      raw = metadata_of(chunk)["document_id"].to_s.strip
+      return false unless raw.match?(UUID_DOCUMENT_ID)
+
+      !raw.casecmp?(entry.document_id.to_s)
+    end
+    private_class_method :conflicting_document_uid?
+
+    def self.foreign_revision?(chunk, entry)
+      catalog = catalog_designator_labels(entry)
+      revision_designators(identity_field_text(chunk)).any? do |token|
+        label = DocumentIdentityCatalog.designator_label(token)
+        next false if catalog.include?(label)
+        next false if abbreviated_title?(label, entry)
+
+        true
+      end
+    end
+    private_class_method :foreign_revision?
+
+    def self.abbreviated_title?(label, entry)
+      return false if label.blank?
+
+      display = DocumentIdentityCatalog.designator_label(entry.display_name)
+      return true if display == label
+
+      revision_designators(entry.display_name).any? { |token|
+        DocumentIdentityCatalog.designator_label(token) == label
+      }
+    end
+    private_class_method :abbreviated_title?
+
+    def self.catalog_brand_conflict?(entry, resolution)
+      brands = Array(entry.brands).filter_map { |brand| normalize_label(brand).presence }
+      return false if brands.empty?
+
+      known = resolution.manufacturer_labels
+      return false if known.empty?
+
+      brands.none? { |brand| known.any? { |label| label == brand || contains_word?(label, brand) } }
+    end
+    private_class_method :catalog_brand_conflict?
+
+    def self.job_matches_catalog_designator?(resolution, entry)
+      catalog = catalog_designator_labels(entry)
+      return false if catalog.empty?
+
+      Array(resolution.values).flat_map { |value| revision_designators(value) }.any? { |token|
+        catalog.include?(DocumentIdentityCatalog.designator_label(token))
+      }
+    end
+    private_class_method :job_matches_catalog_designator?
+
+    def self.catalog_designator_labels(entry)
+      Array(entry.designators).map { |value| DocumentIdentityCatalog.designator_label(value) }.uniq
+    end
+    private_class_method :catalog_designator_labels
+
+    def self.identity_field_text(chunk)
+      IDENTITY_FIELDS.filter_map { |field| metadata_of(chunk)[field].presence }.join("\n")
+    end
+    private_class_method :identity_field_text
+
+    def self.revision_designators(text)
+      text.to_s.upcase.scan(REVISION_DESIGNATOR)
+    end
+    private_class_method :revision_designators
 
     # A model-shaped token in the identity fields is equipment identity.
     # Absence from KbDocumentResolver::BRANDS does not make it missing.

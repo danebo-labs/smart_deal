@@ -37,6 +37,7 @@ module Rag
           account_id: controller.try(:current_account)&.id
         )
         ValidationCapture.record("web_request", request_meta(controller, request_key))
+        ValidationCapture.record("process_contract", process_contract)
         begin
           yield
         rescue Exception => error # rubocop:disable Lint/RescueException
@@ -74,6 +75,30 @@ module Rag
       key = SecureRandom.hex(8) if key.blank?
       key = "#{key}-#{SecureRandom.hex(4)}" if Rails.root.join(ROOT, run_id, key).exist?
       key
+    end
+
+    def process_contract
+      method = TurnPerception.instance_method(:bound_lengths)
+      file, line = method.source_location
+      iseq = RubyVM::InstructionSequence.of(method)
+      {
+        "pid" => Process.pid,
+        "interpreter_model_id" => TurnInterpreter::MODEL_ID,
+        "generation_model_id" => BedrockClient::QUERY_MODEL_ID,
+        "haiku_mode" => HaikuQueryAnalysisFlag.mode,
+        "knowledge_base_id" => ENV["BEDROCK_KNOWLEDGE_BASE_ID"].to_s,
+        "knowledge_base_bucket" => ENV["KNOWLEDGE_BASE_S3_BUCKET"].to_s,
+        "episode_enabled" => ENV["FIELD_COMPANION_EPISODE_ENABLED"].to_s,
+        "turn_enabled" => ENV["FIELD_COMPANION_TURN_ENABLED"].to_s,
+        "episode_scope_enabled" => ENV["RAG_EPISODE_SCOPE_ENABLED"].to_s,
+        "identity_scope_enabled" => ENV["DOCUMENT_IDENTITY_SCOPE_ENABLED"].to_s,
+        "shared_session_enabled" => ENV["SHARED_SESSION_ENABLED"].to_s,
+        "aws_max_attempts" => ENV[LocalPassLedger::ATTEMPTS_ENV].to_s,
+        "ledger" => LocalPassLedger.status,
+        "bound_lengths_file" => file.to_s,
+        "bound_lengths_line" => line,
+        "bound_lengths_iseq_sha256" => (Digest::SHA256.hexdigest(iseq.disasm) if iseq)
+      }
     end
 
     def request_meta(controller, request_key)

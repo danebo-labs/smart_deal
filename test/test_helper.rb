@@ -11,6 +11,9 @@ end
 
 require_relative '../config/environment'
 require 'rails/test_help'
+require_relative 'support/live_aws_block'
+
+LiveAwsBlock.install!
 
 module ActiveSupport
   class TestCase

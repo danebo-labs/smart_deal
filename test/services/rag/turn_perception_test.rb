@@ -46,9 +46,32 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
 
     assert result.valid
     assert_nil result.invalid_reason
-    assert_empty result.observations
+    assert result.observations.any?
+    assert result.observations.all? { |text| text.length <= Rag::ActiveEpisode::MAX_OBSERVATION_CHARS }
+    assert_includes result.observations.join(" "), "la puerta no cierra"
     assert_equal [ "MONARCH NICE3000" ], result.identities.map(&:span).uniq
     assert_includes result.field_rejections.pluck("reason"), "over_length"
+  end
+
+  test "a long observation keeps the symptom sentences and the short identity" do
+    symptom = "la puerta empieza a cerrar y vuelve a abrirse sola"
+    led = "el LED está encendido y no observo una obstrucción mecánica"
+    pending = "no he revisado la sensibilidad de reapertura"
+    switch = "SW4 está en OFF y el modo es esclavo"
+    blob = "#{symptom}. #{led}. #{pending}. #{switch}."
+    assert_operator blob.length, :>, Rag::ActiveEpisode::MAX_OBSERVATION_CHARS
+    turn = "Estoy con MONARCH NICE3000. #{blob}"
+    result = perceive(
+      report([ assert_span("MONARCH NICE3000", "controller") ]).merge("observations" => [ blob ]),
+      turn
+    )
+
+    assert result.valid
+    assert_equal [ "MONARCH NICE3000" ], result.identities.map(&:span).uniq
+    assert result.observations.all? { |text| text.length <= Rag::ActiveEpisode::MAX_OBSERVATION_CHARS }
+    joined = result.observations.join(" ")
+    [ symptom, led, pending, switch ].each { |phrase| assert_includes joined, phrase }
+    assert_not_includes result.field_rejections.pluck("reason"), "over_length"
   end
 
   test "a long assertion keeps the brand and designator window inside it" do

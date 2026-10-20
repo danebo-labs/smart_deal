@@ -249,18 +249,62 @@ module Rag
       data["assertions"] = data["assertions"].filter_map.with_index { |item, index|
         bounded_assertion(item, index)
       }
-      data["observations"] = data["observations"].filter_map.with_index { |text, index|
-        bounded_observation(text, index)
+      data["observations"] = data["observations"].flat_map.with_index { |text, index|
+        Array(bounded_observation(text, index))
       }
       data
     end
 
+    # A long observation stays when it can be cut into literal pieces that
+    # each fit the cap. Dropping the whole phrase would keep a short identity
+    # and lose the symptom that lived in that phrase.
     def bounded_observation(text, index)
       phrase = text.to_s
       return phrase if phrase.length <= ActiveEpisode::MAX_OBSERVATION_CHARS
 
+      pieces = observation_pieces(phrase)
+      return pieces if pieces.any?
+
       reject_field("observations[#{index}]", "over_length")
       nil
+    end
+
+    def observation_pieces(phrase)
+      return [] unless literal_span?(phrase)
+
+      partition_observation(phrase, ActiveEpisode::MAX_OBSERVATION_CHARS).select { |piece|
+        piece.length <= ActiveEpisode::MAX_OBSERVATION_CHARS && literal_span?(piece)
+      }
+    end
+
+    def partition_observation(phrase, limit)
+      units = phrase.split(/(?<=[.!?])[[:space:]]+/)
+      units = [ phrase ] if units.empty?
+      units.flat_map { |unit|
+        next [ unit ] if unit.length <= limit
+
+        clauses = unit.split(/[,;][[:space:]]+/)
+        parts = clauses.size > 1 ? clauses : [ unit ]
+        parts.flat_map { |part| part.length <= limit ? [ part ] : partition_words(part, limit) }
+      }
+    end
+
+    def partition_words(unit, limit)
+      chunks = []
+      current = +""
+      unit.split(/[[:space:]]+/).each do |word|
+        next if word.length > limit
+
+        candidate = current.empty? ? word : "#{current} #{word}"
+        if candidate.length <= limit
+          current = candidate
+        else
+          chunks << current unless current.empty?
+          current = word
+        end
+      end
+      chunks << current unless current.empty?
+      chunks
     end
 
     def bounded_assertion(item, index)

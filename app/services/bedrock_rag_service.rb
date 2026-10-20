@@ -1847,16 +1847,19 @@ class BedrockRagService
     response = begin
       if budget&.armed?
         transport_attempt = 1
-        @client.retrieve_and_generate(params)
+        local_retrieve_and_generate(params)
       else
         Bedrock::AuroraColdStartRetry.with_retry(
           error_classes: [ Aws::BedrockAgentRuntime::Errors::ServiceError ],
           on_retry: (Rag::ValidationCapture.active? ? method(:note_cold_start_retry) : nil)
         ) do
           transport_attempt += 1
-          @client.retrieve_and_generate(params)
+          local_retrieve_and_generate(params)
         end
       end
+    rescue Rag::LocalPassLedger::Stop
+      Rag::ValidationCapture.record_model_boundary("retrieve_and_generate", "blocked")
+      raise
     rescue StandardError => error
       record_terminal_remote_error("retrieve_and_generate", error, transport_attempt)
       if budget&.armed?
@@ -1869,6 +1872,18 @@ class BedrockRagService
     budget&.record_success!("retrieve_and_generate") if budget&.armed?
     record_retrieve_and_generate_response(response)
     response
+  end
+
+  # One physical retrieve_and_generate. The local ledger, when armed, counts
+  # this call and refuses it before the SDK. Aurora retries call it again.
+  def local_retrieve_and_generate(params)
+    Rag::LocalPassLedger.single_attempt!(@client)
+    Rag::LocalPassLedger.protect!(
+      operation: "retrieve_and_generate",
+      model_id: @model_ref.to_s,
+      input_tokens: ContractualLimits::QUERY[:max_input_tokens],
+      output_tokens: Rag::LocalPassLedger.output_tokens_from(params)
+    ) { @client.retrieve_and_generate(params) }
   end
 
   def retrieve_with_retry(params)

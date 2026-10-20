@@ -1,12 +1,12 @@
 # Caso Fermator VF5+: la puerta se reabre sola
 
-**Estado:** matriz del primer recorrido textual. Para revisión. No se ejecutó. No es un recorrido aceptado ni `EPISODIO_VALIDADO`.
+**Estado:** matriz del evaluador. Se conserva como expectativa. La pasada local del 19 de octubre se detuvo en el preflight, antes de generar: [EJECUCION_FERMATOR_VF5_REABRE_SOLA_2026-10-19.md](EJECUCION_FERMATOR_VF5_REABRE_SOLA_2026-10-19.md). No es un recorrido aceptado ni `EPISODIO_VALIDADO`.
 
 **Fecha de preparación:** 2026-10-19.
 
 **HEAD de la preparación:** `5a40f9a3524bcc8a33471317a36734ac5afb8ceb`.
 
-Este artefacto es la validación del orden 2 de [PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](../PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md). El manual se eligió en [SELECCION_MANUAL_TEXTUAL_2026-10-19.md](SELECCION_MANUAL_TEXTUAL_2026-10-19.md). No abre otra cola. No llama modelos ni consulta AWS. No modifica el PDF, los chunks ni el corpus.
+Este artefacto es la validación del orden 2 de [PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](../PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md). El manual se eligió en [SELECCION_MANUAL_TEXTUAL_2026-10-19.md](SELECCION_MANUAL_TEXTUAL_2026-10-19.md). No abre otra cola. La matriz no llama modelos ni consulta AWS. La lectura posterior del objeto y de las dos bases de conocimiento está en el registro de ejecución. No modifica el PDF, los chunks ni el corpus.
 
 El plano Elemont sigue en el orden 3, en [CASO_ELEMONT_MH_LINEAL_2026-10-19.md](CASO_ELEMONT_MH_LINEAL_2026-10-19.md). Aceptar después esta pasada no cierra esas fases ni corrige sus respuestas históricas. Hasta que Lahiri acepte una pasada, este archivo no es el guion de respaldo. La regresión es actividad transversal y no ocupa el orden 3.
 

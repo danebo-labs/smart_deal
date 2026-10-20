@@ -5,6 +5,8 @@
 class RagController < ApplicationController
   include AuthenticationConcern
   include RagQueryConcern
+  include WebValidationCapture
+  capture_web_validation_actions :ask
 
   def ask
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)

@@ -50,14 +50,23 @@ class BedrockClient
         raise
       end
     end
-    Rag::ValidationCapture.record_model_boundary("generate_text", "attempt_started", capture_fields)
-    response = @client.invoke_model(
+    Rag::LocalPassLedger.single_attempt!(@client)
+    response = Rag::LocalPassLedger.protect!(
+      operation: "generate_text",
       model_id: model_id,
-      content_type: 'application/json',
-      body: body.to_json
-    )
+      input_tokens: prompt.to_s.length + system.to_s.length,
+      output_tokens: max_tokens.to_i
+    ) do
+      Rag::ValidationCapture.record_model_boundary("generate_text", "attempt_started", capture_fields)
+      @client.invoke_model(
+        model_id: model_id,
+        content_type: 'application/json',
+        body: body.to_json
+      )
+    end
 
     result = JSON.parse(response.body.read)
+    Rag::LocalPassLedger.settle_usage!(result, model_id: model_id)
     text = result.dig('content', 0, 'text') || result.to_s
 
     track_usage(result, model_id, prompt, start_time, max_tokens: max_tokens, tracking: tracking)
@@ -82,6 +91,9 @@ class BedrockClient
     Rails.logger.error("Bedrock error: #{e.message}")
     Rails.logger.error(e.backtrace.join("\n"))
     nil
+  rescue Rag::LocalPassLedger::Stop
+    Rag::ValidationCapture.record_model_boundary("generate_text", "blocked", capture_fields)
+    raise
   end
 
   # Compatibility method for AiProvider
@@ -102,20 +114,32 @@ class BedrockClient
   # those budgets here would record the same invocation twice. Only the phase
   # 4 web check, when that process armed it, stops the call before the SDK.
   # Disarmed, this is the SDK call and its errors propagate unchanged.
-  def converse(...)
+  def converse(*args, **kwargs, &block)
     budget = phase4_web_budget
-    return converse_client.converse(...) unless budget&.armed?
-
-    budget.checkpoint!("interpreter")
-    begin
-      result = converse_client.converse(...)
-    rescue budget::Stop
-      raise
-    rescue StandardError => error
-      budget.record_error!("interpreter", error)
-      raise budget::Stop, "interpreter stopped after #{error.class}"
+    if budget&.armed?
+      budget.checkpoint!("interpreter")
+      begin
+        result = converse_client.converse(*args, **kwargs, &block)
+      rescue budget::Stop
+        raise
+      rescue StandardError => error
+        budget.record_error!("interpreter", error)
+        raise budget::Stop, "interpreter stopped after #{error.class}"
+      end
+      budget.record_success!("interpreter")
+      return result
     end
-    budget.record_success!("interpreter")
+
+    client = converse_client
+    Rag::LocalPassLedger.single_attempt!(client)
+    model_id = Rag::LocalPassLedger.model_id_from(args, kwargs)
+    result = Rag::LocalPassLedger.protect!(
+      operation: "converse",
+      model_id: model_id,
+      input_tokens: Rag::LocalPassLedger.text_chars([ args, kwargs ]),
+      output_tokens: Rag::LocalPassLedger.output_tokens_from(args, kwargs)
+    ) { client.converse(*args, **kwargs, &block) }
+    Rag::LocalPassLedger.settle_usage!(result, model_id: model_id)
     result
   end
 
@@ -132,10 +156,23 @@ class BedrockClient
         raise
       end
     end
-    Rag::ValidationCapture.record_model_boundary("converse_message", "attempt_started")
-    result = @client.converse(params)
+    Rag::LocalPassLedger.single_attempt!(@client)
+    model_id = Rag::LocalPassLedger.model_id_from(params)
+    result = Rag::LocalPassLedger.protect!(
+      operation: "converse_message",
+      model_id: model_id,
+      input_tokens: Rag::LocalPassLedger.text_chars(params),
+      output_tokens: Rag::LocalPassLedger.output_tokens_from(params)
+    ) do
+      Rag::ValidationCapture.record_model_boundary("converse_message", "attempt_started")
+      @client.converse(params)
+    end
+    Rag::LocalPassLedger.settle_usage!(result, model_id: model_id)
     budget&.record_success!("converse_message") if budget&.armed?
     result
+  rescue Rag::LocalPassLedger::Stop
+    Rag::ValidationCapture.record_model_boundary("converse_message", "blocked")
+    raise
   rescue StandardError => error
     budget = armed_validation_budget
     raise unless budget&.armed?

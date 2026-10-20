@@ -118,10 +118,10 @@ El bosquejo de «abre y no cierra» no se ejecuta. Los siete turnos, las respues
 
 ## Gaps y correspondencias pendientes
 
-- Presencia del PDF en la KB que lea la corrida. La evidencia de ingesta apunta a `Y7RZWMFJSR` para la cuenta 1. El `.env` local cita `QGVYLPTEGT`. No se asume que sean la misma base. El preflight tiene que leer el identificador efectivo y, en lectura, el uid `126cda62-64ad-4469-8674-a29f12e38d48` y el SHA de arriba.
+- Presencia del PDF en la KB que lea la corrida. La lectura del 19 de octubre está en [EJECUCION_FERMATOR_VF5_REABRE_SOLA_2026-10-19.md](EJECUCION_FERMATOR_VF5_REABRE_SOLA_2026-10-19.md): `QGVYLPTEGT` y `Y7RZWMFJSR` son bases distintas. El objeto con el SHA de arriba está en `multimodal-source-destination`. La fila local de `kb_documents` para `126cda62-64ad-4469-8674-a29f12e38d48` no está.
 - El índice impreso y el pie de página no usan el mismo número. Manda la sección, y se anota el índice del PDF.
 - La inversión de `#8` y `#12` queda para una prueba posterior. Detectarla en el recorrido de la reapertura no se penaliza. Sustituir con ella las comprobaciones de «se re-abre sola» sí se rechaza, y el criterio está en la matriz.
 - La página de conexionado y la figura de SW3 no aportan el texto de las comprobaciones.
 - La unidad de la fuerza, Nm en 5.11 y N en la tabla de desempeño, queda fuera de este recorrido.
 - Una copia local `Fermator vf5+.pdf`, SHA-256 `1586bc3f31991c257efcfe8a6eff4d2f1fa2407fb823a424aba05351165249ff`, 16 páginas, no es el archivo del catálogo `VF5.pdf`. No se selecciona.
-- La matriz está escrita y no hubo corrida. El paso siguiente es la revisión de Lahiri y ChatGPT, y después una pasada con captura y presupuesto acotado. Todavía no corresponde declarar un recorrido aceptado ni `EPISODIO_VALIDADO`.
+- La matriz sigue como expectativa. La pasada autorizada el 19 de octubre se detuvo antes de generar. Todavía no corresponde declarar un recorrido aceptado ni `EPISODIO_VALIDADO`.

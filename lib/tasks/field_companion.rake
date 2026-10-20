@@ -2,6 +2,7 @@
 
 require "json"
 require "open3"
+require_relative "../../config/environment" unless defined?(::ApplicationRecord)
 
 # Local debug clean start for one web workspace. Dry-run unless APPLY=true.
 # Selects the runtime row (account, channel web, identifier = user id as text).
@@ -13,7 +14,7 @@ class FieldCompanionCleanStart
 
   # Queue database, not the primary connection. A failed lookup must not abort
   # the workspace transaction.
-  class QueueRecord < ApplicationRecord
+  class QueueRecord < ::ApplicationRecord
     self.abstract_class = true
     connects_to database: { writing: :queue }
   end

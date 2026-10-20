@@ -13,6 +13,8 @@
 # candidacy are checked again. The candidacy is not taken from the request.
 class PinnedDocumentsController < ApplicationController
   include AuthenticationConcern
+  include WebValidationCapture
+  capture_web_validation_actions :create, :destroy
 
   rescue_from ActiveRecord::RecordNotFound, with: :not_found
 

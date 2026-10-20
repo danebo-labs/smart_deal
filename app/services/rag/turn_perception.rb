@@ -182,7 +182,7 @@ module Rag
     def build
       data = coerce_tool(@raw)
       return invalid("invalid_schema") if data.nil?
-      return invalid("over_length") if over_length?(data)
+      data = bound_lengths(data)
 
       assertions = literal_assertions(data["assertions"])
       observations = literal_observations(data["observations"])
@@ -240,6 +240,47 @@ module Rag
         reject_field("slot_hint", "unknown_hint")
         item.merge("slot_hint" => nil)
       end
+    end
+
+    # A span or an observation past its cap does not discard the rest of the
+    # tool. A long assertion keeps the one confirmed brand and designator
+    # inside it when that window still fits the cap.
+    def bound_lengths(data)
+      data["assertions"] = data["assertions"].filter_map.with_index { |item, index|
+        bounded_assertion(item, index)
+      }
+      data["observations"] = data["observations"].filter_map.with_index { |text, index|
+        bounded_observation(text, index)
+      }
+      data
+    end
+
+    def bounded_observation(text, index)
+      phrase = text.to_s
+      return phrase if phrase.length <= ActiveEpisode::MAX_OBSERVATION_CHARS
+
+      reject_field("observations[#{index}]", "over_length")
+      nil
+    end
+
+    def bounded_assertion(item, index)
+      span = item["span"].to_s
+      return item if span.length <= ActiveEpisode::MAX_VALUE_CHARS
+
+      shortened = compound_window_span(span)
+      return item.merge("span" => shortened) if shortened
+
+      reject_field("assertions[#{index}].span", "over_length")
+      nil
+    end
+
+    def compound_window_span(span)
+      match = @catalog.resolve_compound_brand(span, viewer_account: @viewer_account)
+      text = match.respond_to?(:text) ? match.text.to_s : ""
+      return nil if text.blank? || text.length > ActiveEpisode::MAX_VALUE_CHARS
+      return nil unless literal_span?(text)
+
+      text
     end
 
     def over_length?(data)

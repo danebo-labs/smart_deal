@@ -102,13 +102,29 @@ class BedrockClient
     generate_text(prompt, **opts)
   end
 
-  # Shadow perception only. Zero retries and an 8s read timeout, separate from generate_text.
+  # Perception only. The SDK does not retry: max_attempts stays 1.
+  # TurnInterpreter owns a short application retry for transient converse
+  # errors. The 8s read timeout stays. The 2026-10-20 VF5 failures returned
+  # ServiceUnavailable in 2.4–3.1s, so a longer read would not have changed them.
   CONVERSE_CLIENT_OPTIONS = {
     retry_limit: 0,
     max_attempts: 1,
     http_open_timeout: 2,
     http_read_timeout: 8
   }.freeze
+
+  # Effective transport of the perception client. No model call.
+  def converse_diagnostics
+    config = converse_client.config
+    {
+      "region" => config.region,
+      "read_timeout_seconds" => config.http_read_timeout,
+      "open_timeout_seconds" => config.http_open_timeout,
+      "idle_timeout_seconds" => (config.http_idle_timeout if config.respond_to?(:http_idle_timeout)),
+      "max_attempts" => config.max_attempts,
+      "retry_limit" => (config.retry_limit if config.respond_to?(:retry_limit))
+    }
+  end
 
   # Phase 1, 2, and 3 wrappers already checkpoint their own converse. Counting
   # those budgets here would record the same invocation twice. Only the phase

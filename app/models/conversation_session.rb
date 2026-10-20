@@ -154,7 +154,7 @@ class ConversationSession < ApplicationRecord
   # Flag off: the same single UPDATE as add_to_history_and_refresh, and nil.
   # Flag on: history and active_episode in one UPDATE. The caller does not
   # read the Result while the episode flag is the only one enabled.
-  def record_user_turn!(content, user_id:, correlation_id:, selection_turn: false, now: Time.current, locale: :es, interpreter_client: nil)
+  def record_user_turn!(content, user_id:, correlation_id:, selection_turn: false, now: Time.current, locale: :es, interpreter_client: nil, interpreter_sleeper: nil)
     unless episode_recording?
       add_to_history_and_refresh("user", content, user_id: user_id, correlation_id: correlation_id)
       return nil
@@ -162,7 +162,7 @@ class ConversationSession < ApplicationRecord
     if owner_typed_turn?(selection_turn)
       return record_owner_turn!(
         content, user_id: user_id, correlation_id: correlation_id, now: now,
-        locale: locale, interpreter_client: interpreter_client
+        locale: locale, interpreter_client: interpreter_client, interpreter_sleeper: interpreter_sleeper
       )
     end
 
@@ -886,7 +886,7 @@ class ConversationSession < ApplicationRecord
     Rag::HaikuQueryAnalysisFlag.owner? && !selection_turn
   end
 
-  def record_owner_turn!(content, user_id:, correlation_id:, now:, locale:, interpreter_client:)
+  def record_owner_turn!(content, user_id:, correlation_id:, now:, locale:, interpreter_client:, interpreter_sleeper: nil)
     Rag::ValidationCapture.with_turn(correlation_id) do
       apply_recorded_owner_turn!(
         content,
@@ -894,12 +894,13 @@ class ConversationSession < ApplicationRecord
         correlation_id: correlation_id,
         now: now,
         locale: locale,
-        interpreter_client: interpreter_client
+        interpreter_client: interpreter_client,
+        interpreter_sleeper: interpreter_sleeper
       )
     end
   end
 
-  def apply_recorded_owner_turn!(content, user_id:, correlation_id:, now:, locale:, interpreter_client:)
+  def apply_recorded_owner_turn!(content, user_id:, correlation_id:, now:, locale:, interpreter_client:, interpreter_sleeper: nil)
     focus_before = :unset
     self.turn_causal = nil
     turn = Rag::TurnText.truncate(content)
@@ -928,7 +929,8 @@ class ConversationSession < ApplicationRecord
       correlation_id: correlation_id,
       attribution: { account_id: account_id, user_id: user_id, conversation_session_id: id },
       client: interpreter_client,
-      active_photo_context: photo_context
+      active_photo_context: photo_context,
+      sleeper: interpreter_sleeper
     )
 
     result = nil
@@ -957,6 +959,10 @@ class ConversationSession < ApplicationRecord
 
   def apply_owner_perception!(turn, interpreted, correlation_id, user_id, now, locale, focus, photo_context)
     perception = interpreted.perception
+    if interpreted.status == "service_failure"
+      self.turn_active_photo_context = nil
+      return apply_owner_service_failure!(turn, correlation_id, user_id, now)
+    end
     if interpreted.fallback || perception.nil? || !perception.valid
       self.turn_active_photo_context = nil
       return apply_owner_fallback!(turn, correlation_id, user_id, now, locale, focus, interpreted.status)
@@ -1017,6 +1023,35 @@ class ConversationSession < ApplicationRecord
     )
     record_effective_query(turn, query, explained[:components], result)
     persist_user_turn!(stored, result, turn, user_id, correlation_id, now)
+    result
+  end
+
+  # The interpreter never returned a perception. The user line is stored once.
+  # The episode is not filled with that line, and no retrieval query is built.
+  def apply_owner_service_failure!(turn, correlation_id, user_id, now)
+    stored = active_episode
+    parsed = Rag::ActiveEpisode.parse(stored, now: now)
+    episode = stale_episode?(parsed) ? Rag::ActiveEpisode.new : parsed
+    Rag::ValidationCapture.bind(
+      session_id: id,
+      account_id: account_id,
+      user_id: user_id,
+      episode_id: episode.episode_id
+    )
+    note_owner_exit("service_failure", "interpreter_exhausted", correlation_id)
+    state = episode.blank? ? stored : episode.to_h
+    state = {} unless state.is_a?(Hash)
+    remember_turn_causal!(state, state)
+    result = Rag::ActiveEpisodeTurn::Result.new(
+      decision: :continued,
+      reason: "service_failure",
+      state: state,
+      composed: nil,
+      fields_changed: [],
+      understanding: nil
+    )
+    record_effective_query(turn, nil, nil, result)
+    persist_user_turn!(stored, result, turn, user_id, correlation_id, now, keep_episode: true)
     result
   end
 

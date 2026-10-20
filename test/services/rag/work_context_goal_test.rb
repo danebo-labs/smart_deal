@@ -214,11 +214,11 @@ class Rag::WorkContextGoalTest < ActiveSupport::TestCase
     session.update!(active_episode: episode.to_h)
 
     result = with_owner do
-      ask(session, OPENING, RaisingInterpreter.new, correlation: "query:fallback")
+      ask(session, OPENING, RaisingInterpreter.new, correlation: "query:fallback", sleeper: ->(_) { })
     end
 
     assert_equal :continued, result.decision
-    assert_equal "timeout", result.reason
+    assert_equal "service_failure", result.reason
     assert_equal SYMPTOM, session.reload.active_episode.dig("goal", "text")
   end
 
@@ -293,12 +293,13 @@ class Rag::WorkContextGoalTest < ActiveSupport::TestCase
     Rails.logger.stop_broadcasting_to(logger) if logger
   end
 
-  def ask(session, text, interpreter, correlation:)
+  def ask(session, text, interpreter, correlation:, sleeper: nil)
     session.record_user_turn!(
       text,
       user_id: @user.id,
       correlation_id: correlation,
       interpreter_client: interpreter,
+      interpreter_sleeper: sleeper,
       now: @now
     )
   end

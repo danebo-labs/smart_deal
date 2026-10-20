@@ -7,6 +7,9 @@ module Rag
     MODEL_ID = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
     TOOL_NAME = "turn_perception"
     MAX_TOKENS = 512
+    # One initial converse plus two retries. The SDK client stays at one HTTP try.
+    MAX_TRANSIENT_ATTEMPTS = 3
+    BACKOFF_SECONDS = [ 0.4, 1.2 ].freeze
     STAGE_PREPARE = "prepare"
     STAGE_CONVERSE = "converse"
     STAGE_EXTRACT = "extract"
@@ -48,11 +51,11 @@ module Rag
       :error_class, :error_reason, :stage
     )
 
-    def self.call(turn:, episode:, viewer_account:, correlation_id:, attribution: nil, client: nil, catalog: nil, active_photo_context: nil)
+    def self.call(turn:, episode:, viewer_account:, correlation_id:, attribution: nil, client: nil, catalog: nil, active_photo_context: nil, sleeper: nil)
       new(
         turn: turn, episode: episode, viewer_account: viewer_account,
         correlation_id: correlation_id, attribution: attribution, client: client, catalog: catalog,
-        active_photo_context: active_photo_context
+        active_photo_context: active_photo_context, sleeper: sleeper
       ).call
     end
 
@@ -72,7 +75,7 @@ module Rag
       )
     end
 
-    def initialize(turn:, episode:, viewer_account:, correlation_id:, attribution:, client:, catalog:, active_photo_context: nil)
+    def initialize(turn:, episode:, viewer_account:, correlation_id:, attribution:, client:, catalog:, active_photo_context: nil, sleeper: nil)
       @turn_input = turn
       @turn = TurnText.truncate(turn)
       @episode = episode || ActiveEpisode.new
@@ -82,6 +85,10 @@ module Rag
       @client = client
       @catalog = catalog || DocumentIdentityCatalog.current
       @active_photo_context = active_photo_context
+      @sleeper = sleeper || ->(seconds) { sleep(seconds) }
+      @converse_attempts = 0
+      @terminal_failure_result = "error"
+      @attempt_latency_ms = nil
     end
 
     def call
@@ -157,19 +164,12 @@ module Rag
       stage = STAGE_PREPARE
       usage = nil
       client = converse_client
+      @runtime_client = client
       params = converse_params
       stage = STAGE_CONVERSE
-      ValidationCapture.attempt_unless_set(1)
+      ValidationCapture.attempt = 1
       record_interpreter_request(params)
-      # The phase 1, phase 2, or phase 3 wrapper checks the budget inside
-      # converse. The entry mark is written there, after the guard. An
-      # unguarded client is entered here.
-      if guarded_model_budget?
-        response = client.converse(params)
-      else
-        self.class.record_attempt_started
-        response = client.converse(params)
-      end
+      response = converse_with_recovery(client, params)
       latency_ms = elapsed_since(started)
       stage = STAGE_EXTRACT
       usage = response.usage
@@ -195,7 +195,7 @@ module Rag
       )
     rescue StandardError => error
       reason = failure_reason(error)
-      record_interpreter_failure(error, reason, stage)
+      record_interpreter_failure(error, reason, stage, result: @terminal_failure_result)
       Result.new(
         perception: nil,
         fallback: true,
@@ -210,34 +210,171 @@ module Rag
       )
     end
 
-    # The rescue records the step that raised. It does not retry and it does
-    # not decide whether the request left this process. AWS_MAX_ATTEMPTS
-    # limits later retries. A local error after a response is not transport.
-    # The reason is the exception message with credentials removed.
-    def record_interpreter_failure(error, reason, stage)
+    # Each converse is one physical attempt. The SDK client does not add
+    # another try. A transient converse error waits and tries again, up to
+    # three attempts. A later local error is not tried again. Budget Stop is
+    # not a StandardError and leaves this method.
+    def converse_with_recovery(client, params)
+      MAX_TRANSIENT_ATTEMPTS.times do |index|
+        attempt = index + 1
+        @converse_attempts = attempt
+        ValidationCapture.attempt = attempt
+        attempt_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        begin
+          return invoke_converse(client, params)
+        rescue StandardError => error
+          @attempt_latency_ms = elapsed_since(attempt_started)
+          if transient_converse?(error) && attempt < MAX_TRANSIENT_ATTEMPTS
+            record_interpreter_failure(error, failure_reason(error), STAGE_CONVERSE, result: "retry")
+            @sleeper.call(BACKOFF_SECONDS[attempt - 1])
+          else
+            @terminal_failure_result = transient_converse?(error) ? "exhausted" : "error"
+            raise
+          end
+        end
+      end
+    end
+
+    # The phase 1, phase 2, or phase 3 wrapper checks the budget inside
+    # converse. The entry mark is written there, after the guard. An
+    # unguarded client is entered here. BedrockClient#converse admits the
+    # call on the local ledger. This method does not admit it a second time.
+    def invoke_converse(client, params)
+      if guarded_model_budget?
+        client.converse(params)
+      else
+        self.class.record_attempt_started
+        client.converse(params)
+      end
+    end
+
+    # The rescue records the step that raised. A retry record is an
+    # intermediate converse failure. The terminal record is written once,
+    # when the turn stops. The reason is the exception message with
+    # credentials removed.
+    def record_interpreter_failure(error, reason, stage, result:)
       return unless ValidationCapture.active?
 
       full = scrubbed_failure_text(error)
       payload = {
         "stage" => stage,
-        "result" => "error",
+        "result" => result,
         "operation" => "interpreter",
         "error_class" => error.class.name.to_s,
         "reason" => full,
-        "correlation_id" => @correlation_id
+        "correlation_id" => @correlation_id,
+        "failure_kind" => failure_kind(error, stage),
+        "retryable" => stage == STAGE_CONVERSE && transient_converse?(error),
+        "attempt_limit" => MAX_TRANSIENT_ATTEMPTS,
+        "attempt_latency_ms" => @attempt_latency_ms
       }
       if full != reason
         payload["reason_summary"] = reason
         payload["reason_summary_truncated"] = true
       end
-      ValidationCapture.attempt_unless_set(1)
+      payload.merge!(transport_fields(error)) if stage == STAGE_CONVERSE
       ValidationCapture.record("interpreter_failure", payload)
     end
 
     def failure_status(error, stage)
-      return transport_status(error) if stage == STAGE_CONVERSE
+      return LOCAL_FAILURE unless stage == STAGE_CONVERSE
+      return "service_failure" if transient_converse?(error) && @converse_attempts >= MAX_TRANSIENT_ATTEMPTS
 
-      LOCAL_FAILURE
+      case failure_kind(error, stage)
+      when "timeout" then "timeout"
+      when "throttle" then "throttle"
+      when "access" then "access_denied"
+      when "validation" then "validation_error"
+      else "transport_error"
+      end
+    end
+
+    def failure_kind(error, stage)
+      return "local" unless stage == STAGE_CONVERSE
+
+      converse_failure_kind(error)
+    end
+
+    def transient_converse?(error)
+      %w[timeout throttle service transport].include?(converse_failure_kind(error))
+    end
+
+    def converse_failure_kind(error)
+      name = error.class.name.to_s
+      status = provider_http(error).first
+      return "timeout" if error.is_a?(Timeout::Error) || name.include?("Timeout")
+      return "throttle" if name.include?("Throttl") || name.include?("TooManyRequests") || status == 429
+      return "access" if name.match?(/AccessDenied|Unauthorized|Forbidden|ExpiredToken|UnrecognizedClient/) || [ 401, 403 ].include?(status)
+      return "validation" if name.include?("Validation")
+      return "service" if name.include?("ServiceUnavailable") || name.include?("InternalServer") || [ 500, 502, 503, 504 ].include?(status)
+      return "transport" if name.include?("Networking")
+
+      "unclassified"
+    end
+
+    def transport_fields(error)
+      status, request_id = provider_http(error)
+      configured = BedrockClient::CONVERSE_CLIENT_OPTIONS
+      observed = observed_transport
+      {
+        "http_status" => status,
+        "http_status_provenance" => status.nil? ? "uncaptured" : "observed",
+        "request_id" => request_id,
+        "request_id_provenance" => request_id.nil? ? "uncaptured" : "observed",
+        "region" => observed["region"],
+        "region_provenance" => observed["region"].nil? ? "uncaptured" : "observed",
+        "read_timeout_seconds" => observed["read_timeout_seconds"] || configured[:http_read_timeout],
+        "read_timeout_provenance" => observed["read_timeout_seconds"].nil? ? "configured" : "observed",
+        "open_timeout_seconds" => observed["open_timeout_seconds"] || configured[:http_open_timeout],
+        "idle_timeout_seconds" => observed["idle_timeout_seconds"],
+        "sdk_max_attempts" => observed["max_attempts"] || configured[:max_attempts],
+        "sdk_retry_limit" => observed["retry_limit"].nil? ? configured[:retry_limit] : observed["retry_limit"]
+      }
+    end
+
+    def configured_transport
+      observed = observed_transport
+      configured = BedrockClient::CONVERSE_CLIENT_OPTIONS
+      {
+        "region" => observed["region"],
+        "region_provenance" => observed["region"].nil? ? "uncaptured" : "observed",
+        "read_timeout_seconds" => observed["read_timeout_seconds"] || configured[:http_read_timeout],
+        "read_timeout_provenance" => observed["read_timeout_seconds"].nil? ? "configured" : "observed",
+        "open_timeout_seconds" => observed["open_timeout_seconds"] || configured[:http_open_timeout],
+        "idle_timeout_seconds" => observed["idle_timeout_seconds"],
+        "sdk_max_attempts" => observed["max_attempts"] || configured[:max_attempts],
+        "sdk_retry_limit" => observed["retry_limit"].nil? ? configured[:retry_limit] : observed["retry_limit"]
+      }
+    end
+
+    def observed_transport
+      client = @runtime_client
+      return {} unless client.respond_to?(:converse_diagnostics)
+
+      client.converse_diagnostics
+    rescue StandardError
+      {}
+    end
+
+    def provider_http(error)
+      context = error.context if error.respond_to?(:context)
+      return [ nil, nil ] unless context.respond_to?(:http_response)
+
+      response = context.http_response
+      status = response.status_code if response.respond_to?(:status_code)
+      request_id = header_value(response, "x-amzn-requestid") || header_value(response, "x-amz-request-id")
+      [ status, request_id.to_s.presence ]
+    rescue StandardError
+      [ nil, nil ]
+    end
+
+    def header_value(response, name)
+      return nil unless response.respond_to?(:headers)
+
+      headers = response.headers
+      return nil unless headers.respond_to?(:[])
+
+      headers[name] || headers[name.to_sym]
     end
 
     def failure_reason(error)
@@ -276,6 +413,7 @@ module Rag
         "request" => params
       }
       payload["turn_transform"] = turn_transform if @turn_input.to_s != @turn.to_s
+      payload["transport"] = configured_transport
       ValidationCapture.record("interpreter_request", payload)
     end
 

@@ -85,6 +85,27 @@ module RagQueryConcern
     Rag::ValidationCapture.record("route_exit", payload)
   end
 
+  def service_failure_turn?(episode_turn)
+    episode_turn.respond_to?(:reason) && episode_turn.reason.to_s == "service_failure"
+  end
+
+  def service_failure_result(question, correlation_id, locale)
+    answer = I18n.t("rag.interpreter_service_failure", locale: locale)
+    record_published_turn(answer, "service_failure", false, correlation_id)
+    RagResult.new(
+      success?: true,
+      answer: answer,
+      citations: [],
+      retrieved_citations: [],
+      doc_refs: [],
+      correlation_id: correlation_id,
+      response_locale: locale.to_s,
+      generation_mode: "service_failure",
+      model_invoked: false,
+      effective_question: question
+    )
+  end
+
   def meta_result(question, understanding, correlation_id, locale)
     record_published_turn(understanding.clarification, "meta", false, correlation_id)
     RagResult.new(
@@ -176,6 +197,12 @@ module RagQueryConcern
     if question.blank? && images.empty? && documents.empty?
       note_rag_exit("blank_question", "blank_question", correlation_id)
       return RagResult.new(success?: false, error_type: :blank_question)
+    end
+
+    if service_failure_turn?(episode_turn)
+      note_rag_exit("service_failure", "interpreter_exhausted", correlation_id)
+      locale = (response_locale.presence || :es).to_sym
+      return service_failure_result(question, correlation_id, locale)
     end
 
     resolved_response_locale = resolve_response_locale(question, conv_session, override: response_locale)

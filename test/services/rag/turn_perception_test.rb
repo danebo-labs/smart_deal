@@ -30,6 +30,39 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     })
   end
 
+  test "one long field does not discard the short identity in the same tool" do
+    long_observation = "la puerta no cierra " * 12
+    assert_operator long_observation.length, :>, Rag::ActiveEpisode::MAX_OBSERVATION_CHARS
+    long_span = "revisando el tablero #{'norte ' * 8}sin marca visible"
+    assert_operator long_span.length, :>, Rag::ActiveEpisode::MAX_VALUE_CHARS
+    turn = "MONARCH NICE3000 #{long_span}. #{long_observation}"
+    result = perceive(
+      report([
+        assert_span("MONARCH NICE3000", "controller"),
+        assert_span(long_span)
+      ]).merge("observations" => [ long_observation ]),
+      turn
+    )
+
+    assert result.valid
+    assert_nil result.invalid_reason
+    assert_empty result.observations
+    assert_equal [ "MONARCH NICE3000" ], result.identities.map(&:span).uniq
+    assert_includes result.field_rejections.pluck("reason"), "over_length"
+  end
+
+  test "a long assertion keeps the brand and designator window inside it" do
+    window = "MONARCH NICE3000"
+    span = "el operador del rellano #{window} con la puerta abierta del pasillo principal"
+    assert_operator span.length, :>, Rag::ActiveEpisode::MAX_VALUE_CHARS
+    turn = "Estoy con #{span} y la puerta no cierra"
+    result = perceive(report([ assert_span(span, "manufacturer") ]), turn)
+
+    assert result.valid
+    assert_equal [ window ], result.identities.map(&:span).uniq
+    assert_empty result.field_rejections
+  end
+
   test "an extra tool key invalidates the perception" do
     result = perceive({ "move" => "report", "assertions" => [], "observations" => [], "pending_resolution" => nil, "route" => "ready" }, "hola")
 

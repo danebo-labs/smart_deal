@@ -266,7 +266,7 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
   test "a failed interpretation does not replace the open referent" do
     session = open_generic_referent
     with_owner do
-      ask(session, "no lo sé", RaisingInterpreterClient.new(Timeout::Error.new("down")), correlation: "query:referent-fail")
+      ask(session, "no lo sé", RaisingInterpreterClient.new(Timeout::Error.new("down")), correlation: "query:referent-fail", sleeper: ->(_) { })
     end
 
     episode = session.reload.active_episode
@@ -761,37 +761,63 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     assert_nil followed.dig("facts", "manufacturer")
   end
 
-  test "a converse timeout is transport and does not record usage" do
+  test "a converse timeout is retried and does not store the uninterpreted turn" do
     session = web_session
     turn = "la puerta no termina de cerrar y el imán no magnetiza"
     error = Timeout::Error.new("timeout talking Authorization: Bearer secret AKIAIOSFODNN7EXAMPLE")
+    interpreter = RaisingInterpreterClient.new(error)
     events = []
     logs = []
+    result = nil
     assert_no_enqueued_jobs only: TrackBedrockQueryJob do
       with_owner do
         events = Rag::ValidationCapture.capture do
           logs = pilot_events_from do
-            ask(session, turn, RaisingInterpreterClient.new(error), correlation: "stage:timeout")
+            result = ask(session, turn, interpreter, correlation: "stage:timeout", sleeper: ->(_) { })
           end
         end
       end
     end
 
-    failure = events.find { |row| row["kind"] == "interpreter_failure" }
-    assert_equal "converse", failure["stage"]
-    assert_equal "Timeout::Error", failure["error_class"]
-    assert_equal 1, failure["attempt"]
-    assert_not_includes failure["reason"], "AKIA"
-    assert_not_includes failure["reason"], "Bearer"
+    failures = events.select { |row| row["kind"] == "interpreter_failure" }
+    assert_equal [ "retry", "retry", "exhausted" ], failures.pluck("result")
+    assert_equal "Timeout::Error", failures.last["error_class"]
+    assert_not_includes failures.last["reason"], "AKIA"
+    assert_not_includes failures.last["reason"], "Bearer"
     traced = logs.find { |row| row["event"] == "turn_interpreter" }
     assert_equal "converse", traced["stage"]
-    assert_equal "timeout", traced["turn_interpreter_status"]
+    assert_equal "service_failure", traced["turn_interpreter_status"]
     assert_equal 0, traced["input_tokens"]
     assert_equal 0, traced["output_tokens"]
     assert_not_includes traced.to_json, "AKIA"
     assert_equal 0, BedrockQuery.where(correlation_id: "stage:timeout").count
-    assert_equal turn, session.reload.active_episode.dig("goal", "text")
+    assert_equal "service_failure", result.reason
+    assert_nil result.composed
+    assert_nil result.understanding
+    assert_equal 3, interpreter.calls
+    assert_equal 1, session.reload.conversation_history.count { |row| row["role"] == "user" }
+    assert_nil session.active_episode["goal"]
+    assert_empty Array(session.active_episode["observations"])
     assert_empty Array(session.active_episode["identifiers"])
+  end
+
+  test "a recovered interpreter writes one user line and one episode" do
+    session = web_session
+    interpreter = RecoveringInterpreterClient.new(
+      ServiceUnavailableException.new("Bedrock is unable to process your request."),
+      perception("report", observations: [ "la puerta no cierra" ])
+    )
+    waits = []
+    with_owner do
+      ask(session, "la puerta no cierra", interpreter, correlation: "query:recovered", sleeper: ->(seconds) { waits << seconds })
+    end
+
+    episode = session.reload.active_episode
+    assert_equal [ 0.4, 1.2 ], waits
+    assert_equal 3, interpreter.calls
+    assert_equal 1, session.conversation_history.count { |row| row["role"] == "user" }
+    assert_equal [ "la puerta no cierra" ], episode["observations"].pluck("text")
+    assert_equal "la puerta no cierra", episode.dig("goal", "text")
   end
 
   test "a local failure after a paid response records that stage and the usage once" do
@@ -1389,12 +1415,13 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     end
   end
 
-  def ask(session, text, interpreter, correlation: nil, now: Time.current)
+  def ask(session, text, interpreter, correlation: nil, now: Time.current, sleeper: nil)
     session.record_user_turn!(
       text,
       user_id: @user.id,
       correlation_id: correlation || "query:#{SecureRandom.hex(4)}",
       interpreter_client: interpreter,
+      interpreter_sleeper: sleeper,
       now: now
     )
   end
@@ -1633,13 +1660,41 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     Rails.logger.stop_broadcasting_to(logger) if logger
   end
 
+  class ServiceUnavailableException < StandardError; end
+
   class RaisingInterpreterClient
+    attr_reader :calls
+
     def initialize(error)
       @error = error
+      @calls = 0
     end
 
     def converse(*)
+      @calls += 1
       raise @error
+    end
+  end
+
+  class RecoveringInterpreterClient
+    attr_reader :calls
+
+    def initialize(error, response)
+      @error = error
+      @response = response
+      @calls = 0
+    end
+
+    def converse(*)
+      @calls += 1
+      raise @error if @calls < 3
+
+      tool = Struct.new(:name, :input).new("turn_perception", @response)
+      block = Struct.new(:tool_use).new(tool)
+      message = Struct.new(:content).new([ block ])
+      output = Struct.new(:message).new(message)
+      usage = Struct.new(:input_tokens, :output_tokens).new(4, 2)
+      Struct.new(:output, :usage).new(output, usage)
     end
   end
 

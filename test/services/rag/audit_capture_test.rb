@@ -154,18 +154,21 @@ class Rag::AuditCaptureTest < ActiveSupport::TestCase
         episode: Rag::ActiveEpisode.new,
         viewer_account: nil,
         correlation_id: "phase1:9",
-        client: client
+        client: client,
+        sleeper: ->(_) { }
       )
     end
 
-    assert_equal "timeout", result.status
-    assert_equal 1, client.calls
+    assert_equal "service_failure", result.status
+    assert_equal 3, client.calls
     assert_operator result.error_reason.length, :<=, 180
-    failure = events.find { |event| event["kind"] == "interpreter_failure" }
+    failures = events.select { |event| event["kind"] == "interpreter_failure" }
+    assert_equal [ "retry", "retry", "exhausted" ], failures.pluck("result")
+    failure = failures.last
     request = events.find { |event| event["kind"] == "interpreter_request" }
     assert_equal "prepared", request["result"]
     assert_equal "attempt_started", events.find { |event| event["kind"] == "interpreter_attempt" }["result"]
-    assert_equal "error", failure["result"]
+    assert_equal "exhausted", failure["result"]
     assert_equal "interpreter", failure["operation"]
     assert_equal request["correlation_id"], failure["correlation_id"]
     assert_equal "converse", failure["stage"]

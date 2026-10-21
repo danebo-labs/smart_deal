@@ -4,7 +4,7 @@ require "test_helper"
 require "digest"
 
 class BedrockGenerationPromptTest < ActiveSupport::TestCase
-  PRE_CHANGE_SHA256 = "ba6e7e51f03c6d72e4b64b4d575baa6353be222c77845423dc79678a7ff985bc"
+  PRE_CHANGE_SHA256 = "cc875e4132b4391d2d581fe50e37170a3da302bca0432cc81343af1d6f4c9a39"
   # Grounded prompt length before the assignment-conflict sentences, partial contract on.
   PREVIOUS_GROUNDED_CHARS = 11_801
 
@@ -312,9 +312,9 @@ class BedrockGenerationPromptTest < ActiveSupport::TestCase
   end
 
   test "keeps concise output rules" do
-    assert_includes prompt, "at most three logical sections"
     assert_includes prompt, "No markdown tables"
     assert_includes prompt, "Do not add a generic safety closing"
+    assert_not_includes prompt, "three logical sections"
   end
 
   private

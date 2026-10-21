@@ -281,6 +281,7 @@ class SessionContextBuilder
     %w[manufacturer model controller fault_code].each { |key| append_user_fact(leading, episode, key) }
     identifiers = identifier_line(episode)
     leading << identifiers if identifiers
+    leading.concat(check_lines(episode))
     optional = []
     photo = photo_line(episode)
     optional << photo if photo
@@ -334,6 +335,21 @@ class SessionContextBuilder
     "Identifiers: #{values.join(', ')}"
   end
   private_class_method :identifier_line
+
+  def self.check_lines(episode)
+    return [] unless episode.respond_to?(:checks)
+
+    Array(episode.checks).filter_map { |item|
+      subject = item["subject"].to_s.squish
+      next if subject.empty?
+
+      status = item["status"].to_s
+      result = item["result"].to_s.squish
+      line = "Check: #{subject} (#{status})"
+      result.present? ? "#{line}: #{result}" : line
+    }
+  end
+  private_class_method :check_lines
 
   def self.photo_line(episode)
     bits = %w[manufacturer model].filter_map do |key|

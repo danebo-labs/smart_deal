@@ -20,13 +20,16 @@ module Rag
     MAX_OBSERVATIONS = 3
     MAX_STORED_OBSERVATIONS = 12
     MAX_OBSERVATION_CHARS = 180
+    MAX_CHECKS = 6
+    MAX_CHECK_CHARS = 120
+    CHECK_STATUSES = %w[done not_done].freeze
     MAX_REJECTED = 4
     REJECTED_SLOTS = %w[manufacturer model controller fault_code identifier].freeze
     MAX_BYTES = 4096
 
     attr_accessor :episode_id, :status, :opened_at, :updated_at, :opened_by,
                   :goal, :facts, :identifiers, :pending_fact, :pending_question, :active_photo, :conflicts,
-                  :observations, :rejected
+                  :observations, :checks, :rejected
     attr_reader :reason
 
     def initialize
@@ -34,6 +37,7 @@ module Rag
       @identifiers = []
       @conflicts = []
       @observations = []
+      @checks = []
       @rejected = []
       @status = "active"
     end
@@ -70,6 +74,7 @@ module Rag
       episode.active_photo = sanitize_photo(data["active_photo"])
       episode.conflicts = sanitize_conflicts(data["conflicts"])
       episode.observations = sanitize_observations(data["observations"])
+      episode.checks = sanitize_checks(data["checks"])
       episode.rejected = sanitize_rejected(data["rejected"])
       episode
     end
@@ -105,6 +110,7 @@ module Rag
       copy.active_photo = active_photo&.deep_dup
       copy.conflicts = conflicts.deep_dup
       copy.observations = observations.deep_dup
+      copy.checks = checks.deep_dup
       copy.rejected = rejected.deep_dup
       copy
     end
@@ -171,6 +177,25 @@ module Rag
 
       identifiers << { "value" => literal, "source" => source, "correlation_id" => correlation_id.to_s }
       identifiers.shift while identifiers.size > MAX_IDENTIFIERS
+    end
+
+    def upsert_check!(check, correlation_id:)
+      item = check.is_a?(Hash) ? check.stringify_keys : {}
+      subject = item["subject"].to_s.squish.first(MAX_CHECK_CHARS)
+      status = item["status"].to_s
+      return if subject.blank? || CHECK_STATUSES.exclude?(status)
+
+      result = item["result"].to_s.squish.first(MAX_CHECK_CHARS).presence
+      label = FollowupQueryRewriter.normalize_label(subject)
+      row = { "subject" => subject, "status" => status, "correlation_id" => correlation_id.to_s }
+      row["result"] = result if result
+      index = checks.index { |stored| FollowupQueryRewriter.normalize_label(stored["subject"]) == label }
+      if index
+        checks[index] = row
+      else
+        checks << row
+        checks.shift while checks.size > MAX_CHECKS
+      end
     end
 
     def append_observation!(text, correlation_id:)
@@ -245,6 +270,7 @@ module Rag
         "active_photo" => active_photo,
         "conflicts" => conflicts,
         "observations" => observations.presence,
+        "checks" => checks.presence,
         "rejected" => rejected.presence
       }
       payload.compact!
@@ -404,6 +430,25 @@ module Rag
       JSON.generate(payload).bytesize > limit
     end
 
+    def self.sanitize_checks(raw)
+      return [] unless raw.is_a?(Array)
+
+      raw.filter_map { |item|
+        next unless item.is_a?(Hash)
+
+        item = item.stringify_keys
+        subject = item["subject"].to_s.squish.first(MAX_CHECK_CHARS)
+        status = item["status"].to_s
+        next if subject.blank? || CHECK_STATUSES.exclude?(status)
+
+        row = { "subject" => subject, "status" => status, "correlation_id" => item["correlation_id"].to_s }
+        result = item["result"].to_s.squish.first(MAX_CHECK_CHARS).presence
+        row["result"] = result if result
+        row
+      }.last(MAX_CHECKS)
+    end
+    private_class_method :sanitize_checks
+
     def self.sanitize_conflicts(raw)
       return [] unless raw.is_a?(Array)
 
@@ -433,6 +478,13 @@ module Rag
 
       payload["conflicts"] = []
       return if json_bytes(payload) <= MAX_BYTES
+
+      stored_checks = payload["checks"]
+      if stored_checks.is_a?(Array)
+        stored_checks.shift while stored_checks.any? && json_bytes(payload) > MAX_BYTES
+        payload.delete("checks") if stored_checks.empty?
+        return if json_bytes(payload) <= MAX_BYTES
+      end
 
       observations = payload["observations"]
       if observations.is_a?(Array)

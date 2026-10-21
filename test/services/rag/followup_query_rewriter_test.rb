@@ -10,7 +10,7 @@ class Rag::FollowupQueryRewriterTest < ActiveSupport::TestCase
   # File bytes of generation.txt, not the published prompt. The three
   # FIELD_GUIDANCE prefixes replace GROUNDED_SYNTHESIS on those lines.
   # strip_variant_prompt_prefix publishes the same text on the other routes.
-  PROMPT_SHA = "844df124e7ec0063be655d5ac32f276a1a01a04c2a84e6c36dccfb3ec182362c"
+  PROMPT_SHA = "1844024b18bb9c373c8e42e0617e32cde68166c85ad0345ac51f495f9b9e1638"
 
   test "generation prompt bytes stay on the continuity baseline" do
     path = Rails.root.join("app/prompts/bedrock/generation.txt")

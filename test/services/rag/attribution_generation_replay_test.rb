@@ -256,7 +256,7 @@ class Rag::AttributionGenerationReplayTest < ActiveSupport::TestCase
     end
   end
 
-  test "the flag off reconstruction of the captured prompt keeps the voices hash" do
+  test "the versioned capture stays intact and no longer matches the conditional plan prompt" do
     captured = File.binread(capture_fixture)
     assert_equal 36050, captured.bytesize
     assert_equal "42509289d310a005a01e0f31cafbc7fb3f42436b1f8405089a24a6b8347db208", Digest::SHA256.hexdigest(captured)
@@ -265,26 +265,10 @@ class Rag::AttributionGenerationReplayTest < ActiveSupport::TestCase
       Rag::AttributionGenerationReplay.preview(captured_prompt: captured, account: @account)
     end
 
-    assert preview.allowed?, preview.reason
-    assert_equal "09bf470335afbb3d526356034a2fa410642262f3d764d4f35675ff09329c9fa6", preview.prompt_sha256
-    assert_equal 36034, preview.prompt.bytesize
-    assert_nil preview.system_sha256
-
-    partitioned = isolate_env("RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE", "1") do
-      Rag::AttributionGenerationReplay.preview(captured_prompt: captured, account: @account)
-    end
-
-    assert partitioned.allowed?, partitioned.reason
-    assert_equal "09bf470335afbb3d526356034a2fa410642262f3d764d4f35675ff09329c9fa6", partitioned.prompt_sha256
-    assert_equal "8b40b274a9eac2597bd0e9afbce7d60afde3c16b38122477a33c521e9303947a", partitioned.system_sha256
-    assert_equal "655e1c29acb311b9af4ea75e45f9b4edd02f781de7ddcbc76cc348d7843f2fb3", partitioned.user_sha256
-    assert_equal 14615, partitioned.prompt.system.bytesize
-    assert_equal 21419, partitioned.prompt.user.bytesize
-    assert_equal 3, partitioned.prompt.user.scan("<search_result>").size
-    assert_includes partitioned.prompt.user, "Query: La etiqueta Chapa nivel 2 Elemont MH"
-    assert_includes partitioned.prompt.user, "## Active Field Problem"
-    assert_not_includes partitioned.prompt.user, "# DOCUMENT IDENTITY ATTRIBUTION"
-    assert_not_includes partitioned.prompt.system, "<search_result>"
+    assert_equal "prompt_delta", preview.reason
+    # Reconstruction before plan blocks became conditional:
+    # 09bf470335afbb3d526356034a2fa410642262f3d764d4f35675ff09329c9fa6
+    # 8b40b274a9eac2597bd0e9afbce7d60afde3c16b38122477a33c521e9303947a
   end
 
   test "correlation tags default to voices and reject a malformed or historical id" do

@@ -45,13 +45,19 @@ class BedrockRagService
   FIELD_REPORT_PARAGRAPH = <<~TEXT.strip.freeze
     The technician's report records what was stated, including what was not seen, not measured, and not done. A report that something was not seen leaves the documentary check about that thing open: state the check and the condition the passage gives, and do not mark it done or discarded. Do not rank a cause the passages do not rank. An example in the retrieved text stays an example and does not establish that mechanism on this equipment. Keep the indicator name the technician used; a different indicator named in a passage is a different indicator. Earlier assistant lines are previous conclusions of this assistant, not the technician's report and not confirmed facts. State the documented checks that fit the report, with their conditions, and which remain open. Do not replace those checks with a refusal, and do not add a step, adjustment, or replacement the passages do not state.
   TEXT
+  DOCUMENTED_INFORMATION_PLAN = <<~TEXT.strip.freeze
+    - Documented information ("Según el plano" for this drawing): state only what the retrieved body text supports and links to the component asked about, with [n]. Compatible fragments of the same document may be combined when they support that same link. A printed label, a column heading, or a bus name supports the label and its documented section, location, and neighboring labels; it does not by itself establish the component's function, supply, voltage, or connection. ACTION and EXPECTED_RESULT lines in FIELD_RECORD are extraction annotations, not independent evidence from the original document. They must not by themselves establish a function, supply, voltage, or connection. The physical-connection rule and TOPOLOGY_EDGE records above remain in force. Do not transfer a fact from another label. Distinguish extracted table indices from numbering printed on the drawing.
+  TEXT
+  DOCUMENTED_INFORMATION_GENERAL = <<~TEXT.strip.freeze
+    - Documented information: state only what the retrieved body text supports, with [n]. ACTION and EXPECTED_RESULT lines in FIELD_RECORD are extraction annotations, not independent evidence from the original document.
+  TEXT
   DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT = <<~TEXT.strip.freeze
     # DOCUMENT IDENTITY ATTRIBUTION
     Keep documented statements, optional interpretations, and missing information distinct. Never mix a documented claim and an unconfirmed interpretation in the same sentence. Express these distinctions naturally in the question's language; fixed headings are not required.
 
     #{FIELD_REPORT_PARAGRAPH}
 
-    - Documented information ("Según el plano" for this drawing): state only what the retrieved body text supports and links to the component asked about, with [n]. Compatible fragments of the same document may be combined when they support that same link. A printed label, a column heading, or a bus name supports the label and its documented section, location, and neighboring labels; it does not by itself establish the component's function, supply, voltage, or connection. ACTION and EXPECTED_RESULT lines in FIELD_RECORD are extraction annotations, not independent evidence from the original document. They must not by themselves establish a function, supply, voltage, or connection. The physical-connection rule and TOPOLOGY_EDGE records above remain in force. Do not transfer a fact from another label. Distinguish extracted table indices from numbering printed on the drawing.
+    #{DOCUMENTED_INFORMATION_PLAN}
 
     - Optional interpretation ("Interpretación posible, no confirmada por estos pasajes"): omit it unless it helps the technician. Use at most two sentences without [n]. It may explain only what a label's word commonly designates in the trade, explicitly as a possibility and with the reservation that these passages do not confirm it. It must not state this equipment's function, what the component drives, its supply, voltage, connection, terminal, or wiring. A marker does not make an unsupported equipment specification acceptable.
 
@@ -1151,26 +1157,29 @@ class BedrockRagService
                                           labels: [])
     system_role = document_identity_system_role?
     search_results = Rag::DocumentIdentityScope.generation_context(chunks, labels)
+    plan = self.class.plan_context?(question, session_context, chunks)
     template = withheld_document_identity_template(
       question,
       response_locale: response_locale,
       session_context: system_role ? nil : session_context,
       output_channel: output_channel
     )
+    template = restore_plan_blocks(template) if plan
     if system_role
       parts = partition_document_identity_template(
         template,
         question: question,
         search_results: search_results,
         session_context: session_context,
-        response_locale: response_locale
+        response_locale: response_locale,
+        plan: plan
       )
       return DocumentIdentityPrompt.new(system: parts.fetch(:system), user: parts.fetch(:user))
     end
 
     DocumentIdentityPrompt.new(
       system: nil,
-      user: substitute_document_identity_template(template, question, search_results)
+      user: substitute_document_identity_template(template, question, search_results, plan: plan)
     )
   end
 
@@ -1191,20 +1200,37 @@ class BedrockRagService
     )
   end
 
-  def substitute_document_identity_template(template, question, search_results)
+  def substitute_document_identity_template(template, question, search_results, plan:)
     template
       .sub("$query$") { question.to_s }
       .sub("$search_results$") { search_results }
-      .sub(OUTPUT_FORMAT_PLACEHOLDER) { document_identity_output_contract }
+      .sub(OUTPUT_FORMAT_PLACEHOLDER) { document_identity_output_contract(plan: plan) }
   end
 
-  def document_identity_output_contract
-    "#{DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT}\n\n#{DOCUMENT_IDENTITY_CITATION_INSTRUCTIONS}"
+  def document_identity_output_contract(plan:)
+    body = DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT
+    body = body.sub(DOCUMENTED_INFORMATION_PLAN, DOCUMENTED_INFORMATION_GENERAL) unless plan
+    "#{body}\n\n#{DOCUMENT_IDENTITY_CITATION_INSTRUCTIONS}"
+  end
+
+  def restore_plan_blocks(template)
+    rules = self.class.topology_edge_rules
+    template = insert_before_output_contract(template, rules) unless template.include?("RECORD_TYPE: TOPOLOGY_EDGE record")
+    template = insert_before_output_contract(template, literal_label_rules) unless template.include?("# LITERAL LABEL RULES")
+    template
+  end
+
+  def insert_before_output_contract(template, block)
+    text = block.to_s.strip
+    return template if text.empty?
+    return "#{template.rstrip}\n\n#{text}\n" unless template.include?(OUTPUT_FORMAT_PLACEHOLDER)
+
+    template.sub(OUTPUT_FORMAT_PLACEHOLDER, "#{text}\n\n#{OUTPUT_FORMAT_PLACEHOLDER}")
   end
 
   # Moves the context block, the session, and the language footer into the
   # user message. The remaining text stays in its current order.
-  def partition_document_identity_template(template, question:, search_results:, session_context:, response_locale:)
+  def partition_document_identity_template(template, question:, search_results:, session_context:, response_locale:, plan:)
     system_template = template.sub(DOCUMENT_IDENTITY_CONTEXT_BLOCK, "")
     footer = removable_language_footer(system_template, question, response_locale)
     system_template = system_template.sub("\n\n#{footer}", "") if footer
@@ -1212,7 +1238,7 @@ class BedrockRagService
       .sub("$query$") { question.to_s }
       .sub("$search_results$") { search_results }
     user = [ context, session_context.presence, footer ].compact.join("\n\n")
-    system = system_template.sub(OUTPUT_FORMAT_PLACEHOLDER) { document_identity_output_contract }
+    system = system_template.sub(OUTPUT_FORMAT_PLACEHOLDER) { document_identity_output_contract(plan: plan) }
     { system: system, user: user }
   end
 
@@ -2133,6 +2159,7 @@ class BedrockRagService
       grounded_synthesis: grounded_synthesis?,
       field_guidance: field_guidance
     )
+    base = self.class.without_plan_blocks(base) unless self.class.plan_request?(question, session_context)
     output_contract = base.include?(OUTPUT_FORMAT_PLACEHOLDER)
     base = base.sub(OUTPUT_FORMAT_PLACEHOLDER, "").rstrip if output_contract
     locale = if response_locale.present?
@@ -2148,7 +2175,7 @@ class BedrockRagService
     # Detection stays on the two methods above. This substitute is the only
     # place that decides which completeness text is allowed into the prompt.
     prompt_completeness = completeness_directive_for(safety_directive, completeness_directive)
-    visual_directive = visual_label_directive(question)
+    visual_directive = visual_label_directive(question, session_context)
 
     base = "#{language_directive_header(lang_name)}\n\n#{base}" if lang_name.present?
 
@@ -2170,10 +2197,8 @@ class BedrockRagService
   # the question asks for functions/identification of schematic/diagram labels,
   # regardless of the pinned scope (a schematic page inside a pinned manual
   # carries the same inference risk as a pinned photo).
-  def visual_label_directive(question)
-    text = question.to_s
-    return nil unless text.match?(/esquema|diagrama|plano|etiqueta|schematic|diagram|label/i) &&
-                      text.match?(/funci[oó]n|identifica|componentes|qu[eé] es/i)
+  def visual_label_directive(question, session_context = nil)
+    return nil unless self.class.plan_request?(question, session_context)
 
     literal_label_rules
   end
@@ -2487,6 +2512,65 @@ class BedrockRagService
   # Each RAG request renders the prompt twice (build_complete_optimized_config
   # + the post-response token-count assembly) — without memoization that means
   # 2 File.read syscalls per request multiplied by N concurrent requests.
+  PLAN_REQUEST = /plano|esquema|etiquetas?|schematic|diagram|\blabels?\b/i
+  DIAGRAM_SECTION = /(?:^|\n)\s*(?:#+\s*)?(?:diagrama|plano|esquema|tabla de etiquetas|schematic|label table)\b/i
+  TOPOLOGY_EDGE_MARK = "The one exception is a RECORD_TYPE: TOPOLOGY_EDGE record:"
+
+  def self.plan_request?(question, session_context = nil)
+    "#{question}\n#{session_context}".match?(PLAN_REQUEST)
+  end
+
+  def self.plan_context?(question, session_context, chunks)
+    return true if plan_request?(question, session_context)
+
+    Array(chunks).any? { |chunk| plan_chunk?(chunk_body(chunk)) }
+  end
+
+  def self.without_plan_blocks(template)
+    span = topology_span(template)
+    return template unless span
+
+    copy = template.dup
+    copy.slice!(span)
+    copy
+  end
+
+  def self.topology_edge_rules(template = nil)
+    template ||= Rails.root.join("app/prompts/bedrock/generation.txt").read
+    span = topology_span(template)
+    span ? template[span] : ""
+  end
+
+  def self.plan_chunk?(text)
+    body = text.to_s
+    body.match?(/RECORD_TYPE:\s*TOPOLOGY_EDGE/) || body.match?(DIAGRAM_SECTION)
+  end
+  private_class_method :plan_chunk?
+
+  def self.chunk_body(chunk)
+    case chunk
+    when Hash
+      chunk[:content] || chunk["content"] || chunk[:text] || chunk["text"]
+    else
+      chunk.respond_to?(:content) ? chunk.content : nil
+    end.to_s
+  end
+  private_class_method :chunk_body
+
+  def self.topology_span(template)
+    lines = template.lines
+    start_line = lines.index { |line| line.include?(TOPOLOGY_EDGE_MARK) }
+    return nil if start_line.nil?
+
+    finish = lines.index { |line| line.strip == "the complete diagram." }
+    return nil if finish.nil? || finish < start_line
+
+    offset = lines[0...start_line].sum(&:length)
+    length = lines[start_line..finish].sum(&:length)
+    offset...(offset + length)
+  end
+  private_class_method :topology_span
+
   def self.load_generation_prompt_template(grounded_synthesis: false, field_guidance: true)
     partial_contract = Rag::PartialAbstentionContractFlag.enabled?
     grounded_synthesis = grounded_synthesis == true

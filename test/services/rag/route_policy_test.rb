@@ -278,7 +278,8 @@ class Rag::RoutePolicyTest < ActiveSupport::TestCase
       field_rejections: [],
       catalog_disagreements: [],
       invalid_reason: nil,
-      correction: Rag::ObservationCorrection.none
+      correction: Rag::ObservationCorrection.none,
+      checks: []
     )
   end
 

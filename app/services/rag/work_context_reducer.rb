@@ -41,6 +41,7 @@ module Rag
       return @episode if @perception.nil?
       return @episode if @decision&.decision == "meta"
 
+      write_checks unless @perception.move == "unclear"
       remember_referent_choice if remember_referent_choice?
       promote_carry if promote_existing_carry?
 
@@ -208,6 +209,14 @@ module Rag
         @episode.append_observation!(text, correlation_id: @correlation_id)
       end
       supersede_retracted_observations
+    end
+
+    def write_checks
+      return unless @perception.respond_to?(:checks)
+
+      Array(@perception.checks).each do |check|
+        @episode.upsert_check!(check, correlation_id: @correlation_id)
+      end
     end
 
     # A correction names the replacement as a mention when the turn has no

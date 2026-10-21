@@ -77,6 +77,13 @@ module Rag
       data["observations"].each do |text|
         return "observation_not_literal" unless TurnPerception.literal_fragment?(text, @sent_turn)
       end
+      Array(data["checks"]).each do |item|
+        return "span_not_literal" unless TurnPerception.literal_fragment?(item["subject"], @sent_turn)
+
+        result = item["result"]
+        next if result.nil? || result == ""
+        return "span_not_literal" unless result.is_a?(String) && TurnPerception.literal_fragment?(result, @sent_turn)
+      end
       nil
     end
   end

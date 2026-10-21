@@ -12,6 +12,7 @@ module Rag
     IDENTITY_HINTS = %w[manufacturer model controller].freeze
     CLARIFICATION_TARGETS = %w[work_relation referent correction_target].freeze
     ROOT_KEYS = %w[move assertions observations pending_resolution clarification_target].freeze
+    CHECK_KEYS = %w[subject status result].freeze
     ASSERTION_KEYS = %w[span act slot_hint].freeze
     MAX_ASSERTIONS = 8
     MAX_TOOL_BYTES = 4096
@@ -46,7 +47,7 @@ module Rag
     Result = Data.define(
       :valid, :move, :observations, :pending_resolution, :clarification_target,
       :identities, :ambiguities, :field_rejections, :catalog_disagreements, :invalid_reason,
-      :correction
+      :correction, :checks
     ) do
       def facts
         identities.select { |item| item.kind == "fact" }
@@ -98,7 +99,21 @@ module Rag
             items: { type: "string", maxLength: ActiveEpisode::MAX_OBSERVATION_CHARS }
           },
           pending_resolution: { type: %w[string null] },
-          clarification_target: { type: %w[string null] }
+          clarification_target: { type: %w[string null] },
+          checks: {
+            type: "array",
+            maxItems: ActiveEpisode::MAX_CHECKS,
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: %w[subject status],
+              properties: {
+                subject: { type: "string", maxLength: ActiveEpisode::MAX_CHECK_CHARS },
+                status: { type: "string", enum: ActiveEpisode::CHECK_STATUSES },
+                result: { type: %w[string null], maxLength: ActiveEpisode::MAX_CHECK_CHARS }
+              }
+            }
+          }
         }
       }
     end
@@ -109,7 +124,7 @@ module Rag
       return "not_a_hash" unless raw.is_a?(Hash)
 
       data = raw.deep_stringify_keys
-      return "extra_keys" if (data.keys - ROOT_KEYS).any?
+      return "extra_keys" if (data.keys - ROOT_KEYS - [ "checks" ]).any?
       return "invalid_move" unless MOVES.include?(data["move"])
       return "invalid_assertions" unless data["assertions"].is_a?(Array)
       return "invalid_observations" unless data["observations"].is_a?(Array)
@@ -123,6 +138,8 @@ module Rag
       return clarification if clarification
       return "malformed_assertion" unless data["assertions"].all? { |item| assertion_shape?(item) }
       return "invalid_observation" unless data["observations"].all? { |item| item.is_a?(String) }
+      checks = checks_failure(data)
+      return checks if checks
       return "over_bytes" if JSON.generate(data).bytesize > MAX_TOOL_BYTES
 
       nil
@@ -163,9 +180,33 @@ module Rag
       value.to_s.unicode_normalize(:nfc).downcase.gsub(/[[:space:]]+/, " ").strip
     end
 
+    def self.checks_failure(data)
+      return nil unless data.key?("checks")
+
+      checks = data["checks"]
+      return "checks" unless checks.is_a?(Array)
+      return "checks" if checks.size > ActiveEpisode::MAX_CHECKS
+
+      checks.each do |item|
+        return "checks" unless item.is_a?(Hash)
+
+        item = item.stringify_keys
+        return "checks" if (item.keys - CHECK_KEYS).any?
+        return "checks" unless item["subject"].is_a?(String) && item["subject"].present?
+        return "checks" unless ActiveEpisode::CHECK_STATUSES.include?(item["status"])
+        result = item["result"]
+        return "checks" unless result.nil? || result.is_a?(String)
+      end
+      nil
+    end
+
     def self.over_length?(data)
       data["assertions"].any? { |item| item["span"].length > ActiveEpisode::MAX_VALUE_CHARS } ||
-        data["observations"].any? { |item| item.length > ActiveEpisode::MAX_OBSERVATION_CHARS }
+        data["observations"].any? { |item| item.length > ActiveEpisode::MAX_OBSERVATION_CHARS } ||
+        Array(data["checks"]).any? { |item|
+          item["subject"].to_s.length > ActiveEpisode::MAX_CHECK_CHARS ||
+            item["result"].to_s.length > ActiveEpisode::MAX_CHECK_CHARS
+        }
     end
 
     def initialize(raw:, turn:, episode:, catalog:, viewer_account:)
@@ -186,6 +227,7 @@ module Rag
 
       assertions = literal_assertions(data["assertions"])
       observations = literal_observations(data["observations"])
+      checks = literal_checks(data["checks"])
       @correction = ObservationCorrection.resolve(
         turn: @turn, observations: observations, assertions: assertions
       )
@@ -216,7 +258,8 @@ module Rag
         field_rejections: @field_rejections,
         catalog_disagreements: @catalog_disagreements,
         invalid_reason: nil,
-        correction: @correction || ObservationCorrection.none
+        correction: @correction || ObservationCorrection.none,
+        checks: checks
       )
       record_perception(result)
       result
@@ -355,6 +398,33 @@ module Rag
           nil
         end
       end
+    end
+
+    # A check is a verification the technician stated. An observation never
+    # becomes one. A subject or result that is not in the turn is dropped.
+    def literal_checks(raw)
+      return [] unless raw.is_a?(Array)
+
+      raw.filter_map.with_index do |item, index|
+        item = item.stringify_keys
+        subject = item["subject"].to_s.squish.first(ActiveEpisode::MAX_CHECK_CHARS)
+        status = item["status"].to_s
+        unless ActiveEpisode::CHECK_STATUSES.include?(status) && literal_span?(subject)
+          reject_field("checks[#{index}]", "not_literal")
+          next
+        end
+
+        result = item["result"]
+        stored = nil
+        if result.is_a?(String) && result.squish.present?
+          stored = result.squish.first(ActiveEpisode::MAX_CHECK_CHARS)
+          unless literal_span?(stored)
+            reject_field("checks[#{index}].result", "not_literal")
+            next
+          end
+        end
+        { "subject" => subject, "status" => status, "result" => stored }
+      end.first(ActiveEpisode::MAX_CHECKS)
     end
 
     # A literal multi-word phrase can be a short field symptom. A single token
@@ -1093,7 +1163,8 @@ module Rag
         valid: false, move: nil, observations: [], pending_resolution: nil, clarification_target: nil,
         identities: [], ambiguities: [], field_rejections: @field_rejections,
         catalog_disagreements: [], invalid_reason: reason,
-        correction: ObservationCorrection.none
+        correction: ObservationCorrection.none,
+        checks: []
       )
       record_perception(result, original_move: original_move)
       result

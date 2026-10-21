@@ -441,3 +441,25 @@ El gate de precisión reintenta una vez a la misma cota, en `call_with_page_cap_
 Tests de este bloque en verde: continuidad, cobertura, fidelidad, prompt, fusión, reintento Batch, builders, jobs de resultados, parser y chunking de un archivo. RuboCop sin ofensas en esos archivos.
 
 Siguiente: F1-B, comprobaciones del episodio y prompt sin plano, sin llamadas.
+
+### F1-B. Comprobaciones y prompt, 21 de octubre de 2026
+
+Sin llamadas. Gasto US$0. El ledger de asignación no se tocó.
+
+`checks` es opcional en `turn_perception`. Si falta, vale `[]`. El contrato rechaza un sujeto o un resultado que no esté en el turno, un `status` fuera de `done`/`not_done`, más de 6 elementos o un texto de más de 120 caracteres. El producto descarta la comprobación que no es literal y no la fabrica desde una observación. El reducer la guarda antes de una aclaración. El mismo sujeto, normalizado, sustituye al anterior. `new_work` abre otro episodio: las comprobaciones anteriores no pasan. El contexto de la avería lleva una línea `Check:` dentro de `## Active Field Problem`.
+
+Sin plano, el prompt quita el párrafo de `TOPOLOGY_EDGE`, deja la viñeta documentada en su forma general y no añade `literal_label_rules`. Esas tres piezas vuelven si el turno o el objetivo piden plano, esquema o etiqueta, o si un chunk trae `TOPOLOGY_EDGE` o una sección de diagrama o tabla de etiquetas. Se eliminó «Use at most three logical sections». `FIELD_REPORT_PARAGRAPH` no cambió. El SHA del template con el contrato parcial apagado pasa a `cc875e4132b4391d2d581fe50e37170a3da302bca0432cc81343af1d6f4c9a39`. La captura histórica de atribución ya no reconstruye el prompt (`prompt_delta`): perdió esa línea y una pregunta con «etiqueta» ahora recibe las reglas de etiqueta.
+
+Pausa, solo la regla de identificadores. No se aplicó.
+
+Evidencia: la redacción «dos o tres palabras, sin dígito, sin # y que no sea un código en mayúsculas» también deja fuera identificadores que el episodio ya guarda. Con el filtro puesto fallan 15 tests. Salen «Elemont MH», «Tablero norte», «Tablero sur» y «operador de puerta». «Elemont MH» es el equipo del caso. «Tablero norte» mantiene abierta una aclaración de referente. «operador de puerta» sigue en el episodio de la puerta Fermator.
+
+Impacto: la regla cambia qué nombres de equipo conserva el episodio, no solo «Modo esclavo». Una negación posterior de «Tablero norte» ya no lo encontraría. Las comprobaciones y el prompt sin plano no dependen de esta regla.
+
+Alternativas: aplicar la regla y corregir esos tests; conservarla solo si alguna palabra es un código en mayúsculas o trae un dígito, que salva «Elemont MH» y sigue quitando «Tablero norte» y «operador de puerta»; o dejar el almacén como está.
+
+Recomendación: dejar el almacén como está hasta que otro modelo fije una regla que quite «Modo esclavo» y conserve esos nombres. No añadir una lista de síntomas.
+
+Siguiente: F2 no usa esa regla. Puede empezar cuando este commit esté hecho, con el ledger de ingesta y sin escritura en S3. La suite seguida dio 4951 corridas, 2 fallos de hash del prompt (actualizados a `cc875e4132b4391d2d581fe50e37170a3da302bca0432cc81343af1d6f4c9a39` y al archivo `1844024b18bb9c373c8e42e0617e32cde68166c85ad0345ac51f495f9b9e1638`) y 18 errores de sistema en Selenium. Esos dos hashes quedaron verdes al volver a correrlos.
+
+

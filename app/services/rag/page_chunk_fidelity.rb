@@ -65,6 +65,54 @@ module Rag
       }.join.gsub(/\n{3,}/, "\n\n").strip
     end
 
+    # Lines printed on at least half of the pages, and on three or more.
+    # The caller passes one document's page texts. A folio is not this set:
+    # its digits change on every page, and FOLIO_LINE strips it on its own.
+    def self.running_matter_lines(page_texts)
+      grouped = Hash.new { |lines, line| lines[line] = [] }
+      texts = normalize_page_map(page_texts)
+      texts.each do |number, text|
+        text.to_s.lines.map { |line| collapse_line(line) }.reject(&:empty?).uniq.each do |line|
+          next if folio_line?(line)
+
+          grouped[line] << number
+        end
+      end
+      return [] if texts.empty?
+
+      half = texts.size / 2.0
+      grouped.select { |_line, pages| pages.size >= 3 && pages.size >= half }.keys.sort
+    end
+
+    # Four local measures. Nothing here reads a PDF or writes a chunk.
+    # Precision is the pre-merge narrative against its own page. Recall of the
+    # opening and of numeric literals uses recall_chunks when the merge has
+    # moved text; otherwise it uses chunks. A thin or blank text layer is not
+    # verifiable. Presence never verifies table column order.
+    def self.assess_coverage(page_texts:, chunks:, discards: {}, page_count: nil, recall_chunks: nil, anchor_page: nil)
+      texts = normalize_page_map(page_texts)
+      bodies = normalize_coverage_chunks(chunks)
+      recalled = recall_chunks.nil? ? bodies : normalize_coverage_chunks(recall_chunks)
+      dropped = normalize_discards(discards)
+      running = running_matter_lines(texts)
+      numbers = coverage_page_numbers(texts, bodies, dropped, page_count)
+      anchor = anchor_page&.to_i
+      anchor = bodies.pluck(:page).min if anchor.nil? || anchor <= 0
+
+      pages = numbers.index_with { |number|
+        assess_page(
+          number,
+          text: texts[number].to_s,
+          chunks: bodies,
+          recalled: recalled,
+          discarded: dropped.key?(number),
+          running: running,
+          anchor: anchor
+        )
+      }
+      { running_lines: running, pages: pages }
+    end
+
     def self.best_page(body, pages)
       scored = pages.map { |page| [ overlap_score(body, page), page ] }
       score, page = scored.max_by { |row| row[0] }
@@ -224,5 +272,213 @@ module Rag
       I18n.transliterate(text.to_s).downcase.gsub(/[^a-z0-9]+/, " ").squeeze(" ").strip
     end
     private_class_method :norm
+
+    # Below this, the narrative was not written from the page. A paraphrase
+    # that still uses the page's words stays above it.
+    PRECISION_FLOOR = 0.40
+    # A text layer with fewer significant words cannot support alignment.
+    # Blank and diagram-title pages are not verifiable, same as a scan.
+    MIN_TEXT_TOKENS = 12
+    OPENING_WINDOW = 8
+    OPENING_PREFIX = 40
+    OPENING_MIN_SIGNIFICANT = 4
+    FOLIO_LINE = /(?:p[aá]g(?:ina)?|page)\.?\s*\d{1,4}\s*(?:\/|de|of)\s*\d{1,4}/i
+    LITERAL_PATTERN = /#\d+|\d+,\d+|\d+\.\d+|\d+\s*V\b/i
+
+    def self.assess_page(number, text:, chunks:, recalled:, discarded:, running:, anchor:)
+      stripped = strip_furniture(text, running)
+      verifiable = significant_count(stripped) >= MIN_TEXT_TOKENS
+      narratives = precision_narratives(chunks, number, anchor)
+      precision = verifiable ? precision_ratio(narratives.join("\n"), text) : nil
+      recall = recall_texts(recalled, number).join("\n")
+      {
+        accounted: chunks.any? { |chunk| chunk[:page] == number } || discarded,
+        discarded: discarded,
+        verifiable: verifiable,
+        precision: precision,
+        precision_low: verifiable && !precision.nil? && precision < PRECISION_FLOOR,
+        added_lines: verifiable ? added_lines_for(narratives, norm(text), running) : [],
+        opening_present: verifiable ? opening_present?(stripped, recall) : nil,
+        missing_numbers: verifiable ? missing_literals(stripped, recall) : nil,
+        layout_order_verified: false
+      }
+    end
+    private_class_method :assess_page
+
+    def self.coverage_page_numbers(texts, chunks, discards, page_count)
+      if page_count.to_i.positive?
+        (1..page_count.to_i).to_a
+      else
+        (texts.keys + chunks.pluck(:page) + discards.keys).uniq.sort
+      end
+    end
+    private_class_method :coverage_page_numbers
+
+    def self.normalize_page_map(page_texts)
+      Array(page_texts).each_with_object({}) do |(number, text), map|
+        map[number.to_i] = text.to_s
+      end
+    end
+    private_class_method :normalize_page_map
+
+    def self.normalize_coverage_chunks(chunks)
+      Array(chunks).filter_map do |chunk|
+        next if chunk.blank?
+
+        values = chunk.respond_to?(:deep_stringify_keys) ? chunk.deep_stringify_keys : {}
+        source = values["source_pdf_page"]
+        {
+          page: values["page"].to_i,
+          text: values["text"].to_s,
+          source_pdf_page: source.present? ? source.to_i : nil
+        }
+      end
+    end
+    private_class_method :normalize_coverage_chunks
+
+    def self.normalize_discards(discards)
+      Array(discards).each_with_object({}) do |(number, reason), map|
+        map[number.to_i] = reason
+      end
+    end
+    private_class_method :normalize_discards
+
+    def self.precision_narratives(chunks, page, anchor)
+      chunks.filter_map do |chunk|
+        next unless chunk[:page] == page
+        next if page == anchor && s0_narrative?(chunk[:text])
+
+        narrative_text(chunk[:text])
+      end
+    end
+    private_class_method :precision_narratives
+
+    def self.s0_narrative?(text)
+      narrative = narrative_text(text)
+      narrative.match?(/\bS0\b/) && narrative.match?(/DOCUMENT IDENTIFICATION/i)
+    end
+    private_class_method :s0_narrative?
+
+    def self.narrative_text(text)
+      _header, body = split_header(text.to_s)
+      narrative, _records = split_records(body)
+      narrative
+    end
+    private_class_method :narrative_text
+
+    def self.precision_ratio(narrative, page_text)
+      words = tokens(narrative).select { |word| word.length >= 4 }
+      return nil if words.empty?
+
+      page_norm = norm(page_text)
+      hits = words.count { |word| page_norm.match?(/\b#{Regexp.escape(word)}\b/) }
+      hits.to_f / words.size
+    end
+    private_class_method :precision_ratio
+
+    def self.added_lines_for(narratives, page_norm, running)
+      narratives.flat_map(&:lines).filter_map do |line|
+        stripped = collapse_line(line)
+        next if stripped.empty? || folio_line?(stripped) || running.include?(stripped)
+        next if tokens(stripped).none? { |word| word.length >= 4 }
+        next if aligned_line?(stripped, page_norm)
+
+        stripped
+      end
+    end
+    private_class_method :added_lines_for
+
+    def self.opening_present?(stripped_page, recall_text)
+      paragraph = opening_paragraph(stripped_page)
+      return nil if paragraph.nil?
+
+      words = tokens(paragraph).first(OPENING_PREFIX)
+      return nil if words.size < 4
+
+      window = [ OPENING_WINDOW, words.size ].min
+      hay = norm(recall_text)
+      words.each_cons(window).any? { |gram| hay.include?(gram.join(" ")) }
+    end
+    private_class_method :opening_present?
+
+    def self.opening_paragraph(text)
+      paragraphs(text).find { |paragraph|
+        tokens(paragraph).count { |word| word.length >= 4 } >= OPENING_MIN_SIGNIFICANT
+      }
+    end
+    private_class_method :opening_paragraph
+
+    def self.missing_literals(stripped_page, recall_text)
+      number_literals(stripped_page).reject { |literal| literal_present?(literal, recall_text) }
+    end
+    private_class_method :missing_literals
+
+    def self.number_literals(text)
+      seen = {}
+      text.to_s.scan(LITERAL_PATTERN).filter_map do |literal|
+        cleaned = literal.to_s.strip.gsub(/\s+/, " ")
+        key = compact_form(cleaned)
+        next if key.blank? || seen[key]
+
+        seen[key] = true
+        cleaned
+      end
+    end
+    private_class_method :number_literals
+
+    def self.literal_present?(literal, text)
+      needle = compact_form(literal)
+      return false if needle.blank?
+
+      escaped = Regexp.escape(needle)
+      pattern = needle.match?(/\A#?\d/) ? /(?<!\d)#{escaped}(?!\d)/ : /#{escaped}/
+      compact_form(text).match?(pattern)
+    end
+    private_class_method :literal_present?
+
+    def self.compact_form(text)
+      I18n.transliterate(text.to_s).downcase.gsub(/\s+/, "")
+    end
+    private_class_method :compact_form
+
+    def self.recall_texts(chunks, page)
+      chunks.flat_map do |chunk|
+        pieces = []
+        pieces << chunk[:text] if chunk[:page] == page || chunk[:source_pdf_page] == page
+        pieces.concat(marked_regions(chunk[:text], page))
+        pieces
+      end
+    end
+    private_class_method :recall_texts
+
+    def self.marked_regions(text, page)
+      text.to_s.scan(/\[PDF_PAGE:\s*#{page.to_i}\](.*?)(?=\[PDF_PAGE:|\z)/m).flatten
+    end
+    private_class_method :marked_regions
+
+    def self.strip_furniture(text, running)
+      text.to_s.lines.reject { |line|
+        stripped = collapse_line(line)
+        next false if stripped.empty?
+
+        folio_line?(stripped) || running.include?(stripped)
+      }.join
+    end
+    private_class_method :strip_furniture
+
+    def self.folio_line?(line)
+      collapse_line(line).match?(FOLIO_LINE)
+    end
+    private_class_method :folio_line?
+
+    def self.collapse_line(line)
+      line.to_s.strip.delete("\f").gsub(/\s+/, " ")
+    end
+    private_class_method :collapse_line
+
+    def self.significant_count(text)
+      tokens(text).count { |word| word.length >= 4 }
+    end
+    private_class_method :significant_count
   end
 end

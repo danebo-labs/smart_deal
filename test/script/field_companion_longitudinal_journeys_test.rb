@@ -81,6 +81,22 @@ class FieldCompanionLongitudinalJourneysTest < ActiveSupport::TestCase
     assert_includes result["faults"], "repeated_critical_request"
   end
 
+  test "a case record quote is not a repeated guide request and a real request is" do
+    runner = Journeys::Runner.allocate
+    state = empty_state.merge("observations" => [ "comprobé visualmente la guía de la puerta" ])
+    record = "Registro del caso. Observaciones: «comprobé visualmente la guía de la puerta»."
+    request = "Revisa otra vez la guía de la puerta."
+    neutral = "Sigo con el síntoma de la puerta."
+
+    quoted = guide_result(answer: "#{record}\n\n#{neutral}", history: neutral)
+    preceded = guide_result(answer: "#{record}\n\n#{request}", history: request)
+    bare = guide_result(answer: request, history: nil)
+
+    assert_equal false, runner.send(:repeated_request?, quoted, state)
+    assert_equal true, runner.send(:repeated_request?, preceded, state)
+    assert_equal true, runner.send(:repeated_request?, bare, state)
+  end
+
   test "a seeded foreign applicability is detected" do
     result = Score.evaluate([ base_turn("B3", 3, journey: "B", foreign_applicability: true) ])
     assert_includes result["faults"], "foreign_applicability"
@@ -159,26 +175,13 @@ class FieldCompanionLongitudinalJourneysTest < ActiveSupport::TestCase
       assert_not_includes body, "ERROR ArgumentError", name
       assert_not_includes body, "LiveRefused", name
     end
-    # The shown answer may open with the case record. That record quotes the
-    # stored guide observation, and the scorer counts the quote as a repeated
-    # request. L1 and L2 then fail with that fault alone. Any other fault,
-    # a missing fact, or a flag that is not the record still fails this test.
-    quoted = packet["turns"].select { |turn| turn["repeated_critical_request"] }
     assert_equal [], packet.dig("verdict", "absences")
-    assert_equal (quoted.empty? ? [] : [ "repeated_critical_request" ]), packet.dig("verdict", "faults")
-    quoted.each do |turn|
-      assert_match(/\ARegistro del caso\./, turn["answer_excerpt"])
-      assert_match(/\AA/, turn["journey"])
-      assert_operator turn["n"].to_i, :>=, 6
-      observed = [ turn.dig("state", "goal"), *Array(turn.dig("state", "observations")) ].join("\n")
-      assert_match(/gu[ií]a de la puerta/i, observed)
-    end
-    level = quoted.empty? ? "PASS" : "FAIL"
-    assert_equal level, packet.dig("verdict", "L1", "A_no_focus")
-    assert_equal level, packet.dig("verdict", "L1", "A_selected_elemont")
-    assert_equal level, packet.dig("verdict", "L1", "B")
-    assert_equal level, packet.dig("verdict", "L2", "A_no_focus")
-    assert_equal level, packet.dig("verdict", "L2", "A_selected_elemont")
+    assert_equal [], packet.dig("verdict", "faults")
+    assert_equal "PASS", packet.dig("verdict", "L1", "A_no_focus")
+    assert_equal "PASS", packet.dig("verdict", "L1", "A_selected_elemont")
+    assert_equal "PASS", packet.dig("verdict", "L1", "B")
+    assert_equal "PASS", packet.dig("verdict", "L2", "A_no_focus")
+    assert_equal "PASS", packet.dig("verdict", "L2", "A_selected_elemont")
     assert_equal "PASS", packet.dig("verdict", "L3", "no_focus")
     assert_equal "PASS", packet.dig("verdict", "L3", "selected_elemont")
     assert_equal "A11", packet.dig("first_eviction", "A_no_focus", "turn")
@@ -334,6 +337,10 @@ class FieldCompanionLongitudinalJourneysTest < ActiveSupport::TestCase
       "stale_mutated" => false,
       "expect" => []
     }.merge(extra.stringify_keys)
+  end
+
+  def guide_result(answer:, history:)
+    RagQueryConcern::RagResult.new(answer: answer, history_answer: history)
   end
 
   def empty_state

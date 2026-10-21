@@ -1079,14 +1079,27 @@ module FieldCompanion
         "deterministic"
       end
 
+      # The shown answer may open with the case record. That record quotes a
+      # stored observation. The assistant request is the history copy, which
+      # the same attachment already separates. A nil history means there was
+      # no record, so the shown answer is the request.
       def repeated_request?(result, state)
         return false unless result.respond_to?(:answer)
 
-        answer = result.answer.to_s
-        return false if answer.blank? || answer == STUB_ANSWER
+        request = assistant_request(result)
+        return false if request.blank? || request == STUB_ANSWER
 
-        blob = Score.state_has_text?(state, "guía de la puerta")
-        blob && answer.match?(/gu[ií]a de la puerta/i) && answer.match?(/revis|comprob|verifica/i)
+        Score.state_has_text?(state, "guía de la puerta") &&
+          request.match?(/gu[ií]a de la puerta/i) &&
+          request.match?(/revis|comprob|verifica/i)
+      end
+
+      def assistant_request(result)
+        if result.respond_to?(:history_answer) && !result.history_answer.nil?
+          result.history_answer.to_s
+        else
+          result.answer.to_s
+        end
       end
 
       def foreign_procedure?(result, state, prompt)

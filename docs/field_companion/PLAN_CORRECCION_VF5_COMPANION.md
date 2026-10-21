@@ -1,248 +1,395 @@
 # Corrección y validación del companion sobre el VF5
 
-Documento vivo. Opus lo revisa en este archivo. Tras esa revisión y la orden de ejecución, Grok 4.7 implementa, comprueba y actualiza este mismo documento. No se abren planes secundarios. Redactar este archivo no implementa, no llama modelos y no modifica S3, la KB ni el ledger.
-
-Archivo: `docs/field_companion/PLAN_CORRECCION_VF5_COMPANION.md`.
+Documento vivo. Grok 4.7 lo ejecuta tras la orden de ejecución, y actualiza este mismo archivo al cerrar cada fase. No se abren planes secundarios. Redactar o revisar este archivo no implementa, no llama modelos y no modifica S3, la KB ni los ledgers.
 
 ## Objetivo y alcance
 
-Conseguir, en la ruta normal y sobre artefactos corregidos del VF5, una orientación inicial pertinente, con pocas preguntas, documentación aplicable, caso conservado y distinción entre observación, comprobación, hipótesis y pendiente. El criterio sale del guion [Danebo guion intuitibilidad.pdf](/Users/lahirisan/Downloads/Danebo%20guion%20intuitibilidad.pdf): los diálogos son ilustrativos; los comentarios de Gonzalo son requisitos de producto, no procedimientos del fabricante.
+Conseguir, por la ruta normal y sobre artefactos corregidos del VF5, una primera orientación pertinente con pocas preguntas, documentación aplicable, caso conservado y distinción entre observación, comprobación, hipótesis y pendiente. El criterio sale del guion [Danebo guion intuitibilidad.pdf](/Users/lahirisan/Downloads/Danebo%20guion%20intuitibilidad.pdf). Sus diálogos son ilustrativos. Los comentarios de Gonzalo son requisitos de producto: el primer mensaje debe bastar, una o dos intervenciones, y nada que no tenga relación con la falla. No son procedimientos del fabricante.
 
-El VF5 es la muestra para corregir mecanismos generales. No se añaden reglas de este manual ni se declara válida la biblioteca. No hay episodio aceptado. Se conservan las capacidades ya demostradas: foco, continuidad de episodio y corrección del LED.
+El VF5 es la muestra para corregir mecanismos generales. No se añaden reglas de este manual ni se declara válida la biblioteca. Se conservan las capacidades ya demostradas: foco, continuidad de episodio y corrección del LED.
 
 Dentro de este ciclo:
 
-- Instrucción de extracción por página, cobertura determinista, continuidad en la ruta normal con procedencia persistida, ejemplos y `FIELD_RECORD`, re-procesamiento acotado sin subir el contrato, estado tipado del caso, y el contexto de generación de una avería.
-- Validación por capas, de menor a mayor costo, sobre los artefactos que cada capa realmente produce.
+- Ingesta: instrucción por página, texto de página en la fusión, procedencia de lo movido entre páginas, cobertura determinista y sustitución acotada del prefijo del VF5.
+- Caso: estado de comprobaciones en el episodio, ampliando la misma llamada del intérprete.
+- Generación: contexto de avería sin bloques de plano y sin la contradicción de formato.
+- Validación por capas, de menor a mayor costo, sobre los artefactos que cada capa produce.
 
-Fuera de este ciclo, y siguen en [docs/PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](../PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md):
+Fuera de este ciclo (siguen en [docs/PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md](../PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md)): orden 3 (plano Elemont, `EPISODIO_VALIDADO`), órdenes 4 y 5 (fotos, cambio de tema y retorno), selección automática por foto o código, rescate, escalamiento a ingeniería y cierre ante Gonzalo. Los hábitos generales de Gonzalo (serie de seguridad, reinicio de 380 V y 220 V, puertas abiertas en falla) no se codifican: no están en el pasaje VF5 y no autorizan una maniobra. Reprocesar otros manuales ya indexados tampoco entra.
 
-- Orden 1, ya comprobado: `field_companion:start_clean_case`. Se reutiliza; no se reabre.
-- Orden 3, plano Elemont, y el nombre `EPISODIO_VALIDADO`.
-- Órdenes 4 y 5: fotos, cambio de tema y retorno.
-- Selección automática desde foto o código, rescate de personas, escalamiento completo a ingeniería y cierre de campo ante Gonzalo.
-- Los hábitos generales que Gonzalo describe (serie de seguridad, reinicio de 380 V y 220 V, puertas abiertas en falla) no se codifican. No están en el pasaje VF5 del caso y no autorizan una maniobra.
-
-Qué sustituye este documento, solo como ruta de ejecución del orden 2 textual:
-
-- Tratar el fallo restante como un retoque único del contrato de generación.
-- Repetir los replays de fidelidad, continuidad, sección 5.6, Haiku contra Sonnet y la partición system/user.
-- Exigir la matriz de siete turnos o la variante de dos mensajes antes de juzgar el mecanismo.
-- Los párrafos de «siguiente acción» del orden 2 que apuntan a esos replays.
-
-No sustituye el archivo padre, sus evidencias ni sus aceptaciones parciales. El viernes 23 de octubre sigue anotado allí; este plan no lo reabre ni lo usa para saltarse un gate.
+Este documento sustituye, solo como ruta de ejecución del orden 2 textual, los replays de fidelidad, continuidad, sección 5.6, Haiku contra Sonnet y partición system/user; la matriz de siete turnos; y los párrafos de «siguiente acción» del orden 2 que apuntan a ellos. No sustituye el archivo padre, sus evidencias ni sus aceptaciones parciales.
 
 ## Estado inicial
 
-Verificado al redactar este archivo, el 21 de octubre de 2026:
+Verificado el 21 de octubre de 2026 en la revisión de Opus:
 
-- `HEAD` y `origin/main`: `b5fba1cf16fc364323cb57d8454a24889a201821`. `git diff` vacío de archivos seguidos. Cinco rutas sin seguimiento, todavía en disco para que Opus pueda abrirlas durante esta revisión: `app/services/rag/vf5_system_role_admission.rb`, `app/services/rag/vf5_system_role_comparison.rb`, `script/field_companion/vf5_system_role_comparison.rb`, `test/fixtures/files/field_companion/vf5_bound_20261020T1728Z/`, `test/services/rag/vf5_system_role_admission_test.rb`. No se commitean. Al empezar la ejecución se borran, antes de cualquier otro cambio, para que el diff de implementación nazca de un árbol limpio. La ruta normal arma un solo mensaje `user` salvo `RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE=1`. Ese flag queda apagado.
-- PDF [docs/field_companion/fuentes/VF5.pdf](fuentes/VF5.pdf): SHA-256 `be7a39a3490c92c8381cb883402760cb07d10b0a3beda5348bed22f72abedf72`, 22 páginas. La portada no tiene folio. PDF 2–22 imprimen Pág. 1–21.
-- Ledger leído en `tmp/field_companion/vf5_generator_benchmark/assignment_spend.json`: 70 intentos, US$0,945161, `open: {}`, tope 96 intentos y US$4. Quedan 26 intentos y US$3,054839 de holgura acumulada. Los 15 intentos de la asignación histórica no son una reserva: `open` está vacío. Última entrada: 2026-10-21T01:08:09Z. Antes de la primera llamada de este plan, el ejecutor vuelve a leer ese archivo. Si el saldo cambió, recalcula y no parte.
-- Los 30 objetos históricos y la captura del primer turno siguen siendo la evidencia de Codex y de Opus. No se recopilan aquí. Copias locales de lectura: `tmp/review_vf5/` y la sonda previa de dos páginas en `tmp/field_companion/local_ingestion/` (p5 y p13, Sonnet 5.5, fuera de la ruta normal). Esa sonda no certifica ingesta, índice ni recorrido.
+- `HEAD` y `origin/main`: `f8d70b7d404c40a9c60909f55f4d829ddbfeb071` (commit de este plan sobre `b5fba1c`). Cinco rutas sin seguimiento del experimento system/user: `app/services/rag/vf5_system_role_admission.rb`, `app/services/rag/vf5_system_role_comparison.rb`, `script/field_companion/vf5_system_role_comparison.rb`, `test/fixtures/files/field_companion/vf5_bound_20261020T1728Z/` (solo `b0005.txt`) y `test/services/rag/vf5_system_role_admission_test.rb`. Ningún archivo seguido las referencia. `RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE` queda apagado; la ruta normal arma un solo mensaje `user`.
+- PDF [docs/field_companion/fuentes/VF5.pdf](fuentes/VF5.pdf): SHA-256 `be7a39a3490c92c8381cb883402760cb07d10b0a3beda5348bed22f72abedf72`, 22 páginas, con capa de texto en todas. La portada no imprime folio. PDF 2–22 imprimen «Pág. N / 21», N = 1–21. `SectionPageContinuity::PRINTED_PAGE` ya lee esa forma.
+- Artefactos vivos del VF5, según los 30 sidecars copiados en `tmp/review_vf5/` (30 cuerpos y 30 sidecars, 112 `FIELD_RECORD`): `account_id` 1, `document_id` `be7a39a3490c92c8381cb883402760cb07d1`, `ingestion_path` `manual_batch_v1`, contrato `field_records_v8`, `original_source_uri` `s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf`, sin `topology_edge_count`. Prefijo derivado por `BatchResultsParserService::CHUNK_PREFIX_TPL`: `bulk_chunks/1/be7a39a3490c92c8381cb883402760cb07d1/`. No hay chunk de la página 3.
+- Ledger de asignación `tmp/field_companion/vf5_generator_benchmark/assignment_spend.json`: 70 intentos, US$0,945161 comprometidos, `open: {}`, `unknown` 0, topes 96 y US$4. Última entrada: 2026-10-21T01:08:09Z.
+- Evidencia de referencia: informe de Codex y revisión de Opus del 21 de octubre, captura `vf5-bound-20261020T1728Z`, sonda local de p5 y p13 en `tmp/field_companion/local_ingestion/` (Sonnet 5.5 directo, 2849/5859 y 3140/5937 tokens). Con el prompt de sistema actual, p5 ya salió sin el encabezado S4 y sin la nota inventada, y p13 conservó su apertura. Esa sonda no certifica ingesta, índice ni recorrido.
 
-Diagnóstico de referencia, sin copiar sus inventarios: el informe de Codex del 21 de octubre de 2026 y la revisión de Opus de la misma fecha. Código que sostiene la dirección:
+Código que sostiene la dirección:
 
-- La instrucción usa el índice PDF y el total de páginas conservadas: [app/services/bulk_cost_v2_request_builder.rb](../../app/services/bulk_cost_v2_request_builder.rb) (`total = kept_pages.size`), [app/services/manual_batch_ingestion_service.rb](../../app/services/manual_batch_ingestion_service.rb), [app/services/single_file_chunking_service.rb](../../app/services/single_file_chunking_service.rb) (`kept_pages.size`), [app/services/batch_page_retry_service.rb](../../app/services/batch_page_retry_service.rb) (`total_kept`) y [app/prompts/batch_chunking_prompt.rb](../../app/prompts/batch_chunking_prompt.rb) (`Page N of M`). Es una hipótesis fuerte de conflicto con el folio impreso. No es una causa demostrada. p14 la ilustra; no la prueba.
-- `SectionPageContinuity` solo corre si hay `page_texts`. Los llamadores normales no lo pasan: [app/jobs/ingest_batch_results_job.rb](../../app/jobs/ingest_batch_results_job.rb), [app/jobs/ingest_manual_batch_results_job.rb](../../app/jobs/ingest_manual_batch_results_job.rb), [app/services/single_file_chunking_service.rb](../../app/services/single_file_chunking_service.rb). `_page` se borra en [app/services/section_page_continuity.rb](../../app/services/section_page_continuity.rb) antes de entregar el registro. Un texto que el modelo nunca emitió no lo restaura la continuidad.
-- La deduplicación es `(cuenta, SHA-256, field_records_v8)` en [app/services/content_dedup_service.rb](../../app/services/content_dedup_service.rb). La huella del system prompt no entra en la clave. Cambiar la instrucción de usuario no evita el hit. [script/AGENTS.md](../../script/AGENTS.md) prohíbe subir `INGESTION_CONTRACT_VERSION` para sortear un defecto de parseo. No se sube.
-- Un turno web con identidad conocida, pin y modo `owner` hace una llamada de intérprete (`TurnInterpreter`, hasta 3 intentos solo si el error es transitorio) y una `generate_text`. `Retrieve` va aparte y no entra en el ledger de 96 ni en `bedrock_queries`. En modo `owner`, `SemanticQueryAnalyzer.observe` no llama al modelo. El pin usa `RagRetrievalProfile::PINNED_DOCUMENT_RESULTS = 3`. La consulta compuesta cabe en 442 caracteres (`FollowupQueryRewriter::MAX_COMPOSED_CHARS`); el turno puede quedar íntegro y aun así marcar `truncated` al soltar otros componentes.
-- El prompt ya prohíbe dar por hecha una comprobación no reportada y jerarquizar causas sin respaldo (`FIELD_REPORT_PARAGRAPH`). La captura lo incumplió. También contradice «como máximo tres secciones lógicas» con «sin encabezados», y mete «Según el plano» y `TOPOLOGY_EDGE` en una avería de puerta. Añadir más reglas de prosa no es la corrección.
-- `PageRelevanceFilter.filter_pages` manda todo PDF multipágina a Haiku por ventanas de 20. El VF5 son 2 llamadas de filtro, con un reintento si el JSON no parsea. La extracción de página es Sonnet 5.5 directo (`claude-sonnet-5-5-direct`: US$0,002 / US$0,01 por mil tokens). La sonda local midió p5 en 2849/5859 tokens (unos US$0,064) y p13 en 3140/5937 (unos US$0,066). Esos input no demuestran si el system prompt iba en caché. El techo de abajo cubre esa duda. Esas llamadas van a `bedrock_queries` (`ingestion_parse` / filtro), no al ledger de 96. El cliente puede reintentar dos veces un overload.
-- La ingesta no escribe manifiestos bajo `bulk_chunks/`. Un reemplazo de objetos pasa por `S3DocumentsService`, que invalida `SectionNeighborExpander`.
+- El total de la instrucción es el número de páginas conservadas, no el del PDF: [bulk_cost_v2_request_builder.rb](../../app/services/bulk_cost_v2_request_builder.rb) y [manual_batch_ingestion_service.rb](../../app/services/manual_batch_ingestion_service.rb) (`total = kept_pages.size`), [single_file_chunking_service.rb](../../app/services/single_file_chunking_service.rb) (`kept_pages.size`), [batch_page_retry_service.rb](../../app/services/batch_page_retry_service.rb) (`total_kept`) y [batch_chunking_prompt.rb](../../app/prompts/batch_chunking_prompt.rb) (`Page N of M`). El p14 histórico dice que «el contenido de esta página (p. 14/21) no ha sido transmitido» y añade un 9.5 que la página no imprime. Ese es el conflicto esperado entre índice y folio. Sigue siendo una hipótesis: la cobertura es obligatoria aunque falle.
+- `ChunkMergerService` solo llama a `SectionPageContinuity` si recibe `page_texts`. Ningún llamador normal se los pasa: [ingest_batch_results_job.rb](../../app/jobs/ingest_batch_results_job.rb), [ingest_manual_batch_results_job.rb](../../app/jobs/ingest_manual_batch_results_job.rb) y [single_file_chunking_service.rb](../../app/services/single_file_chunking_service.rb). `release_internal!` borra `_page`, así que el parser renderiza un registro movido con la página del chunk que lo recibe. `PageChunkFidelity.strip_running_matter` reconoce cabeceras con patrones de este manual («Módulo electrónico», `DOC-…`). En otro manual, la cabecera impide detectar la apertura a media lista.
+- El prompt de sistema de extracción ya prohíbe añadir encabezados o notas, ya exige conservar la apertura literal y ya mantiene los ejemplos como ejemplos (`BatchChunkingPrompt`, reglas de apertura, de etiquetas S y de ejemplos). La instrucción de usuario no debe repetirlo.
+- La deduplicación es `(cuenta, SHA-256, field_records_v8)` ([content_dedup_service.rb](../../app/services/content_dedup_service.rb)). Volver a subir el PDF no re-parsea. [script/AGENTS.md](../../script/AGENTS.md) prohíbe subir `INGESTION_CONTRACT_VERSION` para sortearlo.
+- `BatchResultsParserService#call` con `ingestion_path: "manual_batch_v1"` valida el JSON, exige `account_id` y `document_uid`, borra el prefijo con `S3DocumentsService#delete_prefix` y lo reescribe como `chunk_p<página>_<n>.txt` y sus sidecars. Tanto el borrado como la escritura invalidan `SectionNeighborExpander`. Un fallo del borrado solo deja un aviso, así que pueden quedar claves sobrantes.
+- La sincronización de la KB es `start_ingestion_job` sobre la fuente de datos, como en [script/patch_elemont_chunk_p5_1_botonera_branch.rb](../../script/patch_elemont_chunk_p5_1_botonera_branch.rb). La fuente abarca todo `bulk_chunks/`, no un documento: el job es incremental, pero recoge cualquier otro cambio pendiente del bucket.
+- Turno web con identidad conocida, pin y modo `owner`: una llamada de intérprete (`TurnInterpreter`, hasta 3 intentos solo ante error transitorio) y una `generate_text`. `Retrieve` va aparte. `RagRetrievalProfile::PINNED_DOCUMENT_RESULTS = 3`. La consulta compuesta cabe en 442 caracteres (`FollowupQueryRewriter::MAX_COMPOSED_CHARS`).
+- `TurnPerception` ya devuelve `observations` como fragmentos literales del turno, e `InterpreterPayloadContract` rechaza lo que no es literal. `WorkContextReducer` ya sustituye y recorta observaciones corregidas. `SessionContextBuilder` las muestra en `## Active Field Problem`, con topes de caracteres.
+- Generación: `generation.txt` pide «Use at most three logical sections» y `web_delivery_channel_directive` pide «No headings or section titles». Las reglas de `TOPOLOGY_EDGE` de `generation.txt` y las viñetas de plano y etiquetas de `DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT` («Según el plano», distinguir dos etiquetas) entran en cada turno de identidad, haya o no un plano. `FIELD_REPORT_PARAGRAPH` ya prohíbe cerrar una comprobación no reportada y jerarquizar causas sin respaldo; la captura lo incumplió. Más prosa de reglas no es la corrección.
+- Caso nuevo: si el intérprete devuelve `new_work`, `ConversationSession` abre un episodio nuevo en la misma sesión, y `start_new_case!` conserva los pins (`pins_after = pins_before`). `field_companion:start_clean_case` es un reinicio operativo: además vacía `document_focus` y `active_entities`, y con ellos el pin.
+- Control de gasto real: `LocalPassLedger` (con `RAG_LOCAL_PASS_GUARD=1`, topes de proceso, `AWS_MAX_ATTEMPTS=1` y base local) protege las llamadas de `BedrockClient` antes del SDK. Con `RAG_ASSIGNMENT_SPEND_PATH`, además reserva en el ledger acumulado de 96 intentos y US$4. El filtro Haiku (`PageRelevanceFilter`) y la extracción (`ClaudeChunkingClient`) van a la API de Anthropic sin ese guardia. Sus clientes se crean con los reintentos por defecto del SDK, y `ClaudeChunkingClient` reintenta además dos veces ante un *overload*. Ambos clientes se pueden inyectar (`haiku_client:` y `client:`). `TrackBedrockQueryJob` escribe `bedrock_queries` de forma asíncrona: en local solo aparece si corre un worker.
 
-## Decisiones ya tomadas
+## Archivos experimentales: se conservan, fuera de alcance
 
-1. Dirección: alineación selectiva del pipeline existente. No basta reparar la página 12. No se crea un contrato nuevo ni un verificador universal de documentos.
-2. `#21` pertenece al síntoma «La puerta se abre pero no se cierra» (PDF 12, impresa 11, sección 8.2), junto con el LED, `#8` y `#12`. No es una comprobación de «La puerta se re-abre sola». Esa sí tiene las tres comprobaciones de sensibilidad `#54`, fotocélula y obstrucción, más la continuación condicional al abrir la PDF 13. El chunk de la página 12 debe contener `#21` bajo su síntoma. La respuesta del caso «se reabre sola» no debe presentarlo como paso de ese síntoma. La disyunción del LED está en 5.6 (PDF 7, `chunk_p7_3` histórico): fotocélula o entrada de reapertura. Se usa cuando ese pasaje está en el contexto; su ausencia en el top 3 histórico no se corrige metiendo `#21` en el caso equivocado. La inversión conocida de `#8` y `#12` frente a las secciones 4 y 5.2 no rechaza este ciclo.
-3. La instrucción dirá que el adjunto es exactamente la página a extraer, que el número es el índice PDF, que el total es el de las páginas del PDF y que el folio impreso puede diferir. No dirá «página N de páginas conservadas». Pedirá emitir solo lo visible, no declarar que la página no llegó, no inventar encabezados ni notas, conservar la apertura y marcar los ejemplos como ejemplos. La cobertura sigue siendo obligatoria aunque la hipótesis de paginación falle.
-4. Continuidad en la ruta normal: los tres llamadores de ingesta pasan `page_texts` extraídos con la misma capa de texto que ya usa el filtro. La procedencia movida se guarda en un campo real (`source_pdf_page`), no en `_page`. El folio impreso se lee del texto (`Pág. N`) y queda vacío si la página no lo imprime. No se calcula folio = índice − 1.
-5. Un descarte del filtro es un resultado registrado en memoria y en el informe local de la corrida. No se sube un manifiesto a `bulk_chunks/`. Página sin chunk y sin descarte es defecto. Un cuerpo que dice no haber recibido la página no se indexa: se reintenta una vez con `BatchPageRetryService` y, si sigue mal, queda la marca de página degradada ya existente.
-6. `promoted_example?` se mide sobre los 112 registros históricos. Se ajusta solo si descarta un registro que no es un ejemplo. Un ejemplo sigue siendo ejemplo; una etiqueta que está en la página y no es ejemplo se conserva. El caso ya visto de la salida FOTOCÉLULA es la regresión de ese ajuste.
-7. El estado tipado se hace primero con lógica determinista sobre el texto literal del técnico: observado, no observado, comprobado con resultado, no comprobado, sin intervenciones. Persiste en el episodio, cabe en el tope de bytes actual y no añade una llamada. Ampliar el tool del intérprete, dentro de la misma llamada, solo si un resultado reportado no cabe en esas formas. «Modo esclavo» y otros síntomas dejan de guardarse como identificador de equipo. El reducer ya rechaza identificadores de cuatro palabras o más; este hueco es el de dos o tres palabras que no son designador.
-8. En un turno de avería que no pregunta por plano, esquema o etiqueta, el prompt de identidad no inyecta el bloque de plano ni las reglas de `TOPOLOGY_EDGE`. Se elimina la contradicción entre «tres secciones» y «sin encabezados»: la respuesta web de avería es prosa, sin títulos exigidos. El bloque tipado del caso es la fuente de qué está abierto. No se añade otra lista de prohibiciones.
-9. La posición en top 3 o top 5 no elige sola el componente. Después de sincronizar, un `Retrieve` de solo lectura con la consulta exacta del primer turno, top 3 y top 5, sin rerank, guarda request, score, URI y cuerpo. Si el pasaje corregido está en el top 3, no se toca la recuperación. Si falta y la consulta salió truncada a 442 caracteres, el primer candidato es `QueryComposer`, no `RagRetrievalProfile`. Subir el top-k solo si el pasaje está en el top 5, la consulta ya nombra el síntoma y no fue truncada. Si no está en el top 5, se inspeccionan consulta y texto del chunk antes de cambiar nada. No se cambian a la vez documento, estado, prompt y recuperación en la corrida que debe aislar un efecto.
-10. Un replay local no valida S3, índice ni `POST /rag/ask`. La conversación integrada corre en local contra la KB `Y7RZWMFJSR`, con el código nuevo, sin editar `.env` y sin desplegar. El proceso exporta la KB, el modo `owner`, episodio, turno y alcance de identidad, como en la captura `vf5-bound-20261020T1728Z`.
-11. La aceptación de este ciclo no es la matriz de siete turnos. Son cuatro intervenciones, descritas en la fase 8. Conservar una comprobación no obliga a recitarlas todas. La condición de la PDF 13 no se prescribe en la primera respuesta. La conversación nueva, vía `start_clean_case`, no arrastra hechos ni el pin del VF5. No hay tests de frase exacta ni tests que solo reproduzcan la implementación: los de estado miran campos; los de respuesta se juzgan por significado.
-12. No se repiten los experimentos ya fallidos. La pregunta nueva de extracción es si la instrucción corregida, el parser normal, la fusión con `page_texts` y la cobertura sostienen las páginas que la sonda de octubre no cubrió. La pregunta nueva de generación es si el estado tipado y el prompt sin bloques de plano, sobre esos chunks certificados, dejan de cerrar comprobaciones y de jerarquizar `#54`.
-13. Los cinco archivos de la partición system/user no se commitean y no se conservan en el árbol de trabajo. La hipótesis ya se ejecutó: tres controles y tres tratamientos del primer mensaje, con `RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE=1` solo en el tratamiento. Los dos brazos fallaron; el tratamiento añadió una maniobra y un ajuste que el contexto no autorizaba. `t2` era otra muestra, no el turno 2. El código vive en `app/services` y en el suite de tests, así que un commit lo dejaría como camino cargable, no como archivo de laboratorio. Además fija `RESERVE_CALLS = 15`, que este plan ya descartó como reserva. La referencia queda en este párrafo. El prompt capturado sigue en la captura `vf5-bound-20261020T1728Z`; las seis respuestas y el ledger están en `tmp/field_companion/vf5_system_role/` y en `assignment_spend.json`. Esos `tmp` no se commitean. No se restaura el arnés.
+Los cinco archivos sin seguimiento se conservan en su sitio, con su contenido. No se borran, no se mueven, no se modifican y no se commitean. Primer paso del ejecutor:
 
-## Presupuesto que autoriza la orden de ejecución
+1. Añadir las cinco rutas a `.git/info/exclude`. Es local y no se commitea. Así no aparecen en `git status`, y un `git add` por directorio no las recoge.
+2. Commitear solo con rutas explícitas (`git add <ruta>`), nunca con `git add -A` ni `git add .`.
+3. Correr la suite solo con los tests seguidos: `bin/rails test $(git ls-files 'test/**/*_test.rb')`. El test experimental no entra en la señal de este ciclo. Si un cambio de este ciclo lo rompe, se anota y no se toca.
 
-La orden de ejecución autoriza solo estos techos. Llegar al tope detiene la fase y se anota aquí. No autoriza el paquete remoto.
+La hipótesis system/user ya se cerró: tres controles y tres tratamientos del primer mensaje fallaron, y el tratamiento añadió una maniobra no autorizada. Sus respuestas y su ledger están en `tmp/field_companion/vf5_system_role/` y en `assignment_spend.json`. No se restaura ese arnés y su `RESERVE_CALLS = 15` no rige en este plan.
 
-Ingesta, fuera del ledger de 96, techo 33 llamadas y US$2,50, lo que ocurra antes:
+## Decisiones
 
-- 2 llamadas Haiku de filtro sobre las 22 páginas, más hasta 2 reintentos de JSON.
-- 8 extracciones Sonnet de la sonda: PDF 3, 5, 6, 12, 13, 14, 19 y 22. El total informado al modelo es 22, no 8.
-- Hasta 4 reintentos de cobertura. Si fallan más de 4 páginas de la sonda, no se reintenta el resto: se para y se actualiza este documento.
-- 14 extracciones del resto solo si la sonda sale. No se vuelven a pagar las 8. 8 + 14 = 22.
-- Hasta 3 llamadas extra por overload en toda la ingesta.
-- Cifra de planificación: unos US$0,07 por página Sonnet según la sonda local, más US$0,40 de techo para el filtro. El ejecutor sustituye la cifra por la suma real de `bedrock_queries` de esa correlación antes de abrir la tanda siguiente. El proceso de ingesta no define la ruta del ledger de 96.
+1. **Dirección.** Alineación selectiva del pipeline existente. No basta reparar la página 12. No hay contrato nuevo ni verificador universal.
 
-El techo de 33 es 2 filtros + 2 reintentos de JSON + 8 de sonda + 4 de cobertura + 14 del resto + 3 de overload.
+2. **Semántica del caso.** `#21` pertenece a «La puerta se abre pero no se cierra» (PDF 12, impresa 11, sección 8.2), junto con el LED, `#8` y `#12`. «La puerta se re-abre sola» tiene tres comprobaciones: sensibilidad `#54`, fotocélula no activada y ausencia de obstrucción mecánica. Su continuación condicional abre la PDF 13: «En caso que el problema persista, desconectar la fotocélula…». El chunk de p12 debe contener `#21` bajo su síntoma. La respuesta del caso «se reabre sola» no lo presenta como paso de ese síntoma. La disyunción del LED está en 5.6 (PDF 7): fotocélula o entrada de reapertura. Se usa cuando ese pasaje está en el contexto. La inversión conocida de `#8` y `#12` frente a las secciones 4 y 5.2 no rechaza este ciclo.
 
-Ledger de asignación, techo 17 intentos y US$0,50 adicionales sobre el saldo leído al arrancar:
+3. **Instrucción por página.** `page_user_content` dice solo lo que el sistema no dice: el documento adjunto es exactamente la página a extraer; su número es el índice del PDF; el total es el número de páginas del PDF, no el de páginas conservadas; el folio impreso puede diferir del índice. Los cuatro llamadores (los tres de ingesta y `BatchPageRetryService`) pasan el total del PDF. Las reglas de apertura, encabezados y ejemplos siguen solo en el prompt de sistema. `INGESTION_CONTRACT_VERSION` no cambia.
 
-- Generación aislada: 3 `generate_text`. Si fallan, una corrección y otras 3. Máximo 6. Si la segunda terna falla, no hay fase 8.
-- Conversación: 4 turnos por 2 llamadas (intérprete y generación) = 8, más 3 intentos de reserva para un único fallo transitorio del intérprete.
-- El SDK no añade reintentos por encima de lo que el proceso ya fija en 1. Un `ServiceUnavailable` cuenta intento aunque el costo real sea cero, como ya ocurrió en el ledger.
+4. **Texto de página y procedencia.** El texto de página es el que ya extrae la ingesta con `PDF::Reader`: `SplitPage#text` de `PdfPageSplitterService`, o `PageRelevanceFilter.extract_page_text` si la página no lo trae. Se obtiene una vez por página y por proceso, y lo usan la fusión y la cobertura. En la ruta síncrona y en el envío por Batch ya está en memoria. Los jobs de resultados Batch corren en otro proceso: lo re-extraen una vez del PDF fuente, con el mismo extractor y la misma descarga que ya usa `BatchPageRetryService`. No se guarda en S3 ni en argumentos de job.
+   - El texto movido a la página anterior conserva en el cuerpo las marcas `[PDF_PAGE]` y `[PRINTED_PAGE]` que `SectionPageContinuity` ya escribe.
+   - Los registros movidos guardan su página en un campo real (`source_pdf_page`) que el parser renderiza. El campo interno `_page` desaparece.
+   - El `page_number` del sidecar sigue siendo uno por chunk, porque Bedrock lo filtra como valor único. Una cita del texto movido apunta a la página del chunk y la marca en línea la precisa.
+   - El folio se lee con `PRINTED_PAGE`. Si la página no imprime un folio con esa forma, la marca se omite. Nunca se calcula folio = índice − 1.
+   - Cabecera y pie: las líneas que se repiten en al menos la mitad de las páginas (y en un mínimo de tres) se tratan como texto corrido, calculado sobre el `page_texts` del documento. Esta regla sustituye los patrones propios del VF5 de `strip_running_matter`. El patrón general de folio se mantiene.
 
-`Retrieve`: máximo 8, fuera de ambos presupuestos. 2 de medición tras sincronizar y 1 por turno integrado. Sin reranker. No se lanza ninguno sobre los chunks viejos para «ver el top 5».
+5. **Cobertura: qué verifica y qué no.** Reutiliza las funciones de alineación de `Rag::PageChunkFidelity` (normalización, `aligned_line?`, comprobación de `EVIDENCE` en la página). Se añade ahí, no en una clase nueva. No lee el PDF. Mide cuatro cosas:
+   - **Contabilidad:** toda página tiene un chunk o un descarte registrado en memoria y en el informe local. Nada se escribe bajo `bulk_chunks/`. Una página sin chunk ni descarte es un defecto. Un descarte prueba que la página quedó contabilizada, no que su contenido sobrase.
+   - **Precisión**, por página y antes de fusionar: proporción de tokens significativos de la narrativa que están en esa página. Quedan fuera la cabecera de identidad, el chunk S0 de la página ancla y el bloque de registros.
+   - **Líneas añadidas:** líneas de narrativa sin alineación con la página. Así se detectan un encabezado inventado o una nota.
+   - **Recall**, después de fusionar: la apertura de la página y sus números e identificadores (`#21`, `0,12`, tensiones) aparecen en sus chunks o en lo movido con `source_pdf_page`.
 
-Quedan al menos 9 intentos del tope de 96 si se usa el techo entero. Esa holgura no es otro experimento.
+   **Gate de producción (ruta normal).** Solo contabilidad y precisión. Un cuerpo con precisión muy baja no se indexa: cubre la página «no recibida» y el contenido inventado sin buscar frases. Se reintenta una vez a la misma cota de tokens, dentro de la escalera existente: `call_with_page_cap_retry` en la ruta síncrona y `BatchPageRetryService` en Batch. Si sigue mal, queda la marca de página degradada que ya existe (`ChunkMergerService::DEGRADATION_MARKER`). Recall y líneas añadidas solo se informan: bloquear por ellos destruiría contenido útil ante cualquier desorden de la capa de texto.
 
-## Paquete que sí pide autorización expresa
+   **Criterio de este ciclo.** Para el VF5, los cuatro controles tienen que salir limpios en las páginas que se certifican.
 
-Se redacta una sola vez, después de la fidelidad local de las 22 páginas, y no se vuelve a pedir si se concede. No forma parte de la orden de ejecución inicial.
+   **Límites declarados.**
+   - Sin capa de texto (página escaneada): continuidad y cobertura no verifican. Solo se exige contabilidad, y el informe marca la página como «no verificable».
+   - Medidas por presencia: no detectan un cruce de columnas ni el orden de una tabla. Por eso p6 y p22 se leen contra `pdftotext -layout` y la imagen de la página.
+   - No se aplica `PageChunkFidelity.correct` en la ingesta. Reescribiría tablas con la capa de texto, y ese riesgo no está medido.
 
-- `SELECT` de solo lectura en la base Rails de producción: SHA del VF5, cuenta 1, contrato `field_records_v8`, estado y prefijo. El plan padre prohíbe esa lectura; por eso va aquí. La base local no tiene la fila. Sirve para no crear un segundo prefijo y para saber si una subida normal no re-parsearía. No bloquea las fases locales.
-- Sustituir el prefijo S3 ya conocido del VF5 con los artefactos locales certificados, borrar las claves que ya no existan y sincronizar solo esa fuente de la KB `Y7RZWMFJSR`. Escritura por `S3DocumentsService`. Sin subir el contrato, sin re-upload que caiga en deduplicación y sin despliegue.
-- Costo remoto esperado: la sincronización de KB no re-paga el parseo. El ejecutor adjunta el informe local (páginas, descarte, cobertura, nota visual de p6 y p22) y el saldo de ingesta ya gastado.
+6. **Ejemplos.** `promoted_example?` se mide sobre los 112 registros históricos. Se ajusta solo si descarta un registro que no es un ejemplo. La regresión de ese ajuste es el caso ya visto de la salida FOTOCÉLULA.
 
-Sin ese paquete, la validación termina en la generación aislada.
+7. **Estado del caso: misma llamada, validación determinista.** No se añade un clasificador por reglas. Interpretar «no he mirado el 54», «ya revisé la fotocélula y nada» o «sin mediciones» con reglas de negación en español duplicaría el intérprete, dependería del idioma y competiría con la maquinaria de correcciones literales que el reducer ya tiene.
+   - El tool `turn_perception` gana un arreglo `checks` con elementos `{subject, status, result}`. `status` es `done` o `not_done`. `subject` es un fragmento literal del turno. `result` es literal o `null`.
+   - `InterpreterPayloadContract` valida la literalidad, el enum y los topes. Un payload sin `checks` equivale a `[]`, para que los fixtures existentes sigan siendo válidos.
+   - Observación y comprobación quedan separadas. Una observación es lo que el técnico vio o no vio, con su negación literal («no veo obstrucción»). No implica una comprobación ni la crea. Una comprobación es algo que el técnico dice haber hecho o no haber hecho, con su resultado si lo da. «Sin mediciones» es `not_done`.
+   - Lo pendiente no se guarda: es toda comprobación documentada que no figura como `done`. El modelo lo deduce del pasaje y del bloque de estado, sin que el estado enumere el manual.
+   - El reducer guarda `checks` en el episodio con topes pequeños (6 elementos y 120 caracteres orientativos), dentro de `MAX_BYTES`. Son lo primero que se recorta después de los conflictos.
+   - Un `subject` igual, según la normalización existente (`FollowupQueryRewriter.normalize_label` / `ObservationText`), sustituye al anterior: un resultado posterior o una corrección reemplazan el estado. `new_work` abre un episodio sin `checks`.
+   - `SessionContextBuilder` añade una línea por comprobación dentro de `## Active Field Problem`. No hay bloque nuevo.
+   - Identificadores: un span de dos o tres palabras sin dígito, sin `#` y que no sea un código en mayúsculas no se guarda como identificador de equipo. Es una regla general: «Modo esclavo» deja de entrar sin una lista de síntomas.
+
+8. **Prompt y contexto de avería.** No hay llamada de clasificación nueva.
+   - Las reglas de `TOPOLOGY_EDGE` de `generation.txt`, las viñetas de plano y etiquetas de `DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT` y `literal_label_rules` entran solo si se cumple una de estas condiciones: algún chunk seleccionado trae un registro `TOPOLOGY_EDGE` o una sección de diagrama o tabla de etiquetas; el turno o el objetivo del episodio pide un plano, esquema o etiqueta. La decisión depende de la evidencia y del caso, no solo de las palabras del turno, y no impide consultar un esquema cuando hace falta.
+   - Sin plano, la viñeta de información documentada queda en su forma general: lo que el cuerpo recuperado respalda, con [n], y la advertencia de que `ACTION` y `EXPECTED_RESULT` son anotaciones de extracción.
+   - Se elimina «Use at most three logical sections». En web manda la directiva de canal: prosa, sin títulos.
+   - `FIELD_REPORT_PARAGRAPH` no cambia. El bloque tipado le da los datos que antes faltaban. No se añade otra lista de prohibiciones.
+   - Menos caracteres no garantiza menos tokens ni más fidelidad. Ambas cosas se miran con el `usage` de las llamadas que ya se hacen.
+
+9. **Recuperación.** No se toca salvo evidencia. Tras sincronizar, un `Retrieve` de solo lectura usa la consulta compuesta del primer turno de la captura, el filtro de pin por la URI original, k = 3 y sin rerank, y guarda request, score, URI y cuerpo.
+   - Si el 8.2 corregido está entre los tres primeros, no se cambia nada.
+   - Si falta, se repite con k = 5.
+   - Si falta y la consulta salió truncada sin el síntoma, el candidato es `QueryComposer`.
+   - Si el pasaje está en las posiciones 4 o 5 con la consulta íntegra y el síntoma nombrado, el cambio permitido es `PINNED_DOCUMENT_RESULTS` de 3 a 5. Encarece cada turno con pin (un 20–30 % más de tokens de entrada, estimado y no medido); se anota con el `usage` real.
+   - Si no aparece ni en el top 5, se inspeccionan la consulta y el cuerpo, y no se cambia nada en este ciclo.
+   - La consulta de la captura es una sonda del índice. El contexto real se comprueba en el primer turno integrado, cuya consulta sale del estado nuevo.
+
+10. **Integración local.** Un replay no valida S3, el índice ni `POST /rag/ask`. La conversación corre en local contra la KB `Y7RZWMFJSR` con el código nuevo, sin editar `.env` y sin desplegar. El proceso exporta la KB, el modo `owner`, los flags de episodio y turno y el alcance de identidad, como en la captura `vf5-bound-20261020T1728Z`. Deja sus capturas con `ValidationCapture` y `WebRequestCapture`, sin instrumentación nueva.
+
+11. **Aceptación.** Son los cuatro turnos de la fase 5, no la matriz de siete. Conservar una comprobación no obliga a recitarlas todas. La condición de la PDF 13 no se prescribe en la primera respuesta. Los tests de estado miran campos. Las respuestas se juzgan por significado con la rúbrica escrita aquí. No hay tests de frase exacta ni tests que solo reproduzcan la implementación.
+
+12. **Preguntas nuevas, no repeticiones.**
+    - Extracción: si la instrucción corregida, el parser normal, la fusión con `page_texts` y la cobertura sostienen las 22 páginas.
+    - Generación: si el estado de comprobaciones y el prompt sin plano, sobre chunks certificados, dejan de cerrar comprobaciones y de jerarquizar `#54`.
+    - La captura histórica es referencia, no control contemporáneo: difieren a la vez chunks, prompt y estado. Este ciclo evalúa el conjunto corregido y no atribuye efectos a una sola pieza.
+
+## Compromisos del diseño
+
+- **Piezas.** Sin servicio nuevo de interpretación ni verificador nuevo: la cobertura vive en `PageChunkFidelity`, el estado en el episodio y el intérprete existentes, y la sustitución en el parser normal. Las únicas piezas de esta corrida son el pegamento de la extracción y el informe local. Si el pegamento supera unas 40 líneas, va a `app/services` con test, como pide [script/AGENTS.md](../../script/AGENTS.md).
+- **Latencia del turno.** Cero llamadas nuevas. El intérprete emite unas decenas de tokens más y el prompt de generación pierde los bloques de plano cuando no aplican. Es lo esperado y no está medido: la fase 3 lo compara con el `usage` de la captura, como referencia y no como control.
+- **Ingesta.** Fuera del camino del usuario. La ruta síncrona reutiliza el texto ya extraído. Los jobs Batch hacen una extracción de texto por documento. La cobertura es aritmética local.
+- **Transporte de esta corrida.** La extracción local usa la API directa (ruta síncrona), no Batch. Prompt, fusión, parser y cobertura son el mismo código, y la escritura final usa `manual_batch_v1` para conservar el prefijo y el nombre de las claves. Batch costaría la mitad, pero exige un worker y una espera; en 22 páginas no compensa.
+- **Procedencia.** El sidecar sigue teniendo una sola página por chunk. La procedencia exacta del texto movido va en el cuerpo y en el registro.
+
+## Autorizaciones y presupuesto
+
+### Qué autoriza la orden de ejecución
+
+- Cambios de código y tests locales. Commits locales con rutas explícitas. Base local y servidor local.
+- Lecturas remotas: `list` y `get` del prefijo VF5 en S3, y `ListIngestionJobs` y `GetIngestionJob` de la fuente de la KB.
+- Llamadas pagadas dentro de los techos de abajo.
+
+No autoriza: escritura en S3, sincronización de la KB, consultas a la base de producción, despliegue, push, cambios de configuración AWS, edición de `.env` ni subir el contrato. La escritura y la sincronización van en la solicitud única de más abajo. El plan por sí solo no concede gasto ni cambios remotos.
+
+### Ingesta (API de Anthropic, fuera del ledger de 96)
+
+Techo: 32 llamadas facturables y US$2,50, lo que ocurra antes.
+
+- Filtro Haiku sobre las 22 páginas: 2 ventanas, más un reintento de JSON cada una, como máximo 4.
+- 22 extracciones Sonnet 5.5, en dos tandas (8 de sonda y 14 de resto). El total informado al modelo es 22.
+- Hasta 6 reintentos entre las dos tandas: escalera de truncado o JSON, o un reintento por precisión baja, con un máximo de uno por página. La cifra de planificación es la de la sonda: unos US$0,065 por página.
+
+Control efectivo:
+
+- `Rag::AssignmentSpend` sobre un archivo propio, `tmp/field_companion/vf5_correction/ingest_spend.json` (`call_cap` 32, `cost_cap_usd` 2,50).
+- Antes de cada llamada lógica, `reserve!` con un techo igual a `LocalPassLedger.price(modelo, tokens de entrada estimados, max_tokens)`. Después, `settle!` con el `usage` real. El caché de escritura y de lectura se cobra con las tarifas `cache_creation` y `cache_read` de `BedrockQuery::BEDROCK_PRICING` (`claude-sonnet-5-5-direct`, `claude-haiku-4-5-20251001-direct`).
+- Los clientes Anthropic se inyectan con `max_retries: 0`: `haiku_client:` en `PageRelevanceFilter.filter_pages` y `client:` en `ClaudeChunkingClient`. Así no hay reintentos ocultos del SDK. Grok confirma el valor por defecto en la gema instalada.
+- Los *overloads* que reintenta `ClaudeChunkingClient` (2 por llamada) devuelven error sin tokens. Se anotan, pero no suman dólares.
+- Si `bedrock_queries` aparece (con un worker local corriendo), sirve de contraste. No es requisito.
+- Flags de topología y visión apagados en el proceso (`INGESTION_LAYOUT_DIGEST_ENABLED`, `INGESTION_VISION_TIER_ENABLED`, `INGESTION_VISUAL_TRIAGE_ENABLED`), como en la ingesta histórica, que no tiene `topology_edge_count`. Así no hay llamadas Opus de visión fuera de presupuesto.
+- Si el filtro manda una página a Opus (`force_opus`), se recalcula su techo con esa tarifa antes de llamar. Si no cabe, esa página se detiene.
+
+### Ledger de asignación (Bedrock, cuenta en los 96)
+
+Techo: 21 intentos y US$0,60 adicionales sobre el saldo leído al arrancar. El tope acumulado de 96 intentos y US$4 sigue vigente.
+
+- **Fase 3:** 2 intérpretes y 3 `generate_text`, en un proceso con `RAG_LOCAL_PASS_CALL_CAP=5` y `RAG_LOCAL_PASS_COST_CAP_USD=0.15`. Una sola corrección permite otra tanda igual, como máximo de 5 intentos más.
+- **Fase 5:** 4 turnos por 2 llamadas, más 3 de reserva para un fallo transitorio del intérprete, con un tope de 11 y US$0,30 en el proceso del servidor local.
+
+Control efectivo:
+
+- `RAG_LOCAL_PASS_GUARD=1`, `AWS_MAX_ATTEMPTS=1` y `RAG_ASSIGNMENT_SPEND_PATH` apuntando al ledger acumulado. `LocalPassLedger` rechaza la llamada antes del SDK si se pasaría del tope del proceso o del acumulado.
+- Un `ServiceUnavailable` cuenta como intento aunque no cueste nada.
+- La reserva por llamada es el techo de precio, unos US$0,045 según la entrada 70. El gasto esperado es de unos US$0,013 por llamada.
+
+Si el saldo cambió por otra actividad, se recalcula y se continúa mientras los 21 intentos y los US$0,60 quepan bajo 96 y US$4. Si no caben, se renuncia primero a la segunda tanda de la fase 3 y después a la reserva de transitorios. Si aun así no cabe, la fase se detiene y se anota.
+
+### Retrieve
+
+Fuera de ambos ledgers; costo bajo. Como máximo 3 de medición tras sincronizar (k = 3, k = 5 si hace falta, y uno tras el único ajuste permitido), más los de los 4 turnos integrados. Se cuentan desde la captura. Sin reranker. Ninguno se lanza sobre los chunks viejos.
+
+### Solicitud única de autorización remota
+
+Se redacta una sola vez, al cerrar la fase 3, con la evidencia local ya revisable. Si se concede, no se vuelve a pedir.
+
+Contenido:
+
+- Informe de cobertura de las 22 páginas, con la nota visual de p6 y p22.
+- Resultado de la fase 3.
+- Gasto real de la ingesta y del ledger.
+- Diferencia de claves entre `tmp/review_vf5/` y el directorio nuevo.
+
+Pide:
+
+1. Sustituir el prefijo `bulk_chunks/1/be7a39a3490c92c8381cb883402760cb07d1/` mediante `BatchResultsParserService#call` con el JSON fusionado y certificado, `ingestion_path: "manual_batch_v1"`, la misma cuenta, el mismo `document_uid` y un `ChunkAsset` con el `s3_key` y el bucket originales, escribiendo con `S3DocumentsService`.
+2. Borrar, por el mismo servicio, las claves sobrantes si el borrado previo falló.
+3. Lanzar un `start_ingestion_job` sobre la fuente de la KB `Y7RZWMFJSR`. La solicitud dice expresamente que la fuente abarca todo `bulk_chunks/` y que el job recogerá también cualquier otro cambio pendiente.
+4. Restaurar la copia y resincronizar una vez si la sustitución o la sincronización fallan.
+
+El costo remoto es el de los embeddings de unos 30 objetos. El parseo no se vuelve a pagar.
+
+Sin esa concesión, la validación termina en la fase 3. El trabajo local queda commiteado y anotado.
 
 ## Fases
 
 ```mermaid
-flowchart TD
-  fase0[Fase0_sin_modelo]
-  fase1[Fase1_extraccion]
-  fase2[Fase2_estado_y_prompt]
-  fase3[Fase3_sonda_pagada]
-  fase4[Fase4_documento_local]
-  fase5[Fase5_generacion_aislada]
-  fase6[Fase6_paquete_remoto]
-  fase7[Fase7_retrieve]
-  fase8[Fase8_conversacion]
-  fase9[Fase9_revision_Lahiri]
-  fase0 --> fase1
-  fase0 --> fase2
-  fase1 --> fase3
-  fase3 --> fase4
-  fase3 --> fase5
-  fase2 --> fase5
-  fase4 --> fase6
-  fase6 --> fase7
-  fase5 --> fase8
-  fase7 --> fase8
-  fase8 --> fase9
+flowchart LR
+  f0[F0_linea_base] --> f1[F1_implementacion]
+  f1 --> f2[F2_extraccion_pagada]
+  f2 --> f3[F3_interprete_y_generacion]
+  f3 --> auth{Solicitud_unica}
+  auth --> f4[F4_sustitucion_y_retrieve]
+  f4 --> f5[F5_conversacion]
+  f5 --> rev[Revision_Lahiri]
 ```
 
-La fase 2 puede avanzar en paralelo con la 1 y la 3. Si la 3 falla, no se ejecutan 4, 5, 6, 7 ni 8. La 2 puede terminar sus pruebas locales. No se adelanta una validación que dependa de una fase fallida.
+### F0. Línea base sin modelos
 
-### Fase 0. Línea base sin inferencia
+- Excluir los archivos experimentales como se indica arriba. Leer el ledger. Correr la suite seguida como línea base.
+- Extraer `page_texts` del PDF local con el extractor de la decisión 4.
+- Calibrar la cobertura candidata sobre los 30 cuerpos históricos. Debe marcar: p3 sin chunk ni descarte, líneas añadidas en p5 (S4 y nota), apertura perdida en p12 y p13, precisión baja en p14 y números ausentes en p19. No debe dar por resueltos el cruce de columna de p22 ni el borne 9 de p6.
+- Aplicar `promoted_example?` a los 112 registros.
+- Evidencia: tabla corta en este documento y tests Minitest de la cobertura sobre esos cuerpos y sobre un fixture sintético de otro formato (otra cabecera repetida, sin folio y con una página sin capa de texto).
+- Fallo: no marca un defecto conocido, o marca como malo un pasaje que el diagnóstico da por fiel. Se ajustan los umbrales con reglas generales y sin rama `if vf5`. No se relaja el fixture.
 
-Resultado: el detector señala los defectos históricos ya conocidos, `#21` queda en el síntoma correcto dentro del fixture, y el filtro de ejemplos tiene un recuento sobre los 112 registros.
+### F1. Implementación local, cero llamadas
 
-Entradas: PDF local, copia `tmp/review_vf5/` o lectura S3 del prefijo ya identificado, parser y `PageChunkFidelity` actuales. Sin modelos.
+**Bloque A, ingesta:** decisiones 3 a 6 en los cuatro llamadores, en `ChunkMergerService`, `SectionPageContinuity`, el parser y la escalera de reintento.
 
-Trabajo: borrar primero las cinco rutas de la decisión 13 y comprobar que `git status` no las lista. Después extraer la capa de texto; correr la cobertura candidata sobre los 30 cuerpos históricos; aplicar `promoted_example?` a cada registro contra su página; confirmar el saldo del ledger. El detector debe marcar página 3 ausente, encabezados añadidos en p5, pérdida de apertura en p12 y p13, autoinforme de p14 y números ausentes en p19. No debe declarar resuelto el cruce de columna de p22 ni el borne 9 de p6.
+Tests:
 
-Evidencia: informe corto en este documento, con páginas marcadas y registros de ejemplo descartados. Tests Minitest del detector contra esos cuerpos, sin frase de la respuesta del companion.
+- Texto de la instrucción y total del PDF.
+- Descarte registrado.
+- Apertura trasladada con `source_pdf_page` renderizado.
+- Folio presente y ausente.
+- Cabecera repetida no VF5.
+- Página sin capa de texto.
+- Gate de precisión que reintenta una vez y degrada.
 
-Salida insuficiente: el detector no marca un defecto conocido, o marca como malo un pasaje histórico que el diagnóstico da por fiel en su contenido principal. Se ajusta el detector antes de cualquier llamada. No se relaja el fixture para que el código pase.
+**Bloque B, caso y prompt:** decisiones 7 y 8.
 
-### Fase 1. Extracción, cobertura y continuidad
+Tests de reducer y episodio con payloads fijos, sin modelo:
 
-Resultado: la ruta normal puede extraer una página sin contradecir el folio, fusionar con texto de página y rechazar un cuerpo que declara no haber recibido la página.
+- No observación, que no crea comprobación.
+- `not_done`.
+- `done` con resultado.
+- Resultado posterior que sustituye.
+- Corrección.
+- `new_work` sin `checks`.
+- Tope de bytes.
+- «Modo esclavo» no entra como identificador.
+- Payload sin `checks`, válido.
 
-Entradas: los llamadores citados y `BatchPageRetryService`.
+Tests de prompt:
 
-Trabajo: cambiar la instrucción y el total que cada llamador pasa; pasar `page_texts` en los tres llamadores de ingesta; persistir `source_pdf_page` y folio impreso; invocar la cobertura después de fusionar. El gate de producción usa señales generales. El fixture VF5 vive en el test de esta muestra, no como rama `if vf5`.
+- La avería muestra la línea de comprobaciones y no contiene bloques de plano ni «three logical sections».
+- Con un chunk `TOPOLOGY_EDGE` o con la palabra «plano» en el objetivo, los bloques vuelven.
 
-Comprobación: tests del texto de instrucción, de un descarte registrado, de una apertura trasladada con página de origen, y del detector sobre un fixture mínimo. Cero llamadas.
+Salida: suite seguida en verde y commit local por bloque.
 
-Salida insuficiente: un test de comportamiento en rojo que no se explica por el fixture. Se corrige el mecanismo. No se entra en la fase 3 con el total todavía igual al número de páginas conservadas.
+Fallo: un test de comportamiento en rojo que el fixture no explica. Se corrige el mecanismo. Si el estado no cabe en `MAX_BYTES`, se reducen los topes en este documento.
 
-### Fase 2. Estado del caso y prompt de avería
+### F2. Extracción pagada del VF5
 
-Resultado: un turno literal deja persistidos los cinco tipos de afirmación, y el prompt de avería muestra ese estado sin el bloque de plano ni la contradicción de secciones.
+Se ejecuta con el código de F1 y el control de la ingesta. Filtro real sobre las 22 páginas, con su decisión guardada.
 
-Entradas: `WorkContextReducer`, `ActiveEpisode`, `SessionContextBuilder` / bloque Active Field Problem, `document_identity_generation_prompt` y las directivas de formato en [app/services/bedrock_rag_service.rb](../../app/services/bedrock_rag_service.rb).
+**Tanda 1, sonda:** PDF 3, 5, 6, 12, 13, 14, 19 y 22, fusionando 12 y 13 con `page_texts`. Por significado y presencia, no por igualdad literal:
 
-Trabajo: clasificador determinista; dejar de promover un síntoma a identificador; omitir los bloques de plano cuando el turno no es de plano; alinear formato y canal web. El ejecutor elige el campo del episodio siempre que quepa en `MAX_BYTES` y no añada una llamada.
+- p3 tiene chunk o un descarte registrado.
+- p5 no tiene encabezado S4 ni nota añadida, y los ejemplos de SW4 siguen marcados como ejemplos.
+- p12 contiene 8.1 y los síntomas de 8.2, con `#21` bajo «se abre pero no se cierra».
+- p13 contiene la apertura condicional de «se reabre sola», unida a 8.2 con su procedencia.
+- p14 contiene 9.1 a 9.4, sin 9.5 inventado y sin decir que la página no llegó.
+- p19 contiene las cifras de 11.1 y 11.2.
+- p6 y p22 se leen contra `pdftotext -layout` y la imagen de la página. La presencia de `0,12` no acredita la columna.
 
-Comprobación: tests del episodio tras frases de no observación, no comprobación, resultado reportado y corrección. Test de que el prompt de avería contiene el estado tipado y no contiene el bloque de plano. Ningún test exige una frase de respuesta.
+Se anota si la hipótesis de paginación queda confirmada, debilitada o sin observar.
 
-Salida insuficiente: el estado tipado no sobrevive un segundo turno o no cabe en el episodio. Se reduce el diseño en este documento y no se llama a generación. Esta fase no espera a la sonda.
+**Tanda 2, resto:** las 14 páginas que faltan, sin volver a pagar las 8. Fusión del documento, cobertura completa y nueva lectura de p6 y p22 si la fusión los mueve. p8 no se queda con el pasaje de p9 como si fuera suyo.
 
-### Fase 3. Sonda pagada de páginas decisivas
+Evidencia: directorio `tmp/field_companion/vf5_correction/ingest/` (requests reducidos, `usage`, cuerpos, JSON fusionado, informe de cobertura, ledger de ingesta) y un párrafo de resultado en este documento.
 
-Resultado: con el código de la fase 1, las páginas 3, 5, 6, 12, 13, 14, 19 y 22 salen fieles en lo que la cobertura puede afirmar, y queda escrita la lectura visual de p6 y p22.
+Fallos:
 
-Entradas: PDF completo como total 22; filtro real de las 22 páginas; extracción solo de esas ocho; fusión de 12 y 13 juntas, con `page_texts`.
+- Más de cuatro páginas de la sonda fallan, o p6 o p22 siguen cruzando columnas: no hay tanda 2. Se ajusta la instrucción una vez dentro del cupo de reintentos. Una segunda sonda completa necesita una pregunta nueva escrita aquí.
+- En la tanda 2, toda página con cuerpo infiel indexable impide la solicitud remota. Las páginas sanas no se reextraen.
+- F3 puede correr si las páginas que usa (5, 7, 12 y 13) están certificadas, aunque otra página falle. No por eso se da por aceptada F2.
 
-Trabajo: guardar request reducido, uso, texto y decisión de filtro. Criterios de la muestra, por significado y presencia, no por igualdad literal: p3 con chunk o descarte registrado; p5 sin encabezado S4 ni nota añadida, y los ejemplos siguen siendo ejemplos; p12 contiene 8.1, ambos síntomas de 8.2 citados arriba y `#21` bajo «se abre pero no se cierra»; p13 contiene la apertura condicional de «se reabre sola»; p14 contiene 9.1 a 9.4 y no inventa 9.5 ni dice que la página no llegó; p19 contiene las cifras de 11.1 y 11.2; p6 y p22 se leen contra el PDF. La presencia de `0,12` no acredita la columna.
+### F3. Intérprete y generación aislada
 
-Evidencia: directorio local de la corrida y el párrafo de resultado en este documento. Suma de `bedrock_queries`.
+Tiene que demostrar dos cosas:
 
-Salida insuficiente: más de cuatro páginas fallan, o p6/p22 siguen cruzando columnas. No hay fase 4 ni 5. Se anota la hipótesis de paginación como confirmada, debilitada o no observada, según diga el texto de p14 y de las demás, y se ajusta la instrucción una vez dentro del cupo de reintentos. Una segunda sonda completa no se lanza sin una pregunta nueva escrita aquí.
+- Que el intérprete real, sobre los mensajes de los turnos 1 y 3, produce el estado esperado.
+- Que el generador, con el pasaje correcto presente, cumple la rúbrica.
 
-### Fase 4. Resto del VF5 en local
+No demuestra que la recuperación traiga ese contexto. Eso lo comprueba F5.
 
-Resultado: las 22 páginas tienen chunk o descarte, la fusión no reintroduce los defectos de la sonda, y p8 no se queda con el pasaje de p9 como si fuera suyo.
+Entradas:
 
-Entradas: las ocho salidas ya pagadas más las catorce páginas restantes. Misma ruta normal.
+- Mensajes de los turnos 1 y 3 de F5.
+- Episodio reducido por el código nuevo a partir de la percepción real.
+- Contexto armado a mano con los cuerpos certificados de p12, p13, p7 (5.6) y p5 (SW4), como mucho cuatro, con la cabecera que devuelve la recuperación y pasados por `DocumentIdentityScope.generation_context`.
+- Prompt construido por `document_identity_generation_prompt` y `SessionContextBuilder`.
+- Modelo, temperatura (0,1) y `max_tokens` de producción.
 
-Trabajo: extraer solo lo que falta, fusionar el documento, correr la cobertura general. Revisar de nuevo p6 y p22 si esa fusión los mueve.
+Se reutiliza el cliente de generación bajo `LocalPassLedger`, o `CapturedGenerationReplay` alimentado con el prompt nuevo. No se construye un arnés nuevo.
 
-Evidencia: informe de cobertura por página y costo acumulado.
+Rúbrica (cada muestra):
 
-Salida insuficiente: cualquier página con cuerpo infiel indexable. No se prepara el paquete remoto. Las páginas sanas no se reextraen. La generación aislada puede haber corrido ya con los chunks de la sonda; su resultado no se promociona a fidelidad del documento.
+- No da por hecha una comprobación sin resultado.
+- No jerarquiza `#54`.
+- Mantiene condicional la frase de la PDF 13, u omite esa frase.
+- No asigna `#21` a «se reabre sola».
+- No convierte el ejemplo de SW4 en una orden.
+- No habla de plano ni de conexiones trazadas.
+- Escribe prosa sin títulos.
+- Sus citas corresponden a los pasajes enviados.
 
-### Fase 5. Generación aislada
+Una sola muestra que cierre la obstrucción, jerarquice `#54` o mande desconectar ya la fotocélula impide la salida. Omitir una comprobación no falla.
 
-Resultado: tres muestras, con los chunks certificados de la sonda y el estado tipado, no dan por hecha una comprobación sin resultado, no jerarquizan `#54`, mantienen condicional la frase de la PDF 13, no asignan `#21` a «se reabre sola» y no convierten el ejemplo de SW4 en una orden para este equipo.
+Estado tras el intérprete:
 
-Entradas: prompt de la fase 2; cuerpos de p12, p13 y p5 certificados; el texto histórico de 5.6, marcado como histórico y fiel en esa cláusula, para ver si el LED sigue colapsando cuando el pasaje sí está. No es un `Retrieve`. Temperatura y modelo de la ruta de producción. El control es la captura ya existente, no una terna nueva del prompt viejo.
+- Turno 1: obstrucción como observación literal, sin comprobación; `#54` y mediciones en `not_done`; sin identificador de síntoma.
+- Turno 3: la comprobación reportada en `done` con su resultado; las demás no aparecen como hechas.
 
-Comprobación: rúbrica semántica sobre las tres muestras. Omitir una comprobación no falla. Recitarlas todas no es obligatorio. Una sola muestra que cierre la obstrucción, jerarquice `#54` o mande desconectar ya la fotocélula impide la salida.
+Evidencia: prompts, `usage` (tokens de entrada frente a la captura, solo como referencia), respuestas y veredicto en este documento.
 
-Evidencia: prompts enviados, respuestas y decisión en este documento. Intentos descontados del ledger.
+Fallo: una corrección local (de prompt o de interpretación) y una segunda tanda. Si vuelve a fallar, se describe el fallo restante y no hay solicitud remota. No se prueba otro modelo ni la partición system/user.
 
-Salida insuficiente: la segunda terna también falla. No hay fase 8. Se describe el fallo que quedó y se detiene. No se prueba otro modelo ni la partición system/user.
+Al cerrar F3, Grok envía la solicitud única.
 
-### Fase 6. Paquete remoto
+### F4. Sustitución, sincronización y Retrieve
 
-Resultado: una solicitud única, con alcance, costo ya gastado y el informe local de la fase 4. El ejecutor espera. No consulta producción ni escribe S3 mientras no esté concedida.
+Solo con la concesión.
 
-Si se concede, sustituye el prefijo, invalida el expansor por la vía del servicio de S3 y sincroniza la fuente. Guarda los identificadores del job. Una concesión no se repite.
+**Antes de escribir (lecturas):**
 
-Salida insuficiente: la sincronización no termina. No hay fase 7. El informe local sigue siendo válido como parseo, no como índice.
+- Listar el prefijo y comparar tamaños y contenido con `tmp/review_vf5/`. Si difieren, se refresca esa copia, que es la que se restaura en caso de fallo.
+- Confirmar que los sidecars nuevos conservan `account_id`, `document_id`, `original_source_uri`, `doc_sha256`, `manual_batch_v1` y `field_records_v8`.
+- Confirmar que ningún job de la fuente está en `STARTING` ni en `IN_PROGRESS`. Si lo hay, se espera a que termine.
 
-### Fase 7. Recuperación sobre el índice nuevo
+**Escritura y sincronización:** según la solicitud.
 
-Resultado: se sabe si la consulta real del primer turno trae el cuerpo corregido de 8.2 y, si el LED entra en esa consulta, el de 5.6.
+Comprobación:
 
-Entradas: consulta exacta de la captura, KB sincronizada, filtro por la URI original, top 3 y top 5, sin generación.
+- El listado del prefijo coincide exactamente con las claves nuevas: sin residuos ni duplicados.
+- El job termina en `COMPLETE`, y se guardan sus estadísticas e identificadores. Si las estadísticas muestran cambios ajenos al VF5, se anotan.
+- Después, el `Retrieve` de la decisión 9: los cuerpos devueltos son los nuevos (marcas de página y texto corregido) y ninguna clave borrada reaparece.
 
-Trabajo: aplicar la decisión 9. Un cambio de composer o de perfil, si hace falta, se prueba con un `Retrieve` adicional dentro del cupo de 8, no con una conversación.
+Fallo: escritura, sincronización o verificación fallida, con una restauración y una resincronización. El informe local sigue valiendo como parseo, no como índice. Si el 8.2 corregido no aparece ni en el top 5 tras el único ajuste permitido, no hay F5. Se anotan la consulta y los cuerpos.
 
-Salida insuficiente: el pasaje de «se reabre sola» no aparece ni en el top 5 después de ese único ajuste. No hay fase 8. Se anota el cuerpo y la consulta. No se sube el top-k «por si acaso».
+### F5. Conversación integrada
 
-### Fase 8. Conversación integrada
+Servidor local, según la decisión 10.
 
-Resultado: un episodio nuevo, pin del VF5 puesto por la interfaz como condición de prueba. Eso no acredita selección automática. Cuatro turnos por `POST /rag/ask`.
+- Arranque: `field_companion:start_clean_case` (orden 1, ya comprobado).
+- Pin del VF5 puesto por el endpoint que usa la interfaz. Es una condición de prueba y no acredita selección automática.
+- Cuatro turnos por `POST /rag/ask`, sin replays como sustituto.
 
 Turnos:
 
-1. Marca, modelo, síntoma «se reabre sola», estado del LED, obstrucción no observada, `#54` no comprobado, sin mediciones. Orientación sobre las comprobaciones de ese síntoma, abiertas; condición de la página siguiente no prescrita; `#21` no atribuido a este síntoma; sin causa ordenada.
-2. Corrección del LED. El episodio conserva síntoma y corrección.
-3. El técnico reporta el resultado de una sola comprobación. Esa pasa a comprobada; las otras siguen abiertas; el caso no se cierra.
-4. `start_clean_case` y un equipo que no es el VF5 ni el caso Elemont. El episodio y el bloque de caso no llevan hechos ni la corrección del VF5. Si la respuesta aplica pasos del VF5 a ese otro equipo, la separación falla.
+1. **Primer mensaje completo.** Marca, modelo, «se reabre sola», estado del LED, «no veo obstrucción», `#54` sin comprobar y sin mediciones. Se espera:
+   - Orientación sobre las comprobaciones de ese síntoma, abiertas y con su respaldo de sección y página.
+   - Como mucho una pregunta.
+   - Ni la condición de la PDF 13 como primer paso, ni `#21` en este síntoma, ni causas ordenadas.
+   - Que los cuerpos recuperados contengan el 8.2 corregido. Si no lo contienen, el fallo se registra como de recuperación, no de generación.
+2. **Corrección del LED.** El episodio sustituye la observación del LED, conserva el síntoma y las comprobaciones, y la respuesta usa el dato corregido.
+3. **Resultado de una comprobación** (por ejemplo, la fotocélula no está activada). Esa comprobación pasa a `done` con su resultado, las demás siguen abiertas y el caso no se cierra.
+4. **Otro equipo en la misma sesión.** Equipo conocido, ni VF5 ni Elemont, sin `start_clean_case`. Se espera:
+   - El intérprete devuelve `new_work` y se abre un episodio nuevo sin hechos, comprobaciones ni correcciones del VF5.
+   - El pin queda según la política real (se conserva) y se registra, sin cambiar su semántica para la prueba.
+   - Si se recuperan pasajes del VF5, llevan la marca `REFERENCE ONLY — OTHER EQUIPMENT` y no se aplican sus pasos, bornes ni valores.
+   - La respuesta continúa como orientación Danebo para el síntoma nuevo.
 
-Cada turno guarda captura de intérprete, estado, consulta efectiva, truncado, cuerpos, prompt y respuesta. Cero replays como sustituto.
+Cada turno conserva en las capturas existentes:
 
-Salida insuficiente: el turno 1 o 3 vuelve a cerrar una comprobación, o el turno 4 arrastra el caso. No se alarga a siete turnos para compensar. Se anota el fallo y se detiene. Si los cuatro salen, el recorrido queda técnicamente estable para revisión, no aceptado como episodio ni como demo.
+- Intérprete y estado.
+- Consulta efectiva y si se truncó.
+- Cuerpos recuperados.
+- Prompt y respuesta.
 
-### Fase 9. Revisión breve de Lahiri
+Se corren los cuatro turnos aunque uno falle, salvo un fallo de infraestructura: cada uno mide algo distinto y el costo es fijo. No se alarga a siete turnos.
 
-Solo con la fase 8 estable. Lahiri mira si la orientación le sirve a un técnico: poca escritura, primera respuesta útil, caso reconocible. No opera las pruebas ni aprueba las fases anteriores. Su comentario se escribe aquí. No es la demo en vivo del guion ni `EPISODIO_VALIDADO`.
+Salida: si los cuatro cumplen, el recorrido queda técnicamente estable para revisión de producto. No queda aceptado como episodio ni como demo. Cuatro turnos no prueban estabilidad estadística.
+
+### Revisión de Lahiri
+
+Solo con F5 estable. Lahiri lee las cuatro respuestas: si la orientación le sirve a un técnico, si escribe poco, si la primera respuesta es útil y si el caso es reconocible. No opera pruebas, no revisa logs y no aprueba fases. Su comentario se escribe aquí. No es la demo del guion ni `EPISODIO_VALIDADO`.
+
+## Ante un fallo
+
+- **Corrección local:** test rojo, umbral de cobertura, redacción del prompt dentro de las decisiones, o un detalle del pegamento. Grok corrige, vuelve a probar y sigue sin consultar.
+- **Cambio de alcance:** otro modelo, la partición system/user, subir el contrato, un cambio de recuperación fuera de la decisión 9, codificar hábitos de Gonzalo o reprocesar otros manuales. Esa rama se detiene y se anota aquí. Sigue el trabajo independiente que no dependa de ella.
+- **Bloqueo real:** presupuesto agotado tras el recálculo, concesión denegada, error de AWS o de Anthropic que persiste fuera de lo transitorio, o un estado remoto distinto del esperado al leerlo. Se detiene la fase, se anota la causa y el siguiente paso posible, y se avisa a Lahiri una sola vez.
 
 ## Estado de ejecución
 
-- Estado: plan escrito en el repositorio, pendiente de revisión de Opus. Sin implementar.
-- Siguiente acción: Opus revisa este documento, en especial las decisiones 2, 9, 11 y 13 y los techos de presupuesto. Después, y solo con orden de ejecución, Grok borra los cinco archivos sin seguimiento y sigue por la fase 0. Actualiza esta sección al cerrar cada fase.
-- No pedir confirmación entre fases que sigan dentro de los techos. Informar cada cierre en pocas líneas: qué salió, qué evidencia quedó y cuál es la fase siguiente.
-- Para la revisión, no para impedir este archivo: el conflicto de página sigue sin estar demostrado; el `SELECT` de producción y la sustitución del prefijo siguen sin autorización; la fidelidad de columna de p6 y p22 no la cubre un control numérico; Aurora no se volvió a comprobar al redactar y no hace falta para empezar la fase 0.
+- Estado: plan revisado por Opus el 21 de octubre de 2026 y listo para la orden de ejecución. Sin implementar.
+- Siguiente acción: con la orden, Grok hace F0. Al cerrar cada fase, actualiza esta sección en pocas líneas: qué salió, dónde quedó la evidencia, el gasto real y la fase siguiente. Avanza sin pedir confirmación mientras siga dentro del alcance y de los techos.
+- Única interacción prevista con Lahiri: la solicitud remota al cerrar F3 y, si F5 sale estable, la revisión de producto.

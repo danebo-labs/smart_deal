@@ -27,6 +27,12 @@ class BatchChunkingPromptTest < ActiveSupport::TestCase
     assert_match(/Never split a shared chain into one component per terminal/, prompt)
   end
 
+  test "a compact table keeps each printed cell in its own column" do
+    assert_includes prompt, "Use compact tables `| ID | Function | Connection | Voltage |` where useful."
+    assert_includes prompt, "Keep each value in the column the page prints."
+    assert_includes prompt, "Do not merge two adjacent cells into one, and do not move a value into a neighboring column."
+  end
+
   test "printed headings and examples stay in the chunk body" do
     assert_match(/classification, not text to insert/, prompt)
     assert_match(/Do not write\s+that label unless the page prints it/, prompt)

@@ -161,7 +161,7 @@ Control efectivo:
 Techo: 21 intentos y US$0,60 adicionales sobre el saldo leído al arrancar. El tope acumulado de 96 intentos y US$4 sigue vigente.
 
 - **Fase 3:** 2 intérpretes y 3 `generate_text`, en un proceso con `RAG_LOCAL_PASS_CALL_CAP=5` y `RAG_LOCAL_PASS_COST_CAP_USD=0.15`. Una sola corrección permite otra tanda igual, como máximo de 5 intentos más.
-- **Fase 5:** 4 turnos por 2 llamadas, más 3 de reserva para un fallo transitorio del intérprete, con un tope de 11 y US$0,30 en el proceso del servidor local.
+- **Fase 5:** 4 turnos por 2 llamadas, ocho previstas, más una de reserva para un fallo transitorio. Nueve llamadas. El tope de proceso sigue en US$0,30. No se le vuelven a asignar tres de reserva.
 
 Control efectivo:
 
@@ -193,7 +193,7 @@ Pide:
 3. Lanzar un `start_ingestion_job` sobre la fuente de la KB `Y7RZWMFJSR`. La solicitud dice expresamente que la fuente abarca todo `bulk_chunks/` y que el job recogerá también cualquier otro cambio pendiente.
 4. Restaurar la copia y resincronizar una vez si la sustitución o la sincronización fallan.
 
-El costo remoto es el de los embeddings de unos 30 objetos. El parseo no se vuelve a pagar.
+El inventario certificado tiene 45 chunks: 45 cuerpos `.txt` y 45 sidecars `.metadata.json`. La página 3 no tiene objeto. El parseo no se vuelve a pagar. Los embeddings son los de esos 45 cuerpos.
 
 Sin esa concesión, la validación termina en la fase 3. El trabajo local queda commiteado y anotado.
 
@@ -691,10 +691,10 @@ La 75 nombra `#21` entre lo que falta, ligado a este síntoma. La 83 pide verifi
 
 **Opciones presupuestadas, sin ejecutar.** Quedan 7 intentos del cupo adicional (tope 91) y 12 del tope de 96. En dólares quedan US$0,502802 del adicional (tope US$1,545161) y US$2,957641 del tope de US$4. Unknown sigue dentro de la exposición.
 
-- Intérprete de los turnos 1 y 3, dos llamadas, unos US$0,007, techo de unos US$0,018. Cabe. La frase propuesta, aún no aplicada, sustituye «result is a literal substring of the turn, or null» por «result is the outcome the technician states for that check, copied literally from the turn, or null; that outcome is the result even when it also reads as an observation». Sin regla nueva en el reducer. Si `result` vuelve null, esa hipótesis queda descartada.
-- F5, según el plan: 4 turnos por 2 llamadas más 3 de reserva, 11 llamadas y US$0,30. Los US$0,30 caben. Las 11 llamadas no caben en los 7 intentos que quedan, ni las 8 sin la reserva. No empieza.
+- Intérprete de los turnos 1 y 3, dos llamadas, unos US$0,007, techo de unos US$0,018. Cabe en los 7 intentos autorizados que quedan. La frase propuesta, aún no aplicada, sustituye «result is a literal substring of the turn, or null» por «result is the outcome the technician states for that check, copied literally from the turn, or null; that outcome is the result even when it also reads as an observation». Sin regla nueva en el reducer. Si `result` vuelve null, esa hipótesis queda descartada.
+- F5: ocho llamadas previstas y una de reserva, nueve en total, tope de proceso US$0,30. Los US$0,30 caben en los US$0,502802 autorizados que quedan y en el tope global de US$4. Las nueve llamadas no caben en los 7 intentos autorizados que quedan. Sí caben en los 12 que deja el tope global de 96. No se amplía ninguno de los dos. No empieza.
 
-**F4, separada de la rúbrica de generación.** La decide Lahiri. F4 puede comprobar la sustitución documental y el Retrieve. No declara aceptado el companion. F5 sigue siendo la fase que mide la continuidad de los turnos 2 a 4. Es probable que el turno 1 de F5 repita estos fallos de generación; si ocurre, se anota como defecto conocido.
+**F4, separada de la rúbrica de generación.** Sigue siendo una propuesta pendiente de decisión. No es una autorización remota. Si se concede, F4 comprueba la sustitución documental y el Retrieve. No declara aceptado el companion. F5 sigue siendo la fase que mide la continuidad de los turnos 2 a 4. Es probable que el turno 1 de F5 repita estos fallos de generación; si ocurre, se anota como defecto conocido.
 
 La solicitud queda redactada y no se envía. Sin escritura en S3 ni sincronización.
 
@@ -702,19 +702,47 @@ La solicitud queda redactada y no se envía. Sin escritura en S3 ni sincronizaci
 
 Pide autorización para sustituir el prefijo del VF5 y sincronizar la fuente. No pide aceptar el companion ni reescribir el prompt de respuesta.
 
-Evidencia ya revisable en local: cobertura de las 22 páginas, con la nota visual de p6 y p22; F2 cerrada en local (45 chunks, «Módulo electrónico VF5+ Fermator», sin páginas degradadas); F3 fallida en generación, con el estado del turno 1 cumplido y el turno 3 sin `result`. Ingesta: 25 llamadas, US$1,139502. Asignación: 84 intentos, committed US$1,016508, unknown US$0,025851. La diferencia de claves entre `tmp/review_vf5/` y el directorio nuevo se adjunta al ejecutar; este paso no lee S3.
+Evidencia ya revisable en local: cobertura de las 22 páginas, con la nota visual de p6 y p22; F2 cerrada en local; F3 fallida en generación, con el estado del turno 1 cumplido y el turno 3 sin `result`. Ingesta: 25 llamadas, US$1,139502. Asignación: 84 intentos, committed US$1,016508, unknown US$0,025851. Esta redacción no autoriza el envío. La diferencia de claves entre `tmp/review_vf5/` y el directorio nuevo se adjunta al ejecutar; este paso no lee S3.
 
-1. Sustituir `bulk_chunks/1/be7a39a3490c92c8381cb883402760cb07d1/` con `BatchResultsParserService#call`, el JSON fusionado certificado, `ingestion_path: "manual_batch_v1"`, la misma cuenta, el mismo `document_uid` y un `ChunkAsset` con el `s3_key` y el bucket originales, escribiendo por `S3DocumentsService`.
+Inventario del JSON certificado `merged_document.json`, sin reauditar la ingesta: 45 chunks, nombre «Módulo electrónico VF5+ Fermator». `BatchResultsParserService#write_chunks_to_s3` escribe un cuerpo `.txt` y un sidecar `.metadata.json` por chunk: 45 cuerpos y 45 sidecars. La página 3 no aporta objeto. El prefijo histórico de `tmp/review_vf5/` era de 30 cuerpos y 30 sidecars. Los embeddings de la sustitución son los de los 45 cuerpos. Los sidecars acompañan a cada cuerpo y no se vuelven a extraer.
+
+1. Sustituir `bulk_chunks/1/be7a39a3490c92c8381cb883402760cb07d1/` con `BatchResultsParserService#call`, ese JSON, `ingestion_path: "manual_batch_v1"`, la misma cuenta, el mismo `document_uid` y un `ChunkAsset` con el `s3_key` y el bucket originales, escribiendo por `S3DocumentsService`.
 2. Borrar por ese servicio las claves sobrantes si el borrado previo falló.
 3. `start_ingestion_job` en la fuente `Y7RZWMFJSR`. La fuente abarca todo `bulk_chunks/` y el job recogerá también cualquier otro cambio pendiente.
 4. Restaurar la copia y resincronizar una vez si la sustitución o la sincronización fallan.
 
-El costo remoto es el de los embeddings de unos 30 objetos. El parseo no se vuelve a pagar. Si se concede, F4 anota si el Retrieve devuelve los cuerpos nuevos. Eso no acepta el companion.
+Si esa decisión se concede, F4 anota si el Retrieve devuelve los cuerpos nuevos. Eso no acepta el companion.
 
 ### Decisión pendiente: generación
 
-Tres redacciones del mismo prompt fallan el mismo criterio: el modelo da por hecha una comprobación que el técnico no reportó y, en `f07f384e`, convierte «comprobar la sensibilidad» en un ajuste. Otra frase equivalente no es el siguiente experimento. Revertir las dos frases de permiso tampoco cierra F3: el intento anterior ya fallaba el criterio. Separar el prompt en system y user sigue siendo cambio de alcance.
+El estado ya se renderiza. `SessionContextBuilder#check_lines` mete en el prompt `Check: sujeto (estado)` y, si hay `result`, el resultado. El fallo de las muestras 75 a 84 es posterior: el mismo prompt le pide al modelo que vuelva a decir qué queda abierto y que proponga el siguiente paso, y la respuesta que ve el técnico es solo el párrafo del modelo. El código no compara ese párrafo con la línea `Check` ni con el verbo del pasaje. `sanitize_answer` quita el título y deja el contenido.
 
-El cambio de enfoque a evaluar es dejar de pedirle al modelo el estado de las comprobaciones y el verbo de la siguiente acción. El episodio ya tiene el estado. El pasaje ya tiene el verbo. La pregunta nueva es si, con el estado renderizado desde el episodio y el modelo limitado a la condición que el pasaje imprime, desaparecen el ajuste inventado y la fotocélula dada por hecha a partir del LED, en las dos muestras del turno 1 y sin una frase nueva de instrucción. No se ejecuta en este paso.
+La alternativa mínima no añade un servicio. Usa la llamada, los pasajes, `QueryComposer`, las líneas `Check` y `sanitize_answer` que ya existen. Lo que cambia es el reparto:
+
+| | Ahora | Propuesto |
+| --- | --- | --- |
+| Entrada del modelo | Pregunta compuesta, pasajes, contexto con objetivo, observaciones y líneas `Check`, más la instrucción de reescribir el estado y sugerir el siguiente paso | La misma pregunta, los mismos pasajes y el mismo contexto. Se le quita la tarea de declarar hecho o pendiente y la de elegir el verbo de la acción siguiente |
+| Qué se conserva | Pasajes, citas `[n]`, objetivo, observaciones, líneas `Check`, sanitizador | Lo mismo |
+| Qué deja de escribir el modelo | — | El estado y el verbo de la acción. Esas dos frases del prompt son las que hoy se lo encargan |
+| Código | Arma el contexto y no vigila el párrafo | La línea `Check` ya construida es el estado visible de la respuesta. El párrafo del modelo queda debajo, solo con la condición del pasaje y su cita |
+| Modelo | Condición, estado, orden y verbo, en un solo párrafo | La condición impresa en el pasaje, con la cita. No es fuente del estado |
+
+La línea `Check` sí es una garantía del código para el estado, el resultado y el referente: el sujeto y el `result` salen del episodio, y un `result` vacío no se rellena. Que el párrafo no convierta una observación en comprobación hecha, ni «comprobar» en «ajustar», no lo garantiza ningún código actual. Depende de que el modelo no lo escriba. Las muestras 83 y 84 ya tenían la prohibición de no añadir un ajuste y lo escribieron igual. Si el párrafo vuelve a hacerlo, la propuesta queda rechazada. No se sustituye por otra frase equivalente.
+
+Los ejemplos siguientes son ilustrativos. No son una salida del modelo ni una respuesta validada. Las condiciones salen del pasaje 8.2, páginas PDF 12 y 13: «Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)», «Comprobar que la fotocélula no esté activada», «Comprobar que no hay una obstrucción mecánica en la puerta», y, si el problema persiste, desconectar la fotocélula y pulsar TEST.
+
+Turno 1, ilustrativo. El episodio real tiene el objetivo «La puerta se reabre sola», `#54` y mediciones en `not_done`, y el LED y «No veo obstrucción» como observaciones. No hay comprobación de fotocélula.
+
+Estado, copiado de las líneas `Check`, no escrito por el modelo: `#54`, no hecha; mediciones, no hechas. El LED apagado y «no veo obstrucción» siguen como observaciones.
+
+Párrafo, ilustrativo: el pasaje 8.2 imprime tres comprobaciones con el verbo comprobar, cita [3]. La de la PDF 13 sigue condicional. No dice que la obstrucción esté hecha. No dice que el LED apagado compruebe la fotocélula. No dice ajustar el `#54`.
+
+Turno 3, ilustrativo. El episodio real añade `Check: fotocélula (done)` sin `result`, y la observación «no está activada». El estado visible repite esa línea vacía. No se inventa el resultado. `#54` y las mediciones siguen no hechas. El párrafo no vuelve a pedir la fotocélula como pendiente. El referente de «no está activada» sigue sin estar en `result`: este reparto no corrige ese defecto.
+
+Pregunta experimental, sin ejecutarla: con el episodio y los cuatro pasajes del turno 1 de las llamadas 83 y 84, si el modelo solo escribe la condición impresa y la cita, y el estado visible es la línea `Check`, ¿el párrafo da por hecha una comprobación que esa línea tiene en `not_done`, o cambia «comprobar» por «ajustar»?
+
+Mínimo: dos `generate_text` del turno 1. No hace falta el turno 3 para rechazarla. Gasto esperado de unos US$0,020, el de las llamadas 83 y 84. Techo de unos US$0,082, dos veces el techo de US$0,041 de las generaciones 75 a 77. Cabe en los 7 intentos y en los US$0,502802 autorizados que quedan. También cabe en el tope global. No se amplía nada. Las entradas 78 a 80 siguen en los 84 intentos y en el unknown de US$0,025851.
+
+Se rechaza si una de las dos muestras da por hecha una comprobación en `not_done` o usa ajustar como acción del `#54`. Si las dos se limitan a la condición y la cita, la propuesta no queda rechazada ni el companion aceptado.
 
 

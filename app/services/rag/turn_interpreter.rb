@@ -48,7 +48,7 @@ module Rag
       Every span is the shortest literal substring of turn, not the sentence. An observation is one contiguous symptom phrase copied from the turn, or empty. The reported fault and what the technician sees or does not see are observations, not identifiers and not checks. Keep every word between its ends. Do not drop words. Do not paraphrase. Do not invent an observation. Do not describe the photo. A correction of manufacturer, model, controller, or fault code still negates the stored value and asserts the replacement. Keep every other symptom in that same turn as an observation. A correction of an observation keeps the replacement phrase as the observation and does not need a slot negate or an assert span.
 
       checks:
-      A check is a verification the technician states as done or not done. It is not an observation. subject is a literal substring of the turn. status is done or not_done. result is a literal substring of the turn, or null. Omit checks when the turn states no verification. Do not turn an observation into a check.
+      A check is a verification the technician states as done or not done. It is not an observation. subject is a literal substring of the turn. status is done or not_done. result is the outcome the technician states for that verification, copied literally from the turn, or null; that outcome stays the result even when it also reads as an observation. Omit checks when the turn states no verification. Do not turn an observation into a check.
     PROMPT
 
     Result = Data.define(

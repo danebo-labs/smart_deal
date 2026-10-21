@@ -106,7 +106,7 @@ module Rag
             items: {
               type: "object",
               additionalProperties: false,
-              required: %w[subject status],
+              required: %w[subject status result],
               properties: {
                 subject: { type: "string", maxLength: ActiveEpisode::MAX_CHECK_CHARS },
                 status: { type: "string", enum: ActiveEpisode::CHECK_STATUSES },

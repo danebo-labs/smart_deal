@@ -463,7 +463,7 @@ F3 anota, en las pruebas ya previstas, si «Modo esclavo» guardado como identif
 
 Señal de este bloque: los tests funcionales de comprobaciones, reducer, episodio y prompt quedaron en verde. La suite seguida (seed 6371) dio 4951 corridas, 35111 aserciones, 2 fallos y 18 errores. Los 2 fallos eran pines de hash del prompt; se actualizaron a `cc875e4132b4391d2d581fe50e37170a3da302bca0432cc81343af1d6f4c9a39` y al archivo `1844024b18bb9c373c8e42e0617e32cde68166c85ad0345ac51f495f9b9e1638`, y esos dos archivos volvieron a salir en verde (32 corridas). Esa suite no queda aprobada por completo: los 18 errores son de sistema, Selenium, previos a este ciclo (en el sandbox, `Errno::EPERM` hacia 8.8.8.8:53; la línea base de F0 ya traía 18 errores de sistema). No se reparan ni se añaden tests Selenium. No bloquean F2.
 
-Arnés experimental, fuera de alcance y sin bloqueo de F2. `test/services/rag/vf5_system_role_admission_test.rb` no entra en la suite seguida; Rails sí lo ejecuta si se le pasa el archivo. `.git/info/exclude` no lo evita. La corrida vio tres fallos: la admisión del ensamblado actual devuelve `control`; la reserva histórica esperaba `plan_refused` y obtuvo `admission_refused`; las seis muestras esperaban `completed` y obtuvieron `admission_refused`. `admit` devuelve `control` solo cuando el SHA del prompt de control renderizado no es `6702ca30a2bca73688a81e5c8f9de1d585d4108d9e4db3cdf80ecdc254761500`. `Vf5SystemRoleComparison` convierte esa negativa en `admission_refused` antes de la reserva y antes de cualquier muestra. El cambio de prompt de F1-B mueve ese render. No se modifica el arnés ni sus expectativas.
+Arnés experimental, fuera de alcance y sin bloqueo de F2. Las cinco rutas siguen en `.git/info/exclude` y fuera del repositorio. El fixture `vf5_bound_20261020T1728Z/b0005.txt` sigue en disco. Los tres fallos no son una regresión del producto: `admit` devuelve `control` cuando el SHA del prompt renderizado no es `6702ca30a2bca73688a81e5c8f9de1d585d4108d9e4db3cdf80ecdc254761500`, y `Vf5SystemRoleComparison` convierte esa negativa en `admission_refused` antes de la reserva y de las muestras. Ese SHA es el ensamblado anterior al prompt ya commiteado. El test local quedó comentado para que `bin/rails test` sin filtro no lo ejecute. No se restauran sus expectativas ni se tocan los otros cuatro archivos. La ruta normal no llama a `Vf5SystemRoleAdmission`.
 
 Siguiente: F2, con el ledger de ingesta y sin escritura en S3. La escritura en S3 espera la autorización de F4.
 
@@ -717,32 +717,60 @@ Si esa decisión se concede, F4 anota si el Retrieve devuelve los cuerpos nuevos
 
 El estado ya se renderiza. `SessionContextBuilder#check_lines` mete en el prompt `Check: sujeto (estado)` y, si hay `result`, el resultado. El fallo de las muestras 75 a 84 es posterior: el mismo prompt le pide al modelo que vuelva a decir qué queda abierto y que proponga el siguiente paso, y la respuesta que ve el técnico es solo el párrafo del modelo. El código no compara ese párrafo con la línea `Check` ni con el verbo del pasaje. `sanitize_answer` quita el título y deja el contenido.
 
-La alternativa mínima no añade un servicio. Usa la llamada, los pasajes, `QueryComposer`, las líneas `Check` y `sanitize_answer` que ya existen. Lo que cambia es el reparto:
+La propuesta de Grok (estado desde el episodio, párrafo del modelo limitado a la condición del pasaje) se corrigió el 21 de octubre sobre `82d25e7`, sin llamadas y sin implementar. Tenía tres defectos:
 
-| | Ahora | Propuesto |
-| --- | --- | --- |
-| Entrada del modelo | Pregunta compuesta, pasajes, contexto con objetivo, observaciones y líneas `Check`, más la instrucción de reescribir el estado y sugerir el siguiente paso | La misma pregunta, los mismos pasajes y el mismo contexto. Se le quita la tarea de declarar hecho o pendiente y la de elegir el verbo de la acción siguiente |
-| Qué se conserva | Pasajes, citas `[n]`, objetivo, observaciones, líneas `Check`, sanitizador | Lo mismo |
-| Qué deja de escribir el modelo | — | El estado y el verbo de la acción. Esas dos frases del prompt son las que hoy se lo encargan |
-| Código | Arma el contexto y no vigila el párrafo | La línea `Check` ya construida es el estado visible de la respuesta. El párrafo del modelo queda debajo, solo con la condición del pasaje y su cita |
-| Modelo | Condición, estado, orden y verbo, en un solo párrafo | La condición impresa en el pasaje, con la cita. No es fuente del estado |
+- **Rúbrica.** Solo rechazaba dar por hecha una comprobación en `not_done`. En el turno 1, la obstrucción y la fotocélula no tienen línea `Check`. Las muestras 83 y 84 fallaron justo ahí («esta condición se cumple», «esta observación visual está hecha»). Con ese criterio las dos habrían pasado.
+- **Garantía.** Atribuía al código una garantía del estado, el resultado y el referente. El código copia el episodio; no lo corrige ni lo completa. En el turno 3 la fotocélula está en `done` con `result` vacío, y «no está activada» es una observación sin referente.
+- **Utilidad.** Un párrafo con solo la condición del pasaje y su cita parafrasea el manual y no orienta. Esa salida evita los errores porque omite la ayuda, y la prueba la habría aceptado. El guion pide orientación con el primer mensaje, una o dos intervenciones, la causa y sus subsistemas sin concluir, la página, y nada ajeno a la falla.
 
-La línea `Check` sí es una garantía del código para el estado, el resultado y el referente: el sujeto y el `result` salen del episodio, y un `result` vacío no se rellena. Que el párrafo no convierta una observación en comprobación hecha, ni «comprobar» en «ajustar», no lo garantiza ningún código actual. Depende de que el modelo no lo escriba. Las muestras 83 y 84 ya tenían la prohibición de no añadir un ajuste y lo escribieron igual. Si el párrafo vuelve a hacerlo, la propuesta queda rechazada. No se sustituye por otra frase equivalente.
+Diseño corregido. Misma llamada, mismos pasajes y mismo contexto. Sin servicio, clasificador ni verificador. Sin reglas del VF5.
 
-Los ejemplos siguientes son ilustrativos. No son una salida del modelo ni una respuesta validada. Las condiciones salen del pasaje 8.2, páginas PDF 12 y 13: «Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)», «Comprobar que la fotocélula no esté activada», «Comprobar que no hay una obstrucción mecánica en la puerta», y, si el problema persiste, desconectar la fotocélula y pulsar TEST.
+| | Ahora | Propuesta de Grok | Corregido |
+| --- | --- | --- | --- |
+| Estado visible | Ninguno propio; lo escribe el modelo | La línea `Check` | Registro breve generado del episodio: equipo, síntoma, observaciones literales entre comillas y comprobaciones del técnico, con plantilla fija en español. `done` sin `result` dice «sin resultado registrado». No enumera el manual |
+| Tarea del modelo | Comprobaciones, cuáles quedan abiertas y siguiente paso opcional | Solo condición y cita | Comprobaciones del pasaje con su verbo y su condición, sin estado; una orientación propia (observación o comprobación siguiente), con la razón tomada del reporte y de los pasajes; como mucho una pregunta |
+| Prompt | — | Quitar dos frases | Sustituir esas dos frases por una. No se añade bloque |
 
-Turno 1, ilustrativo. El episodio real tiene el objetivo «La puerta se reabre sola», `#54` y mediciones en `not_done`, y el LED y «No veo obstrucción» como observaciones. No hay comprobación de fotocélula.
+Sustitución en `FIELD_REPORT_PARAGRAPH`. Sale «State the documented checks that fit the report, with their conditions, and which remain open. You may suggest which open check to do next, with the reason taken from the report, as your own orientation and not as an order or likelihood the passages do not state.» Entra «The Active Field Problem record is shown to the technician with your answer; do not restate whether a check is done or open. State the documented checks that fit the report with the passage's own verb and condition. Then give one next observation or check as your own orientation, with its reason taken from the report and the passages, not as an order or likelihood the passages do not state, and ask at most one question.»
 
-Estado, copiado de las líneas `Check`, no escrito por el modelo: `#54`, no hecha; mediciones, no hechas. El LED apagado y «no veo obstrucción» siguen como observaciones.
+Registro: se antepone al texto ya pasado por `sanitize_answer`, solo en la ruta de identidad documental con episodio activo y con observaciones o comprobaciones. Reutiliza la compactación de observaciones de `SessionContextBuilder`, que ya omite la que repite el objetivo. No entra en el texto que el historial reinyecta: el historial guarda los primeros 200 caracteres de la última respuesta, y el registro los llenaría con un estado que el turno siguiente puede corregir (el LED en F5). Tests sin modelo: fragmentos literales, `done` sin resultado, ningún resultado rellenado, episodio vacío sin registro.
 
-Párrafo, ilustrativo: el pasaje 8.2 imprime tres comprobaciones con el verbo comprobar, cita [3]. La de la PDF 13 sigue condicional. No dice que la obstrucción esté hecha. No dice que el LED apagado compruebe la fotocélula. No dice ajustar el `#54`.
+**Qué garantiza el código.** El registro es el episodio de ese turno, con los fragmentos literales que el contrato admitió. No rellena un `result`. El texto final no lleva títulos `#`. El prompt ya no pide repetir el estado.
 
-Turno 3, ilustrativo. El episodio real añade `Check: fotocélula (done)` sin `result`, y la observación «no está activada». El estado visible repite esa línea vacía. No se inventa el resultado. `#54` y las mediciones siguen no hechas. El párrafo no vuelve a pedir la fotocélula como pendiente. El referente de «no está activada» sigue sin estar en `result`: este reparto no corrige ese defecto.
+**Qué depende del modelo.** Que el párrafo no contradiga el registro, no convierta una observación en comprobación hecha, no cambie «comprobar» por «ajustar», no ordene causas y oriente de verdad. Las muestras 83 y 84 ya tenían la prohibición del ajuste y lo escribieron igual. Que el episodio sea correcto y completo depende del intérprete: el turno 3 sin `result` y «#54» frente a «el #54» siguen abiertos. En el turno 3 el registro mostraría «fotocélula: hecha, sin resultado registrado» y «no está activada» entre las observaciones. Es visible y honesto. No está corregido ni se rellena.
 
-Pregunta experimental, sin ejecutarla: con el episodio y los cuatro pasajes del turno 1 de las llamadas 83 y 84, si el modelo solo escribe la condición impresa y la cita, y el estado visible es la línea `Check`, ¿el párrafo da por hecha una comprobación que esa línea tiene en `not_done`, o cambia «comprobar» por «ajustar»?
+**Turno 1, ilustrativo.** No es una salida del modelo ni una respuesta validada. Parte del episodio real (`attempts/3/t1/episode.json`) y de los pasajes [3] (8.2, PDF 12 y 13, impresas 11 y 12) y [4] (5.6). Páginas en folio impreso.
 
-Mínimo: dos `generate_text` del turno 1. No hace falta el turno 3 para rechazarla. Gasto esperado de unos US$0,020, el de las llamadas 83 y 84. Techo de unos US$0,082, dos veces el techo de US$0,041 de las generaciones 75 a 77. Cabe en los 7 intentos y en los US$0,502802 autorizados que quedan. También cabe en el tope global. No se amplía nada. Las entradas 78 a 80 siguen en los 84 intentos y en el unknown de US$0,025851.
+> Registro del caso. Equipo: Fermator VF5+. Síntoma: «La puerta se reabre sola». Observaciones: «El LED de fotocélula está apagado», «No veo obstrucción». Sin hacer: #54, mediciones.
+>
+> Para «la puerta se re-abre sola», el manual del VF5+ (8.2, pág. 11) da tres comprobaciones y no indica un orden: comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54), comprobar que la fotocélula no esté activada y comprobar que no hay una obstrucción mecánica en la puerta [3]. Lo que reportas son observaciones: no ver obstrucción no es haber comprobado la mecánica de la puerta, y el LED apagado vale para el momento en que lo miraste. El LED de fotocélula se activa cuando la fotocélula o la entrada de re-apertura está activada (5.6) [4]. Orientación mía, no del manual: mira ese LED en el momento en que la puerta reabre. Si se enciende, apunta a la fotocélula o a la entrada de re-apertura; si sigue apagado, no las señala y siguen por comprobar el #54 y la obstrucción mecánica. Si el problema persiste, el manual indica desconectar la fotocélula y volver a pulsar TEST; si entonces la puerta no abre o cierra completamente, debe haber una obstrucción mecánica (pág. 12) [3]. ¿Se enciende el LED cuando la puerta reabre?
 
-Se rechaza si una de las dos muestras da por hecha una comprobación en `not_done` o usa ajustar como acción del `#54`. Si las dos se limitan a la condición y la cita, la propuesta no queda rechazada ni el companion aceptado.
+La primera línea la escribe el código. El resto es lo que el modelo debería poder escribir. La orientación es una inferencia sobre 5.6 y 8.2, marcada como propia. Es una observación que separa la fotocélula de las otras dos comprobaciones y se responde con sí o no. No es un orden de causas. La rúbrica no exige esta orientación concreta, sino una con razón tomada del reporte y de los pasajes.
+
+**Rúbrica de la respuesta completa.** Sustituye el rechazo anterior de esta sección. Se juzga el registro más el texto pasado por `sanitize_answer`. Las líneas de «Rúbrica aclarada» que no se repiten aquí siguen vigentes.
+
+Rechazo, basta una muestra:
+
+1. Presenta como hecha, cumplida, verificada, descartada o resuelta cualquier comprobación de los pasajes que el episodio no tenga en `done`. Vale tenga o no línea `Check`, y también cuando la deduce de una observación («no veo», el estado del LED).
+2. Contradice el registro.
+3. Cambia el verbo del pasaje por ajustar, regular, calibrar, girar o reemplazar. O da como orden un paso que los pasajes no traen («verifique SW4»).
+4. Atribuye al manual un orden, una prioridad o una probabilidad, u ordena causas.
+5. Da la condición de la PDF 13 como primer paso o sin condición, liga `#21` a este síntoma o toma el ejemplo de SW4 como hecho del equipo.
+6. No orienta: solo parafrasea las comprobaciones o el estado, sin una observación o comprobación siguiente ligada al reporte. También falla si hace más de una pregunta o pide algo que el turno ya trae (marca, modelo, LED, obstrucción, `#54`, mediciones).
+7. Lleva un título después del sanitizador, una cita que no corresponde al pasaje o más de 300 palabras.
+
+Aceptación, cada muestra cumple todo:
+
+- Las comprobaciones de «se re-abre sola» con su verbo y [3]. Omitir una no falla.
+- Lo que reportó el técnico queda como observación.
+- Una orientación propia, marcada como tal, con razón del reporte y de los pasajes, y como mucho una pregunta que se responde en pocas palabras.
+- La PDF 13 condicional u omitida.
+- Coherente con el registro.
+
+**Prueba mínima.** Antes, en local y sin llamadas: el registro, la sustitución, sus tests y los pines de hash. Después, dos `generate_text` del turno 1 con el episodio `attempts/3/t1/episode.json` y los cuatro pasajes de `attempts/3/chunks/`, en el mismo orden ([1] SW4, [2] «abre pero no se cierra», [3] «re-abre sola», [4] 5.6). Haiku de producción, temperatura 0,1 y 3000 tokens. Sin intérprete nuevo. Un proceso con `RAG_LOCAL_PASS_CALL_CAP=2` y US$0,10. Un error transitorio cuenta como intento y no se reintenta por encima del tope. Se guardan la respuesta cruda, el texto sanitizado y la respuesta completa con el registro.
+
+Presupuesto: gasto esperado de unos US$0,020, el de las llamadas 83 y 84. Techo de unos US$0,082. El ledger pasaría de 84 a 86 intentos, dentro de los 7 que quedan del cupo autorizado y de los US$0,502802. Quedan 5. Si además se prueba el intérprete del turno 3 (2 llamadas), quedan 3. F5 (nueve llamadas) no cabe en ningún caso y necesita otra decisión de Lahiri. Este plan no amplía nada. Las entradas 78 a 80 siguen en unknown.
+
+Lectura: una muestra rechazada rechaza el diseño y no se sustituye por otra frase equivalente. Dos muestras aceptadas solo dan evidencia preliminar: no prueban estabilidad, no miden el turno 3 y no aceptan el companion. F5 sigue siendo la medida de la conversación.
 
 

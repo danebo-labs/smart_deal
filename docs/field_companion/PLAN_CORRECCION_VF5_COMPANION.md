@@ -473,7 +473,7 @@ Sin escritura en S3. Filtro Haiku de las 22 páginas y extracción síncrona. El
 
 Gasto de la sonda, 10 llamadas, US$0,526390. El reintento de la página 22 suma la llamada 11: US$0,583192 comprometidos, 0 en abierto, techo 32 y US$2,50. No se reextrayeron las páginas sanas.
 
-Paginación: confirmada. El folio impreso es el índice del PDF menos uno (la 12 imprime 11/21, la 13 imprime 12/21, la 22 imprime 21/21). La extracción separa índice y folio. La página 14 no inventa un 9.5 ni dice que la página no llegó.
+Paginación: la diferencia índice/folio está comprobada (la 12 imprime 11/21, la 13 imprime 12/21, la 22 imprime 21/21) y la extracción ya no trata esa diferencia como una página ausente. La 14 no inventa un 9.5 ni dice que la página no llegó. Eso no demuestra que el fallo histórico tuviera solo esa causa.
 
 - p3: descarte registrado. La página es el objetivo del documento y el registro de modificaciones.
 - p5: sin encabezado S4 ni nota de seguridad. Los ejemplos de SW4 siguen marcados como ejemplos.
@@ -482,7 +482,7 @@ Paginación: confirmada. El folio impreso es el índice del PDF menos uno (la 12
 - p13: la frase «En caso que el problema persista, desconectar la fotocélula…» queda unida a 8.2 «se re-abre sola», con `[PDF_PAGE: 13]`, `[PRINTED_PAGE: 12/21]` y `source_pdf_page` 13.
 - p14: contiene 9.1 a 9.4, sin 9.5 inventado y sin decir que la página no llegó.
 - p19: contiene las cifras de 11.1 y 11.2, entre ellas 29,46, 31,61 y 0,12 en la fila EW 60. La cobertura marca ausentes los rótulos 11.1 y 11.2; las cifras no. `layout_order_verified` sigue en falso.
-- p22: no cumple. En el ejemplo 2 la página imprime 36,61 x (−0,17) = −6,13 Kg solo en «Diferencia por apertura» y «Son iguales» en «número de paneles». 0,12 = 4,39 Kg está en «tipo de panel». La primera extracción metió −6,13 en una celda combinada de esas dos columnas. El cuerpo de esa llamada no se conservó al reintentar; queda el usage de la llamada 10.
+- p22: no cumple. En el ejemplo 2 la página imprime 36,61 x (−0,17) = −6,13 Kg solo en «Diferencia por apertura» y «Son iguales» en «número de paneles». 0,12 = 4,39 Kg está en «tipo de panel». La primera extracción metió −6,13 en una celda combinada de esas dos columnas. El cuerpo original de esa llamada se perdió al reintentar y no se reconstruye. Quedan el request de `calls/010.json` y el usage de la llamada 10. El segundo intento está en `attempts/p22/2/`.
 
 Ajuste único de instrucción, commit `b15078c`: la tabla compacta no funde dos celdas impresas ni mueve un valor a la columna vecina. Test del prompt, 29 corridas, 0 fallos. Reextracción solo de la página 22, llamada 11, US$0,056802. Sigue cruzando: dice que la celda impresa abarca las dos primeras columnas y en «número de paneles» escribe «ver celda anterior».
 

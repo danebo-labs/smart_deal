@@ -444,7 +444,7 @@ module BatchChunkingPrompt
 
         # OUTPUT QUALITY
         - High signal-to-noise ratio. No filler, no apology, no meta-commentary.
-        - Use compact tables `| ID | Function | Connection | Voltage |` where useful. Keep each value in the column the page prints. Do not merge two adjacent cells into one, and do not move a value into a neighboring column.
+        - Transcribe a printed table header by header, from left to right. For each header, emit the header and the text aligned directly under it, including a value that wraps onto the following line inside that same column. Give every header its own cell, in that same left-to-right order.
         - Keep each section context-independent — Haiku may surface it in isolation.
 
         # FINAL SAFETY RULE

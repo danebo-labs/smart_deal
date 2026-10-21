@@ -5,7 +5,6 @@ require "open3"
 
 class SectionPageContinuityTest < ActiveSupport::TestCase
   PARENT_PAGE = <<~TEXT
-    INSTRUCCIONES
     2.1 Marcha
     • La unidad se detiene.
     – Revisar el tope.
@@ -15,7 +14,6 @@ class SectionPageContinuityTest < ActiveSupport::TestCase
   TEXT
 
   NEXT_PAGE = <<~TEXT
-    INSTRUCCIONES
     – Si el aviso sigue, separar el sensor y pulsar la prueba. Si el recorrido queda corto, el manual indica un bloqueo.
     • La unidad no arranca.
     – Revisar la alimentacion.
@@ -165,7 +163,49 @@ class SectionPageContinuityTest < ActiveSupport::TestCase
     assert_equal "2.1 Marcha — La unidad se detiene.", parent["field_records"].last["h"]
     assert_equal CONTINUATION_RECORD["a"], parent["field_records"].last["a"]
     assert_equal CONTINUATION_RECORD["r"], parent["field_records"].last["r"]
-    assert_not parent["field_records"].last.key?("_page")
+    record = parent["field_records"].last
+    assert_not record.key?("_page")
+    assert_equal 3, record["source_pdf_page"]
+    assert_equal 2, parent["page"]
+
+    parser = BatchResultsParserService.new(s3_service: Object.new)
+    asset = Struct.new(:filename).new("unit.pdf")
+    assert_nothing_raised do
+      parser.send(:validate_field_record!, record, asset: asset, chunk_index: 0, record_index: 0)
+    end
+    rendered = parser.send(:render_field_record, record, page: parent["page"])
+    assert_includes rendered, "SOURCE_PDF_PAGE: 3"
+    assert_not_includes rendered, "SOURCE_PDF_PAGE: 2"
+  end
+
+  test "a repeated header is running matter and does not hide an opening" do
+    header = "ACME FIELD BULLETIN"
+    pages = {
+      2 => "#{header}\n#{PARENT_PAGE}",
+      3 => "#{header}\n#{NEXT_PAGE}",
+      4 => "#{header}\n3.1 Otro tema\n• La unidad espera.\n"
+    }
+    repaired = SectionPageContinuity.repair_prompt(
+      sample_prompt, pages: pages, extra_records: [ CONTINUATION_RECORD ]
+    )
+
+    assert_nil repaired["blocked"], repaired["notes"].inspect
+    parent, = contents(repaired["prompt"])
+    assert_includes parent, CONTINUATION
+    assert_not_includes parent, header
+  end
+
+  test "a page without a printed folio does not invent one" do
+    parent_text = PARENT_PAGE.lines.reject { |line| line.match?(/Pág\./) }.join
+    child_text = NEXT_PAGE.lines.reject { |line| line.match?(/Pág\./) }.join
+    repaired = SectionPageContinuity.repair_prompt(
+      sample_prompt, pages: { 2 => parent_text, 3 => child_text }, extra_records: []
+    )
+
+    assert_nil repaired["blocked"], repaired["notes"].inspect
+    assert_includes repaired["prompt"], "[PDF_PAGE: 2]"
+    assert_includes repaired["prompt"], "[PDF_PAGE: 3]"
+    assert_not_includes repaired["prompt"], "PRINTED_PAGE"
   end
 
   test "the merger leaves a hyphen prefix unchanged when page texts are absent" do
@@ -204,7 +244,10 @@ class SectionPageContinuityTest < ActiveSupport::TestCase
     raw = Rails.root.join("tmp/field_companion/local_ingestion/raw-p13.txt")
     skip "local VF5 evidence is absent" unless pdf.file? && control.file? && raw.file?
 
-    pages = [ 12, 13 ].index_with { |number| pdf_page(pdf, number) }
+    extracted = [ 11, 12, 13 ].index_with { |number| pdf_page(pdf, number) }
+    running = Rag::PageChunkFidelity.running_matter_lines(extracted)
+    pages = extracted.slice(12, 13)
+    pages[1] = running.join("\n") if running.any?
     records = JSON.parse(raw.read).fetch("chunks").flat_map { |chunk| Array(chunk["field_records"]) }
     repaired = SectionPageContinuity.repair_prompt(control.read, pages: pages, extra_records: records)
 

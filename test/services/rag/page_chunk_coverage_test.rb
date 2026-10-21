@@ -198,6 +198,36 @@ class Rag::PageChunkCoverageTest < ActiveSupport::TestCase
     texts
   end
 
+  test "running matter is whichever line repeats, and a single title stays" do
+    once = "Módulo electrónico VF5+\nCheck the seal before starting the motor.\nPág. 4 / 9\n"
+    kept = Rag::PageChunkFidelity.strip_running_matter(once)
+    assert_includes kept, "Módulo electrónico VF5+"
+    assert_not_includes kept, "Pág."
+
+    stripped = Rag::PageChunkFidelity.strip_running_matter(once, running_lines: [ "Módulo electrónico VF5+" ])
+    assert_not_includes stripped, "Módulo electrónico"
+    assert_includes stripped, "Check the seal"
+  end
+
+  test "a thin text layer is not low precision and an invented body is" do
+    page = "Check the door seal before starting the motor and confirm the photocell input is clear during the full travel of the cabin door."
+    invented = {
+      "document_name" => "Unit",
+      "aliases" => [],
+      "chunks" => [ { "text" => "Replace the hydraulic pump and refill the oil reservoir before the next inspection.", "page" => 4, "field_records" => [] } ]
+    }.to_json
+    faithful = {
+      "document_name" => "Unit",
+      "aliases" => [],
+      "chunks" => [ { "text" => page, "page" => 4, "field_records" => [] } ]
+    }.to_json
+
+    assert Rag::PageChunkFidelity.low_precision_body?(invented, page_text: page, page_number: 4, anchor_page: 1)
+    assert_not Rag::PageChunkFidelity.low_precision_body?(faithful, page_text: page, page_number: 4, anchor_page: 1)
+    assert_not Rag::PageChunkFidelity.low_precision_body?(invented, page_text: "3 Conexionado", page_number: 4, anchor_page: 1)
+    assert_not Rag::PageChunkFidelity.low_precision_body?(invented, page_text: "", page_number: 4, anchor_page: 1)
+  end
+
   def promoted_actions(chunks)
     actions = []
     total = 0

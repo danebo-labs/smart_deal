@@ -516,8 +516,8 @@ module BatchChunkingPrompt
   # Signals whether this page is the anchor (lowest kept page) or a content page.
   # locale is forwarded only for the anchor page; wave-B pages omit it.
   # @param binary             [String]  Raw bytes of the single-page PDF
-  # @param page_number        [Integer] 1-indexed page number in the original document
-  # @param total_pages        [Integer] Total pages in the document (after relevance filtering)
+  # @param page_number        [Integer] 1-indexed PDF page index
+  # @param total_pages        [Integer] Number of pages in the PDF, not the count of pages kept
   # @param filename           [String]  Original document filename (context hint only)
   # @param document_name_hint [String, nil] Canonical name derived from anchor page (passed to pages 2+)
   # @param locale             [String, nil] ISO 639-1 — forwarded only for anchor page
@@ -528,14 +528,13 @@ module BatchChunkingPrompt
   # @return [Array<Hash>]
   def self.page_user_content(binary:, page_number:, total_pages:, filename:, document_name_hint: nil, locale: nil, anchor: false, layout_digest: nil)
     role        = anchor ? "ANCHOR_PAGE" : "CONTENT_PAGE"
-    instruction = +"Page #{page_number} of #{total_pages}. " \
+    instruction = +"The attached document is exactly the page to extract. " \
+      "Page #{page_number} of #{total_pages}. " \
       "Page role: #{role}. " \
-      "This page is part of a single uploaded file — emit the same `document_name` " \
-      "across all pages of this document. " \
-      "Return ONLY chunks for this page, each with \"page\": #{page_number} set explicitly. " \
-      "If the page begins mid-section (content before the first visible heading), " \
-      "that content continues the previous page: emit it verbatim as the FIRST " \
-      "chunk with its field_records — never drop it."
+      "#{page_number} is the PDF page index. " \
+      "#{total_pages} is the number of pages in the PDF. " \
+      "A printed folio may differ from that index. " \
+      "Return chunks for this page only, each with \"page\": #{page_number}."
     instruction << " Document name hint: #{document_name_hint}." if document_name_hint.present?
     instruction << " #{FILENAME_HINT}#{filename}"
     instruction << " Summary language: #{locale}." if locale.present?

@@ -102,11 +102,12 @@ class IngestBatchResultsJob < ApplicationJob
       next unless asset
 
       page_results.sort_by! { |r| r[:page_number] }
-      page_results = retry_truncated_pages!(asset, page_results)
+      page_results, page_texts = prepare_page_results!(asset, page_results)
       total_kept = page_results.size
 
       begin
-        merged_json = ChunkMergerService.merge(page_results)
+        report = ChunkMergerService.merge_with_report(page_results, page_texts: page_texts)
+        merged_json = report[:json]
         parser.call(asset: asset, raw_json: merged_json, ingestion_path: "manual_batch_v1",
                     account_id: account_id, document_uid: asset.sha256[0, 36])
       rescue ArgumentError, BatchResultsParserService::ParseError => e
@@ -277,14 +278,25 @@ class IngestBatchResultsJob < ApplicationJob
   # truncated OR returned invalid JSON — the V1 page-6 failure mode. The Batch
   # usage row is preserved; each direct retry is tracked once by the client and
   # accumulated on the asset via on_usage.
-  def retry_truncated_pages!(asset, page_results)
-    BatchPageRetryService.new.retry_failed_pages!(
-      page_results: page_results,
-      s3_key:       asset.s3_key,
-      filename:     asset.filename,
-      sha256:       asset.sha256,
-      on_usage:     ->(usage) { accumulate_asset_usage(asset, usage) }
+  def prepare_page_results!(asset, page_results)
+    service = BatchPageRetryService.new
+    loaded = service.load_source_pages(s3_key: asset.s3_key, filename: asset.filename)
+    results = service.retry_failed_pages!(
+      page_results:    page_results,
+      s3_key:          asset.s3_key,
+      filename:        asset.filename,
+      sha256:          asset.sha256,
+      on_usage:        ->(usage) { accumulate_asset_usage(asset, usage) },
+      source_pdf:      loaded[:binary],
+      source_loaded:   true,
+      page_texts:      loaded[:texts],
+      pdf_page_count:  loaded[:texts].keys.max
     )
+    [ results, loaded[:texts] ]
+  end
+
+  def retry_truncated_pages!(asset, page_results)
+    prepare_page_results!(asset, page_results).first
   end
 
   def accumulate_asset_usage(asset, usage)

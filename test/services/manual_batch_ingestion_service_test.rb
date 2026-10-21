@@ -178,6 +178,10 @@ class ManualBatchIngestionServiceTest < ActiveSupport::TestCase
 
     assert_equal 2, fake_client.submitted_requests.size, "only pages 2+3 should be submitted"
     assert_equal [ 2, 3 ], result[:kept_pages].sort
+    instructions = fake_client.submitted_requests.map { |request| request[:params][:messages].first[:content].last[:text] }
+    assert_includes instructions[0], "Page 2 of 3"
+    assert_includes instructions[1], "Page 3 of 3"
+    assert instructions.none? { |text| text.include?("begins mid-section") }
   ensure
     PageRelevanceFilter.define_singleton_method(:call_batch, orig_cb)
     TrackBedrockQueryJob.define_singleton_method(:perform_later, orig_track)

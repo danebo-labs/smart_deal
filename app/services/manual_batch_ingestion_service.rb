@@ -51,7 +51,9 @@ class ManualBatchIngestionService
       h[page.number] = custom_id_for(sha256, page.number)
     end
 
-    items = build_batch_request_items(kept_pages, filename, sha256, locale, filter_results)
+    items = build_batch_request_items(
+      kept_pages, filename, sha256, locale, filter_results, pdf_page_count: total_pages
+    )
     batch_ids = ClaudeBatchSubmissionService.new(batch_client: @batch_client).submit!(items)
 
     Rails.logger.info(
@@ -118,14 +120,14 @@ class ManualBatchIngestionService
     end
   end
 
-  def build_batch_request_items(kept_pages, filename, sha256, locale, filter_results)
-    total = kept_pages.size
+  def build_batch_request_items(kept_pages, filename, sha256, locale, filter_results, pdf_page_count:)
+    kept_total = kept_pages.size
 
     kept_pages.each_with_index.map do |page, idx|
       custom_id     = custom_id_for(sha256, page.number)
       page_locale   = idx.zero? ? locale : nil
       anchor        = idx.zero?
-      layout_digest = topology_for_page(page, total, filename, locale, filter_results)
+      layout_digest = topology_for_page(page, kept_total, filename, locale, filter_results)
 
       ClaudeBatchRequestItem.new(
         custom_id: custom_id,
@@ -135,7 +137,7 @@ class ManualBatchIngestionService
           content = BatchChunkingPrompt.page_user_content(
             binary:        page.binary,
             page_number:   page.number,
-            total_pages:   total,
+            total_pages:   pdf_page_count,
             filename:      filename,
             locale:        page_locale,
             anchor:        anchor,

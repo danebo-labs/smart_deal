@@ -55,13 +55,14 @@ module Rag
       tokens(claim).size >= 6 && spans.any? { |span| recall(claim, span) >= 0.55 }
     end
 
-    def self.strip_running_matter(text)
+    # Folio lines always drop. Repeated furniture drops only when the caller
+    # passes the document catalog from #running_matter_lines. A title that
+    # appears on one page stays.
+    def self.strip_running_matter(text, running_lines: nil)
+      running = Array(running_lines)
       text.to_s.lines.reject { |line|
-        stripped = line.strip.delete("\f")
-        stripped.match?(/\A(?:INSTRUCCIONES|DOC-[A-Z0-9.]{6,}|Versi[oó]n:\s*\S+)\z/i) ||
-          stripped.match?(/\bwww\.\S+/i) ||
-          stripped.match?(/\APág\.\s*\d/i) ||
-          stripped.match?(/\AMódulo electrónico\b/i)
+        stripped = collapse_line(line)
+        stripped.present? && (folio_line?(stripped) || running.include?(stripped))
       }.join.gsub(/\n{3,}/, "\n\n").strip
     end
 
@@ -82,6 +83,34 @@ module Rag
 
       half = texts.size / 2.0
       grouped.select { |_line, pages| pages.size >= 3 && pages.size >= half }.keys.sort
+    end
+
+    # True when a healthy page body is verifiable and its narrative is below
+    # the precision floor. A blank or thin text layer is not low: it cannot
+    # be checked. Records are not part of the narrative.
+    def self.low_precision_body?(body, page_text:, page_number:, anchor_page: nil)
+      text = page_text.to_s
+      return false if text.blank?
+
+      parsed = LlmJsonParser.parse(body.to_s)
+      return false unless parsed.is_a?(Hash)
+
+      number = page_number.to_i
+      chunks = Array(parsed["chunks"]).filter_map do |chunk|
+        next unless chunk.is_a?(Hash)
+
+        { page: number, text: chunk["text"].to_s }
+      end
+      return false if chunks.empty?
+
+      report = assess_coverage(
+        page_texts: { number => text },
+        chunks: chunks,
+        anchor_page: anchor_page
+      )
+      report.dig(:pages, number, :precision_low) == true
+    rescue JSON::ParserError, TypeError
+      false
     end
 
     # Four local measures. Nothing here reads a PDF or writes a chunk.

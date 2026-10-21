@@ -141,15 +141,30 @@ class IngestManualBatchResultsJob < ApplicationJob
     # (V1 page-6 failure mode). Retry only — automatic long-manual routing
     # stays untouched until E3a. No asset ledger row exists on this chain;
     # each retry is still tracked once by ClaudeChunkingClient.
-    page_results = BatchPageRetryService.new.retry_failed_pages!(
+    service = BatchPageRetryService.new
+    loaded = if service.respond_to?(:load_source_pages)
+      service.load_source_pages(s3_key: s3_key, filename: filename)
+    else
+      { binary: nil, texts: {} }
+    end
+    pdf_count = loaded[:texts].keys.max || ctx[:total_pages]
+    page_results = service.retry_failed_pages!(
       page_results:    page_results,
       s3_key:          s3_key,
       filename:        filename,
       sha256:          sha256,
-      tracking_prefix: "web_batch_retry"
+      tracking_prefix: "web_batch_retry",
+      source_pdf:      loaded[:binary],
+      source_loaded:   service.respond_to?(:load_source_pages),
+      page_texts:      loaded[:texts],
+      pdf_page_count:  pdf_count
     )
 
-    merged_json = ChunkMergerService.merge(page_results)
+    merged_json = ChunkMergerService.merge_with_report(
+      page_results,
+      page_texts: loaded[:texts],
+      discards: filtered_page_discards(ctx, loaded[:texts])
+    )[:json]
 
     s3 = S3DocumentsService.new
     asset = ChunkAsset.new(filename: filename, sha256: sha256, s3_key: s3_key, content_type: "application/pdf")
@@ -229,12 +244,26 @@ class IngestManualBatchResultsJob < ApplicationJob
       page_customs:    batch.page_customs.to_h.transform_keys(&:to_i),
       page_topology_edges: batch.page_topology_edges.to_h.transform_keys(&:to_i),
       kept_pages:      Array(batch.kept_pages),
+      total_pages:     batch.total_pages,
       conv_session_id: batch.conv_session_id,
       kb_doc_id:       batch.kb_document_id,
       account_id:      batch.account_id,
       document_uid:    batch.kb_document&.document_uid,
       locale:          batch.locale
     }
+  end
+
+  def filtered_page_discards(ctx, page_texts)
+    kept = Array(ctx[:kept_pages]).map(&:to_i)
+    return {} if kept.empty?
+
+    last = ctx[:total_pages].to_i
+    last = page_texts.keys.max.to_i if last.zero?
+    return {} if last.zero?
+
+    (1..last).each_with_object({}) do |number, discards|
+      discards[number] = "filtered" unless kept.include?(number)
+    end
   end
 
   def broadcast_failed(web_manual_batch, ctx)

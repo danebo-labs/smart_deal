@@ -583,4 +583,19 @@ class ChunkMergerServiceTest < ActiveSupport::TestCase
     assert_equal [ 2, 5 ], report[:degraded_pages]
     assert_equal 2, parsed["chunks"].count
   end
+
+  test "a discard stays on the report and a low precision page is only the marker" do
+    invented = "Replace the hydraulic pump and refill the oil reservoir before the next inspection."
+    report = ChunkMergerService.merge_with_report(
+      [ { page_number: 4, text: page3_json, precision_low: true, usage: nil, model: "m" } ],
+      discards: { 2 => :cover }
+    )
+    parsed = JSON.parse(report[:json])
+
+    assert_equal({ 2 => "cover" }, report[:discards])
+    assert_includes report[:degraded_pages], 4
+    assert_includes parsed["chunks"].first["text"], "EXTRACCION PARCIAL"
+    assert_not_includes parsed["chunks"].first["text"], invented
+    assert_not_includes report[:json], "ELECTRICAL"
+  end
 end

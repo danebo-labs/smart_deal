@@ -148,7 +148,9 @@ class Rag::PageChunkFidelityTest < ActiveSupport::TestCase
     root = Rails.root.join("tmp/field_companion/validation_captures/vf5-bound-20261020T1728Z")
     skip "captured prompts are local evidence" unless root.join("354da85f-c20c-4d36-bb88-45a0c059bc2e/bodies/b0005.txt").file?
 
-    pages = [ 5, 12, 13 ].map { |number| pdf_page(number) }
+    raw = [ 5, 12, 13 ].index_with { |number| raw_pdf_page(number) }
+    running = Rag::PageChunkFidelity.running_matter_lines(raw)
+    pages = raw.values.map { |text| Rag::PageChunkFidelity.strip_running_matter(text, running_lines: running) }
     turn1 = root.join("354da85f-c20c-4d36-bb88-45a0c059bc2e/bodies/b0005.txt").read
     turn2 = root.join("8205d72d-d67f-4dcb-b9d6-532fb3373768/bodies/b0005.txt").read
     corrected1 = Rag::PageChunkFidelity.rewrite_search_results(turn1, pages)
@@ -179,12 +181,12 @@ class Rag::PageChunkFidelityTest < ActiveSupport::TestCase
 
   private
 
-  def pdf_page(number)
+  def raw_pdf_page(number)
     pdf = Rails.root.join("docs/field_companion/fuentes/VF5.pdf")
     output, status = Open3.capture2("pdftotext", "-layout", "-f", number.to_s, "-l", number.to_s, pdf.to_s, "-")
     flunk "pdftotext #{status.exitstatus}" unless status.success?
 
-    Rag::PageChunkFidelity.strip_running_matter(output)
+    output
   end
 
   def query_line(prompt)

@@ -195,6 +195,10 @@ class BulkCostV2RequestBuilderTest < ActiveSupport::TestCase
     requests, _meta = builder.build_all!([ asset ])
 
     assert_equal 2, requests.size
+    instructions = requests.map { |request| request[:params][:messages].first[:content].last[:text] }
+    assert_includes instructions[0], "Page 2 of 3"
+    assert_includes instructions[1], "Page 3 of 3"
+    assert instructions.all? { |text| text.include?("number of pages in the PDF") }
     assert_equal "claude-sonnet-5-5", requests[0][:params][:model]
     assert_equal BatchChunkingPrompt::MODEL_TEXT, requests[0][:params][:model]
     assert_equal "claude-opus-5-5", requests[1][:params][:model]

@@ -288,7 +288,11 @@ class BatchResultsParserService
 
     return "no evidence" if unverifiable_non_stop_field_record?(record)
 
-    stray = values.keys - FIELD_RECORD_ALLOWED_KEYS
+    stray = values.keys - FIELD_RECORD_ALLOWED_KEYS - [ "source_pdf_page" ]
+    origin = values["source_pdf_page"]
+    if values.key?("source_pdf_page") && !(origin.is_a?(Integer) && origin.positive?)
+      stray << "source_pdf_page"
+    end
     return "unknown keys: #{stray.join(', ')}" if stray.any?
 
     # `sw` is the stop-work evidence pair. Carried under any other record type it
@@ -399,7 +403,14 @@ class BatchResultsParserService
     missing = FIELD_RECORD_REQUIRED_KEYS.reject { |key| values.key?(key) }
     raise ParseError, "Missing #{missing.join(', ')} in #{location}" if missing.any?
 
-    unknown = values.keys - FIELD_RECORD_ALLOWED_KEYS
+    if values.key?("source_pdf_page")
+      origin = values["source_pdf_page"]
+      unless origin.is_a?(Integer) && origin.positive?
+        raise ParseError, "Invalid source_pdf_page in #{location}"
+      end
+    end
+
+    unknown = values.keys - FIELD_RECORD_ALLOWED_KEYS - [ "source_pdf_page" ]
     raise ParseError, "Unknown #{unknown.join(', ')} in #{location}" if unknown.any?
 
     FIELD_RECORD_REQUIRED_KEYS.each do |key|
@@ -588,11 +599,15 @@ class BatchResultsParserService
     lines = [
       "FIELD_RECORD:",
       "RECORD_ID: #{record_id}",
-      "SOURCE_SECTION_OR_PAGE: #{source}",
+      "SOURCE_SECTION_OR_PAGE: #{source}"
+    ]
+    origin = values["source_pdf_page"]
+    lines << "SOURCE_PDF_PAGE: #{origin}" if origin.is_a?(Integer) && origin.positive?
+    lines.concat([
       "RECORD_TYPE: #{record_type}",
       "ACTION: #{field_value(values["a"])}",
       "EXPECTED_RESULT: #{field_value(values["r"])}"
-    ]
+    ])
     if derivation.present?
       lines << "DERIVATION: #{derivation}"
       lines << "DERIVATION_EVIDENCE: #{field_value(values['derivation_evidence'])}"

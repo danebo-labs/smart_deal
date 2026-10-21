@@ -58,9 +58,23 @@ class BatchPageRetryService
   # @param on_usage        [Proc, nil]   called once per billed retry with the usage object
   # @return [Array<Hash>] the same page_results array
   def retry_failed_pages!(page_results:, s3_key:, filename:, sha256:,
-                          tracking_prefix: "bulk_retry", on_usage: nil)
+                          tracking_prefix: "bulk_retry", on_usage: nil,
+                          source_pdf: nil, source_loaded: false,
+                          page_texts: nil, pdf_page_count: nil)
+    @page_texts = page_texts.is_a?(Hash) ? page_texts : {}
+    pdf_count = pdf_page_count.to_i
+    pdf_count = @page_texts.keys.max.to_i if pdf_count.zero?
     failed = page_results.select { |pr| self.class.needs_retry?(pr) }
-    return page_results if failed.empty?
+    anchor_page_number = page_results.filter_map { |pr| pr[:page_number] }.min
+    pass = {
+      filename: filename, sha256: sha256, tracking_prefix: tracking_prefix,
+      on_usage: on_usage, anchor_page_number: anchor_page_number
+    }
+
+    if failed.empty?
+      precision_pass!(page_results, source_pdf, pdf_count, **pass)
+      return page_results
+    end
 
     reasons = failed.map { |pr| "p#{pr[:page_number]}:#{retry_reason(pr)}" }.join(", ")
     Rails.logger.warn(
@@ -68,20 +82,31 @@ class BatchPageRetryService
       "retrying direct #{RETRY_TOKEN_LADDER.first / 1000}k"
     )
 
-    pdf_binary = download_source_pdf(s3_key, filename)
+    pdf_binary = source_loaded ? source_pdf : download_source_pdf(s3_key, filename)
     return page_results if pdf_binary.nil?
 
-    # The anchor (lowest-numbered kept page) must keep its ANCHOR_PAGE role on
-    # retry so it still emits S0/summary/companion_offer; all others stay CONTENT_PAGE.
-    anchor_page_number = page_results.filter_map { |pr| pr[:page_number] }.min
-
+    pdf_count = page_results.size if pdf_count.zero?
     retry_extracted_pages!(pdf_binary, failed.index_by { |pr| pr[:page_number] },
-                           total_kept: page_results.size,
-                           filename: filename, sha256: sha256,
-                           tracking_prefix: tracking_prefix, on_usage: on_usage,
-                           anchor_page_number: anchor_page_number)
+                           pdf_page_count: pdf_count, **pass)
+    precision_pass!(page_results, pdf_binary, pdf_count, **pass)
 
     page_results
+  end
+
+  # One download, then the text of every page. The caller passes the binary
+  # back into #retry_failed_pages! so a truncation retry does not download again.
+  # A splitter that cannot yield text leaves the binary usable.
+  def load_source_pages(s3_key:, filename:)
+    binary = nil
+    binary = download_source_pdf(s3_key, filename)
+    return { binary: nil, texts: {} } if binary.blank?
+
+    splitter = PdfPageSplitterService.new(binary)
+    texts = splitter.respond_to?(:page_texts) ? splitter.page_texts : {}
+    { binary: binary, texts: texts }
+  rescue StandardError => e
+    Rails.logger.warn("BatchPageRetryService: page text extraction failed for #{filename} — #{e.message}")
+    { binary: binary, texts: {} }
   end
 
   private
@@ -100,12 +125,12 @@ class BatchPageRetryService
   #
   # A splitter failure degrades the affected pages instead of raising: the caller
   # holds a fully paid document, and losing it costs far more than a degraded page.
-  def retry_extracted_pages!(pdf_binary, pending, total_kept:, **retry_options)
+  def retry_extracted_pages!(pdf_binary, pending, pdf_page_count:, **retry_options)
     PdfPageSplitterService.new(pdf_binary).each_page(only: pending.keys) do |page_number, page_binary|
       page_result = pending.delete(page_number)
       next if page_result.nil?
 
-      retry_one_page!(page_result, page_binary, total_kept, **retry_options)
+      retry_one_page!(page_result, page_binary, pdf_page_count, **retry_options)
     end
   rescue StandardError => e
     Rails.logger.error(
@@ -115,38 +140,27 @@ class BatchPageRetryService
     pending.each_key { |page_number| Rails.logger.warn("BatchPageRetryService: no binary for p#{page_number} retry") }
   end
 
-  def retry_one_page!(page_result, page_bin, total_kept,
+  def retry_one_page!(page_result, page_bin, pdf_page_count,
                       filename:, sha256:, tracking_prefix:, on_usage:, anchor_page_number: nil)
     page_num = page_result[:page_number]
     model    = page_result[:model].to_s.delete_suffix("-batch").presence || BatchChunkingPrompt::MODEL_TEXT
     client = ClaudeChunkingClient.new(model: model)
-    user_content = BatchChunkingPrompt.page_user_content(
-      binary:      page_bin,
-      page_number: page_num,
-      total_pages: total_kept,
-      filename:    filename,
-      anchor:      page_num == anchor_page_number
-    )
+    user_content = page_user_content(page_bin, page_num, pdf_page_count, filename, anchor_page_number)
 
     RETRY_TOKEN_LADDER.each_with_index do |cap, index|
-      result = client.call(
-        user_content:    user_content,
-        filename:        filename,
-        page_number:     page_num,
-        total_pages:     total_kept,
-        max_tokens:      cap,
-        tracking_prefix: tracking_prefix,
-        route:           "bulk_retry",
-        attempt:         index + 2, # Batch attempt was 1
-        correlation_id:  "ingest:#{sha256.to_s[0, 12]}:p#{page_num}"
-      )
+      result = call_page(client, user_content, page_num, pdf_page_count, cap, index + 2,
+                         filename, sha256, tracking_prefix)
 
       page_result[:text]        = result[:text]
       page_result[:stop_reason] = result[:stop_reason]
       on_usage&.call(result[:usage])
 
       healthy = result[:stop_reason] != "max_tokens" && self.class.parseable_json?(result[:text])
-      break if healthy
+      if healthy
+        page_result[:output_cap] = cap
+        page_result[:retry_attempt] = index + 2
+        break
+      end
 
       Rails.logger.warn(
         "BatchPageRetryService: #{filename} p#{page_num} still #{retry_reason(page_result)} at #{cap} — " \
@@ -156,6 +170,88 @@ class BatchPageRetryService
       Rails.logger.error("BatchPageRetryService: retry failed #{filename} p#{page_num} — #{e.message}")
       break
     end
+  end
+
+  # Healthy JSON whose narrative is below the floor gets one call at the same
+  # cap. It does not climb the truncation ladder.
+  def precision_pass!(page_results, pdf_binary, pdf_count, filename:, sha256:, tracking_prefix:, on_usage:, anchor_page_number:)
+    return if pdf_binary.blank? || @page_texts.blank? || pdf_count.zero?
+
+    pending = page_results.select { |page_result| low_precision_page?(page_result, anchor_page_number) }
+    return if pending.empty?
+
+    by_page = pending.index_by { |page_result| page_result[:page_number] }
+    PdfPageSplitterService.new(pdf_binary).each_page(only: by_page.keys) do |number, binary|
+      precision_retry_one!(
+        by_page[number], binary, pdf_count,
+        filename: filename, sha256: sha256, tracking_prefix: tracking_prefix,
+        on_usage: on_usage, anchor_page_number: anchor_page_number
+      )
+    end
+  rescue StandardError => e
+    Rails.logger.error("BatchPageRetryService: precision pass failed for #{filename} — #{e.message}")
+  end
+
+  def precision_retry_one!(page_result, page_bin, pdf_page_count, filename:, sha256:, tracking_prefix:, on_usage:, anchor_page_number:)
+    page_num = page_result[:page_number]
+    cap = page_result[:output_cap] || BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS
+    attempt = (page_result[:retry_attempt] || 1) + 1
+    model = page_result[:model].to_s.delete_suffix("-batch").presence || BatchChunkingPrompt::MODEL_TEXT
+    client = ClaudeChunkingClient.new(model: model)
+    user_content = page_user_content(page_bin, page_num, pdf_page_count, filename, anchor_page_number)
+    result = call_page(client, user_content, page_num, pdf_page_count, cap, attempt, filename, sha256, tracking_prefix)
+    page_result[:text] = result[:text]
+    page_result[:stop_reason] = result[:stop_reason]
+    page_result[:output_cap] = cap
+    on_usage&.call(result[:usage])
+    page_result[:precision_low] = true if precision_still_low?(page_result, anchor_page_number)
+  rescue ClaudeChunkingClient::ApiError => e
+    Rails.logger.error("BatchPageRetryService: precision retry failed #{filename} p#{page_num} — #{e.message}")
+    page_result[:precision_low] = true
+  end
+
+  def low_precision_page?(page_result, anchor_page_number)
+    return false if page_result[:stop_reason] == "max_tokens"
+    return false unless self.class.parseable_json?(page_result[:text])
+
+    text = @page_texts[page_result[:page_number]] || @page_texts[page_result[:page_number].to_s]
+    Rag::PageChunkFidelity.low_precision_body?(
+      page_result[:text],
+      page_text: text,
+      page_number: page_result[:page_number],
+      anchor_page: anchor_page_number
+    )
+  end
+
+  def precision_still_low?(page_result, anchor_page_number)
+    return false if page_result[:stop_reason] == "max_tokens"
+    return false unless self.class.parseable_json?(page_result[:text])
+
+    low_precision_page?(page_result, anchor_page_number)
+  end
+
+  def page_user_content(page_bin, page_num, pdf_page_count, filename, anchor_page_number)
+    BatchChunkingPrompt.page_user_content(
+      binary:      page_bin,
+      page_number: page_num,
+      total_pages: pdf_page_count,
+      filename:    filename,
+      anchor:      page_num == anchor_page_number
+    )
+  end
+
+  def call_page(client, user_content, page_num, pdf_page_count, cap, attempt, filename, sha256, tracking_prefix)
+    client.call(
+      user_content:    user_content,
+      filename:        filename,
+      page_number:     page_num,
+      total_pages:     pdf_page_count,
+      max_tokens:      cap,
+      tracking_prefix: tracking_prefix,
+      route:           "bulk_retry",
+      attempt:         attempt,
+      correlation_id:  "ingest:#{sha256.to_s[0, 12]}:p#{page_num}"
+    )
   end
 
   def download_source_pdf(s3_key, filename)

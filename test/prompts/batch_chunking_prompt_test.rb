@@ -94,8 +94,12 @@ class BatchChunkingPromptTest < ActiveSupport::TestCase
     instruction = BatchChunkingPrompt.page_user_content(
       binary: "%PDF-fake", page_number: 10, total_pages: 24, filename: "m.pdf"
     ).last.fetch(:text)
-    assert_includes instruction, "begins mid-section"
-    assert_includes instruction, "never drop it"
+    assert_not_includes instruction, "begins mid-section"
+    assert_not_includes instruction, "never drop it"
+    assert_includes instruction, "The attached document is exactly the page to extract."
+    assert_includes instruction, "10 is the PDF page index."
+    assert_includes instruction, "24 is the number of pages in the PDF."
+    assert_includes instruction, "A printed folio may differ from that index."
   end
 
   test "system prompt enforces exact document_name match when Document name hint is present" do

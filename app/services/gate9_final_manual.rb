@@ -488,7 +488,7 @@ class Gate9FinalManual
       uc     = BatchChunkingPrompt.page_user_content(
         binary:      page[:binary],
         page_number: page[:number],
-        total_pages: total_kept,
+        total_pages: total_pages,
         filename:    filename,
         locale:      nil,
         anchor:      anchor
@@ -659,6 +659,8 @@ class Gate9FinalManual
       # anchor and total_kept from the COMPLETE kept set, not the subset
       complete_kept = Array(state["kept_pages"]).map(&:to_i)
       total_kept    = complete_kept.size
+      pdf_total     = state["total_pages"].to_i
+      pdf_total     = total_kept if pdf_total.zero?
       anchor_page   = complete_kept.min
 
       ladder = [ BatchChunkingPrompt::WEB_PAGE_RETRY_MAX_TOKENS, BatchChunkingPrompt::MAX_TOKENS ]
@@ -675,7 +677,7 @@ class Gate9FinalManual
         uc     = BatchChunkingPrompt.page_user_content(
           binary:      page_bin,
           page_number: page_num,
-          total_pages: total_kept,
+          total_pages: pdf_total,
           filename:    filename,
           anchor:      page_num == anchor_page
         )
@@ -685,7 +687,7 @@ class Gate9FinalManual
             user_content:    uc,
             filename:        filename,
             page_number:     page_num,
-            total_pages:     total_kept,
+            total_pages:     pdf_total,
             max_tokens:      cap,
             tracking_prefix: "gate9_final_retry",
             route:           "bulk_retry",

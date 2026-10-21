@@ -427,7 +427,7 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
     PageRelevanceFilter.define_singleton_method(:filter_pages, orig_filter)
   end
 
-  test "pdf_mixed: page instructions use kept page count after filtering" do
+  test "pdf_mixed: page instructions use the PDF page count after filtering" do
     FakePdfPage3 = Struct.new(:number, :binary, :model, :force_opus) unless defined?(FakePdfPage3)
     pages = (1..4).map { |n| FakePdfPage3.new(n, "%PDF-p#{n}", BatchChunkingPrompt::MODEL_TEXT, false) }
 
@@ -481,7 +481,7 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
 
     build_service(filename: "kept-total.pdf").call
 
-    assert_equal [ [ 2, 2 ], [ 3, 2 ] ], captured_page_totals.sort
+    assert_equal [ [ 2, 4 ], [ 3, 4 ] ], captured_page_totals.sort
   ensure
     FileMultimodalRouter.define_singleton_method(:classify, orig_classify)
     PageRelevanceFilter.define_singleton_method(:filter_pages, orig_filter)
@@ -1575,5 +1575,60 @@ class SingleFileChunkingServiceTest < ActiveSupport::TestCase
     assert_includes chunk, "DERIVATION: leader_line"
     assert_includes chunk, "DERIVATION: vision"
     assert_equal 2, chunk.scan("RECORD_TYPE: TOPOLOGY_EDGE").size
+  end
+
+  test "precision gate retries once at the same cap and then degrades" do
+    service = SingleFileChunkingService.new(
+      binary: "%PDF", content_type: "application/pdf", filename: "gate.pdf",
+      s3_key: "k", sha256: "ab" * 32, s3_service: Object.new
+    )
+    page = "Check the door seal before starting the motor and confirm the photocell input is clear during the full travel of the cabin door."
+    invented = {
+      "document_name" => "Unit", "aliases" => [],
+      "chunks" => [ { "text" => "Replace the hydraulic pump and refill the oil reservoir before the next inspection.", "page" => 4, "field_records" => [] } ]
+    }.to_json
+    faithful = {
+      "document_name" => "Unit", "aliases" => [],
+      "chunks" => [ { "text" => page, "page" => 4, "field_records" => [] } ]
+    }.to_json
+    calls = []
+    responses = []
+    client = Object.new
+    client.define_singleton_method(:call) do |**kwargs|
+      calls << kwargs
+      responses.shift
+    end
+
+    responses.replace([
+      { text: invented, stop_reason: "end_turn" },
+      { text: invented, stop_reason: "end_turn" }
+    ])
+    result = service.send(
+      :call_with_page_cap_retry,
+      client: client, user_content: [], page_number: 4, total_pages: 22, page_text: page, anchor_page: 1
+    )
+
+    assert_equal 2, calls.size
+    assert_equal [ BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS, BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS ], calls.pluck(:max_tokens)
+    assert_equal [ 1, 2 ], calls.pluck(:attempt)
+    assert result[:precision_low]
+
+    calls.clear
+    responses.replace([ { text: faithful, stop_reason: "end_turn" } ])
+    kept = service.send(
+      :call_with_page_cap_retry,
+      client: client, user_content: [], page_number: 4, total_pages: 22, page_text: page, anchor_page: 1
+    )
+    assert_equal 1, calls.size
+    assert_nil kept[:precision_low]
+
+    calls.clear
+    responses.replace([ { text: invented, stop_reason: "end_turn" } ])
+    thin = service.send(
+      :call_with_page_cap_retry,
+      client: client, user_content: [], page_number: 4, total_pages: 22, page_text: "3 Conexionado", anchor_page: 1
+    )
+    assert_equal 1, calls.size
+    assert_nil thin[:precision_low]
   end
 end

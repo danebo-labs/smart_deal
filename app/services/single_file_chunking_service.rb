@@ -148,6 +148,7 @@ class SingleFileChunkingService
     # VisionTopologyExtractor's geometric criterion covers.
     @filter_results = filter_results
 
+    discards = {}
     kept_pages = pages.select do |page|
       r = filter_results[page.number] || { keep: true, reason: :missing, source: :fallback }
 
@@ -160,6 +161,7 @@ class SingleFileChunkingService
         "PageRelevanceFilter: #{@filename} p#{page.number} " \
         "#{r[:keep] ? 'keep' : 'drop'} (#{r[:reason]}, #{r[:source]})"
       )
+      discards[page.number] = r[:reason].to_s unless r[:keep]
       r[:keep]
     end
 
@@ -170,7 +172,10 @@ class SingleFileChunkingService
           "(#{total} pages) — falling back to per-page keep-all"
         )
         page_results = chunk_pages_with_identity_hint(pages, total)
-        report       = ChunkMergerService.merge_with_report(page_results)
+        report       = ChunkMergerService.merge_with_report(
+          page_results,
+          page_texts: source_page_texts(pages)
+        )
         log_pdf_mixed_metrics(total: total, parsed_pages: pages, fallback: "per_page_keep_all", started_at: started_at)
         parse_and_write(report[:json])
         @asset.degraded_pages = report[:degraded_pages]
@@ -196,8 +201,12 @@ class SingleFileChunkingService
       return parse_and_write(result[:text])
     end
 
-    page_results = chunk_pages_with_identity_hint(kept_pages, kept_pages.size)
-    report       = ChunkMergerService.merge_with_report(page_results)
+    page_results = chunk_pages_with_identity_hint(kept_pages, total)
+    report       = ChunkMergerService.merge_with_report(
+      page_results,
+      page_texts: source_page_texts(pages),
+      discards: discards
+    )
     log_pdf_mixed_metrics(total: total, parsed_pages: kept_pages, fallback: nil, started_at: started_at)
     parse_and_write(report[:json])
     @asset.degraded_pages = report[:degraded_pages]
@@ -234,12 +243,16 @@ class SingleFileChunkingService
   #           emits the same document_name across all parts of the same file.
   # For single-page inputs, falls through to a direct call (no hint needed).
   def chunk_pages_with_identity_hint(pages, total)
-    return [ call_claude_for_page(pages.first, total, document_name_hint: nil, locale: @locale, anchor: true) ] if pages.size == 1
+    if pages.size == 1
+      return [ call_claude_for_page(pages.first, total, document_name_hint: nil, locale: @locale, anchor: true, anchor_page: pages.first.number) ]
+    end
 
     anchor = pages.min_by(&:number)
     rest   = pages.reject { |p| p.number == anchor.number }
 
-    anchor_result = call_claude_for_page(anchor, total, document_name_hint: nil, locale: @locale, anchor: true)
+    anchor_result = call_claude_for_page(
+      anchor, total, document_name_hint: nil, locale: @locale, anchor: true, anchor_page: anchor.number
+    )
 
     hint = begin
       JSON.parse(anchor_result[:text].to_s)["document_name"].to_s.presence
@@ -249,23 +262,23 @@ class SingleFileChunkingService
 
     Rails.logger.info("SingleFileChunkingService: pdf_mixed #{@filename} wave-A anchor=p#{anchor.number} hint=#{hint.inspect}")
 
-    rest_results = chunk_pages_parallel(rest, total, document_name_hint: hint)
+    rest_results = chunk_pages_parallel(rest, total, document_name_hint: hint, anchor_page: anchor.number)
     [ anchor_result ] + rest_results
   end
 
-  def chunk_pages_parallel(pages, total, document_name_hint: nil)
+  def chunk_pages_parallel(pages, total, document_name_hint: nil, anchor_page: nil)
     pages.each_slice(FileMultimodalRouter::MAX_PARALLEL_PAGES).flat_map do |batch|
       futures = batch.map do |page|
         pg = page
         Concurrent::Promises.future do
-          call_claude_for_page(pg, total, document_name_hint: document_name_hint)
+          call_claude_for_page(pg, total, document_name_hint: document_name_hint, anchor_page: anchor_page)
         end
       end
       futures.map(&:value!)
     end
   end
 
-  def call_claude_for_page(page, total, document_name_hint:, locale: nil, anchor: false)
+  def call_claude_for_page(page, total, document_name_hint:, locale: nil, anchor: false, anchor_page: nil)
     model    = page.model
     page_num = page.number
     edges, digest = topology_for_page(page.binary, page_num, total_pages: total)
@@ -283,12 +296,34 @@ class SingleFileChunkingService
       client:       ClaudeChunkingClient.new(model: model),
       user_content: content,
       page_number:  page_num,
-      total_pages:  total
+      total_pages:  total,
+      page_text:    readable_page_text(page),
+      anchor_page:  anchor_page || page_num
     )
     {
       page_number: page_num, text: result[:text], usage: result[:usage], model: model,
-      stop_reason: result[:stop_reason], topology_edges: edges
+      stop_reason: result[:stop_reason], topology_edges: edges, precision_low: result[:precision_low]
     }
+  end
+
+  def source_page_texts(pages)
+    Array(pages).each_with_object({}) do |page, texts|
+      next unless page.respond_to?(:number)
+
+      texts[page.number] = readable_page_text(page)
+    end
+  end
+
+  def readable_page_text(page)
+    return "" unless page.respond_to?(:text)
+
+    text = page.text.to_s
+    return text if text.present?
+    return "" unless page.respond_to?(:binary)
+
+    PageRelevanceFilter.extract_page_text(page.binary).to_s
+  rescue StandardError
+    ""
   end
 
   # Both tiers of the contract v8 topology pipeline, each behind its own flag.
@@ -371,24 +406,22 @@ class SingleFileChunkingService
     BatchChunkingPrompt::MAX_TOKENS
   ].freeze
 
-  def call_with_page_cap_retry(client:, user_content:, page_number: nil, total_pages: nil)
+  def call_with_page_cap_retry(client:, user_content:, page_number: nil, total_pages: nil, page_text: nil, anchor_page: nil)
     result = nil
     page_label = page_number ? " p#{page_number}" : ""
 
     PAGE_TOKEN_LADDER.each_with_index do |cap, index|
-      result = client.call(
-        user_content:   user_content,
-        filename:       @filename,
-        page_number:    page_number,
-        total_pages:    total_pages,
-        max_tokens:     cap,
-        attempt:        index + 1,
-        correlation_id: correlation_id(page_number)
-      )
+      result = invoke_page(client, user_content, page_number, total_pages, cap, index + 1)
 
-      truncated  = result[:stop_reason] == "max_tokens"
-      parseable  = parseable_json?(result[:text])
-      return result if !truncated && parseable
+      truncated = result[:stop_reason] == "max_tokens"
+      parseable = parseable_json?(result[:text])
+      if !truncated && parseable
+        return with_precision_retry(
+          client: client, user_content: user_content, result: result, cap: cap,
+          page_number: page_number, total_pages: total_pages, page_text: page_text,
+          anchor_page: anchor_page, attempt: index + 2, page_label: page_label
+        )
+      end
 
       reason = truncated ? "truncated" : "unparseable JSON"
       if index < PAGE_TOKEN_LADDER.size - 1
@@ -405,6 +438,46 @@ class SingleFileChunkingService
     end
 
     result
+  end
+
+  def invoke_page(client, user_content, page_number, total_pages, cap, attempt)
+    client.call(
+      user_content:   user_content,
+      filename:       @filename,
+      page_number:    page_number,
+      total_pages:    total_pages,
+      max_tokens:     cap,
+      attempt:        attempt,
+      correlation_id: correlation_id(page_number)
+    )
+  end
+
+  # One more call at the cap that already produced healthy JSON. A thin or
+  # blank text layer does not enter. A second low body is not indexed.
+  def with_precision_retry(client:, user_content:, result:, cap:, page_number:, total_pages:, page_text:, anchor_page:, attempt:, page_label:)
+    return result unless Rag::PageChunkFidelity.low_precision_body?(
+      result[:text], page_text: page_text, page_number: page_number, anchor_page: anchor_page
+    )
+
+    Rails.logger.warn(
+      "SingleFileChunkingService: #{@filename}#{page_label} precision low at " \
+      "max_tokens=#{cap} — one retry at the same cap"
+    )
+    retried = invoke_page(client, user_content, page_number, total_pages, cap, attempt)
+    retried[:precision_low] = true if precision_still_low?(retried, page_text, page_number, anchor_page)
+    retried
+  rescue StandardError => e
+    Rails.logger.warn("SingleFileChunkingService: #{@filename}#{page_label} precision retry failed — #{e.message}")
+    result.merge(precision_low: true)
+  end
+
+  def precision_still_low?(result, page_text, page_number, anchor_page)
+    return false if result[:stop_reason] == "max_tokens"
+    return false unless parseable_json?(result[:text])
+
+    Rag::PageChunkFidelity.low_precision_body?(
+      result[:text], page_text: page_text, page_number: page_number, anchor_page: anchor_page
+    )
   end
 
   # Canonical fence-tolerant check shared with the Batch retry route so the

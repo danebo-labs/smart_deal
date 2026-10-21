@@ -75,6 +75,20 @@ class PdfPageSplitterService
     end
   end
 
+  # Text of every page, one page on disk at a time. Blank reader text falls
+  # back to the same extractor the relevance filter already uses.
+  def page_texts
+    texts = {}
+    each_split_page do |page|
+      text = page.text.to_s
+      text = PageRelevanceFilter.extract_page_text(page.binary) if text.blank?
+      texts[page.number] = text
+    ensure
+      page&.cleanup
+    end
+    texts
+  end
+
   # Writes every self-contained page to a tempfile and yields a SplitPage.
   # The caller owns each yielded tempfile and must call SplitPage#cleanup.
   def each_split_page

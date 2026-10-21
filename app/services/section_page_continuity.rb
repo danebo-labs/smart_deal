@@ -123,7 +123,7 @@ class SectionPageContinuity
     moved, kept = partition_records(original_child_records, moved_text, remainder)
     attached = attach_extra(extra_records, moved_text, remainder, parent["field_records"])
     rejected = attached[:rejected]
-    carried = (moved + attached[:kept]).map { |record| record.merge("_page" => right) }
+    carried = (moved + attached[:kept]).map { |record| record.merge("source_pdf_page" => right) }
     parent["field_records"] = retarget_records(Array(parent["field_records"]) + carried, parent["text"], heading, left)
     child["field_records"] = if isolate
       restore_isolated(original_child_records, moved_text)
@@ -305,7 +305,9 @@ class SectionPageContinuity
       next unless chunk["field_records"].is_a?(Array)
 
       chunk["field_records"] = chunk["field_records"].map { |record|
-        record.deep_stringify_keys.except("_page")
+        values = record.deep_stringify_keys.except("_page")
+        origin = positive_page(values["source_pdf_page"])
+        origin ? values.merge("source_pdf_page" => origin) : values.except("source_pdf_page")
       }
     end
   end
@@ -380,10 +382,15 @@ class SectionPageContinuity
   def retarget_records(records, fragment, fallback, default_page)
     Array(records).map do |record|
       values = record.deep_stringify_keys
-      page = values.delete("_page") || default_page
+      legacy = positive_page(values.delete("_page"))
+      origin = positive_page(values["source_pdf_page"]) || legacy
+      if origin && origin != default_page.to_i
+        values["source_pdf_page"] = origin
+      else
+        values.delete("source_pdf_page")
+      end
       heading = heading_for_evidence(fragment, values["ev"], fallback)
       values["h"] = heading if heading.present? && !describes?(values["h"], fragment)
-      values["_page"] = page
       values
     end
   end
@@ -422,11 +429,13 @@ class SectionPageContinuity
   def render_records(records, default_page)
     blocks = Array(records).filter_map do |record|
       values = record.deep_stringify_keys
-      page = values.delete("_page") || default_page
+      values.delete("_page")
       clean = values.slice(*BatchResultsParserService::FIELD_RECORD_ALLOWED_KEYS)
+      origin = positive_page(values["source_pdf_page"])
+      clean["source_pdf_page"] = origin if origin
       next if clean["k"].blank? || clean["ev"].blank?
 
-      parser.send(:render_field_record, clean, page: page)
+      parser.send(:render_field_record, clean, page: default_page)
     end
     return "" if blocks.empty?
 
@@ -458,20 +467,32 @@ class SectionPageContinuity
   end
 
   def normalize_pages(page_texts)
-    Array(page_texts).each_with_object({}) do |(number, raw), map|
+    pending = {}
+    ready = {}
+    Array(page_texts).each do |number, raw|
       if raw.is_a?(Hash) && raw[:body].is_a?(String)
-        map[number.to_i] = raw
+        ready[number.to_i] = raw
         next
       end
       next if raw.blank?
 
       text = utf8(raw)
-      map[number.to_i] = {
-        raw: text,
-        printed: printed_label(text),
-        body: Rag::PageChunkFidelity.strip_running_matter(text)
-      }
+      pending[number.to_i] = { raw: text, printed: printed_label(text) }
     end
+    catalog = {}
+    pending.each { |number, page| catalog[number] = page[:raw] }
+    ready.each { |number, page| catalog[number] = page[:raw] || page[:body] }
+    running = Rag::PageChunkFidelity.running_matter_lines(catalog)
+    pending.each do |number, page|
+      page[:body] = Rag::PageChunkFidelity.strip_running_matter(page[:raw], running_lines: running)
+      ready[number] = page
+    end
+    ready
+  end
+
+  def positive_page(value)
+    number = Integer(value, exception: false)
+    number if number&.positive?
   end
 
   def printed_label(raw)

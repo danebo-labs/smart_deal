@@ -64,14 +64,27 @@ class ChunkMergerService
   # @param page_texts [Hash, nil] PDF index => raw page text. Required for the
   #   cross-page stitch. Printed page numbers are read from that text and are
   #   not the PDF index. An empty hash skips the stitch.
-  # @return [Hash] { json: String, degraded_pages: Array<Integer> }
-  def self.merge_with_report(page_results, page_texts: nil)
-    new(page_results, page_texts: page_texts).merge_with_report
+  # @param discards [Hash, nil] PDF index => reason for a page that was not sent
+  #   to the model. Recorded on the report only. Nothing is written under
+  #   bulk_chunks/.
+  # @return [Hash] { json: String, degraded_pages: Array<Integer>, discards: Hash }
+  def self.merge_with_report(page_results, page_texts: nil, discards: nil)
+    new(page_results, page_texts: page_texts, discards: discards).merge_with_report
   end
 
-  def initialize(page_results, page_texts: nil)
+  def self.normalize_discards(discards)
+    Array(discards).each_with_object({}) do |(page, reason), map|
+      number = page.to_i
+      next unless number.positive?
+
+      map[number] = reason.to_s
+    end
+  end
+
+  def initialize(page_results, page_texts: nil, discards: nil)
     @page_results = page_results.sort_by { |r| r[:page_number] }
     @page_texts = page_texts || {}
+    @discards = self.class.normalize_discards(discards)
   end
 
   def merge_with_report
@@ -115,6 +128,11 @@ class ChunkMergerService
         )
         merged["section_identity"] = section_identity if section_identity.present?
         merged["section_path"] = [ section_identity ] if section_identity.present?
+        if merged["field_records"].is_a?(Array)
+          merged["field_records"].each do |record|
+            record.delete("source_pdf_page") if record.is_a?(Hash)
+          end
+        end
         if page_edges.present? && !edges_attached
           merged["topology_edges"] = page_edges
           edges_attached = true
@@ -145,7 +163,7 @@ class ChunkMergerService
       "chunks"          => all_chunks
     })
 
-    { json: json, degraded_pages: degraded_pages }
+    { json: json, degraded_pages: degraded_pages, discards: @discards }
   end
 
   private
@@ -198,12 +216,18 @@ class ChunkMergerService
   end
 
   # Returns [parsed_hash, degraded_boolean].
-  # Three cases:
+  # Four cases:
   #   - parse OK, not truncated  → normal parsed hash, not degraded
   #   - parse OK, max_tokens     → parsed chunks + marker appended, degraded
+  #   - precision still low      → marker-only hash, degraded
   #   - parse fails              → marker-only hash, degraded
   def parse_page_result(r, idx)
     page_number = r[:page_number]
+    if r[:precision_low]
+      marker = degradation_marker_chunk(page_number)
+      return [ { "document_name" => "", "aliases" => [], "chunks" => [ marker ] }, true ]
+    end
+
     text        = r[:text].to_s.strip
     stop_reason = r[:stop_reason]
 

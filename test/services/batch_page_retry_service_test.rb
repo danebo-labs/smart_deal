@@ -285,4 +285,30 @@ class BatchPageRetryServiceTest < ActiveSupport::TestCase
     PdfPageSplitterService.define_singleton_method(:new, original_splitter)
     ClaudeChunkingClient.define_singleton_method(:new, original_client)
   end
+
+  test "a low precision page is retried once at the same cap and then marked" do
+    page_text = "Check the door seal before starting the motor and confirm the photocell input is clear during the full travel of the cabin door."
+    invented = {
+      "document_name" => "Unit", "aliases" => [],
+      "chunks" => [ { "text" => "Replace the hydraulic pump and refill the oil reservoir before the next inspection.", "page" => 6, "field_records" => [] } ]
+    }.to_json
+    pages = [ { page_number: 6, text: invented, model: "claude-sonnet-4-6", stop_reason: "end_turn" } ]
+
+    with_retry_harness(
+      client_results: [ { text: invented, usage: make_usage, stop_reason: nil } ],
+      page_binaries: { 6 => "page-6-pdf" }
+    ) do |calls|
+      BatchPageRetryService.new.retry_failed_pages!(
+        page_results: pages, s3_key: "k", filename: "manual.pdf", sha256: "c" * 64,
+        source_pdf: "pdf", source_loaded: true, page_texts: { 6 => page_text }, pdf_page_count: 22
+      )
+
+      assert_equal 1, calls.size, "one precision retry, not the truncation ladder"
+      assert_equal BatchChunkingPrompt::WEB_PAGE_MAX_TOKENS, calls.first[:max_tokens]
+      assert_equal 2, calls.first[:attempt]
+      assert_includes calls.first[:user_content].last[:text], "Page 6 of 22"
+    end
+
+    assert pages.first[:precision_low]
+  end
 end

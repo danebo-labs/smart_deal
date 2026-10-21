@@ -102,7 +102,7 @@ class BulkCostV2RequestBuilder
     # BatchIngestionService will mark asset as failed rather than in_batch.
     return [ [], [] ] if kept_pages.empty?
 
-    items    = build_page_request_items(kept_pages, asset)
+    items    = build_page_request_items(kept_pages, asset, pdf_page_count: total_pages)
     page_ids = kept_pages.map { |page| page_custom_id(asset.sha256, page.number) }
 
     [ items, page_ids ]
@@ -151,9 +151,7 @@ class BulkCostV2RequestBuilder
     end
   end
 
-  def build_page_request_items(kept_pages, asset)
-    total = kept_pages.size
-
+  def build_page_request_items(kept_pages, asset, pdf_page_count:)
     kept_pages.each_with_index.map do |page, idx|
       custom_id = page_custom_id(asset.sha256, page.number)
       anchor    = idx.zero?
@@ -166,7 +164,7 @@ class BulkCostV2RequestBuilder
           content = BatchChunkingPrompt.page_user_content(
             binary:      page.binary,
             page_number: page.number,
-            total_pages: total,
+            total_pages: pdf_page_count,
             filename:    asset.filename,
             locale:      nil,
             anchor:      anchor

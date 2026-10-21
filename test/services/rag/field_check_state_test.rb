@@ -131,6 +131,11 @@ class Rag::FieldCheckStateTest < ActiveSupport::TestCase
 
     assert_includes context, "## Active Field Problem"
     assert_includes prompt, "Check: la fotocélula (not_done)"
+    assert_includes prompt, "a check is done only when the technician reports doing it"
+    assert_includes prompt, "as your own orientation and not as an order or likelihood the passages do not state"
+    assert_includes prompt, "without headings"
+    assert_not_includes prompt, "Section headers"
+    assert_not_includes prompt, "fixed headings are not required"
     assert_not_includes prompt, "three logical sections"
     assert_not_includes prompt, "Según el plano"
     assert_not_includes prompt, "RECORD_TYPE: TOPOLOGY_EDGE"

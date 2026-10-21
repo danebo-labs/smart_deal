@@ -121,13 +121,13 @@ class Rag::WorkContextGoalTest < ActiveSupport::TestCase
     assert_includes episode.identifiers.pluck("value"), "NICE3000"
   end
 
-  test "several symptoms become one goal in interpreter order and stay inside the cap" do
+  test "a problem statement becomes the goal and the other observation stays" do
     door = "no abre la puerta"
     shake = "además vibra"
     turn = "El ascensor no abre la puerta y además vibra"
     episode, = settle(Rag::ActiveEpisode.new, perception("report", observations: [ door, shake, door ]), turn)
 
-    assert_equal "#{door} #{shake}", episode.goal["text"]
+    assert_equal door, episode.goal["text"]
     assert_equal [ door, shake ], episode.observations.pluck("text")
   end
 
@@ -191,6 +191,87 @@ class Rag::WorkContextGoalTest < ActiveSupport::TestCase
     assert_nil decision.retrieval_query
     assert_equal SYMPTOM, settled.goal["text"]
     assert_empty settled.observations
+  end
+
+  test "the reported fault is the goal and the other observations stay visible" do
+    turn = "Estoy con un operador de puerta Fermator VF5+. La puerta se reabre sola. El LED de fotocélula está apagado. No veo obstrucción. No he comprobado el #54. No hice mediciones."
+    symptom = "La puerta se reabre sola"
+    led = "El LED de fotocélula está apagado"
+    obstruction = "No veo obstrucción"
+    episode, decision = settle(
+      Rag::ActiveEpisode.new,
+      perception(
+        "report",
+        observations: [ symptom, led, obstruction ],
+        checks: [
+          { "subject" => "#54", "status" => "not_done" },
+          { "subject" => "mediciones", "status" => "not_done" }
+        ]
+      ),
+      turn
+    )
+    context = SessionContextBuilder.send(:render_field_problem, episode)
+
+    assert_equal "ready", decision.decision
+    assert_equal symptom, episode.goal["text"]
+    assert_equal [ symptom, led, obstruction ], episode.observations.pluck("text")
+    assert_includes context, "Obs: #{led}; #{obstruction}"
+    assert_not_includes context, "Obs: #{symptom}"
+    assert_equal %w[not_done not_done], episode.checks.pluck("status")
+  end
+
+  test "without a problem statement the goal stays the joined observations" do
+    led = "El LED de fotocélula está apagado"
+    obstruction = "No veo obstrucción"
+    turn = "#{obstruction}. #{led}."
+    episode, = settle(
+      Rag::ActiveEpisode.new,
+      perception("report", observations: [ obstruction, led ]),
+      turn
+    )
+
+    assert_equal "#{obstruction} #{led}", episode.goal["text"]
+    assert_equal [ obstruction, led ], episode.observations.pluck("text")
+  end
+
+  test "the later query keeps the stored symptom" do
+    turn = "Estoy con un operador de puerta Fermator VF5+. La puerta se reabre sola. El LED de fotocélula está apagado. No veo obstrucción."
+    symptom = "La puerta se reabre sola"
+    episode, decision = settle(
+      Rag::ActiveEpisode.new,
+      perception(
+        "report",
+        observations: [ symptom, "El LED de fotocélula está apagado", "No veo obstrucción" ]
+      ),
+      turn
+    )
+    later = "Ya revisé la fotocélula y no está activada."
+    later_perception = Rag::TurnPerception.build(
+      perception("follow_up", checks: [ { "subject" => "la fotocélula", "status" => "done", "result" => "no está activada" } ]),
+      turn: later, episode: episode, catalog: nil, viewer_account: nil
+    )
+    query = Rag::QueryComposer.explain(
+      state: episode, turn: later, perception: later_perception, decision: decision
+    )[:query]
+
+    assert_includes query, symptom
+    assert_includes query, later
+    assert_includes query, "No veo obstrucción"
+  end
+
+  test "el #54 does not replace the stored #54 check" do
+    episode = open_episode
+    episode.upsert_check!({ "subject" => "#54", "status" => "not_done" }, correlation_id: "old")
+    episode.upsert_check!(
+      { "subject" => "el #54", "status" => "done", "result" => "medido" },
+      correlation_id: "new"
+    )
+
+    assert_equal "54", Rag::FollowupQueryRewriter.normalize_label("#54")
+    assert_equal "el 54", Rag::FollowupQueryRewriter.normalize_label("el #54")
+    assert_equal [ [ "#54", "not_done" ], [ "el #54", "done" ] ], episode.checks.map { |row|
+      [ row["subject"], row["status"] ]
+    }
   end
 
   test "thin new work opens an empty episode and does not store the relational sentence" do
@@ -336,14 +417,16 @@ class Rag::WorkContextGoalTest < ActiveSupport::TestCase
     })
   end
 
-  def perception(move, assertions: [], observations: [], pending_resolution: nil, clarification_target: nil)
-    {
+  def perception(move, assertions: [], observations: [], checks: nil, pending_resolution: nil, clarification_target: nil)
+    raw = {
       "move" => move,
       "assertions" => assertions,
       "observations" => observations,
       "pending_resolution" => pending_resolution,
       "clarification_target" => clarification_target
     }
+    raw["checks"] = checks unless checks.nil?
+    raw
   end
 
   def assertion(span, act, hint = nil)

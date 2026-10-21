@@ -478,7 +478,8 @@ module Rag
       phrases = goal_observations
       return @turn if phrases.empty?
 
-      phrases.join(" ")
+      problems = phrases.select { |phrase| problem_statement?(phrase) }
+      (problems.any? ? problems : phrases).join(" ")
     end
 
     def goal_observations

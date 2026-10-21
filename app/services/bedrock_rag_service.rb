@@ -43,7 +43,7 @@ class BedrockRagService
   # Replaces the previous field-report paragraph. A report that something was
   # not seen leaves that check open. It does not count as performing the check.
   FIELD_REPORT_PARAGRAPH = <<~TEXT.strip.freeze
-    The technician's report records what was stated, including what was not seen, not measured, and not done. A report that something was not seen leaves the documentary check about that thing open: state the check and the condition the passage gives, and do not mark it done or discarded. Do not rank a cause the passages do not rank. An example in the retrieved text stays an example and does not establish that mechanism on this equipment. Keep the indicator name the technician used; a different indicator named in a passage is a different indicator. Earlier assistant lines are previous conclusions of this assistant, not the technician's report and not confirmed facts. State the documented checks that fit the report, with their conditions, and which remain open. Do not replace those checks with a refusal, and do not add a step, adjustment, or replacement the passages do not state.
+    The technician's report records what was stated, including what was not seen, not measured, and not done. A report that something was not seen leaves the documentary check about that thing open: state the check and the condition the passage gives, and do not mark it done or discarded. Do not rank a cause the passages do not rank. An example in the retrieved text stays an example and does not establish that mechanism on this equipment. Keep the indicator name the technician used; a different indicator named in a passage is a different indicator. Earlier assistant lines are previous conclusions of this assistant, not the technician's report and not confirmed facts. State the documented checks that fit the report, with their conditions, and which remain open. You may suggest which open check to do next, with the reason taken from the report, as your own orientation and not as an order or likelihood the passages do not state. Do not replace those checks with a refusal, and do not add a step, adjustment, or replacement the passages do not state.
   TEXT
   DOCUMENTED_INFORMATION_PLAN = <<~TEXT.strip.freeze
     - Documented information ("Según el plano" for this drawing): state only what the retrieved body text supports and links to the component asked about, with [n]. Compatible fragments of the same document may be combined when they support that same link. A printed label, a column heading, or a bus name supports the label and its documented section, location, and neighboring labels; it does not by itself establish the component's function, supply, voltage, or connection. ACTION and EXPECTED_RESULT lines in FIELD_RECORD are extraction annotations, not independent evidence from the original document. They must not by themselves establish a function, supply, voltage, or connection. The physical-connection rule and TOPOLOGY_EDGE records above remain in force. Do not transfer a fact from another label. Distinguish extracted table indices from numbering printed on the drawing.
@@ -53,7 +53,7 @@ class BedrockRagService
   TEXT
   DOCUMENT_IDENTITY_ATTRIBUTION_CONTRACT = <<~TEXT.strip.freeze
     # DOCUMENT IDENTITY ATTRIBUTION
-    Keep documented statements, optional interpretations, and missing information distinct. Never mix a documented claim and an unconfirmed interpretation in the same sentence. Express these distinctions naturally in the question's language; fixed headings are not required.
+    Keep documented statements, optional interpretations, and missing information distinct. Never mix a documented claim and an unconfirmed interpretation in the same sentence. Express these distinctions naturally in the question's language without headings.
 
     #{FIELD_REPORT_PARAGRAPH}
 
@@ -79,7 +79,7 @@ class BedrockRagService
     knowledge, requirements, procedures, or safety judgments from memory.
   TEXT
   DOCUMENT_IDENTITY_ROLE_REPLACEMENT = <<~TEXT.strip.freeze
-    Answer from the retrieved documentation. The technician's words are the report of this job, not a completed check and not a documented procedure. State the documented checks and their conditions. Do not add technical knowledge, requirements, procedures, or safety judgments from memory.
+    Answer from the retrieved documentation. The technician's words are the report of this job, not a documented procedure; a check is done only when the technician reports doing it. State the documented checks and their conditions. Do not add technical knowledge, requirements, procedures, or safety judgments from memory.
   TEXT
   DOCUMENT_IDENTITY_INFERENCE_CLAUSES = [
     "Reason, infer, and conclude from chunks. ",
@@ -2388,7 +2388,7 @@ class BedrockRagService
       You MUST write your ENTIRE response in #{lang_name}.
       - This overrides the language of the retrieved documents and any prior conversation.
       - If chunks are in another language, translate the relevant content into #{lang_name}.
-      - Section headers, bullet labels, time estimates, safety notes, and the closing must all be in #{lang_name}.
+      - Labels, time estimates, safety notes, and the closing must all be in #{lang_name}.
     HEADER
   end
 

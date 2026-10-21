@@ -27,11 +27,10 @@ class BatchChunkingPromptTest < ActiveSupport::TestCase
     assert_match(/Never split a shared chain into one component per terminal/, prompt)
   end
 
-  test "a printed table is read header by header from left to right" do
-    assert_includes prompt, "Transcribe a printed table header by header, from left to right."
-    assert_includes prompt, "emit the header and the text aligned directly under it"
-    assert_includes prompt, "Give every header its own cell, in that same left-to-right order."
-    assert_not_includes prompt, "Use compact tables"
+  test "a printed table stays a compact table" do
+    assert_includes prompt, "Use compact tables `| ID | Function | Connection | Voltage |` where useful."
+    assert_not_includes prompt, "header by header"
+    assert_not_includes prompt, "Do not merge two adjacent cells"
   end
 
   test "printed headings and examples stay in the chunk body" do

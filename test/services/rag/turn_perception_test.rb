@@ -749,6 +749,7 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_includes episode.observations.pluck("text"), "La guía no tiene obstrucción"
     assert_includes episode.observations.pluck("text"), "El LED 8 está apagado"
     assert_includes episode.identifiers.pluck("value"), "Elemont MH"
+    assert_includes Rag::TurnInterpreter::PROMPT, "What the technician sees or does not see is an observation, not an identifier and not a check."
     assert_includes Rag::TurnInterpreter::PROMPT, "Keep every other symptom in that same turn as an observation."
     assert_not_includes Rag::TurnInterpreter::PROMPT, "has empty observations"
   end

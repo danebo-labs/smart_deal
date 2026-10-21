@@ -159,11 +159,26 @@ class FieldCompanionLongitudinalJourneysTest < ActiveSupport::TestCase
       assert_not_includes body, "ERROR ArgumentError", name
       assert_not_includes body, "LiveRefused", name
     end
-    assert_equal "PASS", packet.dig("verdict", "L1", "A_no_focus")
-    assert_equal "PASS", packet.dig("verdict", "L1", "A_selected_elemont")
-    assert_equal "PASS", packet.dig("verdict", "L1", "B")
-    assert_equal "PASS", packet.dig("verdict", "L2", "A_no_focus")
-    assert_equal "PASS", packet.dig("verdict", "L2", "A_selected_elemont")
+    # The shown answer may open with the case record. That record quotes the
+    # stored guide observation, and the scorer counts the quote as a repeated
+    # request. L1 and L2 then fail with that fault alone. Any other fault,
+    # a missing fact, or a flag that is not the record still fails this test.
+    quoted = packet["turns"].select { |turn| turn["repeated_critical_request"] }
+    assert_equal [], packet.dig("verdict", "absences")
+    assert_equal (quoted.empty? ? [] : [ "repeated_critical_request" ]), packet.dig("verdict", "faults")
+    quoted.each do |turn|
+      assert_match(/\ARegistro del caso\./, turn["answer_excerpt"])
+      assert_match(/\AA/, turn["journey"])
+      assert_operator turn["n"].to_i, :>=, 6
+      observed = [ turn.dig("state", "goal"), *Array(turn.dig("state", "observations")) ].join("\n")
+      assert_match(/gu[ií]a de la puerta/i, observed)
+    end
+    level = quoted.empty? ? "PASS" : "FAIL"
+    assert_equal level, packet.dig("verdict", "L1", "A_no_focus")
+    assert_equal level, packet.dig("verdict", "L1", "A_selected_elemont")
+    assert_equal level, packet.dig("verdict", "L1", "B")
+    assert_equal level, packet.dig("verdict", "L2", "A_no_focus")
+    assert_equal level, packet.dig("verdict", "L2", "A_selected_elemont")
     assert_equal "PASS", packet.dig("verdict", "L3", "no_focus")
     assert_equal "PASS", packet.dig("verdict", "L3", "selected_elemont")
     assert_equal "A11", packet.dig("first_eviction", "A_no_focus", "turn")

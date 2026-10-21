@@ -467,4 +467,25 @@ Arnés experimental, fuera de alcance y sin bloqueo de F2. `test/services/rag/vf
 
 Siguiente: F2, con el ledger de ingesta y sin escritura en S3. La escritura en S3 espera la autorización de F4.
 
+### F2. Sonda, 21 de octubre de 2026
+
+Sin escritura en S3. Filtro Haiku de las 22 páginas y extracción síncrona. El ancla real es la página 1, así que se extrajo antes de la sonda y no se vuelve a pagar. Flags de layout, visión y triaje apagados. El SDK de Anthropic trae `max_retries` 2; los clientes se inyectaron con 0. Código de la sonda: `ca545d6`. Evidencia: `tmp/field_companion/vf5_correction/ingest/` y ledger `tmp/field_companion/vf5_correction/ingest_spend.json`.
+
+Gasto de la sonda, 10 llamadas, US$0,526390. El reintento de la página 22 suma la llamada 11: US$0,583192 comprometidos, 0 en abierto, techo 32 y US$2,50. No se reextrayeron las páginas sanas.
+
+Paginación: confirmada. El folio impreso es el índice del PDF menos uno (la 12 imprime 11/21, la 13 imprime 12/21, la 22 imprime 21/21). La extracción separa índice y folio. La página 14 no inventa un 9.5 ni dice que la página no llegó.
+
+- p3: descarte registrado. La página es el objetivo del documento y el registro de modificaciones.
+- p5: sin encabezado S4 ni nota de seguridad. Los ejemplos de SW4 siguen marcados como ejemplos.
+- p6: no cruza columnas. En el texto y en la imagen, 12 es abrir, 11 es 0 V, 10 es común, 9 es 12 V y 8 es cerrar. La figura 3 imprime N—7, un símbolo en 6 y L—5, hacia 230 V. El cuerpo lo dice así.
+- p12: contiene 8.1 y los síntomas de 8.2. `#21` queda bajo «se abre pero no se cierra», junto con el LED, `#8` y `#12`.
+- p13: la frase «En caso que el problema persista, desconectar la fotocélula…» queda unida a 8.2 «se re-abre sola», con `[PDF_PAGE: 13]`, `[PRINTED_PAGE: 12/21]` y `source_pdf_page` 13.
+- p14: contiene 9.1 a 9.4, sin 9.5 inventado y sin decir que la página no llegó.
+- p19: contiene las cifras de 11.1 y 11.2, entre ellas 29,46, 31,61 y 0,12 en la fila EW 60. La cobertura marca ausentes los rótulos 11.1 y 11.2; las cifras no. `layout_order_verified` sigue en falso.
+- p22: no cumple. En el ejemplo 2 la página imprime 36,61 x (−0,17) = −6,13 Kg solo en «Diferencia por apertura» y «Son iguales» en «número de paneles». 0,12 = 4,39 Kg está en «tipo de panel». La primera extracción metió −6,13 en una celda combinada de esas dos columnas. El cuerpo de esa llamada no se conservó al reintentar; queda el usage de la llamada 10.
+
+Ajuste único de instrucción, commit `b15078c`: la tabla compacta no funde dos celdas impresas ni mueve un valor a la columna vecina. Test del prompt, 29 corridas, 0 fallos. Reextracción solo de la página 22, llamada 11, US$0,056802. Sigue cruzando: dice que la celda impresa abarca las dos primeras columnas y en «número de paneles» escribe «ver celda anterior».
+
+No hay tanda 2. No hay segunda sonda. F2 no se acepta. F3 no arranca: la página 7 no está certificada. La solicitud remota no se envía.
+
 

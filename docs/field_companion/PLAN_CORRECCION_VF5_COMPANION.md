@@ -773,4 +773,83 @@ Presupuesto: gasto esperado de unos US$0,020, el de las llamadas 83 y 84. Techo 
 
 Lectura: una muestra rechazada rechaza el diseño y no se sustituye por otra frase equivalente. Dos muestras aceptadas solo dan evidencia preliminar: no prueban estabilidad, no miden el turno 3 y no aceptan el companion. F5 sigue siendo la medida de la conversación.
 
+### F3. La configuración de registro y orientación queda rechazada, 21 de octubre de 2026
+
+La propuesta de esta sección quedó aplicada en el árbol de trabajo, sobre `4e5a12e`, sin commit. `FIELD_REPORT_PARAGRAPH` sustituye las dos frases indicadas por la frase única. Su SHA es `0992a841c2e7f9ef0c5a417753c449eae5a232df90c7926c7e2685d0d1e0f2a6`. El prompt reconstruido del turno 1 es el de `attempts/3` con solo ese cambio: SHA `8be5f9861ac9c4a07f5e7cd29a61647a8e626e1369363c367d975eddf741f5a6`, frente a `f07f384e7c0d28b9fed90f2475dcef6ef39b1e728db4c7794b9bf9f05af3b92a`. `Rag::FieldCaseRecord` antepone el registro después de `sanitize_answer`. El historial guarda en `prompt_reply` el texto sanitizado, y ese es el que se reinyecta. Los tests locales del registro, de la sustitución y del corte de historial pasaron antes de las llamadas.
+
+**Qué garantiza el código, y estas dos salidas lo muestran.** El registro copia el episodio del turno 1: Fermator VF5+, el síntoma, las dos observaciones literales, y `#54` y mediciones en «sin hacer». Omite la observación que repite el objetivo. No rellena un resultado. No enumera el manual. Las dos respuestas crudas abren con `# Diagnóstico…`. El sanitizador quita esa línea. El texto presentado no lleva `#`; conserva etiquetas con dos puntos, que CG-D19 admite. `history_reply.txt` es igual a `sanitized.txt` y no contiene el registro. El prompt ya no pide repetir qué está hecho o abierto.
+
+**Qué depende del modelo.** Las dos muestras vuelven a decir que el `#54` no está hecho. El registro ya lo dice. Esa repetición coincide con el registro y no da la comprobación por hecha: la rúbrica no la usa como rechazo. El párrafo, el verbo, la orientación y el uso de los pasajes siguen siendo del modelo. El ejemplo ilustrativo de arriba no se usó como salida exigida ni como texto del fabricante. «sugiere», en la muestra 1, se lee igual que en las muestras 75 a 77: no cierra la fotocélula. Preguntar el LED en el momento de la reapertura habría sido válido; ninguna de las dos lo pregunta, y la rúbrica no exige esa orientación.
+
+Generación. Dos `generate_text`, sin intérprete, sin reintento y sin escritura en S3. Haiku `global.anthropic.claude-haiku-4-5-20251001-v1:0`, temperatura 0,1, 3000 tokens. Episodio `attempts/3/t1/episode.json`. Pasajes de `attempts/3/chunks/` en el orden [1] SW4, [2] «abre pero no se cierra», [3] «re-abre sola», [4] 5.6. Tope de proceso: 2 llamadas y US$0,10. Llamadas 85 y 86, 7626 tokens de entrada cada una, 460 y 466 de salida, US$0,009926 y US$0,009956. Gasto de la prueba: US$0,019882. Ledger: de 84 intentos y committed US$1,016508 a 86 intentos y committed US$1,036390. Unknown sigue en US$0,025851. Open vacío. Exposición US$1,062241. Quedan 5 intentos del cupo de 91 y US$0,482920 del tope US$1,545161. Del tope de 96 quedan 10 intentos; del de US$4 quedan US$2,937759. Las entradas 78 a 80 siguen en unknown.
+
+Copias en `tmp/field_companion/vf5_correction/f3/attempts/4/samples/`: `response.txt`, `sanitized.txt`, `presented.txt`, `history_reply.txt`. 231 y 246 palabras en el texto presentado.
+
+Muestra 1, texto presentado:
+
+```
+Registro del caso. Equipo: Fermator VF5+. Síntoma: «La puerta se reabre sola». Observaciones: «El LED de fotocélula está apagado», «No veo obstrucción». Comprobaciones: #54, sin hacer; mediciones, sin hacer.
+
+Según la documentación del VF5+, para la reapertura automática de la puerta se documentan tres comprobaciones iniciales [3]:
+
+Comprobaciones documentadas:
+
+1. **Potenciómetro de regulación de fuerza de re-apertura (#54)** — No realizada. La documentación indica comprobar la sensibilidad de este componente [3].
+
+2. **Fotocélula activada** — Usted reporta que el LED de fotocélula está apagado. La documentación establece comprobar que la fotocélula no esté activada [3]. Un LED apagado sugiere que la fotocélula no está detectando obstrucción en este momento.
+
+3. **Obstrucción mecánica en la puerta** — Usted reporta no ver obstrucción. La documentación indica comprobar que no hay obstrucción mecánica [3].
+
+Información adicional relevante:
+
+El módulo VF5+ tiene un interruptor SW4 (Máster/Esclavo) que controla el comportamiento de re-apertura [1]. En posición ON (Máster), la unidad ejecuta instrucciones directamente: la activación de la fotocélula provoca re-apertura inmediata sin control de la maniobra. En posición OFF (Esclavo), no hay movimientos de re-apertura automáticos; la puerta solo responde a instrucciones del módulo de control del ascensor [1].
+
+Próximo paso:
+
+¿Cuál es la posición actual del interruptor SW4 en el módulo VF5+? Esto determinará si la re-apertura es controlada localmente por el operador de puerta o si debe ser controlada por la maniobra del ascensor.
+```
+
+Muestra 2, texto presentado:
+
+```
+Registro del caso. Equipo: Fermator VF5+. Síntoma: «La puerta se reabre sola». Observaciones: «El LED de fotocélula está apagado», «No veo obstrucción». Comprobaciones: #54, sin hacer; mediciones, sin hacer.
+
+Según la documentación del VF5+, para el síntoma "la puerta se reabre sola" se documentan tres comprobaciones [3]:
+
+Comprobaciones documentadas:
+
+1. **Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)** — Usted aún no ha realizado esta comprobación.
+
+2. **Comprobar que la fotocélula no esté activada** — Usted reporta que el LED de fotocélula está apagado, lo que indica que la fotocélula no está activada en este momento.
+
+3. **Comprobar que no hay una obstrucción mecánica en la puerta** — Usted reporta que no ve obstrucción.
+
+Siguiente paso documentado:
+
+Si el problema persiste después de estas tres comprobaciones, la documentación indica: "desconectar la fotocélula y volver a pulsar el botón de TEST. Si la puerta no se abre o cierra completamente, debe haber una obstrucción mecánica en la puerta" [3].
+
+Observación sobre la configuración:
+
+La documentación también documenta que el interruptor SW4 controla si la unidad opera en modo Máster (ON) o Esclavo (OFF) [1]. En modo Máster, la activación de la fotocélula provoca re-apertura inmediata sin control de la maniobra. Aunque el LED de fotocélula está apagado, conviene verificar la posición de SW4 y el estado del potenciómetro #54, que es la comprobación pendiente más directa para este síntoma.
+
+¿Ha verificado ya la posición del interruptor SW4 y el ajuste del potenciómetro #54?
+```
+
+| Criterio | Muestra 1 | Muestra 2 |
+| --- | --- | --- |
+| 1. Comprobación dada por hecha, también si se deduce del LED o de «no veo» | Cumple. «sugiere» deja la fotocélula abierta. La obstrucción queda como reporte | Falla. «indica que la fotocélula no está activada en este momento», deducido del LED. El episodio no la tiene en `done` |
+| 2. Contradice el registro | Cumple. «No realizada» coincide con `#54, sin hacer` | Cumple este ítem. El cuerpo dice que el `#54` aún no está hecho |
+| 3. Cambia el verbo, o manda un paso que los pasajes no traen | Falla. El próximo paso pide la posición de SW4. 8.2 no trae ese paso | Falla. «el ajuste del potenciómetro #54» y «conviene verificar» SW4 |
+| 4. Atribuye al manual un orden, una prioridad o una probabilidad | Falla. «tres comprobaciones iniciales» se atribuyen a la documentación. La lista numerada, sola, está admitida | Falla. «Siguiente paso documentado», «después de estas tres comprobaciones» y «la comprobación pendiente más directa» |
+| 5. PDF 13 sin condición o como primer paso, `#21` en este síntoma, o SW4 como hecho del equipo | Cumple. La PDF 13 se omite. No hay `#21`. SW4 se describe como el interruptor; no se afirma el modo de este equipo | Cumple. La PDF 13 va con «Si el problema persiste» y la frase es la del pasaje. No hay `#21`. No afirma el modo de este equipo |
+| 6. No orienta, hace más de una pregunta, o pide lo que el turno ya trae | Cumple este ítem. Una pregunta, sobre SW4, que el turno no traía | Falla. La pregunta pide el `#54`, que el registro ya trae en «sin hacer» |
+| 7. Título tras el sanitizador, cita que no corresponde, o más de 300 palabras | Cumple. Sin `#`. [3] y [1] corresponden. 231 palabras | Cumple. Sin `#`. [3] y [1] corresponden. 246 palabras |
+
+Aceptación, cada muestra tenía que cumplir todo. Ninguna lo cumple.
+
+- Muestra 1. Las tres comprobaciones van con «comprobar» y [3]. El LED y la obstrucción quedan como reporte. La PDF 13 está omitida. El párrafo coincide con el registro en el `#54`. La orientación no está marcada como propia: va como «Próximo paso» después del texto de SW4, y su razón es la función del interruptor, no el reporte.
+- Muestra 2. Las tres comprobaciones van con el verbo del pasaje y [3]. El LED no queda solo como observación. «Siguiente paso documentado» atribuye al manual la secuencia, y «más directa» ordena el `#54`. La PDF 13 conserva la condición. La pregunta vuelve sobre el `#54` y lo llama ajuste.
+
+**Cierre de esta configuración.** Las dos muestras fallan. El diseño de esta frase queda rechazado. No se escribe otra variación del prompt y no hay tercera generación. El fallo es de estas dos salidas. No se concluye que la arquitectura sea inviable. No hay evidencia preliminar y el companion no queda aceptado. El turno 3 sigue sin `result`. «#54» y «el #54» siguen sin equivaler. «Modo esclavo» no está en este episodio y esta corrida no lo mide. F5 no se ejecutó. F2 no se repitió. S3, la KB y la configuración AWS no se tocaron.
+
 

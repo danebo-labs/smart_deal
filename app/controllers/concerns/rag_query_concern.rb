@@ -35,6 +35,7 @@ module RagQueryConcern
                          :generation_context,
                          :generation_prompt_chars,
                          :context_truncated,
+                         :history_answer,
                          keyword_init: true)
 
   # Circled numerals for ① ② ③ lists in table conversion and WA legacy callers.
@@ -139,6 +140,13 @@ module RagQueryConcern
       effective_question: question,
       turn_understanding: understanding
     )
+  end
+
+  def field_case_attachment(answer, result, conv_session)
+    episode = if conv_session.respond_to?(:active_episode)
+      Rag::ActiveEpisode.parse(conv_session.active_episode)
+    end
+    Rag::FieldCaseRecord.attach(answer, episode: episode, generation_mode: result[:generation_mode])
   end
 
   def append_turn_clarification(answer, pending_question, understanding, result)
@@ -340,10 +348,11 @@ module RagQueryConcern
     sanitized_answer, pending_question = append_turn_clarification(
       sanitized_answer, pending_question, understanding, result
     )
+    attached = field_case_attachment(sanitized_answer, result, conv_session)
 
     RagResult.new(
       success?:            true,
-      answer:              sanitized_answer,
+      answer:              attached.presented,
       citations:           result[:citations],
       retrieved_citations: result[:retrieved_citations],
       doc_refs:            result[:doc_refs],
@@ -373,7 +382,8 @@ module RagQueryConcern
       equipment_identity_reason: result[:equipment_identity_reason],
       generation_context: result[:generation_context],
       generation_prompt_chars: result[:generation_prompt_chars],
-      context_truncated: result[:context_truncated]
+      context_truncated: result[:context_truncated],
+      history_answer: attached.history
     )
   rescue ImageCompressionService::CompressionError => e
     log_rag_error("Image compression", e)

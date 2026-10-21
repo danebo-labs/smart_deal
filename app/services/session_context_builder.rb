@@ -114,6 +114,15 @@ class SessionContextBuilder
   end
   private_class_method :mark_context_truncated
 
+  # Observations the case record may quote. Same compaction as the prompt
+  # block, including the omission of an observation the goal already states.
+  def self.case_observations(episode)
+    return [] unless episode.respond_to?(:observations)
+
+    goal = episode.goal&.[]("text").to_s.squish
+    visible_observations(goal, compact_observations(episode))
+  end
+
   # Technician-stated job state for the current web episode.
   # Empty unless both companion flags are on and the episode is still current.
   # The block never includes pinned documents, summaries, or retrieved text.

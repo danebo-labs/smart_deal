@@ -130,10 +130,13 @@ class ConversationSession < ApplicationRecord
 
   # ─── History ────────────────────────────────────────────────────────────────
 
-  def add_to_history(role, content, user_id: nil, correlation_id: nil, focus_ids: nil)
+  def add_to_history(role, content, user_id: nil, correlation_id: nil, focus_ids: nil, prompt_reply: nil)
     with_lock do
       history = conversation_history.last(MAX_HISTORY - 1)
-      history << history_message(role, content, user_id: user_id, correlation_id: correlation_id, focus_ids: focus_ids)
+      history << history_message(
+        role, content, user_id: user_id, correlation_id: correlation_id,
+        focus_ids: focus_ids, prompt_reply: prompt_reply
+      )
       update!(conversation_history: history)
     end
   end
@@ -201,9 +204,12 @@ class ConversationSession < ApplicationRecord
   end
 
   # History stays truncated. pending_fact is calculated from the full reply.
-  def record_assistant_turn!(content, user_id:, correlation_id:, pending_question: nil, expected_episode_id: nil, writer: "assistant", focus_ids: nil)
+  def record_assistant_turn!(content, user_id:, correlation_id:, pending_question: nil, expected_episode_id: nil, writer: "assistant", focus_ids: nil, prompt_reply: nil)
     unless episode_recording?
-      add_to_history("assistant", content, user_id: user_id, correlation_id: correlation_id, focus_ids: focus_ids)
+      add_to_history(
+        "assistant", content, user_id: user_id, correlation_id: correlation_id,
+        focus_ids: focus_ids, prompt_reply: prompt_reply
+      )
       return :not_recording if writer == "photo_assistant"
 
       return nil
@@ -229,7 +235,10 @@ class ConversationSession < ApplicationRecord
 
       if writer == "photo_assistant" && Rag::HaikuQueryAnalysisFlag.owner?
         history = conversation_history.last(MAX_HISTORY - 1)
-        history << history_message("assistant", content, user_id: user_id, correlation_id: correlation_id, focus_ids: focus_ids)
+        history << history_message(
+          "assistant", content, user_id: user_id, correlation_id: correlation_id,
+          focus_ids: focus_ids, prompt_reply: prompt_reply
+        )
         update!(conversation_history: history)
         next
       end
@@ -244,7 +253,10 @@ class ConversationSession < ApplicationRecord
       )
       remember_turn_causal!(stored_episode, result.state)
       history = conversation_history.last(MAX_HISTORY - 1)
-      history << history_message("assistant", content, user_id: user_id, correlation_id: correlation_id, focus_ids: focus_ids)
+      history << history_message(
+        "assistant", content, user_id: user_id, correlation_id: correlation_id,
+        focus_ids: focus_ids, prompt_reply: prompt_reply
+      )
       attrs = { conversation_history: history }
       attrs[:active_episode] = result.state if result.decision == :assistant
       update!(attrs)
@@ -461,11 +473,11 @@ class ConversationSession < ApplicationRecord
   end
 
   def history_for_prompt
-    conversation_history.map { |m| { role: m["role"], content: m["content"] } }
+    conversation_history.map { |message| { role: message["role"], content: prompt_history_text(message) } }
   end
 
   def recent_history_for_prompt(turns: 3)
-    conversation_history.last(turns).map { |m| { role: m["role"], content: m["content"] } }
+    conversation_history.last(turns).map { |message| { role: message["role"], content: prompt_history_text(message) } }
   end
 
   # Mensajes del usuario dentro de la ventana del episodio, en orden cronológico.
@@ -547,13 +559,13 @@ class ConversationSession < ApplicationRecord
     end
 
     indexes = user_indexes.last(EPISODE_MAX_USER_MESSAGES)
-    if assistant_index && conversation_history[assistant_index]["content"].to_s.presence
+    if assistant_index && prompt_history_text(conversation_history[assistant_index]).present?
       indexes = (indexes + [ assistant_index ]).sort
     end
 
     indexes.map do |index|
       message = conversation_history[index]
-      { role: message["role"], content: message["content"].to_s }
+      { role: message["role"], content: prompt_history_text(message) }
     end
   end
 
@@ -1625,7 +1637,7 @@ class ConversationSession < ApplicationRecord
     nil
   end
 
-  def history_message(role, content, user_id:, correlation_id:, focus_ids: nil)
+  def history_message(role, content, user_id:, correlation_id:, focus_ids: nil, prompt_reply: nil)
     message = {
       "role" => role,
       "content" => Rag::TurnText.truncate(content),
@@ -1634,7 +1646,17 @@ class ConversationSession < ApplicationRecord
     message["user_id"] = user_id if user_id.present?
     message["correlation_id"] = correlation_id if correlation_id.present?
     message["focus_ids"] = Array(focus_ids).map(&:to_i).uniq.sort unless focus_ids.nil?
+    # Shown answer may open with the case record. The next prompt reads this
+    # copy, so that record does not occupy the 200 characters reinjected later.
+    message["prompt_reply"] = Rag::TurnText.truncate(prompt_reply.to_s) unless prompt_reply.nil?
     message
+  end
+
+  def prompt_history_text(message)
+    return message["content"].to_s unless message.is_a?(Hash)
+    return message["content"].to_s unless message["role"] == "assistant" && message.key?("prompt_reply")
+
+    message["prompt_reply"].to_s
   end
 
   def episode_recording?

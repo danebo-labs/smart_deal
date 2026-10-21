@@ -128,7 +128,8 @@ class RagController < ApplicationController
         correlation_id: result.correlation_id,
         pending_question: result.pending_question,
         expected_episode_id: expected_episode_id,
-        focus_ids: conv_session.focus_document_ids
+        focus_ids: conv_session.focus_document_ids,
+        prompt_reply: result.history_answer
       )
       # The photo route's images_uploaded branch terminates asynchronously in
       # FieldPhotoAnalysisJob (which emits its own interaction_completed) — the
@@ -262,7 +263,8 @@ class RagController < ApplicationController
       correlation_id: replay_id,
       pending_question: result.pending_question,
       expected_episode_id: conv_session.live_episode_id,
-      focus_ids: focus_ids
+      focus_ids: focus_ids,
+      prompt_reply: result.history_answer
     )
     raw_citations = citation_processor.transport_references(result.citations)
     sources_visible = Rag::SourcesVisibility.enabled?

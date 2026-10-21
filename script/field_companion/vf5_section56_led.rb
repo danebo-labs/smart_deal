@@ -4,26 +4,37 @@ require "digest"
 require "json"
 require "open3"
 
-# Inserts the captured section 5.6 chunk as search result 4 of the repaired
-# turn-1 prompt and, when VF5_SECTION56_LED=1, asks Haiku for three
-# independent samples. Without that flag this only writes the prompt, the
-# diff, the provenance, and the rubric. The assignment ledger is never reset.
-# No Retrieve, no interpreter, and no knowledge-base write.
+# Marks search result 4 of the section 5.6 replay with the applicability line
+# DocumentIdentityScope produces for that same VF5 chunk, then, when
+# VF5_SECTION56_LED=1, asks Haiku for three independent samples. Without that
+# flag this only writes the prompt, the diff, the provenance, and the rubric.
+# The assignment ledger is never reset. No Retrieve, no interpreter, and no
+# knowledge-base write.
+#
+# Boot with KNOWLEDGE_BASE_S3_BUCKET set to the chunk URI's bucket. A relative
+# catalog key is expanded with that constant. The dev bucket does not match
+# this chunk and the same call then returns reference-only. That is not the
+# assembly that labeled results 1-3.
 
 RESERVE_CALLS = 15
 CALL_CAP = 96
 COST_CAP = BigDecimal("4")
 JOB_CALLS = 3
-JOB_USD = BigDecimal("0.04")
-EXPECTED_ATTEMPTS = 58
-EXPECTED_COMMITTED = BigDecimal("0.805683")
-EXPECTED_BASE_SHA = "e4db4fde8644ca108e9420e009dd86547a2e66a9b5377379e3b4242ee4e50b18"
+JOB_USD = BigDecimal("0.16")
+EXPECTED_ATTEMPTS = 61
+EXPECTED_COMMITTED = BigDecimal("0.841346")
+EXPECTED_BASE_SHA = "7dd848fca0b780694c2b5ad7749271d54a885b82ea6afeab1872dbfa5bc64873"
 EXPECTED_PDF_SHA = "be7a39a3490c92c8381cb883402760cb07d10b0a3beda5348bed22f72abedf72"
 EXPECTED_CHUNK_SHA = "02944c035917290906ce3254e06d72b773fe7617044fd7d0468d6dad7550cc21"
-BASE_PATH = "tmp/field_companion/vf5_section_continuity/vf5-section-continuity-20261020T222748Z/prompt-after.txt"
+EXPECTED_PAGE7_META_SHA = "337e3c286fa9ed82019ed5b78fae0d26b46281aa9db775c0beed6f6e7e5be7de"
+EXPECTED_PAGE12_META_SHA = "04f392c0bf1295fd6cfa8880cc08df312dfda58ca71297f88038ebb1d7dca3df"
+BASE_PATH = "tmp/field_companion/vf5_section56/vf5-section56-20261020T232307Z/prompt-after.txt"
 PDF_PATH = "docs/field_companion/fuentes/VF5.pdf"
 CAPTURE_DIR = "tmp/field_companion/validation_captures/vf5-codefix-20261020T1644Z/c183d77a-c39e-48ae-8c0d-8728e266ece5"
 CHUNK_PATH = "#{CAPTURE_DIR}/bodies/b0003.txt"
+TURN_CAPTURE = "tmp/field_companion/validation_captures/vf5-bound-20261020T1728Z/354da85f-c20c-4d36-bb88-45a0c059bc2e/capture.json"
+PAGE7_META = "tmp/field_companion/vf5_section56/inputs/chunk_p7_3.metadata.json"
+PAGE12_META = "tmp/field_companion/vf5_section56/inputs/chunk_p12_1.metadata.json"
 SPEND_PATH = "tmp/field_companion/vf5_generator_benchmark/assignment_spend.json"
 MODEL_ID = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
 REQUEST_ID = "354da85f-c20c-4d36-bb88-45a0c059bc2e"
@@ -34,23 +45,32 @@ LED_CLAUSE = "la fotocélula o la entrada de re-apertura está activada"
 MARKER = "</search_result>\n\n# LANGUAGE AND TONE\n"
 # Frozen before any generation. Do not edit after the samples exist.
 RUBRIC = {
-  "checks" => [
-    "Explicar el LED como activación de fotocélula o entrada de reapertura, con cita [4], sin afirmar cuál ocurrió.",
-    "Mantener pendiente comprobar la fotocélula y distinguir el origen de la activación indicada.",
-    "Mantener la sensibilidad #54 sin revisar, sin ordenar ajustarla ni inventar procedimiento o valores.",
-    "Mantener la observación visual como tal, sin descarte global ni comprobación atribuida al técnico.",
-    "Mantener TEST como prueba posterior condicionada a persistencia; no reducir esa condición a «después de revisar #54».",
-    "No atribuir al manual un orden obligatorio de las tres comprobaciones.",
-    "Conservar en el cierre los pendientes relevantes. Vale una redacción concisa. No se exige repetir literalmente toda la lista.",
-    "Explicar SW4 documentalmente sin afirmar que el ejemplo sea el mecanismo confirmado del caso.",
-    "No inventar mediciones, reparaciones, resultados ni causas confirmadas."
+  "semantic" => [
+    "Explica que el LED puede corresponder a fotocélula o a entrada de reapertura activada.",
+    "No afirma cuál de las dos ocurrió sin evidencia.",
+    "Mantiene pendiente comprobar la fotocélula y distinguir el origen de la activación."
+  ],
+  "attribution" => [
+    "Cita [4] para esa explicación.",
+    "La cita respalda realmente la afirmación."
+  ],
+  "case" => [
+    "La observación visual no se convierte en descarte global ni en comprobación atribuida al técnico.",
+    "#54 sigue sin revisar, sin ajuste ordenado y sin valores inventados.",
+    "TEST conserva la condición documental de persistencia y no queda restringido a revisar #54.",
+    "No aparece un orden obligatorio inventado.",
+    "El cierre conserva los pendientes relevantes.",
+    "SW4 se explica sin convertir el ejemplo en el mecanismo confirmado.",
+    "No hay mediciones, reparaciones ni resultados inventados."
   ],
   "reading" => [
-    "Una hipótesis condicional no equivale por sí sola a causa confirmada ni a prioridad causal. Se juzga qué hechos presupone y si la evidencia la permite.",
-    "No se penalizan encabezados o estilo como fallos técnicos.",
-    "No se rebajan los criterios para obtener un pase.",
-    "Citar [4] y después tratar el LED como fotocélula sola no cumple el primer criterio.",
-    "Enumerar una comprobación y omitirla en el cierre como si estuviera resuelta no cumple."
+    "Se juzga significado y contexto. No se exige redacción literal ni se penaliza el formato.",
+    "La ausencia de cita no equivale a ausencia de uso semántico. Conservar las dos alternativas sin [4] es mejora semántica y fallo de atribución.",
+    "Dos o tres muestras con las dos alternativas y cita correcta son una señal inicial favorable al marcado.",
+    "Uso semántico correcto sin cita es una mejora parcial, distinta del fallo anterior.",
+    "Una sola muestra que mejora no alcanza para dar la mejora por estable.",
+    "Ninguna mejora significa que el marcado no bastó en estas muestras. No descarta toda influencia de la marca.",
+    "No se declara causa exclusiva, estabilidad estadística ni aceptación del turno 1."
   ]
 }.freeze
 
@@ -64,11 +84,14 @@ def vf5_led_main
   vf5_led_bytes!(base, chunk)
   pages = vf5_led_pages
   provenance = vf5_led_provenance(chunk, pages)
-  prompt = vf5_led_prompt(base, chunk)
-  vf5_led_authorize!(base, chunk, prompt, provenance)
+  classification = vf5_led_applicability!(chunk)
+  provenance["applicability"] = classification
+  label = classification.fetch("label")
+  prompt = vf5_led_prompt(base, label)
+  vf5_led_authorize!(base, chunk, prompt, provenance, label)
 
   live = ENV["VF5_SECTION56_LED"] == "1"
-  run_id = live ? "vf5-section56-#{Time.now.utc.strftime('%Y%m%dT%H%M%SZ')}" : "preview"
+  run_id = live ? "vf5-section56-mark-#{Time.now.utc.strftime('%Y%m%dT%H%M%SZ')}" : "preview-applicability"
   root = Rails.root.join("tmp/field_companion/vf5_section56/#{run_id}")
   root.mkpath
   balance = vf5_led_balance
@@ -76,7 +99,8 @@ def vf5_led_main
   puts JSON.generate("status" => "prepared", "run_id" => run_id, "balance" => balance.except("entries"), "prompt_sha256" => Digest::SHA256.hexdigest(prompt), "body_sha256" => Digest::SHA256.hexdigest(body), "ceiling_usd" => provenance["character_ceiling_usd"])
   return 0 unless live
 
-  vf5_led_refuse_budget!(balance)
+  opening_admission = vf5_led_refuse_budget!(balance, Rag::LocalPassLedger.price(MODEL_ID, prompt.bytesize, 3000))
+  root.join("admission_opening.json").write(JSON.generate(opening_admission))
   vf5_led_match_preview!(prompt)
   code = vf5_led_execute(root, run_id, prompt, balance)
   puts JSON.generate("status" => "finished", "exit" => code, "run_id" => run_id)
@@ -150,39 +174,119 @@ def vf5_led_provenance(chunk, pages)
     "score" => row["score"],
     "decision" => row["decision"],
     "non_blocking_differences" => differences,
-    "blocked" => nil,
-    "equipment_line" => "absent from the captured chunk; not added"
+    "blocked" => nil
   }
 end
 
-def vf5_led_prompt(base, chunk)
-  text = base.dup.force_encoding(Encoding::UTF_8)
-  body = chunk.dup.force_encoding(Encoding::UTF_8)
-  raise "marker" unless text.scan(MARKER).size == 1
+def vf5_led_applicability!(chunk)
+  raise "page fidelity" if ENV["RAG_LOCAL_PAGE_FIDELITY"] == "1"
 
-  block = "<search_result>\n<content>\n#{body}\n</content>\n<source>\n4\n</source>\n</search_result>\n"
-  text.sub(MARKER, "</search_result>\n#{block}\n# LANGUAGE AND TONE\n")
+  require "active_support/testing/time_helpers"
+  page7 = vf5_led_meta(PAGE7_META, EXPECTED_PAGE7_META_SHA)
+  page12 = vf5_led_meta(PAGE12_META, EXPECTED_PAGE12_META_SHA)
+  capture = JSON.parse(Rails.root.join(TURN_CAPTURE).read)
+  episode = capture.fetch("events").find { |event| event["kind"] == "episode_delta" }.fetch("episode_after")
+  focus = capture.fetch("events").find { |event| event["kind"] == "document_focus" }.dig("after", 0, "source_uri")
+  source = page7.fetch("original_source_uri")
+  bucket = source.delete_prefix("s3://").split("/", 2).first
+  raise "bucket #{KbDocument::KB_BUCKET}" unless KbDocument::KB_BUCKET == bucket
+  raise "focus" unless focus == source
+  raise "sibling uri" unless page12.fetch("original_source_uri") == source
+  raise "sibling name" unless page12.fetch("canonical_name") == page7.fetch("canonical_name")
+  raise "section" if page7.key?("section_identity") || page12.key?("section_identity")
+
+  body = chunk.dup.force_encoding(Encoding::UTF_8)
+  account = Account.find(capture.fetch("events").find { |event| event["kind"] == "episode_delta" }.fetch("account_id"))
+  helper = Object.new
+  helper.extend(ActiveSupport::Testing::TimeHelpers)
+  report = nil
+  helper.travel_to(Time.iso8601(episode.fetch("updated_at"))) do
+    identity = Rag::EquipmentIdentity.from_episode(episode)
+    raise "identity" unless identity&.known?
+
+    selected = vf5_led_apply(body, page7, source, identity, account)
+    sibling = vf5_led_apply("sibling body", page12, source, identity, account)
+    report = {
+      "label" => selected.labels.sole,
+      "applicability" => selected.applicability.sole,
+      "status" => selected.status.to_s,
+      "body_unchanged" => selected.chunks.sole[:content] == body,
+      "sibling_label" => sibling.labels.sole,
+      "sibling_applicability" => sibling.applicability.sole,
+      "sibling_body_unchanged" => sibling.chunks.sole[:content] == "sibling body",
+      "known" => true,
+      "facts" => identity.facts.map { |fact| [ fact["slot"], fact["value"] ] },
+      "bucket" => bucket,
+      "canonical_name" => page7.fetch("canonical_name"),
+      "page_fidelity" => "off"
+    }
+  end
+  unless report["applicability"] == "compatible" && report["label"] == "THIS JOB'S EQUIPMENT: VF5" &&
+      report["body_unchanged"] && report["sibling_label"] == report["label"] &&
+      report["sibling_applicability"] == "compatible" && report["sibling_body_unchanged"]
+    raise "applicability #{report.inspect}"
+  end
+
+  report
 end
 
-def vf5_led_authorize!(base, chunk, prompt, provenance)
+def vf5_led_meta(path, sha)
+  raw = Rails.root.join(path).binread
+  raise "meta sha #{path}" unless Digest::SHA256.hexdigest(raw) == sha
+
+  JSON.parse(raw).fetch("metadataAttributes")
+end
+
+def vf5_led_apply(content, metadata, focus, identity, account)
+  chunk = {
+    content: content,
+    original_source_uri: metadata["original_source_uri"],
+    location_uri: "s3://#{metadata['original_source_uri'].delete_prefix('s3://').split('/', 2).first}/bulk_chunks/1/#{metadata['document_id']}/chunk.txt",
+    metadata: metadata
+  }
+  Rag::DocumentIdentityScope.apply([ chunk ], identity, focus_uris: [ focus ], viewer_account: account)
+end
+
+def vf5_led_prompt(base, label)
+  text = base.dup.force_encoding(Encoding::UTF_8)
+  seen = 0
+  marked = text.gsub("<content>\n") { |match|
+    seen += 1
+    seen == 4 ? "<content>\n#{label}\n" : match
+  }
+  raise "result slots #{seen}" unless seen == 4
+
+  marked
+end
+
+def vf5_led_without_mark(prompt, label)
+  seen = 0
+  prompt.gsub("<content>\n#{label}\n") { |match|
+    seen += 1
+    seen == 4 ? "<content>\n" : match
+  }
+end
+
+def vf5_led_authorize!(base, chunk, prompt, provenance, label)
   text = base.dup.force_encoding(Encoding::UTF_8)
   body = chunk.dup.force_encoding(Encoding::UTF_8)
-  inserted = "\n<search_result>\n<content>\n#{body}\n</content>\n<source>\n4\n</source>\n</search_result>"
-  raise "prompt changed outside result 4" unless prompt.sub(inserted, "") == text
-  raise "result 4 duplicated" unless prompt.scan(inserted).size == 1
+  raise "restore" unless vf5_led_without_mark(prompt, label) == text
+  raise "marker" unless text.scan(MARKER).size == 1 && prompt.scan(MARKER).size == 1
+  raise "open phrase" unless prompt.scan("and which remain open").size == 1 && text.scan("and which remain open").size == 1
 
   before = vf5_led_contents(text)
   after = vf5_led_contents(prompt)
   sources = prompt.to_enum(:scan, SectionPageContinuity::RESULT_PATTERN).map { Regexp.last_match[2] }
-  raise "count" unless before.size == 3 && after.size == 4
-  raise "results 1-3" unless before == after.first(3)
-  raise "content" unless after[3] == body
+  raise "count" unless before.size == 4 && after.size == 4
+  raise "results 1-3" unless before.first(3) == after.first(3)
+  raise "content" unless after[3] == "#{label}\n#{body}"
+  raise "result 4 base" unless before[3] == body
   raise "sources" unless sources == [ "1", "2", "3", "4" ]
   raise "goal" unless prompt[/^Goal: .*$/] == text[/^Goal: .*$/]
   raise "query" unless prompt[/^Query: .*$/] == text[/^Query: .*$/]
-  raise "state" if prompt.include?("Reportado por el técnico:")
+  raise "state" if prompt.include?("Reportado por el técnico:") && text.exclude?("Reportado por el técnico:")
   raise "orientation" if prompt.include?("Orientación según el manual") && text.exclude?("Orientación según el manual")
-  raise "equipment added" if after[3].include?("THIS JOB'S EQUIPMENT:")
+  raise "equipment line" unless label == "THIS JOB'S EQUIPMENT: VF5"
   raise "provenance" unless provenance["blocked"].nil?
 
   ceiling = Rag::LocalPassLedger.price(MODEL_ID, prompt.bytesize, 3000)
@@ -273,27 +377,73 @@ def vf5_led_manifest(prompt, body, provenance, balance, live)
     "samples" => 3,
     "attempt_limit" => 1,
     "retry_policy" => "CapturedGenerationReplay.run_sample with attempt_limit 1. A transient error may call it again while attempts and calculated spend remain inside this job. Wait comes from TransientBackoff. SDK max_attempts stays 1.",
-    "budget_note" => "US$0.04 limits calculated additional spend (committed + unknown + open holds) before each attempt, plus the last observed call as the estimate of the next one. The character ceiling is a momentary hold and is higher than US$0.04; settle replaces it with token usage. The process ledger dollar cap is the remaining global budget so that hold can be admitted. The process call cap is 3.",
+    "budget_note" => "US$0.16 limits additional calculated spend plus unknown plus open holds, plus the full reserve of the next call, before each attempt. That reserve is LocalPassLedger.price of the prompt byte size and 3000 output tokens, the hold AssignmentSpend opens. The previous call's settled cost is not the admission estimate. The cumulative caps stay 96 attempts and US$4. Fifteen attempts stay reserved. The process ledger dollar cap is the remaining global budget so the hold can be admitted. The process call cap is 3.",
     "sdk_max_attempts" => 1,
     "character_ceiling_usd" => provenance["character_ceiling_usd"],
     "job_calls" => JOB_CALLS,
     "job_usd" => JOB_USD.to_s("F"),
     "reserve_calls" => RESERVE_CALLS,
     "balance_before" => balance,
-    "selection" => "Result 4 is the captured chunk, unmodified. Source number 4 is only in the wrapper. Results 1-3 and the rest of the prompt stay byte for byte. No Retrieve.",
+    "selection" => "Result 4 keeps the captured chunk byte for byte and gains the applicability line DocumentIdentityScope returned for that chunk. Source number 4 stays only in the wrapper. Results 1-3 and the rest of the prompt stay byte for byte. No Retrieve.",
     "provenance" => provenance.except("character_ceiling_usd", "prompt_bytes")
   }
 end
 
-def vf5_led_refuse_budget!(balance)
+def vf5_led_refuse_budget!(balance, reserve)
   remaining_calls = CALL_CAP - balance["attempts"]
-  remaining_usd = COST_CAP - BigDecimal(balance["committed_usd"]) - BigDecimal(balance["unknown_usd"])
-  raise "reserve" if remaining_calls < RESERVE_CALLS + JOB_CALLS
+  remaining_usd = COST_CAP - BigDecimal(balance["committed_usd"]) - BigDecimal(balance["unknown_usd"]) - BigDecimal(balance["held_usd"])
+  raise "reserve calls" if remaining_calls < RESERVE_CALLS + JOB_CALLS
   raise "global cost" if remaining_usd < JOB_USD
+
+  decision = vf5_led_admit(vf5_led_opening_snapshot(balance), balance, reserve)
+  raise "opening admission #{decision.inspect}" unless decision["admitted"]
+
+  decision
+end
+
+def vf5_led_opening_snapshot(balance)
+  {
+    "attempts" => balance["attempts"],
+    "committed_usd" => balance["committed_usd"],
+    "unknown_usd" => balance["unknown_usd"],
+    "held_usd" => balance["held_usd"]
+  }
+end
+
+def vf5_led_admit(snapshot, opening, reserve)
+  used = snapshot["attempts"].to_i - opening["attempts"].to_i
+  committed = BigDecimal(snapshot["committed_usd"].to_s)
+  unknown = BigDecimal(snapshot.fetch("unknown_usd", "0").to_s)
+  held = BigDecimal(snapshot.fetch("held_usd", "0").to_s)
+  additional = committed + unknown + held -
+    BigDecimal(opening["committed_usd"].to_s) -
+    BigDecimal(opening.fetch("unknown_usd", "0").to_s) -
+    BigDecimal(opening.fetch("held_usd", "0").to_s)
+  ceiling = BigDecimal(reserve.to_s)
+  job_total = additional + ceiling
+  global_total = committed + unknown + held + ceiling
+  reasons = []
+  reasons << "attempts" unless used < JOB_CALLS && snapshot["attempts"].to_i < CALL_CAP - RESERVE_CALLS
+  reasons << "job_usd" unless job_total <= JOB_USD
+  reasons << "global_usd" unless global_total <= COST_CAP
+  {
+    "admitted" => reasons.empty?,
+    "reasons" => reasons,
+    "used" => used,
+    "additional_usd" => format("%.6f", additional),
+    "reserve_usd" => format("%.6f", ceiling),
+    "reserve_basis" => "prompt bytes as input tokens plus 3000 output tokens",
+    "job_total_usd" => format("%.6f", job_total),
+    "job_limit_usd" => format("%.6f", JOB_USD),
+    "global_total_usd" => format("%.6f", global_total),
+    "global_limit_usd" => format("%.6f", COST_CAP),
+    "attempts" => snapshot["attempts"].to_i,
+    "attempt_ceiling" => CALL_CAP - RESERVE_CALLS
+  }
 end
 
 def vf5_led_match_preview!(prompt)
-  manifest = Rails.root.join("tmp/field_companion/vf5_section56/preview/manifest.json")
+  manifest = Rails.root.join("tmp/field_companion/vf5_section56/preview-applicability/manifest.json")
   return unless manifest.file?
 
   preview = JSON.parse(manifest.read)
@@ -324,15 +474,12 @@ def vf5_led_execute(root, run_id, prompt, balance)
 
   prepared = vf5_led_prepared(prompt)
   root.join("prepared.json").write(JSON.generate("prompt_sha256" => prepared.prompt_sha256, "body_sha256" => prepared.body_sha256, "at" => Time.now.utc.iso8601))
-  last_cost = nil
   3.times do |index|
     name = "s#{index + 1}"
     directory = root.join(name)
     directory.mkpath
-    sample = vf5_led_one_sample(name, directory, prepared, client, spend, balance, run_id, results, last_cost)
+    sample = vf5_led_one_sample(name, directory, prepared, client, spend, balance, run_id, results)
     break unless sample && sample.status == "returned"
-
-    last_cost = sample.cost_usd.present? ? BigDecimal(sample.cost_usd.to_s) : nil
   end
   results.count { |row| row["status"] == "returned" } == 3 ? 0 : 2
 rescue Rag::AssignmentSpend::Stop, Rag::LocalPassLedger::Stop => error
@@ -346,18 +493,24 @@ ensure
   end
 end
 
-def vf5_led_one_sample(name, directory, prepared, client, spend, opening, run_id, results, last_cost)
+def vf5_led_one_sample(name, directory, prepared, client, spend, opening, run_id, results)
   sample = nil
   attempt = 0
   loop do
-    estimate = sample&.cost_usd.present? ? BigDecimal(sample.cost_usd.to_s) : last_cost
-    unless vf5_led_room?(spend, opening, estimate)
-      results << { "sample" => name, "status" => "not_started", "reason" => "cap", "attempts_already" => attempt }
+    reserve = Rag::LocalPassLedger.price(MODEL_ID, prepared.prompt.bytesize, prepared.max_tokens)
+    decision = vf5_led_admit(spend.snapshot, opening, reserve)
+    decision["prompt_bytes"] = prepared.prompt.bytesize
+    decision["max_tokens"] = prepared.max_tokens
+    decision["sample"] = name
+    next_attempt = attempt + 1
+    attempt_dir = directory.join(format("a%d", next_attempt))
+    attempt_dir.mkpath
+    attempt_dir.join("admission.json").write(JSON.generate(decision))
+    unless decision["admitted"]
+      results << { "sample" => name, "status" => "not_started", "reason" => "cap", "attempts_already" => attempt, "admission" => decision }
       return nil
     end
-    attempt += 1
-    attempt_dir = directory.join(format("a%d", attempt))
-    attempt_dir.mkpath
+    attempt = next_attempt
     attempt_dir.join("checkpoint.json").write(JSON.generate(
       "sample" => name,
       "attempt" => attempt,
@@ -390,16 +543,6 @@ def vf5_led_one_sample(name, directory, prepared, client, spend, opening, run_id
     row["wait_seconds"] = wait
     sleep wait
   end
-end
-
-def vf5_led_room?(spend, opening, next_estimate)
-  snap = spend.snapshot
-  used = snap["attempts"].to_i - opening["attempts"]
-  spent = BigDecimal(snap["committed_usd"]) + BigDecimal(snap["unknown_usd"].to_s) + BigDecimal(snap["held_usd"].to_s) - BigDecimal(opening["committed_usd"])
-  return false unless used < JOB_CALLS && spent < JOB_USD && snap["attempts"].to_i < CALL_CAP - RESERVE_CALLS
-  return true if next_estimate.nil?
-
-  spent + next_estimate <= JOB_USD
 end
 
 def vf5_led_prepared(prompt)

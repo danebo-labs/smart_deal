@@ -1772,5 +1772,59 @@ Conserva la identidad, el LED encendido y el resultado de la fotocélula, y no l
 
 **Decisión.** Este candidato no queda aceptado. El opt-in sigue apagado por defecto. Esta muestra no es estabilidad, ni cierra F3, ni abre F4 o F5. F2 sigue cerrada.
 
+### Control congelado con Sonnet 4.5, 22 de octubre de 2026
+
+Lahiri autoriza hasta 9 intentos desde el 124: tope acumulado 133, gasto adicional máximo US$0,31, techo acumulado US$4 con unknown y reservas. Sin reintento automático, sin fallback y sin otra generación si el control falla. No se cambia el modelo global, el prompt, las guardias, los cuerpos ni la recuperación. No se ejecutan F4 ni F5. No hay escritura en S3 ni sincronización de la KB.
+
+**Ledger antes de llamar.** 124 intentos, committed US$1,294907, unknown US$0,10214, abierto vacío, `call_cap` 132, 124 entradas sin huecos. La 124 sigue settled en US$0,003564. Exposición US$1,397047. `HEAD` `898306007d5f8746380a08e4cf6a7b09b01f877d`, árbol limpio.
+
+**Techo de esta llamada, calculado aquí.** `LocalPassLedger.price` tasa el contexto real como un token por carácter y reserva la salida máxima. System 1177 caracteres más request 5061: 6238. Salida 3000. Sonnet 4.5 global, US$0,003 y US$0,015 por millar. Techo US$0,063714. Con la reserva abierta, la exposición habría sido US$1,460761 y el adicional US$0,063714. Cabe bajo US$4 y bajo US$0,31. El importe estimado de una revisión anterior no se usó como reserva.
+
+**Petición.** `CapturedGenerationReplay.prepare` no lee esta captura: no hay `capture.json` en el directorio de `CallEvidence`. Un envoltorio local, en `tmp/`, arma ese JSON sobre copias de los mismos bytes. `prepare` devuelve el system y el request idénticos. La llamada de pago no usa el envoltorio como segunda reserva: `generate_text` reserva una vez en el ledger de asignación. System SHA-256 `83c457e98134bc388ba172ef70476216ab2190662079adce91088a5dfa50679e`. Request SHA-256 `9dc02d34a45879a48bed6e8e74f5208a6291967981358220a814e108736fc9bc`. Los dos coinciden con el dictamen y con `20261022T180341Z`, byte a byte. Temperatura 0,1. `max_tokens` 3000. Modelo `global.anthropic.claude-sonnet-4-5-20250929-v1:0`. Sin intérprete, sin Retrieve y sin antecedente del asistente.
+
+**Cliente falso, antes de pagar.** Una generación con runtime stub. El ledger de asignación no cambió. La captura guarda la petición, los parámetros, la salida cruda, la presentada, las transformaciones, `stop_reason`, el usage y el consumo. En ese fixture el sanitizador sí cambia el texto, así que la presentada no es una copia ciega de la cruda.
+
+**Llamada.** Una, la 125, `20261022T191253Z`. `stop_reason` `end_turn`. 2189 tokens de entrada, los mismos que Haiku sobre estos bytes, y 335 de salida. Coste US$0,011592. Latencia del proveedor 9869 ms. Techo reservado US$0,063714, settled en el coste real. Unknown no se movió. No hubo reintento ni segundo modelo. Artefactos en `tmp/field_companion/vf5_correction/f3/sonnet_gate/20261022T191253Z/`.
+
+**Comparación.** No es contemporánea y es una sola muestra. Haiku es la captura `20261022T180341Z`, hecha antes y con el mismo system y el mismo request. No estima tasas ni separa del todo la capacidad del modelo y el diseño del contexto: las dos fallan sobre esta entrada.
+
+Respuesta cruda de Sonnet:
+
+```
+Danebo ve que ya descartaste la fotocélula y que no hay obstrucción visible, así que la ruta natural es revisar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54), que es la primera comprobación que la documentación propone para este síntoma [3].
+
+Ese potenciómetro ajusta cuánta resistencia tolera la puerta antes de interpretar que hay un obstáculo y reabrir. Si está demasiado sensible, la puerta puede reabrir sin causa real [3]. La comprobación consiste en verificar su posición actual y, si es necesario, reducir la sensibilidad girándolo en el sentido que indique el módulo (habitualmente hacia la derecha o según la serigrafía del VF5+).
+
+Otra posibilidad, aunque menos frecuente si el LED de fotocélula está encendido de forma estable, es que la señal de re-apertura (#21) esté activada de manera continua o intermitente desde la maniobra del ascensor [2]. Eso obligaría a medir con multímetro si hay tensión en esa entrada, pero la documentación lo menciona después del ajuste de fuerza.
+
+¿El potenciómetro #54 está en una posición intermedia o ya lo habías tocado antes de este turno?
+```
+
+La seguridad de respuesta, la atribución de citas y el sanitizador no modificaron ese texto. `CompanionTurnPublication` lo rechazó por R3: la frase sin cita «Eso obligaría a medir con multímetro si hay tensión en esa entrada, pero la documentación lo menciona después del ajuste de fuerza». La presentada, y lo que habría quedado como `prompt_reply`, es solo:
+
+```
+No pude preparar una orientación fiable para este turno; el caso se conserva.
+```
+
+Esa sustitución es mecánica. No acredita fidelidad del generador ni utilidad para el técnico.
+
+**Evaluación del texto crudo.** Defectos materiales, los mismos tipos que el Haiku ya capturado y algunos más:
+
+- Trata «no está activada» como descarte de la fotocélula. [4] dice que el indicador se activa cuando la fotocélula o la entrada de re-apertura está activada. La respuesta no usa esa disyunción.
+- Cierra «No veo obstrucción» como ausencia de obstrucción.
+- Atribuye a [3] una primera comprobación. La fuente enumera tres y no fija ese orden.
+- Con [3], describe el potenciómetro como un ajuste de resistencia que, si está demasiado sensible, reabre la puerta sin causa. La fuente dice comprobar la sensibilidad.
+- Convierte comprobar en ajustar e inventa un giro y un sentido que estos cuatro cuerpos no imprimen.
+- Trae #21 y la condición continua desde el síntoma de la puerta que se abre y no se cierra, con [2]. El multímetro de ese pasaje está en la señal de cerrado, no en esta maniobra.
+- La pregunta pide una posición intermedia del #54 que el pasaje no imprime.
+
+**Evaluación de la presentada.** Es una abstención. No orienta. No conserva, en el texto que vería el técnico, el LED encendido ni el resultado de la fotocélula. No propone un foco.
+
+**Conversación.** No se ejecutó. El control no pasa, así que no se abre la secuencia de cuatro turnos ni el cambio de contexto. Sigue pendiente, y no queda resuelto aquí, incluir todos los turnos del técnico del episodio sin el tope de tres y sin duplicar el mensaje actual. El archivo íntegro y el corte de 600 siguen pendientes. F2 sigue cerrada. F3 sigue abierta. F4 y F5 no se ejecutaron.
+
+**Gasto.** Un intento, el 125, settled US$0,011592. Unknown sigue US$0,10214. Ledger: 125 intentos, committed US$1,306499, abierto vacío, `call_cap` 132, tope US$4. Exposición US$1,408639. Del adicional de US$0,31 se usaron US$0,011592. Quedan ocho intentos de la autorización sin usar. El tope de código sigue en 132: no hizo falta subirlo a 133.
+
+**Decisión.** Sonnet 4.5 no queda aceptado como generador de este control. No se prueba otro modelo ni otra variante. El opt-in sigue apagado por defecto. Esta muestra no es estabilidad, ni cierra F3, ni abre F4 o F5. La recuperación real sigue sin medirse.
+
 
 

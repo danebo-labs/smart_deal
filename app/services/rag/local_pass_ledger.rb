@@ -25,7 +25,9 @@ module Rag
     TICKETS = :rag_local_pass_tickets
     ASSIGNMENT_PATH_ENV = "RAG_ASSIGNMENT_SPEND_PATH"
     ASSIGNMENT_IDS = :rag_assignment_spend_ids
-    ASSIGNMENT_CALL_CAP = 96
+    # Lahiri, 2026-10-22: one four-turn conversation, eight calls, cumulative 110.
+    # The dollar cap stays US$4 and includes unknown exposure.
+    ASSIGNMENT_CALL_CAP = 110
     ASSIGNMENT_COST_CAP_USD = "4"
     LOCAL_HOSTS = [ "", "localhost", "127.0.0.1", "::1" ].freeze
     MUTEX = Mutex.new

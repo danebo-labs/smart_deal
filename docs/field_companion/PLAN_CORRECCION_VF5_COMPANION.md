@@ -1406,5 +1406,60 @@ El techo de las ocho reservas es US$0,207906. Sale de las reservas ya pagadas en
 
 Exposición leída, sin escribir el ledger: committed US$1,149887, unknown US$0,025851, abierto vacío, exposición US$1,175738. Si las ocho reservas se conservaran enteras, la exposición quedaría en US$1,383644. Bajo US$4 quedan US$2,824262. El límite que impide la corrida es el número de intentos, no el de dólares. El tope de proceso de la corrida anterior, 8 llamadas y US$0,50, cubre este techo. No se ejecuta hasta recibir la ampliación.
 
+### Continuidad de cuatro turnos, ejecutada el 22 de octubre de 2026
+
+Lahiri autoriza 8 llamadas, tope acumulado 110, techo adicional US$0,21 y límite acumulado US$4 con el unknown incluido. `ASSIGNMENT_CALL_CAP` pasa de 96 a 110. En el ledger solo cambia `call_cap`, de 102 a 110. Los intentos 1 a 102, el committed, el unknown y las entradas quedan como estaban. El proceso de esta corrida admite 8 llamadas y US$0,21. Preflight sin modelo: rechazo nulo, 4 cuerpos, 4 compatibles, identidad conocida, estado `scoped`. Reloj real. Sesión nueva 202, episodio `ep_76532e612b41658c` en los cuatro turnos. Historial 0, 2, 4, 6 y 8. `prompt_reply` no contiene «Registro del caso». No hubo `ServiceUnavailable` ni reintento. No valida Retrieve ni F4. No hubo S3, sincronización ni despliegue. El prompt no cambió.
+
+**Gasto.** Ocho llamadas, US$0,053600. Techos reservados, US$0,204903, bajo US$0,21. Unknown no se movió.
+
+| Id | Qué | Techo | Real |
+|---|---|---|---|
+| 103 | intérprete T1 | 0,008752 | 0,003864 |
+| 104 | generación T1 | 0,041927 | 0,009943 |
+| 105 | intérprete T2 | 0,009021 | 0,003273 |
+| 106 | generación T2 | 0,042400 | 0,009958 |
+| 107 | intérprete T3 | 0,008986 | 0,003351 |
+| 108 | generación T3 | 0,042510 | 0,010216 |
+| 109 | intérprete T4 | 0,008973 | 0,003109 |
+| 110 | generación T4 | 0,042334 | 0,009886 |
+
+Ledger al cerrar: 110 intentos, committed US$1,203487, unknown US$0,025851, abierto vacío, exposición US$1,229338, `call_cap` 110, tope US$4. No queda ningún intento de este cupo.
+
+**Estado.** Identidad y síntoma se conservan. Fermator conocido, «Fermator VF5+» y «operador de puerta» siguen, y el objetivo sigue siendo «La puerta se reabre sola». Desde el turno 2 la observación del LED es «el LED de fotocélula está encendido» y «apagado» no vuelve. El turno 3 guarda la fotocélula en `done` con resultado «no está activada». `#54` y mediciones siguen `not_done`. El turno 4 no borra ese resultado ni cierra el `#54`. También queda la observación suelta «no está activada», además del resultado en la comprobación. La consulta del turno 4 lleva el síntoma, el LED encendido y ese resultado.
+
+**Turno 1.** Las dos comprobaciones que el sanitizador anterior borraba están en el texto. El episodio no convierte el LED ni la obstrucción en comprobaciones. La respuesta sí: «Esta condición se cumple» cierra la fotocélula desde el LED apagado, y «Esta observación visual está hecha» cierra la obstrucción. «Este es el primer paso documentado» y «Próximo paso documentado» atribuyen un orden. La pregunta pide un multímetro que estos pasajes no imprimen.
+
+**Turno 2.** El registro y el párrafo usan el LED encendido. «Antes de ajustar el #54» cambia el verbo y lo pone primero. «ya reportado: no se ve obstrucción» da la observación por hecha. La glosa de [4] se queda en una señal de re-apertura.
+
+**Turno 3.** El registro dice fotocélula hecha, «no está activada», y el párrafo no vuelve a pedir esa revisión. Cita [4] con la disyunción. Después atribuye las tres comprobaciones de este síntoma a [2] y llama a `#21` «la más probable». `#21` está en el pasaje de «abre pero no se cierra», no en el de «se re-abre sola». La pregunta pide medir el terminal `#21` con multímetro o con la consola. Eso no está en los cuatro cuerpos.
+
+**Turno 4.** No repregunta el LED, la fotocélula ni las mediciones. Preguntar por el acceso al `#54` cabe, porque sigue sin hacerse. No cabe el marco: «el siguiente paso documentado» y «Ajuste el potenciómetro #54». La obstrucción se lista como ya verificada. El TEST queda detrás de ese ajuste.
+
+```
+Registro del caso. Equipo: Fermator VF5+, operador de puerta. Síntoma: «La puerta se reabre sola». Observaciones: «No veo obstrucción», «el LED de fotocélula está encendido», «no está activada». Comprobaciones: #54, sin hacer; mediciones, sin hacer; fotocélula, hecha, «no está activada».
+
+Según la documentación del VF5+, el siguiente paso documentado para la puerta que se reabre sola es:
+
+**Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)** [3].
+
+Usted ya ha verificado que:
+- La fotocélula no está activada (revisión completada).
+- No hay obstrucción mecánica visible.
+
+Sin embargo, existe una contradicción no resuelta: el LED de fotocélula está encendido, pero usted reporta que la fotocélula no está activada. La documentación establece que el indicador LED de fotocélula se activa "cuando la fotocélula o la entrada de re-apertura está activada" [4].
+
+Falta en los pasajes: la documentación no especifica qué significa que el LED esté encendido mientras la fotocélula reporta no estar activada, ni proporciona valores de referencia para el potenciómetro #54.
+
+Próximo paso recomendado:
+
+Ajuste el potenciómetro #54 (regulación de fuerza de re-apertura) y observe si la puerta deja de reabrirse. Si el problema persiste después de este ajuste, la documentación indica desconectar la fotocélula y pulsar el botón de TEST nuevamente; si la puerta no se abre o cierra completamente en ese caso, debe haber una obstrucción mecánica [3].
+
+¿Tiene acceso al potenciómetro #54 en el módulo VF5+ para realizar este ajuste?
+```
+
+La negrita de esa respuesta es cosmética. El fallo es el orden atribuido y el verbo.
+
+**Cierre.** El estado recorre los cuatro turnos en un episodio y conserva la corrección y el resultado. La orientación no. La continuidad no se acepta. Siguen los fallos de generación: orden o paso siguiente atribuido al manual, observación tratada como comprobación hecha, y un procedimiento que los cuerpos no imprimen. H1 no está descartada. H2 y H3 no se probaron. «#54» y «el #54» no se midieron como equivalencia. F2 sigue cerrada en local. F3 sigue abierta. F4 y F5 no se ejecutaron.
+
 
 

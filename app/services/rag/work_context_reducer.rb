@@ -343,19 +343,34 @@ module Rag
       }
     end
 
+    # A sentence that still names the retracted value is not the replacement.
+    # "está encendido, no apagado" contains the new state and is removed with
+    # the old observation, so the replacement has to be stored on its own.
     def remember_asserted!(phrase)
-      return if asserted_stored?(phrase)
+      return if asserted_stored?(phrase, durable: true)
 
       @episode.append_observation!(phrase, correlation_id: @correlation_id)
     end
 
-    def asserted_stored?(phrase)
+    def asserted_stored?(phrase, durable: false)
       label = FollowupQueryRewriter.normalize_label(phrase)
       return false if label.blank?
 
       @episode.observations.any? { |item|
         current = FollowupQueryRewriter.normalize_label(item["text"])
-        current == label || contained_label?(label, current) || contained_label?(current, label)
+        next false unless current == label || contained_label?(label, current) || contained_label?(current, label)
+        next false if durable && current != label && retracted_carrier?(item["text"])
+
+        true
+      }
+    end
+
+    def retracted_carrier?(text)
+      correction = @perception.respond_to?(:correction) ? @perception.correction : nil
+      return false unless correction&.active?
+
+      correction.retracted.any? { |nucleus|
+        ObservationCorrection.retracted?(text, nucleus, correction.asserted)
       }
     end
 

@@ -353,6 +353,112 @@ class Rag::WorkContextReducerTest < ActiveSupport::TestCase
     assert_includes episode.goal["text"], "la puerta no abre"
   end
 
+  test "a bare state inside the reported observation replaces the stored value and keeps the others" do
+    [
+      {
+        stored: [ "la puerta vuelve a abrirse", "El LED de fotocélula está apagado", "No veo obstrucción" ],
+        turn: "Corrijo solo el estado del LED: el LED de fotocélula está encendido, no apagado.",
+        reported: "el LED de fotocélula está encendido, no apagado",
+        kept: "el LED de fotocélula está encendido",
+        dropped: /apagado/i
+      },
+      {
+        stored: [ "el sensor de puerta está apagado", "el indicador de piso está apagado" ],
+        turn: "Corrijo: el sensor de puerta está encendido, no apagado.",
+        reported: "el sensor de puerta está encendido, no apagado",
+        kept: "el sensor de puerta está encendido",
+        dropped: /el sensor de puerta está apagado/i
+      }
+    ].each do |row|
+      episode = open_episode
+      row[:stored].each { |text| episode.append_observation!(text, correlation_id: "seed") }
+
+      with_owner { settle(episode, correct_observation(row[:reported]), row[:turn]) }
+
+      texts = episode.observations.pluck("text")
+      assert_includes texts, row[:kept], row[:turn]
+      row[:stored].each do |text|
+        next if text.match?(row[:dropped])
+
+        assert_includes texts, text, row[:turn]
+      end
+      assert texts.none? { |text| text.match?(row[:dropped]) }, row[:turn]
+    end
+  end
+
+  test "supported correction formats keep the replacement and the other observations" do
+    sibling = "no hay personas dentro"
+    formats = [
+      {
+        stored: "detenida cerca de planta 1",
+        turn: "En realidad la cabina está cerca de planta 2, no de planta 1.",
+        kept: /planta 2/,
+        dropped: /(?<![[:alnum:]])planta 1(?![[:alnum:]])/
+      },
+      {
+        stored: "detenida cerca de planta 1",
+        turn: "Me equivoqué: la cabina está cerca de planta 2, no en planta 1.",
+        kept: /planta 2/,
+        dropped: /(?<![[:alnum:]])planta 1(?![[:alnum:]])/
+      },
+      {
+        stored: "detenida cerca de planta 1",
+        turn: "Corrijo: la cabina está cerca de planta 2 y no en planta 1.",
+        kept: /planta 2/,
+        dropped: /(?<![[:alnum:]])planta 1(?![[:alnum:]])/
+      },
+      {
+        stored: "detenida cerca de planta 1",
+        turn: "La cabina queda cerca de planta 2, no de planta 1.",
+        kept: /planta 2/,
+        dropped: /(?<![[:alnum:]])planta 1(?![[:alnum:]])/
+      },
+      {
+        stored: "El LED 7 está apagado",
+        turn: "Corrijo: el LED que está apagado es el 5, no el 7.",
+        kept: /LED.*5/,
+        dropped: /LED 7/
+      },
+      {
+        stored: "El LED de fotocélula está encendido",
+        turn: "Corrijo: el LED está apagado, no encendido.",
+        kept: /LED de fotocélula está apagado/,
+        dropped: /encendido/
+      },
+      {
+        stored: "el sensor de puerta está apagado",
+        turn: "Corrijo: el sensor de puerta está encendido, no apagado.",
+        reported: "el sensor de puerta está encendido",
+        kept: /el sensor de puerta está encendido/,
+        dropped: /el sensor de puerta está apagado/
+      }
+    ]
+
+    formats.each do |row|
+      episode = open_episode
+      episode.append_observation!(row[:stored], correlation_id: "seed")
+      episode.append_observation!(sibling, correlation_id: "seed")
+
+      with_owner { settle(episode, correct_observation(row[:reported]), row[:turn]) }
+
+      texts = episode.observations.pluck("text")
+      assert texts.any? { |text| text.match?(row[:kept]) }, row[:turn]
+      assert_includes texts, sibling, row[:turn]
+      assert texts.none? { |text| text.match?(row[:dropped]) }, row[:turn]
+    end
+  end
+
+  test "an ambiguous state correction leaves both stored observations" do
+    episode = open_episode
+    stored = [ "el sensor de puerta está apagado", "el indicador de piso está apagado" ]
+    stored.each { |text| episode.append_observation!(text, correlation_id: "seed") }
+    turn = "Corrijo un dato: está encendido, no apagado."
+
+    with_owner { settle(episode, correct_observation(nil), turn) }
+
+    assert_equal stored, episode.observations.pluck("text")
+  end
+
   test "a level correction replaces por arriba and keeps the no-code observation" do
     episode = open_episode
     episode.append_observation!("No aparece código de falla", correlation_id: "seed")
@@ -439,6 +545,10 @@ class Rag::WorkContextReducerTest < ActiveSupport::TestCase
       "pending_resolution" => nil,
       "clarification_target" => nil
     }
+  end
+
+  def correct_observation(text)
+    report_payload(Array(text).compact).merge("move" => "correct")
   end
 
   def with_owner(&block)

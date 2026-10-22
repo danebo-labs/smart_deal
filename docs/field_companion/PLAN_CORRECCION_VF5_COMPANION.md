@@ -994,4 +994,16 @@ Criterios. Síntoma e identidad, sí. La fotocélula queda realizada con «no es
 
 **Cierre.** El evaluador queda corregido y publicado. La secuencia local se ejecutó una vez, con los fallos conservados. El defecto que corta la continuidad es la pérdida del LED corregido cuando la observación trae el estado desnudo «no apagado». La generación repite, en los tres párrafos, cierres y atribuciones que esta rúbrica rechaza, y en el tercero cita el cuerpo del otro síntoma. Esas dos partes quedan en pausa para revisión con Opus. No se cambia el prompt, no se lanza otra secuencia y no se amplía el presupuesto. «#54» y «el #54» siguen sin equivaler. F4 y F5 no se ejecutaron. S3, la KB y la configuración AWS no se tocaron.
 
+### Reducer: el estado desnudo ya no se lleva el valor nuevo, 21 de octubre de 2026
+
+La pausa del reducer queda cerrada con el cambio mínimo. La generación sigue en pausa para Opus, sobre las respuestas ya guardadas. No hubo llamadas. El ledger sigue en 94 intentos, committed US$1,084467, unknown US$0,025851. Los artefactos de la sesión 199 no se tocaron. No se reabrió F2 ni se escribió en S3. El prompt de generación no cambió.
+
+`remember_asserted!` trataba como ya guardada la frase nueva cuando estaba contenida en la observación que todavía dice el valor retirado. Esa observación es el blanco de la excisión, y el valor anterior cae además por el reemplazo de una palabra. Las dos copias desaparecían. Ahora esa observación no cuenta como copia durable. El reemplazo se guarda solo, y después se retiran la frase con la cola y el valor anterior. No hay una regla del VF5: vale para cualquier estado desnudo que la gramática ya reconoce, «no apagado» igual que «no encendido».
+
+Reproducción local, la misma percepción del turno 2, sin modelo. Antes: «La puerta se reabre sola», «No veo obstrucción». Después: esas dos y «el LED de fotocélula está encendido». «apagado» no queda.
+
+Tests en `WorkContextReducerTest`. El estado desnudo dentro de la observación cubre el LED de fotocélula y el sensor de puerta, y conserva la observación que no se corrige. Los formatos ya soportados siguen el reducer: «no de», «no en», «y no en», el contraste paralelo sin «corrijo», «no el 7», el LED genérico que hereda el cualificador, y el estado nombrado con la frase ya limpia. La corrección ambigua de dos observaciones deja las dos. Suite completa, semilla 43735: 4952 ejecuciones, 35317 aserciones, 0 fallos, 0 errores, 186 omitidas.
+
+Código: `c2aa94eba3888a6a663aca8f8d90ec786807ea62`. Rutas: `app/services/rag/work_context_reducer.rb` y `test/services/rag/work_context_reducer_test.rb`.
+
 

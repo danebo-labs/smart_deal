@@ -2081,5 +2081,67 @@ Dado que la fotocélula está encendida pero no activada, y no hay obstrucción 
 
 **Pendiente.** La expansión no corre en un turno real: hace falta el catálogo local y no hubo Retrieve. No hay selección de aplicabilidad distinta del filtro de identidad ya existente. 8.3 no se incorporó. El defecto visual de la página 4 sigue abierto antes de F4. El sentido de giro de una figura no se fijó. R3 y el resto de validadores no cambiaron; esta muestra no disparó el falso positivo de especificaciones, y la publicación aceptada no vio el descarte ni la dirección inventada. F2 sigue cerrada en local. F3 sigue abierta. F4 y F5 no se ejecutaron. La demo no está lista.
 
+### Contraste Sonnet 4.5 sobre la entrada del intento 133, 22 de octubre de 2026
+
+Una generación. No cambia el generador global, el system, los guards ni los sanitizadores. No reabre la auditoría de Opus. No hay Retrieve, intérprete, conversación, S3 ni sincronización. F3 no se cierra.
+
+**Partida.** `HEAD` `3fa8881deb628b5c01ff7c833e30130cfba9dd39`, igual que `origin/main`, árbol limpio. La entrada es la captura `tmp/field_companion/vf5_correction/f3/assembly_candidate/20261022T223719Z`. User SHA-256 `3d50e7e18e1b1358c9db058a57ce4d060f1b46d78f081f591a1d6e691b0a618b`. System SHA-256 `83c457e98134bc388ba172ef70476216ab2190662079adce91088a5dfa50679e`. Cuerpo de invocación SHA-256 `92faf7bf783861e02c106fea3c94bde9d1d246fd1a316d254ce368f4b5c0758e`. Esos tres coinciden entre `request_user.txt`, `request_system.txt`, `freeze.json` y los archivos enviados en `call_01`. No se reconstruyó una selección nueva: el producto volvió a armar el turno y la puerta rechazó la llamada si el system, el user o el cuerpo diferían de esos bytes. En el cliente falso y en la llamada de pago coincidieron.
+
+**Modelo.** El del control `sonnet_gate/20261022T191253Z`: `global.anthropic.claude-sonnet-4-5-20250929-v1:0`. No es Sonnet 5.5. `BEDROCK_MODEL_ID` sigue en Haiku 4.5 global. La tarifa está en `BedrockQuery::BEDROCK_PRICING`: US$0,003 y US$0,015 por millar. `GetInferenceProfile` en `us-east-1` devolvió ese id, tipo `SYSTEM_DEFINED`, estado `ACTIVE`, y los ARN de `anthropic.claude-sonnet-4-5-20250929-v1:0`. `GetFoundationModelAvailability` respondió `AccessDenied` por falta de `bedrock:GetFoundationModel`. Esa denegación no es el estado del perfil y no se sustituyó por otro modelo ni por una invocación de prueba. El contrato de `invoke_model` no cambió: `bedrock-2023-05-31`, un mensaje `user`, system aparte, temperatura 0,1, `max_tokens` 3000. La única diferencia de la petición respecto del intento 133 es `model_id`.
+
+**Autorización, leída antes de pagar.** Ledger: 133 intentos, committed US$1,338743, unknown US$0,10214, abierto vacío, `call_cap` 136, tope US$4. Exposición US$1,440883. Esta autorización es distinta de las tres llamadas no usadas de la candidata. Máximo dos intentos y US$0,20 adicionales, reservas incluidas. El tope de código no se subió: 133 más 2 llega a 135 y cabe en 136. Caracteres del system y del user: 8992. Techo de una llamada US$0,071976. Dos llamadas US$0,143952. Con las dos reservadas, la exposición habría sido US$1,584835. Cabe bajo US$0,20 y bajo US$4. No se bajó `max_tokens` ni se cambió el modelo. `AWS_MAX_ATTEMPTS=1`, `max_attempts` 1 y `retry_limit` 0. Sin reintento del SDK.
+
+**Cliente falso, antes de pagar.** El ledger no se movió. Una invocación. Rol `user`, sin mensaje de asistente. Hashes de user, system y cuerpo iguales a 133. Modelo Sonnet 4.5 global, temperatura 0,1, 3000 tokens, `bedrock-2023-05-31`. Las seis fuentes conservan los SHA de `sources.json` del intento 133. La cruda del fixture empieza por `# Captura` y la presentada pierde ese encabezado. `stop_reason` `end_turn`. Usage de fixture 100/20, coste calculado US$0,000600, correlación `query:vf5-sonnet-contrast-fake`. Criterios congelados antes de pagar, SHA-256 `bad8cb27be9d71d3c109e6d771c0f223eb66a67739ff2e84e6f2ca3f572b0cbc`, en `tmp/field_companion/vf5_correction/f3/sonnet_contrast/criteria.txt`. No son la lista de la candidata Haiku. Haiku 133 queda como referencia histórica, no contemporánea, de una sola muestra. No se volvió a llamar.
+
+**Llamada.** Una, la 134, `20261022T234051Z`. Correlación `query:7daac824-fb71-43e1-8cc3-4257e7ec0fcb`. El user y el system enviados conservan los hashes de arriba. `stop_reason` `end_turn`. 3227 de entrada, los mismos que Haiku en el intento 133, y 487 de salida. Los contadores de caché del usage vinieron a cero. Latencia del proveedor 11887 ms. Coste US$0,016986. Techo reservado US$0,071976, settled en el coste real. Unknown no se movió. Una invocación. El episodio no cambió. No hubo segunda generación ni reintento.
+
+`extract_doc_refs` no modificó el texto. `CompanionTurnPublication` lo rechazó por R2: «desconectar la fotocélula y volver a pulsar el botón de TEST» y «debe haber una obstrucción mecánica». Esas dos cadenas están en [3]. R2 mira la condición en el mismo fragmento, y [3] las precede con «En caso que el problema persista». El rechazo es mecánico. No demuestra que el modelo haya inventado las cadenas, ni que el resto sea fiel. La presentada, y lo que habría visto el técnico, es:
+
+```
+No pude preparar una orientación fiable para este turno; el caso se conserva.
+```
+
+**Cruda.**
+
+```
+El técnico ya descartó fotocélula activada y obstrucción visible. La documentación de Fermator para «la puerta se re-abre sola» propone tres comprobaciones [3]: sensibilidad del potenciómetro #54, fotocélula activada y obstrucción mecánica. Las dos últimas están hechas; queda la primera.
+
+El #54 es el «potenciómetro que permite ajustar la fuerza de cierre de la puerta (sensibilidad a reaperturas)» [6]. Si está demasiado sensible, la puerta interpreta resistencia normal como obstáculo y reabre. La ruta sería comprobar su posición actual y, si está en el extremo bajo (máxima sensibilidad), girarlo hacia valores más altos para reducir reaperturas no deseadas [6].
+
+Otra posibilidad, aunque el técnico no vio obstrucción, es que exista una «obstrucción mecánica» interna o intermitente que la inspección visual no detectó [3]. La documentación sugiere «desconectar la fotocélula y volver a pulsar el botón de TEST» [3]: si la puerta sigue sin cerrar completamente, «debe haber una obstrucción mecánica» [3]. Esa prueba confirmaría si hay fricción o desalineación que cause la reapertura.
+
+También conviene verificar que la entrada de re-apertura #21 no esté activa de forma continua o intermitente [2][5], ya que «tiene prioridad sobre la señal cerrar» [5] y provocaría el síntoma observado. Si el operador está en modo Máster (SW4 ON), «la activación de la fotocélula provocará una re-apertura inmediata» [1], pero el técnico ya confirmó que la fotocélula no está activada.
+
+¿En qué posición está el potenciómetro #54 ahora?
+```
+
+**Evaluación del crudo.**
+
+- Fotocélula. «descartó fotocélula activada» cierra el estado activado, no la frase de Haiku «descartando esa causa». La comprobación está hecha en el caso y el resultado es «no está activada». Decir que ese ítem está hecho cabe en el reporte. No usa la disyunción de [4].
+- Obstrucción. «Las dos últimas están hechas» incluye la obstrucción mecánica. «No veo obstrucción» no es esa comprobación hecha ni una obstrucción mecánica descartada. El párrafo siguiente vuelve a abrir una obstrucción interna. Las dos frases no pueden sostenerse juntas. La primera es el defecto.
+- LED. No aparece. No hay una explicación que contradiga [4]. Tampoco se usa [4]. No mencionar un componente no es, por sí solo, un fallo. Aquí queda sin relacionar el LED encendido con la fotocélula no activada.
+- Relación. «Si está demasiado sensible, la puerta interpreta resistencia normal como obstáculo y reabre» no está en [6] ni en [3]. Es una relación inventada.
+- Ajuste. La cita de la fuerza de cierre está en [6]. «extremo bajo (máxima sensibilidad)» y «girarlo hacia valores más altos» no están. [6] da el rango 60 a 150 Nm y no lo convierte en sentido de giro ni en extremo de sensibilidad. Convertir ese rango en objetivo de intervención es el defecto. La recomendación deja de comprobar y pasa a girar. La cita [6] no respalda esa maniobra.
+- TEST. Las palabras citadas están en [3]. La recomendación pierde «En caso que el problema persista» y cambia «no se abre o cierra completamente» por «sigue sin cerrar». «fricción o desalineación» no está en el pasaje. R2 bloqueó las dos citas por la condición del mismo fragmento. El bloqueo no absuelve el cambio de condición ni la causa añadida.
+- Entrada 21. Considerarla puede ser válido. «tiene prioridad sobre la señal cerrar» está en [5]. «continua o intermitente» no está en [5]. En [2], «continuamente» pertenece a la entrada OPEN del otro síntoma, no a #21. La cita [2] no respalda esa condición. «provocaría el síntoma observado» va más allá de la prioridad que [5] imprime.
+- SW4. El condicional y la cita de [1] conservan el ejemplo. No ordena cambiar el modo. El resultado de la fotocélula se usa para decir que ese ejemplo no está activado. Eso no excluye la fotocélula como causa mediante [4].
+- Prioridad. «queda la primera» usa el orden de la lista después de dar por hechas las otras dos. [3] no fija ese orden. No es la frase «causa más probable» de Haiku. Sigue dependiendo de un ítem cerrado de más.
+- Pregunta. Preguntar la posición del #54 no repite un dato ya dado: el caso dice que no se comprobó. Puede ser pertinente. El giro hacia valores más altos, en el mismo foco, no lo es.
+- Utilidad. Hay un foco y una sola prosa. No es una orientación publicable: cierra la obstrucción, manda un sentido de ajuste que las fuentes enviadas no establecen y ofrece el TEST sin su condición. La presentada es la abstención. No orienta.
+
+**Comparación con Haiku 133.** No es contemporánea. Haiku es la llamada 133, hecha antes, con los mismos bytes de system y user. Los dos reciben 3227 tokens de entrada. Haiku publicó el texto. Sonnet no: R2 lo sustituyó por la abstención.
+
+Lo que Sonnet no repite de esa publicación: no dice que el resultado «no está activada» descarte la fotocélula como causa, y no explica el LED como vigilancia sin activación. [4] no entra.
+
+Lo que sí repite, con más detalle: un objetivo de ajuste del #54 que [6] no dirige, ahora con extremo bajo, sensibilidad máxima y giro hacia valores más altos. Haiku pedía valores más altos de fuerza de cierre y una sensibilidad insuficiente. Los dos convierten comprobar en ajustar.
+
+Lo que Sonnet añade: la obstrucción mecánica dada por hecha y, a la vez, reabierta como interna; el TEST sin «si el problema persiste»; fricción o desalineación; y #21 continua o intermitente con [2]. La pregunta de posición, sin el giro, habría podido quedar. No queda sola.
+
+**Parada.** La primera muestra falla en el sentido de ajuste, en la obstrucción dada por hecha y en el TEST sin su condición, y además queda bloqueada. No se hizo la segunda. No se cambió la entrada después de ver la salida. Un fallo de esta muestra no demuestra incapacidad general de Sonnet ni justifica cambiar el generador por esta vía.
+
+**Gasto.** Un intento, el 134, settled US$0,016986. Unknown sigue US$0,10214. Ledger: 134 intentos, committed US$1,355729, abierto vacío, `call_cap` 136, tope US$4. Exposición US$1,457869. Del adicional de US$0,20 se usaron US$0,016986. La segunda llamada autorizada no se ejecutó. No hubo reintento. Las entradas 1 a 133 no se reescribieron.
+
+**Decisión.** Sonnet 4.5, con esta entrada verificada, no evita los errores centrales del intento 133. Hay una muestra, bloqueada, no una tasa. No es estabilidad, ni superioridad, ni motivo para migrar, ni cierre de F3. La siguiente decisión tiene que volver a la continuidad, a la recuperación real, al coste y a la latencia, no a otra llamada de este caso. F2 sigue cerrada en local. F3 sigue abierta. Los defectos documentales verificados siguen pendientes antes de F4. F4 y F5 no se ejecutaron. La demo no está lista.
+
 
 

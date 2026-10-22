@@ -25,10 +25,10 @@ module Rag
     TICKETS = :rag_local_pass_tickets
     ASSIGNMENT_PATH_ENV = "RAG_ASSIGNMENT_SPEND_PATH"
     ASSIGNMENT_IDS = :rag_assignment_spend_ids
-    # Lahiri, 2026-10-22: twelve documentary comparisons and, only if that
-    # comparison passes, eight more conversation calls. Cumulative 130.
-    # The dollar cap stays US$4 and includes unknown exposure.
-    ASSIGNMENT_CALL_CAP = 130
+    # Lahiri, 2026-10-22: the companion-turn check adds at most nine calls
+    # on top of the 123 already recorded. Cumulative 132. The dollar cap
+    # stays US$4 and includes unknown exposure.
+    ASSIGNMENT_CALL_CAP = 132
     ASSIGNMENT_COST_CAP_USD = "4"
     LOCAL_HOSTS = [ "", "localhost", "127.0.0.1", "::1" ].freeze
     MUTEX = Mutex.new

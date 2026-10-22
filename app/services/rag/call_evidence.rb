@@ -16,7 +16,7 @@ module Rag
       "consumption" => "consumption.json"
     }.freeze
 
-    def self.capture_call(directory:, client:, correlation_id:, prompt:, state:, history:, sources:, presenter:, model_id: nil, max_tokens: nil, temperature: nil)
+    def self.capture_call(directory:, client:, correlation_id:, prompt:, state:, history:, sources:, presenter:, model_id: nil, max_tokens: nil, temperature: nil, system: nil, validation: nil, prompt_reply: nil, prompt_reply_truncated: nil, state_before: nil, state_after: nil, raw_message: nil, retrieval_query: nil)
       events = ValidationCapture.capture do
         ValidationCapture.correlation = correlation_id
         client.generate_text(
@@ -24,6 +24,7 @@ module Rag
           model_id: model_id,
           max_tokens: max_tokens,
           temperature: temperature,
+          system: system,
           tracking: { correlation_id: correlation_id }
         )
       end
@@ -37,7 +38,14 @@ module Rag
             presenter: presenter,
             state: state,
             history: history,
-            sources: sources
+            sources: sources,
+            validation: validation,
+            prompt_reply: prompt_reply,
+            prompt_reply_truncated: prompt_reply_truncated,
+            state_before: state_before,
+            state_after: state_after,
+            raw_message: raw_message,
+            retrieval_query: retrieval_query
           }
         }
       )
@@ -64,12 +72,13 @@ module Rag
           state: context[:state],
           history: context[:history],
           sources: context.fetch(:sources, nil),
-          consumption: consumption_of(call)
+          consumption: consumption_of(call),
+          extras: capture_extras(call, events, context)
         )
       end
     end
 
-    def self.write(directory, index:, correlation_id:, operation:, attempt:, request:, raw_response:, presented_response:, state:, history:, sources:, consumption:)
+    def self.write(directory, index:, correlation_id:, operation:, attempt:, request:, raw_response:, presented_response:, state:, history:, sources:, consumption:, extras: nil)
       safe = correlation_id.to_s.gsub(/[^A-Za-z0-9_-]/, "_")
       attempt_label = attempt.nil? ? "na" : attempt.to_s
       folder = Pathname(directory).join(format("%02d-%s-%s-%s", index, operation, attempt_label, safe))
@@ -97,7 +106,58 @@ module Rag
         "presented_absent" => presented_text.nil?
       }
       write_json(folder.join("linkage.json"), linkage)
+      write_extras(folder, extras)
       folder
+    end
+
+    def self.capture_extras(call, events, context)
+      request = call[:request].is_a?(Hash) ? call[:request] : {}
+      raw = call[:raw].is_a?(Hash) ? call[:raw] : {}
+      publications = Array(events).select { |event|
+        event.is_a?(Hash) && event["kind"] == "companion_publication" &&
+          (event["correlation_id"].blank? || event["correlation_id"].to_s == call[:correlation_id].to_s)
+      }
+      {
+        "system" => request["system"] || context[:system],
+        "parameters" => {
+          "model_id" => request["model_id"] || raw["model_id"],
+          "max_tokens" => request["max_tokens"] || raw["max_tokens"],
+          "temperature" => request["temperature"] || raw["temperature"],
+          "anthropic_version" => request["anthropic_version"] || raw["anthropic_version"]
+        }.compact,
+        "provider_response" => raw["provider_response"],
+        "extracted_text" => raw["answer"],
+        "stop_reason" => raw["stop_reason"],
+        "validation" => context.key?(:validation) ? context[:validation] : publications.presence,
+        "prompt_reply" => context[:prompt_reply],
+        "prompt_reply_truncated" => context[:prompt_reply_truncated],
+        "state_before" => context[:state_before],
+        "state_after" => context[:state_after],
+        "raw_message" => context[:raw_message],
+        "retrieval_query" => context[:retrieval_query],
+        "latency_ms" => raw["latency_ms"]
+      }
+    end
+
+    def self.write_extras(folder, extras)
+      return if extras.nil?
+
+      folder.join("system.txt").binwrite(extras["system"].to_s) unless extras["system"].nil?
+      write_json(folder.join("parameters.json"), extras["parameters"]) if extras["parameters"].present?
+      write_json(folder.join("provider_response.json"), extras["provider_response"]) unless extras["provider_response"].nil?
+      folder.join("extracted_text.txt").binwrite(extras["extracted_text"].to_s) unless extras["extracted_text"].nil?
+      write_json(folder.join("validation.json"), extras["validation"]) unless extras["validation"].nil?
+      unless extras["prompt_reply"].nil?
+        folder.join("prompt_reply.txt").binwrite(extras["prompt_reply"].to_s)
+        write_json(folder.join("prompt_reply.json"), {
+          "prompt_reply" => extras["prompt_reply"],
+          "prompt_reply_truncated" => extras["prompt_reply_truncated"] == true
+        })
+      end
+      write_json(folder.join("state_before.json"), extras["state_before"]) unless extras["state_before"].nil?
+      write_json(folder.join("state_after.json"), extras["state_after"]) unless extras["state_after"].nil?
+      folder.join("message.txt").binwrite(extras["raw_message"].to_s) unless extras["raw_message"].nil?
+      folder.join("query.txt").binwrite(extras["retrieval_query"].to_s) unless extras["retrieval_query"].nil?
     end
 
     def self.extract_calls(events)
@@ -180,7 +240,9 @@ module Rag
         "attempt" => call[:attempt],
         "model_id" => model_id,
         "input_tokens" => input.is_a?(Numeric) ? input.to_i : nil,
-        "output_tokens" => output.is_a?(Numeric) ? output.to_i : nil
+        "output_tokens" => output.is_a?(Numeric) ? output.to_i : nil,
+        "stop_reason" => raw.is_a?(Hash) ? raw["stop_reason"] : nil,
+        "latency_ms" => raw.is_a?(Hash) ? raw["latency_ms"] : nil
       }
       if input.is_a?(Numeric) && output.is_a?(Numeric) && model_id.present?
         row["cost_usd"] = format("%.6f", LocalPassLedger.price(model_id, input, output))

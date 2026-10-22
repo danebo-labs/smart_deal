@@ -414,6 +414,7 @@ class QueryOrchestratorService
       raw_question: @raw_question,
       context_truncated: generation_context_truncated?,
       omit_evidence_records: @omit_evidence_records == true,
+      conv_session: @conv_session,
       **rag_telemetry
     )
   end

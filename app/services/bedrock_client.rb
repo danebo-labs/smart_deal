@@ -11,6 +11,8 @@ require 'json'
 class BedrockClient
   include AwsClientInitializer
 
+  attr_reader :last_stop_reason
+
   # Fixed query model: Claude Haiku 4.5 (cost-effective, fast). Override via BEDROCK_MODEL_ID env var.
   QUERY_MODEL_ID = (ENV.fetch('BEDROCK_MODEL_ID', nil).presence ||
                     Rails.application.credentials.dig(:bedrock, :model_id) ||
@@ -25,6 +27,7 @@ class BedrockClient
 
   def generate_text(prompt, model_id: DEFAULT_MODEL_ID, max_tokens: 2000, temperature: 0.7, tracking: nil, system: nil)
     model_id ||= DEFAULT_MODEL_ID
+    @last_stop_reason = nil
 
     body = {
       anthropic_version: 'bedrock-2023-05-31',
@@ -67,12 +70,15 @@ class BedrockClient
 
     result = JSON.parse(response.body.read)
     Rag::LocalPassLedger.settle_usage!(result, model_id: model_id)
+    @last_stop_reason = result["stop_reason"]
     text = result.dig('content', 0, 'text') || result.to_s
+    latency_ms = ((Time.current - start_time) * 1000).to_i
 
     track_usage(result, model_id, prompt, start_time, max_tokens: max_tokens, tracking: tracking)
     record_generation_result(
       result, text, prompt, capture_fields,
-      system: system, model_id: model_id, max_tokens: max_tokens, temperature: temperature
+      system: system, model_id: model_id, max_tokens: max_tokens, temperature: temperature,
+      latency_ms: latency_ms
     )
     budget&.record_success!("generate_text") if budget&.armed?
 
@@ -224,7 +230,7 @@ class BedrockClient
     )
   end
 
-  def record_generation_result(result, text, prompt, capture_fields, system:, model_id:, max_tokens:, temperature:)
+  def record_generation_result(result, text, prompt, capture_fields, system:, model_id:, max_tokens:, temperature:, latency_ms: nil)
     return unless Rag::ValidationCapture.active?
 
     usage = result.is_a?(Hash) && result["usage"].is_a?(Hash) ? result["usage"] : {}
@@ -237,6 +243,9 @@ class BedrockClient
         "result" => "returned",
         "operation" => "generate_text",
         "answer" => text,
+        "stop_reason" => result.is_a?(Hash) ? result["stop_reason"] : nil,
+        "latency_ms" => latency_ms,
+        "provider_response" => provider_response(result),
         "input_tokens" => input_tokens.nil? ? "unavailable" : input_tokens,
         "output_tokens" => output_tokens.nil? ? "unavailable" : output_tokens,
         "error_class" => nil,
@@ -244,6 +253,16 @@ class BedrockClient
       }.merge(generation_result_fields(model_id, max_tokens, temperature, prompt, system))
        .merge(capture_fields || {})
     )
+  end
+
+  def provider_response(result)
+    return nil unless result.is_a?(Hash)
+
+    {
+      "stop_reason" => result["stop_reason"],
+      "content" => result["content"],
+      "usage" => result["usage"]
+    }
   end
 
   def record_generation_error(error, prompt, capture_fields, system:, model_id:, max_tokens:, temperature:)

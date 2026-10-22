@@ -41,6 +41,7 @@ es:
     generation_retry: "No pude redactar la respuesta a esta consulta. Reenviarla igual suele fallar: indica fabricante, modelo y el código exacto del display o de la placa, o adjunta una foto de la placa."
     interpreter_service_failure: "No pude interpretar este mensaje. El servicio de interpretación no respondió. No hay un diagnóstico de este turno."
     data_not_available: "Ese dato no aparece en los fragmentos de manual recuperados para esta consulta."
+    companion_contract_invalid: "No pude preparar una orientación fiable para este turno; el caso se conserva."
     unconfirmed_reference_withheld: "La identidad de este equipo no está confirmada. %{references} Ese material no se aplica como procedimiento de este trabajo. Lee el fabricante y el modelo en la placa del cuadro o del controlador y compártelos."
     unconfirmed_reference_clause: "Referencia no aplicada a este trabajo: %{names}."
     unconfirmed_reference_unnamed: "La referencia recuperada no se aplica a este trabajo."

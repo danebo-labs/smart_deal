@@ -7,6 +7,11 @@ class ConversationSession < ApplicationRecord
   # One technician turn can carry the equipment, the symptom, the observations,
   # and the question. History, the interpreter, and span checks share this cut.
   MAX_MSG_LENGTH = 600
+  # Technical cap for the reply re-read by a later prompt. Sized so one
+  # generation of generation_max_tokens can be stored. A fixed
+  # characters-per-token ratio does not prove that a 3000-token reply
+  # always fits; prompt_reply_truncated marks that case.
+  PROMPT_REPLY_MAX_CHARS = 16_000
   EPISODE_WINDOW = 4.hours
   EPISODE_MAX_USER_MESSAGES = 3
   CaseBoundary = Data.define(:attributes, :case_boundary_reason, :pin_release_reason)
@@ -1655,8 +1660,23 @@ class ConversationSession < ApplicationRecord
     message["focus_ids"] = Array(focus_ids).map(&:to_i).uniq.sort unless focus_ids.nil?
     # Shown answer may open with the case record. The next prompt reads this
     # copy, so that record does not occupy the 200 characters reinjected later.
-    message["prompt_reply"] = Rag::TurnText.truncate(prompt_reply.to_s) unless prompt_reply.nil?
+    # content stays on MAX_MSG_LENGTH. prompt_reply has its own cap.
+    assign_prompt_reply!(message, prompt_reply)
     message
+  end
+
+  def assign_prompt_reply!(message, prompt_reply)
+    return if prompt_reply.nil?
+
+    text = prompt_reply.to_s
+    if text.length > PROMPT_REPLY_MAX_CHARS
+      Rails.logger.warn(
+        "[PROMPT_REPLY] truncated length=#{text.length} cap=#{PROMPT_REPLY_MAX_CHARS}"
+      )
+      text = text[0, PROMPT_REPLY_MAX_CHARS]
+      message["prompt_reply_truncated"] = true
+    end
+    message["prompt_reply"] = text
   end
 
   def prompt_history_text(message)

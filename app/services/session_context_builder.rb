@@ -44,6 +44,138 @@ class SessionContextBuilder
     text
   end
 
+  # Companion-turn context. The case block still uses MAX_PROBLEM_CHARS.
+  # The previous reply is one full prompt_reply and does not pass through
+  # the 200-character cut or MAX_CONTEXT_CHARS. An observation is omitted
+  # only when its normalized text equals the result of a check with the
+  # same correlation. The episode is not modified.
+  def self.companion_context(session, episode: nil)
+    parsed = companion_episode(session, episode)
+    trace = { truncated: false }
+    case_text = companion_case(parsed, trace)
+    [ case_text, companion_technician_turns(session), companion_prior_answer(session) ].compact_blank.join("\n\n")
+  end
+
+  def self.companion_episode(session, episode)
+    return episode if episode.is_a?(Rag::ActiveEpisode)
+    return Rag::ActiveEpisode.parse(episode) if episode.present?
+    return nil unless session.respond_to?(:active_episode)
+
+    Rag::ActiveEpisode.parse(session.active_episode)
+  end
+
+  def self.companion_case(episode, trace)
+    return "" if episode.nil? || episode.blank?
+
+    lines = [ "Caso:" ]
+    goal = episode.goal&.[]("text").to_s.squish
+    lines << "Objetivo: #{goal}" if goal.present?
+    identity = companion_identity(episode)
+    lines << "Identidad: #{identity}" if identity.present?
+    observations = companion_observations(episode)
+    if observations.any?
+      lines << "Observaciones:"
+      observations.each { |item| lines << "- #{item['text']}" }
+    end
+    checks = Array(episode.checks).select { |item| item.is_a?(Hash) && item["subject"].present? }
+    if checks.any?
+      lines << "Comprobaciones:"
+      checks.each { |item| lines << companion_check_line(item) }
+    end
+    text = lines.join("\n")
+    return finish_problem_fit(text, trace) if text.length <= MAX_PROBLEM_CHARS
+
+    trace[:truncated] = true
+    note_omission(trace, "hard_cap", text[MAX_PROBLEM_CHARS..])
+    finish_problem_fit(text[0, MAX_PROBLEM_CHARS], trace)
+  end
+
+  def self.companion_observations(episode)
+    checks = Array(episode.checks)
+    Array(episode.observations).reject do |item|
+      normalized = Rag::ObservationText.normalize(item["text"])
+      next false if normalized.blank?
+
+      checks.any? do |check|
+        check["correlation_id"].to_s == item["correlation_id"].to_s &&
+          check["result"].present? &&
+          Rag::ObservationText.normalize(check["result"]) == normalized
+      end
+    end
+  end
+
+  def self.companion_identity(episode)
+    parts = []
+    %w[manufacturer model].each do |key|
+      fact = episode.fact(key)
+      next unless fact.is_a?(Hash) && fact["status"] == "known"
+      next unless %w[user catalog].include?(fact["source"].to_s)
+
+      value = fact["value"].to_s.squish
+      parts << value if value.present?
+    end
+    Array(episode.identifiers).each do |item|
+      next unless item.is_a?(Hash)
+
+      source = item["source"].to_s
+      next unless source.empty? || source == "user"
+
+      value = item["value"].to_s.squish
+      parts << value if value.present?
+    end
+    parts.uniq.join(", ")
+  end
+
+  def self.companion_check_line(item)
+    subject = item["subject"].to_s.squish
+    state = item["status"].to_s == "done" ? "hecha" : "sin hacer"
+    result = item["result"].to_s.squish
+    line = "- sujeto: #{subject}; estado: #{state}"
+    result.empty? ? line : "#{line}; resultado: #{result}"
+  end
+
+  def self.companion_technician_turns(session)
+    return "" unless session.respond_to?(:episode_prompt_history)
+
+    turns = session.episode_prompt_history.select { |turn| turn[:role].to_s == "user" }
+    return "" if turns.empty?
+
+    lines = turns.map { |turn| "- #{turn[:content]}" }
+    ([ "Turnos del técnico:" ] + lines).join("\n")
+  end
+
+  def self.companion_prior_answer(session)
+    message = companion_prior_message(session)
+    return "" if message.nil?
+
+    mark = message["prompt_reply_truncated"] == true ? "«antecedente truncado»\n" : ""
+    "Conclusión previa de Danebo. No es un hecho confirmado.\n#{mark}#{message['prompt_reply']}"
+  end
+
+  def self.companion_prior_message(session)
+    return nil unless session.respond_to?(:conversation_history) && session.respond_to?(:episode_history_cutoff)
+
+    cutoff = session.episode_history_cutoff
+    now = Time.current
+    chosen = nil
+    Array(session.conversation_history).each do |message|
+      next unless message.is_a?(Hash) && message["role"] == "assistant"
+
+      ts = begin
+        Time.zone.parse(message["ts"].to_s)
+      rescue StandardError
+        nil
+      end
+      next if ts.nil? || ts < cutoff || ts > now
+
+      chosen = message
+    end
+    return nil unless chosen&.key?("prompt_reply")
+    return nil if chosen["prompt_reply"].to_s.blank?
+
+    chosen
+  end
+
   def self.assemble_context(session, active_photo_context, trace)
     parts = []
 

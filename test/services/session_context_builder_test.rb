@@ -1035,6 +1035,148 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
     end
   end
 
+  test "companion context drops only the matching observation and keeps the episode" do
+    now = Time.current
+    episode = Rag::ActiveEpisode.open(correlation_id: "case", now: now)
+    episode.assign_goal!("La puerta se reabre sola", correlation_id: "case")
+    episode.write_fact!(
+      "manufacturer", status: "known", value: "Fermator", source: "user",
+      correlation_id: "case", at: now.iso8601
+    )
+    episode.append_observation!("no está activada", correlation_id: "c1")
+    episode.append_observation!("LED encendido", correlation_id: "c2")
+    episode.append_observation!("puerta libre", correlation_id: "c3")
+    episode.upsert_check!(
+      { "subject" => "fotocélula", "status" => "done", "result" => "no está activada" },
+      correlation_id: "c1"
+    )
+    episode.upsert_check!(
+      { "subject" => "recorrido", "status" => "done", "result" => "puerta libre" },
+      correlation_id: "other"
+    )
+    before = JSON.generate(episode.to_h)
+    session = ConversationSession.create!(
+      identifier: "web:companion-dedup-#{SecureRandom.hex(4)}",
+      channel: "web",
+      expires_at: 1.hour.from_now,
+      active_episode: episode.to_h,
+      conversation_history: [
+        { "role" => "user", "content" => "Ya revisé la fotocélula", "ts" => now.iso8601 }
+      ]
+    )
+
+    text = SessionContextBuilder.companion_context(session, episode: episode)
+    observations = text[/Observaciones:.*?(?=\nComprobaciones:)/m]
+
+    assert_equal before, JSON.generate(episode.to_h)
+    assert_includes text, "Objetivo: La puerta se reabre sola"
+    assert_includes text, "Fermator"
+    assert_includes text, "sujeto: fotocélula; estado: hecha; resultado: no está activada"
+    assert_includes text, "sujeto: recorrido; estado: hecha; resultado: puerta libre"
+    assert_includes observations, "LED encendido"
+    assert_includes observations, "puerta libre"
+    assert_not_includes observations, "no está activada"
+    assert_includes text, "Ya revisé la fotocélula"
+  end
+
+  test "companion context keeps one full previous reply and the default context stays at 200" do
+    now = Time.current
+    body = ("A" * 700) + "COLA_UNICA"
+    session = ConversationSession.create!(
+      identifier: "web:companion-reply-#{SecureRandom.hex(4)}",
+      channel: "web",
+      expires_at: 1.hour.from_now,
+      active_episode: {
+        "v" => 1,
+        "episode_id" => "ep-reply",
+        "status" => "active",
+        "opened_at" => (now - 10.minutes).iso8601,
+        "updated_at" => now.iso8601,
+        "goal" => { "text" => "La puerta se reabre sola" }
+      },
+      conversation_history: [
+        { "role" => "user", "content" => "primer turno", "ts" => (now - 2.minutes).iso8601 },
+        {
+          "role" => "assistant",
+          "content" => "shown",
+          "prompt_reply" => body,
+          "ts" => (now - 1.minute).iso8601
+        }
+      ]
+    )
+
+    travel_to now do
+      default_context = SessionContextBuilder.build(session)
+      companion = SessionContextBuilder.companion_context(session)
+
+      assert_not_includes default_context, "COLA_UNICA"
+      assert_includes default_context, "A" * 150
+      assert_includes companion, "COLA_UNICA"
+      assert_includes companion, "Conclusión previa de Danebo. No es un hecho confirmado."
+      assert_not_includes companion, "«antecedente truncado»"
+    end
+  end
+
+  test "a technically truncated antecedent is marked in the companion context" do
+    now = Time.current
+    huge = "B" * (ConversationSession::PROMPT_REPLY_MAX_CHARS + 40)
+    session = ConversationSession.create!(
+      identifier: "web:companion-cap-#{SecureRandom.hex(4)}",
+      channel: "web",
+      expires_at: 1.hour.from_now,
+      active_episode: {
+        "v" => 1,
+        "episode_id" => "ep-cap",
+        "status" => "active",
+        "opened_at" => (now - 10.minutes).iso8601,
+        "updated_at" => now.iso8601
+      }
+    )
+    session.add_to_history("assistant", "corto", prompt_reply: huge)
+    session.reload
+
+    travel_to now + 1.second do
+      text = SessionContextBuilder.companion_context(session)
+      stored = session.conversation_history.last
+
+      assert_equal true, stored["prompt_reply_truncated"]
+      assert_equal ConversationSession::PROMPT_REPLY_MAX_CHARS, stored["prompt_reply"].length
+      assert_includes text, "«antecedente truncado»"
+      assert_not_includes text, "B" * (ConversationSession::PROMPT_REPLY_MAX_CHARS + 1)
+    end
+  end
+
+  test "an empty prompt_reply is not a companion antecedent" do
+    now = Time.current
+    session = ConversationSession.create!(
+      identifier: "web:companion-empty-#{SecureRandom.hex(4)}",
+      channel: "web",
+      expires_at: 1.hour.from_now,
+      active_episode: {
+        "v" => 1,
+        "episode_id" => "ep-empty",
+        "status" => "active",
+        "opened_at" => (now - 10.minutes).iso8601,
+        "updated_at" => now.iso8601
+      },
+      conversation_history: [
+        {
+          "role" => "assistant",
+          "content" => "No pude preparar una orientación fiable para este turno; el caso se conserva.",
+          "prompt_reply" => "",
+          "ts" => (now - 1.minute).iso8601
+        }
+      ]
+    )
+
+    travel_to now do
+      text = SessionContextBuilder.companion_context(session)
+
+      assert_not_includes text, "Conclusión previa"
+      assert_not_includes text, "No pude preparar"
+    end
+  end
+
   private
 
   test "a catalog controller is recognized identity and not a technician statement" do

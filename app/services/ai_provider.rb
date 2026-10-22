@@ -19,6 +19,10 @@ class AiProvider
     raise e
   end
 
+  def last_stop_reason
+    @client.last_stop_reason if @client.respond_to?(:last_stop_reason)
+  end
+
   # Structured tool call. #query is text generation and cannot carry a tool schema.
   def converse(params)
     @client.converse_message(params)

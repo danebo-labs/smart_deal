@@ -36,6 +36,9 @@ module RagQueryConcern
                          :generation_prompt_chars,
                          :context_truncated,
                          :history_answer,
+                         :companion_turn,
+                         :companion_reason,
+                         :companion_publication,
                          keyword_init: true)
 
   # Circled numerals for ① ② ③ lists in table conversion and WA legacy callers.
@@ -142,11 +145,47 @@ module RagQueryConcern
     )
   end
 
-  def field_case_attachment(answer, result, conv_session)
+  CompanionPublication = Struct.new(:presented, :history, :route_outcome, :companion_reason, keyword_init: true)
+
+  def publish_companion_answer(answer, result, conv_session, locale:, route_outcome:, companion_reason:)
+    text = answer.to_s
+    lost = Rag::CompanionTurnPublication.after_guards(text, result[:companion_publication], locale: locale)
+    invalid = result[:companion_contract_invalid] == true || lost.present?
+    if invalid
+      if lost.present? && Rag::ValidationCapture.active?
+        Rag::ValidationCapture.record(
+          "companion_publication",
+          "result" => "rejected_after_guards",
+          "reasons" => lost
+        )
+      end
+      return CompanionPublication.new(
+        presented: Rag::CompanionTurnPublication.abstain_message(locale),
+        history: "",
+        route_outcome: :abstained,
+        companion_reason: "companion_contract_invalid"
+      )
+    end
+
+    attached = field_case_attachment(text, result, conv_session, companion_turn: true)
+    CompanionPublication.new(
+      presented: attached.presented,
+      history: attached.history,
+      route_outcome: route_outcome,
+      companion_reason: companion_reason
+    )
+  end
+
+  def field_case_attachment(answer, result, conv_session, companion_turn: false)
     episode = if conv_session.respond_to?(:active_episode)
       Rag::ActiveEpisode.parse(conv_session.active_episode)
     end
-    Rag::FieldCaseRecord.attach(answer, episode: episode, generation_mode: result[:generation_mode])
+    Rag::FieldCaseRecord.attach(
+      answer,
+      episode: episode,
+      generation_mode: result[:generation_mode],
+      companion_turn: companion_turn
+    )
   end
 
   def append_turn_clarification(answer, pending_question, understanding, result)
@@ -347,10 +386,27 @@ module RagQueryConcern
     sanitized_answer = sanitize_answer(guarded[:answer], channel: resolved_output_channel)
     quick_replies    = result[:quick_replies]
     pending_question = result[:pending_question]
-    sanitized_answer, pending_question = append_turn_clarification(
-      sanitized_answer, pending_question, understanding, result
-    )
-    attached = field_case_attachment(sanitized_answer, result, conv_session)
+    route_outcome = result[:route_outcome]
+    companion_reason = result[:companion_reason]
+    unless result[:companion_turn]
+      sanitized_answer, pending_question = append_turn_clarification(
+        sanitized_answer, pending_question, understanding, result
+      )
+    end
+    attached = if result[:companion_turn]
+      publish_companion_answer(
+        sanitized_answer,
+        result,
+        conv_session,
+        locale: resolved_response_locale,
+        route_outcome: route_outcome,
+        companion_reason: companion_reason
+      )
+    else
+      field_case_attachment(sanitized_answer, result, conv_session)
+    end
+    route_outcome = attached.route_outcome if attached.respond_to?(:route_outcome) && attached.route_outcome
+    companion_reason = attached.companion_reason if attached.respond_to?(:companion_reason) && attached.companion_reason
 
     RagResult.new(
       success?:            true,
@@ -373,7 +429,10 @@ module RagQueryConcern
       retrieved_chunk_sha256s:  result[:retrieved_chunk_sha256s],
       deterministic_validation: result[:deterministic_validation],
       quick_replies:             quick_replies,
-      route_outcome:            result[:route_outcome],
+      route_outcome:            route_outcome,
+      companion_turn:           result[:companion_turn],
+      companion_reason:         companion_reason,
+      companion_publication:    result[:companion_publication],
       pending_question:         pending_question,
       retrieve_ms:              result[:retrieve_ms],
       generation_ms:            result[:generation_ms],

@@ -59,6 +59,10 @@ class BedrockClientTest < ActiveJob::TestCase
     assert_nil returned["prompt"]
     assert_equal prepared["user_sha256"], returned["user_sha256"]
     assert_equal "respuesta", returned["answer"]
+    assert_equal "end_turn", returned["stop_reason"]
+    assert_equal "end_turn", @client.last_stop_reason
+    assert_equal "end_turn", returned.dig("provider_response", "stop_reason")
+    assert_kind_of Integer, returned["latency_ms"]
   end
 
   test "generate_text sends system and records its sha on prepared and returned" do

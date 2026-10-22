@@ -9,8 +9,12 @@ module Rag
     Attachment = Data.define(:presented, :history)
 
     class << self
-      def attach(answer, episode:, generation_mode:)
+      def attach(answer, episode:, generation_mode:, companion_turn: false)
         text = answer.to_s
+        if companion_turn
+          return Attachment.new(presented: text, history: text)
+        end
+
         record = render(episode, generation_mode: generation_mode)
         return Attachment.new(presented: text, history: nil) if record.empty?
 

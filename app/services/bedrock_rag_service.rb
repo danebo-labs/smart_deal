@@ -247,7 +247,8 @@ class BedrockRagService
             entity_s3_uris: [], entity_sources: [], output_channel: nil, force_entity_filter: false,
             auto_scope_filter: false, account_id: nil, user_id: nil, conversation_session_id: nil,
             correlation_id: nil, include_diagnostics: false, episode: nil, equipment_identity: :omit,
-            raw_question: nil, context_truncated: nil, omit_evidence_records: false)
+            raw_question: nil, context_truncated: nil, omit_evidence_records: false,
+            conv_session: nil)
     unless @knowledge_base_id
       error_msg = 'Knowledge Base ID not configured. Please set BEDROCK_KNOWLEDGE_BASE_ID environment variable or configure in Rails credentials.'
       Rails.logger.error(error_msg)
@@ -297,7 +298,8 @@ class BedrockRagService
         conversation_session_id: conversation_session_id,
         correlation_id: correlation_id,
         raw_question: raw_question,
-        context_truncated: context_truncated
+        context_truncated: context_truncated,
+        conv_session: conv_session
       ))
         return scoped
       end
@@ -482,7 +484,8 @@ class BedrockRagService
   def document_identity_scope_result(question, episode:, response_locale:, entity_s3_uris:, entity_sources:,
                                      force_entity_filter:, account_id:, user_id:, conversation_session_id:,
                                      correlation_id:, session_context: nil, output_channel: nil,
-                                     equipment_identity: :omit, raw_question: nil, context_truncated: nil)
+                                     equipment_identity: :omit, raw_question: nil, context_truncated: nil,
+                                     conv_session: nil)
     Thread.current[:document_identity_scope] = nil
     @evidence_applicability = nil
     identity = resolved_equipment_identity(episode, equipment_identity)
@@ -561,8 +564,16 @@ class BedrockRagService
         locale: effective_response_locale(question, response_locale: response_locale)
       )
     end
+    companion_turn = companion_turn_applies?(
+      applied: applied,
+      chunks: applied.chunks,
+      episode: episode,
+      raw_question: raw_question
+    )
     prompt = if companion
       guidance.to_s
+    elsif companion_turn
+      companion_turn_prompt(raw_question, applied.chunks, conv_session: conv_session, episode: episode)
     else
       document_identity_generation_prompt(
         question, applied.chunks,
@@ -640,7 +651,12 @@ class BedrockRagService
       response_locale: response_locale,
       retrieval: retrieval,
       companion: companion,
-      safety_evidence: guidance&.safety_evidence
+      safety_evidence: guidance&.safety_evidence,
+      companion_turn: companion_turn,
+      stop_reason: companion_turn ? generation_stop_reason : nil,
+      technician_texts: companion_turn ? companion_technician_texts(conv_session, episode, raw_question) : nil,
+      manufacturer: companion_turn ? companion_manufacturer(episode) : nil,
+      raw_question: raw_question
     )
     if companion && result[:answer].blank?
       return attach_generation_trace!(
@@ -1194,6 +1210,127 @@ class BedrockRagService
     ENV["RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE"] == "1"
   end
 
+  # The only read of RAG_COMPANION_TURN. Off keeps the current documentary prompt.
+  def companion_turn_enabled?
+    ENV["RAG_COMPANION_TURN"] == "1"
+  end
+
+  def companion_turn_applies?(applied:, chunks:, episode:, raw_question:)
+    return false unless companion_turn_enabled?
+
+    reason = companion_turn_skip_reason(applied: applied, chunks: chunks, episode: episode, raw_question: raw_question)
+    note_companion_turn(reason || "applied")
+    reason.nil?
+  end
+
+  def companion_turn_skip_reason(applied:, chunks:, episode:, raw_question:)
+    return :system_role if document_identity_system_role?
+    return :identity unless applied.status == :scoped
+    return :plan if self.class.plan_context?(raw_question.to_s, nil, chunks)
+
+    parsed = episode.is_a?(Rag::ActiveEpisode) ? episode : Rag::ActiveEpisode.parse(episode)
+    return :episode if parsed.nil? || parsed.blank? || parsed.status != "active"
+    return :raw_question if raw_question.blank?
+    return :field_records if companion_field_records?(chunks)
+
+    nil
+  end
+
+  def companion_field_records?(chunks)
+    Array(chunks).any? do |chunk|
+      next false if Rag::DocumentIdentityScope.reference_only_chunk?(chunk)
+
+      narrative = Rag::DocumentIdentityScope.omit_terminal_evidence_records(chunk[:content].to_s)
+      narrative.lines.any? { |line| line.strip.start_with?("FIELD_RECORD") }
+    end
+  end
+
+  def note_companion_turn(reason)
+    Rails.logger.info("[COMPANION_TURN] #{reason}")
+    return unless Rag::ValidationCapture.active?
+
+    Rag::ValidationCapture.record(
+      "companion_turn",
+      "result" => reason.to_s == "applied" ? "applied" : "skipped",
+      "reason" => reason.to_s
+    )
+  end
+
+  def companion_turn_prompt(raw_question, chunks, conv_session:, episode:)
+    parts = [ "Mensaje del técnico:\n#{raw_question.to_s.strip}" ]
+    context = SessionContextBuilder.companion_context(conv_session, episode: episode)
+    parts << context if context.present?
+    parts << companion_source_block(chunks)
+    DocumentIdentityPrompt.new(system: companion_turn_system_prompt, user: parts.join("\n\n"))
+  end
+
+  def companion_turn_system_prompt
+    Rails.root.join("app/prompts/bedrock/companion_turn.txt").read
+  end
+
+  def companion_source_block(chunks)
+    lines = [ "Fuentes:" ]
+    Array(chunks).each_with_index do |chunk, index|
+      metadata = chunk[:metadata].to_h.stringify_keys
+      name = metadata["canonical_name"].presence || metadata["original_filename"].presence || "DATA_NOT_AVAILABLE"
+      page = metadata["page_number"].presence || "DATA_NOT_AVAILABLE"
+      narrative = Rag::DocumentIdentityScope.omit_terminal_evidence_records(chunk[:content].to_s).strip
+      lines << "[#{index + 1}] Documento: #{name}. Página: #{page}."
+      lines << narrative
+      lines << ""
+    end
+    lines.join("\n")
+  end
+
+  def companion_publication_sources(chunks)
+    Array(chunks).each_with_index.map do |chunk, index|
+      applicability = (chunk[:identity_applicability] || chunk["identity_applicability"]).to_s
+      {
+        "index" => index + 1,
+        "content" => chunk[:content].to_s,
+        "applicability" => applicability,
+        "reference_only" => Rag::DocumentIdentityScope.reference_only_chunk?(chunk)
+      }
+    end
+  end
+
+  def companion_technician_texts(conv_session, episode, raw_question)
+    texts = [ raw_question.to_s ]
+    parsed = episode.is_a?(Rag::ActiveEpisode) ? episode : Rag::ActiveEpisode.parse(episode)
+    unless parsed.nil? || parsed.blank?
+      texts << parsed.goal&.[]("text")
+      Array(parsed.observations).each { |item| texts << item["text"] }
+      Array(parsed.checks).each do |item|
+        texts << item["subject"]
+        texts << item["result"]
+      end
+      Array(parsed.identifiers).each { |item| texts << item["value"] }
+    end
+    if conv_session.respond_to?(:conversation_history)
+      Array(conv_session.conversation_history).each do |message|
+        texts << message["content"] if message.is_a?(Hash) && message["role"] == "user"
+      end
+    end
+    texts.compact
+  end
+
+  def companion_manufacturer(episode)
+    parsed = episode.is_a?(Rag::ActiveEpisode) ? episode : Rag::ActiveEpisode.parse(episode)
+    return nil if parsed.nil? || parsed.blank?
+
+    fact = parsed.fact("manufacturer")
+    return nil unless fact.is_a?(Hash) && fact["status"] == "known"
+
+    fact["value"].to_s.squish.presence
+  end
+
+  def generation_stop_reason
+    generator = document_identity_generator
+    return nil unless generator.respond_to?(:last_stop_reason)
+
+    generator.last_stop_reason
+  end
+
   def withheld_document_identity_template(question, response_locale:, session_context:, output_channel:)
     self.class.withhold_document_identity_inference(
       load_generation_prompt_with_locale(
@@ -1358,7 +1495,22 @@ class BedrockRagService
   end
 
   def finish_document_identity_generation(question:, raw_answer:, chunks:, response_locale:, retrieval:,
-                                           companion: false, safety_evidence: nil)
+                                           companion: false, safety_evidence: nil, companion_turn: false,
+                                           stop_reason: nil, technician_texts: nil, manufacturer: nil,
+                                           raw_question: nil)
+    if companion_turn
+      return finish_companion_turn_generation(
+        question: raw_question.presence || question,
+        raw_answer: raw_answer,
+        chunks: chunks,
+        response_locale: response_locale,
+        retrieval: retrieval,
+        stop_reason: stop_reason,
+        technician_texts: technician_texts,
+        manufacturer: manufacturer
+      )
+    end
+
     no_results_locale = effective_response_locale(question, response_locale: response_locale)
     answer_text = extract_doc_refs(raw_answer.to_s)[:clean_answer]
     canned_no_results = bedrock_no_results?(answer_text)
@@ -1416,6 +1568,64 @@ class BedrockRagService
     }
     capture_cited_sources(result[:citations])
     result
+  end
+
+  def finish_companion_turn_generation(question:, raw_answer:, chunks:, response_locale:, retrieval:,
+                                       stop_reason:, technician_texts:, manufacturer:)
+    locale = effective_response_locale(question, response_locale: response_locale)
+    extracted = extract_doc_refs(raw_answer.to_s)[:clean_answer]
+    citations = document_identity_citation_records(chunks)
+    safety = Rag::AnswerSafetyProcessor.new(locale: locale).call(
+      extracted,
+      evidence: citations,
+      require_cited_evidence: true
+    )
+    attribution = Rag::CitationAttributionGuard.new(question: question, citations: citations).call(safety)
+    @last_citation_attribution = attribution
+    guarded = attribution.answer
+    publication = Rag::CompanionTurnPublication.call(
+      text: extracted,
+      guarded_text: guarded,
+      sources: companion_publication_sources(chunks),
+      stop_reason: stop_reason,
+      technician_texts: technician_texts,
+      manufacturer: manufacturer,
+      guards: [
+        { "name" => "answer_safety", "before" => extracted, "after" => safety },
+        { "name" => "citation_attribution", "before" => safety, "after" => guarded }
+      ],
+      locale: locale
+    )
+    record_companion_publication(publication, stop_reason)
+    accepted = publication.accepted?
+    answer_text = accepted ? guarded : Rag::CompanionTurnPublication.abstain_message(locale)
+    result = {
+      answer: answer_text,
+      citations: @citation_processor.build_numbered_references(citations, answer_text, question: question),
+      retrieved_citations: citations.compact,
+      doc_refs: build_doc_refs(chunks.reject { |chunk| Rag::DocumentIdentityScope.reference_only_chunk?(chunk) }),
+      session_id: nil,
+      retrieval_trace: retrieval[:retrieval_trace],
+      generation_mode: "document_identity_scope",
+      model_invoked: true,
+      route_outcome: accepted ? :answered : :abstained,
+      companion_turn: true,
+      companion_contract_invalid: !accepted,
+      companion_reason: accepted ? nil : "companion_contract_invalid",
+      companion_publication: publication.to_h,
+      document_identity: Thread.current[:document_identity_scope]
+    }
+    capture_cited_sources(result[:citations])
+    result
+  end
+
+  def record_companion_publication(publication, stop_reason)
+    return unless Rag::ValidationCapture.active?
+
+    Rag::ValidationCapture.record(
+      "companion_publication",
+      publication.to_h.merge("stop_reason" => stop_reason)
+    )
   end
 
   def document_identity_citation_records(chunks)

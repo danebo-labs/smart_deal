@@ -181,6 +181,76 @@ class Rag::CallEvidenceTest < ActiveSupport::TestCase
     FileUtils.remove_entry(dir) if dir
   end
 
+  test "a fake client writes the companion capture before any paid call" do
+    dir = Dir.mktmpdir
+    client = FakeClient.new
+    validation = {
+      "accepted" => true,
+      "reasons" => [],
+      "signals" => [ { "code" => "S2", "questions" => 1 } ],
+      "quotes" => [ { "text" => "cuando el cierre es normal", "source" => 1, "position" => 12 } ]
+    }
+    sources = [
+      { "index" => 1, "sha256" => Digest::SHA256.hexdigest("cuerpo uno"), "content" => "cuerpo uno" },
+      { "index" => 2, "sha256" => Digest::SHA256.hexdigest("cuerpo dos"), "content" => "cuerpo dos" }
+    ]
+
+    folder = Rag::CallEvidence.capture_call(
+      directory: dir,
+      client: client,
+      correlation_id: "query:companion",
+      prompt: "Mensaje del técnico:\n¿qué sigue?",
+      system: "Responde en castellano, en una sola respuesta integrada.",
+      state: { "episode_id" => "ep-after" },
+      history: [ { "role" => "user", "content" => "turno previo" } ],
+      sources: sources,
+      presenter: ->(raw) { "presentado: #{raw}" },
+      model_id: MODEL,
+      max_tokens: 3000,
+      temperature: 0.1,
+      validation: validation,
+      prompt_reply: "presentado: RAW query:companion",
+      prompt_reply_truncated: false,
+      state_before: { "episode_id" => "ep-before" },
+      state_after: { "episode_id" => "ep-after" },
+      raw_message: "¿qué sigue?",
+      retrieval_query: "consulta compuesta"
+    ).sole
+
+    assert_equal "Responde en castellano, en una sola respuesta integrada.", folder.join("system.txt").read
+    assert_equal "Mensaje del técnico:\n¿qué sigue?", folder.join("request.txt").read
+    parameters = JSON.parse(folder.join("parameters.json").read)
+    assert_equal MODEL, parameters["model_id"]
+    assert_equal 3000, parameters["max_tokens"]
+    assert_in_delta 0.1, parameters["temperature"]
+    assert_equal "bedrock-2023-05-31", parameters["anthropic_version"]
+    provider = JSON.parse(folder.join("provider_response.json").read)
+    assert_equal "end_turn", provider["stop_reason"]
+    assert_equal "RAW query:companion", folder.join("extracted_text.txt").read
+    assert_equal "RAW query:companion", folder.join("raw_response.txt").read
+    assert_equal validation, JSON.parse(folder.join("validation.json").read)
+    assert_equal "presentado: RAW query:companion", folder.join("presented_response.txt").read
+    reply = JSON.parse(folder.join("prompt_reply.json").read)
+    assert_equal "presentado: RAW query:companion", reply["prompt_reply"]
+    assert_equal false, reply["prompt_reply_truncated"]
+    assert_equal "ep-before", JSON.parse(folder.join("state_before.json").read)["episode_id"]
+    assert_equal "ep-after", JSON.parse(folder.join("state_after.json").read)["episode_id"]
+    assert_equal "turno previo", JSON.parse(folder.join("history.json").read).dig("history", 0, "content")
+    stored_sources = JSON.parse(folder.join("sources.json").read).fetch("sources")
+    assert_equal [ "cuerpo uno", "cuerpo dos" ], stored_sources.pluck("content")
+    assert_equal sources.pluck("sha256"), stored_sources.pluck("sha256")
+    assert_equal "¿qué sigue?", folder.join("message.txt").read
+    assert_equal "consulta compuesta", folder.join("query.txt").read
+    consumption = JSON.parse(folder.join("consumption.json").read)
+    assert_equal "end_turn", consumption["stop_reason"]
+    assert_equal 12, consumption["latency_ms"]
+    assert_equal 20, consumption["input_tokens"]
+    assert_equal 5, consumption["output_tokens"]
+    assert_equal "calculated", consumption["cost_kind"]
+  ensure
+    FileUtils.remove_entry(dir) if dir
+  end
+
   private
 
   def call(correlation_id, prompt, episode_id, history)
@@ -200,12 +270,11 @@ class Rag::CallEvidenceTest < ActiveSupport::TestCase
       @prompts = []
     end
 
-    def generate_text(prompt, model_id: nil, max_tokens: nil, temperature: nil, tracking: nil)
+    def generate_text(prompt, model_id: nil, max_tokens: nil, temperature: nil, tracking: nil, system: nil)
       correlation_id = tracking[:correlation_id]
       @prompts << prompt
       Rag::ValidationCapture.attempt = 1
-      Rag::ValidationCapture.record(
-        "generate_text",
+      prepared = {
         "stage" => "generate",
         "result" => "prepared",
         "operation" => "generate_text",
@@ -213,8 +282,11 @@ class Rag::CallEvidenceTest < ActiveSupport::TestCase
         "model_id" => model_id,
         "max_tokens" => max_tokens,
         "temperature" => temperature,
+        "anthropic_version" => "bedrock-2023-05-31",
         "correlation_id" => correlation_id
-      )
+      }
+      prepared["system"] = system if system.present?
+      Rag::ValidationCapture.record("generate_text", prepared)
       text = "RAW #{correlation_id}"
       Rag::ValidationCapture.record(
         "generation_result",
@@ -224,6 +296,12 @@ class Rag::CallEvidenceTest < ActiveSupport::TestCase
         "answer" => text,
         "input_tokens" => 20,
         "output_tokens" => 5,
+        "stop_reason" => "end_turn",
+        "latency_ms" => 12,
+        "provider_response" => { "stop_reason" => "end_turn", "content" => [ { "text" => text } ] },
+        "model_id" => model_id,
+        "max_tokens" => max_tokens,
+        "temperature" => temperature,
         "correlation_id" => correlation_id
       )
       text

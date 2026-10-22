@@ -1736,5 +1736,41 @@ Defecto material. Otra vez la contradicción, y el TEST queda detrás de esa ver
 
 **Estado del candidato.** Sigue opt-in. Sin `omit_evidence_records: true` la generación documental conserva los registros. El plano también los conserva. F2 sigue cerrada. F3 sigue abierta: el estado de los cuatro turnos anteriores queda como estaba, y la generación no queda aceptada. F4 y F5 no se ejecutaron.
 
+## F3, turno único
+
+Candidato opt-in, `RAG_COMPANION_TURN=1`, leído en un solo método y desactivado por defecto. No se combina con `RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE`. La generación recibe el mensaje del técnico; la recuperación sigue con la consulta compuesta. El episodio no se reescribe: una observación se omite de la representación solo cuando su texto normalizado coincide con el resultado de un check de la misma correlación. La respuesta anterior entra completa, como conclusión previa, con tope técnico de 16 000 caracteres y marca `prompt_reply_truncated` si se corta. Fuera del candidato, el corte de 200 del asistente y el de 600 del técnico siguen igual.
+
+`Rag::CompanionTurnPublication` aplica R1–R5 y anota S1–S4. No renderiza ni vuelve a llamar. Una respuesta inválida publica «No pude preparar una orientación fiable para este turno; el caso se conserva», deja `prompt_reply` vacío y no muestra el texto crudo. La comprobación de condiciones es léxica y solo ve el fragmento que contiene la cita: una condición en la línea anterior pasa el validador. Eso no demuestra fidelidad semántica.
+
+Tests con red bloqueada y cliente falso: `companion_turn_publication_test`, `companion_turn_generation_test`, más contexto, registro del caso, historial, evidencia de la llamada, cliente y el concern. La captura del cliente falso escribe system, parámetros, respuesta del proveedor, `stop_reason`, validación, respuesta presentada, `prompt_reply`, estados, historial, fuentes, mensaje, consulta, tokens y coste antes de cualquier llamada de pago.
+
+**Control.** Una generación, `20261022T180341Z`. Episodio de T4, turnos del técnico T2, T3 y «¿qué sigue?», cuatro cuerpos certificados en el orden p5, p12, p12–p13, p7. Sin antecedente del asistente: la prosa de T3 no salió de este candidato. Sin intérprete. Consulta de recuperación: la `effective_question` de T4 de referencia. Techo calculado US$0,021238; admisión del proceso US$0,022238. Haiku 4.5 global, temperatura 0,1, `max_tokens` 3000. `stop_reason` `end_turn`. 2189 tokens de entrada, 275 de salida, US$0,003564, latencia 4590 ms. Una sola llamada. El episodio, en objetivo, identidad, observaciones y checks, quedó igual. `prompt_reply` es la respuesta presentada, 928 caracteres, sin registro del caso y sin marca de truncado.
+
+La publicación mecánica aceptó el texto: [3] existe y es compatible, no hay cita entre comillas, no hay atribución sin marca, y el sanitizador conservó el texto. Esa aceptación no juzga la paráfrasis.
+
+Respuesta presentada:
+
+```
+Danebo ve que la fotocélula no está activada según la comprobación realizada, y que el LED está encendido pero sin que la fotocélula esté funcionando. Esto descarta que la reapertura sea causada por la fotocélula misma. Según la documentación [3], cuando la puerta se reabre sola, el siguiente paso es comprobar la sensibilidad del potenciómetro de regulación de fuerza de reapertura (#54), que está en la lista de comprobaciones sin hacer. Este ajuste controla cuánta fuerza se aplica durante la reapertura, y si está demasiado sensible podría provocar que la puerta se abra sin causa aparente. También está pendiente comprobar las mediciones, que podrían revelar si hay señales eléctricas anómalas activando la reapertura.
+
+¿Has podido acceder al potenciómetro #54 para verificar su sensibilidad, o necesitas primero hacer las mediciones eléctricas para descartar que haya una señal de reapertura (#21) activada continuamente?
+```
+
+**Evaluación.** Defectos materiales:
+
+- Atribuye a [3] un paso siguiente. La fuente enumera tres comprobaciones para la puerta que se reabre sola y no fija ese orden.
+- Descarta la fotocélula como causa. [4] dice que el indicador se activa cuando la fotocélula o la entrada de re-apertura está activada. La respuesta no usa esa disyunción.
+- La pregunta trae #21, y la condición «continuamente», desde el síntoma de la puerta que se abre y no se cierra, sin cita.
+- Describe el potenciómetro como un ajuste que controla la fuerza y que, si está demasiado sensible, abre la puerta sin causa. La fuente dice comprobar la sensibilidad.
+- Atribuye a las mediciones pendientes la función de revelar señales eléctricas anómalas. El episodio solo las deja sin hacer.
+
+Conserva la identidad, el LED encendido y el resultado de la fotocélula, y no llama contradicción a esa combinación. No alcanza: el control no orienta con la disyunción de 5.6 ni con lo pendiente sin atribuir un orden que la fuente no dice.
+
+**Conversación.** No se ejecutó. El control falló en lo semántico. No hay segunda variante.
+
+**Gasto.** Un intento, el 124, settled US$0,003564. Unknown sigue US$0,10214. Ledger: 124 intentos, committed US$1,294907, abierto vacío, `call_cap` 132, tope US$4. Exposición US$1,397047. De los US$0,20 autorizados se usaron US$0,003564. Quedan ocho llamadas sin usar, dentro del cupo de 132.
+
+**Decisión.** Este candidato no queda aceptado. El opt-in sigue apagado por defecto. Esta muestra no es estabilidad, ni cierra F3, ni abre F4 o F5. F2 sigue cerrada.
+
 
 

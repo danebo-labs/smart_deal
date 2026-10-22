@@ -129,6 +129,20 @@ class Rag::FieldCaseRecordTest < ActiveSupport::TestCase
     assert_not_includes shown.history, "Registro del caso"
   end
 
+  test "a companion turn publishes the answer without the case record" do
+    prose = "El cierre puede quedar pendiente [1]."
+    attached = Rag::FieldCaseRecord.attach(
+      prose,
+      episode: turn_episode,
+      generation_mode: "document_identity_scope",
+      companion_turn: true
+    )
+
+    assert_equal prose, attached.presented
+    assert_equal prose, attached.history
+    assert_not_includes attached.presented, "Registro del caso"
+  end
+
   test "document identity delivery prepends the record after sanitizing" do
     episode = turn_episode
     session = ConversationSession.create!(

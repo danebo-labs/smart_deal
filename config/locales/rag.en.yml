@@ -41,6 +41,7 @@ en:
     generation_retry: "I could not compose an answer to this query. Sending the same wording again usually fails: name the manufacturer, model, and the exact display or nameplate code, or attach a photo of the nameplate."
     interpreter_service_failure: "I could not interpret this message. The interpretation service did not respond. There is no diagnosis for this turn."
     data_not_available: "That information is not in the manual excerpts retrieved for this question."
+    companion_contract_invalid: "I could not prepare a reliable orientation for this turn; the case is kept."
     unconfirmed_reference_withheld: "This equipment identity is not confirmed. %{references} That material is not applied as this job's procedure. Read the manufacturer and model on the controller cabinet nameplate and share them."
     unconfirmed_reference_clause: "Reference not applied to this job: %{names}."
     unconfirmed_reference_unnamed: "The retrieved reference is not applied to this job."

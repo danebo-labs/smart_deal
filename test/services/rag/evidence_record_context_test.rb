@@ -52,6 +52,16 @@ class Rag::EvidenceRecordContextTest < ActiveSupport::TestCase
     assert_includes context, LABEL
   end
 
+  test "companion narration drops a terminal record and keeps the prose" do
+    block = service.send(:companion_source_block, [ chunk(passage) ])
+
+    assert_includes block, "[1] Documento: VF5. Página: 12."
+    assert_includes block, NARRATIVE
+    assert_not_includes block, "FIELD_RECORD"
+    assert_not_includes block, "FIELD-SAFETY EVIDENCE RECORDS"
+    assert_includes chunk(passage)[:content], "FIELD_RECORD"
+  end
+
   test "narrative after the records keeps the original passage" do
     body = "#{passage}\nSigue el texto impreso de la página.\n"
     context = Rag::DocumentIdentityScope.generation_context([ chunk(body) ], [], records: false)

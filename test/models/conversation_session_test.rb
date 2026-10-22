@@ -1087,6 +1087,37 @@ class ConversationSessionTest < ActiveSupport::TestCase
     assert_not_includes session.conversation_history.last["content"], "modelo del equipo"
   end
 
+  test "prompt_reply keeps a reply past 600 characters and marks only the technical cap" do
+    session = web_episode_session
+    kept = "N" * 700
+    huge = "T" * (ConversationSession::PROMPT_REPLY_MAX_CHARS + 25)
+
+    session.add_to_history("assistant", kept, prompt_reply: kept)
+    session.add_to_history("assistant", "corto", prompt_reply: huge)
+    session.reload
+    stored, capped = session.conversation_history.last(2)
+
+    assert_equal ConversationSession::MAX_MSG_LENGTH, stored["content"].length
+    assert_equal kept, stored["prompt_reply"]
+    assert_not stored.key?("prompt_reply_truncated")
+    assert_equal ConversationSession::PROMPT_REPLY_MAX_CHARS, capped["prompt_reply"].length
+    assert_equal true, capped["prompt_reply_truncated"]
+    assert_equal "corto", capped["content"]
+  end
+
+  test "an empty prompt_reply stays empty and is not the shown abstention" do
+    session = web_episode_session
+    shown = "No pude preparar una orientación fiable para este turno; el caso se conserva."
+
+    session.add_to_history("assistant", shown, prompt_reply: "")
+    session.reload
+    row = session.conversation_history.last
+
+    assert_equal "", row["prompt_reply"]
+    assert_includes row["content"], "No pude preparar"
+    assert_nil session.episode_prompt_history.find { |turn| turn[:role] == "assistant" }
+  end
+
   test "record_photo_observation! keeps a technician brand and records the photo conflict" do
     session = web_episode_session
     with_episode_flag("true") do

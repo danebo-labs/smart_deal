@@ -1006,4 +1006,171 @@ Tests en `WorkContextReducerTest`. El estado desnudo dentro de la observación c
 
 Código: `c2aa94eba3888a6a663aca8f8d90ec786807ea62`. Rutas: `app/services/rag/work_context_reducer.rb` y `test/services/rag/work_context_reducer_test.rb`.
 
+### Validación pagada del turno de corrección, 22 de octubre de 2026
+
+Una sola pasada sobre `2ed7072fdcb5677dfc20b2be23766e928857c0ea`, que ya incluye el reducer. No se cambió el prompt ni el código. No hubo S3, sincronización ni despliegue. Esta pasada no valida Retrieve: los cuatro cuerpos certificados de F2 se inyectaron en `retrieve_with_retry`, con los mismos SHA. `retrieve_and_generate_with_retry` queda sustituido por una excepción. `AWS_MAX_ATTEMPTS=1` y `RAG_TRANSIENT_ATTEMPT_LIMIT=1`. No hubo reintento.
+
+Preflight, sin modelo. Ledger de partida: 94 intentos, committed US$1,084467, unknown US$0,025851, exposición US$1,110318. Cupo restante: 2 intentos y US$2,889682 bajo US$4. Techos usados para admitir las dos llamadas: intérprete US$0,015 y generación US$0,080. Los dos caben con el unknown incluido. Tope de proceso: 2 llamadas y US$0,20. La copia del episodio posterior al turno 1 y de los dos mensajes reales de la sesión 199 cuadra. Con el reloj de esa copia, la costura deja 4 cuerpos, 4 compatibles, identidad conocida y estado `scoped`. La sesión 199 no se escribió.
+
+La copia usa el reloj que ya admite `record_user_turn!`: `now` igual a `2026-10-21T20:14:00-03:00`, quince segundos después del `updated_at` guardado. Sin ese reloj, `ActiveEpisode.parse` marca el episodio vencido a la mañana siguiente y el reducer no habría recibido el caso. La consulta, el contexto de sesión y el registro presentado parsean con `Time.current` y no reciben ese `now`.
+
+**Gasto.** Dos llamadas, las 95 y 96. 95: `converse`, US$0,003331, techo US$0,009021. 96: `generate_text`, 564/137, US$0,001249, techo US$0,017370. Delta: 2 intentos y US$0,004580 comprometidos. Ledger: 96 intentos, committed US$1,089047, unknown US$0,025851, `open` vacío, exposición US$1,114898. El tope de 96 intentos queda lleno. No queda otra llamada autorizada.
+
+Sesión nueva 200. Correlación `query:fefe9a06-c3ed-45ea-9c5e-0c629a5cbe63`. Episodio `ep_3411b921375f5547`, el mismo. Artefactos en `tmp/field_companion/vf5_correction/f3/led_correction_check/20261022T123131Z/`. `result.json` lee el episodio con `Time.current` y por eso lo muestra vacío. El JSON persistido está en `episode_after.json` y en el evento `episode_delta`.
+
+**Solicitud.** «Corrijo solo el estado del LED: el LED de fotocélula está encendido, no apagado.»
+
+**Intérprete.** Movimiento `correct`. Afirmación «el LED de fotocélula está encendido». Observación aplicada «el LED de fotocélula está encendido, no apagado». Sin comprobaciones. La percepción recupera la frase limpia y descarta la contenida.
+
+**Episodio después del reducer.** Objetivo «La puerta se reabre sola». Fabricante Fermator, conocido, dicho por el usuario. Identificadores «Fermator VF5+» y «operador de puerta». Observaciones: «La puerta se reabre sola», «No veo obstrucción», «el LED de fotocélula está encendido». La tercera lleva la correlación de este turno. «apagado» no aparece. Comprobaciones: `#54` y mediciones, `not_done`, con la correlación del turno 1. `updated_at` queda en `2026-10-21T20:14:00-03:00`.
+
+**Consulta.** «Corrijo solo el estado del LED: el LED de fotocélula está encendido, no apagado. Fermator VF5+ operador de puerta No veo obstrucción La puerta se reabre sola». Componentes registrados: turno completo, identidad ausente como componente, identificadores presentes, una observación, objetivo presente. El LED nuevo viaja dentro del turno y no se repite como observación aparte. La inyección devolvió las páginas 5, 12, 12 y 7.
+
+**Prompt enviado.** 2374 caracteres, SHA `10e6b5059898c951ecb34644bd064224bc4908a9c407ac26d30e8dece5199b94`, en `bodies/b0006.txt`. Es la guía de identidad no confirmada. Dice que no se reportó síntoma, que la identidad no está confirmada, que no se enseñen los manuales y que no se cite con `[n]`. Los cuerpos no entran. El contexto de 2400 caracteres conserva solo «Módulo electrónico VF5+ Fermator, p. 7» como nombre disponible bajo pedido, y omite las páginas 5 y 12. `EquipmentIdentity.from_episode` parsea el episodio con `Time.current`. A las 09:31 del 22 de octubre ese `updated_at` cae fuera de la ventana de cuatro horas, el parse lo deja en blanco y la generación toma la guía de identidad desconocida. El registro del caso usa el mismo parse y no se adjunta. `prompt_reply` queda nil.
+
+**Respuesta presentada**, ya sin los rótulos en negrita que el modelo puso en líneas solas:
+
+```
+El LED de fotocélula está encendido (estado actual reportado).
+
+Estado visual del indicador luminoso confirmado en campo.
+
+El LED encendido indica que la fotocélula está detectando obstrucción o presencia continua en la zona de cobertura, o bien que el módulo electrónico mantiene la salida activa por otra condición de lógica operativa.
+
+¿La cabina está en movimiento o detenida cuando observas el LED encendido?
+```
+
+El texto del modelo, antes de `sanitize_answer`, traía los rótulos `REPORTE`, `EVIDENCIA` e `HIPÓTESIS` y una regla horizontal. El sanitizador existente los retira. No hay registro del caso delante.
+
+**Criterios del estado, observados.** «encendido» queda persistido. «apagado» desaparece. Síntoma, identidad y las dos comprobaciones pendientes se conservan. Mismo episodio.
+
+**Criterios de la respuesta contra los pasajes.** Esta respuesta no se generó contra los pasajes. El prompt se lo prohíbe y no los incluye. No hay citas. No aparece `#54`, `#21`, el botón de TEST, ni el verbo ajustar. El episodio no marca ninguna comprobación como hecha. La frase «Estado visual del indicador luminoso confirmado en campo» repite la corrección del técnico bajo el rótulo de evidencia. La hipótesis de obstrucción, presencia continua o salida activa no está en el prompt. El pasaje 5.6, que sí dice que el LED se activa cuando la fotocélula o la entrada de re-apertura está activada, estaba retenido. La pregunta sobre si la cabina se mueve tampoco está en los pasajes.
+
+**Qué queda reproducido y qué no.** El reducer, con la salida real del intérprete y la copia del episodio del turno 1, conserva el valor nuevo y retira el anterior. Eso queda reproducido en el JSON guardado. La generación de anoche, dentro de la ventana, sí recibió los cuerpos y produjo el párrafo con registro, citas, «ajustar» y «siguiente paso documentado». Esta pasada no recorrió ese prompt. Tratar el párrafo de hoy como una repetición de esos fallos sería una hipótesis: el modelo contestó la guía de identidad desconocida. La causa de esa guía es el reloj de la copia frente a los parses de la consulta y del registro, que usan `Time.current`. No se lanza otra llamada. El tope de 96 intentos está lleno. La generación con los pasajes y con el episodio ya corregido sigue sin medirse.
+
+### Reloj, reconstrucción documental y diagnóstico de la generación, 22 de octubre de 2026
+
+Sin llamadas a modelo ni Retrieve, sin S3, KB, reextracción ni despliegue. Código de la aplicación sin cambios: HEAD `2ed7072fdcb5677dfc20b2be23766e928857c0ea`. Ledger verificado antes y después: 96 intentos y 96 entradas; committed US$1,089047, igual a la suma de `actual_usd`; unknown US$0,025851, que son las entradas 78 a 80 a US$0,008617 cada una, `converse` sin tokens; `open` vacío; exposición US$1,114898. Ni `assignment_spend.json` ni `ingest_spend.json` cambiaron después de las 09:31:37 del 22 de octubre. El tope de 96 intentos sigue lleno.
+
+**Reloj: el defecto de las llamadas 95 y 96 es del arnés.** `led_correction_check.rb` pasaba `now: REPLAY_NOW` solo a `record_user_turn!`. Dentro de esa llamada, el intérprete, el reducer y el compositor de la consulta usan ese reloj. Por eso la consulta efectiva sí lleva el caso. Hay que corregir la sección anterior: la consulta no se parseó con `Time.current`. El reducer tocó `updated_at` a `2026-10-21T20:14:00-03:00`. Después, cada lectura del episodio llama a `Rag::ActiveEpisode.parse` con `Time.current`, que eran las 09:31 del 22 de octubre: el episodio tenía 13 h 17 min y la ventana es de 4 horas. Las lecturas afectadas:
+- `SessionContextBuilder`, líneas 132 y 239 y el historial del episodio: el contexto de sesión quedó en 109 caracteres;
+- `EquipmentIdentity.from_episode`, desde `bedrock_rag_service.rb:1288`, que dio la guía de identidad desconocida;
+- `FieldCaseRecord`, desde `RagQueryConcern#field_case_attachment`: sin registro y `prompt_reply` nil;
+- `RagQueryConcern`, líneas 53, 61, 147 y 263.
+
+**En una petición normal no ocurre.** `RagController#ask` llama a `record_user_turn!` sin `now`, así que el reducer toca `updated_at` con `Time.current` y las lecturas siguientes, en la misma petición, ven un episodio de segundos. Queda un borde posible, deducido del código y no reproducido. Un turno que no renueva `updated_at` y que llega a generación pertenece a dos clases: `unclear`, o un fallback sin síntoma buscable. Si el episodio cruza las 4 horas durante los segundos que dura esa petición, el intérprete lo ve vivo y la generación lo ve vencido. El resultado coincide con lo que el turno siguiente vería por vencimiento. No se corrige: hacerlo exige pasar un reloj por toda la petición, que es infraestructura nueva. TTL y expiración, sin cambios.
+
+**Corrección, solo en el arnés** (`tmp/`, no se versiona). El original quedó copiado como `led_correction_check.as_run_20261022T123131Z.rb`, SHA-256 `c2b78179…d1e7`. El nuevo arnés tiene SHA-256 `182f3f95a567b7bdb75eb1bb55b4f94a5a95f596819b60b27878e5cfa47d291c`.
+- El modo `run` ahora se niega cuando la copia está vencida en `Time.current`. Esa negativa habría detenido las llamadas 95 y 96.
+- Nuevo modo `reconstruct`:
+  - recorre la ruta completa dentro de `travel_to(REPLAY_NOW)`, con `ActiveSupport::Testing::TimeHelpers`;
+  - usa como cliente del intérprete el `tool_input` grabado en `20261022T123131Z`, con `usage` 0, así que no hay fila de gasto;
+  - activa `LiveAwsBlock` y además se niega en `Seahorse::Client::Base#build_request`;
+  - se niega si el ledger está armado.
+
+  No escribe timestamps a mano: el único `updated_at` es el que toca el reducer con ese reloj.
+- Límite: `travel_to` también fija `Time.now`, y `Aws::Sigv4::Signer` firma con `Time.now.utc` (`signer.rb:232`). Una llamada pagada dentro del viaje saldría firmada con la fecha histórica. Las llamadas pagadas no se hacen dentro de `travel_to`.
+
+**Reconstrucción**, separada de la evidencia original, en `tmp/field_companion/vf5_correction/f3/led_correction_check/20261022T125015Z_reconstruccion/`. `reconstruction.json` declara que no es una conversación validada. La carpeta `20261022T123131Z/` no se tocó.
+- Sesión local nueva, 201; correlación reutilizada `query:fefe9a06-c3ed-45ea-9c5e-0c629a5cbe63`; `tool_input` SHA-256 `69aee48f…`. `Time.current` dentro: `2026-10-21T20:14:00-03:00`. La copia de partida cuadra con la de la llamada 96.
+- El episodio está vivo en las cuatro lecturas y es idéntico a `episode_after.json` de la llamada 96. Conserva el objetivo «La puerta se reabre sola», Fermator conocido y «Fermator VF5+», «operador de puerta». Observaciones: «La puerta se reabre sola», «No veo obstrucción», «el LED de fotocélula está encendido». `#54` y mediciones siguen `not_done`.
+- Contexto. El problema ocupa 370 caracteres y el contexto de sesión 1059, frente a 109 en la llamada 96. El bloque Active Field Problem dice «Obs: No veo obstrucción; el LED de fotocélula está encendido» y lista las dos comprobaciones `not_done`. «apagado» solo aparece en la línea de usuario del turno 1, dentro de Recent Conversation, que el prompt rotula como reporte del técnico corregible.
+- Historial. La línea Assistant es `prompt_reply` del turno 1, sin «Registro del caso», y le sigue la corrección del turno 2. El registro que se adjuntaría a la respuesta presentada es: «Registro del caso. Equipo: Fermator VF5+, operador de puerta. Síntoma: «La puerta se reabre sola». Observaciones: «No veo obstrucción», «el LED de fotocélula está encendido». Comprobaciones: #54, sin hacer; mediciones, sin hacer.» No entra en el prompt.
+- Política `scoped`, modo `document_identity_scope`. Prompt `bodies/b0006.txt`: 27 699 bytes, SHA-256 `44e40948d76ca2806814133e1d2aafa4df42f69ad772fc1bddedc6bc0eeb360d`, frente a 2374 en la llamada 96.
+- Los cuatro cuerpos certificados de F2 entran verbatim, con los SHA del manifiesto, todos como THIS JOB'S EQUIPMENT:
+
+  | Fuente | Pasaje | Página |
+  | --- | --- | --- |
+  | 1 | SW4 | 5 |
+  | 2 | «abre pero no se cierra» | 12 |
+  | 3 | «re-abre sola» | 12 y 13 |
+  | 4 | 5.6 | 7 |
+
+  La fuente 3 lleva `[PDF_PAGE: 12]` `[PRINTED_PAGE: 11/21]` y `[PDF_PAGE: 13]` `[PRINTED_PAGE: 12/21]`, que coinciden con los pies «Pág. 11 / 21» y «Pág. 12 / 21» del PDF.
+- El texto fijo de instrucciones es idéntico byte a byte al prompt de `attempts/4`, el del turno 1 de las muestras 85 y 86. Solo cambian la consulta, los identificadores, la línea Obs, Recent Conversation y Query Resolution.
+- Ninguna operación llegó al SDK: `blocked_aws` está vacío. `generate_text` registró `prepared` y se detuvo en `LiveAwsBlock::Refused`. `identity_status: unavailable` y el texto de `result` son la salida existente para una generación en blanco, no una respuesta.
+- `Rag::CapturedGenerationReplay.prepare` acepta esta captura con `turn: 2`: sin system, temperatura 0,1, 3000 tokens, modelo Haiku 4.5 global. `LocalPassLedger.price` da un techo de US$0,042699 por llamada.
+- No demuestra Retrieve, ni la respuesta del modelo, ni F5.
+
+**Evaluador, corregido contra el PDF y el texto presentado.** Estas distinciones no aflojan ninguna regla de rechazo de la rúbrica.
+- Los títulos se juzgan después de `sanitize_answer`. Las siete respuestas crudas de los intentos 2 a 4 traen un título `#`. El patrón de `strip_markdown_headers` lo retira en las siete y ninguna de las diez lo conserva. Un rótulo con dos puntos que atribuye al manual, como «Próximo paso recomendado según documentación:» o «Siguiente paso documentado:», cuenta como atribución de contenido, no como formato.
+- El terminal 21 es la entrada de re-apertura (5.5, PDF 7: «21.- Re-apertura … La señal de re-apertura tiene prioridad sobre la señal cerrar»), y 5.6 liga el LED a esa entrada. Mencionar `#21` o preguntar por SW4 es pertinente a «se re-abre sola». Solo sigue siendo defecto presentar `#21` como una de las tres comprobaciones de 8.2.
+- La hipótesis de la muestra 94 (LED encendido sin fotocélula activada, luego una entrada de re-apertura activa) combina 5.6 con el resultado del técnico. Es orientación razonada, en el sentido de Gonzalo: «orientación desde donde se origina la falla (sin ser concluyente)». Su defecto es presentarla como «la documentación sugiere», no el razonamiento.
+- Corrección a la sección de cierre de F3. El manual sí documenta el ajuste del `#54`: 5.11, PDF 8, «Potenciómetro que permite ajustar la fuerza de cierre de la puerta (sensibilidad a reaperturas) … de 60 a 150Nm», y la puesta en marcha de la PDF 10. Lo que no lo trae son los cuatro pasajes inyectados. Nombrar el ajuste no es ordenarlo: «medición o ajuste» en la 84 no se rechaza. Sí se rechazan la orden de la 83 («Ajuste el potenciómetro #54…») y el «siguiente paso documentado sería ajustar» de la 92.
+- Una observación no cierra una comprobación. «sugiere que sí está activada o que hay una entrada de re-apertura activa» (92) reproduce la disyunción de 5.6, y «en este momento» (86) es una inferencia momentánea de 5.6 a la que le falta la cita [4]. Ninguna de las dos da la comprobación por hecha. Los cierres de la 75, 83, 84 y 90 siguen en pie.
+- La cita debe sostener la frase. En la 94, las comprobaciones de re-abre y la condición del TEST van con [2] y están en [3]: defecto.
+- «Si el problema persiste después de las comprobaciones anteriores» conserva la condición de la PDF 13, que es el último guion de la misma lista. Es una lectura discutible pero no una orden inventada.
+
+**Veredictos revisados de las diez muestras documentales.**
+
+| Muestra | Prompt y turno | Defecto de rechazo que se mantiene |
+| --- | --- | --- |
+| 75 | `cc1c72e9`, T1 | «ha verificado visualmente» da la obstrucción por comprobada; «según documentación» |
+| 76 | `cc1c72e9`, T1 | «según documentación» y «el primer elemento listado» atribuyen prioridad |
+| 77 | `cc1c72e9`, T1 | ninguno demostrado |
+| 83 | `f07f384e`, T1 | cierres; «primer paso documentado»; orden de ajustar el `#54` |
+| 84 | `f07f384e`, T1 | cierres; «primer elemento documentado» |
+| 85 | registro, T1 | ninguno demostrado |
+| 86 | registro, T1 | «más directa» y «Siguiente paso documentado» atribuyen orden; repregunta por el `#54` ya informado |
+| 90 | registro, T1 | cierres; «Es el primer paso documentado» |
+| 92 | registro, T2, reducer anterior | «el siguiente paso documentado sería ajustar el potenciómetro #54» |
+| 94 | registro, T3 | cita [2] por [3]; «Próximo paso documentado»; «la documentación sugiere» |
+
+Quedan 8 de 10 con defecto de rechazo. 77 y 85 no lo tienen, pero ninguna de las dos usa el LED ni 5.6 para orientar hacia el origen. No son evidencia de aceptación. Frecuencias:
+- orden, prioridad o paso siguiente atribuidos al manual: 8 de 10 (75, 76, 83, 84, 86, 90, 92 y 94);
+- observación dada por comprobación: 4 de 10;
+- comprobar convertido en ajustar: 2 de 10;
+- cita errónea: 1;
+- repregunta: 1.
+
+**Causas demostradas.**
+- La muestra 96 no mide la generación: mide el reloj del arnés.
+- La contradicción entre la 92 y el registro venía del reducer, corregido en `c2aa94e`.
+- Los defectos persisten con el estado correcto en el turno 1 (85, 86 y 90) y con tres redacciones del prompt. El estado, el historial, el orden de los cuerpos y el reloj no los explican.
+- El prompt documental que hoy se envía contiene instrucciones que chocan entre sí:
+  - `DOCUMENT_IDENTITY_ROLE_REPLACEMENT` dice «Answer from the retrieved documentation … Do not add technical knowledge … from memory», mientras el párrafo de atribución pide «one next observation or check as your own orientation»;
+  - el ROLE dice «a check is done only when…» y «State the documented checks», mientras el párrafo de atribución dice «do not restate whether a check is done or open»;
+  - `generation.txt:156` dice «Use short paragraphs or numbered lists» frente a «running prose only»;
+  - «say DATA_NOT_AVAILABLE» frente a «do not replace with a refusal».
+- Los pasajes inyectados no incluyen 5.5 ni 5.11. Son los dos hechos del manual detrás del `#21` y del ajuste del `#54` que el modelo escribió sin poder citarlos.
+- La varianza de muestreo es grande: con el mismo prompt, la 85 no tiene defecto y la 86 sí. Dos o tres muestras por configuración no estiman tasas; solo pueden rechazar.
+
+**Hipótesis, no demostradas.**
+- H1. El ROLE solo legitima lo documentado, así que el modelo rotula como documentada la orientación propia que el párrafo de atribución le pide. El patrón aparece en 8 de 10.
+- H2. El encuadre `FIELD_RECORD` con `RECORD_TYPE: TROUBLESHOOTING_STEP` y `ACTION` induce secuencia y estado por comprobación.
+- H3. La falta de 5.11 empuja al verbo ajustar a partir del nombre «potenciómetro de regulación».
+
+La muestra no permite pesar H1, H2 y H3 entre sí ni separarlas de una plantilla estable del modelo. Tampoco permite suponer que un modelo más fuerte lo resuelva: el benchmark anterior no lo mostró.
+
+**Intervención.** Hecha: el arnés (reloj y `reconstruct`), la reconstrucción y la corrección del evaluador. No se cambió el prompt de producción. La causa no está demostrada, tres redacciones ya fallaron, y un cambio sin medir reemplazaría la única línea base medida, que es exactamente el prompt de la reconstrucción.
+
+Recomendada, sin implementar, la variante B. En `DOCUMENT_IDENTITY_ROLE_REPLACEMENT` se sustituirían «State the documented checks and their conditions. Do not add technical knowledge, requirements, procedures, or safety judgments from memory.» por:
+
+> «Steps, conditions, values, terminals, and procedures come only from the retrieved documentation. Your own field reasoning is allowed only when you present it as yours, never as what the documentation says, orders, or prioritizes.»
+
+El material es el mismo; lo que cambia es la atribución, alineada con AGENTS.md («Reason, infer, and conclude as a field copilot» y «Never … present an inference as the manufacturer's instruction»). El código solo garantizaría que el prompt deja de contener esa contradicción. Que el modelo deje de atribuir al manual depende del modelo y se mide.
+
+Arquitectura, solo como recomendación: si B falla, el paso siguiente es H2, renderizar los cuerpos sin el encuadre `TROUBLESHOOTING_STEP`/`ACTION` en `document_identity_scope`, que afecta a todos los turnos con evidencia. H3, traer la definición 5.11 junto a 8.2, es un cambio de recuperación y espera evidencia de F4.
+
+**Próxima prueba pagada mínima, no ejecutada.** Requiere que Lahiri autorice 6 intentos por encima de los 96 (tope 102).
+- Brazo A: `CapturedGenerationReplay.run_sample` sobre `20261022T125015Z_reconstruccion/bodies/b0006.txt`, SHA `44e40948…`, tres muestras. Mide por primera vez el turno 2 con el estado correcto y los pasajes.
+- Brazo B: la misma reconstrucción con la variante B, reconstruida a costo cero, tres muestras.
+- Condiciones comunes: reloj real, sin `travel_to`; `attempt_limit: 1`; Haiku 4.5 global; temperatura 0,1; 3000 tokens.
+- Costo: 6 llamadas `generate_text`. Esperado unos US$0,0103 por llamada, alrededor de US$0,062 en total. Techo 6 × US$0,042699 = US$0,256194. La exposición quedaría en a lo sumo US$1,371092, bajo US$4. El unknown no se toca.
+- Regla de decisión, registrada antes de correr, con la rúbrica de este documento y las distinciones de arriba:
+  - Si B tiene 0 de 3 con atribución al manual, cierre o ajuste ordenado, y A tiene al menos 2 de 3, H1 queda respaldada. B pasa al código con tests y después va a F5. No se declara estable.
+  - Si B tiene al menos 1 de 3 con esa clase de defecto, H1 queda rechazada. No se prueba otra frase, y la decisión siguiente es la de H2.
+  - Si A tiene 0 de 3, la muestra no separa los brazos y no se decide nada.
+
+**Estado.**
+- F3 sigue abierta.
+  - El intérprete está demostrado en T1 y T3.
+  - T2 está reproducido en el reducer y reconstruido hasta el prompt.
+  - La generación no está aceptada.
+  - Siguen pendientes «#54» frente a «el #54», y el Modo esclavo sin medir.
+- F4 no se ejecutó; necesita autorización remota.
+- F5 no se ejecutó; necesita llamadas por encima del tope.
+
+El companion no está estable.
+
 

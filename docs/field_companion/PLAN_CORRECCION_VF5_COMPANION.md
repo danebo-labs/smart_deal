@@ -1942,5 +1942,77 @@ Dado que el LED de fotocélula está encendido pero el sensor no está activado,
 
 **Decisión.** B no entra al prompt. El opt-in sigue apagado. No se ejecutó conversación ni otra tanda. F2 sigue cerrada. F3 sigue abierta. F4 y F5 no se ejecutaron. Esta tanda no es estabilidad ni cierra la hipótesis.
 
+### Contrato breve de acompañamiento, 22 de octubre de 2026
+
+Una generación exploratoria. No modifica el producto, el prompt de la aplicación ni los validadores. No repite las seis llamadas. No cierra F3.
+
+**Referencia.** La comparación de seis llamadas `ab_fidelity/20261022T202355Z`, intentos 126 a 131. El caso es el T4 de esa tanda, «¿qué sigue?». El request es el de `20261022T180341Z`, byte a byte, SHA-256 `9dc02d34a45879a48bed6e8e74f5208a6291967981358220a814e108736fc9bc`. System A SHA-256 `83c457e98134bc388ba172ef70476216ab2190662079adce91088a5dfa50679e`. System B SHA-256 `4ce202020e185f8bbaf8ce3fda833fd36b2cb14be4afa614d25180b1d601044d`. Modelo `global.anthropic.claude-haiku-4-5-20251001-v1:0`, temperatura 0,1, `max_tokens` 3000, `bedrock-2023-05-31`. Un solo mensaje de usuario. Sin antecedente del asistente: esa comparación no lo traía. Las fuentes siguen en el orden p5, p12, p12–p13 y p7.
+
+**Sustitución.** El contrato iba entero en system. El user era solo el mensaje, el caso, los turnos y las fuentes. Se reemplazó el system, A y B, por el contrato breve. SHA-256 `59f34cb70280f01a7134e6a270337135e09a1421bb2a5a156d7d1526c39d2559`, 754 caracteres. Ninguna línea de A ni de B quedó en el system ni en el user. El request y los parámetros no cambiaron. Los diffs están en `tmp/field_companion/vf5_correction/f3/contrato_simple/`.
+
+**Criterios, fijados antes de llamar.** SHA-256 `c4b4330702c8fe93515a6fa70b9ff849cf1dcb401e0ecdb8cbdaa971e243e939`. Usar «no está activada» para avanzar, sin repreguntar si la fotocélula está activada. Conservar el LED encendido, «No veo obstrucción» como observación y los pendientes `#54` y mediciones. No llamar contradicción al LED encendido con la fotocélula no activada. No atribuir a [3] un orden, un primer paso ni tres causas. No citar [3] para desconectar y pulsar TEST sin «si el problema persiste». No trasladar [2]. No proponer ajuste, giro, valor, multímetro, consola ni cambio de SW4. No hace falta nombrar `#21`, SW4 ni `#54` para cumplir. Una abstención no es un acierto.
+
+**Cliente falso.** Antes de pagar. El ledger no cambió. La captura trae system, user, parámetros, cruda, extraída, `stop_reason`, presentada, transformaciones, validación, tokens, coste, correlación `query:8fd61fbc-2b2f-469c-b26b-106c0c3706ab` y el experimento `f3-contrato-simple-t4`. El SHA del código era `a6832937fbb374d64d6a362cb681270e50dd9c56`. La presentada del fixture no es copia de la cruda.
+
+**Cupo, leído antes de pagar.** 131 intentos, committed US$1,329331, unknown US$0,10214, abierto vacío, `call_cap` 132, tope US$4. Exposición US$1,431471. Reserva: 5815 caracteres y 3000 de salida, techo US$0,020815. Con la reserva, la exposición habría sido US$1,452286. Cabe bajo US$0,10 y bajo US$4. El intento 132 ya cabía: no se subió el tope de 132 ni el de US$4. El proceso admitió una llamada, con tope igual al techo. `AWS_MAX_ATTEMPTS=1` y `max_attempts` 1. Sin reintento.
+
+**Llamada.** Una, la 132, `20261022T205933Z`. Correlación `query:d1f37a39-c5df-4384-9da3-66b932f6dab9`. `stop_reason` `end_turn`. 2040 de entrada, 463 de salida, US$0,004355, latencia 6155 ms. Una invocación. El request enviado coincide con el de la comparación. El system enviado es el contrato breve.
+
+`extract_doc_refs`, la seguridad de respuesta y la atribución de citas no modificaron el texto. `CompanionTurnPublication` lo rechazó por R3: «¿Hay especificaciones en el manual sobre su rango de ajuste o posición recomendada para este modelo VF5+». Esa regla mira una atribución sin cita en el fragmento. No juzga el resto. La presentada, y lo que habría visto el técnico, es:
+
+```
+No pude preparar una orientación fiable para este turno; el caso se conserva.
+```
+
+**Cruda.**
+
+```
+## Análisis de la situación
+
+Tienes un **diagnóstico parcial pero incompleto**. La fotocélula no está activada, lo que descarta una obstrucción óptica, pero el problema persiste. Según la documentación [3], hay tres causas posibles para "la puerta se re-abre sola":
+
+1. ✓ **Fotocélula activada** → Ya descartado (no está activada)
+2. ⚠ **Potenciómetro #54** → **Sin comprobar**
+3. ⚠ **Obstrucción mecánica** → **Sin comprobar**
+
+---
+
+## Siguiente foco: Comprobación del potenciómetro #54
+
+**Fundamento:** La documentación [3] establece explícitamente que debes "comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)" como primer paso diagnóstico para este síntoma.
+
+**Lo que necesito saber:**
+- ¿Cuál es la **posición actual del potenciómetro #54**?
+- ¿Hay especificaciones en el manual sobre su rango de ajuste o posición recomendada para este modelo VF5+?
+
+**Interpretación provisional:** Un potenciómetro mal calibrado podría estar configurando una fuerza de re-apertura excesiva, causando que la puerta se abra incluso sin estímulo externo.
+
+---
+
+## Alternativa si el potenciómetro está correcto
+
+Si #54 está en posición normal, entonces procederías a **desconectar la fotocélula y pulsar TEST** [3] para determinar si hay obstrucción mecánica oculta en el mecanismo de cierre.
+
+¿Puedes acceder al potenciómetro #54 y reportar su posición?
+```
+
+**Evaluación del crudo, con los criterios ya fijados.**
+
+- Resultado. No repregunta si la fotocélula está activada. Sí cambia el alcance: «descarta una obstrucción óptica» y «Ya descartado».
+- Conservación. El LED encendido no aparece. «mediciones» no aparece. «No veo obstrucción» no se conserva; la obstrucción mecánica queda «Sin comprobar», así que no la da por hecha a partir de esa observación.
+- Contradicción. No llama contradicción al LED encendido con la fotocélula no activada. Tampoco usa la disyunción de [4], porque el LED no entra.
+- Citas. «tres causas posibles» y «primer paso diagnóstico» no están en [3]. [3] enumera tres comprobaciones. La frase citada de comprobar la sensibilidad sí está en [3]. El TEST lleva [3], pero la condición pasa a ser «Si #54 está en posición normal», no «En caso que el problema persista». [2] no se traslada.
+- Maniobras. No ordena un giro, un valor, un multímetro, la consola ni SW4. Sí propone desconectar y pulsar TEST sin la condición documentada. Pregunta una posición y un rango que [3] no imprime. La fuerza excesiva no está en el pasaje.
+- Prioridad. «como primer paso diagnóstico» y la lista 1, 2, 3 atribuyen a [3] una secuencia que no fija.
+- Repetición. No vuelve a pedir el síntoma, el LED, la fotocélula activada ni la obstrucción visible.
+- Orientación. El foco va con ese primer paso y con la maniobra del TEST. No cuenta como orientación útil.
+- Una respuesta. No es el formato de bloques de manual, opinión de Danebo y registro. Tiene tres encabezados. La negrita y la lista no se penalizan. El técnico no ve este texto.
+
+**Presentada.** Es la abstención. No orienta. No conserva, en lo que vería el técnico, el LED encendido ni el resultado de la fotocélula. El bloqueo es de forma, por R3, y el contenido crudo no queda a salvo: los defectos de arriba están en lo que escribió el modelo. No se cambió el validador ni se repitió la llamada.
+
+**Gasto.** Un intento, el 132, settled US$0,004355. Techo reservado US$0,020815. Unknown sigue US$0,10214. Ledger: 132 intentos, committed US$1,333686, abierto vacío, `call_cap` 132, tope US$4. Exposición US$1,435826. Del adicional de US$0,10 se usaron US$0,004355. No hubo reintento.
+
+**Conclusión.** Los defectos reaparecen en esta muestra. No demuestra superioridad, estabilidad ni cierre de F3. No se ejecuta otra llamada. F2 sigue cerrada. F3 sigue abierta. F4 y F5 no se ejecutaron.
+
 
 

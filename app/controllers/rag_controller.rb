@@ -322,6 +322,7 @@ class RagController < ApplicationController
       generation_context: generation_context,
       generation_prompt_chars: generation_prompt_chars,
       context_truncated: context_truncated,
+      **interpreter_input_telemetry(conv_session),
       **phase_ms
     )
     chunk_ids, sources = Rag::TurnEvidence.evidence_from(citations)
@@ -336,6 +337,23 @@ class RagController < ApplicationController
       chunk_ids: chunk_ids,
       sources: sources
     )
+  end
+
+  # Lengths of the technician message before and after the existing cut that
+  # feeds the interpreter. Present only when that cut changes the text.
+  # The message itself stays out of this event.
+  def interpreter_input_telemetry(conv_session)
+    chars = conv_session.respond_to?(:interpreter_input_chars) ? conv_session.interpreter_input_chars : nil
+    return {} unless chars.is_a?(Hash)
+
+    original = chars[:original]
+    sent = chars[:sent]
+    return {} unless original.is_a?(Integer) && sent.is_a?(Integer)
+
+    {
+      interpreter_original_chars: original,
+      interpreter_sent_chars: sent
+    }
   end
 
   def generation_trace_kwargs(result)

@@ -27,6 +27,7 @@ class PilotUsageLog
     stage
     suggestion_document_uids suggestion_scopes knowledge_scope
     episode_id episode_decision episode_fields_changed composed_chars
+    interpreter_original_chars interpreter_sent_chars
     original_sha256 effective_sha256 pending_question_type
     turn_interpreter_status turn_interpreter_fallback prompt_version schema_version
     catalog_fingerprint interpreter_move interpreter_assertions catalog_disagreement

@@ -327,6 +327,12 @@ Fallo: una corrección local (de prompt o de interpretación) y una segunda tand
 
 Al cerrar F3, Grok envía la solicitud única.
 
+### Backlog previo a F4
+
+No se implementa ahora. Queda antes de cualquier escritura o sincronización de esta fase.
+
+`KbSyncService#find_data_source_id` busca el id preferido y, si no está entre las fuentes listadas, avisa y sigue con `summaries.first`. Esa fuente puede ser la antigua o, en cualquier caso, no la de `bulk_chunks/` de `Y7RZWMFJSR` (`PJ0N58DMHG`). Un `start_ingestion_job` por esa selección sincronizaría otra fuente del mismo knowledge base. Antes de F4 hay que eliminar esa selección alternativa, tanto del datasource antiguo como del primero disponible, cuando falle la configuración del pipeline principal. Si el id configurado no aparece en el listado, la sincronización se detiene. El recorrido ya usado en la página 5 de Elemont se niega en ese caso y no llama a este servicio. Hasta dejar cerrado este punto no hay F4. No se implementa en esta corrección.
+
 ### F4. Sustitución, sincronización y Retrieve
 
 Solo con la concesión.
@@ -1172,5 +1178,202 @@ Arquitectura, solo como recomendación: si B falla, el paso siguiente es H2, ren
 - F5 no se ejecutó; necesita llamadas por encima del tope.
 
 El companion no está estable.
+
+### Comparación A/B del ROLE, evaluación fijada antes de llamar, 22 de octubre de 2026
+
+Lahiri autoriza solo esta comparación: 6 llamadas, tope acumulado 102 intentos, techo adicional US$0,26. El tope de US$4 no se amplía. Unknown se conserva y entra en la exposición. No hay reintento ni otra variante. No se cambia el prompt de producción, ni S3, ni la KB. El código de generación sigue en `94c8edb4489b14cc4a93fa8c19ac22ce766e0218`.
+
+La regla de decisión de la sección anterior no rige esta corrida. La de este encargo es:
+
+- Si B no reduce el defecto de atribución, la intervención es insuficiente. H1 no se declara descartada.
+- Si B lo reduce, el resultado es evidencia preliminar. No se declara estable el companion y el cambio no pasa a producción.
+
+**Rúbrica, fijada antes de leer las respuestas.** Se juzga el texto después de `sanitize_answer`. El registro del caso no está en este prompt y no se vuelve a adjuntar. Los dos brazos comparten estado, pasajes, historial, modelo y parámetros. La única diferencia permitida es la sustitución de las dos frases del ROLE.
+
+1. Fidelidad de afirmaciones y citas. Una afirmación sobre el manual necesita el pasaje que la contiene y una cita que apunte a ese pasaje. Una cita que no sostiene la frase falla. Un valor, un terminal, un procedimiento o un ajuste que estos cuatro cuerpos no imprimen, presentado como documentación de este trabajo, falla. Nombrar el ajuste del `#54` no es ordenarlo. Mencionar el terminal 21 o SW4 es pertinente a este síntoma. Presentar `#21` como una de las tres comprobaciones de «se re-abre sola» falla: esa lista está en el otro pasaje.
+2. Documentación y razonamiento propio. Lo que el pasaje dice se presenta como documentación. El razonamiento propio se presenta como propio. Falla atribuir al manual un orden, una prioridad, un primer paso o un paso siguiente que el pasaje no imprime, y falla «la documentación sugiere» para una inferencia. Un razonamiento marcado como propio no falla por ser propio.
+3. Observaciones y comprobaciones. «No veo obstrucción» y el LED encendido siguen siendo observaciones. No cierran la fotocélula ni la obstrucción. `#54` y mediciones siguen pendientes: este turno no dice haberlos hecho. Una comprobación está hecha solo cuando el técnico dice haberla hecho.
+4. Orientación. La respuesta orienta hacia el origen de la falla con el LED encendido y los pasajes, sin cerrar el caso. Una paráfrasis fiel de las comprobaciones, sin esa orientación, no se acepta.
+
+El defecto que B pretende reducir es el de la regla 2. Una muestra sin ese defecto que solo parafrasea no cuenta como mejora. H2 y H3 no se prueban en esta corrida.
+
+**Corrida.** Preflight a las 10:23, reloj real `2026-10-22T10:23:34-03:00`, sin `travel_to`. El episodio guardado, parseado con `Time.current`, sigue `expired`: su `updated_at` es `2026-10-21T20:14:00-03:00`. El caso que se envió es el del prompt reconstruido, comprobado antes de llamar. En `## Active Field Problem` los dos brazos traen el objetivo «La puerta se reabre sola», Fermator, «Fermator VF5+» y «operador de puerta», `#54` y mediciones en `not_done`, y la observación «No veo obstrucción; el LED de fotocélula está encendido». «apagado» no está en esa observación. Sigue en el historial del turno 1 y en la frase de corrección. Los cuatro cuerpos certificados están verbatim. SHA del prompt A: `44e40948d76ca2806814133e1d2aafa4df42f69ad772fc1bddedc6bc0eeb360d`, 27699 bytes, el de la reconstrucción. SHA del prompt B: `f31f42c07add3fa09c4cbca149b5d658ac8bea3ddf8dbcffbcfb96232d37de38`, 27788 bytes. La única diferencia es la sustitución de las dos frases del ROLE. La primera frase del ROLE no cambia. Modelo `global.anthropic.claude-haiku-4-5-20251001-v1:0`, temperatura 0,1, 3000 tokens, sin system. Orden A, B, A, B, A, B. Un intento por llamada. `refusal` nulo. Techos US$0,042699 y US$0,042788. Suma US$0,256461, bajo US$0,26. Exposición de partida US$1,114898, unknown US$0,025851 incluido. Cabe bajo US$4.
+
+No se tocó el prompt de producción. El tope de intento del archivo de gasto pasó a 102 para esta autorización. El de US$4 no se movió. El código de `LocalPassLedger` sigue en 96.
+
+**Gasto.** Seis llamadas, 97 a 102, todas `generate_text`, un intento, sin error. 97 A: 7948/436, US$0,010128. 98 B: 7967/451, US$0,010222. 99 A: 7948/420, US$0,010048. 100 B: 7967/464, US$0,010287. 101 A: 7948/427, US$0,010083. 102 B: 7967/421, US$0,010072. Delta US$0,060840. Ledger: 102 intentos, committed US$1,149887, unknown US$0,025851, `open` vacío. Exposición US$1,175738. Artefactos en `tmp/field_companion/vf5_correction/f3/role_ab/20261022T132334Z/`.
+
+`sanitize_answer` quitó, en las tres de A, las líneas que eran solo negrita de las comprobaciones 2 y 3. El modelo sí las escribió. El texto de abajo es el presentado. Esas dos líneas no añaden una atribución: repiten el verbo del pasaje.
+
+**1-A**
+
+```
+Gracias por la corrección. Con el LED de fotocélula **encendido**, el diagnóstico cambia.
+
+Según la documentación del VF5+, el LED de fotocélula se activa cuando "la fotocélula o la entrada de re-apertura está activada" [4]. Esto significa que el módulo está recibiendo una señal de re-apertura.
+
+Para el síntoma "la puerta se reabre sola" con LED de fotocélula encendido, la documentación establece estas comprobaciones [3]:
+
+**1. Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54).**
+No realizado aún.
+
+Usted reporta que no ve obstrucción, pero el LED está encendido. Esto indica que la fotocélula **sí está activada** según el módulo, aunque visualmente no detecte bloqueo.
+
+Usted reporta que no ve obstrucción.
+
+La documentación también menciona que si el problema persiste después de estas comprobaciones, se debe "desconectar la fotocélula y volver a pulsar el botón de TEST. Si la puerta no se abre o cierra completamente, debe haber una obstrucción mecánica en la puerta" [3].
+
+Próximo paso recomendado: Verifique físicamente la fotocélula (limpieza, alineación, conexión) para confirmar por qué el LED permanece encendido sin obstrucción visible. ¿La fotocélula está limpia y correctamente alineada?
+```
+
+La cita [4] sostiene la disyunción. La cita [3] sostiene el TEST. `#54` sigue sin hacer. La obstrucción se queda en «reporta». Falla la regla 3: «la fotocélula sí está activada» cierra esa comprobación desde el LED. La glosa «Esto significa que el módulo está recibiendo una señal de re-apertura» estrecha la disyunción a una sola rama. La pregunta de limpieza y alineación orienta, y no está impresa en estos pasajes. No se acepta.
+
+**2-B**
+
+```
+Gracias por la corrección. Con el LED de fotocélula **encendido**, la situación cambia.
+
+Según la documentación del VF5+, el LED de fotocélula se activa cuando "la fotocélula o la entrada de re-apertura está activada" [4]. Esto significa que el módulo está detectando una señal de re-apertura activa.
+
+Para el síntoma "la puerta se reabre sola" con el LED de fotocélula encendido, la documentación indica estas comprobaciones [3]:
+
+**1. Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54).**
+
+**2. Comprobar que la fotocélula no esté activada** — pero en tu caso el LED está encendido, lo que indica que sí hay una señal activa en la fotocélula o en la entrada de re-apertura.
+
+**3. Comprobar que no hay una obstrucción mecánica en la puerta** — ya lo has verificado visualmente.
+
+Dado que el LED de fotocélula está encendido y la puerta se reabre sola, la causa más probable documentada es que la fotocélula o su entrada de re-apertura están activadas continuamente. Esto puede ocurrir por suciedad, desalineación de la fotocélula, o un problema en el cableado de la entrada de re-apertura.
+
+Próximo paso: antes de ajustar el potenciómetro #54, verifica físicamente el estado de la fotocélula (limpieza, alineación, obstrucciones ópticas) y revisa visualmente el cableado de la entrada de re-apertura. ¿Observas suciedad, polvo o desalineación en la óptica de la fotocélula?
+```
+
+[4] y [3] apuntan a los pasajes que dicen esas comprobaciones. La segunda comprobación conserva la disyunción. Falla la regla 2: «la causa más probable documentada» y «continuamente» no están en el pasaje. Falla la regla 3: «ya lo has verificado visualmente» convierte «no veo obstrucción» en la comprobación mecánica hecha. «antes de ajustar» ordena un ajuste. El pasaje dice comprobar la sensibilidad. Suciedad, desalineación y cableado no están en estos cuatro cuerpos y quedan dentro de esa causa documentada. Hay orientación, y no se acepta.
+
+**3-A**
+
+```
+Gracias por la corrección. Con el LED de fotocélula **encendido**, el diagnóstico cambia.
+
+Según la documentación del VF5+, el LED de fotocélula se activa cuando "la fotocélula o la entrada de re-apertura está activada" [4]. Esto significa que el módulo está detectando una señal de re-apertura activa.
+
+Para el síntoma "la puerta se reabre sola" con el LED de fotocélula encendido, la documentación establece estas comprobaciones [3]:
+
+**1. Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54).**
+No lo has hecho aún.
+
+Reportas que no ves obstrucción, pero el LED está encendido, lo que indica que el módulo sí detecta activación en la fotocélula o en la entrada de re-apertura.
+
+Reportas que no ves obstrucción.
+
+La documentación también menciona que si el problema persiste después de estas comprobaciones, se debe desconectar la fotocélula y pulsar el botón de TEST; si la puerta no se abre o cierra completamente, hay obstrucción mecánica [3].
+
+Próximo paso: ¿Has verificado físicamente el estado del potenciómetro #54 o medido su posición? La documentación no especifica el rango de ajuste, pero es la primera comprobación documentada para este síntoma con fotocélula activa.
+```
+
+[4] y [3] cuadran con los pasajes. `#54` sigue pendiente. La obstrucción sigue como reporte. La frase del LED conserva las dos ramas y no da la fotocélula por hecha. «la documentación no especifica el rango de ajuste» es cierto para estos cuatro cuerpos. Falla la regla 2: «es la primera comprobación documentada» atribuye una prioridad que la lista no imprime. No se acepta.
+
+**4-B**
+
+```
+Gracias por la corrección. Con el LED de fotocélula **encendido**, la situación cambia.
+
+Según la documentación del VF5+, el LED de fotocélula se activa cuando "la fotocélula o la entrada de re-apertura está activada" [4]. Esto significa que el módulo está detectando una señal de re-apertura activa.
+
+Para el síntoma "la puerta se reabre sola" con el LED de fotocélula encendido, la documentación indica estas comprobaciones [3]:
+
+**1. Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54).**
+
+**2. Comprobar que la fotocélula no esté activada.** Usted reporta que no ve obstrucción, pero el LED está encendido, lo que sugiere que el módulo sí detecta una señal de fotocélula o re-apertura activa.
+
+**3. Comprobar que no hay una obstrucción mecánica en la puerta.** Usted ya ha verificado esto visualmente.
+
+Hay un punto adicional documentado: si el problema persiste después de estas comprobaciones, "desconectar la fotocélula y volver a pulsar el botón de TEST. Si la puerta no se abre o cierra completamente, debe haber una obstrucción mecánica en la puerta" [3].
+
+Mi orientación: Dado que el LED de fotocélula está encendido pero usted no ve obstrucción física, el siguiente paso lógico es verificar el potenciómetro #54 (que aún no ha comprobado) y luego considerar si la fotocélula misma está generando una señal continua sin causa visible.
+
+¿Ha podido acceder al potenciómetro #54 para inspeccionar su posición o ajuste?
+```
+
+[4] y [3] cuadran. `#54` sigue sin hacer. «Mi orientación» presenta como propio el paso siguiente y la señal continua. Preguntar por el ajuste no lo ordena. Falla la regla 3: «ya ha verificado esto visualmente» cierra la obstrucción mecánica. La glosa inicial vuelve a estrechar 5.6. No se acepta. Es la muestra en la que la frase nueva sí separa la orientación, y el cierre de la observación sigue.
+
+**5-A**
+
+```
+Gracias por la corrección. Con el LED de fotocélula **encendido**, el diagnóstico cambia.
+
+Según la documentación del VF5+, el LED de fotocélula se activa cuando "la fotocélula o la entrada de re-apertura está activada" [4]. Esto significa que el módulo está detectando una señal de re-apertura activa.
+
+Para el síntoma "la puerta se reabre sola" con LED de fotocélula encendido, la documentación establece estas comprobaciones [3]:
+
+**1. Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54).**
+No realizado aún.
+
+Usted reporta que no ve obstrucción, pero el LED está encendido, lo que indica que el módulo sí detecta activación en la fotocélula o en la entrada de re-apertura.
+
+Usted reporta que no ve obstrucción.
+
+La documentación también menciona que si el problema persiste después de estas comprobaciones, se debe desconectar la fotocélula y pulsar el botón de TEST. Si la puerta no se abre o cierra completamente, habría obstrucción mecánica [3].
+
+Próximo paso: ¿Ha verificado físicamente el estado de la fotocélula (limpieza, alineación, conexión)? El LED encendido sugiere que el módulo recibe una señal continua de re-apertura, aunque usted no vea un objeto bloqueando el haz.
+```
+
+[4] y [3] cuadran. `#54` pendiente. La obstrucción sigue como reporte. La frase posterior del LED conserva la disyunción y no cierra la fotocélula. No hay «primer paso documentado». La pregunta orienta hacia la fotocélula a partir del LED. La glosa «Esto significa» igual estrecha 5.6 a una señal de re-apertura, y la pregunta de limpieza no está en los pasajes. No se acepta como muestra limpia. Es la de A que no atribuye prioridad ni cierra una comprobación.
+
+**6-B**
+
+```
+Gracias por la corrección. Con el LED de fotocélula **encendido**, el diagnóstico cambia.
+
+Según la documentación del VF5+, el LED de fotocélula se activa cuando "la fotocélula o la entrada de re-apertura está activada" [4]. Esto significa que el módulo está detectando una señal de re-apertura activa, aunque usted no observe obstrucción física.
+
+Para el síntoma "la puerta se reabre sola" con LED de fotocélula encendido, la documentación indica estas comprobaciones [3]:
+
+**1. Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54).**
+
+**2. Comprobar que la fotocélula no esté activada** — aunque el LED está encendido, esto sugiere que la fotocélula o su entrada sí está activa en este momento.
+
+**3. Comprobar que no hay una obstrucción mecánica en la puerta** — usted ya reporta que no ve obstrucción.
+
+La documentación también menciona una prueba adicional: "En caso que el problema persista, desconectar la fotocélula y volver a pulsar el botón de TEST. Si la puerta no se abre o cierra completamente, debe haber una obstrucción mecánica en la puerta" [3].
+
+Próximo paso: ¿Ha comprobado ya el potenciómetro #54? Ese es el primer punto documentado. Si el ajuste de #54 no resuelve el problema, la fotocélula podría estar generando una señal continua de re-apertura incluso sin obstrucción visible.
+```
+
+[4] y [3] cuadran, y esta cita del TEST conserva «En caso que el problema persista». La obstrucción se queda en «reporta». La segunda comprobación sugiere actividad y conserva las dos ramas, sin darla por hecha. Falla la regla 2: «Ese es el primer punto documentado». «Si el ajuste de #54 no resuelve» pone el ajuste en la secuencia. El pasaje manda comprobar la sensibilidad. No se acepta.
+
+**Evaluación.** Las seis citan [4] con la frase de 5.6 y, cuando citan el TEST, usan [3]. Ninguna presenta `#21` como comprobación de «se re-abre sola». Ninguna acepta el caso. Las seis glosan la cita [4] como «el módulo está recibiendo o detectando una señal de re-apertura» y así pierden la rama de la fotocélula en esa frase. Esa glosa está en los dos brazos y no mide la sustitución.
+
+El defecto de la regla 2, el que B debía reducir, aparece en A una vez (3-A, «primera comprobación documentada») y en B dos veces (2-B, «causa más probable documentada»; 6-B, «primer punto documentado»). La regla 3 falla en A una vez (1-A cierra la fotocélula) y en B dos veces (2-B y 4-B dan la obstrucción por verificada). 4-B es la única que marca «Mi orientación» y no llama documentado a su paso siguiente. No compensa los otros dos de B.
+
+**Recomendación.** La sustitución de las dos frases es insuficiente. B no reduce la atribución al manual y empeora el cierre de observaciones. H1 no queda descartada: el resultado no la separa de H2 ni de H3. No es evidencia para promover el cambio. El companion no está estable. No se cambia el prompt de producción y no se abre otra variante. El fallback de la fuente de datos queda en el backlog previo a F4, sin implementarse. F4 y F5 siguen sin ejecutarse.
+
+### Sanitizador: la línea solo en negrita conserva sus palabras, 22 de octubre de 2026
+
+Lahiri sustituye el criterio anterior. Una línea formada solo por negrita conserva todas sus palabras y pierde únicamente los delimitadores. No deciden la puntuación, la numeración, la longitud ni el vocabulario. El caso explícito queda así: `**Respuesta**` seguido de `No, no son el mismo.` pasa a `Respuesta` y después `No, no son el mismo.`. La expectativa del test se actualiza como cambio de criterio.
+
+Se mantiene lo demás: rótulo con dos puntos, negrita dentro de una oración, sujeto en negrita, regla horizontal, negrita vacía y encabezado Markdown con `#`. No se toca el prompt, el modelo ni los límites de entrada, historial o contexto. No hay llamada. El ledger sigue en 102 intentos.
+
+`interaction_completed` añade `interpreter_original_chars` y `interpreter_sent_chars` solo cuando el corte existente, el de 600 antes del intérprete, cambia el texto. Los dos enteros salen del texto original y del texto que realmente recibe `TurnInterpreter`. El evento no lleva el mensaje. Un mensaje de 746 caracteres queda registrado como 746 y 600; el texto enviado sigue siendo el corte actual y pierde el final.
+
+Reproceso de las 13 respuestas crudas, sin modificar los originales. Los derivados están en `tmp/field_companion/vf5_correction/f3/sanitizer_reprocess/`. No faltó ningún original.
+
+En 1-A, 3-A y 5-A se recuperan dos líneas que el patrón de hasta 80 caracteres borraba:
+
+- `2. Comprobar que la fotocélula no esté activada.`
+- `3. Comprobar que no hay una obstrucción mecánica en la puerta.`
+
+En las seis del A/B, la primera comprobación ya estaba: su interior mide 92 caracteres y superaba el tope de 80, así que el sanitizador anterior la dejaba con los asteriscos. Ahora pierde solo esos delimitadores. En 2-B, 4-B y 6-B las comprobaciones 2 y 3 iban seguidas de prosa en la misma línea; no eran una línea solo en negrita y no se habían borrado.
+
+En las siete de los intentos 2 a 4 no hay líneas recuperadas por este cambio. Las dos reglas coinciden salvo el encabezado `# Diagnóstico: …`, que las dos siguen eliminando entero. Es la regla de encabezados Markdown, que esta corrección no cambia. Los tres de los intentos 2 empiezan por `# Diagnóstico: Puerta que se reabre sola con LED de fotocélula apagado`. Los dos del intento 3 y los dos del intento 4 empiezan por `# Diagnóstico: La puerta se reabre sola — Fermator VF5+`.
+
+Recuperar esas dos comprobaciones no acepta las respuestas. Siguen los fallos de generación ya registrados: atribuir al manual un orden, una prioridad, un paso siguiente o una causa más probable; tratar una observación como comprobación hecha; estrechar la disyunción de 5.6; ordenar ajustar donde el pasaje dice comprobar. H1 no está descartada. H2 y H3 no se probaron. Siguen sin medir «#54» frente a «el #54» y el Modo esclavo. F2 sigue cerrada en local. F3 sigue abierta. F4 y F5 no se ejecutan.
+
+Pendiente, sin implementar:
+
+- Prioridad alta antes del piloto con dictado: el corte de 600 puede perder una negación o un resultado, y `QueryComposer` puede descartar el turno completo cuando el texto compuesto pasa de 442 caracteres. No basta con subir todos los límites a la vez.
+- Persistir íntegro cada mensaje del técnico y cada respuesta presentada, ligados a la conversación y a la correlación, con una retención definida.
+- Antes de F4, el punto del backlog: quitar la selección alternativa del datasource antiguo o del primero disponible cuando falle la configuración del pipeline principal.
+
 
 

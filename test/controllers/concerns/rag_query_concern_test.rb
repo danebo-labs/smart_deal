@@ -1008,13 +1008,68 @@ class RagQueryConcernTest < ActiveSupport::TestCase
         "Componente identificado: Según el plano, Chapa nivel 3 está en la botonera [1].",
       "**Chapa nivel 3** aparece en la **Sección Botonera** [1]." =>
         "**Chapa nivel 3** aparece en la **Sección Botonera** [1].",
+      # 2026-10-22, Lahiri: a bold-only line keeps its words. The previous
+      # expectation deleted «Respuesta». That deletion was the old criterion.
       "**Respuesta**\nNo, no son el mismo." =>
-        "No, no son el mismo."
+        "Respuesta\nNo, no son el mismo."
     }
 
     cases.each do |text, expected|
       assert_equal expected, @controller.send(:sanitize_answer, text)
     end
+  end
+
+  # 2026-10-22. A bold-only line keeps every word. Length, a trailing period,
+  # a number, and the vocabulary do not decide whether the words stay.
+  test "sanitize_answer keeps the words of a bold-only line and drops only the delimiters" do
+    raw_one_a = <<~TEXT.strip
+      **1. Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54).**
+      **2. Comprobar que la fotocélula no esté activada.**
+      **3. Comprobar que no hay una obstrucción mecánica en la puerta.**
+    TEXT
+    kept = @controller.send(:sanitize_answer, raw_one_a)
+
+    assert_equal <<~TEXT.strip, kept
+      1. Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54).
+      2. Comprobar que la fotocélula no esté activada.
+      3. Comprobar que no hay una obstrucción mecánica en la puerta.
+    TEXT
+    assert_not_includes kept, "**"
+
+    without_period = @controller.send(:sanitize_answer, "**Comprobar que la fotocélula no esté activada**")
+    assert_equal "Comprobar que la fotocélula no esté activada", without_period
+
+    numbered = @controller.send(:sanitize_answer, "**2. Comprobar que no hay una obstrucción mecánica en la puerta**")
+    assert_equal "2. Comprobar que no hay una obstrucción mecánica en la puerta", numbered
+
+    assert_equal "Respuesta\nNo, no son el mismo.",
+                 @controller.send(:sanitize_answer, "**Respuesta**\nNo, no son el mismo.")
+  end
+
+  test "sanitize_answer keeps the other presentation rules around a bold-only line" do
+    text = <<~TEXT
+      # Encabezado
+      **Datos faltantes:**
+      El valor **crítico** sigue en la oración.
+      **Seguridad Puerta nivel 3** forma parte del circuito.
+      **J26** — puentea las cerraduras.
+      ---
+      ****
+      **Recomendación**: Consulta el manual.
+    TEXT
+    out = @controller.send(:sanitize_answer, text)
+
+    assert_not_includes out, "# Encabezado"
+    assert_not_includes out, "#"
+    assert_includes out, "Datos faltantes:"
+    assert_not_includes out, "**Datos faltantes:**"
+    assert_includes out, "El valor **crítico** sigue en la oración."
+    assert_includes out, "**Seguridad Puerta nivel 3** forma parte del circuito."
+    assert_includes out, "**J26** — puentea las cerraduras."
+    assert_not_includes out, "---"
+    assert_not_includes out, "****"
+    assert_includes out, "Recomendación: Consulta el manual."
+    assert_not_includes out, "**Recomendación**"
   end
 
   test 'sanitize_answer does not strip a hash that appears mid-sentence' do

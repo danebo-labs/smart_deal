@@ -17,7 +17,7 @@ class ConversationSession < ApplicationRecord
   DOCUMENT_FOCUS_KEYS = %w[added_at display_name kb_document_id source_uri].freeze
   PHOTO_PENDING_SLOTS = %w[manufacturer model].freeze
 
-  attr_accessor :turn_active_photo_context, :turn_causal, :context_truncated
+  attr_accessor :turn_active_photo_context, :turn_causal, :context_truncated, :interpreter_input_chars
 
   def self.media_type_for(document_or_uri)
     source = document_or_uri.respond_to?(:s3_key) ? document_or_uri.s3_key : document_or_uri
@@ -158,6 +158,7 @@ class ConversationSession < ApplicationRecord
   # Flag on: history and active_episode in one UPDATE. The caller does not
   # read the Result while the episode flag is the only one enabled.
   def record_user_turn!(content, user_id:, correlation_id:, selection_turn: false, now: Time.current, locale: :es, interpreter_client: nil, interpreter_sleeper: nil)
+    self.interpreter_input_chars = nil
     unless episode_recording?
       add_to_history_and_refresh("user", content, user_id: user_id, correlation_id: correlation_id)
       return nil
@@ -915,8 +916,14 @@ class ConversationSession < ApplicationRecord
   def apply_recorded_owner_turn!(content, user_id:, correlation_id:, now:, locale:, interpreter_client:, interpreter_sleeper: nil)
     focus_before = :unset
     self.turn_causal = nil
-    turn = Rag::TurnText.truncate(content)
-    record_user_message(content, turn)
+    original_text = content.to_s
+    turn = Rag::TurnText.truncate(original_text)
+    if original_text == turn
+      self.interpreter_input_chars = nil
+    else
+      self.interpreter_input_chars = { original: original_text.length, sent: turn.length }
+    end
+    record_user_message(original_text, turn)
     focus_before = Rag::ValidationCapture.active? ? document_focus_entries : :unset
     if duplicate_user_correlation?(correlation_id)
       note_owner_exit("duplicate_correlation", "duplicate_user_correlation", correlation_id)

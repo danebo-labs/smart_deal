@@ -1459,7 +1459,282 @@ Ajuste el potenciómetro #54 (regulación de fuerza de re-apertura) y observe si
 
 La negrita de esa respuesta es cosmética. El fallo es el orden atribuido y el verbo.
 
-**Cierre.** El estado recorre los cuatro turnos en un episodio y conserva la corrección y el resultado. La orientación no. La continuidad no se acepta. Siguen los fallos de generación: orden o paso siguiente atribuido al manual, observación tratada como comprobación hecha, y un procedimiento que los cuerpos no imprimen. H1 no está descartada. H2 y H3 no se probaron. «#54» y «el #54» no se midieron como equivalencia. F2 sigue cerrada en local. F3 sigue abierta. F4 y F5 no se ejecutaron.
+**Cierre.** El estado recorre los cuatro turnos en un episodio y conserva la corrección y el resultado. La orientación no. La continuidad no se acepta. Siguen los fallos de generación: orden o paso siguiente atribuido al manual, observación tratada como comprobación hecha, y un procedimiento que los cuerpos no imprimen. H1 no está descartada. H2 y H3 no se probaron en esa corrida. «#54» y «el #54» no se midieron como equivalencia. F2 sigue cerrada en local. F3 sigue abierta. F4 y F5 no se ejecutaron.
+
+### H2. Registros fuera del contexto documental, 22 de octubre de 2026
+
+Lahiri autoriza 12 llamadas de comparación, techo US$0,52, y 8 llamadas condicionales de conversación, techo US$0,21, solo si la comparación pasa. Tope acumulado 130. Techo adicional conjunto US$0,73. Límite US$4, con committed, unknown y reservas. No hay Retrieve, reextracción, S3, sincronización ni despliegue. F4 y F5 no entran. El candidato no queda como comportamiento predeterminado.
+
+**Código.** `Rag::DocumentIdentityScope.omit_terminal_evidence_records` quita el bloque solo si hay un único encabezado `# FIELD-SAFETY EVIDENCE RECORDS`, todas las líneas posteriores no vacías son líneas de registro, los `FIELD_RECORD` y los `END_FIELD_RECORD` coinciden y son más de cero, y queda prosa antes del encabezado. Si el bloque no es terminal o el pasaje quedaría vacío, el cuerpo original se conserva. `generation_context` sigue incluyendo los registros salvo `records: false`. El plano, `TOPOLOGY_EDGE`, las citas y los guards siguen viendo el chunk original. `omit_evidence_records` entra por `execute_rag_query`, el orquestador y `BedrockRagService#query`, y solo omite cuando es exactamente true y el turno no es de plano. El valor predeterminado es false. No cambian ROLE, FIELD_REPORT_PARAGRAPH, historial, modelo, extracción, S3 ni KB.
+
+**Tests.** `evidence_record_context_test`, `call_evidence_test` y `local_pass_ledger_test`: 23 pruebas, 378 aserciones, 0 fallos. Cubren el cuerpo conservado y los registros omitidos, las etiquetas y las fuentes, el plano y el pasaje compuesto solo por registros, la prosa posterior al bloque, los chunks de citas y guards sin cambios, y el tope 130. `CallEvidence`, con un cliente falso, guarda por llamada la petición efectiva, la respuesta cruda, la presentada, el estado, el historial, las fuentes y el consumo, unidos por correlación. Sin tokens, `cost_kind` queda `unavailable` y no se escribe `cost_usd`.
+
+**Reconstrucción, no captura histórica.** T1 y T4 se armaron de nuevo con la sesión 202, el episodio `ep_76532e612b41658c` y los cuatro cuerpos certificados. El reloj se desplazó solo mientras se armaba el prompt y estaba real antes de cada llamada. No son las peticiones de las llamadas 104 y 110. T1 usa el episodio de `t1/episode.json`. T4 usa el episodio guardado en la sesión, que coincide con `t4/episode.json` en objetivo, observaciones y comprobaciones; no imprime «Not current». El historial de T4 que entra al prompt es la corrección del LED, la fotocélula revisada, el corte de 200 caracteres de la respuesta anterior y «¿qué sigue?». A y B comparten pregunta, estado, historial, fuentes, modelo `global.anthropic.claude-haiku-4-5-20251001-v1:0`, temperatura 0,1, 3000 tokens y ningún mensaje de sistema. El diff de cada turno retira 170 líneas y ninguna otra: encabezado, líneas de registro y blancos. A tiene 4 encabezados; B tiene 0. Los cuatro cuerpos certificados sí cumplen la condición de bloque final. Techo de las 12 peticiones, US$0,457734.
+
+**Rúbrica, fijada antes de llamar.** Un defecto material es atribuir al manual un orden, una prioridad, el siguiente paso, la causa más probable, o un procedimiento, valor o herramienta que los cuatro cuerpos no imprimen para ese componente; tratar una observación como una comprobación hecha; ordenar un ajuste donde el pasaje dice comprobar; citar una fuente que no sostiene la frase, o trasladar una herramienta o un valor entre componentes; dar una paráfrasis sin orientación útil; y, en T4, volver a pedir el LED, la obstrucción, la revisión de la fotocélula o las mediciones, o llamar contradicción o dato no documentado a la combinación de LED encendido y fotocélula no activada. La glosa de 5.6 cuenta solo si la frase dice que la documentación establece esa única rama. Umbral: B como máximo 1/6 con defecto material, A al menos 3/6, y al menos 2/3 de B-T4 orientan usando el resultado reportado.
+
+**Llamadas.** El orden fue A/B alternado. La 111 volvió. La 112 fue un 403 en 29 ms del sandbox local, sin respuesta de modelo; su techo US$0,034012 queda unknown y no se convirtió en cero. Esa muestra se emitió después fuera del sandbox: es la 113. La 122 llegó a Bedrock y devolvió `ServiceUnavailable` a los 5089 ms para el tercer A de T4; no se reintentó. La 123 es el B de T4 que faltaba, no una repetición de la 122. Once respuestas presentadas y una llamada sin texto.
+
+| Id | Muestra | Resultado | Real |
+|---|---|---|---|
+| 111 | 01 T1 A | 7703 / 375 | 0,009578 |
+| 112 | sandbox 403, sin muestra | unknown | techo 0,034012 |
+| 113 | 02 T1 B | 4826 / 335 | 0,006501 |
+| 114 | 03 T1 A | 7703 / 480 | 0,010103 |
+| 115 | 04 T1 B | 4826 / 290 | 0,006276 |
+| 116 | 05 T1 A | 7703 / 417 | 0,009788 |
+| 117 | 06 T1 B | 4826 / 295 | 0,006301 |
+| 118 | 07 T4 A | 7796 / 375 | 0,009671 |
+| 119 | 08 T4 B | 4919 / 344 | 0,006639 |
+| 120 | 09 T4 A | 7796 / 361 | 0,009601 |
+| 121 | 10 T4 B | 4919 / 364 | 0,006739 |
+| 122 | 11 T4 A | ServiceUnavailable | techo 0,042277, unknown |
+| 123 | 12 T4 B | 4919 / 348 | 0,006659 |
+
+En las once respuestas, la captura guarda el SHA del prompt preparado, la correlación `vf5-h2-…`, la respuesta cruda y el consumo. La presentada es esa respuesta después del sanitizador: quita el título `# Diagnóstico` cuando aparece y la negrita de algunos rótulos. La evaluación es de la presentada. La 122 no tiene `cost_usd`; su consumo queda `unavailable`. Los intentos 1 a 110 no se reescribieron. El 110 sigue settled en US$0,009886. Unknown de origen US$0,025851 sigue dentro del total.
+
+**01 T1 A, presentada.**
+
+```
+Según la documentación del VF5+, cuando la puerta se reabre sola, debe verificarse [3]:
+
+1. **La sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)** — Usted aún no ha comprobado este elemento.
+
+2. **Que la fotocélula no esté activada** — Usted reporta que el LED de fotocélula está apagado, lo que es consistente con esta condición.
+
+3. **Que no hay obstrucción mecánica en la puerta** — Usted ya ha verificado visualmente que no hay obstrucción.
+
+Próximo paso documentado:
+
+La documentación indica que si el problema persiste después de estas comprobaciones, debe desconectar la fotocélula y pulsar nuevamente el botón de TEST. Si la puerta no se abre o cierra completamente en ese caso, habría una obstrucción mecánica en la puerta [3].
+
+Lo que falta:
+
+No ha comprobado el potenciómetro #54, que es el primer elemento documentado para este síntoma. La documentación no proporciona valores de ajuste, rangos de sensibilidad, ni procedimiento de medición para #54 — solo que debe verificarse su sensibilidad.
+
+¿Ha podido acceder al potenciómetro #54 en el módulo VF5+ para inspeccionar su posición o estado?
+```
+
+Defecto material. «Primer elemento documentado» atribuye un orden. «Ya ha verificado» cierra la obstrucción desde «no veo obstrucción».
+
+**02 T1 B, presentada.**
+
+```
+La documentación del VF5+ indica tres comprobaciones para la re-apertura automática de la puerta [3]:
+
+1. **Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)** — aún no realizado.
+2. **Comprobar que la fotocélula no esté activada** — ya confirmado: el LED de fotocélula está apagado [3].
+3. **Comprobar que no hay obstrucción mecánica en la puerta** — ya confirmado: no se ve obstrucción [3].
+
+Dado que el LED de fotocélula está apagado y no hay obstrucción visible, el siguiente paso documentado es **verificar el potenciómetro #54**. Este componente regula la fuerza de re-apertura; si su sensibilidad es excesiva, puede provocar que la puerta se abra sola incluso sin activación de la fotocélula.
+
+La documentación también menciona que si el problema persiste después de estas comprobaciones, se debe desconectar la fotocélula y pulsar el botón de TEST; si la puerta no abre o cierra completamente, habría obstrucción mecánica [3].
+
+¿Ha podido acceder al potenciómetro #54 para verificar su posición o ajuste?
+```
+
+Defecto material. El pasaje [3] lista tres comprobaciones y no nombra un siguiente paso. El LED apagado y «no veo obstrucción» quedan como comprobaciones confirmadas, y [3] no sostiene ese cierre.
+
+**03 T1 A, presentada.**
+
+```
+Según la documentación del VF5+, para el síntoma "la puerta se reabre sola" se documentan tres comprobaciones [3]:
+
+1. Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54).
+Usted aún no ha realizado esta comprobación. La documentación no especifica qué valores o ajustes son correctos.
+
+2. Comprobar que la fotocélula no esté activada.
+Usted reporta que el LED de fotocélula está apagado, lo que es consistente con una fotocélula no activada. Sin embargo, la documentación también indica que el LED de fotocélula se activa "cuando la fotocélula o la entrada de re-apertura está activada" [4]. Un LED apagado sugiere que ninguna de estas dos está activa en este momento.
+
+3. Comprobar que no hay una obstrucción mecánica en la puerta.
+Usted reporta que no ve obstrucción.
+
+Paso adicional documentado:
+Si el problema persiste después de estas comprobaciones, la documentación indica: "desconectar la fotocélula y volver a pulsar el botón de TEST. Si la puerta no se abre o cierra completamente, debe haber una obstrucción mecánica en la puerta" [3].
+
+Próximo paso recomendado:
+Compruebe el potenciómetro #54 (regulación de fuerza de re-apertura), que es la única de las tres comprobaciones que aún no ha realizado. La documentación no proporciona valores de referencia ni procedimiento de ajuste para este componente.
+
+¿Puede acceder al potenciómetro #54 en el módulo VF5+ y observar su posición actual?
+```
+
+Defecto material. «La única de las tres comprobaciones que aún no ha realizado» da por hechas la fotocélula y la obstrucción. La frase de [4] no dice que la documentación establezca una sola rama; esa glosa, sola, no entra en la rúbrica.
+
+**04 T1 B, presentada.**
+
+```
+La documentación del VF5+ indica tres comprobaciones para la re-apertura automática de la puerta [3]:
+
+1. **Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)** — aún no realizado.
+2. **Comprobar que la fotocélula no esté activada** — ya confirmado: el LED de fotocélula está apagado [3].
+3. **Comprobar que no hay obstrucción mecánica en la puerta** — ya confirmado: no se ve obstrucción [3].
+
+Dado que el LED de fotocélula está apagado y no hay obstrucción visible, el siguiente paso documentado es verificar el potenciómetro #54. La documentación también menciona que si el problema persiste después de desconectar la fotocélula y pulsar el botón de TEST, debe haber una obstrucción mecánica [3].
+
+Próximo paso: Comprueba la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54). ¿Cuál es su posición actual o rango de ajuste?
+```
+
+Defecto material. Mismo cierre de observaciones y el mismo «siguiente paso documentado». Además adelanta la consecuencia de la obstrucción: el pasaje la condiciona a que, tras desconectar y pulsar TEST, la puerta no complete el ciclo.
+
+**05 T1 A, presentada.**
+
+```
+Según la documentación del VF5+, para el síntoma "la puerta se reabre sola" se documentan tres comprobaciones [3]:
+
+Comprobaciones documentadas:
+
+1. **Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)** — Usted aún no ha realizado esta comprobación.
+
+2. **Comprobar que la fotocélula no esté activada** — Usted reporta que el LED de fotocélula está apagado, lo que es consistente con esta condición.
+
+3. **Comprobar que no hay una obstrucción mecánica en la puerta** — Usted reporta no ver obstrucción.
+
+Paso adicional si el problema persiste:
+
+Si después de revisar el #54 el problema continúa, la documentación indica desconectar la fotocélula y pulsar el botón de TEST. Si la puerta no se abre o cierra completamente en ese caso, debe haber una obstrucción mecánica [3].
+
+Falta en los pasajes:
+
+Los pasajes no especifican qué valores o rangos del potenciómetro #54 son correctos, ni cómo ajustarlo. Tampoco documentan mediciones eléctricas específicas para este síntoma.
+
+Próximo paso:
+
+¿Puede acceder al potenciómetro #54 en el módulo VF5+ y verificar su posición actual? Esto le permitirá determinar si la sensibilidad de re-apertura está configurada incorrectamente.
+```
+
+Defecto material. Pone el TEST detrás de revisar solo el `#54`, y la pregunta pide una posición y una configuración incorrecta que el pasaje no imprime. El pasaje dice comprobar la sensibilidad.
+
+**06 T1 B, presentada.**
+
+```
+La documentación del VF5+ indica tres comprobaciones para la reapertura automática de la puerta [3]:
+
+1. **Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)** — aún no realizado.
+2. **Comprobar que la fotocélula no esté activada** — ya confirmado: el LED de fotocélula está apagado [3].
+3. **Comprobar que no hay obstrucción mecánica en la puerta** — ya confirmado: no se ve obstrucción [3].
+
+Dado que el LED de fotocélula está apagado y no hay obstrucción visible, el siguiente paso documentado es verificar el potenciómetro #54. La documentación también menciona que si el problema persiste después de desconectar la fotocélula y pulsar el botón de TEST, debe haber una obstrucción mecánica [3].
+
+Próximo paso: Comprueba la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54). ¿Puedes acceder a ese potenciómetro y verificar su posición actual?
+```
+
+Defecto material. Igual que 04 en el cierre y en el paso atribuido. El verbo de la última instrucción sí es comprobar.
+
+**07 T4 A, presentada.**
+
+```
+Según la documentación del VF5+, el siguiente paso documentado es **comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)** [3].
+
+Su situación actual:
+- LED de fotocélula encendido
+- Fotocélula no está activada (ya revisada)
+- No hay obstrucción mecánica visible
+- La puerta se reabre sola
+
+La documentación establece que cuando la puerta se reabre sola, debe verificarse [3]:
+
+1. **Potenciómetro #54** — comprobar su sensibilidad de regulación de fuerza de re-apertura.
+2. **Fotocélula no esté activada** — ya lo confirmó.
+3. **No hay obstrucción mecánica** — ya lo verificó.
+
+Si el problema persiste después de revisar el potenciómetro #54, la documentación indica un paso adicional: **desconectar la fotocélula y volver a pulsar el botón de TEST (50)**. Si la puerta no se abre o cierra completamente en ese caso, debe haber una obstrucción mecánica en la puerta [3].
+
+Falta en los pasajes: La documentación no especifica qué valores o posiciones del potenciómetro #54 son correctos, ni cómo ajustarlo.
+
+¿Ha revisado o ajustado el potenciómetro #54, o necesita orientación sobre dónde localizarlo en el módulo?
+```
+
+Defecto material. «El siguiente paso documentado» y «ya lo verificó» para la obstrucción. No llama contradicción al LED encendido con la fotocélula no activada. La fotocélula sí estaba hecha en el estado de T4.
+
+**08 T4 B, presentada.**
+
+```
+Según la documentación del VF5+, cuando **la puerta se reabre sola**, debe verificar [3]:
+
+1. **La sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)** — esto aún no lo ha hecho.
+2. **Que la fotocélula no esté activada** — usted ya reportó que no está activada.
+3. **Que no hay obstrucción mecánica en la puerta** — usted reportó que no ve obstrucción.
+
+El problema es que el **LED de fotocélula está encendido**, lo cual según la documentación indica que "la fotocélula o la entrada de re-apertura está activada" [4]. Esto contradice su verificación de que la fotocélula no está activada.
+
+Próximo paso documentado:
+
+La documentación indica que si el problema persiste después de verificar lo anterior, debe "desconectar la fotocélula y volver a pulsar el botón de TEST. Si la puerta no se abre o cierra completamente, debe haber una obstrucción mecánica en la puerta" [3].
+
+Pregunta: ¿Ha ajustado o verificado el potenciómetro #54 (regulación de fuerza de re-apertura)? Si no, ese es el siguiente control documentado antes de desconectar la fotocélula.
+```
+
+Defecto material. Incorpora el resultado y lo declara contradicción. [4] imprime la disyunción, no una contradicción con la fotocélula revisada. No cuenta como orientación que use el resultado reportado.
+
+**09 T4 A, presentada.**
+
+```
+Según la documentación del VF5+, el siguiente paso documentado es **comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)** [3].
+
+Su situación actual:
+- LED de fotocélula encendido
+- Fotocélula no está activada (ya revisada)
+- No hay obstrucción mecánica visible
+- La puerta se reabre sola
+
+La documentación establece que cuando la puerta se reabre sola, debe verificarse [3]:
+
+1. **Potenciómetro #54** — comprobar su sensibilidad de regulación de fuerza de re-apertura.
+2. **Fotocélula no activada** — ya lo confirmó.
+3. **Sin obstrucción mecánica** — ya lo confirmó.
+
+Si el problema persiste después de revisar el potenciómetro #54, la documentación indica un paso adicional: **desconectar la fotocélula y pulsar el botón de TEST**. Si la puerta no se abre o cierra completamente en ese caso, debe haber una obstrucción mecánica en la puerta [3].
+
+Falta en los pasajes: La documentación no especifica qué valores o rangos debe tener el potenciómetro #54, ni cómo ajustarlo.
+
+¿Ha revisado o ajustado el potenciómetro #54? ¿Cuál es su posición actual?
+```
+
+Defecto material. Mismo orden atribuido y la obstrucción dada por confirmada. No declara contradicción.
+
+**10 T4 B, presentada.**
+
+```
+Según la documentación del VF5+, cuando **la puerta se reabre sola**, debe verificar:
+
+1. **La sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)** [3]. Usted aún no ha realizado esta medición.
+
+2. **Que la fotocélula no esté activada** [3]. Usted reporta que ya revisó y no está activada, pero el LED de fotocélula está encendido. La documentación establece que el indicador LED de fotocélula se activa "cuando la fotocélula o la entrada de re-apertura está activada" [4]. Esta discrepancia entre el estado del LED (encendido) y su verificación (no activada) requiere aclaración.
+
+3. **Que no hay obstrucción mecánica en la puerta** [3]. Usted reporta que no ve obstrucción.
+
+Próximo paso documentado: La documentación indica que si el problema persiste después de estas comprobaciones, debe "desconectar la fotocélula y volver a pulsar el botón de TEST. Si la puerta no se abre o cierra completamente, debe haber una obstrucción mecánica en la puerta" [3].
+
+Pregunta: ¿Ha ajustado o medido el potenciómetro #54? Si no, ese es el siguiente control documentado. Si ya lo verificó, ¿cuál es su estado o valor?
+```
+
+Defecto material. La combinación queda como discrepancia que requiere aclaración, y el `#54` queda como medición y como valor. No orienta con el resultado sin ese conflicto.
+
+**11 T4 A.** Sin texto. `ServiceUnavailable`: «Bedrock is unable to process your request.» No se reintentó. El prompt capturado es el A de T4.
+
+**12 T4 B, presentada.**
+
+```
+Según la documentación del VF5+, cuando **la puerta se reabre sola**, debe verificar [3]:
+
+1. **La sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)** — esto aún no lo ha hecho.
+2. **Que la fotocélula no esté activada** — usted ya reportó que no está activada.
+3. **Que no hay obstrucción mecánica en la puerta** — usted reportó que no ve obstrucción.
+
+El problema es que el **LED de fotocélula está encendido**, lo que según la documentación indica que "la fotocélula o la entrada de re-apertura está activada" [4]. Esto contradice su verificación de que la fotocélula no está activada.
+
+Próximo paso documentado: La documentación indica que si el problema persiste después de verificar lo anterior, debe "desconectar la fotocélula y volver a pulsar el botón de TEST. Si la puerta no se abre o cierra completamente, debe haber una obstrucción mecánica en la puerta" [3].
+
+Antes de eso, le recomiendo verificar el **potenciómetro #54** (regulación de fuerza de re-apertura), que aún no ha revisado. ¿Puede acceder a ese potenciómetro y reportar su posición actual?
+```
+
+Defecto material. Otra vez la contradicción, y el TEST queda detrás de esa verificación. No cuenta como orientación con el resultado.
+
+**Umbral.** A tiene defecto en las cinco respuestas que existen; falta la sexta por el proveedor. Cinco ya superan 3/6. B tiene defecto en 6/6; el máximo era 1/6. B-T4 orienta con el resultado, sin contradicción ni aclaración falsa, en 0/3; el mínimo era 2/3. El umbral no se cumple. La etapa 2 no se ejecutó. No se abrió otra variante. El prompt B es más corto, de unos 7700 a unos 4800 tokens de entrada en T1, y el defecto sigue. Esta muestra no demuestra ni descarta que los registros sean la causa.
+
+**Gasto.** Trece intentos nuevos, 111 a 123. Once settled suman US$0,087856. Dos unknown suman US$0,076289. Exposición adicional US$0,164145, bajo US$0,52 y bajo US$0,73. Ledger al cerrar: 123 intentos, committed US$1,291343, unknown US$0,10214, abierto vacío, exposición US$1,393483, `call_cap` 130, tope US$4. Quedan 7 intentos de cupo. No se usaron las 8 llamadas condicionales.
+
+**Estado del candidato.** Sigue opt-in. Sin `omit_evidence_records: true` la generación documental conserva los registros. El plano también los conserva. F2 sigue cerrada. F3 sigue abierta: el estado de los cuatro turnos anteriores queda como estaba, y la generación no queda aceptada. F4 y F5 no se ejecutaron.
 
 
 

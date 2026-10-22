@@ -48,7 +48,8 @@ class QueryOrchestratorService
   def initialize(query, images: [], documents: [], document_uids: [], account: nil, session_id: nil, response_locale: nil, session_context: nil,
                  conv_session: nil, entity_s3_uris: [], output_channel: nil, force_entity_filter: false, auto_scope_filter: false, locale: nil,
                  user_id: nil, conversation_session_id: nil, correlation_id: nil, field_photo_id: nil, raw_question: nil,
-                 context_truncated: nil, apply_photo_continuity: true, expected_episode_id: nil, equipment_identity: :omit)
+                 context_truncated: nil, apply_photo_continuity: true, expected_episode_id: nil, equipment_identity: :omit,
+                 omit_evidence_records: false)
     @query = query
     @raw_question = raw_question
     @context_truncated = context_truncated
@@ -71,6 +72,7 @@ class QueryOrchestratorService
     @field_photo_id = field_photo_id
     @apply_photo_continuity = apply_photo_continuity
     @expected_episode_id = expected_episode_id
+    @omit_evidence_records = omit_evidence_records == true
     @equipment_identity = equipment_identity
     @equipment_identity_supplied = equipment_identity != :omit
     @ai_provider = AiProvider.new
@@ -411,6 +413,7 @@ class QueryOrchestratorService
       equipment_identity: resolved_equipment_identity,
       raw_question: @raw_question,
       context_truncated: generation_context_truncated?,
+      omit_evidence_records: @omit_evidence_records == true,
       **rag_telemetry
     )
   end
@@ -573,6 +576,7 @@ class QueryOrchestratorService
         auto_scope_filter: @auto_scope_filter,
         episode: episode_for_scope,
         equipment_identity: resolved_equipment_identity,
+        omit_evidence_records: @omit_evidence_records == true,
         **rag_telemetry
       )
     rescue StandardError => e

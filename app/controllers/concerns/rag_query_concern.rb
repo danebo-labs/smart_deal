@@ -195,7 +195,8 @@ module RagQueryConcern
                         correlation_id: nil, field_photo_id: nil, conversation_session_id: nil,
                         episode_turn: nil, conversational_turn_analysis: nil,
                         apply_photo_continuity: true, retrieval_question: nil,
-                        equipment_identity: :omit, raw_question: nil, context_truncated: nil)
+                        equipment_identity: :omit, raw_question: nil, context_truncated: nil,
+                        omit_evidence_records: false)
     question  = question.to_s.strip
     images    = Array(images).compact
     documents = Array(documents).compact
@@ -324,6 +325,7 @@ module RagQueryConcern
       correlation_id:      correlation_id,
       field_photo_id:      field_photo_id,
       apply_photo_continuity: apply_photo_continuity,
+      omit_evidence_records: omit_evidence_records == true,
       **identity_kwargs
     ).execute
 

@@ -390,11 +390,23 @@ module Rag
       )
     end
 
+    EVIDENCE_RECORD_HEADING = "# FIELD-SAFETY EVIDENCE RECORDS"
+    EVIDENCE_RECORD_KEYS = %w[
+      RECORD_ID SOURCE_SECTION_OR_PAGE SOURCE_PDF_PAGE RECORD_TYPE ACTION
+      EXPECTED_RESULT DETAILS DERIVATION DERIVATION_EVIDENCE STOP_WORK_TRIGGER
+      STOP_WORK_REQUIRED_ACTION REPAIR_AUTHORITY UNCERTAINTY EVIDENCE
+    ].freeze
+    EVIDENCE_RECORD_LINE = /\A(?:FIELD_RECORD:|END_FIELD_RECORD|(?:#{EVIDENCE_RECORD_KEYS.join('|')}):.*)\z/
+
     # Same chunks, same order. The preamble is one line before the results.
     # A label is one line before that chunk's body.
-    def self.generation_context(chunks, labels = [])
+    # records: false drops a terminal evidence-record block from the prompt
+    # body. The default keeps it. Callers other than the documentary
+    # comparison leave the default alone. Source numbers and labels stay.
+    def self.generation_context(chunks, labels = [], records: true)
       body = Array(chunks).each_with_index.map { |chunk, index|
         content = apply_local_page_fidelity(chunk, chunk[:content].to_s)
+        content = omit_terminal_evidence_records(content) if records == false
         label = labels[index]
         content = "#{label}\n#{content}" if label.present?
         [
@@ -412,6 +424,38 @@ module Rag
 
       "#{PREAMBLE}\n#{body}"
     end
+
+    # Drops the records only when one heading closes the passage and every
+    # line after it is a record field. A later narrative line keeps the
+    # original. An empty passage before the heading keeps the original.
+    def self.omit_terminal_evidence_records(content)
+      lines = content.to_s.lines
+      indexes = lines.each_index.select { |index| lines[index].strip == EVIDENCE_RECORD_HEADING }
+      return content.to_s unless indexes.one?
+
+      tail = lines[(indexes.first + 1)..] || []
+      return content.to_s unless terminal_evidence_records?(tail)
+
+      narrative = lines[0...indexes.first].join
+      return content.to_s if narrative.strip.empty?
+
+      "#{narrative.rstrip}\n"
+    end
+
+    def self.terminal_evidence_records?(lines)
+      opened = 0
+      closed = 0
+      lines.each do |line|
+        stripped = line.strip
+        next if stripped.empty?
+        return false unless stripped.match?(EVIDENCE_RECORD_LINE)
+
+        opened += 1 if stripped == "FIELD_RECORD:"
+        closed += 1 if stripped == "END_FIELD_RECORD"
+      end
+      opened.positive? && opened == closed
+    end
+    private_class_method :terminal_evidence_records?
 
     def self.this_job_line(canonical_name)
       "THIS JOB'S EQUIPMENT: #{canonical_name}"

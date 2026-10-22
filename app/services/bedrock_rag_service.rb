@@ -247,7 +247,7 @@ class BedrockRagService
             entity_s3_uris: [], entity_sources: [], output_channel: nil, force_entity_filter: false,
             auto_scope_filter: false, account_id: nil, user_id: nil, conversation_session_id: nil,
             correlation_id: nil, include_diagnostics: false, episode: nil, equipment_identity: :omit,
-            raw_question: nil, context_truncated: nil)
+            raw_question: nil, context_truncated: nil, omit_evidence_records: false)
     unless @knowledge_base_id
       error_msg = 'Knowledge Base ID not configured. Please set BEDROCK_KNOWLEDGE_BASE_ID environment variable or configure in Rails credentials.'
       Rails.logger.error(error_msg)
@@ -257,6 +257,7 @@ class BedrockRagService
     Rails.logger.info("Querying Knowledge Base with: #{question}")
 
     start_time = Time.current
+    @omit_evidence_records = omit_evidence_records == true
     attribution = {
       account_id: account_id || @account&.id,
       user_id: user_id,
@@ -568,7 +569,8 @@ class BedrockRagService
         labels: applied.labels,
         response_locale: response_locale,
         session_context: session_context,
-        output_channel: output_channel
+        output_channel: output_channel,
+        omit_evidence_records: @omit_evidence_records == true
       )
     end
     generation_truncated = context_truncated == true || (companion && guidance.context_truncated?)
@@ -1154,10 +1156,14 @@ class BedrockRagService
   end
 
   def document_identity_generation_prompt(question, chunks, response_locale:, session_context:, output_channel:,
-                                          labels: [])
+                                          labels: [], omit_evidence_records: false)
     system_role = document_identity_system_role?
-    search_results = Rag::DocumentIdentityScope.generation_context(chunks, labels)
     plan = self.class.plan_context?(question, session_context, chunks)
+    search_results = Rag::DocumentIdentityScope.generation_context(
+      chunks,
+      labels,
+      records: plan || omit_evidence_records != true
+    )
     template = withheld_document_identity_template(
       question,
       response_locale: response_locale,

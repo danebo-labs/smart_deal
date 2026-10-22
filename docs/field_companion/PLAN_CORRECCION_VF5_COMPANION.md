@@ -331,7 +331,7 @@ Al cerrar F3, Grok envía la solicitud única.
 
 No se implementa ahora. Queda antes de cualquier escritura o sincronización de esta fase.
 
-`KbSyncService#find_data_source_id` busca el id preferido y, si no está entre las fuentes listadas, avisa y sigue con `summaries.first`. Esa fuente puede ser la antigua o, en cualquier caso, no la de `bulk_chunks/` de `Y7RZWMFJSR` (`PJ0N58DMHG`). Un `start_ingestion_job` por esa selección sincronizaría otra fuente del mismo knowledge base. Antes de F4 hay que eliminar esa selección alternativa, tanto del datasource antiguo como del primero disponible, cuando falle la configuración del pipeline principal. Si el id configurado no aparece en el listado, la sincronización se detiene. El recorrido ya usado en la página 5 de Elemont se niega en ese caso y no llama a este servicio. Hasta dejar cerrado este punto no hay F4. No se implementa en esta corrección.
+`KbSyncService#find_data_source_id` busca el id preferido y, si no está entre las fuentes listadas, avisa y sigue con `summaries.first`. Esa fuente puede ser la antigua o, en cualquier caso, no la de `bulk_chunks/` de `Y7RZWMFJSR` (`PJ0N58DMHG`). Un `start_ingestion_job` por esa selección sincronizaría otra fuente del mismo knowledge base. Antes de F4 hay que eliminar esa selección alternativa, tanto del datasource antiguo como del primero disponible, cuando falle la configuración del pipeline principal. Si el id configurado no aparece en el listado, la sincronización se detiene. El recorrido ya usado en la página 5 de Elemont se niega en ese caso y no llama a este servicio. Hasta dejar cerrado este punto no hay F4. No se implementa en esta corrección. La tabla de mensajes del final de este documento tiene más prioridad que esta limpieza; no la sustituye ni abre F4.
 
 ### F4. Sustitución, sincronización y Retrieve
 
@@ -1369,11 +1369,42 @@ En las siete de los intentos 2 a 4 no hay líneas recuperadas por este cambio. L
 
 Recuperar esas dos comprobaciones no acepta las respuestas. Siguen los fallos de generación ya registrados: atribuir al manual un orden, una prioridad, un paso siguiente o una causa más probable; tratar una observación como comprobación hecha; estrechar la disyunción de 5.6; ordenar ajustar donde el pasaje dice comprobar. H1 no está descartada. H2 y H3 no se probaron. Siguen sin medir «#54» frente a «el #54» y el Modo esclavo. F2 sigue cerrada en local. F3 sigue abierta. F4 y F5 no se ejecutan.
 
-Pendiente, sin implementar:
+Pendiente, sin implementar y sin diseñar:
 
-- Prioridad alta antes del piloto con dictado: el corte de 600 puede perder una negación o un resultado, y `QueryComposer` puede descartar el turno completo cuando el texto compuesto pasa de 442 caracteres. No basta con subir todos los límites a la vez.
-- Persistir íntegro cada mensaje del técnico y cada respuesta presentada, ligados a la conversación y a la correlación, con una retención definida.
-- Antes de F4, el punto del backlog: quitar la selección alternativa del datasource antiguo o del primero disponible cuando falle la configuración del pipeline principal.
+- Antes del piloto con dictado, y aparte de cualquier archivo: el corte de 600 puede perder una negación o un resultado antes del intérprete, y `QueryComposer` puede descartar el turno completo cuando el texto compuesto pasa de 442 caracteres. No basta con subir todos los límites a la vez. Una tabla de mensajes no corrige esos dos comportamientos.
+- Backlog: una tabla de mensajes vinculada a la sesión y a correlation_id, con retención y datos personales definidos. Su finalidad es conservar íntegros cada mensaje del técnico y cada respuesta presentada. Hoy `conversation_history` guarda hasta 600 caracteres por mensaje y un máximo de 20 mensajes; no es un archivo completo. `TurnEvidence` conserva sobre todo hashes, y la captura textual opcional (`PILOT_AUDIT_CAPTURE`) va al log, no a esa tabla. Tiene más prioridad que eliminar el fallback del datasource. No incluye una interfaz de historiales, exportaciones ni otras funciones. El almacenamiento de mensajes y respuestas queda separado del estado del episodio (hechos, observaciones, correcciones y comprobaciones) y del contexto del modelo: guardar el texto íntegro no obliga a enviarlo íntegro.
+- Antes de F4, con menos prioridad que esa tabla: quitar la selección alternativa del datasource antiguo o del primero disponible cuando falle la configuración del pipeline principal.
+
+### Continuidad de cuatro turnos, preparada y no ejecutada, 22 de octubre de 2026
+
+El objetivo vuelve a ser la continuidad de una conversación. No hay otra comparación de redacción ni otro retoque de formato. No se abre otro plan ni otro arnés. F2 sigue cerrada en local. F3 sigue abierta. F4 y F5 no se ejecutan. No hubo llamadas. El ledger no se escribió.
+
+La secuencia es la ruta ya usada en la sesión 199: una sesión nueva, historial vacío y episodio vacío, reloj real, y cada turno lee el estado y el historial que dejó el anterior. El flujo es `record_user_turn!`, intérprete, reducer, composición, `execute_rag_query`, generación, sanitizado y `record_assistant_turn!` con `history_answer`. No se reconstruye un episodio intermedio a mano y no se usa `travel_to`. Los cuatro cuerpos certificados de F2 entran por `retrieve_with_retry`, en el mismo orden. `retrieve_and_generate_with_retry` sigue sustituido por una excepción. Esta preparación no valida Retrieve ni F4, y no escribe en S3 ni sincroniza ni despliega. El código de esa ruta está en `e4a5e3f00bc570b8230064132b0c1226c2fa9f9e`. El arnés de `tmp/` no se modificó: sigue en tres turnos y no se lanza. Cuando el cupo exista, el único cambio previo es añadir el cuarto mensaje a esa misma lista.
+
+Mensajes, en este orden:
+
+1. «Estoy con un operador de puerta Fermator VF5+. La puerta se reabre sola. El LED de fotocélula está apagado. No veo obstrucción. No he comprobado el #54. No hice mediciones.»
+2. «Corrijo solo el estado del LED: el LED de fotocélula está encendido, no apagado.»
+3. «Ya revisé la fotocélula y no está activada.»
+4. «¿qué sigue?»
+
+Misma condición de proceso que la sesión 199: `AWS_MAX_ATTEMPTS=1`, `RAG_TRANSIENT_ATTEMPT_LIMIT=1`, modelo y prompt sin cambios, temperatura 0,1 y 3000 tokens. El reintento de `ServiceUnavailable` que trae el arnés ya no corre cuando el ledger pasa de 96 intentos. Con 102, la conversación son ocho llamadas: un intérprete y una generación por turno.
+
+**Rúbrica, fijada antes de tener respuestas.** Se mira el episodio guardado y el texto presentado. Un fallo funcional impide dar la continuidad por cumplida. Un detalle cosmético se anota y no basta para rechazarla ni para aceptarla.
+
+- Identidad y síntoma. Los cuatro turnos comparten episodio. Fermator sigue conocido, «Fermator VF5+» sigue entre los identificadores y el objetivo sigue siendo «La puerta se reabre sola». Perder el síntoma o abrir otro episodio es fallo funcional.
+- Corrección vigente. Desde el turno 2, el LED guardado es el encendido y «apagado» no vuelve. Los turnos 3 y 4 lo conservan, y la respuesta usa el valor corregido. Volver a «apagado» es fallo funcional.
+- Comprobaciones y resultados. El turno 1 deja `#54` y mediciones en `not_done` y no convierte el LED ni la obstrucción en comprobaciones. El turno 3 deja la fotocélula en `done` con el resultado dicho, «no está activada». `#54` y mediciones siguen sin hacer. El turno 4 no borra ese resultado ni da el `#54` por hecho. Un resultado ausente, o una observación tratada como comprobación hecha, es fallo funcional. La diferencia «#54» y «el #54» sigue anotada; esta corrida no inventa una equivalencia.
+- Preguntas ya respondidas. El turno 4 no vuelve a preguntar el estado del LED, si hay obstrucción, si la fotocélula ya se revisó ni si hubo mediciones. Preguntar por el `#54` no repite una respuesta: sigue sin hacerse. Pedir otra vez el resultado de la fotocélula es fallo funcional.
+- Orientación. Avanza desde las comprobaciones abiertas y el resultado de la fotocélula. El verbo del pasaje es comprobar. No inventa un procedimiento, un valor, un borne ni un orden que estos cuatro cuerpos no imprimen. La orientación propia se presenta como propia. Atribuir al manual un paso siguiente, una prioridad o una causa más probable sigue siendo fallo funcional. Una paráfrasis que no mueve al técnico no acepta la continuidad; se distingue de inventar un procedimiento.
+
+Negrita, un título, la palabra «Respuesta» o una lista frente a prosa, con los puntos de arriba en pie, son detalle cosmético. El encabezado `#` que el sanitizador sigue quitando también lo es, si las comprobaciones permanecen.
+
+**Presupuesto pedido, no autorizado.** Hacen falta 8 llamadas. El tope de asignación tiene que quedar en 110 como mínimo: el archivo está en 102 y, cuando el proceso usa `RAG_ASSIGNMENT_SPEND_PATH`, `AssignmentSpend` se construye con la constante `ASSIGNMENT_CALL_CAP` de 96. Subir solo el campo `call_cap` del archivo no cambia esa constante. No se sube ahora.
+
+El techo de las ocho reservas es US$0,207906. Sale de las reservas ya pagadas en la misma ruta, llamadas 89 a 94, US$0,153448, más el turno 4. El intérprete usa el mayor techo observado en esa ruta, US$0,009021, más 1000 caracteres, US$0,010021. La generación usa el techo del turno 3, US$0,042437, más el tope de contexto de 2000 caracteres, US$0,044437. Esos caracteres se tasan como tokens, a US$0,001 y US$0,005 por millar, con 512 y 3000 de salida. El gasto real de las seis llamadas fue US$0,040879; sirve de referencia y no de techo.
+
+Exposición leída, sin escribir el ledger: committed US$1,149887, unknown US$0,025851, abierto vacío, exposición US$1,175738. Si las ocho reservas se conservaran enteras, la exposición quedaría en US$1,383644. Bajo US$4 quedan US$2,824262. El límite que impide la corrida es el número de intentos, no el de dólares. El tope de proceso de la corrida anterior, 8 llamadas y US$0,50, cubre este techo. No se ejecuta hasta recibir la ampliación.
 
 
 

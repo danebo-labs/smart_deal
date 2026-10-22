@@ -44,16 +44,31 @@ class SessionContextBuilder
     text
   end
 
-  # Companion-turn context. The case block still uses MAX_PROBLEM_CHARS.
-  # The previous reply is one full prompt_reply and does not pass through
-  # the 200-character cut or MAX_CONTEXT_CHARS. An observation is omitted
-  # only when its normalized text equals the result of a check with the
-  # same correlation. The episode is not modified.
-  def self.companion_context(session, episode: nil)
+  # Companion-turn context. The case and the technician turns use their own
+  # budgets. A line that does not fit is omitted whole and named. The
+  # previous reply is one full prompt_reply and does not pass through the
+  # 200-character cut or MAX_CONTEXT_CHARS. An observation is omitted only
+  # when its normalized text equals the result of a check with the same
+  # correlation. The episode is not modified.
+  COMPANION_CASE_BUDGET = 3_500
+  COMPANION_TURN_BUDGET = 4_000
+  COMPANION_NEGATION = /(?<![[:alnum:]])\b(?:no|ni|nunca)\b(?![[:alnum:]])/i
+  COMPANION_CORRECTION = /\b(?:corrij\w*|correcci[oó]n)\b/i
+
+  def self.companion_case_budget
+    COMPANION_CASE_BUDGET
+  end
+
+  def self.companion_turn_budget
+    COMPANION_TURN_BUDGET
+  end
+
+  def self.companion_context(session, episode: nil, current_message: nil)
     parsed = companion_episode(session, episode)
     trace = { truncated: false }
-    case_text = companion_case(parsed, trace)
-    [ case_text, companion_technician_turns(session), companion_prior_answer(session) ].compact_blank.join("\n\n")
+    case_text = companion_case(parsed, trace, session: session)
+    turns = companion_technician_turns(session, current_message: current_message, trace: trace)
+    [ case_text, turns, companion_prior_answer(session) ].compact_blank.join("\n\n")
   end
 
   def self.companion_episode(session, episode)
@@ -64,30 +79,27 @@ class SessionContextBuilder
     Rag::ActiveEpisode.parse(session.active_episode)
   end
 
-  def self.companion_case(episode, trace)
+  def self.companion_case(episode, trace, session: nil)
     return "" if episode.nil? || episode.blank?
 
-    lines = [ "Caso:" ]
+    units = [ companion_unit("Caso:", keep: true) ]
     goal = episode.goal&.[]("text").to_s.squish
-    lines << "Objetivo: #{goal}" if goal.present?
+    units << companion_unit("Objetivo: #{goal}", keep: true) if goal.present?
     identity = companion_identity(episode)
-    lines << "Identidad: #{identity}" if identity.present?
+    units << companion_unit("Identidad: #{identity}", keep: true) if identity.present?
     observations = companion_observations(episode)
     if observations.any?
-      lines << "Observaciones:"
-      observations.each { |item| lines << "- #{item['text']}" }
+      units << companion_unit("Observaciones:", keep: true)
+      observations.each do |item|
+        line = "- #{item['text']}"
+        units << companion_unit(line, protect: companion_protected_text?(line))
+      end
     end
-    checks = Array(episode.checks).select { |item| item.is_a?(Hash) && item["subject"].present? }
-    if checks.any?
-      lines << "Comprobaciones:"
-      checks.each { |item| lines << companion_check_line(item) }
+    companion_check_lines(episode, session).each do |line|
+      units << companion_unit(line, keep: !line.start_with?("- "), protect: companion_protected_text?(line))
     end
-    text = lines.join("\n")
-    return finish_problem_fit(text, trace) if text.length <= MAX_PROBLEM_CHARS
-
-    trace[:truncated] = true
-    note_omission(trace, "hard_cap", text[MAX_PROBLEM_CHARS..])
-    finish_problem_fit(text[0, MAX_PROBLEM_CHARS], trace)
+    text = fit_companion_units(units, companion_case_budget, trace, "companion_case").join("\n")
+    finish_problem_fit(text, trace)
   end
 
   def self.companion_observations(episode)
@@ -126,22 +138,213 @@ class SessionContextBuilder
     parts.uniq.join(", ")
   end
 
-  def self.companion_check_line(item)
-    subject = item["subject"].to_s.squish
-    state = item["status"].to_s == "done" ? "hecha" : "sin hacer"
-    result = item["result"].to_s.squish
-    line = "- sujeto: #{subject}; estado: #{state}"
-    result.empty? ? line : "#{line}; resultado: #{result}"
+  def self.companion_check_lines(episode, session)
+    checks = Array(episode.checks).select { |item| item.is_a?(Hash) && item["subject"].present? }
+    done, pending = checks.partition { |item| item["status"].to_s == "done" }
+    lines = []
+    if done.any?
+      lines << "Comprobaciones realizadas:"
+      done.each { |item| lines << companion_done_line(item, session) }
+    end
+    if pending.any?
+      lines << "Reportes del técnico sobre comprobaciones no realizadas. No son una agenda ni una tarea prescrita:"
+      pending.each { |item| lines << companion_pending_line(item, session) }
+    end
+    lines
   end
 
-  def self.companion_technician_turns(session)
-    return "" unless session.respond_to?(:episode_prompt_history)
+  def self.companion_done_line(item, session)
+    span = companion_report_span(session, item)
+    result = item["result"].to_s.squish
+    line = "- hecha."
+    line = "#{line} resultado: «#{result}»." if result.present?
+    line + companion_span_clause(span, item["subject"], done: true)
+  end
 
-    turns = session.episode_prompt_history.select { |turn| turn[:role].to_s == "user" }
-    return "" if turns.empty?
+  def self.companion_pending_line(item, session)
+    span = companion_report_span(session, item)
+    "- reporte del técnico, no es una tarea prescrita." + companion_span_clause(span, item["subject"], done: false)
+  end
 
-    lines = turns.map { |turn| "- #{turn[:content]}" }
-    ([ "Turnos del técnico:" ] + lines).join("\n")
+  def self.companion_span_clause(span, subject, done:)
+    case span[:kind]
+    when :original
+      " texto original del mensaje: «#{span[:text]}».#{companion_provenance_clause(span)}"
+    when :truncated_store
+      " texto almacenado truncado, no es el mensaje íntegro: «#{span[:text]}».#{companion_provenance_clause(span)}"
+    else
+      derived = " representación derivada del estado, no es una cita literal del técnico. sujeto: #{subject.to_s.squish}."
+      derived += " el caso no la marca como hecha." unless done
+      derived + companion_provenance_clause(span)
+    end
+  end
+
+  def self.companion_provenance_clause(span)
+    bits = []
+    bits << "correlación #{span[:correlation_id]}" if span[:correlation_id].present?
+    bits << "procedencia del texto: #{span[:provenance]}" if span[:provenance].present?
+    return "" if bits.empty?
+
+    " #{bits.join('. ')}."
+  end
+
+  def self.companion_report_span(session, item)
+    message = companion_message_for(session, item["correlation_id"])
+    base = {
+      correlation_id: item["correlation_id"].to_s.presence,
+      provenance: message.is_a?(Hash) ? message["text_provenance"].to_s.presence : nil
+    }
+    return base.merge(kind: :derived) unless message.is_a?(Hash)
+
+    content = message["content"].to_s
+    if companion_stored_truncated?(content)
+      return base.merge(kind: :truncated_store, text: content)
+    end
+
+    needles = [ item["result"], item["subject"] ].map { |value| value.to_s.squish }.reject(&:empty?)
+    sentences = content.split(/(?<=[.!?])\s+/).map(&:strip).reject(&:empty?)
+    hits = sentences.select { |sentence| needles.any? { |needle| companion_sentence_has?(sentence, needle) } }
+    return base.merge(kind: :original, text: hits.first) if hits.one?
+
+    base.merge(kind: :derived)
+  end
+
+  def self.companion_sentence_has?(sentence, needle)
+    return false if needle.blank?
+    return true if sentence.include?(needle)
+
+    Rag::ObservationText.covered_by?(sentence, needle)
+  end
+
+  def self.companion_message_for(session, correlation_id)
+    return nil if correlation_id.blank?
+    return nil unless session.respond_to?(:conversation_history)
+
+    Array(session.conversation_history).find do |message|
+      message.is_a?(Hash) && message["role"] == "user" && message["correlation_id"].to_s == correlation_id.to_s
+    end
+  end
+
+  def self.companion_stored_truncated?(content)
+    text = content.to_s
+    text.length == ConversationSession::MAX_MSG_LENGTH && text.end_with?("...")
+  end
+
+  def self.companion_protected_text?(text)
+    body = text.to_s
+    body.match?(COMPANION_NEGATION) || body.match?(COMPANION_CORRECTION)
+  end
+
+  def self.companion_unit(text, keep: false, protect: false)
+    { text: text, keep: keep, protect: protect }
+  end
+
+  def self.fit_companion_units(units, budget, trace, part)
+    chosen = units.select { |unit| unit[:keep] }
+    units.reject { |unit| unit[:keep] }.each do |unit|
+      if companion_units_length(chosen + [ unit ]) <= budget
+        chosen << unit
+        next
+      end
+      replaced = false
+      if unit[:protect]
+        chosen.reverse_each do |existing|
+          next if existing[:keep] || existing[:protect]
+          next if existing.equal?(unit)
+
+          trial = chosen.reject { |item| item.equal?(existing) } + [ unit ]
+          next if companion_units_length(trial) > budget
+
+          note_omission(trace, part, existing[:text])
+          trace[:truncated] = true if trace
+          chosen.delete(existing)
+          chosen << unit
+          replaced = true
+          break
+        end
+      end
+      next if replaced
+
+      note_omission(trace, part, unit[:text])
+      trace[:truncated] = true if trace
+    end
+    units.filter_map { |unit| unit[:text] if chosen.any? { |item| item.equal?(unit) } }
+  end
+
+  def self.companion_units_length(units)
+    units.pluck(:text).join("\n").length
+  end
+
+  # Episode user messages in stored order, without the global cap of three.
+  # The current message is left out. A stored cut of 600 characters stays
+  # labeled as truncated. A message that does not fit is omitted whole.
+  def self.companion_technician_turns(session, current_message: nil, trace: nil)
+    messages = companion_episode_user_messages(session)
+    current = current_message.to_s.strip
+    if current.present?
+      messages = messages.reject { |message| message["content"].to_s.strip == current }
+    end
+    return "" if messages.empty?
+
+    header = "Turnos del técnico, en orden. El mensaje de este turno no se repite."
+    units = messages.map { |message|
+      line = companion_turn_line(message)
+      companion_unit(line, protect: companion_protected_text?(message["content"])).merge(message: message)
+    }
+    room = companion_turn_budget - header.length - 1
+    kept = fit_companion_units(units, room, trace, "companion_turn")
+    omitted = units.reject { |unit| kept.include?(unit[:text]) }
+    record_companion_turns(messages, kept, omitted)
+    lines = [ header, *kept ]
+    omitted.each { |unit| lines << companion_omission_line(unit[:message]) }
+    lines.join("\n")
+  end
+
+  def self.companion_turn_line(message)
+    content = message["content"].to_s
+    notes = []
+    notes << "texto almacenado truncado, no es el mensaje íntegro" if companion_stored_truncated?(content)
+    notes << "procedencia: #{message['text_provenance']}" if message["text_provenance"].present?
+    notes << "correlación: #{message['correlation_id']}" if message["correlation_id"].present?
+    prefix = notes.empty? ? "" : "[#{notes.join('. ')}] "
+    "- #{prefix}#{content}"
+  end
+
+  def self.companion_omission_line(message)
+    label = message["correlation_id"].presence || "sin correlación"
+    "Omitido por presupuesto, sin recortar: correlación #{label}, #{message['content'].to_s.length} caracteres."
+  end
+
+  def self.companion_episode_user_messages(session, now: Time.current)
+    return [] unless session.respond_to?(:conversation_history) && session.respond_to?(:episode_history_cutoff)
+
+    cutoff = session.episode_history_cutoff(now)
+    Array(session.conversation_history).select do |message|
+      next false unless message.is_a?(Hash) && message["role"] == "user"
+
+      ts = companion_message_ts(message["ts"])
+      ts && ts >= cutoff && ts <= now
+    end
+  end
+
+  def self.companion_message_ts(value)
+    return nil if value.blank?
+
+    Time.zone.parse(value.to_s)
+  rescue StandardError
+    nil
+  end
+
+  def self.record_companion_turns(messages, kept, omitted)
+    return unless Rag::ValidationCapture.active?
+
+    Rag::ValidationCapture.record(
+      "companion_turns",
+      "budget" => companion_turn_budget,
+      "kept" => kept.size,
+      "seen" => messages.size,
+      "omitted" => omitted.pluck(:text)
+    )
   end
 
   def self.companion_prior_answer(session)

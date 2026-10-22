@@ -333,6 +333,8 @@ No se implementa ahora. Queda antes de cualquier escritura o sincronización de 
 
 `KbSyncService#find_data_source_id` busca el id preferido y, si no está entre las fuentes listadas, avisa y sigue con `summaries.first`. Esa fuente puede ser la antigua o, en cualquier caso, no la de `bulk_chunks/` de `Y7RZWMFJSR` (`PJ0N58DMHG`). Un `start_ingestion_job` por esa selección sincronizaría otra fuente del mismo knowledge base. Antes de F4 hay que eliminar esa selección alternativa, tanto del datasource antiguo como del primero disponible, cuando falle la configuración del pipeline principal. Si el id configurado no aparece en el listado, la sincronización se detiene. El recorrido ya usado en la página 5 de Elemont se niega en ese caso y no llama a este servicio. Hasta dejar cerrado este punto no hay F4. No se implementa en esta corrección. La tabla de mensajes del final de este documento tiene más prioridad que esta limpieza; no la sustituye ni abre F4.
 
+Defecto visual de la página 4, registrado para resolver antes de F4 y no corregido en la candidata de ensamblado. La cobertura la deja contabilizada, no descartada, y no verificable: capa insuficiente, un token significativo. No es precisión baja. El cuerpo certificado `tmp/field_companion/vf5_correction/ingest/bodies/p04.txt` la describe como un único diagrama de conexionado. Las etiquetas pequeñas de bornes, conectores, interruptores y potenciómetros quedan ilegibles, y varios ítems siguen en `DATA_NOT_AVAILABLE` o `REQUIRES_FIELD_VERIFICATION`. No se reinterpreta la figura.
+
 ### F4. Sustitución, sincronización y Retrieve
 
 Solo con la concesión.
@@ -2013,6 +2015,71 @@ Si #54 está en posición normal, entonces procederías a **desconectar la fotoc
 **Gasto.** Un intento, el 132, settled US$0,004355. Techo reservado US$0,020815. Unknown sigue US$0,10214. Ledger: 132 intentos, committed US$1,333686, abierto vacío, `call_cap` 132, tope US$4. Exposición US$1,435826. Del adicional de US$0,10 se usaron US$0,004355. No hubo reintento.
 
 **Conclusión.** Los defectos reaparecen en esta muestra. No demuestra superioridad, estabilidad ni cierre de F3. No se ejecuta otra llamada. F2 sigue cerrada. F3 sigue abierta. F4 y F5 no se ejecutaron.
+
+### Candidata de ensamblado, 22 de octubre de 2026
+
+Una generación. El system A no se tocó. El opt-in `RAG_COMPANION_TURN=1` sigue apagado por defecto. Haiku 4.5 global, temperatura 0,1, `max_tokens` 3000. No hay Retrieve, intérprete, segunda selección ni regla de Fermator, VF5, fotocélula o `#54`. F3 no se cierra.
+
+**Partida.** `82b67b0`. El código de la candidata estaba sin commit encima de ese HEAD. System A SHA-256 `83c457e98134bc388ba172ef70476216ab2190662079adce91088a5dfa50679e`. Ledger leído antes de pagar: 132 intentos, committed US$1,333686, unknown US$0,10214, abierto vacío, `call_cap` 132 en el archivo, tope US$4. Exposición US$1,435826. Esta autorización suma como máximo cuatro intentos: el tope de código pasa a 136 y se escribe en el ledger al iniciar la llamada, sin alterar entradas históricas.
+
+**Recortes, medidos en el código y en el T4 de referencia.** `EPISODE_MAX_USER_MESSAGES` es 3 y se aplica en `episode_prompt_history`. El request de `20261022T180341Z` por eso trae T2, T3 y «¿qué sigue?», y no T1. El corte de 600 caracteres ocurre al guardar, en `history_message` vía `Rag::TurnText.truncate`. `conversation_history` no contiene el mensaje íntegro si superó ese largo: queda en 600 y termina en `...`. El corte de 200 caracteres está en `assemble_context`, sobre el asistente del historial por defecto. No está en `episode_prompt_history` ni en el antecedente del companion, que usa `prompt_reply` hasta `PROMPT_REPLY_MAX_CHARS` y marca `prompt_reply_truncated`. El replay no reconstruye un mensaje ya cortado. T1, T2 y T3 salen de `local_sequence/20261022T143409Z/tN/question.txt`, con procedencia de esa ruta. Ninguno trae el corte de 600. No se guardó el asistente de la secuencia original: esa prosa no salió de esta candidata. Si el episodio tuviera `prompt_reply`, el producto lo incluiría.
+
+**Representación.** Identidad, síntoma y observaciones vigentes se conservan. «no está activada» sale de observaciones porque es el resultado de la comprobación con la misma correlación; el resultado queda en la comprobación hecha, con la frase original «Ya revisé la fotocélula y no está activada.» «No he comprobado el #54.» y «No hice mediciones.» quedan como reportes del técnico, con su frase original, y el encabezado dice que no son una agenda ni una tarea prescrita. No aparece «sin hacer». El estado del episodio no cambia. Si no hay una sola frase original, la línea se marca como representación derivada y no como cita.
+
+**Turnos del companion.** Selección propia, sin cambiar el tope global de tres. Orden de almacenamiento. El mensaje actual no se repite. Presupuesto de 4000 caracteres para los turnos y 3500 para el caso. Lo que no cabe se omite entero y se nombra la correlación y el largo. Una negación o una corrección se protege: no se parte para que quepa. En este T4 cupieron T1, T2 y T3.
+
+**Definiciones.** `Rag::CompanionDefinitionCatalog` es local y de hilo. Nil no lee S3 y no expande. El expansor mira solo los pasajes ya seleccionados. Un identificador explícito es `#N`, `Pin N` o un paréntesis con un solo número. Una lista `(26, 21, 25, 23)` no define cada número. Hace falta el identificador en el encabezado y una palabra distintiva compartida con la frase que lo nombra. Varias correspondencias, o ninguna, no añaden nada. No hay recursión. Una línea entre corchetes, como `[SEARCH_ALIASES: …]`, no confirma: junta palabras de varios identificadores. Tope de cuatro secciones y 6000 caracteres; lo que no cabe se omite entero. Las secciones añadidas entran al prompt, al mapa de citas y a la validación, con página, sección y procedencia. No se inventa un URI de S3.
+
+En los cuatro cuerpos certificados se añadieron, después de ellos, exactamente dos:
+
+- `[5]` página 7, sección 5.5, entrada `21.- Re-apertura`. Procede de `ingest/bodies/p07.txt`. El cuerpo es el párrafo de la entrada, precedido por la línea de 5.5. No se copian las operaciones hermanas.
+- `[6]` página 8, sección 5.11, `5.11 Seguridad (54)`. Procede de `ingest/bodies/p08.txt`. El cuerpo completo es el potenciómetro de fuerza de cierre, regulable de 60 a 150 Nm.
+
+No entraron 8.3, «Poner potenciómetros al mínimo» ni el párrafo de 300 N de `8.- Señal cerrar`. `#8` y `#12` se nombran en el síntoma de abrir y no cerrar; no hubo correspondencia distintiva con sus definiciones. 8.3 no se añade por una regla de este caso. Esa ausencia es una limitación de la candidata, no una conclusión de que 8.3 sea irrelevante.
+
+**Request.** Congelado en `tmp/field_companion/vf5_correction/f3/assembly_candidate/20261022T223719Z`. User SHA-256 `3d50e7e18e1b1358c9db058a57ce4d060f1b46d78f081f591a1d6e691b0a618b`. Cuerpo de invocación SHA-256 `92faf7bf783861e02c106fea3c94bde9d1d246fd1a316d254ce368f4b5c0758e`. La referencia `9dc02d34a45879a48bed6e8e74f5208a6291967981358220a814e108736fc9bc` sigue siendo el T4 de `20261022T180341Z`. El diff separa caso, turnos y fuentes. El caso sustituye «sin hacer» por las frases originales. Los turnos recuperan T1 y dejan fuera «¿qué sigue?». Las fuentes añaden solo `[5]` y `[6]`. Criterios congelados antes de ver la respuesta, SHA-256 `64cc8e752eb9ba6ddc847bb23cadf05888a4d40627caace03e711c7b6c447481`.
+
+**Cliente falso.** Antes de pagar. El ledger no se movió. Una invocación. System, user, parámetros, modelo, cruda, texto extraído, `stop_reason` `end_turn`, presentada, validación, correlación `query:vf5-assembly-capture` e intento 1. La cruda del fixture empieza por `# Captura` y la presentada pierde ese encabezado. El fixture no trae `usage`: el coste queda `unavailable`, no se inventa un importe. Las seis fuentes del mapa de citas llevan la numeración de arriba. El episodio no cambió.
+
+**Cupo, recalculado sobre el request congelado.** Entrada por caracteres más 3000 de salida: techo US$0,023992. Cuatro llamadas: US$0,095968. Cabe en el adicional de US$0,20 y, sumado a la exposición de US$1,435826, queda en US$1,531794, bajo US$4. No se bajó `max_tokens` ni se cambió el modelo. `AWS_MAX_ATTEMPTS=1` y `max_attempts` 1. Sin reintento del SDK.
+
+**Llamada.** Una, la 133, `call_01`. Correlación `query:ca0a4e71-8c0e-4e77-8997-3bb061d22a39`. El user enviado coincide con el congelado. Modelo `global.anthropic.claude-haiku-4-5-20251001-v1:0`, temperatura 0,1, `max_tokens` 3000, `bedrock-2023-05-31`. `stop_reason` `end_turn`. 3227 de entrada, 366 de salida, US$0,005057, latencia 5496 ms. Techo reservado US$0,023992. Publicación `accepted` true, sin razones. Cruda y presentada son el mismo texto, SHA-256 `ae3cc30ee648d17532d63be49a30da82b0eebec7ba6e1e329a74b68f499283af`. El episodio no cambió. R3 no saltó: la pregunta no es el falso positivo conocido de especificaciones sin cita. Los validadores no se tocaron.
+
+**Cruda y presentada.**
+
+```
+El técnico ha confirmado que la fotocélula «no está activada» [3], descartando esa causa. Sin embargo, según la documentación, cuando la puerta se reabre sola, Danebo sugiere tres comprobaciones [3]: la sensibilidad del potenciómetro #54, que la fotocélula no esté activada (ya hecha), y que no haya obstrucción mecánica (ya observada como ausente).
+
+El técnico reporta no haber comprobado el #54. Este potenciómetro regula «la fuerza de cierre de la puerta (sensibilidad a reaperturas)» y es ajustable de 60 a 150Nm [6]. Una sensibilidad demasiado baja permitiría que la puerta se reabre con facilidad.
+
+Dado que la fotocélula está encendida pero no activada, y no hay obstrucción visible, la causa más probable es que el #54 esté configurado con una sensibilidad insuficiente. Esto coincide con el patrón: el LED de fotocélula encendido indica que el sistema está monitoreando, pero sin activación real, y sin obstrucción mecánica, la reapertura apunta a un ajuste de fuerza inadecuado.
+
+¿Puede comprobar la posición actual del potenciómetro #54 y ajustarlo hacia valores más altos de fuerza de cierre para reducir la sensibilidad a reaperturas?
+```
+
+**Evaluación mecánica.** La captura está completa y el request no divergió. Hay una sola generación. La cita entre comillas de la fuerza de cierre está en [6], que es 5.11, página 8. La publicación deja pasar el texto. Eso no es aceptación semántica. Elegir `#54` como foco podía ser válido. No se exigía nombrarlo.
+
+**Evaluación semántica.**
+
+- Reportes. Conserva que el técnico no comprobó `#54` y usa la frase «no está activada». No vuelve a preguntar si la fotocélula está activada. A la vez convierte ese resultado en «descartando esa causa». «No activada» no es avería, falta de función ni causa excluida. [3] pide comprobar que la fotocélula no esté activada; no dice que ese resultado cierre la causa.
+- Obstrucción. «ya observada como ausente» y «sin obstrucción mecánica» amplían «No veo obstrucción». La observación no descarta la obstrucción mecánica.
+- Definición. El rango 60 a 150 Nm y la frase de fuerza de cierre están en la fuente añadida y la cita apunta a [6]. Nombrar el ajuste no autoriza ordenarlo para esta falla.
+- Operación. «ajustarlo hacia valores más altos de fuerza de cierre» no está en 5.11 ni en [3]. [3] dice comprobar la sensibilidad. La dirección, «demasiado baja» y «sensibilidad insuficiente» son un objetivo inventado. La recomendación pierde la condición de comprobar y la sustituye por un sentido de ajuste que el texto enviado no establece.
+- LED. [4] dice que el indicador se activa cuando la fotocélula o la entrada de reapertura está activada. «el sistema está monitoreando, pero sin activación real» no está en esa frase. El LED encendido y la fotocélula no activada quedan unidos a una causa ya elegida, no a la disyunción.
+- Prioridad. «Danebo sugiere tres comprobaciones» no dice que el fabricante fije un primer paso. La lista de [3] sigue siendo una lista. No basta para aceptar el resto.
+- Pregunta. Preguntar por la posición del `#54` puede ser pertinente. Pedir ajustarlo hacia valores más altos no lo es.
+- Utilidad. El foco es concreto y la respuesta es una sola prosa. No es útil: descarta de más y manda un ajuste con dirección no documentada en las fuentes enviadas.
+- Publicación. Llegó al técnico. Una salida publicada con ese contenido no cuenta como éxito.
+
+**Parada.** La primera muestra ya trae una operación con valor objetivo inventado y una recomendación que pierde la condición de comprobar. No se hicieron las otras tres llamadas. Un descarte ampliado en una sola muestra no se vuelve aceptable por no haberse repetido. No se abrió otra variante.
+
+**Gasto.** Un intento, el 133, settled US$0,005057. Unknown sigue US$0,10214. Ledger: 133 intentos, committed US$1,338743, abierto vacío, `call_cap` 136, tope US$4. Exposición US$1,440883. Del adicional de US$0,20 se usaron US$0,005057. Quedan tres intentos de esta autorización sin usar. No hubo reintento.
+
+**Tests.** Minitest, semilla 2210: `companion_assembly_test`, `session_context_builder_test`, `companion_turn_generation_test`, `evidence_record_context_test` y `local_pass_ledger_test`. 95 corridas, 990 aserciones, 0 fallos, 0 errores. Cubren T1 y la corrección del LED en el contexto de T4, el resultado literal de la fotocélula, «No hice mediciones.» sin volverlo tarea, la expansión con página y procedencia, la falta de expansión ante un identificador ambiguo o una línea de alias, el tope global de tres y el corte de 200 en el historial por defecto, y la generación solo con el opt-in.
+
+**Decisión.** Candidata rechazada como solución suficiente. El ensamblado hace lo que se le pidió y la respuesta del proveedor sigue descartando causas y ordenando un ajuste que las fuentes enviadas no dirigen. No queda bloqueada por captura, coste o falta de una capacidad que solo pudiera sustituirse a mano. No está prometida para una prueba conversacional. Un resultado negativo no demuestra que cualquier cambio de contexto sea irrelevante. Cuatro respuestas favorables tampoco habrían cerrado F3.
+
+**Pendiente.** La expansión no corre en un turno real: hace falta el catálogo local y no hubo Retrieve. No hay selección de aplicabilidad distinta del filtro de identidad ya existente. 8.3 no se incorporó. El defecto visual de la página 4 sigue abierto antes de F4. El sentido de giro de una figura no se fijó. R3 y el resto de validadores no cambiaron; esta muestra no disparó el falso positivo de especificaciones, y la publicación aceptada no vio el descarte ni la dirección inventada. F2 sigue cerrada en local. F3 sigue abierta. F4 y F5 no se ejecutaron. La demo no está lista.
 
 
 

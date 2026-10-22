@@ -1066,13 +1066,16 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
     )
 
     text = SessionContextBuilder.companion_context(session, episode: episode)
-    observations = text[/Observaciones:.*?(?=\nComprobaciones:)/m]
+    observations = text[/Observaciones:.*?(?=\nComprobaciones realizadas:)/m]
 
     assert_equal before, JSON.generate(episode.to_h)
     assert_includes text, "Objetivo: La puerta se reabre sola"
     assert_includes text, "Fermator"
-    assert_includes text, "sujeto: fotocélula; estado: hecha; resultado: no está activada"
-    assert_includes text, "sujeto: recorrido; estado: hecha; resultado: puerta libre"
+    assert_includes text, "hecha. resultado: «no está activada»."
+    assert_includes text, "hecha. resultado: «puerta libre»."
+    assert_includes text, "representación derivada del estado, no es una cita literal del técnico. sujeto: fotocélula."
+    assert_includes text, "representación derivada del estado, no es una cita literal del técnico. sujeto: recorrido."
+    assert_not_includes text, "sin hacer"
     assert_includes observations, "LED encendido"
     assert_includes observations, "puerta libre"
     assert_not_includes observations, "no está activada"

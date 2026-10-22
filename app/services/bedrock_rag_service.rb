@@ -570,10 +570,11 @@ class BedrockRagService
       episode: episode,
       raw_question: raw_question
     )
+    companion_chunks = companion_turn ? companion_assembled_chunks(applied.chunks) : nil
     prompt = if companion
       guidance.to_s
     elsif companion_turn
-      companion_turn_prompt(raw_question, applied.chunks, conv_session: conv_session, episode: episode)
+      companion_turn_prompt(raw_question, companion_chunks, conv_session: conv_session, episode: episode)
     else
       document_identity_generation_prompt(
         question, applied.chunks,
@@ -647,7 +648,7 @@ class BedrockRagService
     result = finish_document_identity_generation(
       question: question,
       raw_answer: raw_answer,
-      chunks: applied.chunks,
+      chunks: companion_turn ? companion_chunks : applied.chunks,
       response_locale: response_locale,
       retrieval: retrieval,
       companion: companion,
@@ -1258,10 +1259,27 @@ class BedrockRagService
 
   def companion_turn_prompt(raw_question, chunks, conv_session:, episode:)
     parts = [ "Mensaje del técnico:\n#{raw_question.to_s.strip}" ]
-    context = SessionContextBuilder.companion_context(conv_session, episode: episode)
+    context = SessionContextBuilder.companion_context(
+      conv_session, episode: episode, current_message: raw_question
+    )
     parts << context if context.present?
     parts << companion_source_block(chunks)
     DocumentIdentityPrompt.new(system: companion_turn_system_prompt, user: parts.join("\n\n"))
+  end
+
+  def companion_assembled_chunks(chunks)
+    result = Rag::CompanionDefinitionExpander.expand(
+      chunks, catalog: Rag::CompanionDefinitionCatalog.current
+    )
+    if Rag::ValidationCapture.active?
+      Rag::ValidationCapture.record(
+        "companion_definitions",
+        "catalog" => Rag::CompanionDefinitionCatalog.current.nil? ? "absent" : "present",
+        "added" => result.added,
+        "omitted" => result.omitted
+      )
+    end
+    result.chunks
   end
 
   def companion_turn_system_prompt
@@ -1275,11 +1293,22 @@ class BedrockRagService
       name = metadata["canonical_name"].presence || metadata["original_filename"].presence || "DATA_NOT_AVAILABLE"
       page = metadata["page_number"].presence || "DATA_NOT_AVAILABLE"
       narrative = Rag::DocumentIdentityScope.omit_terminal_evidence_records(chunk[:content].to_s).strip
-      lines << "[#{index + 1}] Documento: #{name}. Página: #{page}."
+      lines << companion_source_heading(index, name, page, metadata)
       lines << narrative
       lines << ""
     end
     lines.join("\n")
+  end
+
+  def companion_source_heading(index, name, page, metadata)
+    heading = "[#{index + 1}] Documento: #{name}. Página: #{page}."
+    return heading if metadata["definition_of"].blank?
+
+    section = metadata["section"].presence
+    label = metadata["section_heading"].presence
+    heading += " Sección: #{section}." if section.present?
+    heading += " Entrada: #{label}." if label.present? && label != section
+    "#{heading} Procedencia: definición de #{metadata['definition_of']} en el mismo documento. #{metadata['definition_provenance']}"
   end
 
   def companion_publication_sources(chunks)

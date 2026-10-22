@@ -1826,5 +1826,121 @@ Esa sustitución es mecánica. No acredita fidelidad del generador ni utilidad p
 
 **Decisión.** Sonnet 4.5 no queda aceptado como generador de este control. No se prueba otro modelo ni otra variante. El opt-in sigue apagado por defecto. Esta muestra no es estabilidad, ni cierra F3, ni abre F4 o F5. La recuperación real sigue sin medirse.
 
+### Distinción entre comprobación y descarte, 22 de octubre de 2026
+
+Experimento aislado. No modifica el producto ni valida una conversación. La hipótesis es que el prompt regula cuándo una comprobación está hecha y no distingue bastante ese estado de un descarte causal. Sigue siendo hipótesis: estas muestras no la demuestran ni la descartan.
+
+**Referencia.** `tmp/field_companion/vf5_correction/f3/peticion_efectiva_20261022.md` contiene el system y el request de las capturas, sin el salto de línea final. El request de la tanda es el archivo de `20261022T180341Z`, byte a byte, SHA-256 `9dc02d34a45879a48bed6e8e74f5208a6291967981358220a814e108736fc9bc`. El mismo archivo está en la captura de Sonnet. System A es el system de esa captura y `app/prompts/bedrock/companion_turn.txt`, SHA-256 `83c457e98134bc388ba172ef70476216ab2190662079adce91088a5dfa50679e`. Ese prompt de la aplicación no se editó.
+
+**Versiones, fijadas antes de llamar.** A es el system completo. B sustituye solo el bloque de las cuatro líneas sobre reportes, observación y comprobación hecha. El prefijo y el sufijo coinciden. SHA-256 del bloque retirado `2d7af68c4fbda52a219c95a103b8bf65992012cff8dc8dc32ffebce43d381da4`. SHA-256 del bloque nuevo `c47bd3164803256763435427f79e2000662eeaba1150da348fd6ddbc7cbcf068`. System B SHA-256 `4ce202020e185f8bbaf8ce3fda833fd36b2cb14be4afa614d25180b1d601044d`. El bloque nuevo no nombra fotocélula, LED, componentes ni una respuesta esperada. No se cambió después de ver las salidas.
+
+**Cliente falso.** Antes de pagar, dos invocaciones stub, A y B. El ledger no cambió. Cada captura trae request, system, parámetros, cruda, presentada, transformaciones, `stop_reason`, usage y consumo. El request enviado coincide en las dos. El diff capturado es ese bloque. La presentada del fixture no es copia de la cruda.
+
+**Cupo, leído antes de pagar.** 125 intentos, committed US$1,306499, unknown US$0,10214, abierto vacío, 125 entradas, `call_cap` 132, tope US$4. Exposición US$1,408639. La reserva usa un token por carácter y la salida máxima. A: 6238 caracteres, techo US$0,021238. B: 6488 caracteres, techo US$0,021488. Seis llamadas: US$0,128178. Con esa reserva, la exposición habría sido US$1,536817. Cabe bajo US$0,20, bajo US$4 y en el cupo: 125 más 6 llega a 131. No se subió ningún tope.
+
+**Llamadas.** Seis, alternadas A/B, `20261022T202355Z`. Haiku 4.5 global, temperatura 0,1, `max_tokens` 3000. Cada una lleva el mismo request y solo su system. Sin historial de otra muestra, sin intérprete y sin Retrieve. Las seis devolvieron `end_turn`. Una invocación por muestra. Los intentos 1 a 125 quedaron como estaban. Capturas en `tmp/field_companion/vf5_correction/f3/ab_fidelity/20261022T202355Z/`.
+
+| Muestra | Intento | Entrada | Salida | Coste | Latencia | Cruda SHA-256 | Presentada |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 01 A | 126 | 2189 | 309 | US$0,003734 | 4652 ms | `43addef2c11ab8c8a2dd797e22ee97280a5355c8c32b0672a48d4335a02180d3` | igual, `accepted` true |
+| 02 B | 127 | 2250 | 246 | US$0,003480 | 4086 ms | `cca79f4b24c5e8f5d4546636071e51763a9ef68766e9769552c5b7e130581af4` | igual, `accepted` true |
+| 03 A | 128 | 2189 | 284 | US$0,003609 | 4091 ms | `fbea6653c2929733a567b8608189e30e626632a38d7964cf98b420c81c9b8614` | abstención, R2 |
+| 04 B | 129 | 2250 | 378 | US$0,004140 | 5231 ms | `148ee15e174da9d1d6d8090bd58f74f18faed869f0e83aaace04953209de1864` | igual, `accepted` true |
+| 05 A | 130 | 2189 | 296 | US$0,003669 | 4284 ms | `4a9ab7266fd562e61b6452cf539f8302684dfa0d9263ee8ce7ed6370e606c5db` | igual, `accepted` true |
+| 06 B | 131 | 2250 | 390 | US$0,004200 | 5296 ms | `642e6f3791eecc964b132b076aa3a21020bb1c03b3a97e466eeac17b9193a50a` | igual, `accepted` true |
+
+La presentada de 03 A tiene SHA-256 `b1e0d6d8cc4be8ab0009666a91ff425a5bf3a42dfd93b66ca85eba34da17a551`. R2 detalla «la fotocélula o la entrada de re-apertura está activada». El texto publicado es «No pude preparar una orientación fiable para este turno; el caso se conserva.» `accepted: true` en las otras cinco es la publicación mecánica. No es aceptación semántica.
+
+**Evaluación de la cruda.** Un sí conserva el criterio. El defecto citado es el que lo rompe.
+
+| Muestra | 1. Resultado | 2. Relación | 3. Prioridad | 4. Traslado | 5. Orientación |
+| --- | --- | --- | --- | --- | --- |
+| 01 A | No. «la reapertura no viene de ahí» cierra la fotocélula como causa. | No. Cita la disyunción de [4] y aun así cierra esa causa. Llama a #54 el siguiente paso de [3]. Atribuye a las mediciones la señal #21 y el voltaje de apertura de [2]. | No. «Según la documentación […] el siguiente paso es» la primera comprobación de [3]. | No. La pregunta pide ajustar #54. Las mediciones reciben #21 y el voltaje del otro síntoma. | No. El foco va con la maniobra de ajustarlo. |
+| 02 B | No. «descartando así esa causa». | No. No usa 5.6. El LED encendido no aparece. La lista de [3] queda como procedimiento, y la fotocélula como «ya hecho». | No. «Según la documentación […] el procedimiento es verificar tres aspectos». | No. Pide «medir o ajustar» la posición del #54. | No. La orientación es esa medición o ese ajuste. |
+| 03 A | Sí. Conserva «no está activada» y no la llama descarte ni avería. | No. Usa la disyunción y apunta al otro ramal. A la vez llama a #54 el siguiente paso documentado y pide el TEST sin «si el problema persiste». | No. «Según la documentación […] el siguiente paso es» la frase de #54. | No. Pide desconectar y pulsar TEST ahora, y habla de «tocar el potenciómetro». | No. La pregunta toma el TEST como paso previo. La presentada, además, es abstención y no orienta. |
+| 04 B | No. «descarta una obstrucción en la célula» y marca el estado como «ya descartado». | No. No usa 5.6. El LED encendido y el resultado quedan unidos a un desajuste del #54. «No hay obstrucción visible» sí conserva el reporte. | No. Presenta los tres ítems como focos de la documentación y arma la secuencia «primero ajustar #54». | No. Convertir la comprobación en ajustar #54. | No. Pregunta si ya lo midió o lo ajustó, o si necesita cómo hacerlo. |
+| 05 A | No. «descarta que la reapertura sea causada por la fotocélula» y dice que no está funcionando. | No. No usa 5.6. El LED encendido queda como fotocélula que no funciona. | No. «el siguiente paso es» y «es el paso que corresponde ahora», con [3]. | No. «medir o ajustar», «demasiado alto» y «reducir la sensibilidad». | No. La orientación incluye esa medición o ese ajuste. |
+| 06 B | No. «descarta una obstrucción en el sensor» y «ya descartado». | No. Los tres ítems pasan a «causas posibles». El LED encendido no se relaciona con 5.6. | No. «según la documentación […] hay tres causas posibles». | No. Pide «medir su valor actual». El TEST se ofrece sin la condición de que el problema persista. | No. Ofrece dos maniobras: medir el #54 o desconectar y hacer el TEST. |
+
+**Señal.** No hay señal favorable para B. En el criterio que la hipótesis nombra, las tres B amplían «no está activada» a un descarte. Dos A también. La única cruda que no lo amplía es 03 A, y falla los otros cuatro criterios; su presentada no llega al técnico. Ninguna B usa el pasaje 5.6. Las seis fallan relación, prioridad, traslado y orientación útil. La variación de redacción no es una mejora de B. Tres muestras por versión no dan tasa, estabilidad ni una causa exclusiva.
+
+**01 A, cruda y presentada.**
+
+```
+Danebo ve que la fotocélula no está activada según la comprobación realizada, pero el LED está encendido. Esto es coherente: el LED de fotocélula se enciende cuando la fotocélula o la entrada de re-apertura está activada [4], pero el técnico ya verificó que la fotocélula no está activada, así que la reapertura no viene de ahí.
+
+Según la documentación, cuando la puerta se reabre sola, el siguiente paso es «comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)» [3]. Esta comprobación está marcada como sin hacer en el caso. Danebo entiende que el potenciómetro podría estar calibrado con una fuerza de re-apertura excesiva, provocando que la puerta se abra nuevamente durante el cierre.
+
+También está pendiente la comprobación de mediciones, que podría revelar si hay una señal de re-apertura (#21) activada de forma errónea o si hay un voltaje incorrecto en la señal de apertura [2].
+
+¿El técnico puede acceder al potenciómetro #54 para verificar su posición actual y ajustarlo si es necesario?
+```
+
+**02 B, cruda y presentada.**
+
+```
+El técnico ha confirmado que la fotocélula no está activada [turno 2], descartando así esa causa. Según la documentación, cuando la puerta se reabre sola, el procedimiento es verificar tres aspectos [3]: la sensibilidad del potenciómetro #54, que la fotocélula no esté activada (ya hecho), y que no haya obstrucción mecánica.
+
+El sujeto #54 está sin hacer [caso]. Danebo sugiere comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54) como siguiente paso, ya que es el elemento de control directo sobre cuánta fuerza aplica el sistema para reabrirse, y su desajuste podría causar que la puerta se reabra con sensibilidad excesiva incluso sin activación de fotocélula.
+
+¿El técnico puede acceder al potenciómetro #54 para medir o ajustar su posición actual?
+```
+
+**03 A, cruda.**
+
+```
+Danebo ve que la fotocélula no está activada según la comprobación realizada, pero el LED está encendido. Esto es coherente: el LED se enciende cuando «la fotocélula o la entrada de re-apertura está activada» [4], pero el técnico verificó que la fotocélula en sí no lo está. Eso significa que probablemente sea la entrada de re-apertura la que está activa, o hay otra causa.
+
+Según la documentación, ante una puerta que se reabre sola, el siguiente paso es «comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)» [3]. Esta comprobación está marcada como sin hacer en el caso. Danebo también sugiere descartar una obstrucción mecánica: si desconectas la fotocélula y pulsas TEST, y la puerta no se abre o cierra completamente, habría obstrucción [3].
+
+Antes de tocar el potenciómetro, ¿has desconectado la fotocélula y pulsado TEST para verificar si hay obstrucción mecánica?
+```
+
+**03 A, presentada.**
+
+```
+No pude preparar una orientación fiable para este turno; el caso se conserva.
+```
+
+**04 B, cruda y presentada.**
+
+```
+El técnico ha confirmado que la fotocélula no está activada [turnos], lo que descarta una obstrucción en la célula como causa directa de la reapertura. Sin embargo, según la documentación, cuando «la puerta se re-abre sola» hay tres focos a verificar: el potenciómetro #54, el estado de la fotocélula (ya descartado) y obstrucción mecánica [3].
+
+El potenciómetro #54 de regulación de fuerza de re-apertura aún no ha sido comprobado [caso]. Este componente controla la sensibilidad con la que el sistema interpreta señales de re-apertura; si está mal calibrado, puede provocar que la puerta se reabra sin causa aparente. Dado que el LED de fotocélula está encendido pero la célula no está activada [turnos], y que no hay obstrucción visible [observaciones], la desviación en el ajuste de #54 es el siguiente punto crítico.
+
+La documentación también menciona que si el problema persiste después de desconectar la fotocélula y pulsar TEST, habría obstrucción mecánica [3]. Esto sugiere una secuencia: primero ajustar #54, y si la reapertura continúa, entonces desconectar la fotocélula para aislar si hay un obstáculo físico que el sistema está detectando.
+
+¿Ha medido o ajustado ya el potenciómetro #54, o necesita orientación sobre cómo hacerlo?
+```
+
+**05 A, cruda y presentada.**
+
+```
+Danebo ve que la fotocélula no está activada según la comprobación realizada, y que el LED está encendido pero sin que la fotocélula esté funcionando. Esto descarta que la reapertura sea causada por la fotocélula detectando una obstrucción.
+
+Según la documentación, cuando la puerta se reabre sola, el siguiente paso es «comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)» [3]. Esta comprobación está marcada como sin hacer en el caso, así que es el paso que corresponde ahora.
+
+El potenciómetro #54 controla la fuerza con la que la puerta se reabre. Si está ajustado demasiado alto, puede causar que la puerta se abra sola incluso sin una orden de reapertura legítima. Danebo sugiere medir o ajustar este potenciómetro para reducir la sensibilidad de reapertura y verificar si el problema se resuelve.
+
+¿Has localizado el potenciómetro #54 en el módulo VF5+ y puedes acceder a él para comprobar su posición actual?
+```
+
+**06 B, cruda y presentada.**
+
+```
+El técnico ha confirmado que la fotocélula no está activada [turnos], lo que descarta una obstrucción en el sensor. Sin embargo, según la documentación, cuando «la puerta se re-abre sola» hay tres causas posibles a verificar: la sensibilidad del potenciómetro #54, que la fotocélula no esté activada (ya descartado), y obstrucción mecánica [3].
+
+Danebo ve dos caminos desde aquí. El primero es comprobar el potenciómetro de regulación de fuerza de re-apertura (#54), que está en la lista de comprobaciones pero sin hacer. Este ajuste controla cuánta fuerza se aplica para abrir la puerta; si está demasiado sensible, puede provocar reaperturas no deseadas. El segundo es desconectar la fotocélula y pulsar el botón de TEST para aislar si hay obstrucción mecánica que impida el cierre completo [3].
+
+Dado que el LED de fotocélula está encendido pero el sensor no está activado, Danebo sugiere que el siguiente paso sea medir la sensibilidad del potenciómetro #54 antes de descartar causas mecánicas, ya que es el control directo de la fuerza de reapertura y está pendiente de comprobación.
+
+¿El técnico puede acceder al potenciómetro #54 para medir su valor actual, o prefiere primero desconectar la fotocélula y hacer el test de cierre para descartar obstrucción mecánica?
+```
+
+**Gasto.** Seis intentos, 126 a 131, settled. Suman US$0,022832. Unknown sigue US$0,10214. Ledger: 131 intentos, committed US$1,329331, abierto vacío, `call_cap` 132, tope US$4. Exposición US$1,431471. Del adicional de US$0,20 se usaron US$0,022832. No hubo reintento, fallback ni otra variante.
+
+**Decisión.** B no entra al prompt. El opt-in sigue apagado. No se ejecutó conversación ni otra tanda. F2 sigue cerrada. F3 sigue abierta. F4 y F5 no se ejecutaron. Esta tanda no es estabilidad ni cierra la hipótesis.
+
 
 

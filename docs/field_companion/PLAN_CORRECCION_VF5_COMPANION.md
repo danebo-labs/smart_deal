@@ -1,6 +1,291 @@
 # Corrección y validación del companion sobre el VF5
 
+## Validación de Opus — F3: desambiguación progresiva (23 de octubre de 2026, vigente para Grok)
+
+**Precedencia.** Esta sección manda sobre todo lo que sigue. Después vale la «Revisión para Opus — F3: desambiguación progresiva» de Codex, solo en lo que esta sección conserva. Luego, la «Validación de Opus» anterior y el historial. Esta validación no implementa producto, no invoca modelos, no toca el ledger ni los caps, no escribe en S3, no sincroniza la KB y no autoriza gasto.
+
+### 1. Veredicto
+
+**La dirección de Codex se acepta y su diseño se sustituye por uno menor.** Los seis defectos capturados se corrigen sin proposiciones, sin `requirements_for` y sin un intérprete de conectores. Las piezas son cuatro:
+
+- quitar una regla de repetición y un rescate léxico;
+- añadir una comprobación temporal cerrada sobre el sustantivo que distingue el caso;
+- añadir un campo `question_about` al plan;
+- añadir el tipo de pendiente `documented_context`, transportado por el camino de publicación que ya existe.
+
+Los motivos:
+
+- **T3.** El modelo **sí** propuso la pregunta pertinente en T3, T4, A y B («¿Está activada la entrada de re-apertura (#21)?»). La bloquearon dos reglas concretas: el identificador I4 y la inclusión de raíces del hecho dentro de la pregunta. Quitar esas dos reglas basta para que se publique. No hace falta un motor semántico.
+- **A/B.** El paso del patín no pasó por una lectura temporal errónea de Ruby. Pasó porque `case_distinguishes?` lo **autoriza** cuando comparte raíces. Basta con que el descubrimiento léxico deje de autorizar y con una regla cerrada: el marcador temporal más cercano antes del sustantivo que distingue el caso. Con los textos literales capturados, A sale `incompatible` y B `compatible` (prueba en seco, sección 7).
+- **Las preguntas de T1 y T2 no eran preguntas de desambiguación perdidas.** T1 pedía la «posición actual» del #54, que es la comprobación misma del paso y acerca un ajuste. T2 presuponía que la fotocélula estaba bloqueada, aunque 5.6 dice fotocélula **o** entrada 21, y añadía «línea de visión», un concepto que no está en la fuente. Esos rechazos son aceptables. Lo que falta es una salida segura cuando una pregunta pertinente falla solo por redacción, y eso se resuelve con una pregunta derivada de la cita literal, no relajando el vocabulario.
+
+Lo que el modelo interpreta: qué observación corresponde a qué síntoma documentado, qué pregunta hace falta y a qué apartado apunta. Lo que Ruby comprueba: procedencia y literalidad, que haya un sustantivo distintivo compartido, que no choque el marcador temporal cerrado ni la negación sobre ese sustantivo, que la pregunta no repita lo ya respondido, y que pregunta y pendiente lleguen publicadas. Si Ruby no puede confirmar un caso, no lo publica como aplicable y pregunta. No lo da por bueno ni bloquea la orientación general.
+
+### 2. Qué se conserva, qué se corrige y qué se difiere de la propuesta de Codex
+
+| Punto de Codex | Decisión |
+| --- | --- |
+| 1. Resultado de check promovido a identificador | **Se conserva**, reducido a una regla exacta (C1). |
+| 2. Sujeto, atributo y alcance en la repetición | **Se sustituye.** Se quita la dirección «hecho contenido en la pregunta» y se conserva «pregunta contenida en un hecho». Se añaden la repetición por destino ya resuelto y por texto ya preguntado (C2). Sin proposiciones. |
+| 3. Decisión única de aplicabilidad | **Se conserva** como núcleo (C3). El check decide y el render solo consume. |
+| 4. Proposiciones, requisitos, negación y temporalidad generales | **Se sustituye** por `CompanionCaseRelation`: sustantivo distintivo tras artículo, marcador temporal más cercano de una lista cerrada y negación cercana. Lo que no puede confirmar queda `unresolved`. |
+| 5. Schema `context.bindings/ask` | **Se sustituye** por `question_about` (hasta dos ids). Las asociaciones reutilizan `links`. |
+| 6. Aclaración como respuesta suficiente | **Se conserva** (C4). |
+| 7. Pendiente `documented_context` | **Se conserva, reducido** (C5): pregunta y destinos. Se instala solo al publicar, una respuesta breve se ata en el reducer y no se retiene una pregunta ignorada. |
+| 8. Contexto hermano desde el catálogo, con herencia de apartado entre páginas | **Se sustituye** por la rehidratación del chunk destino de la pregunta publicada, por `filename` (C6). La reconstrucción general de apartados se difiere. |
+| 9. Siete recorridos, 36 llamadas, US$1,50 | **Se sustituye** por la tanda Q1 de la sección 6 (≤ 12 invocaciones, sobre de US$0,30), sin autorizar. |
+| Rúbrica de Opus anterior: acción de otro caso «condicionada (si…)» detrás de una pregunta | **Se retira** por la decisión de Lahiri: no se indica una acción cuya aplicabilidad sigue incierta. Desaparece el encabezado «Si lo que ves es…». |
+
+**Diferido, sin fecha en F3:** proposiciones y requisitos en `ReportedOperation`; `case_candidates` y `requirements_for`; herencia de apartados entre páginas; recordar una vez una pregunta ignorada; atributos de checks más allá de la familia de operación; recorridos R3, R5 y R6 con modelo real; cambio de `MAX_TOKENS`. Cada uno entra solo si una captura real demuestra el defecto.
+
+### 3. Diseño mínimo para Grok
+
+Sin migración, sin llamada nueva, sin gema y sin cambios de F2, de ingesta, de modelo ni de presupuesto. Una sola clase nueva: `Rag::CompanionCaseRelation`. Cada cambio empieza por un test que falla.
+
+#### C1. Un resultado no es identidad (P1)
+
+- **Defecto.** En T3, `episode_after.json` contiene el identificador «no está activada» con la misma `correlation_id` que el check `{fotocélula, done, no está activada}`. `CompanionCaseFacts` lo publica como I4.
+- **Cambio.** `WorkContextReducer#write_assertions`: antes de `append_identifier!`, se omite el identificador cuyo `FollowupQueryRewriter.normalize_label` sea igual al de un `result` de `@perception.checks` del mismo turno. En lectura histórica, `SessionContextBuilder.companion_identity`, o `CompanionCaseFacts#initialize` si es más local, omite un identificador cuya etiqueta sea igual a un `result` de un check guardado **con la misma correlation_id**. No se migran sesiones.
+- **Pruebas.** El raw del intérprete de T3 da un episodio sin ese identificador y con el check intacto. `t3/episode_after.json` histórico da `CompanionCaseFacts` sin I4. Caso negativo: la misma etiqueta con otra correlation_id se conserva, y «Fermator VF5+» se conserva.
+- **Si no se puede resolver:** el comportamiento es el actual. C2 ya impide que ese identificador bloquee preguntas.
+
+#### C2. Repetición: lo preguntado, no lo mencionado (P2)
+
+- **Defecto.** `fact_covered_by_question?` rechaza toda pregunta que contenga el núcleo de un hecho, aunque lo use como premisa o pregunte por otro componente: I4 = {`activ`} ⊂ la pregunta sobre #21.
+- **Cambio.** En `CompanionPlanCheck#repeated_fact` se elimina la rama `fact_covered_by_question?`. Se conserva `question_covered_by_fact?`: lo preguntado, sin las palabras interrogativas, cabe en el núcleo de un hecho. Se añaden dos motivos más:
+  - `repeats_ask`: el texto normalizado es igual a una pregunta ya respondida (`answers.q`, ver C5).
+  - `already_answered`: un destino de `question_about` ya tiene respuesta cerrada, o asociación `compatible` o `incompatible` (C3).
+- **Entrada y salida.** El plan, los hechos y las afirmaciones entran. Sale la pregunta o un rechazo con su motivo.
+- **Pruebas** con `tool_input` capturados:
+  - T3: «¿Está activada la entrada de re-apertura (#21)?» se conserva.
+  - T4: «¿El LED de fotocélula encendido se debe a la entrada… (#21)…?» se conserva. La observación O3 es premisa, no repetición.
+  - «¿Está activada la fotocélula?» con C1 da `repeats_fact:C1`. «¿Está encendido el LED de fotocélula?» con O3 da `repeats_fact:O3`.
+  - Fuera del VF5: con «Revisé la válvula V1 y no está activada», «¿Está activada la válvula V2?» se conserva y «¿…V1?» se rechaza.
+- **Si no se puede resolver:** sin destino ni antecedente, solo rige `question_covered_by_fact?`.
+
+#### C3. Asociación de caso: una sola decisión que vincula check y render (P3, P6)
+
+- **Defecto.** En A, el link O4→S1.3 se rechazó por casualidad (`order`), y S1.4 sobrevivió por `case_distinguishes?` (raíces «patín» y «cerrar»). El render recalculó esa función y escribió «Para este síntoma». En B, el link correcto cayó por `ungrounded:sintoma`.
+- **Nueva `app/services/rag/companion_case_relation.rb`.** `.call(fact_text:, item_text:, goal_text:)` devuelve `{relation: :compatible | :incompatible | :unresolved, reason:, anchors:}`:
+  1. *Anclas* = raíz (`CompanionPlanCheck.stem`) de la palabra que sigue a un artículo (`el la los las un una unos unas del al`) en el texto del ítem, menos `symptom_stems(goal)`, `GENERIC_STEMS` y `CONNECTORS`. Si no hay anclas: `unresolved/no_anchor`.
+  2. Anclas compartidas con cualquier palabra del hecho. Si no hay ninguna: `unresolved/anchor_missing`.
+  3. Para cada ancla compartida se busca el marcador más cercano en las 8 palabras anteriores, en el hecho y en el ítem. La lista es cerrada:
+     - `before`: «antes de», «antes del», «antes que»;
+     - `during`: «cuando», «mientras», «durante»;
+     - `after`: «después de», «después del», «después que», «tras», «una vez que».
+
+     También se mira la negación (`CompanionPlanCheck::NEGATION`) en las 4 palabras anteriores.
+  4. `incompatible` si los dos marcadores existen y son distintos, o si la negación difiere. `unresolved/condition_not_stated` si el ítem tiene marcador y el hecho no. En los demás casos, `compatible`.
+
+  No se amplía la lista para hacer pasar un caso. Una forma no reconocida da `unresolved`, que lleva a preguntar y nunca a publicar.
+- **`CompanionPlanCheck#call`.**
+  - Para cada link de un hecho `observation` (incluidas las respuestas de C5) a un `item` o a un paso o texto de un ítem que no supera `item_applicable?`, se calcula la relación **antes de `reading_reason` y con independencia de él**. El link solo sigue en `links` (y se renderiza como «lectura») si su reading pasa. La asociación se guarda aparte.
+  - Si para el mismo ítem hay una asociación `incompatible` y otra `compatible`, gana `incompatible`.
+  - `Result` gana `associations` (`[{fact, statement, item, relation, reason}]`) y `confirmed_items` (ítem → `"goal"` o id del hecho).
+- **Autorización de pasos.** `#keep_step?` queda así: el ítem del paso es `item_applicable?`, o tiene asociación `compatible`, o tiene una respuesta `yes` atada (C5). Se eliminan como autorización `case_distinguishes?`, `linked_to_item?` y `distinguishing_question?` (si nadie más las usa, se borran). Los motivos de rechazo son `case_incompatible`, `case_unresolved` y `case_unconfirmed`.
+- **`CompanionPlanRender`.**
+  - `#step_heading` lee `check.confirmed_items`: `"goal"` da «Para este síntoma, «ítem», la documentación indica [s]:»; un hecho da «Para lo que informaste, «hecho», la documentación indica en «ítem» [s]:». Se borra la rama «Si lo que ves es…», y `self.case_distinguishes?` si queda sin uso.
+  - Una asociación `incompatible` produce una línea: «La documentación trata aparte «ítem» [s]; lo que informaste, «hecho», no coincide con esa condición, así que esa indicación no se aplica aquí.»
+- **Pruebas.**
+  - A capturado: S1.4 cae por `case_incompatible`. No aparece el paso del patín ni un encabezado de confirmación para la p13. Sí aparece la línea de incompatibilidad, y se mantiene el grupo de la p12. Lo mismo con el link retirado (`case_unconfirmed`) y con el reading vacío.
+  - B capturado: `compatible`, S1.4 se conserva con «probablemente» y el encabezado cita el hecho, aunque el reading falle.
+  - `CompanionCaseRelation` con los casos de la sección 7, incluido el fixture de la bomba.
+  - La pregunta sobre #21 no libera S1.4 en A.
+- **Si no se puede resolver:** `unresolved`. Los pasos de ese ítem no se publican y se aplica la pregunta derivada de C4.
+
+#### C4. Pregunta con destino documental; la aclaración puede ser todo el turno (P4)
+
+- **Defecto.** Ninguna pregunta llegó publicada. `Result#usable?` exige links o steps.
+- **Schema y prompt.** `CompanionPlan::TOOL_SCHEMA` gana `question_about`: un array de 0 a 2 ids de afirmaciones `item` o `text`, que pasa a ser obligatorio aunque esté vacío. En `companion_plan.txt` cambian tres frases:
+  - links: «si una observación corresponde a un síntoma documentado distinto del objetivo, enlázala al título de ese síntoma; el sistema comprueba si coincide»;
+  - steps: «no incluyas pasos de un síntoma que el caso todavía no distingue; pregunta»;
+  - question: «question_about son los ids del síntoma o afirmación que la pregunta distingue; una pregunta puede ser toda la respuesta del turno».
+
+  Se quita «la acción que depende de ese dato queda condicionada». `MAX_TOKENS` sigue en 1200.
+- **Check.**
+  - `question_targets` son los ids válidos: existen, son `item` o `text` y son distintos.
+  - La pregunta libre pasa por `question_reason` y por C2, sin cambios en el vocabulario.
+  - Si falla **solo** por `ungrounded:*`, `too_long` o `not_one_question`, y hay uno o dos destinos `item`, se usa la pregunta derivada:
+    - con un destino: «¿Lo que ves coincide con «ÍTEM» [s]?»;
+    - con dos: «¿Lo que ves coincide con «A» [x] o con «B» [y]?».
+  - Un rechazo por `operation`, `prescription` o `exclusion` no se deriva y la pregunta se elimina.
+  - Sin pregunta válida del modelo, con exactamente un ítem `unresolved` en C3 y sin respuesta previa sobre él, el check deriva la pregunta de un destino.
+  - Una pregunta sin destino solo puede acompañar links o steps, como hoy.
+  - `usable?` = `links.any? || steps.any? || (question.present? && question_targets.any?)`.
+- **Render.** Con destinos, la pregunta lleva antes una línea:
+  - con un destino: «Para orientar falta un dato: la documentación trata «T» [s].»;
+  - con dos: «Para orientar falta distinguir: la documentación trata por separado «A» [x] y «B» [y].».
+
+  Las citas son literales y con fuente.
+- **Publicación.** `CompanionTurnPublication` no cambia de criterio. Grok comprueba con un test que un turno de solo preámbulo y pregunta se acepta. Si R1–R5 exigieran pasos, solo se admite como evidencia la cita del preámbulo.
+- **Pruebas.**
+  - `links=[]` y `steps=[]` con pregunta y destino: el texto se publica y `accepted`.
+  - Pregunta con «actual» y un destino ítem: se publica la derivada. Sin destino: se elimina.
+  - «¿Ajustaste el #54 a 100?»: se elimina y no se deriva.
+  - Fuera del VF5, «aparece ya en marcha» frente a «La alarma aparece durante la marcha»: se deriva la pregunta de ese ítem.
+- **Si no se puede resolver:** sin destino válido no hay turno de solo pregunta. Se publica la orientación general o la abstención actual.
+
+#### C5. Pendiente `documented_context` y respuesta breve o parcial (P7)
+
+- **Defecto.** El companion no devuelve `pending_question`. Un «sí» o «no sé» no se puede atar a lo preguntado.
+- **Pendiente.** `PendingQuestion::TYPES` incluye `documented_context`. `coerce` conserva `{"type", "question" (≤ 240), "targets" => [{"item" (≤ 160, literal), "document_key", "filename", "page"}] (1–2)}` y rechaza el pendiente si falta la pregunta o los destinos. No entra en `CONVERSATIONAL_TYPES` ni en `FACT_TYPES`. Grok revisa los usos en `route_policy.rb`, `turn_perception.rb` y `active_episode_turn.rb` con un test: este pendiente no cambia la ruta ni la decisión respecto a no tener pendiente.
+- **Transporte.**
+  - `CompanionPlan.compose` construye `Composed#pending` a partir de la pregunta final y sus destinos. `Prepared` conserva los chunks para mapear la fuente al `filename` y al `document_key`.
+  - `BedrockRagService#companion_plan_answer` lo guarda, y `#finish_companion_turn_generation` devuelve `pending_question:` solo si `accepted` y el texto publicado contiene la pregunta.
+  - Desde ahí sigue el camino existente: `RagQueryConcern` → `RagResult` → controller → `record_assistant_turn!` → `ActiveEpisodeTurn.write_pending!`. Si un guard elimina la pregunta, no queda pendiente.
+- **Respuesta.** `WorkContextReducer#bind_documented_answer` se llama después de `write_checks` y **antes** de las salidas de `clarify_first` y `unclear`, cuando el pendiente es `documented_context` y el movimiento no es `new_work`:
+  - `PendingQuestion.parse_reply` admite una lista cerrada de respuestas: «sí», «si», «no», «no sé», «no lo sé», «no puedo verlo». «Sí» y «no» solo cuentan con un destino; «no sé» vale con uno o dos.
+  - Las observaciones de este turno reciben `"answers" => {"q", "t", "r"}`, con `r` ∈ yes, no, unknown o nil.
+  - Si no hay observación y hay respuesta cerrada o `answer_pending`, se guarda el mensaje literal (≤ 160) como observación con `answers`.
+  - Después, `clear_pending_unless_meta` actúa como hoy. Una pregunta ignorada no se retiene.
+- **Episodio.** `ActiveEpisode.sanitize_observations` admite `answers` truncado. `fork` y `to_h` lo conservan. La expulsión por `MAX_BYTES` funciona como hoy, y con la observación se va la respuesta. Si el pendiente no cabe, no se instala y se registra `pending_overflow`.
+- **Uso.**
+  - `CompanionCaseFacts::Fact` gana `answers`, y el bloque del prompt muestra «O5 [respuesta del técnico a «q»]: «sí».».
+  - En el check, `yes` confirma el destino si su texto normalizado y su documento coinciden con un ítem de este turno. `no` lo excluye con `case_excluded_by_answer`. `unknown` retiene sus pasos y renderiza «Indicaste que no puedes distinguirlo; la indicación de «ítem» [s] depende de ese dato.» Con `already_answered` no se vuelve a preguntar por ese destino.
+  - Una respuesta libre (`r` nil) pasa por C3 con el link del modelo.
+- **Intérprete.** `TurnInterpreter#pending_payload` devuelve `{"clarification_target" => "documented_context", "question" => q}`. El prompt del intérprete gana una frase: el mensaje puede responder a esa pregunta y lo observado se registra con las palabras del técnico.
+- **Pruebas.** Pregunta publicada → pendiente instalado (owner y no owner). Guard que quita la pregunta → sin pendiente. Después:
+  - «sí» confirma el ítem y permite su paso;
+  - «no» lo excluye;
+  - «no sé» deja la línea del límite y no repregunta;
+  - «Mientras se está cerrando; no distingo qué parte» → `anchor_missing` → la pregunta siguiente no repite el texto (`repeats_ask`);
+  - «¿qué sigue?» no se guarda como respuesta;
+  - `new_work` descarta el pendiente;
+  - el episodio y el equipo no cambian.
+- **Si no se puede resolver:** sin pendiente, una respuesta breve queda como observación sin ancla y lleva a `unresolved`. Nunca se publica un caso.
+
+#### C6. Rehidratar el destino de la pregunta (top-k)
+
+- **Defecto.** `chunk_p13_1` estuvo en T3, A y B, y faltó en T4. Una respuesta al destino no puede usarse si su chunk no llega.
+- **Cambio.**
+  - `CompanionDefinitionCatalog` expone `page(document_key, filename)` sobre las filas que `CompanionDefinitionSource` ya lee.
+  - `CompanionDefinitionExpander.expand(chunks, catalog:, targets: [])` añade primero el chunk de cada destino ausente, buscado por `document_key` y `filename`. Comparte el presupuesto de 4 / 6000 y usa `companion_context: "answer_target"`.
+  - Los destinos son los de las observaciones de este turno con `answers` (el pendiente ya se limpió). `BedrockRagService#companion_assembled_chunks` los recibe del episodio.
+  - No hay Retrieve, búsqueda por vecindad, recursión ni otro documento.
+- **Pruebas.** Destino ausente en el top 8 → añadido con su página y su hash. Catálogo nil o presupuesto lleno → `target_not_loaded`, el paso no se autoriza y se renderiza «Tu respuesta apunta a «ítem», pero ese apartado no está en la documentación cargada en este turno.».
+- **Si no se puede resolver:** queda la omisión trazada y el límite reconocido.
+
+#### C7. Una observación no se anota en otro atributo (P5)
+
+- **Cambio.** `CompanionPlanRender#observation_step` exige además que el hecho contenga la primera ancla (sustantivo tras artículo) del texto del paso, con el mismo helper de C3.
+- **Prueba.** «No veo obstrucción» se anota en «Comprobar que no hay una obstrucción mecánica…» (ancla `obstr`) y no en «Verificar si los LEDs de obstrucción se encienden» (ancla `leds`).
+- **Si no se puede resolver:** la observación no se anota en ningún paso.
+
+**Tests existentes que cambian a propósito:** `companion_plan_test.rb:182` («Si lo que ves es «El motor no arranca»») y las aserciones de `companion_f3_sequence_test` sobre la pregunta del patín que importaba pasos y sobre «Para este síntoma» por raíces. Se reescriben con la conducta nueva y cada cambio se anota en el registro de ejecución. Los cuatro mensajes de `TURNS` no se editan.
+
+### 4. Pruebas locales que deben pasar antes de pagar
+
+Red denegada, clientes falsos que fallan si se les invoca y ledger intacto. Fixtures pequeños y versionados, con hash y procedencia de `20261023T182442Z`. Los textos nuevos llevan la etiqueta `fixture`.
+
+1. **Replay de capturas.** Se reconstruye cada turno capturado (T1–T4, A, B) con el `tool_input` real del plan, los hechos y los chunks guardados, y se pasa por el check y el render nuevos. Resultado esperado:
+   - T3 y T4 publican la pregunta sobre #21;
+   - A no publica el paso del patín ni lo confirma;
+   - B lo publica con «probablemente»;
+   - T1 y T2 conservan su orientación;
+   - se mantienen el LED encendido, el resultado de la fotocélula sin descarte causal, que no se atribuye TEST, y el conflicto C1 con N/Nm.
+2. Las unidades de C1–C7 descritas arriba, incluido el fixture de la bomba.
+3. La secuencia encadenada sin red: los cuatro mensajes históricos más «sí», «no sé» y la respuesta parcial sobre una pregunta publicada. Se comprueba publicación, pendiente e historial en ambos caminos de `write_pending!`.
+4. Las pruebas focales de `test/services/rag/companion_*`, `reported_operation_test`, `work_context_reducer_test`, `active_episode_test`, `session_context_builder_test` y de publicación y controller. Después, la suite completa, documentando los fallos Selenium ya conocidos. RuboCop sin ofensas en los archivos tocados.
+5. Preflight en seco del request del plan con el schema nuevo: tokens de entrada y techo con `LocalPassLedger.price`.
+
+Estos tests prueban contrato, control, render y persistencia. **No prueban qué hará Haiku.**
+
+### 5. Qué verifiqué personalmente y qué procede de informes
+
+Lo verificado:
+
+- **Repositorio.** `HEAD` = `4601df138d3fb42baa730adcdebdf1ceed2b65e1` en `main`, árbol limpio antes de editar. `4601df1` y `47cb3c7` solo cambian este plan respecto a `26777e2`.
+- **Capturas.** Leí `plan.tool_input` y `plan.check` de los seis `turn.json` de `20261023T182442Z-conversation`:
+  - las preguntas y sus motivos de rechazo son los de la sección 1;
+  - `t2/episode_after.json` no tiene identificador de estado;
+  - `t3/episode_after.json` añade «no está activada» con la correlation_id del check;
+  - `chunk_p13_1` está en T3, A y B, y falta en T1, T2 y T4.
+- **Código.** Leí `CompanionPlanCheck`, `CompanionPlanRender`, `CompanionPlan`, `companion_plan.txt`, `PendingQuestion`, `CompanionCaseFacts`, el reducer (`write_assertions`, `durable_identifier?`, `clear_pending_unless_meta`, `write_pending`), `ActiveEpisodeTurn.apply_assistant/write_pending!`, el tramo de `RagQueryConcern` que pasa `pending_question`, `companion_plan_answer`, `finish_companion_turn_generation`, el expander, el catálogo y la fuente de definiciones. Comprobé dos cosas: `finish_companion_turn_generation` no devuelve `pending_question`, y el camino de escritura desde `RagResult` ya existe.
+- **Regla de C3, prueba en seco** con Ruby puro, sin Rails ni red y sin archivos del producto. Con los textos literales:
+
+  | Texto | Resultado |
+  | --- | --- |
+  | A | `incompatible patin:before/during` |
+  | B | `compatible` |
+  | «se reabre mientras cierra el patín» | `compatible` |
+  | «Se reabre al cerrar» | `unresolved/anchor_missing` |
+  | la respuesta parcial | `unresolved/anchor_missing` |
+  | «el patín roza» | `unresolved/condition_not_stated` |
+  | «no es cuando el patín está cerrando» | `incompatible` (negación) |
+
+  Con la bomba: antes/antes `compatible`; durante/antes `incompatible`; «ya en marcha» `unresolved`. La primera ancla de C7 es `leds` frente a `obstr`. Es una prueba de la regla, no del código que implementará Grok.
+- **Ledger.** `assignment_spend.json` SHA-256 `c04d9859…446f`, el mismo que leyó Codex: 152 intentos, open vacío, autorización `f2f3-joint-after-134` y ejecución `f3-vf5-20261023`. No sumé las entradas: los US$1,476693 committed y US$0,102140 unknown proceden del registro de Grok y de la lectura de Codex, con el mismo hash.
+
+De informes, no verificado: el coste por llamada, las latencias, el contenido de los PDF de las páginas 12 y 13 (lo cubrió la validación anterior de Opus) y cualquier comportamiento de Haiku con el schema nuevo. No ejecuté tests de Rails.
+
+### 6. Primera validación real propuesta (Q1), finita y no autorizada
+
+**Objetivo.** Refutar o confirmar, con Haiku real, cuatro cosas: (a) se publica una aclaración pertinente; (b) se incorpora una respuesta desconocida o parcial; (c) hay orientación compatible; (d) no reaparece el error A/B. No se repite el benchmark.
+
+**Punto de partida.** El estado y el historial **reales** posteriores a T2 de `20261023T182442Z`: `t2/episode_after.json`, más los mensajes y las respuestas publicadas de T1 y T2. Grok lo reconstruye en local y comprueba el hash del episodio frente a la captura. T1 y T2 no se vuelven a llamar. El checkpoint se declara en el manifest. Base local, candidata F2 `candidate_r2` (manifest `3472b631…`), Retrieve stub local, `global.anthropic.claude-haiku-4-5-20251001-v1:0`, dos invocaciones por turno, sin reintentos.
+
+**Ficha fijada antes de llamar.** Solo responde a la dimensión que Danebo publicó:
+
+| Dimensión publicada | Respuesta |
+| --- | --- |
+| Entrada 21, re-apertura o qué activa el LED | «No sé cómo ver si la entrada 21 está activada.» |
+| Momento de la reapertura o patín, primera vez | «Mientras se está cerrando; no distingo qué parte.» |
+| Momento o patín, de nuevo y más concreta | «Antes de que el patín empiece a cerrar; la puerta todavía se está cerrando.» |
+| Cualquier otra | Se registra `unanswered_question` con su pertinencia y se cierra el recorrido. No se inventa respuesta. |
+
+**Secuencia.** Máximo 6 turnos y 12 invocaciones:
+
+1. **Recorrido principal**, hasta 4 turnos. Empieza con «Ya revisé la fotocélula y no está activada.» y sigue respondiendo con la ficha mientras Danebo publique una pregunta prevista. Termina cuando Danebo orienta sin pregunta, cuando pregunta algo no previsto o al cuarto turno.
+2. **Texto A.** Si el recorrido no envió ya el texto de la tercera fila, se envía una vez, voluntario, desde el estado final: «Se reabre durante el cierre de la puerta, antes de que el patín empiece a cerrar.».
+3. **Rama B.** Un turno desde el estado inmediatamente anterior al envío del texto A, con «Se vuelve a abrir justo cuando el patín está cerrando.».
+
+**Aceptación por significado:**
+
+- **E1.** Se publica al menos una pregunta pertinente con su preámbulo documental. No se exige cuál ni en qué turno.
+- **E2.** Tras «no sé», no se vuelve a pedir ese dato. Se reconoce el límite y se mantiene la orientación independiente.
+- **E3.** Tras la respuesta parcial, no se repite la pregunta. Si sigue preguntando, la pregunta es más concreta.
+- **E4.** Con el texto A no se publica el paso del patín ni se confirma su apartado.
+- **E5.** En B se publica ese paso con «probablemente» y con el encabezado que cita el hecho.
+- **E6.** Se conservan los avances de la ejecución de F3: LED encendido, «no está activada» sin descarte, ninguna atribución de TEST, ningún I4, publicación aceptada y `answer == history_answer`.
+
+E1, E4, E5 y E6 son obligatorios. E2 y E3 lo son si se llegó a enviar esa respuesta; si no, quedan «no demostrado».
+
+**Parada.** Las condiciones de la Decisión 3 (ruta, estado, transporte, seguridad, presupuesto), más la publicación de un paso de un ítem `incompatible` o no confirmado, que se trata como fallo de seguridad. No se regenera, no se reintenta, no se añaden ramas y no se repone cupo.
+
+**Presupuesto propuesto, sin escribir.**
+
+| Concepto | Valor |
+| --- | --- |
+| Invocaciones adicionales | 12; cap acumulado 164 si el ledger sigue en 152 |
+| Sobre incremental | US$0,30 |
+| Coste real estimado | US$0,08–0,10, extrapolando US$0,0124 por turno con algo de crecimiento |
+| Techo por turno | El preflight lo recalcula sobre los requests reales; histórico ≈ US$0,034 |
+| Exposición global máxima | US$1,578833 + US$0,30 = US$1,878833, por debajo de US$4 |
+
+La autorización se pide aparte, después de que las pruebas locales estén en verde y con el diff entregado.
+
+**Si Q1 falla sin riesgo de seguridad**, se registra qué capa falló (modelo, check, render o transporte) con la captura por capa de Codex (sección 9 de su revisión). Una tanda Q2 exige un defecto reproducido en local y su corrección. Si Q1 pasa, la cobertura adicional es opcional, con un máximo de 8 invocaciones y US$0,20 y autorización propia: la bomba sintética de dos o tres turnos y la corrección R6. No condiciona F4.
+
+### 7. Evidencia para cerrar F3 y pasar a F4/F5
+
+- **F3 se cierra** con las pruebas locales de la sección 4 en verde y Q1 aceptada según E1–E6, en revisión humana por significado de la respuesta cruda y de la publicada. `accepted=true` y las regex del runner no bastan.
+- **F4** hereda una comprobación concreta: con Retrieve real, el destino de una pregunta publicada se rehidrata (C6) o queda `target_not_loaded` visible. El ranking no se da por validado con el stub.
+- **F5** comprueba en la web que la pregunta publicada instala el pendiente, que la respuesta del técnico se ata a ella y que el pin no cambia.
+- **Los órdenes 3 a 5 del plan padre** siguen después, sin cambios.
+
+**Riesgos aceptados.** La regla de C3 es léxica y conservadora:
+
+- una paráfrasis sin artículo o con un marcador no listado da `unresolved` y produce una pregunta, no un error publicado;
+- una asociación compatible depende de que el modelo proponga el link correcto: Ruby veta la contradicción detectable, pero no prueba que el caso sea ese;
+- la conducta ante una pregunta ignorada queda para cuando una captura la muestre.
+
+Orden para Grok: C1 → C2 → C3 → C7 → C4 → C5 → C6, cada uno con su test que falla. Después, la sección 4, el diff y el preflight en seco. Ninguna llamada sin autorización nueva.
+
+---
+
 ## Revisión para Opus — F3: desambiguación progresiva (23 de octubre de 2026)
+
+**Estado: validada por Opus con sustituciones; ver la sección anterior, que prevalece.** Texto original de Codex:
 
 **Estado: propuesta pendiente de validación de Opus; no implementada.** Esta revisión integra la corrección en F3 del rediseño original. La prioridad y el alcance que Lahiri acaba de fijar sustituyen las instrucciones anteriores incompatibles: terminar en cuatro turnos, una sola continuación, admitir acciones de otro caso por tener una pregunta, y exigir vocabulario literal para toda pregunta. No se revoca la aceptación local de F2 ni se reabren su ingesta, adjudicación o PDF. La aprobación histórica de Opus no equivale a aprobar este cambio. Grok implementará el diseño concreto siguiente después de esa validación.
 

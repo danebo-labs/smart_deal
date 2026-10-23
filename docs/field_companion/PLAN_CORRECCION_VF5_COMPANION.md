@@ -3394,7 +3394,7 @@ La asociación es `compatible`, motivo `markers_agree`, ancla `patin`. El paso c
 
 ## F3. Corrección local y continuación de Q1, 23 de octubre de 2026
 
-**Veredicto.** F3 no se cierra. La corrección local queda aceptada: una comprobación no hecha ya responde si se realizó, la pregunta publicada y su pendiente quedan coherentes, y el fragmento del destino se puede rehidratar cuando sale del top-k. La continuación con Haiku real reconoció el límite de la pregunta del LED y orientó sin repetirla ni inventar una maniobra. No hubo una segunda pregunta más concreta, porque el modelo no preguntó por el momento ni por la parte. Esa aclaración progresiva sigue sin demostrarse. F4 queda preparado y no se ejecuta.
+**Veredicto.** F3 no se cierra. La corrección local queda aceptada: una comprobación no hecha ya responde si se realizó, la pregunta publicada y su pendiente quedan coherentes, y el fragmento del destino se puede rehidratar cuando sale del top-k. La continuación con Haiku real reconoció el límite de la pregunta del LED y orientó sin repetirla ni inventar una maniobra. Esa continuación partió de B, donde el momento del patín ya estaba dicho; no es la prueba de aclaración progresiva. La medición desde un checkpoint ambiguo está en la sección siguiente.
 
 **Dos versiones de Q1.** Los seis primeros turnos son el commit `e63f47e72622a10bce6f2cf63d8aa38953bb8482`. La continuación se ejecutó sobre ese mismo `HEAD`, con los cuatro archivos de producto todavía sin commitear. No es la misma versión. El commit que archiva ese diff es `7a55210dd6c870d5da651b46a6d31193796fd9d0`. Hashes SHA-256 de esa continuación, en `q1c_code.json`: `companion_plan.rb` `f93f6b99bda913010a0600088e3932f19c6d984f8ba3c3557a79598070095fd5`, `companion_plan_check.rb` `10f096ce7eab38a5d7629e17bdcb44c6a624d963111b5a78a5c818d1d5d43539`, `pending_question.rb` `7ed19ac5d5ef7c9451b1f6c46f242005212523fed6c1ebac0c2de10f008086db`, `reported_operation.rb` `7ccf1380933993aa66f3b3ae1ccca7fb5ec63f2efd0adcd2f1ceceab47fdab0e`. No se presenta toda Q1 como una sola versión.
 
@@ -3457,5 +3457,79 @@ Dos invocaciones, liquidadas, ids 159 y 160: US$0,003363 y US$0,009511. Incremen
 3. **Aclaración progresiva.** No observada. No se publicaron la pregunta de parte ni una segunda pregunta más concreta. Las frases «Mientras se está cerrando…» y «La puerta todavía se está cerrando…» no se enviaron.
 4. **Límites.** La ficha no cubre otra pregunta imprevista; no hizo falta. El cupo restante no se usó para provocar esa aclaración. El `filename` reparado no es el estado original de B.
 
-**Siguiente paso, sin ejecutarlo.** F4, el de la sección 7: con Retrieve real, el destino de una pregunta publicada se rehidrata o queda visible como no cargado. El ranking no se da por validado con el stub. F4 no arranca en este encargo, porque la aclaración progresiva en vivo sigue pendiente y no se fuerza el cierre de F3. Después, F5 comprueba en la web el pendiente y que el pin no cambia. Los órdenes 3 a 5 del plan padre siguen después. La F4 de sustitución y sincronización de este plan sigue sujeta a su backlog y a la concesión. F4 y F5 no se declaran hechas.
+**Siguiente paso, sin ejecutarlo.** F4, el de la sección 7: con Retrieve real, el destino de una pregunta publicada se rehidrata o queda visible como no cargado. El ranking no se da por validado con el stub. F4 no arranca en este encargo. Después, F5 comprueba en la web el pendiente y que el pin no cambia. Los órdenes 3 a 5 del plan padre siguen después. La F4 de sustitución y sincronización de este plan sigue sujeta a su backlog y a la concesión. F4 y F5 no se declaran hechas.
+
+## F3. Checkpoint ambiguo y aclaración progresiva, 23 de octubre de 2026
+
+**Veredicto.** F3 no se cierra. El punto de partida queda corregido y el ensayo local muestra que el código puede publicar una pregunta sobre un dato desconocido, conservar una respuesta parcial y sustituir la repetición por una pregunta más concreta. Con Haiku real, el primer turno no publicó pregunta. La orientación es aplicable con lo que el caso ya sabe. La aclaración progresiva no se ejerció. No hubo segundo turno ni checkpoint de continuación. El producto no se modificó después de ver la salida.
+
+### 1. Rectificación
+
+La continuación anterior partió de la rama B y esperaba una pregunta sobre el momento o la parte. Esa instrucción era incorrecta. En B el técnico ya había dicho «Se vuelve a abrir justo cuando el patín está cerrando». Desde ese estado, Danebo no debe volver a preguntar cuándo ocurre ni qué parte cierra. Que no lo preguntara no demuestra un fallo de aclaración. Esa ejecución queda como evidencia histórica de la pregunta del LED y de su respuesta «no sé». No se reinterpreta como prueba de aclaración progresiva y no se vuelve a usar B para provocar una pregunta temporal.
+
+### 2. Checkpoint
+
+Procedencia: `20261023T182442Z-conversation/t3/episode_after.json`, SHA-256 `3196986bdb6e229b4240a199dc6a2d2e42aeda0d99d03a6a3ea2e2da49d7c2b3`, `updated_at` `2026-10-23T15:25:00-03:00`. Cargado a las 18:38 (−03) en una sesión local nueva, id 239, episodio `ep_ebaad52adc01a534`. El archivo de captura no se modificó. No se reutilizó el episodio de B ni se borraron hechos para simular un estado anterior.
+
+Quedan fuera T4, A y B. T4 ya envió «¿qué sigue?» y su episodio no añade una aclaración temporal; cargarlo habría puesto en el historial el estímulo de esta prueba. A y B son las aclaraciones de momento que esta medición no debe contener.
+
+Estado observado, sin pendiente:
+
+- Objetivo: «La puerta se reabre sola».
+- Identificadores guardados: «Fermator VF5+», «operador de puerta» y «no está activada».
+- Observaciones: «La puerta se reabre sola», «No veo obstrucción», «el LED de fotocélula está encendido». No queda el LED apagado.
+- Checks: `#54` no hecho, `mediciones` no hechas, fotocélula hecha con resultado «no está activada».
+- Historial publicado: T1, T2 y T3, con `answer` igual a `history_answer`. Ningún mensaje habla del momento ni de qué parte cierra.
+
+El identificador «no está activada» es el defecto histórico de representación, con la correlación del T3 y el mismo texto que el resultado del check. No hubo normalización local: el episodio cargado lo conserva. La lectura vigente de `companion_identity` lo omite porque repite ese resultado. La identidad que ve el compañero es «Fermator, Fermator VF5+, operador de puerta». Eso no se presenta como si el archivo original careciera del identificador.
+
+Código de esta medición: `HEAD` `44d7a6222bd6e8ee4f8c4cd7e4bd78beee28be86`. El producto es el de `7a55210`. No se cambió después de la salida.
+
+### 3. Ensayo local, sin modelo
+
+Dobles sobre los ocho chunks con clave del T3 y los hechos de ese checkpoint. No es resultado de Haiku. Quedó en `runs/20261023T213823Z-q1p/q1p_rehearsal.json`.
+
+- «¿Ha comprobado el #54?» se retira por `repeats_fact:N1`.
+- «¿Está activada la entrada de re-apertura?» se publica. El pendiente es «Fotocélula.», página 7, `chunk_p7_3.txt`. El resultado de la fotocélula no la contesta.
+- «¿Está activada la entrada de re-apertura (#21)?» también pasa el checker en este doble.
+- «¿El patín está cerrando?» se publica. El pendiente es «La puerta se vuelve a abrir cuando el patín está cerrando.», página 13, `chunk_p13_1.txt`.
+- Con la respuesta parcial «Mientras se está cerrando; no distingo qué parte» atada a ese apartado, la misma pregunta del patín se sustituye por «¿Qué parte se está cerrando, la puerta o el patín?».
+- Esa frase parcial no cierra el pendiente. «No sé si lo que está cerrando es la puerta o el patín» y «No sé cómo distinguir si lo activa la entrada 21 o la fotocélula» sí se leen como `unknown`.
+
+Un directorio anterior, `20261023T213806Z-q1p`, se detuvo antes de reservar llamadas por un arreglo vacío tratado como bloqueo. No escribió el ledger.
+
+### 4. Turno real
+
+Ficha fijada en `q1p_card.json` antes de llamar. Mensaje enviado: «¿Qué sigue?»
+
+El modelo propuso: «¿Has comprobado manualmente que no hay obstrucción mecánica en la puerta, o solo la observaste visualmente?» `question_about` apuntaba al paso `S1.5` y se rechazó por `statement_kind:step`. La pregunta se rechazó por `ungrounded:has,observaste,visualmente`. No quedó pendiente. El texto publicado no contiene pregunta, así que no se envió ninguna frase de la ficha y no hubo segundo turno.
+
+**Respuesta publicada.**
+
+Sobre lo que reportaste, «el LED de fotocélula está encendido»: la documentación dice «Indicador LED y relé activado cuando la fotocélula o la entrada de re-apertura está activada» [2]; lectura de Danebo: LED de fotocélula encendido: indicador LED activado cuando la fotocélula o la entrada de reapertura está activada.
+Para este síntoma, «La puerta se re-abre sola», la documentación indica [1]:
+- «Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)» [1]; dijiste «No he comprobado el #54», así que sigue pendiente.
+- «Comprobar que no hay una obstrucción mecánica en la puerta» [1]; reportaste «No veo obstrucción», que es una observación: esta comprobación no consta como hecha.
+- «En caso que el problema persista, desconectar la fotocélula y volver a pulsar el botón de TEST»; «Si la puerta no se abre o cierra completamente, debe haber una obstrucción mecánica en la puerta» [1].
+También informaste: «Ya revisé la fotocélula y no está activada».
+
+`answer` y `history_answer` coinciden. Publicación aceptada. Ruta `answered`. Turno compañero aplicado. El episodio sigue siendo `ep_ebaad52adc01a534`. Siguen el LED encendido, el #54 no hecho, la fotocélula hecha con «no está activada» y las tres observaciones. No aparece el procedimiento del patín. No se inventa una maniobra, un valor ni una medición.
+
+La orientación es útil con el contexto disponible: deja el #54 pendiente, distingue la observación de la obstrucción de la comprobación mecánica y conserva el paso condicional de TEST. No se rechaza por no haber elegido la pregunta temporal. La aclaración progresiva no se ejerció.
+
+La pregunta retirada pide al técnico clasificar una observación ya registrada con las palabras «manualmente» y «visualmente», que no están en la fuente ni en el caso. El texto publicado ya dice que esa comprobación no consta como hecha. Queda localizado el descarte; no se abre otra implementación.
+
+### 5. Qué quedó demostrado y qué no
+
+Demostrado en el ensayo local, sin modelo: pregunta pertinente, respuesta parcial y segunda pregunta más concreta.
+
+Demostrado con Haiku: desde la incertidumbre real, una orientación aplicable que conserva lo conocido y no aplica el procedimiento del patín.
+
+No demostrado con Haiku: pregunta publicada, incorporación de una respuesta parcial o desconocida, segunda pregunta más precisa, uso de una tercera respuesta y orientación final posterior. Con dos invocaciones no había margen para ese tramo, y no se comprimió la conversación para obtenerlo. No hay checkpoint de continuación porque el turno no publicó una segunda pregunta.
+
+### 6. Consumo y saldo
+
+Dos invocaciones, liquidadas, ids 161 y 162: US$0,003153 y US$0,009847. Incremento US$0,013000. `attempts` 162, `priced` 157, `blocked` 0, `open` vacío. `committed` US$1,539900. `unknown` US$0,10214, sin cambio. Autorización `f2f3-joint-after-134` intacta. `call_cap` 164, sin cambio. Ejecución `f3-q1-20261023` intacta: corte 152, US$0,750000, 12 llamadas. De esas 12 se han usado 10. Quedan 2 de las 4 autorizadas para esta medición, sin otra ejecución y sin regenerar el turno. SHA-256 del ledger: `6ea5d5dd2467307984268593b3ada74a7489a50b516079d0cb3e2f81a9c1ee3c`.
+
+**Siguiente paso, sin ejecutarlo.** F3 sigue abierto en la aclaración progresiva con modelo real. F4, el de la sección 7, no arranca. F5 y los órdenes 3 a 5 del plan padre siguen después. F4 y F5 no se declaran hechas.
 

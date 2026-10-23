@@ -278,7 +278,11 @@ Nunca se regenera un turno, ni se sustituye por una respuesta preparada, ni se r
 
 ## Ejecución de F3 — 23 de octubre de 2026
 
-F3 quedó implementada y probada en local. La conversación pagada y las dos ramas hipotéticas quedan **no demostrado**: el techo conservador de las doce invocaciones es US$0,318233 y el techo de esta ejecución es US$0,30. No hubo llamada a Bedrock, no se escribió el ledger, no se publicó nada en S3 y no se sincronizó la KB. El manifest de la candidata F2 no se regeneró.
+F3 quedó implementada en `26777e2` y, en un proceso posterior, se ejecutó una sola tanda real: el guion de cuatro turnos y las dos ramas hipotéticas. Doce invocaciones, sin reintento ni regeneración. Base local, candidata F2 local, Bedrock real. No se escribió producción, S3 ni el índice.
+
+**Veredicto de esta tanda: no aprobada.** Los cuatro turnos y la rama B cumplen el criterio semántico de abajo y llegaron publicados al técnico. La rama A no lo cumple: la respuesta trata «antes de que el patín empiece a cerrar» como el síntoma «cuando el patín está cerrando». Completar las llamadas no aprueba la tanda. Esta corrida es un recorrido y dos continuaciones, no una tasa de éxito frente al no determinismo.
+
+**Criterio de aceptación de las respuestas reales.** Semántico, contextual y documental. La coincidencia textual con una respuesta ideal no aprueba ni rechaza. Valen otra formulación, otro orden y otro foco cuando conservan el significado de los reportes y las correcciones, las afirmaciones y las acciones tienen respaldo documental aplicable, se mantienen las condiciones relevantes, la respuesta ayuda a avanzar o pregunta el contexto que hace falta, y la aclaración posterior se usa sin inventar una conclusión. No se exige una pregunta concreta ni nombrar todos los componentes. Una inferencia razonable vale si se presenta como provisional y sus premisas están respaldadas. «No está activada» puede decirse de otra forma y no puede convertirse en «causa descartada». Revisar la activación no equivale a desconectar y pulsar TEST. Si el guard bloquea un enlace semánticamente correcto, se registran las dos cosas y no se cambia el guard ni se regenera. Los criterios de parada siguen siendo pérdida de estado, caída de ruta, transporte, instrucción insegura y presupuesto.
 
 ### 1. Cambios y pruebas
 
@@ -296,74 +300,147 @@ Pruebas, sin inferencia. 117 corridas, 1161 aserciones, 0 fallos, semilla 27215,
 
 ### 2. Candidata F2 usada
 
-Directorio `tmp/field_companion/vf5_correction/f2f3_joint/f2/candidate_r2/`. Manifest SHA-256 `3472b6310640454cb79db75c0a5e9b97cdb9e0f8a7fa1eefebc6498ee8d0abc0`. Adjudicación SHA-256 `6b6b0d214486704a9a48a2b1c7da354a530d47d3eb5542b1c471e114636c24f4`. El `git_sha` interno del manifest sigue siendo `cebd7de6ff95dbd110b6017afc4f76cb828718e2`, el commit que produjo la candidata. 90 hashes de cuerpos y sidecars, 0 ausentes y 0 distintos, medidos contra `candidate_r2/kb`. No se regeneró el manifest para atribuirlo a este commit. El índice remoto no se usó.
+El proceso que pagó releyó `tmp/field_companion/vf5_correction/f2f3_joint/f2/candidate_r2/`. Manifest SHA-256 `3472b6310640454cb79db75c0a5e9b97cdb9e0f8a7fa1eefebc6498ee8d0abc0`. Adjudicación SHA-256 `6b6b0d214486704a9a48a2b1c7da354a530d47d3eb5542b1c471e114636c24f4`. El `git_sha` interno del manifest sigue siendo `cebd7de6ff95dbd110b6017afc4f76cb828718e2`. 90 hashes de cuerpos y sidecars, 0 ausentes y 0 distintos, medidos contra `candidate_r2/kb`. No se regeneró el manifest. El Retrieve de la tanda es el stub local sobre esa candidata. El índice remoto no se usó y esta tanda no acredita su ranking.
+
+Proceso, antes de reservar: `SHARED_SESSION_ENABLED=false` en el entorno antes de cargar Rails, `SharedSession::ENABLED == false`, base `smart_deal_development` en `localhost`, modelo `global.anthropic.claude-haiku-4-5-20251001-v1:0`, `AWS_MAX_ATTEMPTS=1`, `RAG_TRANSIENT_ATTEMPT_LIMIT=1`. El techo se recalculó en ese proceso: doce requests, US$0,325543, por debajo de US$0,35. En una copia del ledger se admitieron las doce reservas y el archivo real no cambió. Después se escribió la autorización `f2f3-joint-after-134` y la ejecución `f3-vf5-20261023` (US$0,35, 12 llamadas). Los intentos seguían en 140, así que el cap de llamadas pasó de 150 a 152.
 
 ### 3. Cuatro respuestas del guion
 
-No hay respuestas publicadas. Los cuatro textos del guion no se enviaron:
+Modelo real. Publicación mecánica aceptada en los cuatro. Episodio `ep_ebaad52adc01a534` de principio a fin. Ningún turno publicó una pregunta, así que no hay `unanswered_question` del guion. La evidencia local está en `tmp/field_companion/vf5_correction/f2f3_joint/runs/20261023T182442Z-conversation/`.
 
-1. «Estoy con un operador de puerta Fermator VF5+. La puerta se reabre sola. El LED de fotocélula está apagado. No veo obstrucción. No he comprobado el #54. No hice mediciones.»
-2. «Corrijo solo el estado del LED: el LED de fotocélula está encendido, no apagado.»
-3. «Ya revisé la fotocélula y no está activada.»
-4. «¿qué sigue?»
+**T1.** «Estoy con un operador de puerta Fermator VF5+. La puerta se reabre sola. El LED de fotocélula está apagado. No veo obstrucción. No he comprobado el #54. No hice mediciones.»
 
-Los cuatro turnos quedan **no demostrado**.
+> Para este síntoma, «La puerta se re-abre sola», la documentación indica [2]:
+> - «Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)» [2]; dijiste «No he comprobado el #54», así que sigue pendiente.
+> - «Comprobar que la fotocélula no esté activada» [2].
+> - «Comprobar que no hay una obstrucción mecánica en la puerta» [2]; reportaste «No veo obstrucción», que es una observación: esta comprobación no consta como hecha.
+> - «En caso que el problema persista, desconectar la fotocélula y volver a pulsar el botón de TEST»; «Si la puerta no se abre o cierra completamente, debe haber una obstrucción mecánica en la puerta» [2].
+
+[2] es la página 12, `chunk_p12_5`, apartado «La puerta se re-abre sola». El [2] de la respuesta es ese documento. La frase del LED de la página 7 no entra en esta respuesta. El intérprete guardó además una fila `mediciones` / `not_done`; el texto publicado no la convierte en una medición pendiente.
+
+**T2.** «Corrijo solo el estado del LED: el LED de fotocélula está encendido, no apagado.»
+
+> Sobre lo que reportaste, «el LED de fotocélula está encendido»: la documentación dice «Indicador LED y relé activado cuando la fotocélula o la entrada de re-apertura está activada» [2]; lectura de Danebo: LED de fotocélula encendido: indicador LED activado cuando la fotocélula o la entrada de re-apertura está activada.
+> Para este síntoma, «La puerta se re-abre sola», la documentación indica [3]:
+> - «Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)» [3]; dijiste «No he comprobado el #54», así que sigue pendiente.
+> - «Comprobar que la fotocélula no esté activada» [3].
+> - «Comprobar que no hay una obstrucción mecánica en la puerta» [3]; reportaste «No veo obstrucción», que es una observación: esta comprobación no consta como hecha.
+> - «En caso que el problema persista, desconectar la fotocélula y volver a pulsar el botón de TEST»; «Si la puerta no se abre o cierra completamente, debe haber una obstrucción mecánica en la puerta» [3].
+
+[2] es la página 7, `chunk_p7_3`, sección 5.6: el LED se activa cuando la fotocélula o la entrada de re-apertura está activada. [3] es otra vez la página 12, `chunk_p12_5`. El retrieve de este turno incluyó `chunk_p10_1` (diagrama, página 10) y el companion siguió aplicado: la ruta no cayó a `generate_text`. La observación vigente pasó a «el LED de fotocélula está encendido».
+
+**T3.** «Ya revisé la fotocélula y no está activada.»
+
+> Sobre lo que reportaste, «el LED de fotocélula está encendido»: la documentación dice «Indicador LED y relé activado cuando la fotocélula o la entrada de re-apertura está activada» [2]; lectura de Danebo: LED de fotocélula encendido: indicador LED activado cuando la fotocélula o la entrada de re-apertura está activada.
+> Para este síntoma, «La puerta se re-abre sola», la documentación indica [1]:
+> - «Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)» [1]; dijiste «No he comprobado el #54», así que sigue pendiente.
+> - «Comprobar que no hay una obstrucción mecánica en la puerta» [1]; reportaste «No veo obstrucción», que es una observación: esta comprobación no consta como hecha.
+> - «En caso que el problema persista, desconectar la fotocélula y volver a pulsar el botón de TEST»; «Si la puerta no se abre o cierra completamente, debe haber una obstrucción mecánica en la puerta» [1].
+> También informaste: «Ya revisé la fotocélula y no está activada».
+
+[1] es la página 12, `chunk_p12_5`. [2] es la página 7. El estado guarda la fotocélula como comprobación hecha, operación `check`, resultado «no está activada». El modelo propuso enlazar ese hecho con «Comprobar que la fotocélula no esté activada» y el reading añadió «hecha» y «reportó», palabras que el guard no encuentra en el paso ni en el hecho (`ungrounded:hecha,reporto`). El enlace se descartó y el paso no salió en la lista. El técnico igual recibió el reporte, con su frase, en «También informaste». El contenido del enlace era correcto y el guard lo bloqueó; la publicación de respaldo sí llegó. No se tocó el guard. La viñeta de desconectar y pulsar TEST no dice «ya informaste». `chunk_p13_1` (patín, página 13) entró en el retrieve y no se usó en la respuesta.
+
+**T4.** «¿qué sigue?»
+
+> Sobre lo que reportaste, «el LED de fotocélula está encendido»: la documentación dice «Indicador LED y relé activado cuando la fotocélula o la entrada de re-apertura está activada» [2]; lectura de Danebo: LED de fotocélula encendido: indicador LED activado cuando la fotocélula o la entrada de re-apertura está activada.
+> Para este síntoma, «La puerta se re-abre sola», la documentación indica [1]:
+> - «Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)» [1]; dijiste «No he comprobado el #54», así que sigue pendiente.
+> - «Comprobar que no hay una obstrucción mecánica en la puerta» [1]; reportaste «No veo obstrucción», que es una observación: esta comprobación no consta como hecha.
+> - «En caso que el problema persista, desconectar la fotocélula y volver a pulsar el botón de TEST»; «Si la puerta no se abre o cierra completamente, debe haber una obstrucción mecánica en la puerta» [1].
+> También informaste: «Ya revisé la fotocélula y no está activada».
+
+El prompt de este plan recibió la respuesta publicada de T3 como conclusión previa. [1] página 12, [2] página 7. El episodio, el LED encendido, el #54 pendiente y el resultado de la fotocélula siguen. El mismo enlace de la fotocélula volvió a caer por `ungrounded:hecha,paso`. La pregunta del modelo «¿El LED de fotocélula encendido se debe a la entrada de re-apertura (#21) activada, o hay otra causa?» cayó por `repeats_fact:I4`. I4 es el identificador «no está activada», guardado en T3 a partir del resultado, y el tallo `activ` de esa identidad cabe dentro de la pregunta. El dato de la entrada #21 no estaba informado. La respuesta publicada deja la disyunción de la página 7 sin resolverla. `chunk_p13_1` no salió en el retrieve de T4.
 
 ### 4. Dos continuaciones hipotéticas
 
-Textos fijados antes de cualquier salida de modelo. No se ejecutaron. Son casos simulados, no reportes de campo.
+Ningún turno del guion preguntó el momento de la reapertura. El punto de bifurcación es el estado y el historial posteriores a T4, en dos sesiones locales distintas. No se fabricó una pregunta previa de Danebo. Los textos son los fijados antes de ver al modelo. Son casos simulados, no reportes de campo. Cada copia conservó el objetivo, el LED encendido, «No veo obstrucción», el #54 pendiente y la fotocélula con resultado «no está activada».
 
-- Caso A: «Se reabre durante el cierre de la puerta, antes de que el patín empiece a cerrar».
-- Caso B: «Se vuelve a abrir justo cuando el patín está cerrando».
+**Rama A, hipotética.** «Se reabre durante el cierre de la puerta, antes de que el patín empiece a cerrar».
 
-El manual, en la candidata, separa esos contextos. `chunk_p12_5` trae «La puerta se re-abre sola» y la comprobación de que la fotocélula no esté activada. `chunk_p13_1` trae «La puerta se vuelve a abrir cuando el patín está cerrando» y «Comprobar la regulación del patín…». A no queda leído como exclusión de las causas del caso general. B no queda leído como prueba de la avería. Las dos respuestas quedan **no demostrado**.
+> Sobre lo que reportaste, «el LED de fotocélula está encendido»: la documentación dice «Indicador LED y relé activado cuando la fotocélula o la entrada de re-apertura está activada» [2]; lectura de Danebo: LED de fotocélula encendido: indicador LED activado cuando la fotocélula o la entrada de re-apertura está activada.
+> Sobre lo que reportaste, «Ya revisé la fotocélula y no está activada»: la documentación dice «Comprobar que la fotocélula no esté activada» [4]; lectura de Danebo: Ya revisé la fotocélula y no está activada: comprobar que la fotocélula no esté activada.
+> Para este síntoma, «La puerta se vuelve a abrir cuando el patín está cerrando», la documentación indica [1]:
+> - «Comprobar la regulación del patín, ya que probablemente el sistema de bloqueo del patín no esté correctamente ajustado y la puerta tenga fricción mecánica»; «Verificar si los LEDs de obstrucción se encienden» [1]; reportaste «No veo obstrucción», que es una observación: esta comprobación no consta como hecha.
+> Para este síntoma, «La puerta se re-abre sola», la documentación indica [4]:
+> - «Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)» [4]; dijiste «No he comprobado el #54», así que sigue pendiente.
+> - «Comprobar que no hay una obstrucción mecánica en la puerta» [4].
+> - «En caso que el problema persista, desconectar la fotocélula y volver a pulsar el botón de TEST»; «Si la puerta no se abre o cierra completamente, debe haber una obstrucción mecánica en la puerta» [4].
+
+[1] es la página 13, `chunk_p13_1`. [4] es la página 12, `chunk_p12_5`. [2] es la página 7. La aclaración quedó guardada, literal, como observación. El modelo intentó leerla como «la puerta se vuelve a abrir cuando el patín está cerrando»; el guard rechazó ese enlace porque «antes de» no está en el apartado del patín (`order`). El paso del patín se publicó igual: el encabezado dice «Para este síntoma» y cita el apartado de la página 13. La página 12 también está, con el #54 pendiente y la vía condicional de TEST, y el resultado de la fotocélula queda unido a «Comprobar que la fotocélula no esté activada» con relación `complete`.
+
+**Rama B, hipotética.** «Se vuelve a abrir justo cuando el patín está cerrando».
+
+> Sobre lo que reportaste, «el LED de fotocélula está encendido»: la documentación dice «Indicador LED y relé activado cuando la fotocélula o la entrada de re-apertura está activada» [2]; lectura de Danebo: LED de fotocélula encendido: indicador LED activado cuando la fotocélula o la entrada de re-apertura está activada.
+> Sobre lo que reportaste, «Ya revisé la fotocélula y no está activada»: la documentación dice «Comprobar que la fotocélula no esté activada» [3]; lectura de Danebo: Ya revisé la fotocélula y no está activada: comprobación de que la fotocélula no esté activada.
+> Para este síntoma, «La puerta se vuelve a abrir cuando el patín está cerrando», la documentación indica [1]:
+> - «Comprobar la regulación del patín, ya que probablemente el sistema de bloqueo del patín no esté correctamente ajustado y la puerta tenga fricción mecánica»; «Verificar si los LEDs de obstrucción se encienden» [1]; reportaste «No veo obstrucción», que es una observación: esta comprobación no consta como hecha.
+> Para este síntoma, «La puerta se re-abre sola», la documentación indica [3]:
+> - «Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)» [3]; dijiste «No he comprobado el #54», así que sigue pendiente.
+> - «Comprobar que no hay una obstrucción mecánica en la puerta» [3].
+> - «En caso que el problema persista, desconectar la fotocélula y volver a pulsar el botón de TEST»; «Si la puerta no se abre o cierra completamente, debe haber una obstrucción mecánica en la puerta» [3].
+
+[1] página 13, `chunk_p13_1`. [3] página 12, `chunk_p12_5`. [2] página 7. La aclaración quedó como observación. El apartado citado es el de ese momento. «Probablemente» es la palabra del fabricante dentro de la cita, y la respuesta no la convierte en una avería comprobada. «No veo obstrucción» sigue anotada como observación sobre «Verificar si los LEDs de obstrucción se encienden», y esa comprobación no queda hecha. El resultado de la fotocélula queda unido al paso de activación. La página 12 permanece como el grupo general, con el #54 pendiente.
 
 ### 5. Evaluación
 
-No hay texto de modelo que evaluar. Lo que sí publicó el render local, con fuentes de prueba y el estado del guion, es esto:
+Esto evalúa el texto publicado por Haiku en esta tanda. Las pruebas con dobles, en `companion_f3_sequence_test` y `reported_operation_test`, usan percepciones escritas a mano: ahí la revisión de la fotocélula cae en el paso de activación con «ya informaste», y la frase de la rama B retira la pregunta y deja «Para este síntoma» en el patín. Esos dobles no son esta corrida.
 
-- La revisión «Ya revisé la fotocélula y no está activada» queda en el paso «Comprobar que la fotocélula no esté activada» con «ya informaste» y el resultado «no está activada». La correspondencia de esa frase con el paso de desconectar y pulsar TEST es `:related`, y el link de reading vacío se rechaza. La línea de desconexión no dice «ya informaste».
-- «Desconecté la fotocélula, todavía no pulsé TEST» es `:partial`. La nota dice «no completa esta operación» y no arrastra «debe haber una obstrucción mecánica».
-- «No está activada» permanece como resultado de la familia `check`. «No veo obstrucción» no genera un acto. «No hice mediciones» no genera un acto ni una fila de medición.
-- Con el LED corregido a encendido, el bloque de caso del turno siguiente contiene «encendido» y no contiene «apagado». El mensaje histórico del técnico sigue en el archivo de la conversación.
-- La pregunta «¿Se vuelve a abrir cuando el patín está cerrando?» se conserva mientras el caso no trae ese momento, y se retira cuando la observación ya lo trae. El paso del patín queda con «Para este síntoma, «La puerta se vuelve a abrir cuando el patín está cerrando»».
-- El conflicto de prueba se publica como «Ojo, el documento no es coherente (C1)» con las dos rotulaciones «N» y «Nm». La línea `[NOTA_EXTRACCION]` no entra en el bloque del companion ni en el texto publicado.
+**T1, cumple.** El foco es el apartado de la página 12 que corresponde a «La puerta se re-abre sola». «No he comprobado el #54» sigue pendiente sobre «Comprobar la sensibilidad», que es una comprobación, y el enlace que atribuía un ajuste al potenciómetro fue rechazado (`operation`). «No veo obstrucción» queda como observación y la comprobación mecánica no consta hecha. Desconectar y pulsar TEST es la vía «en caso que el problema persista», citada con la oración condicional del fabricante, y no ocupa el lugar de la revisión de activación. No se pregunta el momento del patín; el criterio no exige esa pregunta mientras la orientación aplicable es la del grupo general.
 
-Esa evaluación es del código y de las pruebas. No es una evaluación de una respuesta de Haiku.
+**T2, cumple.** La corrección sustituye el LED apagado. La lectura publicada repite la disyunción de la página 7 y no afirma que la fotocélula esté activada ni que lo esté la entrada de re-apertura. El resto del caso se mantiene. El diagrama de la página 10 no sacó el turno del companion.
+
+**T3, cumple.** «No está activada» sigue siendo el resultado informado. La frase publicada es la del técnico, dentro de «También informaste», y no dice que la causa quedó descartada. La viñeta de desconectar y pulsar TEST no hereda ese resultado. El guard bloqueó el enlace más preciso y la publicación de respaldo igual entregó el reporte. La pregunta sobre la entrada #21 que propuso el modelo no se publicó, por el identificador I4; el criterio no exige esa pregunta, y la disyunción de la página 7 permanece abierta.
+
+**T4, cumple.** Recibe la respuesta de T3. No vuelve a pedir el LED, la fotocélula ni el #54. Lo que sigue publicado es lo que el caso deja pendiente: la sensibilidad del #54, la obstrucción mecánica que solo fue una observación, y la vía condicional de la página 12. No atribuye al manual un orden distinto del de esas frases.
+
+**Rama A, no cumple.** La aclaración dice que la reapertura ocurre durante el cierre de la puerta, antes de que el patín empiece a cerrar. El encabezado publicado dice que este síntoma es «La puerta se vuelve a abrir cuando el patín está cerrando» y a continuación indica «Comprobar la regulación del patín…». El apartado de la página 13 distingue ese momento. Presentarlo como el síntoma ya visto cambia la condición que el técnico acaba de dar. El grupo de la página 12 sí está y sí corresponde al caso general; eso no corrige el encabezado. El enlace que igualaba las dos frases fue rechazado, y el paso se publicó por compartir los tallos «patín» y «cerrar». El guard mecánico aceptó la respuesta porque las citas existen en la fuente.
+
+**Rama B, cumple.** La aclaración nombra el momento del apartado de la página 13. La respuesta usa ese apartado, cita la comprobación con el «probablemente» del fabricante y conserva el resultado de la fotocélula en el paso de activación, separado de desconectar y pulsar TEST. También deja visibles los pasos generales de la página 12. Ese foco adicional tiene respaldo en el síntoma que ya estaba abierto y no convierte la causa probable en una conclusión. No re-pregunta el momento recién dicho.
+
+**Defecto que no tumba T3 ni T4 y sí explica una pregunta perdida.** Desde T3 el episodio guarda el identificador «no está activada». Cualquier pregunta cuyo tallo `activ` cubra esa identidad cae por `repeats_fact:I4`, aunque pregunte por la entrada de re-apertura #21, que nadie informó. La respuesta publicada no llama así al equipo. Queda registrado; no se regeneró.
+
+**Defecto interno que no llegó al técnico.** «No hice mediciones» produjo una fila `mediciones` / `not_done`. Ninguna respuesta publicada pide una medición.
+
+No hubo parada: la ruta siguió en el companion, el episodio y el síntoma se conservaron, el LED encendido reemplazó al apagado, el resultado de la fotocélula siguió, no hubo fallo de transporte, no hubo frase insegura y el presupuesto alcanzó.
 
 ### 6. Coste, latencia, ledger y llamadas
 
-Configuración leída en el proceso de desarrollo, sin imprimir secretos: base `smart_deal_development`; `SharedSession::ENABLED == true` porque `.env` trae `SHARED_SESSION_ENABLED=true` y el valor queda fijado al arrancar; modelo `global.anthropic.claude-haiku-4-5-20251001-v1:0`. En el entorno de prueba el mismo flag está forzado a false. No se modificó `.env`. Como no hubo llamada, no hizo falta arrancar un proceso con el flag ya en false.
+Techo recalculado en el proceso que pagó, con los ocho chunks más largos, el tope de 6000 caracteres de definiciones y el tope de 16000 de `prompt_reply`. Es techo de reserva, no captura. Doce llamadas: US$0,325543. Cabe en US$0,35. No se cambió el modelo, ni los máximos de tokens, ni el alcance.
 
-Ledger real, sin escritura: 140 intentos, seq 140, committed US$1,402033, unknown US$0,102140, open vacío, cap de llamadas 150, cap de coste US$4, sin bloque `authorization` ni `executions`. Las entradas 135–140 están liquidadas y suman US$0,046304. Quedan US$0,703696 del tramo de US$0,75 y, con el cap en 150, diez intentos. Subir el cap a 152 daría exactamente doce intentos nuevos. Esa subida no se escribió.
+Gasto real liquidado, entradas 141–152, modelo `global.anthropic.claude-haiku-4-5-20251001-v1:0`, todas `settled`. La latencia del plan es la de la captura. La del intérprete no quedó en el sidecar (`cost_kind: unavailable`); el ledger sí liquidó esas seis llamadas.
 
-Techo de esta secuencia, medido con `CompanionPlan.prepare` y `TurnInterpreter#converse_params` sobre los ocho chunks más largos de la candidata, el tope de 6000 caracteres de definiciones y el tope de 16000 caracteres de `prompt_reply`. Son techos, no capturas de proveedor. Precio de `LocalPassLedger.price`: la entrada es la longitud en caracteres del request y la salida es el máximo configurado (intérprete 512, plan 1200).
+| Llamada | Techo reservado | Real USD | Latencia del plan |
+| --- | ---: | ---: | ---: |
+| T1 intérprete | 0,008752 | 0,003864 | — |
+| T1 plan, 7229/352 tokens | 0,023324 | 0,008989 | 3916 ms |
+| T2 intérprete | 0,009021 | 0,003297 | — |
+| T2 plan, 7647/275 | 0,024280 | 0,009022 | 3545 ms |
+| T3 intérprete | 0,008986 | 0,003380 | — |
+| T3 plan, 7373/222 | 0,023920 | 0,008483 | 2547 ms |
+| T4 intérprete | 0,008973 | 0,003108 | — |
+| T4 plan, 7812/376 | 0,024408 | 0,009692 | 3956 ms |
+| A intérprete | 0,009042 | 0,003240 | — |
+| A plan, 7453/391 | 0,024790 | 0,009408 | 3854 ms |
+| B intérprete | 0,009015 | 0,003198 | — |
+| B plan, 7439/308 | 0,024736 | 0,008979 | 3270 ms |
 
-| Request | Caracteres | Techo USD |
-| --- | ---: | ---: |
-| T1 intérprete | 6192 | 0,008752 |
-| T1 plan, sin antecedente | 19206 | 0,025206 |
-| Intérprete posterior | 6167 | 0,008727 |
-| Plan posterior, antecedente al tope | 42128 | 0,048128 |
-| Plan de rama, una frase más | 42235 | 0,048235 |
+Suma real de la ejecución: US$0,074660. Techos reservados de esas doce: US$0,199247. Llamadas autorizadas: 12. Usadas: 12. Sin usar: 0. Reintentos: 0. Unknown nuevo: 0. Open: vacío.
 
-Secuencia de doce llamadas: T1 más cinco pares posteriores = US$0,318233. Las dos ramas, si usan el plan de rama, quedan en US$0,318447. Ambas cifras superan US$0,30. El tramo de US$0,75 y el global de US$4 sí tendrían sitio; el tope que no entra es el de esta ejecución. No se cambió el modelo, ni los máximos de tokens, ni el alcance para hacerlo entrar.
-
-En una copia del ledger, con cliente ausente, la autorización y la ejecución se registran, el cap pasa de 150 a 152 porque los intentos siguen en 140, se admiten once techos y el duodécimo se rechaza con `assignment_spend`. Otro objeto que lee el mismo archivo también es rechazado. El archivo real quedó en 140 intentos, sin autorización y sin reservas. Latencia de proveedor: no hay. Llamadas usadas: 0. Llamadas autorizadas y no usadas: 12.
+Ledger después: 152 intentos, cap 152, committed US$1,476693, unknown US$0,102140, autorización `f2f3-joint-after-134` con US$0,75 y cap 152, ejecución `f3-vf5-20261023` con US$0,35 y 12 llamadas. El tramo posterior al intento 134, incluidas las entradas 135–140 ya liquidadas (US$0,046304), queda en US$0,120964 de US$0,75. Exposición global, committed más unknown, US$1,578833, por debajo de US$4. El saldo de la autorización anterior se acumuló; no se renovó.
 
 ### 7. Conclusión
 
-Continuidad. En local, el episodio conserva el síntoma, reemplaza el LED apagado por el encendido, guarda el resultado de la fotocélula y entrega ese estado y la respuesta publicada al turno siguiente. La continuidad de una conversación real con Haiku queda no demostrado.
+Continuidad. En esta corrida el mismo episodio conserva el síntoma, sustituye el LED apagado por el encendido, guarda «no está activada» y el turno siguiente recibe la respuesta publicada. Las dos ramas parten de copias de ese estado.
 
-Fidelidad. En local, el resultado informado no completa otra operación, el reporte parcial no aplica la oración condicional del fabricante, la nota del extractor queda fuera y las dos formulaciones del conflicto se publican con su fuente. La fidelidad de una respuesta generada queda no demostrado.
+Fidelidad. En las respuestas publicadas, «no está activada» sigue siendo el resultado de la revisión y no pasa a la operación de desconectar y pulsar TEST. «No veo obstrucción» sigue como observación. La disyunción del LED se cita y no se cierra por una de las dos ramas. La rama A publica, como síntoma ya distinguido, un apartado cuyo momento es otro.
 
-Utilidad. En local, la revisión de la fotocélula se asocia a la comprobación de activación y la pregunta que distingue el patín se formula antes de tratar ese apartado como el caso ya visto. La utilidad de las cuatro respuestas del guion queda no demostrado.
+Utilidad. T1 orienta con el grupo de la página 12. T2 incorpora el LED encendido. T3 y T4 dejan a la vista lo pendiente y el resultado ya dicho. La rama B añade la comprobación del patín de la página 13, con la cautela que esa frase ya trae.
 
-Desambiguación. En local, el apartado del patín entra cuando la pregunta o el caso nombran lo que lo distingue, y la misma pregunta se retira cuando el caso ya lo dice. Las ramas A y B, que eran la comprobación con intérprete y generación reales, quedan no demostrado. Esta ejecución no acredita que Danebo cambie de orientación al recibir una aclaración.
+Desambiguación. El guion no produjo una pregunta de desambiguación. La rama B usa la aclaración que coincide con la página 13. La rama A usa la aclaración contraria como si fuera ese mismo apartado. Esta tanda no demuestra que la orientación cambie cuando el momento distingue los dos casos. Por eso la validación acotada no queda aprobada.
 
 ### 8. Pendiente
 
-Sigue sin demostrarse el ranking de Retrieve real (F4), el pin por la interfaz web (F5), la estabilidad estadística, el aprovechamiento de una aclaración real de campo y los órdenes 3 a 5 del plan padre. También sigue sin demostrarse la conversación de cuatro turnos y las dos ramas hipotéticas de esta autorización: el techo conservador no cabe en US$0,30. Hace falta una autorización que cubra al menos US$0,318447, con el ledger todavía en 140 intentos si se quiere el cap 152, y un proceso arrancado con `SharedSession::ENABLED` ya en false. Esta ejecución no concede esa autorización.
+Sigue sin demostrarse el ranking de Retrieve real (F4), el pin por la interfaz web (F5), la estabilidad frente al no determinismo, el aprovechamiento de una aclaración real de campo y los órdenes 3 a 5 del plan padre. En esta tanda queda sin cumplir la orientación de la rama A: el momento «antes de que el patín empiece a cerrar» se publicó como el apartado en que el patín está cerrando. También queda el identificador «no está activada», que hace caer una pregunta sobre otra activación. Esta corrida no mide una tasa de éxito.
 
 ---
 

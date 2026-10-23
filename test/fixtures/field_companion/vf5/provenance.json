@@ -1,0 +1,17 @@
+{
+  "pdf": "docs/field_companion/fuentes/VF5.pdf",
+  "pdf_sha256": "be7a39a3490c92c8381cb883402760cb07d10b0a3beda5348bed22f72abedf72",
+  "note": "Copias de la agrupación ya contrastada de «La puerta se re-abre sola» (PDF 12–13) y del síntoma siguiente. La prueba lee solo estos archivos.",
+  "files": {
+    "chunk_p12_5.txt": {
+      "sha256": "aeab3d5afb150beaad789399355d2c500f746f41ee7183e2a58283122ebbca48",
+      "pdf_pages": [12, 13],
+      "printed_folios": ["11/21", "12/21"]
+    },
+    "chunk_p13_1.txt": {
+      "sha256": "35f79ea23c44025e7668b9c914f0ce495dc5f5faf0b975f08ecc5075f1266bc7",
+      "pdf_pages": [13],
+      "printed_folios": ["12/21"]
+    }
+  }
+}

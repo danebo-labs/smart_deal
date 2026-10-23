@@ -1,0 +1,42 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: paso libre 1.400 mm, patín, LEDs de obstrucción, puerta golpea al abrir, La puerta no alcanza la posición de apertura completa, puerta se vuelve a abrir cuando patín está cerrando, La puerta golpea cuando abre]
+
+• La puerta no alcanza la posición de apertura completa.
+– Verificar los ajustes mecánicos de la puerta. El motor tiene suficiente par para abrir las puertas en circunstancias normales hasta un paso libre de 1.400 mm (sin reducción del motor).
+• La puerta se vuelve a abrir cuando el patín está cerrando.
+– Comprobar la regulación del patín, ya que probablemente el sistema de bloqueo del patín no esté correctamente ajustado y la puerta tenga fricción mecánica. Verificar si los LEDs de obstrucción se encienden.
+• La puerta golpea cuando abre.
+– Comprobar que el desbloqueo del patín esté bien fijado antes de que la puerta empiece a abrir. En caso de que el patín no esté bien fijado se debe comprobar su ajuste debido a que debe estar demasiado duro.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-4D4AE862F196721D
+SOURCE_SECTION_OR_PAGE: • La puerta no alcanza la posición de apertura completa.
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Verificar los ajustes mecánicos de la puerta.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: criteria=El motor tiene suficiente par para abrir las puertas en circunstancias normales hasta un paso libre de 1.400 mm (sin reducción del motor)
+EVIDENCE: Verificar los ajustes mecánicos de la puerta.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-5903A3127DE5E8C5
+SOURCE_SECTION_OR_PAGE: • La puerta se vuelve a abrir cuando el patín está cerrando.
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Comprobar la regulación del patín. Verificar si los LEDs de obstrucción se encienden.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: criteria=probable causa indicada: sistema de bloqueo del patín mal ajustado y fricción mecánica en la puerta
+EVIDENCE: Comprobar la regulación del patín, ya que probablemente el sistema de bloqueo del patín no esté correctamente ajustado
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-1644F1EFCD501A00
+SOURCE_SECTION_OR_PAGE: • La puerta golpea cuando abre.
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Comprobar que el desbloqueo del patín esté bien fijado antes de que la puerta empiece a abrir.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: precondition=en caso de que el patín no esté bien fijado, comprobar su ajuste porque debe estar demasiado duro
+EVIDENCE: Comprobar que el desbloqueo del patín esté bien fijado antes de que la puerta empiece a abrir.
+END_FIELD_RECORD

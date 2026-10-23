@@ -256,6 +256,26 @@ Nunca se regenera un turno, ni se sustituye por una respuesta preparada, ni se r
 
 ---
 
+## Ejecución de F2 — 23 de octubre de 2026
+
+**Veredicto: F2 aceptada en local.** No hubo inferencias ni reextracciones pagadas, ni escrituras en S3, ni Retrieve, ni cambios de modelo, presupuesto, ledger o flags. El detector de fidelidad no se modificó.
+
+**Qué se conservó.** El grupo «La puerta se re-abre sola» (tres comprobaciones, continuación en la página 13 que empieza «En caso que el problema persista», resultado condicional y límite antes de «La puerta no alcanza la posición de apertura completa»). `chunk_p12_5` y `chunk_p13_1` no cambiaron. Las notas del fabricante que empiezan por «Nota:» siguen en el cuerpo. Los conflictos C1–C4 siguen literales y anclados: no se convierte N en Nm ni se elige una asignación de bornes. El prompt de extracción no se tocó.
+
+**Qué se corrigió.** Comentarios del extractor marcados con `[NOTA_EXTRACCION]`, o reescritos cuando metían en el valor un paréntesis que la página no imprime (el 200, el 600, el «230 V» de la Fig. 3, la fila de 36,61 Kg). La fila de clase térmica queda vacía, como está impresa. La unidad de cable de la página 17 pasa de `mm2` a `mm²`. `CompanionStatements` trata como una sola nota de extracción la línea completa que lleva `DATA_NOT_AVAILABLE` o `REQUIRES_FIELD_VERIFICATION`, y también la que empieza por `[NOTA_EXTRACCION]`. Esas notas no entran en el bloque que consume el companion. Una «Nota:» del fabricante, sin esa marca, sigue siendo texto.
+
+**Página 22.** Está entre las 21 retenidas y el gate ya la certificaba por capa de texto. Aplazarla no la saca del cierre: no se abrió otra revisión visual. Solo se separaron los comentarios de extractor que `added_lines` ya señalaba. El gate fresco sigue en `certified_text_layer`.
+
+**Adjudicación.** `tmp/field_companion/vf5_correction/f2f3_joint/f2/adjudication.json`. Autoridad: renders de `tmp/field_companion/vf5_correction/f2f3_joint/f2/renders_20261023/` (140 dpi, más recortes) y, para la placa de la página 4 y la Fig. 3, los recortes ya existentes del mismo PDF. 21 páginas en `certified_text_layer`, `certified_visual_review`, `verified_manual` o `corrected`; la página 3 en `discard_accepted`. Donde el detector no mide un dato que sí está (apertura de la página 15, «200 V» separado por celdas vacías, encabezados 11.1 / 11.2 / 11.3), la adjudicación lo registra como verificación manual y no cambia el detector.
+
+**Candidata.** `tmp/field_companion/vf5_correction/f2f3_joint/f2/candidate_r2/`. No sustituye a `f2/kb` ni a `f2/kb.r1`. 45 cuerpos y 45 sidecars. El diff contra `f2/kb` cambia 26 cuerpos: marcas de notas y las correcciones de arriba. `manifest.json` identifica el código (`git_sha`), el PDF `be7a39a3…f72`, los resultados originales, los reemplazos y los hashes. El manifest se regenera al cerrar el commit para que `git_sha` sea el de esta entrega. Evidencia voluminosa, solo local, en ese directorio y en `renders_20261023/`.
+
+**Pruebas.** `companion_statements_test.rb` (grupo 12–13 y notas), `companion_plan_test.rb` y el resto de `test/services/rag/companion_*`: 92 pruebas, 0 fallos. Fixtures versionados en `test/fixtures/field_companion/vf5/`.
+
+**Siguiente bloque de F3, sin ejecutarlo.** El punto 1 de «F3: alcance para los cuatro turnos»: la ruta D5. `companion_turn_skip_reason` debe usar `plan_request?` sobre el mensaje literal, con las pruebas de `companion_plan_route_test.rb`. Después, en el mismo orden del plan, la correspondencia de operaciones, la orientación y el presupuesto. La conversación pagada de cuatro turnos no está autorizada por esta ejecución.
+
+---
+
 ## Revisión de Codex — 23 de octubre de 2026 (vigente con las enmiendas de Opus de arriba)
 
 **Encargo actual: elaborar y revisar el plan. No implementar, invocar modelos, modificar presupuestos, escribir en S3, sincronizar la KB ni desplegar.** Opus valida este diseño; Grok implementará después F2 y, sobre su evidencia aceptada, F3. Esta revisión completa el rediseño iniciado el miércoles 21. Conserva este archivo como única cola de la corrección VF5.

@@ -1,0 +1,56 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: la puerta se re-abre sola, potenciómetro de regulación de fuerza de re-apertura, #54, fotocélula, obstrucción mecánica, botón de TEST]
+
+[PDF_PAGE: 12]
+[PRINTED_PAGE: 11/21]
+8.2 Funcionamiento normal
+
+• La puerta se re-abre sola.
+– Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54).
+– Comprobar que la fotocélula no esté activada.
+– Comprobar que no hay una obstrucción mecánica en la puerta.
+
+[PDF_PAGE: 13]
+[PRINTED_PAGE: 12/21]
+– En caso que el problema persista, desconectar la fotocélula y volver a pulsar el botón de TEST. Si la puerta no se abre o cierra completamente, debe haber una obstrucción mecánica en la puerta.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-25C752F61083C06F
+SOURCE_SECTION_OR_PAGE: 8.2 Funcionamiento normal — La puerta se re-abre sola.
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54).
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54).
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-780BFE187C304EF0
+SOURCE_SECTION_OR_PAGE: 8.2 Funcionamiento normal — La puerta se re-abre sola.
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Comprobar que la fotocélula no esté activada.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Comprobar que la fotocélula no esté activada.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-1A0C34BF91373E41
+SOURCE_SECTION_OR_PAGE: 8.2 Funcionamiento normal — La puerta se re-abre sola.
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Comprobar que no hay una obstrucción mecánica en la puerta.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Comprobar que no hay una obstrucción mecánica en la puerta.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-7A74B652F51E3263
+SOURCE_SECTION_OR_PAGE: 8.2 Funcionamiento normal — La puerta se re-abre sola.
+SOURCE_PDF_PAGE: 13
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: En caso que el problema persista, desconectar la fotocélula y volver a pulsar el botón de TEST.
+EXPECTED_RESULT: Si la puerta no se abre o cierra completamente, debe haber una obstrucción mecánica en la puerta.
+DETAILS: precondition=el problema persiste (síntoma no visible en esta página)
+EVIDENCE: Si la puerta no se abre o cierra completamente, debe haber una obstrucción mecánica en la puerta.
+END_FIELD_RECORD

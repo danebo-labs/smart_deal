@@ -4,10 +4,12 @@ module Rag
   # Numbered statements of the companion sources. A bullet item governs the
   # dash lines that follow it without other text in between; those are its
   # steps. A page mark between two steps does not separate them. A sentence, a table row, a
-  # warning, and a conflict note are statements of their own. A line carrying
-  # an extraction marker is an extraction note, not document text. The text of
-  # a statement is a literal piece of its source. Reference-only sources and
-  # record blocks give no statements.
+  # warning, and a conflict note are statements of their own. A whole line that
+  # carries an extraction marker, or that starts with [NOTA_EXTRACCION], is one
+  # extraction note: it is not split into sentences and it is not document text.
+  # A manufacturer line that only begins with «Nota:» stays document text.
+  # The text of a statement is a literal piece of its source. Reference-only
+  # sources and record blocks give no statements.
   class CompanionStatements
     Statement = Data.define(:id, :source, :kind, :text, :section, :item, :page) do
       def step?
@@ -22,6 +24,7 @@ module Rag
     TABLE_RULE = /\A\|[\s\-|:]+\|\z/
     PAGE_MARK = /\A\[PDF_PAGE:\s*(\d+)\]\z/
     CONFLICT_LINE = /\A\[CONFLICTO_DOCUMENTAL\b/
+    EXTRACTOR_NOTE_LINE = /\A\[NOTA_EXTRACCION\b/
     WARNING_LINE = /\A(?:IMPORTANTE|ATENCI[ÓO]N|ADVERTENCIA|PRECAUCI[ÓO]N|PELIGRO|WARNING|CAUTION|DANGER)\b/i
     HEADER_LINE = /\A(?:\[(?:PRINTED_PAGE|DOCUMENT|SOURCE_URI|SEARCH_ALIASES|TRANSCRIPCI[ÓO]N_VISUAL_LOCAL)\b|THIS JOB'S EQUIPMENT:|#{Regexp.escape(DocumentIdentityScope::OTHER_EQUIPMENT_PREFIX)})/
     EXTRACTION_MARKER = /\b(?:DATA_NOT_AVAILABLE|REQUIRES_FIELD_VERIFICATION)\b/
@@ -73,6 +76,11 @@ module Rag
 
         if line.match?(CONFLICT_LINE)
           number = add(source, number, "conflict", line, section, item, page)
+          next
+        end
+        if line.match?(EXTRACTOR_NOTE_LINE) || line.match?(EXTRACTION_MARKER)
+          steps_open = false
+          number = add(source, number, "extraction_note", line, section, item, page)
           next
         end
         if line.match?(SECTION_LINE) || line.match?(ENTRY_LINE)

@@ -3735,4 +3735,103 @@ Sigue sin demostrarse con Haiku, desde este checkpoint: una aclaración publicad
 
 El mismo archivo, SHA-256 `3196986bdb6e229b4240a199dc6a2d2e42aeda0d99d03a6a3ea2e2da49d7c2b3`, episodio `ep_ebaad52adc01a534`, sin pendiente. No hay checkpoint posterior: no se publicó un turno. Continuar exige una autorización explícita para cargar ese JSON en una sesión local nueva con `updated_at` dentro de la ventana, sin reescribir la captura, y entonces enviar una sola vez «¿Qué sigue?». Esa pasada sigue siendo intérprete y generación, las dos invocaciones que quedan de `f3-q1-20261023`. Hasta esa autorización, esas dos llamadas no se usan. Esta sección no es una continuación ya probada.
 
+## F3. Replay reactivado del checkpoint posterior a T3, 23 de octubre de 2026
+
+**Veredicto.** F3 no se cierra. F2 permanece aceptada. Esta pasada es un replay de prueba: una copia del checkpoint histórico se cargó en una sesión local y solo se movieron las marcas de tiempo necesarias para que el episodio siguiera activo. No es una continuación histórica sin modificaciones. Con el reloj real, el caso completo estaba cargado antes de llamar. Se envió una vez «¿Qué sigue?». Haiku propuso una pregunta con modalidad. El producto no la publicó. Publicó una aclaración de alcance sobre «No veo obstrucción» y dejó ese pendiente. La respuesta del técnico no se envió. Una muestra favorable no cierra F3 ni declara estabilidad.
+
+### 1. Preparación temporal
+
+`HEAD` de la ejecución `da63d137e181492d9681760b7182c130eb6bb928`. El producto de `app/` es el de `2d778f1`: no hubo diff de producto. Prompts, modelo y validadores no se cambiaron. La caducidad de cuatro horas no se tocó. No hubo reloj simulado. `SHARED_SESSION_ENABLED=false` antes de cargar Rails. Base `smart_deal_development` en localhost. Candidata `candidate_r2`, manifiesto `3472b6310640454cb79db75c0a5e9b97cdb9e0f8a7fa1eefebc6498ee8d0abc0`, Retrieve y S3 locales, converse real, Haiku `global.anthropic.claude-haiku-4-5-20251001-v1:0`, `AWS_MAX_ATTEMPTS=1`, `RAG_TRANSIENT_ATTEMPT_LIMIT=1`.
+
+Captura original, sin escritura: `20261023T182442Z-conversation/t3/episode_after.json`, SHA-256 `3196986bdb6e229b4240a199dc6a2d2e42aeda0d99d03a6a3ea2e2da49d7c2b3`, igual antes y después. Sesión local 240. Reloj real de la copia `2026-10-23T20:51:00-03:00`, zona `America/Santiago`. Delta único `19560.905` segundos.
+
+| Campo | Original | En la copia |
+| --- | --- | --- |
+| `updated_at` | `2026-10-23T15:25:00-03:00` | `2026-10-23T20:51:00-03:00` |
+| `opened_at` | `2026-10-23T15:24:43-03:00` | igual, sin cambio |
+| `facts.manufacturer.at` | `2026-10-23T15:24:43-03:00` | igual, sin cambio |
+| historial T1 | `2026-10-23T15:24:50-03:00` | `2026-10-23T20:50:50-03:00` |
+| historial T2 | `2026-10-23T15:24:55-03:00` | `2026-10-23T20:50:55-03:00` |
+| historial T3 | `2026-10-23T15:25:00-03:00` | `2026-10-23T20:51:00-03:00` |
+
+`updated_at` es lo que `ActiveEpisode.parse` usa para la ventana. Las marcas del historial se movieron con el mismo delta porque, si se dejaban en las 15:25, el corte `max(ahora − 4 h, opened_at)` las dejaba fuera y el producto no veía T1–T3. El orden relativo se conservó. Equipo, síntoma, observaciones, checks, resultados, correcciones y textos del historial no se reescribieron.
+
+Preflight con `Time.current` a las 20:51:01, antes de reservar. Episodio `ep_ebaad52adc01a534`, no vacío. Objetivo «La puerta se reabre sola». Identidad que ve el compañero: «Fermator, Fermator VF5+, operador de puerta». El JSON sigue guardando el identificador «no está activada»; la identidad lo omite porque repite el resultado de la fotocélula. Observaciones: «La puerta se reabre sola», «No veo obstrucción», «el LED de fotocélula está encendido». Checks: `#54` no hecho, `mediciones` no hechas, fotocélula hecha con «no está activada». Sin pendiente. Los tres mensajes publicados de T1, T2 y T3 eran visibles. No estaban las ramas A o B, «¿Qué revisaste?», «El marco de la puerta, nada más», «manualmente» ni «visualmente». Registro: `runs/20261023T235100Z-q1r/q1r_clock.json` y `q1r_preflight.json`.
+
+La copia del ledger admitió dos reservas y rechazó la tercera sin escribir el archivo real. Después se armó el guard con tope de proceso 2. No se abrió otra ejecución ni se movió `call_cap`.
+
+### 2. Respuesta publicada
+
+Correlación `query:7d0ed419-7478-4393-b151-40cd6e67cd91`. Ruta `answered`. Turno compañero aplicado. Publicación aceptada, sin motivos. `answer`, `history_answer`, `presented_response.txt` y `prompt_reply` son el mismo texto. SHA-256 del archivo `f147c8c9cba295f5dbe690b9fbf274f3f62b8c05d773c8ab4505ae2d9a980994`.
+
+```
+Sobre lo que reportaste, «el LED de fotocélula está encendido»: la documentación dice «Indicador LED y relé activado cuando la fotocélula o la entrada de re-apertura está activada» [2]; lectura de Danebo: LED de fotocélula encendido: indicador LED activado cuando la fotocélula o la entrada de reapertura está activada.
+Para este síntoma, «La puerta se re-abre sola», la documentación indica [1]:
+- «Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)» [1]; dijiste «No he comprobado el #54», así que sigue pendiente.
+- «Comprobar que no hay una obstrucción mecánica en la puerta» [1]; reportaste «No veo obstrucción», que es una observación: esta comprobación no consta como hecha.
+- «En caso que el problema persista, desconectar la fotocélula y volver a pulsar el botón de TEST»; «Si la puerta no se abre o cierra completamente, debe haber una obstrucción mecánica en la puerta» [1].
+También informaste: «Ya revisé la fotocélula y no está activada».
+Para orientar falta el alcance de «No veo obstrucción»: la documentación trata «La puerta se re-abre sola» [1].
+Dijiste «No veo obstrucción». ¿Qué revisaste?
+```
+
+El campo `content` del historial guarda solo 600 caracteres y corta en la viñeta de la obstrucción, en «obstrucción me...». Esa pregunta no está en ese campo. `prompt_reply` sí es el texto completo, y es el antecedente que el prompt siguiente lee. El corte es `MAX_MSG_LENGTH`. No es otra redacción.
+
+### 3. Pregunta de Haiku y transformación
+
+El intérprete devolvió `follow_up`, sin aserciones, observaciones ni checks nuevos. No armó la aclaración.
+
+Haiku, en el plan, propuso: «¿Has comprobado manualmente que no hay obstrucción mecánica en la puerta, o solo la observaste visualmente?» `question_about` era `S1.5` y se rechazó por `statement_kind:step`. La pregunta se rechazó por `modality:manualmente,visualmente`. No se publicó y no quedó pendiente.
+
+Ruby publicó otra frase: «Dijiste «No veo obstrucción». ¿Qué revisaste?» `question_scope` es el reporte «No veo obstrucción» con aspecto `scope`. `question_targets` quedó en `S1.2`, el ítem «La puerta se re-abre sola.», no el paso. El preámbulo dice que falta el alcance de ese reporte y cita el ítem en [1].
+
+Otros rechazos del mismo plan, que no sustituyeron la pregunta: el enlace de O1 a `S1.2` por `operation`, y el enlace de C1 a `S1.4` por `ungrounded:hecha,paso,pide`. Las tres viñetas del síntoma se publicaron igual.
+
+### 4. Evaluación
+
+La aclaración publicada es válida en este caso. Pregunta qué cubrió un reporte cuyo alcance no está dicho. Conserva la negación dentro de la cita. No vuelve a preguntar si la fotocélula está activada ni si el #54 se comprobó. No da la comprobación mecánica por hecha: la viñeta sigue diciendo que es una observación y que no consta como hecha. No añade una herramienta, un valor ni una maniobra. La frase de Haiku, con «manualmente» y «visualmente», es otra proposición y no llegó al técnico.
+
+La lista de comprobaciones, sola, no es el avance. El avance es la pregunta de alcance y el preámbulo que la distingue del síntoma. `confirmed_items` marca «La puerta se re-abre sola.» como `goal` porque el ítem ya es el objetivo del caso. Eso no cierra la obstrucción ni convierte la pregunta de alcance en un «sí» al apartado.
+
+El texto conserva el LED encendido, el #54 pendiente, el resultado «no está activada» y el TEST con su condición. No aparece el procedimiento del patín.
+
+La consulta local de Retrieve fue «¿Qué sigue? Fermator VF5+ operador de puerta no está activada el LED de fotocélula está encendido No veo obstrucción La puerta se reabre sola». Ahí entra el identificador guardado «no está activada», que la identidad del compañero había omitido. El texto publicado lo usa como el resultado ya informado de la fotocélula, no como nombre de equipo.
+
+### 5. Pendiente
+
+`documented_context`, instalado porque la pregunta está en el texto publicado.
+
+- `about`: «No veo obstrucción».
+- `aspect`: `scope`. Un «sí» posterior no se traduce a `r=yes` y no confirma el apartado ni cierra la comprobación.
+- `question`: «Dijiste «No veo obstrucción». ¿Qué revisaste?».
+- Destino: ítem «La puerta se re-abre sola.», página 12, `chunk_p12_5.txt`, `document_key` `s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf`.
+
+Ese archivo de la candidata tiene SHA-256 `aeab3d5afb150beaad789399355d2c500f746f41ee7183e2a58283122ebbca48`, el mismo que la fuente [1] de este turno, y contiene el ítem. La pregunta no es sobre #21, así que no hereda «no está activada». La pregunta rechazada de Haiku no quedó instalada.
+
+Después del turno siguen el mismo episodio, el LED encendido, el #54 no hecho, la fotocélula hecha con «no está activada» y las tres observaciones. `opened_at` sigue en `2026-10-23T15:24:43-03:00`. El turno escribió `updated_at` `2026-10-23T20:51:08-03:00`.
+
+### 6. Fuentes, uso y ledger
+
+Ocho fragmentos con clave, más dos sin clave (páginas 8 y 7). Los de clave son `chunk_p12_5.txt` `aeab3d5a…bca48`, `chunk_p7_3.txt` `4329d2a4…5524e`, `chunk_p12_4.txt` `5d230dc7…550b3`, `chunk_p13_2.txt` `cc0237f2…a77bff`, `chunk_p12_3.txt` `449f7b35…80c862`, `chunk_p4_1.txt` `c609377a…896a9`, `chunk_p6_1.txt` `ec7118d4…ef0f45`, `chunk_p17_1.txt` `c90f69db…52eda0`. `number_of_results` 8 sobre 45.
+
+Dos invocaciones, liquidadas, sin reintento. Id 163, `converse`, 23:51:03Z, US$0,003153, techo US$0,009189. La captura del intérprete no guardó tokens ni latencia; el ledger sí liquidó ese importe. Id 164, `converse_message`, 23:51:08Z, 7877 de entrada, 394 de salida, `tool_use`, 4675 ms, US$0,009847, techo US$0,024573. Incremento US$0,013000.
+
+`attempts` 164, `priced` 159, `blocked` 0, `seq` 164, `open` vacío. `committed` US$1,552900. `unknown` US$0,10214, sin cambio. Autorización `f2f3-joint-after-134` intacta. `call_cap` 164, sin cambio. Ejecución `f3-q1-20261023` intacta: corte 152, US$0,750000, 12 llamadas. Esas 12 están usadas. No queda invocación de esa ejecución. SHA-256 del ledger: `b4e0252b964b73b9f51ce73c8844f1a5c366519a6072db93ea547ca6bb450ec6`. El tope de US$4 sigue por encima de `committed` más `unknown`.
+
+### 7. Qué quedó demostrado y qué falta
+
+Demostrado con Haiku, en este replay: desde el caso de T3 reactivado, el modelo propone una modalidad que el producto retira, y el técnico recibe una pregunta de alcance que conserva la negación, no cierra la obstrucción y deja un pendiente cuyo destino se puede identificar.
+
+Sigue sin demostrarse: que Danebo use la respuesta del técnico. No se envió ninguna. También sigue sin verse una segunda pregunta más concreta, ni el uso de esa respuesta en la orientación siguiente. F4 no arranca. F3 sigue abierto. Esta muestra no es una tasa ni una declaración de estabilidad.
+
+### 8. Checkpoint para continuar
+
+No es la captura histórica. Es el estado posterior a este replay, todavía sin respuesta del técnico:
+
+`tmp/field_companion/vf5_correction/f2f3_joint/runs/20261023T235100Z-q1r/q1r_t1/episode_after.json`
+
+SHA-256 `a23aa7fce6b8e21868b690c8180577760927cb128c3d3faa85606f5753ff9c8f`. Sesión 240. Episodio `ep_ebaad52adc01a534`. `updated_at` `2026-10-23T20:51:08-03:00`. La ventana de ese estado llega hasta `2026-10-24T00:51:08-03:00`. Pendiente: la pregunta de alcance de arriba, aspecto `scope`, destino `chunk_p12_5.txt`.
+
+La continuación mínima es un turno nuevo, con autorización de gasto distinta porque `f3-q1-20261023` ya no tiene llamadas, que envíe una respuesta del técnico a esa pregunta y compruebe si el turno siguiente la usa como alcance, sin dar por hecha la obstrucción mecánica y sin confirmar el apartado. Este archivo no contiene esa respuesta. No se probó esa continuación.
+
 

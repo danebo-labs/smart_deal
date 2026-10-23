@@ -11,6 +11,14 @@ module Rag
       nor never if when unless except only
     ].freeze
     CONDITION_PHRASES = [ "en caso", "a menos", "in case" ].freeze
+    # A source marker before a partial quote is carried when the answer puts a
+    # marker of the same family before that quote.
+    MARKER_FAMILIES = {
+      "condition" => %w[si cuando salvo excepto if when unless except] + [ "en caso", "a menos", "in case" ],
+      "negation" => %w[no ni nunca nor never],
+      "restriction" => %w[solo sólo only]
+    }.freeze
+    CLAIM_VERBS = /\b(?:según|indica|dice|establece|pide|exige|recomienda|says|states|requires)\b/i.freeze
     QUOTE_PATTERN = /«([^»]*)»|“([^”]*)”|"([^"]*)"/.freeze
     CITATION_PATTERN = /\[(\d+)\]/.freeze
     LIST_MARKER = /(?:\A|[[:space:]])(?:[-*•]|\d+[.)])(?=[[:space:]])/.freeze
@@ -99,27 +107,33 @@ module Rag
           next if numbers.empty?
 
           cited = numbers.filter_map { |number| sources[number - 1] }
-          fragment.to_enum(:scan, QUOTE_PATTERN).each do
-            quoted = Regexp.last_match.captures.compact.first.to_s
+          fragment.to_enum(:scan, QUOTE_PATTERN).map { Regexp.last_match }.each do |quote_match|
+            quoted = quote_match.captures.compact.first.to_s
             next if quoted.strip.empty?
             next if technician_quote?(quoted, technician_texts)
 
-            match = documentary_quote(quoted, cited)
-            if match
+            lead = fragment[0...quote_match.begin(0)].to_s
+            match = documentary_quote(quoted, cited, lead)
+            if match.nil?
+              reasons << reason("R2", quoted)
+            elsif match[:condition_dropped]
+              reasons << reason("R2", "condition_dropped:#{quoted}")
+            else
               found << {
                 "text" => quoted,
                 "source" => match[:source],
                 "position" => match[:position]
               }
-            else
-              reasons << reason("R2", quoted)
             end
           end
         end
         found
       end
 
-      def documentary_quote(quoted, sources)
+      # nil when no cited source holds the quote literally. condition_dropped
+      # when it does but a marker of the source fragment is not carried.
+      def documentary_quote(quoted, sources, lead = "")
+        dropped = false
         sources.each_with_index do |source, offset|
           content = source_content(source)
           next unless aligned?(content, quoted)
@@ -128,17 +142,35 @@ module Rag
           next unless fragment
 
           found = fragment_match(fragment, quoted)
-          next unless local_condition?(fragment, found)
+          unless local_condition?(fragment, found, lead)
+            dropped = true
+            next
+          end
 
           return { source: source_number(source, offset), position: found.begin(0) }
         end
-        nil
+        dropped ? { condition_dropped: true } : nil
       end
 
-      def local_condition?(fragment, match)
+      def local_condition?(fragment, match, lead = "")
         before = fragment[0...match.begin(0)].to_s
         after = fragment[match.end(0)..].to_s
-        !marker_in?(before) && !starts_with_marker?(after)
+        return false if starts_with_marker?(after)
+        return true unless marker_in?(before)
+
+        carried?(families_in(before), lead)
+      end
+
+      def families_in(text)
+        MARKER_FAMILIES.select { |_family, markers| markers.any? { |marker| marker_word?(text, marker) } }.keys
+      end
+
+      def carried?(families, lead)
+        families.all? { |family| MARKER_FAMILIES[family].any? { |marker| marker_word?(lead, marker) } }
+      end
+
+      def marker_word?(text, marker)
+        text.to_s.match?(/(?<![[:alnum:]])#{Regexp.escape(marker)}(?![[:alnum:]])/i)
       end
 
       def attribution_reasons(text, manufacturer)
@@ -146,10 +178,18 @@ module Rag
         AnswerSafetyProcessor.fragments(text).filter_map do |fragment|
           next if fragment.match?(CITATION_PATTERN)
           next if fragment.match?(ABSENCE_PATTERN)
+          next if question_only?(fragment)
           next unless attributes_source?(fragment, name)
 
           reason("R3", fragment)
         end
+      end
+
+      # A question about the manual attributes nothing to it. A question that
+      # also states what the manual says still does.
+      def question_only?(fragment)
+        body = fragment.to_s.strip
+        (body.start_with?("¿") || body.end_with?("?")) && !body.match?(CLAIM_VERBS)
       end
 
       def attributes_source?(fragment, manufacturer)

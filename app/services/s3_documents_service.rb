@@ -210,6 +210,7 @@ class S3DocumentsService
     return if prefix.blank?
 
     Rag::SectionNeighborExpander.invalidate!(prefix)
+    Rag::CompanionDefinitionSource.invalidate!(prefix)
   end
 
   # #delete_prefix is given a directory prefix (`bulk_chunks/<account>/<uid>`),
@@ -220,6 +221,7 @@ class S3DocumentsService
     return unless doc_prefix.start_with?(BULK_CHUNKS_PREFIX)
 
     Rag::SectionNeighborExpander.invalidate!(doc_prefix)
+    Rag::CompanionDefinitionSource.invalidate!(doc_prefix)
   end
 
   def find_bucket_name

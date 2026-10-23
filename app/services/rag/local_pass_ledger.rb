@@ -25,10 +25,10 @@ module Rag
     TICKETS = :rag_local_pass_tickets
     ASSIGNMENT_PATH_ENV = "RAG_ASSIGNMENT_SPEND_PATH"
     ASSIGNMENT_IDS = :rag_assignment_spend_ids
-    # Lahiri, 2026-10-22: the assembly candidate adds at most four calls
-    # on top of the 132 already recorded. Cumulative 136. The dollar cap
-    # stays US$4 and includes unknown exposure.
-    ASSIGNMENT_CALL_CAP = 136
+    # Lahiri, 2026-10-22: the joint F2/F3 validation adds at most sixteen
+    # calls on top of the 134 already recorded. Cumulative 150. The dollar
+    # cap stays US$4 and includes unknown exposure.
+    ASSIGNMENT_CALL_CAP = 150
     ASSIGNMENT_COST_CAP_USD = "4"
     LOCAL_HOSTS = [ "", "localhost", "127.0.0.1", "::1" ].freeze
     MUTEX = Mutex.new

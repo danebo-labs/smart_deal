@@ -27,6 +27,14 @@ class BatchChunkingPromptTest < ActiveSupport::TestCase
     assert_match(/Never split a shared chain into one component per terminal/, prompt)
   end
 
+  test "a drawn relation is stated and a legibility limit is not a document absence" do
+    assert_match(/A relation the figure draws between printed labels .* is evidence/m, prompt)
+    assert_match(/Never write that the\s+page does not indicate a relation the figure draws/, prompt)
+    assert_match(/"illegible in this rendering" \+ REQUIRES_FIELD_VERIFICATION,\s+never "not indicated"/, prompt)
+    assert_match(/Transcribe every legible printed label of a figure/, prompt)
+    assert_match(/not described by its title or brand alone/, prompt)
+  end
+
   test "a printed table stays a compact table" do
     assert_includes prompt, "Use compact tables `| ID | Function | Connection | Voltage |` where useful."
     assert_not_includes prompt, "header by header"

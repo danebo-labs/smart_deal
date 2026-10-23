@@ -365,6 +365,16 @@ module BatchChunkingPrompt
           the exact order and per-terminal assignment REQUIRES_FIELD_VERIFICATION.
           Never split a shared chain into one component per terminal, and never commit
           to a terminal number the page does not print against that component.
+        - A relation the figure draws between printed labels (a wire, leader line,
+          bracket, or arrow joining them) is evidence. State it as drawn ("20 (+) and
+          19 (−) join the green cable to RECEIVER, as drawn"). Never write that the
+          page does not indicate a relation the figure draws.
+        - What this rendering lets you read is not what the document prints. A mark
+          you cannot read is "illegible in this rendering" + REQUIRES_FIELD_VERIFICATION,
+          never "not indicated", "not shown", or absent from the document.
+        - Transcribe every legible printed label of a figure (terminal numbers, names,
+          values, legends), even when other marks on it are illegible. A figure with
+          labeled elements is not described by its title or brand alone.
 
         # DOCUMENTARY FIDELITY (ABSOLUTE)
         - Preserve the source's exact modality and action verbs. "Check", "avoid",

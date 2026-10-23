@@ -118,11 +118,19 @@ module Rag
     # opening and of numeric literals uses recall_chunks when the merge has
     # moved text; otherwise it uses chunks. A thin or blank text layer is not
     # verifiable. Presence never verifies table column order.
-    def self.assess_coverage(page_texts:, chunks:, discards: {}, page_count: nil, recall_chunks: nil, anchor_page: nil)
+    #
+    # Coverage, verification and acceptance are separate. A page is accounted
+    # when a chunk or a discard covers it. It is verified by its text layer or
+    # by a visual review: { page => { labels: [...], reviewer: "..." } }, whose
+    # labels must all reach the page's chunks. It is certified only when that
+    # verification passed. A page whose chunks claim a figure is illegible or
+    # does not show something needs a visual review even with a text layer.
+    def self.assess_coverage(page_texts:, chunks:, discards: {}, page_count: nil, recall_chunks: nil, anchor_page: nil, visual_reviews: {})
       texts = normalize_page_map(page_texts)
       bodies = normalize_coverage_chunks(chunks)
       recalled = recall_chunks.nil? ? bodies : normalize_coverage_chunks(recall_chunks)
       dropped = normalize_discards(discards)
+      reviews = normalize_reviews(visual_reviews)
       running = running_matter_lines(texts)
       numbers = coverage_page_numbers(texts, bodies, dropped, page_count)
       anchor = anchor_page&.to_i
@@ -136,11 +144,23 @@ module Rag
           recalled: recalled,
           discarded: dropped.key?(number),
           running: running,
-          anchor: anchor
+          anchor: anchor,
+          review: reviews[number]
         )
       }
-      { running_lines: running, pages: pages }
+      { running_lines: running, pages: pages, summary: coverage_summary(pages) }
     end
+
+    def self.coverage_summary(pages)
+      states = pages.values.pluck(:certification)
+      {
+        pages: pages.size,
+        accounted: pages.values.count { |page| page[:accounted] },
+        certified: pages.values.count { |page| page[:certified] },
+        by_certification: states.tally.sort.to_h
+      }
+    end
+    private_class_method :coverage_summary
 
     def self.best_page(body, pages)
       scored = pages.map { |page| [ overlap_score(body, page), page ] }
@@ -314,13 +334,14 @@ module Rag
     FOLIO_LINE = /(?:p[aá]g(?:ina)?|page)\.?\s*\d{1,4}\s*(?:\/|de|of)\s*\d{1,4}/i
     LITERAL_PATTERN = /#\d+|\d+,\d+|\d+\.\d+|\d+\s*V\b/i
 
-    def self.assess_page(number, text:, chunks:, recalled:, discarded:, running:, anchor:)
+    def self.assess_page(number, text:, chunks:, recalled:, discarded:, running:, anchor:, review: nil)
       stripped = strip_furniture(text, running)
       verifiable = significant_count(stripped) >= MIN_TEXT_TOKENS
       narratives = precision_narratives(chunks, number, anchor)
-      precision = verifiable ? precision_ratio(narratives.join("\n"), text) : nil
+      measured = review ? without_labels(narratives.join("\n"), review[:labels]) : narratives.join("\n")
+      precision = verifiable ? precision_ratio(measured, text) : nil
       recall = recall_texts(recalled, number).join("\n")
-      {
+      report = {
         accounted: chunks.any? { |chunk| chunk[:page] == number } || discarded,
         discarded: discarded,
         verifiable: verifiable,
@@ -329,10 +350,74 @@ module Rag
         added_lines: verifiable ? added_lines_for(narratives, norm(text), running) : [],
         opening_present: verifiable ? opening_present?(stripped, recall) : nil,
         missing_numbers: verifiable ? missing_literals(stripped, recall) : nil,
-        layout_order_verified: false
+        layout_order_verified: false,
+        figure_claims: figure_claims(recall),
+        visual_review: review && visual_review(review, recall)
       }
+      report[:certification] = certification(report)
+      report[:certified] = report[:certification].start_with?("certified_")
+      report
     end
     private_class_method :assess_page
+
+    FIGURE_CLAIM = /ilegible|no\s+(?:es\s+)?legible|no\s+est[aá]\s+indicad|no\s+se\s+(?:indica|muestra|aprecia|distingue)|no\s+visible|DATA_NOT_AVAILABLE/i
+
+    def self.figure_claims(text)
+      text.to_s.lines.map { |line| collapse_line(line) }.select { |line| line.match?(FIGURE_CLAIM) }.uniq
+    end
+    private_class_method :figure_claims
+
+    def self.visual_review(review, recall_text)
+      labels = Array(review[:labels]).map { |label| label.to_s.strip }.reject(&:empty?)
+      missing = labels.reject { |label| literal_present?(label, recall_text) }
+      {
+        reviewer: review[:reviewer].to_s.presence,
+        labels: labels.size,
+        missing_labels: missing,
+        status: labels.any? && missing.empty? ? "complete" : "incomplete"
+      }
+    end
+    private_class_method :visual_review
+
+    # A reviewed figure label is drawn, not in the text layer. Its lines are
+    # vouched for by the review and leave the precision measure.
+    def self.without_labels(narrative, labels)
+      needles = Array(labels).map { |label| compact_form(label) }.reject(&:empty?)
+      return narrative if needles.empty?
+
+      narrative.to_s.lines.reject { |line|
+        compact = compact_form(line)
+        needles.any? { |needle| compact.include?(needle) }
+      }.join
+    end
+    private_class_method :without_labels
+
+    def self.certification(report)
+      return "discarded" if report[:discarded]
+      return "missing" unless report[:accounted]
+
+      review = report[:visual_review]
+      return "failed_visual_review" if review && review[:status] != "complete"
+
+      if report[:verifiable]
+        failed = report[:precision_low] || report[:opening_present] == false || Array(report[:missing_numbers]).any?
+        return "failed_text_layer" if failed
+        return "certified_visual_review" if review
+        return "needs_visual_review" if report[:figure_claims].any?
+
+        return "certified_text_layer"
+      end
+      review ? "certified_visual_review" : "needs_visual_review"
+    end
+    private_class_method :certification
+
+    def self.normalize_reviews(reviews)
+      Array(reviews).each_with_object({}) do |(number, review), map|
+        values = review.respond_to?(:deep_symbolize_keys) ? review.deep_symbolize_keys : {}
+        map[number.to_i] = values
+      end
+    end
+    private_class_method :normalize_reviews
 
     def self.coverage_page_numbers(texts, chunks, discards, page_count)
       if page_count.to_i.positive?
@@ -461,7 +546,8 @@ module Rag
 
       escaped = Regexp.escape(needle)
       pattern = needle.match?(/\A#?\d/) ? /(?<!\d)#{escaped}(?!\d)/ : /#{escaped}/
-      compact_form(text).match?(pattern)
+      joined_cells = text.to_s.gsub(/(\d)\s*\|\s*(?=\p{L})/, '\1')
+      compact_form(joined_cells).match?(pattern)
     end
     private_class_method :literal_present?
 

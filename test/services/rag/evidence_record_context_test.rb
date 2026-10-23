@@ -53,10 +53,11 @@ class Rag::EvidenceRecordContextTest < ActiveSupport::TestCase
   end
 
   test "companion narration drops a terminal record and keeps the prose" do
-    block = service.send(:companion_source_block, [ chunk(passage) ])
+    block = Rag::CompanionPlan.statements_block(Rag::CompanionStatements.parse([ chunk(passage) ]), [ chunk(passage) ])
 
-    assert_includes block, "[1] Documento: VF5. Página: 12."
-    assert_includes block, NARRATIVE
+    assert_includes block, "[1] VF5, página 12"
+    assert_includes block, "S1.1 (texto): La puerta se re-abre sola."
+    assert_includes block, "S1.2 (texto): Comprobar la sensibilidad del #54."
     assert_not_includes block, "FIELD_RECORD"
     assert_not_includes block, "FIELD-SAFETY EVIDENCE RECORDS"
     assert_includes chunk(passage)[:content], "FIELD_RECORD"

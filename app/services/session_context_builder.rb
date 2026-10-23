@@ -63,11 +63,13 @@ class SessionContextBuilder
     COMPANION_TURN_BUDGET
   end
 
-  def self.companion_context(session, episode: nil, current_message: nil)
+  def self.companion_context(session, episode: nil, current_message: nil, current_correlation_id: nil)
     parsed = companion_episode(session, episode)
     trace = { truncated: false }
     case_text = companion_case(parsed, trace, session: session)
-    turns = companion_technician_turns(session, current_message: current_message, trace: trace)
+    turns = companion_technician_turns(
+      session, current_message: current_message, current_correlation_id: current_correlation_id, trace: trace
+    )
     [ case_text, turns, companion_prior_answer(session) ].compact_blank.join("\n\n")
   end
 
@@ -196,8 +198,8 @@ class SessionContextBuilder
     }
     return base.merge(kind: :derived) unless message.is_a?(Hash)
 
-    content = message["content"].to_s
-    if companion_stored_truncated?(content)
+    content = companion_message_text(message)
+    if companion_message_cut?(message)
       return base.merge(kind: :truncated_store, text: content)
     end
 
@@ -276,20 +278,24 @@ class SessionContextBuilder
   end
 
   # Episode user messages in stored order, without the global cap of three.
-  # The current message is left out. A stored cut of 600 characters stays
-  # labeled as truncated. A message that does not fit is omitted whole.
-  def self.companion_technician_turns(session, current_message: nil, trace: nil)
+  # The current turn is left out by its correlation id; two turns with the
+  # same words are two turns. Without that id the current text is matched.
+  # A stored cut stays labeled as truncated. A message that does not fit is
+  # omitted whole.
+  def self.companion_technician_turns(session, current_message: nil, current_correlation_id: nil, trace: nil)
     messages = companion_episode_user_messages(session)
     current = current_message.to_s.strip
-    if current.present?
-      messages = messages.reject { |message| message["content"].to_s.strip == current }
+    if current_correlation_id.present?
+      messages = messages.reject { |message| message["correlation_id"].to_s == current_correlation_id.to_s }
+    elsif current.present?
+      messages = messages.reject { |message| companion_message_text(message).strip == current }
     end
     return "" if messages.empty?
 
     header = "Turnos del técnico, en orden. El mensaje de este turno no se repite."
     units = messages.map { |message|
       line = companion_turn_line(message)
-      companion_unit(line, protect: companion_protected_text?(message["content"])).merge(message: message)
+      companion_unit(line, protect: companion_protected_text?(companion_message_text(message))).merge(message: message)
     }
     room = companion_turn_budget - header.length - 1
     kept = fit_companion_units(units, room, trace, "companion_turn")
@@ -300,10 +306,20 @@ class SessionContextBuilder
     lines.join("\n")
   end
 
+  def self.companion_message_text(message)
+    message["full_content"].presence || message["content"].to_s
+  end
+
+  def self.companion_message_cut?(message)
+    return message["full_content_truncated"] == true if message["full_content"].present?
+
+    companion_stored_truncated?(message["content"])
+  end
+
   def self.companion_turn_line(message)
-    content = message["content"].to_s
+    content = companion_message_text(message)
     notes = []
-    notes << "texto almacenado truncado, no es el mensaje íntegro" if companion_stored_truncated?(content)
+    notes << "texto almacenado truncado, no es el mensaje íntegro" if companion_message_cut?(message)
     notes << "procedencia: #{message['text_provenance']}" if message["text_provenance"].present?
     notes << "correlación: #{message['correlation_id']}" if message["correlation_id"].present?
     prefix = notes.empty? ? "" : "[#{notes.join('. ')}] "
@@ -312,7 +328,7 @@ class SessionContextBuilder
 
   def self.companion_omission_line(message)
     label = message["correlation_id"].presence || "sin correlación"
-    "Omitido por presupuesto, sin recortar: correlación #{label}, #{message['content'].to_s.length} caracteres."
+    "Omitido por presupuesto, sin recortar: correlación #{label}, #{companion_message_text(message).length} caracteres."
   end
 
   def self.companion_episode_user_messages(session, now: Time.current)

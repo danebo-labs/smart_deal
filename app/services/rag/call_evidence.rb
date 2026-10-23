@@ -66,7 +66,7 @@ module Rag
           correlation_id: call[:correlation_id],
           operation: call[:operation],
           attempt: call[:attempt],
-          request: text_of(call[:request], request_key(call[:operation])) || context[:request],
+          request: request_text(call) || context[:request],
           raw_response: raw_text,
           presented_response: presented,
           state: context[:state],
@@ -192,15 +192,29 @@ module Rag
     def self.request_operation(event)
       return "generate_text" if event["kind"] == "generate_text" && event["result"] == "prepared"
       return "interpreter" if event["kind"] == "interpreter_request" && event["result"] == "prepared"
+      return "companion_plan" if event["kind"] == "converse" && event["result"] == "prepared" && companion_plan_request?(event)
 
       nil
+    end
+
+    def self.companion_plan_request?(event)
+      event.dig("tool_config", "tool_choice", "tool", "name").to_s == CompanionPlan::TOOL_NAME
     end
 
     def self.result_operation(event)
       return "generate_text" if event["kind"] == "generation_result"
       return "interpreter" if event["kind"] == "interpreter_raw"
+      return "companion_plan" if event["kind"] == "companion_plan"
 
       nil
+    end
+
+    def self.request_text(call)
+      if call[:operation] == "companion_plan" && call[:request].is_a?(Hash)
+        return JSON.generate(call[:request].slice("model_id", "system", "messages", "inference_config", "tool_config"))
+      end
+
+      text_of(call[:request], request_key(call[:operation]))
     end
 
     def self.request_key(operation)
@@ -266,6 +280,6 @@ module Rag
       path.write(JSON.generate(payload))
     end
     private_class_method :write_json, :envelope, :consumption_of, :raw_text_of, :text_of, :request_key,
-      :result_operation, :request_operation, :extract_calls
+      :result_operation, :request_operation, :extract_calls, :companion_plan_request?, :request_text
   end
 end

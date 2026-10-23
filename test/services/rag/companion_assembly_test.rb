@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require_relative "../../support/companion_plan_response"
 
 class Rag::CompanionAssemblyTest < ActiveSupport::TestCase
   T1 = "query:t1"
@@ -65,6 +66,42 @@ class Rag::CompanionAssemblyTest < ActiveSupport::TestCase
     assert_not_includes text, "texto original del mensaje: «#{stored}"
   end
 
+  test "a user message longer than the stored cut keeps its whole text for the companion turns" do
+    now = Time.current
+    episode = reabre_episode(now)
+    session = session_for(episode, now)
+    long = "#{'medida del tablero ' * 40}no hice mediciones al final."
+    travel_to(now - 30.seconds) { session.add_to_history("user", long, correlation_id: "query:long") }
+    session.reload
+    stored = session.conversation_history.find { |message| message["correlation_id"] == "query:long" }
+
+    text = travel_to(now) { SessionContextBuilder.companion_context(session, current_message: CURRENT) }
+
+    assert_equal ConversationSession::MAX_MSG_LENGTH, stored["content"].length
+    assert_equal long, stored["full_content"]
+    assert_not stored.key?("full_content_truncated")
+    assert_includes text, long
+    assert_not_includes text, "texto almacenado truncado"
+  end
+
+  test "two turns with the same words are two turns and only the current one is left out by its id" do
+    now = Time.current
+    episode = reabre_episode(now)
+    session = session_for(episode, now, extra: [
+      { "role" => "user", "content" => CURRENT, "correlation_id" => "query:t5", "ts" => (now - 10.seconds).iso8601 }
+    ])
+
+    by_id = travel_to(now) do
+      SessionContextBuilder.companion_technician_turns(session, current_message: CURRENT, current_correlation_id: "query:t5")
+    end
+    by_text = travel_to(now) { SessionContextBuilder.companion_technician_turns(session, current_message: CURRENT) }
+
+    assert_equal 1, by_id.scan("] #{CURRENT}").size
+    assert_includes by_id, "correlación: query:t4] #{CURRENT}"
+    assert_not_includes by_id, "correlación: query:t5"
+    assert_equal 0, by_text.scan("] #{CURRENT}").size
+  end
+
   test "a turn that does not fit is omitted whole and a negation is kept" do
     now = Time.current
     episode = reabre_episode(now)
@@ -112,7 +149,7 @@ class Rag::CompanionAssemblyTest < ActiveSupport::TestCase
     result = Rag::CompanionDefinitionExpander.expand([ chunk ], catalog: catalog)
     service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "kb-test")
     sources = service.send(:companion_publication_sources, result.chunks)
-    block = service.send(:companion_source_block, result.chunks)
+    block = Rag::CompanionPlan.statements_block(Rag::CompanionStatements.parse(result.chunks), result.chunks)
 
     assert_equal 2, result.chunks.size
     assert_equal [ "#7" ], result.added.pluck("definition_of")
@@ -121,8 +158,8 @@ class Rag::CompanionAssemblyTest < ActiveSupport::TestCase
     assert_includes result.chunks.last[:content], "La válvula de caudal regula el paso del fluido."
     assert_equal result.chunks.last[:content], sources.last["content"]
     assert_equal 2, sources.last["index"]
-    assert_includes block, "[2] Documento: Manual de válvulas. Página: 4. Sección: 4.2."
-    assert_includes block, "definición de #7"
+    assert_includes block, "[2] Manual de válvulas, página 4, definición añadida de #7"
+    assert_includes block, "S2.2 (texto): La válvula de caudal regula el paso del fluido."
     assert_equal "compatible", sources.last["applicability"]
   end
 
@@ -278,8 +315,8 @@ class Rag::CompanionAssemblyTest < ActiveSupport::TestCase
     end
 
     assert_includes on_calls.first[:user], "La válvula de caudal regula el paso del fluido."
-    assert_includes on_calls.first[:user], "Sección: 4.2."
-    assert_includes on_calls.first[:system], "una sola respuesta integrada"
+    assert_includes on_calls.first[:user], "definición añadida de #7"
+    assert_includes on_calls.first[:system], "companion_plan"
     assert_not_includes off_calls.first[:user], "La válvula de caudal regula el paso del fluido."
     assert_not_includes off_calls.first[:user], "Mensaje del técnico:"
   end
@@ -425,6 +462,10 @@ class Rag::CompanionAssemblyTest < ActiveSupport::TestCase
       "El cierre puede quedar pendiente [1]."
     end
     generator.define_singleton_method(:last_stop_reason) { "end_turn" }
+    generator.define_singleton_method(:converse) do |params|
+      calls << { user: params[:messages].first[:content].first[:text], system: params[:system].first[:text] }
+      CompanionPlanResponse.build({ "links" => [], "steps" => [], "question" => "" })
+    end
     service.define_singleton_method(:document_identity_generator) { generator }
     service.send(
       :document_identity_scope_result,

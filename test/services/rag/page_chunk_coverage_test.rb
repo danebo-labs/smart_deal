@@ -55,6 +55,83 @@ class Rag::PageChunkCoverageTest < ActiveSupport::TestCase
     assert_nil fourth[:missing_numbers]
   end
 
+  test "an accounted image page is not certified until a visual review reaches its chunks" do
+    pages = { 1 => "#{OPENING}\n#{FOLLOWING}\n", 2 => "" }
+    described = "The board shows terminals 19 RECEIVER and 21 RE-OPEN; the arrow under the dial is illegible."
+    unreviewed = Rag::PageChunkFidelity.assess_coverage(
+      page_texts: pages,
+      chunks: [ { page: 1, text: "#{OPENING}\n#{FOLLOWING}" }, { page: 2, text: described } ]
+    )
+    page = unreviewed[:pages][2]
+
+    assert page[:accounted]
+    assert_not page[:verifiable]
+    assert_equal "needs_visual_review", page[:certification]
+    assert_not page[:certified]
+    assert_equal "certified_text_layer", unreviewed[:pages][1][:certification]
+    assert_equal({ pages: 2, accounted: 2, certified: 1, by_certification: { "certified_text_layer" => 1, "needs_visual_review" => 1 } },
+                 unreviewed[:summary])
+
+    complete = Rag::PageChunkFidelity.assess_coverage(
+      page_texts: pages,
+      chunks: [ { page: 2, text: described } ],
+      visual_reviews: { 2 => { labels: [ "19 RECEIVER", "21 RE-OPEN" ], reviewer: "local" } }
+    )[:pages][2]
+    assert_equal "certified_visual_review", complete[:certification]
+    assert complete[:certified]
+    assert_equal [], complete[:visual_review][:missing_labels]
+
+    incomplete = Rag::PageChunkFidelity.assess_coverage(
+      page_texts: pages,
+      chunks: [ { page: 2, text: described } ],
+      visual_reviews: { 2 => { labels: [ "19 RECEIVER", "23 +12V COM" ] } }
+    )[:pages][2]
+    assert_equal "failed_visual_review", incomplete[:certification]
+    assert_equal [ "23 +12V COM" ], incomplete[:visual_review][:missing_labels]
+  end
+
+  test "a value and its unit in adjacent table cells are present and a split number is not" do
+    text = "#{OPENING}\nSupply voltage 50 103 144 V\n#{FOLLOWING}\n"
+    table = "#{OPENING}\n| Supply voltage | 50 | 103 | 144 | V |\n#{FOLLOWING}"
+    page = Rag::PageChunkFidelity.assess_coverage(page_texts: { 1 => text }, chunks: [ { page: 1, text: table } ])[:pages][1]
+    assert_equal [], page[:missing_numbers]
+
+    wrong = "#{OPENING}\n| Supply voltage | 50 | 103 | 1 | 44 V |\n#{FOLLOWING}"
+    page = Rag::PageChunkFidelity.assess_coverage(page_texts: { 1 => text }, chunks: [ { page: 1, text: wrong } ])[:pages][1]
+    assert_equal [ "144 V" ], page[:missing_numbers]
+  end
+
+  test "reviewed figure labels leave the precision measure and unreviewed prose stays in it" do
+    text = "#{OPENING}\n#{FOLLOWING}\n"
+    labels = "- PRIORITY INPUTS: 23 +12V COM, 21 RE-OPEN.\n- PHOTOCELL: 17 EMITTER, 19 RECEIVER.\n- OBSTRUCTION 39 40 41, PHOTOCELL 36 37 38."
+    body = "#{OPENING}\n#{labels}"
+    review = { 1 => { labels: [ "21 RE-OPEN", "19 RECEIVER", "PHOTOCELL 36 37 38" ] } }
+
+    unreviewed = Rag::PageChunkFidelity.assess_coverage(page_texts: { 1 => text }, chunks: [ { page: 1, text: body } ])[:pages][1]
+    reviewed = Rag::PageChunkFidelity.assess_coverage(page_texts: { 1 => text }, chunks: [ { page: 1, text: body } ], visual_reviews: review)[:pages][1]
+    assert unreviewed[:precision] < reviewed[:precision]
+    assert_equal "certified_visual_review", reviewed[:certification]
+
+    invented = "#{body}\nRotate the safety dial clockwise to reduce the reopening sensitivity of the door."
+    padded = Rag::PageChunkFidelity.assess_coverage(page_texts: { 1 => text }, chunks: [ { page: 1, text: invented } ], visual_reviews: review)[:pages][1]
+    assert padded[:precision] < reviewed[:precision]
+    assert padded[:added_lines].any? { |line| line.include?("Rotate the safety dial") }
+  end
+
+  test "a text page whose chunk claims the figure omits a relation needs a visual review" do
+    text = "#{OPENING}\n#{FOLLOWING}\n"
+    claim = "#{OPENING}\n#{FOLLOWING}\nThe pairing of each wire with its device is not indicated in the figure (no está indicado)."
+    page = Rag::PageChunkFidelity.assess_coverage(page_texts: { 1 => text }, chunks: [ { page: 1, text: claim } ])[:pages][1]
+
+    assert page[:verifiable]
+    assert_equal [ claim.lines.last.strip ], page[:figure_claims]
+    assert_equal "needs_visual_review", page[:certification]
+
+    plain = Rag::PageChunkFidelity.assess_coverage(page_texts: { 1 => text }, chunks: [ { page: 1, text: "#{OPENING}\n#{FOLLOWING}" } ])[:pages][1]
+    assert_equal [], plain[:figure_claims]
+    assert_equal "certified_text_layer", plain[:certification]
+  end
+
   test "a discard accounts for a page and does not call the content surplus" do
     text = "#{FOLLOWING}\n#{OPENING}\n"
     bare = Rag::PageChunkFidelity.assess_coverage(page_texts: { 2 => text }, chunks: [])

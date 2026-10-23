@@ -2145,3 +2145,41 @@ Lo que Sonnet añade: la obstrucción mecánica dada por hecha y, a la vez, reab
 
 
 
+
+## F2+F3 conjunta: validación pagada (2026-10-22)
+
+Ruta: producto real (`RagQueryConcern#execute_rag_query`, intérprete, reducer,
+`CompanionPlan` → `CompanionPlanCheck` → `CompanionPlanRender` → guardas →
+`CompanionTurnPublication`). Retrieve y S3 son locales sobre la KB F2 corregida
+(`tmp/field_companion/vf5_correction/f2f3_joint/f2/kb`, BM25 con el filtro y
+`number_of_results` del producto); converse es real (Haiku 4.5 global). No
+valida el ranking de Bedrock Retrieve (F4). Runner y salidas:
+`tmp/field_companion/vf5_correction/f2f3_joint/run.rb`, `runs/`.
+
+| Intento | Llamadas | Resultado |
+| --- | --- | --- |
+| Control T4 (`20261023T012747Z-control`) | 1 | Publicada. #54 pendiente, fotocélula informada. El check rechazó los 4 enlaces (citaban ids «S1.4» o declaraban estados) y la pregunta (`ungrounded:actual`). |
+| Conversación (`20261023T012807Z`) | 1 | Inválida por el runner: `.env` local con `SHARED_SESSION_ENABLED=true` apaga el episodio; cayó al generador antiguo. El runner ahora lo rechaza. |
+| Conversación (`20261023T012855Z`) | 4 | T1 publicada y fiel. T2 se detuvo: `[COMPANION_TURN] plan`. |
+
+Ledger: 134 → 140 intentos; committed 1.355729 → 1.402033; unknown 0.10214.
+
+Diagnóstico de T2: `BedrockRagService.plan_context?` desactiva el turno
+compañero si **cualquier** chunk recuperado contiene una cabecera de diagrama
+(`DIAGRAM_SECTION`). F2 rotula ahora los diagramas de forma explícita
+(`chunk_p10_1`: «Diagrama de la página (etiquetas literales):»), y ese chunk
+entra en el top 8 por léxico. El turno cae al generador antiguo, que infiere
+«la fotocélula sí está activada» y usa negritas: no es publicable como
+compañero. Es una interacción F2/F3, no un fallo del plan.
+
+Corrección pendiente (sin pagar): en el turno compañero, decidir `:plan` solo
+por `plan_request?` de la pregunta, o por los chunks que el plan cita, no por
+todo el top-k. Tras esa corrección se repite la conversación completa (8
+llamadas; quedan 10 de techo).
+
+Defectos menores vistos en T1/control: lecturas del modelo que repiten el
+hecho sin aportar; nota «ya informaste» de la fotocélula unida al paso
+condicional «desconectar la fotocélula y pulsar TEST», que no es la misma
+comprobación.
+
+No se declara F3 estable ni F4/F5 completadas.

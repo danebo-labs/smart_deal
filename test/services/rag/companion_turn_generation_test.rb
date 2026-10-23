@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require_relative "../../support/companion_plan_response"
 
 class Rag::CompanionTurnGenerationTest < ActiveSupport::TestCase
   RAW = "¿qué sigue?"
@@ -24,20 +25,26 @@ class Rag::CompanionTurnGenerationTest < ActiveSupport::TestCase
 
     result = with_scope do
       with_companion do
-        ask(episode, session, calls: calls, retrieved: retrieved, chunks: [ fermator_chunk(PHOTOCELL) ])
+        ask(
+          episode, session, calls: calls, retrieved: retrieved, chunks: [ fermator_chunk(PHOTOCELL) ],
+          plan: { "links" => [ { "fact" => "G1", "statement" => "S1.1", "reading" => "" } ], "steps" => [], "question" => "" }
+        )
       end
     end
 
     assert_equal [ COMPOSED ], retrieved
     assert_equal 1, calls.size
-    assert_includes calls.first[:user], "Mensaje del técnico:"
-    assert_includes calls.first[:user], RAW
+    assert_includes calls.first[:user], "Mensaje de este turno:\n#{RAW}"
+    assert_includes calls.first[:user], "S1.1 (texto): #{PHOTOCELL}"
     assert_not_includes calls.first[:user], "COMPUESTA_Z9"
-    assert_includes calls.first[:system], "una sola respuesta integrada"
-    assert_equal 3000, calls.first[:max_tokens]
-    assert_in_delta 0.1, calls.first[:temperature]
+    assert_includes calls.first[:system], "companion_plan"
+    assert_equal Rag::CompanionPlan::MAX_TOKENS, calls.first[:max_tokens]
+    assert_equal 0, calls.first[:temperature]
+    assert_equal({ tool: { name: Rag::CompanionPlan::TOOL_NAME } }, calls.first[:tool_choice])
     assert_equal true, result[:companion_turn]
     assert_equal :answered, result[:route_outcome]
+    assert_equal "Sobre lo que reportaste, «La puerta se reabre sola»: la documentación dice «#{PHOTOCELL.delete_suffix('.')}» [1].",
+                 result[:answer]
     assert_equal before, JSON.generate(episode.to_h)
     session.reload
     assert_equal stored_episode, session.active_episode
@@ -96,26 +103,24 @@ class Rag::CompanionTurnGenerationTest < ActiveSupport::TestCase
     assert_not foreign[:companion_turn]
   end
 
-  test "an invalid contract publishes the fixed message and does not call again" do
+  test "a plan with nothing valid publishes the fixed message and does not call again" do
     episode = known_episode
     calls = []
+    plan = {
+      "links" => [ { "fact" => "O9", "statement" => "S1.1", "reading" => "hay que ajustar el cierre" } ],
+      "steps" => [ "S1.1" ],
+      "question" => ""
+    }
 
     result = with_scope do
       with_companion do
-        ask(
-          episode, session_for(episode),
-          chunks: [ fermator_chunk(PHOTOCELL) ],
-          calls: calls,
-          retrieved: [],
-          answer: "Según el manual, hay que ajustar el cierre."
-        )
+        ask(episode, session_for(episode), chunks: [ fermator_chunk(PHOTOCELL) ], calls: calls, retrieved: [], plan: plan)
       end
     end
 
     assert_equal 1, calls.size
     assert_equal Rag::CompanionTurnPublication.abstain_message(:es), result[:answer]
     assert_not_includes result[:answer], "ajustar"
-    assert_not_includes result[:answer], "Según el manual"
     assert_equal true, result[:companion_contract_invalid]
     assert_equal :abstained, result[:route_outcome]
     assert_equal "companion_contract_invalid", result[:companion_reason]
@@ -184,7 +189,7 @@ class Rag::CompanionTurnGenerationTest < ActiveSupport::TestCase
 
   private
 
-  def ask(episode, session, chunks:, calls:, retrieved:, answer: "El cierre puede quedar pendiente [1].")
+  def ask(episode, session, chunks:, calls:, retrieved:, answer: "El cierre puede quedar pendiente [1].", plan: {})
     service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "kb-test")
     service.define_singleton_method(:retrieve_chunks) do |query, **|
       retrieved << query
@@ -196,6 +201,16 @@ class Rag::CompanionTurnGenerationTest < ActiveSupport::TestCase
       answer
     end
     generator.define_singleton_method(:last_stop_reason) { "end_turn" }
+    generator.define_singleton_method(:converse) do |params|
+      calls << {
+        user: params[:messages].first[:content].first[:text],
+        system: params[:system].first[:text],
+        max_tokens: params.dig(:inference_config, :max_tokens),
+        temperature: params.dig(:inference_config, :temperature),
+        tool_choice: params.dig(:tool_config, :tool_choice)
+      }
+      CompanionPlanResponse.build(plan)
+    end
     service.define_singleton_method(:document_identity_generator) { generator }
     service.send(
       :document_identity_scope_result,

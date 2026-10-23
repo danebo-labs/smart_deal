@@ -12,6 +12,9 @@ class ConversationSession < ApplicationRecord
   # characters-per-token ratio does not prove that a 3000-token reply
   # always fits; prompt_reply_truncated marks that case.
   PROMPT_REPLY_MAX_CHARS = 16_000
+  # Technical cap for the technician text kept beside a cut content.
+  # full_content_truncated marks a message longer than this.
+  USER_TEXT_MAX_CHARS = 8_000
   EPISODE_WINDOW = 4.hours
   EPISODE_MAX_USER_MESSAGES = 3
   CaseBoundary = Data.define(:attributes, :case_boundary_reason, :pin_release_reason)
@@ -1658,11 +1661,22 @@ class ConversationSession < ApplicationRecord
     message["user_id"] = user_id if user_id.present?
     message["correlation_id"] = correlation_id if correlation_id.present?
     message["focus_ids"] = Array(focus_ids).map(&:to_i).uniq.sort unless focus_ids.nil?
+    assign_full_content!(message, content) if role == "user"
     # Shown answer may open with the case record. The next prompt reads this
     # copy, so that record does not occupy the 200 characters reinjected later.
     # content stays on MAX_MSG_LENGTH. prompt_reply has its own cap.
     assign_prompt_reply!(message, prompt_reply)
     message
+  end
+
+  # content keeps the shared MAX_MSG_LENGTH cut. A longer technician message
+  # also keeps its text, up to USER_TEXT_MAX_CHARS, for the companion archive.
+  def assign_full_content!(message, content)
+    text = content.to_s
+    return if text.length <= MAX_MSG_LENGTH
+
+    message["full_content"] = text[0, USER_TEXT_MAX_CHARS]
+    message["full_content_truncated"] = true if text.length > USER_TEXT_MAX_CHARS
   end
 
   def assign_prompt_reply!(message, prompt_reply)

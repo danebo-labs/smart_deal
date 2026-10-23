@@ -35,6 +35,42 @@ class Rag::CompanionTurnPublicationTest < ActiveSupport::TestCase
     assert_equal [ "R2" ], rules(result)
   end
 
+  test "a literal quote after a source condition is accepted when the answer carries that condition" do
+    step = "– En caso que el problema persista, desconectar la fotocélula y volver a pulsar el botón de TEST."
+    quote = "desconectar la fotocélula y volver a pulsar el botón de TEST"
+    carried = publish("Si el problema persiste, el manual indica «#{quote}» [1].", [ source(step) ])
+    dropped = publish("El manual indica «#{quote}» [1].", [ source(step) ])
+    negated = publish("Reportaste que no ves «#{quote}» [1].", [ source(step) ])
+
+    assert carried.accepted?, carried.reasons.inspect
+    assert_equal quote, carried.quotes.sole["text"]
+    assert_not dropped.accepted?
+    assert_equal [ "condition_dropped:#{quote}" ], dropped.reasons.pluck("detail")
+    assert_not negated.accepted?, "a negation does not carry a condition"
+  end
+
+  test "a dropped negation is reported as dropped and a non literal quote as missing" do
+    body = "Comprobar que la fotocélula no está activada."
+    dropped = publish("La página dice «está activada» [1].", [ source(body) ])
+    carried = publish("La fotocélula no figura como «está activada» [1].", [ source(body) ])
+    invented = publish("La página dice «fotocélula bloqueada» [1].", [ source(body) ])
+
+    assert_equal [ "condition_dropped:está activada" ], dropped.reasons.pluck("detail")
+    assert carried.accepted?, carried.reasons.inspect
+    assert_equal [ "fotocélula bloqueada" ], invented.reasons.pluck("detail")
+  end
+
+  test "a question about the manual is not an attribution and a question that asserts it is" do
+    question = publish("¿Hay especificaciones en el manual sobre el ajuste del cierre?", [ source(PHOTOCELL) ])
+    asserted = publish("Según el manual hay que ajustar el cierre, ¿lo hiciste?", [ source(PHOTOCELL) ])
+    statement = publish("El manual pide ajustar el cierre.", [ source(PHOTOCELL) ])
+
+    assert question.accepted?, question.reasons.inspect
+    assert_not asserted.accepted?
+    assert_equal [ "R3" ], rules(asserted)
+    assert_equal [ "R3" ], rules(statement)
+  end
+
   test "si inside another word does not reject the following quote" do
     body = "Comprobar la sensibilidad cuando el cierre es normal."
     result = publish("La página dice «cuando el cierre es normal» [1].", [ source(body) ])

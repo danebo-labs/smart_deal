@@ -178,6 +178,39 @@ class SectionPageContinuityTest < ActiveSupport::TestCase
     assert_not_includes rendered, "SOURCE_PDF_PAGE: 2"
   end
 
+  test "an alias of the moved text follows it and the freed slot names the remaining item" do
+    pages = [
+      page_result(2, "• La unidad se detiene.\n– Revisar el tope.\n– Revisar el sensor.", [ "tope" ], []),
+      page_result(3, "#{CONTINUATION}\n• La unidad se para cuando el carro de la guía está bajando.\n– Revisar la guía.",
+                  [ "separar el sensor", "arranque", "guía" ], [])
+    ]
+    stitched = JSON.parse(ChunkMergerService.merge_with_report(pages, page_texts: {
+      2 => PARENT_PAGE,
+      3 => NEXT_PAGE.sub("• La unidad no arranca.\n– Revisar la alimentacion.",
+                         "• La unidad se para cuando el carro de la guía está bajando.\n– Revisar la guía.")
+    })[:json])
+    parent, child = stitched["chunks"]
+
+    assert_includes parent["text"], CONTINUATION
+    assert_equal [ "tope", "separar el sensor" ], parent["aliases"]
+    assert_equal [ "arranque", "guía", "unidad se para cuando carro de guía está bajando" ], child["aliases"]
+  end
+
+  test "an alias present on both sides of the cut stays with the child" do
+    pages = [
+      page_result(2, "• La unidad se detiene.\n– Revisar el tope.\n– Revisar el sensor.", [ "tope" ], []),
+      page_result(3, "#{CONTINUATION}\n• La unidad no arranca.\n– Revisar el sensor y la alimentacion.", [ "sensor" ], [])
+    ]
+    stitched = JSON.parse(ChunkMergerService.merge_with_report(pages, page_texts: {
+      2 => PARENT_PAGE,
+      3 => NEXT_PAGE.sub("– Revisar la alimentacion.", "– Revisar el sensor y la alimentacion.")
+    })[:json])
+    parent, child = stitched["chunks"]
+
+    assert_equal [ "tope" ], parent["aliases"]
+    assert_equal [ "sensor" ], child["aliases"]
+  end
+
   test "a repeated header is running matter and does not hide an opening" do
     header = "ACME FIELD BULLETIN"
     pages = {

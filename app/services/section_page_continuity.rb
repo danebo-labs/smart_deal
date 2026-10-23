@@ -4,7 +4,8 @@
 # open item. A heading that does not describe its fragment is replaced with
 # the section and item that do. The PDF index and the printed page number
 # stay distinct. Aliases of the following item are not copied onto the
-# continuation. Field records are rendered by BatchResultsParserService.
+# continuation; an alias that only the moved text contains moves with it.
+# Field records are rendered by BatchResultsParserService.
 # This class does not name a manual or a symptom.
 class SectionPageContinuity
   CONTINUATION_HEADING = "(continuación de página anterior)"
@@ -13,6 +14,8 @@ class SectionPageContinuity
   CHECK_LINE = /\A[–—-]\s+\S/
   PRINTED_PAGE = /(?:p[aá]g(?:ina)?|page)\.?\s*(\d{1,4})\s*(?:\/|de|of)\s*(\d{1,4})/i
   CONDITIONAL = /\b(?:en caso|si)\b/i
+  ALIAS_WORDS = 9
+  ARTICLES = %w[el la los las un una unos unas].freeze
   RESULT_PATTERN = %r{<search_result>\n<content>\n(.*?)\n</content>\n<source>\n(.*?)\n</source>}m
 
   def self.apply!(chunks, page_texts: nil, extra_records: nil, isolate: false, keep_internal: false)
@@ -116,6 +119,7 @@ class SectionPageContinuity
     remainder = strip_prefix(child["text"].to_s, prefix.presence || moved_text)
     parent["text"] = joined_parent_text(parent["text"], left, right, parent_page, child_page, section, moved_text)
     child["text"] = remainder
+    moved_aliases = carry_aliases!(parent, child, moved_text, remainder)
     parent.delete("_record_text")
     parent["_changed"] = true
     child["_changed"] = true
@@ -145,9 +149,50 @@ class SectionPageContinuity
       "item" => item,
       "heading" => heading,
       "moved_records" => moved.size + attached[:kept].size,
+      "moved_aliases" => moved_aliases,
       "rejected_records" => rejected,
       "isolated" => isolate
     }
+  end
+
+  # An alias found only in the moved text follows it to the parent. The slots
+  # it frees go to the items that stay in the child, so the child is still
+  # found by its own symptoms.
+  def carry_aliases!(parent, child, moved_text, remainder)
+    return [] unless child["aliases"].is_a?(Array)
+
+    moved = child["aliases"].select do |name|
+      phrase?(moved_text, name) && !phrase?(remainder, name)
+    end
+    return [] if moved.empty?
+
+    parent["aliases"] = merge_aliases(Array(parent["aliases"]), moved)
+    kept = child["aliases"] - moved
+    items = remainder.to_s.lines.map { |line| flatten(line) }.grep(ITEM_LINE).map { |line| item_alias(line) }
+    child["aliases"] = merge_aliases(kept, items)
+    moved
+  end
+
+  def merge_aliases(current, extra)
+    seen = current.map { |name| norm(name) }
+    added = extra.select do |name|
+      key = norm(name)
+      next false if key.blank? || seen.include?(key)
+
+      seen << key
+    end
+    (current + added).first(BatchResultsParserService::CHUNK_ALIAS_LIMIT)
+  end
+
+  def item_alias(line)
+    words = line.sub(/\A[•●▪]\s+/, "").sub(/[.:;]+\z/, "").split
+    words = words.reject { |word| ARTICLES.include?(word.downcase) } if words.size > ALIAS_WORDS
+    words.first(ALIAS_WORDS).join(" ")
+  end
+
+  def phrase?(text, name)
+    needle = norm(name)
+    needle.present? && " #{norm(text)} ".include?(" #{needle} ")
   end
 
   def pseudo_chunk(content, pages)

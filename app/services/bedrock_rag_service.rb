@@ -571,10 +571,16 @@ class BedrockRagService
       raw_question: raw_question
     )
     companion_chunks = companion_turn ? companion_assembled_chunks(applied.chunks) : nil
+    companion_plan = if companion_turn
+      Rag::CompanionPlan.prepare(
+        raw_question: raw_question, chunks: companion_chunks, episode: episode,
+        session: conv_session, correlation_id: correlation_id
+      )
+    end
     prompt = if companion
       guidance.to_s
     elsif companion_turn
-      companion_turn_prompt(raw_question, companion_chunks, conv_session: conv_session, episode: episode)
+      DocumentIdentityPrompt.new(system: companion_plan.system, user: companion_plan.user)
     else
       document_identity_generation_prompt(
         question, applied.chunks,
@@ -600,6 +606,8 @@ class BedrockRagService
       }
       if companion
         document_identity_generator.query(prompt, **generation_kwargs)
+      elsif companion_turn
+        companion_plan_answer(companion_plan, generation_kwargs[:tracking].merge(user_query: question))
       else
         document_identity_generator.query(prompt.user, system: prompt.system, **generation_kwargs)
       end
@@ -630,7 +638,7 @@ class BedrockRagService
         prompt, raw_turn: raw_question, sent_question: question, truncated: generation_truncated
       )
     end
-    if raw_answer.blank?
+    if raw_answer.blank? && !companion_turn
       Rails.logger.warn("[DOCUMENT_IDENTITY] generation_blank; required identity stays closed")
       return attach_generation_trace!(
         identity_closed_result(
@@ -654,7 +662,7 @@ class BedrockRagService
       companion: companion,
       safety_evidence: guidance&.safety_evidence,
       companion_turn: companion_turn,
-      stop_reason: companion_turn ? generation_stop_reason : nil,
+      stop_reason: companion_turn ? @companion_plan_stop_reason : nil,
       technician_texts: companion_turn ? companion_technician_texts(conv_session, episode, raw_question) : nil,
       manufacturer: companion_turn ? companion_manufacturer(episode) : nil,
       raw_question: raw_question
@@ -1257,58 +1265,74 @@ class BedrockRagService
     )
   end
 
-  def companion_turn_prompt(raw_question, chunks, conv_session:, episode:)
-    parts = [ "Mensaje del técnico:\n#{raw_question.to_s.strip}" ]
-    context = SessionContextBuilder.companion_context(
-      conv_session, episode: episode, current_message: raw_question
+  # One forced tool call. The answer text is rendered from the checked plan,
+  # so a blank text reaches publication and abstains there.
+  def companion_plan_answer(prepared, tracking)
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    response = document_identity_generator.converse(prepared.params)
+    latency_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
+    usage = track_companion_plan_usage(response, latency_ms, tracking)
+    composed = Rag::CompanionPlan.compose(response, prepared)
+    @companion_plan_stop_reason = composed.stop_reason
+    record_companion_plan(composed, usage.merge("latency_ms" => latency_ms, "model_id" => prepared.params[:model_id]))
+    composed.text
+  end
+
+  def track_companion_plan_usage(response, latency_ms, tracking)
+    usage = response.respond_to?(:usage) ? response.usage : nil
+    input_tokens = usage.respond_to?(:input_tokens) ? usage.input_tokens.to_i : 0
+    output_tokens = usage.respond_to?(:output_tokens) ? usage.output_tokens.to_i : 0
+    tokens = { "input_tokens" => input_tokens.positive? ? input_tokens : nil, "output_tokens" => input_tokens.positive? ? output_tokens : nil }
+    return tokens if input_tokens <= 0
+
+    TrackBedrockQueryJob.perform_later(
+      source: "query",
+      route: "companion_plan",
+      model_id: BedrockClient::QUERY_MODEL_ID,
+      token_source: "provider_usage",
+      input_tokens: input_tokens,
+      output_tokens: output_tokens,
+      latency_ms: latency_ms,
+      **tracking.to_h.symbolize_keys.slice(:correlation_id, :user_query, :account_id, :user_id, :conversation_session_id)
     )
-    parts << context if context.present?
-    parts << companion_source_block(chunks)
-    DocumentIdentityPrompt.new(system: companion_turn_system_prompt, user: parts.join("\n\n"))
+    tokens
+  rescue StandardError => error
+    Rails.logger.warn("companion plan usage tracking failed #{error.class}")
+    tokens || {}
+  end
+
+  def record_companion_plan(composed, usage)
+    Rails.logger.info("[COMPANION_PLAN] usable=#{composed.check.usable?} rejections=#{composed.check.rejections.size}")
+    return unless Rag::ValidationCapture.active?
+
+    Rag::ValidationCapture.record(
+      "companion_plan",
+      usage.merge(
+        "tool_input" => composed.input,
+        "check" => composed.check.to_h,
+        "stop_reason" => composed.stop_reason,
+        "rendered" => composed.text
+      )
+    )
+  end
+
+  def companion_definition_source
+    @companion_definition_source ||= Rag::CompanionDefinitionSource.new
   end
 
   def companion_assembled_chunks(chunks)
-    result = Rag::CompanionDefinitionExpander.expand(
-      chunks, catalog: Rag::CompanionDefinitionCatalog.current
-    )
+    catalog = companion_definition_source.catalog_for(chunks)
+    result = Rag::CompanionDefinitionExpander.expand(chunks, catalog: catalog)
     if Rag::ValidationCapture.active?
       Rag::ValidationCapture.record(
         "companion_definitions",
-        "catalog" => Rag::CompanionDefinitionCatalog.current.nil? ? "absent" : "present",
+        "catalog" => catalog.nil? ? "absent" : "present",
+        "catalog_origin" => Rag::CompanionDefinitionCatalog.current.nil? ? "document_chunks" : "process",
         "added" => result.added,
         "omitted" => result.omitted
       )
     end
     result.chunks
-  end
-
-  def companion_turn_system_prompt
-    Rails.root.join("app/prompts/bedrock/companion_turn.txt").read
-  end
-
-  def companion_source_block(chunks)
-    lines = [ "Fuentes:" ]
-    Array(chunks).each_with_index do |chunk, index|
-      metadata = chunk[:metadata].to_h.stringify_keys
-      name = metadata["canonical_name"].presence || metadata["original_filename"].presence || "DATA_NOT_AVAILABLE"
-      page = metadata["page_number"].presence || "DATA_NOT_AVAILABLE"
-      narrative = Rag::DocumentIdentityScope.omit_terminal_evidence_records(chunk[:content].to_s).strip
-      lines << companion_source_heading(index, name, page, metadata)
-      lines << narrative
-      lines << ""
-    end
-    lines.join("\n")
-  end
-
-  def companion_source_heading(index, name, page, metadata)
-    heading = "[#{index + 1}] Documento: #{name}. Página: #{page}."
-    return heading if metadata["definition_of"].blank?
-
-    section = metadata["section"].presence
-    label = metadata["section_heading"].presence
-    heading += " Sección: #{section}." if section.present?
-    heading += " Entrada: #{label}." if label.present? && label != section
-    "#{heading} Procedencia: definición de #{metadata['definition_of']} en el mismo documento. #{metadata['definition_provenance']}"
   end
 
   def companion_publication_sources(chunks)
@@ -1351,13 +1375,6 @@ class BedrockRagService
     return nil unless fact.is_a?(Hash) && fact["status"] == "known"
 
     fact["value"].to_s.squish.presence
-  end
-
-  def generation_stop_reason
-    generator = document_identity_generator
-    return nil unless generator.respond_to?(:last_stop_reason)
-
-    generator.last_stop_reason
   end
 
   def withheld_document_identity_template(question, response_locale:, session_context:, output_channel:)

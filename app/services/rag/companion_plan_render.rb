@@ -52,6 +52,7 @@ module Rag
       quoted = []
       @check.links.each do |link|
         statement = @statements.find(link[:statement])
+        next if statement.nil? || part_question_replaces?(statement)
         next if link[:reading].blank? && @check.steps.include?(statement.id)
 
         lines << link_line(@facts.find(link[:fact]), statement, link[:reading])
@@ -81,6 +82,13 @@ module Rag
     end
 
     private
+
+    def part_question_replaces?(statement)
+      return false unless @check.question.to_s.match?(/\A¿(?:Qué parte|Se está cerrando)\b/)
+
+      item = statement.kind == "item" ? statement.text : statement.item.to_s
+      question_statements.any? { |target| target.text == item || target.item.to_s == item }
+    end
 
     def link_line(fact, statement, reading)
       line = "Sobre lo que reportaste, #{case_text(fact)}: la documentación dice #{quote(statement)}"
@@ -123,8 +131,14 @@ module Rag
         item = row["item"] || row[:item]
         source = row["source"] || row[:source]
         next if item.blank? || source.blank?
+        if (row["note"] || row[:note]) == "partial"
+          fact = row["fact"] || row[:fact]
+          next if fact.blank?
 
-        "Indicaste que no puedes distinguirlo; la indicación de «#{bare(item)}» [#{source}] depende de ese dato."
+          "Con lo que informaste, «#{bare(fact)}», la documentación de «#{bare(item)}» [#{source}] no separa un dato más concreto."
+        else
+          "Indicaste que no puedes distinguirlo; la indicación de «#{bare(item)}» [#{source}] depende de ese dato."
+        end
       }
     end
 
@@ -143,7 +157,9 @@ module Rag
 
       lines = []
       targets = question_statements
-      if targets.one?
+      if targets.one? && @check.question.match?(/\A¿(?:Qué parte|Se está cerrando)\b/)
+        lines << "Para orientar falta distinguir la parte [#{targets.first.source}]."
+      elsif targets.one?
         lines << "Para orientar falta un dato: la documentación trata «#{bare(targets.first.text)}» [#{targets.first.source}]."
       elsif targets.size == 2
         left, right = targets

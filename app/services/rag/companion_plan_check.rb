@@ -213,17 +213,119 @@ module Rag
       text = @plan["question"].to_s.squish
       targets = @targets
       reason = text.present? ? question_reason(text, steps) : nil
+      reason = "repeats_heading" if reason.nil? && text.present? && heading_repeat?(text)
       return [ text, targets ] if text.present? && reason.nil?
 
       reject("question", text, reason || "invalid") if text.present?
-      derived_from = derivable?(reason) ? item_target_statements : []
-      derived_from = unresolved_items if derived_from.empty? && text.blank?
+      derived_from = replacement_items(reason, text)
       return [ nil, [] ] unless derived_from.any? && derived_from.all? { |item| !closed_target?(item) }
+
+      partial = open_partial_for(derived_from)
+      if partial
+        concrete = derived_from.one? ? concrete_question(derived_from.first, partial) : nil
+        return [ concrete, derived_from.map(&:id) ] if concrete.present? && question_reason(concrete, steps).nil?
+
+        remember_partial_limit(derived_from.first, partial)
+        return [ nil, [] ]
+      end
+      return [ nil, [] ] unless text.blank? || derivable?(reason)
 
       derived = derived_question(derived_from)
       return [ nil, [] ] if derived.blank? || question_reason(derived, steps)
 
       [ derived, derived_from.map(&:id) ]
+    end
+
+    # A blank question, a soft wording failure, or a restatement of the
+    # heading can be replaced. A closed answer cannot.
+    def replacement_items(reason, text)
+      from_targets = item_target_statements
+      replaceable = text.blank? || derivable?(reason) || %w[repeats_ask repeats_heading].include?(reason)
+      return from_targets if from_targets.any? && replaceable
+      return unresolved_items if text.blank? || %w[repeats_ask repeats_heading].include?(reason)
+
+      []
+    end
+
+    # The heading, or a prior question, restated after an open partial.
+    # A choice between the item's two nouns is a narrower question.
+    def heading_repeat?(text)
+      open_partial_rows.any? do |statement, fact|
+        next false if part_choice?(text, statement)
+
+        asked = content_stems(self.class.words(text)) - self.class.question_stems
+        next false if asked.empty?
+
+        item_stems = content_stems(self.class.words(statement.text))
+        prior = content_stems(self.class.words(fact.answers["q"].to_s)) - self.class.question_stems
+        asked.subset?(item_stems) || (prior.any? && asked.subset?(prior))
+      end
+    end
+
+    def part_choice?(text, statement)
+      nouns = distinct_nouns(statement.text)
+      return false if nouns.size < 2
+
+      body = self.class.normal(text)
+      body.match?(/\bo\b/) && nouns.first(2).all? { |noun| body.include?(self.class.normal(noun)) }
+    end
+
+    # Uses the partial answer. Two documentary nouns become the choice.
+    # The heading is not the question. Nil when that choice is not available.
+    def concrete_question(statement, partial)
+      nouns = distinct_nouns(statement.text)
+      return nil if nouns.size < 2
+
+      left, right = nouns
+      words = self.class.words(partial.text)
+      if words.include?("parte")
+        "¿Qué parte se está cerrando, #{left} o #{right}?"
+      elsif words.any? { |word| self.class.stem(word) == "cerra" }
+        "¿Se está cerrando #{left} o #{right}?"
+      end
+    end
+
+    def distinct_nouns(text)
+      article_nouns(text).uniq { |phrase| self.class.stem(self.class.words(phrase).last.to_s) }
+    end
+
+    def article_nouns(text)
+      text.to_s.scan(/\p{L}+/).each_cons(2).filter_map do |left, right|
+        article = self.class.words(left).first
+        next unless CompanionCaseRelation::ARTICLES.include?(article)
+
+        "#{article} #{right}"
+      end
+    end
+
+    def open_partial_for(statements)
+      statements.lazy.filter_map { |statement| open_partial(statement) }.first
+    end
+
+    def open_partial_rows
+      @statements.statements.filter_map { |statement|
+        partial = open_partial(statement)
+        [ statement, partial ] if partial
+      }
+    end
+
+    def open_partial(statement)
+      item = statement.kind == "item" ? statement.text : statement.item.to_s
+      @facts.facts.find { |fact|
+        answers = fact.answers
+        answers.is_a?(Hash) && answers["q"].present? && answers["r"].blank? &&
+          fact.kind == "observation" &&
+          Array(answers["t"]).any? { |target| target_matches?(target, item, statement) }
+      }
+    end
+
+    def remember_partial_limit(statement, partial)
+      item = statement.text.to_s
+      return if item.blank? || @limits.any? { |row| row["item"] == item && row["note"] == "partial" }
+
+      @limits << {
+        "item" => item, "source" => statement.source, "note" => "partial", "fact" => partial.text.to_s
+      }
     end
 
     def derivable?(reason)
@@ -458,6 +560,7 @@ module Rag
     def question_reason(text, steps)
       return "too_long" if text.length > MAX_QUESTION_CHARS
       return "not_one_question" unless text.end_with?("?") && text.count("?") == 1
+      return "already_answered" if already_answered?
 
       normal = self.class.normal(text)
       sources = self.class.normal(@statements.statements.map { |item| [ item.text, item.item ].compact.join(" ") }.join(" "))
@@ -473,7 +576,6 @@ module Rag
       missing = ungrounded(normal, allowed).reject { |stem| cited.include?(stem) }
       return "ungrounded:#{missing.first(3).join(',')}" if missing.any?
       return "repeats_ask" if repeated_ask?(normal)
-      return "already_answered" if already_answered?
       repeated = repeated_fact(normal)
       return "repeats_fact:#{repeated.id}" if repeated
 

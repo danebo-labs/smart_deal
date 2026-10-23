@@ -6,6 +6,8 @@ module Rag
   # new process does not start the counters at zero.
   class AssignmentSpend
     Stop = Class.new(Exception)
+    # One recorded step. 150 -> 152, then 152 -> 164. Anything else stays.
+    CALL_CAP_BUMPS = { 150 => 152, 152 => 164 }.freeze
 
     def initialize(path:, call_cap:, cost_cap_usd:)
       @path = Pathname(path)
@@ -47,8 +49,8 @@ module Rag
     end
 
     # Records this execution once. The same id does not move the cutoff
-    # backward or raise the ceiling. The call-cap bump is only 150 -> 152,
-    # and only when the file is still at the given attempt count.
+    # backward or raise the ceiling. A call-cap bump is only the next
+    # recorded step, and only while the file is still at that attempt count.
     def admit_execution!(id:, cost_usd:, calls:, bump_call_cap_to: nil, bump_only_if_attempts: nil)
       with_lock do |state, file|
         grants = state["executions"].is_a?(Array) ? state["executions"] : []
@@ -60,13 +62,7 @@ module Rag
           return existing
         end
 
-        if bump_call_cap_to.to_i == 152 && bump_only_if_attempts && state["attempts"].to_i == bump_only_if_attempts.to_i
-          auth = state["authorization"]
-          if auth.is_a?(Hash) && auth["call_cap"].to_i == 150
-            auth["call_cap"] = 152
-            state["call_cap"] = [ state["call_cap"].to_i, 152 ].max
-          end
-        end
+        apply_call_cap_bump!(state, bump_call_cap_to, bump_only_if_attempts)
         row = {
           "id" => id.to_s,
           "after_attempt" => state["attempts"].to_i,
@@ -268,13 +264,53 @@ module Rag
     end
 
     def executions_exceeded?(state, ceiling)
-      Array(state["executions"]).any? do |grant|
-        next false unless grant.is_a?(Hash)
-
+      grants = Array(state["executions"]).select { |grant| grant.is_a?(Hash) }.sort_by { |grant| grant["after_attempt"].to_i }
+      grants.each_with_index.any? do |grant, index|
         after = grant["after_attempt"].to_i
-        scoped_attempts(state, after) + 1 > grant["calls"].to_i ||
-          scoped_exposure(state, after) + ceiling > decimal(grant["cost_usd"])
+        boundary = grants[index + 1]&.fetch("after_attempt", nil)&.to_i
+        incoming = boundary.nil?
+        scoped_between(state, after, boundary) + (incoming ? 1 : 0) > grant["calls"].to_i ||
+          scoped_exposure_between(state, after, boundary) + (incoming ? ceiling : 0) > decimal(grant["cost_usd"])
       end
+    end
+
+    def scoped_between(state, after_attempt, boundary)
+      state["entries"].count { |entry|
+        counts_toward?(entry, after_attempt) && (boundary.nil? || entry["id"].to_i <= boundary)
+      }
+    end
+
+    def scoped_exposure_between(state, after_attempt, boundary)
+      state["entries"].sum(BigDecimal("0")) do |entry|
+        next BigDecimal("0") unless counts_toward?(entry, after_attempt)
+        next BigDecimal("0") if boundary && entry["id"].to_i > boundary
+
+        exposure_of(state, entry)
+      end
+    end
+
+    def exposure_of(state, entry)
+      case entry["status"]
+      when "settled", "kept"
+        decimal(entry["actual_usd"])
+      when "unknown"
+        decimal(entry["reserved_usd"].presence || entry["ceiling_usd"])
+      when "reserved"
+        decimal(state.dig("open", entry["id"].to_s).presence || entry["ceiling_usd"])
+      else
+        BigDecimal("0")
+      end
+    end
+
+    def apply_call_cap_bump!(state, bump_call_cap_to, bump_only_if_attempts)
+      return unless bump_only_if_attempts && state["attempts"].to_i == bump_only_if_attempts.to_i
+
+      target = bump_call_cap_to.to_i
+      auth = state["authorization"]
+      return unless auth.is_a?(Hash) && CALL_CAP_BUMPS[auth["call_cap"].to_i] == target
+
+      auth["call_cap"] = target
+      state["call_cap"] = [ state["call_cap"].to_i, target ].max
     end
 
     def scoped_attempts(state, after_attempt)

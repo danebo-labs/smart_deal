@@ -106,6 +106,27 @@ class Rag::AssignmentSpendTest < ActiveSupport::TestCase
     assert_equal 150, book.snapshot["authorization"]["call_cap"]
   end
 
+  test "a later execution is not blocked by an earlier grant that already used its calls" do
+    book = spend(call_cap: 164, cost_cap: "4")
+    seed_history(152)
+    book.ensure_authorization!(id: "f2f3-joint-after-134", after_attempt: 134, cost_usd: "0.75", call_cap: 152)
+    book.admit_execution!(id: "f3-vf5-20261023", cost_usd: "0.35", calls: 12)
+    assert_raises(Rag::AssignmentSpend::Stop) do
+      book.reserve!(ceiling_usd: "0.010000", model_id: "haiku", turn: 1)
+    end
+
+    later = book.admit_execution!(
+      id: "f3-q1-20261023", cost_usd: "0.75", calls: 12,
+      bump_call_cap_to: 164, bump_only_if_attempts: 152
+    )
+    assert_equal 152, later["after_attempt"]
+    assert_equal "0.750000", book.snapshot["authorization"]["cost_usd"]
+    assert_equal 134, book.snapshot["authorization"]["after_attempt"]
+    assert_equal 164, book.snapshot["authorization"]["call_cap"]
+    assert book.reserve!(ceiling_usd: "0.010000", model_id: "haiku", turn: 1)
+    assert_equal 153, book.snapshot["attempts"]
+  end
+
   test "an unpriced error keeps the ceiling" do
     book = spend
     id = book.reserve!(ceiling_usd: "0.125000", model_id: "sonnet", turn: 1)

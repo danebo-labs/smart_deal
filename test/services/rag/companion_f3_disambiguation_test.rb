@@ -171,15 +171,27 @@ class Rag::CompanionF3DisambiguationTest < ActiveSupport::TestCase
       { "links" => [ link_of("O2", item) ], "steps" => [ general.id, skate.id ], "question" => "" },
       partial_facts, statements
     )
-    assert_includes second.question, "Lo que ves coincide con"
-    assert_includes second.question, SKATE
+    assert_includes second.question, "Qué parte se está cerrando"
+    assert_includes second.question, "la puerta o el patín"
+    assert_not_includes second.question, SKATE
+    assert_not_includes second.question, "Lo que ves coincide"
     assert_not_equal first, second.question
     assert_not_includes second.steps, skate.id
     assert_nil second.rejections.find { |row| row["reason"] == "already_answered" }
 
+    repeated = check_plan(
+      { "links" => [ link_of("O2", item) ], "steps" => [ general.id, skate.id ], "question" => first, "question_about" => [ item.id ] },
+      partial_facts, statements
+    )
+    assert_equal second.question, repeated.question
+    assert_not_includes repeated.question, SKATE
+
     narrowed = render_of(second, statements, partial_facts)
+    assert_includes narrowed, "falta distinguir la parte"
     assert_not_includes narrowed, first
+    assert_not_includes narrowed, SKATE
     assert_not_includes narrowed, "probablemente"
+    assert publish(narrowed).accepted?, publish(narrowed).reasons.inspect
 
     later = facts_for("La puerta se reabre sola", [ "El LED de fotocélula está encendido", BEFORE ], answer: stored["answers"])
     branch_a = check_plan(
@@ -410,6 +422,24 @@ class Rag::CompanionF3DisambiguationTest < ActiveSupport::TestCase
     number_only["question"] = "¿Está activada la entrada de re-apertura (#21)?"
     released = replay_plan(branch_b, number_only)
     assert released.checked.steps.none? { |id| branch_b.statements.find(id).text.include?("probablemente") }
+  end
+
+  test "a partial answer does not repeat the heading when the manual names one part" do
+    manual = "• El patín roza.\n– Comprobar la regulación.\n"
+    statements = Rag::CompanionStatements.parse([ chunk(manual) ])
+    item = statements.statements.find { |row| row.kind == "item" }
+    partial = "No distingo qué parte"
+    facts = facts_for("La puerta se reabre sola", [ partial ], answer: {
+      "q" => "¿El patín está cerrando?", "t" => [ { "item" => item.text, "page" => item.page.to_s } ]
+    })
+    checked = check_plan({ "links" => [ link_of("O1", item) ], "steps" => [], "question" => "" }, facts, statements)
+    text = render_of(checked, statements, facts)
+
+    assert_nil checked.question
+    assert_equal "partial", checked.limits.first["note"]
+    assert_includes text, "no separa un dato más concreto"
+    assert_not_includes text, "Lo que ves coincide"
+    assert_not_includes text, "¿El patín está cerrando?"
   end
 
   test "a pending question that does not fit the episode is not installed" do

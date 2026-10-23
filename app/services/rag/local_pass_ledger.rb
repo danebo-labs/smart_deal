@@ -321,16 +321,15 @@ module Rag
         )
       end
 
-      # 150 is the standing cap. A file that already recorded the one-time
-      # bump to 152 is read back so a new process does not ignore it and
-      # does not grant anything above 152.
+      # 150 is the standing cap. A file that recorded a bump to 152 or 164
+      # is read back. A larger number is not a grant.
       def assignment_call_cap
         path = ENV[ASSIGNMENT_PATH_ENV].to_s
         return ASSIGNMENT_CALL_CAP if path.empty? || !File.exist?(path)
 
         data = JSON.parse(File.read(path))
         authorized = data.is_a?(Hash) ? data.dig("authorization", "call_cap").to_i : 0
-        return authorized if authorized.between?(ASSIGNMENT_CALL_CAP, 152)
+        return authorized if [ ASSIGNMENT_CALL_CAP, 152, 164 ].include?(authorized)
 
         ASSIGNMENT_CALL_CAP
       rescue JSON::ParserError, SystemCallError

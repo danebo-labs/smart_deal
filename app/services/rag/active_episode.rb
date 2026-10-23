@@ -186,10 +186,14 @@ module Rag
       return if subject.blank? || CHECK_STATUSES.exclude?(status)
 
       result = item["result"].to_s.squish.first(MAX_CHECK_CHARS).presence
-      label = FollowupQueryRewriter.normalize_label(subject)
+      operation = self.class.sanitize_operation(item["operation"])
       row = { "subject" => subject, "status" => status, "correlation_id" => correlation_id.to_s }
       row["result"] = result if result
-      index = checks.index { |stored| FollowupQueryRewriter.normalize_label(stored["subject"]) == label }
+      # Derived from the turn by WorkContextReducer. A historical row without
+      # it is the check family. It is not a second fact the technician stated.
+      row["operation"] = operation if operation
+      incoming = ReportedOperation.key(subject, operation)
+      index = checks.index { |stored| ReportedOperation.key(stored["subject"], stored["operation"]) == incoming }
       if index
         checks[index] = row
       else
@@ -430,6 +434,11 @@ module Rag
       JSON.generate(payload).bytesize > limit
     end
 
+    def self.sanitize_operation(raw)
+      families = Array(raw).map(&:to_s) & ReportedOperation::ACTS.keys
+      families.presence
+    end
+
     def self.sanitize_checks(raw)
       return [] unless raw.is_a?(Array)
 
@@ -444,6 +453,8 @@ module Rag
         row = { "subject" => subject, "status" => status, "correlation_id" => item["correlation_id"].to_s }
         result = item["result"].to_s.squish.first(MAX_CHECK_CHARS).presence
         row["result"] = result if result
+        operation = sanitize_operation(item["operation"])
+        row["operation"] = operation if operation
         row
       }.last(MAX_CHECKS)
     end

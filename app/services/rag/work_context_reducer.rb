@@ -215,8 +215,21 @@ module Rag
       return unless @perception.respond_to?(:checks)
 
       Array(@perception.checks).each do |check|
-        @episode.upsert_check!(check, correlation_id: @correlation_id)
+        @episode.upsert_check!(check_with_operation(check), correlation_id: @correlation_id)
       end
+    end
+
+    # The family is the act verb closest before the subject in the sentence
+    # that contains it. No such verb is the check family. The full sentence
+    # stays available to ReportedOperation.correspondence through the literal span.
+    def check_with_operation(check)
+      item = check.is_a?(Hash) ? check.stringify_keys : {}
+      subject = item["subject"].to_s
+      sentence = @turn.to_s.split(/(?<=[.!?])\s+/).find { |part|
+        SessionContextBuilder.companion_sentence_has?(part, subject)
+      } || @turn.to_s
+      family = ReportedOperation.family_before(sentence, subject)
+      item.merge("operation" => [ family || "check" ])
     end
 
     # A correction names the replacement as a mention when the turn has no

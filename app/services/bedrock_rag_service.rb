@@ -1235,7 +1235,7 @@ class BedrockRagService
   def companion_turn_skip_reason(applied:, chunks:, episode:, raw_question:)
     return :system_role if document_identity_system_role?
     return :identity unless applied.status == :scoped
-    return :plan if self.class.plan_context?(raw_question.to_s, nil, chunks)
+    return :plan if self.class.plan_request?(raw_question.to_s, nil)
 
     parsed = episode.is_a?(Rag::ActiveEpisode) ? episode : Rag::ActiveEpisode.parse(episode)
     return :episode if parsed.nil? || parsed.blank? || parsed.status != "active"
@@ -2774,13 +2774,32 @@ class BedrockRagService
   # Each RAG request renders the prompt twice (build_complete_optimized_config
   # + the post-response token-count assembly) — without memoization that means
   # 2 File.read syscalls per request multiplied by N concurrent requests.
-  PLAN_REQUEST = /plano|esquema|etiquetas?|schematic|diagram|\blabels?\b/i
+  # "etiqueta del equipo" is the nameplate the technician is reading, not a request
+  # for the label table. A plan word negated in the same sentence is not a request
+  # either: "no necesito el plano" matched the old alternation and would have
+  # taken the turn off the companion.
+  PLAN_REQUEST = /plano|esquema|\betiquetas?\b(?!\s+del\s+equipo)|schematic|diagram|\blabels?\b/i
+  PLAN_NEGATION = /\A(?:no|ni|nunca|sin|tampoco|ningun[oa]?)\z/i
   DIAGRAM_SECTION = /(?:^|\n)\s*(?:#+\s*)?(?:diagrama|plano|esquema|tabla de etiquetas|schematic|label table)\b/i
   TOPOLOGY_EDGE_MARK = "The one exception is a RECORD_TYPE: TOPOLOGY_EDGE record:"
 
   def self.plan_request?(question, session_context = nil)
-    "#{question}\n#{session_context}".match?(PLAN_REQUEST)
+    text = "#{question}\n#{session_context}"
+    offset = 0
+    while (match = text.match(PLAN_REQUEST, offset))
+      return true unless plan_term_negated?(text, match.begin(0))
+
+      offset = match.end(0)
+      offset += 1 if offset <= match.begin(0)
+    end
+    false
   end
+
+  def self.plan_term_negated?(text, offset)
+    sentence = text.to_s[0...offset].to_s.split(/[.!?\n]/).last.to_s
+    sentence.scan(/[[:alpha:]]+/).last(3).any? { |word| word.match?(PLAN_NEGATION) }
+  end
+  private_class_method :plan_term_negated?
 
   def self.plan_context?(question, session_context, chunks)
     return true if plan_request?(question, session_context)

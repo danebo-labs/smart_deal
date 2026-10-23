@@ -55,6 +55,22 @@ class Rag::WorkContextReducerTest < ActiveSupport::TestCase
     assert texts.none? { |text| text.match?(/\bc[oó]digo\s+8\b/i) }
   end
 
+  test "a check keeps the act said before its subject and does not overwrite a different act" do
+    episode = open_episode
+    episode.assign_goal!("la puerta se reabre sola", correlation_id: "seed")
+    with_owner do
+      settle(episode, checks_payload("fotocélula", "done", "no está activada"), "Ya revisé la fotocélula y no está activada.")
+      settle(episode, checks_payload("fotocélula", "done", nil), "Desconecté la fotocélula.")
+      settle(episode, checks_payload("#54", "not_done", nil), "No he comprobado el #54.")
+      settle(episode, checks_payload("el #54", "done", nil), "Ya comprobé el #54.")
+    end
+
+    photocell = episode.checks.select { |row| row["subject"] == "fotocélula" }
+    assert_equal [ [ "check" ], [ "disconnect" ] ], photocell.pluck("operation")
+    assert_equal "no está activada", photocell.first["result"]
+    assert_equal [ "done" ], episode.checks.select { |row| row["subject"].include?("54") }.pluck("status")
+  end
+
   test "a continuity echo does not replace the open checks" do
     episode = open_episode
     episode.assign_goal!("la puerta no termina de cerrar", correlation_id: "seed")
@@ -535,6 +551,10 @@ class Rag::WorkContextReducerTest < ActiveSupport::TestCase
 
     assert_equal "LED de fotocélula está apagado", qualified
     assert_equal "SW4 sigue en OFF", Rag::WorkContextReducer.qualify_generic_led("SW4 sigue en OFF", "El LED de fotocélula está encendido")
+  end
+
+  def checks_payload(subject, status, result)
+    report_payload([]).merge("checks" => [ { "subject" => subject, "status" => status, "result" => result } ])
   end
 
   def report_payload(observations, assertions = [])

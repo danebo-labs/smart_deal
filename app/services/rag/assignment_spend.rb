@@ -19,12 +19,73 @@ module Rag
       with_lock { |state, _file| public_snapshot(state) }
     end
 
+    # One persisted grant. A later process cannot rebase the cost, the
+    # cutoff, or the id. call_cap may only rise through admit_execution!'s
+    # recorded bump. Missing on an empty file is not a grant.
+    def ensure_authorization!(id:, after_attempt:, cost_usd:, call_cap:)
+      with_lock do |state, file|
+        incoming_cost = format_money(cost_usd)
+        current = state["authorization"]
+        if current.nil?
+          state["authorization"] = {
+            "id" => id.to_s,
+            "after_attempt" => after_attempt.to_i,
+            "cost_usd" => incoming_cost,
+            "call_cap" => call_cap.to_i
+          }
+          write!(file, state)
+          return state["authorization"]
+        end
+        unless current.is_a?(Hash) && current["id"] == id.to_s &&
+            current["after_attempt"].to_i == after_attempt.to_i &&
+            decimal(current["cost_usd"]) == decimal(incoming_cost)
+          raise Stop, "authorization_mismatch"
+        end
+
+        current
+      end
+    end
+
+    # Records this execution once. The same id does not move the cutoff
+    # backward or raise the ceiling. The call-cap bump is only 150 -> 152,
+    # and only when the file is still at the given attempt count.
+    def admit_execution!(id:, cost_usd:, calls:, bump_call_cap_to: nil, bump_only_if_attempts: nil)
+      with_lock do |state, file|
+        grants = state["executions"].is_a?(Array) ? state["executions"] : []
+        state["executions"] = grants
+        existing = grants.find { |row| row.is_a?(Hash) && row["id"] == id.to_s }
+        if existing
+          raise Stop, "execution_renewed" if decimal(cost_usd) > decimal(existing["cost_usd"]) || calls.to_i > existing["calls"].to_i
+
+          return existing
+        end
+
+        if bump_call_cap_to.to_i == 152 && bump_only_if_attempts && state["attempts"].to_i == bump_only_if_attempts.to_i
+          auth = state["authorization"]
+          if auth.is_a?(Hash) && auth["call_cap"].to_i == 150
+            auth["call_cap"] = 152
+            state["call_cap"] = [ state["call_cap"].to_i, 152 ].max
+          end
+        end
+        row = {
+          "id" => id.to_s,
+          "after_attempt" => state["attempts"].to_i,
+          "cost_usd" => format_money(cost_usd),
+          "calls" => calls.to_i,
+          "at" => Time.now.utc.iso8601
+        }
+        grants << row
+        write!(file, state)
+        row
+      end
+    end
+
     # Reserves one attempt and its ceiling. The hold stays until settle!,
     # keep!, or release!.
     def reserve!(ceiling_usd:, **meta)
       ceiling = money(ceiling_usd)
       with_lock do |state, file|
-        if state["attempts"] + 1 > @call_cap || exposure(state) + ceiling > @cost_cap
+        if over_cap?(state, ceiling)
           state["blocked"] = state["blocked"].to_i + 1
           write!(file, state)
           raise Stop, "assignment_spend"
@@ -57,7 +118,8 @@ module Rag
     # amounts, and entries stay as they were.
     def sync_caps!
       with_lock do |state, file|
-        state["call_cap"] = @call_cap
+        authorized = state.dig("authorization", "call_cap").to_i
+        state["call_cap"] = [ @call_cap, authorized ].max
         state["cost_cap_usd"] = @cost_cap.to_s("F")
         state["unknown"] = format_money(state["unknown"])
         write!(file, state)
@@ -166,14 +228,78 @@ module Rag
         "committed_usd" => format_money(state["committed"]),
         "unknown_usd" => format_money(state["unknown"]),
         "held_usd" => format_money(state["open"].values.sum(BigDecimal("0")) { |amount| decimal(amount) }),
-        "call_cap" => @call_cap,
+        "call_cap" => attempt_cap(state),
         "cost_cap_usd" => @cost_cap.to_s("F"),
+        "authorization" => state["authorization"],
+        "executions" => state["executions"],
         "entries" => state["entries"]
       }
     end
 
     def exposure(state)
       decimal(state["committed"]) + decimal(state["unknown"]) + state["open"].values.sum(BigDecimal("0")) { |amount| decimal(amount) }
+    end
+
+    def over_cap?(state, ceiling)
+      return true if state["attempts"] + 1 > attempt_cap(state)
+      return true if exposure(state) + ceiling > @cost_cap
+
+      authorization_exceeded?(state, ceiling) || executions_exceeded?(state, ceiling)
+    end
+
+    # The constructor cap and a persisted authorization cap both apply.
+    # The authorization cannot be raised here; admit_execution! is the only bump.
+    def attempt_cap(state)
+      authorized = state.dig("authorization", "call_cap").to_i
+      return @call_cap unless authorized.positive?
+
+      [ @call_cap, authorized ].min
+    end
+
+    def authorization_exceeded?(state, ceiling)
+      auth = state["authorization"]
+      return false unless auth.is_a?(Hash)
+
+      after = auth["after_attempt"].to_i
+      room = auth["call_cap"].to_i - after
+      return true if scoped_attempts(state, after) + 1 > room
+
+      scoped_exposure(state, after) + ceiling > decimal(auth["cost_usd"])
+    end
+
+    def executions_exceeded?(state, ceiling)
+      Array(state["executions"]).any? do |grant|
+        next false unless grant.is_a?(Hash)
+
+        after = grant["after_attempt"].to_i
+        scoped_attempts(state, after) + 1 > grant["calls"].to_i ||
+          scoped_exposure(state, after) + ceiling > decimal(grant["cost_usd"])
+      end
+    end
+
+    def scoped_attempts(state, after_attempt)
+      state["entries"].count { |entry| counts_toward?(entry, after_attempt) }
+    end
+
+    def scoped_exposure(state, after_attempt)
+      state["entries"].sum(BigDecimal("0")) do |entry|
+        next BigDecimal("0") unless counts_toward?(entry, after_attempt)
+
+        case entry["status"]
+        when "settled", "kept"
+          decimal(entry["actual_usd"])
+        when "unknown"
+          decimal(entry["reserved_usd"].presence || entry["ceiling_usd"])
+        when "reserved"
+          decimal(state.dig("open", entry["id"].to_s).presence || entry["ceiling_usd"])
+        else
+          BigDecimal("0")
+        end
+      end
+    end
+
+    def counts_toward?(entry, after_attempt)
+      entry.is_a?(Hash) && entry["id"].to_i > after_attempt && entry["status"] != "released"
     end
 
     def entry(meta, id:, status:, ceiling_usd:)

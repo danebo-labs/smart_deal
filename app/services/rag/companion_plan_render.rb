@@ -19,6 +19,46 @@ module Rag
       new(check, facts, statements).call
     end
 
+    def self.applicable?(item, facts)
+      goal = facts.respond_to?(:goal) ? facts.goal : nil
+      return false if goal.nil? || item.blank?
+
+      wanted = symptom_stems(goal.text)
+      offered = symptom_stems(item)
+      shared = wanted & offered
+      return false if wanted.empty? || offered.empty?
+
+      shared.size >= [ 2, wanted.size ].min &&
+        shared.size >= wanted.size * APPLICABLE_SHARE &&
+        shared.size >= offered.size * APPLICABLE_SHARE
+    end
+
+    def self.symptom_stems(text)
+      CompanionPlanCheck.words(text)
+                        .reject { |word| SYMPTOM_STOPWORDS.include?(word) }
+                        .map { |word| CompanionPlanCheck.stem(word) }
+                        .reject { |stem| GENERIC_STEMS.include?(stem) }
+                        .to_set
+    end
+
+    def self.distinctive_stems(item, goal_text)
+      blocked = CompanionPlanCheck::CONNECTORS | CompanionPlanCheck::QUESTION_WORDS.map { |word| CompanionPlanCheck.stem(word) }.to_set
+      (symptom_stems(item) - symptom_stems(goal_text)).reject { |stem| blocked.include?(stem) }.to_set
+    end
+
+    def self.case_distinguishes?(item, facts)
+      goal_text = facts.respond_to?(:goal) ? facts.goal&.text : nil
+      distinctive = distinctive_stems(item, goal_text)
+      return false if distinctive.empty?
+
+      facts.facts.any? do |fact|
+        next false if fact.kind == "goal"
+
+        stems = CompanionPlanCheck.words(fact.text).map { |word| CompanionPlanCheck.stem(word) }.to_set
+        distinctive.intersect?(stems)
+      end
+    end
+
     def initialize(check, facts, statements)
       @check = check
       @facts = facts
@@ -36,16 +76,20 @@ module Rag
         quoted << statement
       end
       steps = @check.steps.map { |id| @statements.find(id) }
-      notes = step_notes(steps)
+      notes, relations, noted = step_notes(steps)
       steps.group_by { |step| [ step.source, step.item ] }.each do |(source, item), group|
         lines << step_heading(item, source)
-        group.each { |step| lines << "- #{quote(step)}#{notes[step.id]}." }
+        group.each do |step|
+          body = relations[step.id] == :partial ? operation_sentences(step.text) : step.text
+          lines << "- #{quote(step, body)}#{notes[step.id]}."
+        end
         warnings(group, quoted).each do |warning|
           lines << "Advertencia: #{quote(warning)}."
           quoted << warning
         end
         quoted.concat(group)
       end
+      unmatched_reports(noted).each { |fact| lines << "También informaste: #{case_text(fact)}." }
       conflicts(quoted).each { |note| lines << note }
       lines << @check.question if @check.question.present?
       lines.join("\n")
@@ -60,15 +104,15 @@ module Rag
     end
 
     def step_heading(item, source)
-      if applicable?(item)
+      if applicable?(item) || self.class.case_distinguishes?(item, @facts)
         "Para este síntoma, «#{bare(item)}», la documentación indica [#{source}]:"
       else
         "Si lo que ves es «#{bare(item)}», la documentación indica para ese caso [#{source}]:"
       end
     end
 
-    def quote(statement)
-      parts = AnswerSafetyProcessor.fragments(statement.text).map { |part| bare(part) }.reject(&:empty?)
+    def quote(statement, text = statement.text)
+      parts = AnswerSafetyProcessor.fragments(text).map { |part| bare(part) }.reject(&:empty?)
       body = if parts.any? { |part| part.match?(/[«»]/) }
         parts.join("; ")
       else
@@ -83,39 +127,80 @@ module Rag
 
     def step_notes(steps)
       notes = Hash.new { |hash, key| hash[key] = +"" }
+      relations = {}
+      noted = []
       covered = {}
       ordered = @facts.facts.select { |fact| %w[done_check not_done_check].include?(fact.kind) } +
                 @facts.facts.select { |fact| fact.kind == "observation" }
       ordered.each do |fact|
-        step = best_step(fact, steps, covered)
+        step, relation = best_step(fact, steps, covered)
         next unless step
 
         covered[step.id] = true if fact.done_check?
-        notes[step.id] << note(fact)
+        relations[step.id] = relation if relation
+        noted << fact.id
+        notes[step.id] << note(fact, relation)
       end
-      notes
+      [ notes, relations, noted ]
     end
 
     def best_step(fact, steps, covered)
-      observation = fact.kind == "observation"
-      core = content_stems(observation ? fact.text : fact.subject)
-      needed = observation ? [ 2, core.size ].min : 1
+      return observation_step(fact, steps, covered) if fact.kind == "observation"
+
+      wanted = fact.done_check? ? :complete : :pending
+      ranked = steps.filter_map do |step|
+        relation = ReportedOperation.correspondence(
+          report_text: fact.text, result: fact.result,
+          status: fact.done_check? ? "done" : "not_done",
+          statement_text: step.text
+        )
+        score = if relation == wanted then 2
+        elsif fact.done_check? && relation == :partial then 1
+        end
+        [ step, relation, score ] if score
+      end
+      chosen = ranked.max_by { |step, _relation, score| [ score, -steps.index(step) ] }
+      chosen ? [ chosen[0], chosen[1] ] : [ nil, nil ]
+    end
+
+    def observation_step(fact, steps, covered)
+      core = content_stems(fact.text)
+      needed = [ 2, core.size ].min
       scored = steps.filter_map do |step|
-        next if observation && (covered[step.id] || !bare(step.text).match?(CHECK_STEP))
+        next if covered[step.id] || !bare(step.text).match?(CHECK_STEP)
 
         overlap = (core & content_stems(step.text)).size
         [ step, overlap ] if overlap.positive? && overlap >= needed
       end
-      scored.max_by { |(step, overlap)| [ overlap, -steps.index(step) ] }&.first
+      step = scored.max_by { |(item, overlap)| [ overlap, -steps.index(item) ] }&.first
+      [ step, nil ]
     end
 
-    def note(fact)
+    def note(fact, relation = nil)
       said = case_text(fact)
       case fact.kind
-      when "done_check" then "; ya informaste: #{said}"
+      when "done_check"
+        if relation == :partial
+          "; informaste #{said}, que no completa esta operación"
+        else
+          "; ya informaste: #{said}"
+        end
       when "not_done_check" then "; dijiste #{said}, así que sigue pendiente"
       else "; reportaste #{said}, que es una observación: esta comprobación no consta como hecha"
       end
+    end
+
+    # A partial report quotes the sentences that carry the operation. A later
+    # sentence with no act is the document's conditional result and is not applied.
+    def operation_sentences(text)
+      sentences = text.to_s.split(CompanionStatements::SENTENCE_SPLIT).map(&:strip).reject(&:empty?)
+      kept = sentences.select { |sentence| ReportedOperation.parse(sentence).acts.reject(&:negated).any? }
+      kept.any? ? kept.join(" ") : text
+    end
+
+    def unmatched_reports(noted)
+      linked = @check.links.pluck(:fact).to_set
+      @facts.facts.select { |fact| fact.done_check? && noted.exclude?(fact.id) && linked.exclude?(fact.id) }
     end
 
     def warnings(group, quoted)
@@ -134,31 +219,14 @@ module Rag
         match = statement.text.match(NOTE_MARKER)
         next unless match
 
-        body = match[:body].gsub("REQUIRES_FIELD_VERIFICATION", "hay que verificarlo en campo").tr("«»“”\"", "'''''")
+        body = match[:body].gsub(CompanionStatements::EXTRACTION_MARKER, "").gsub(/\s{2,}/, " ").strip
+        body = body.tr("«»“”\"", "'''''")
         "Ojo, el documento no es coherente (#{match[:id].strip}) [#{statement.source}]: #{one_fragment(body)}."
       end
     end
 
     def applicable?(item)
-      goal = @facts.goal
-      return false if goal.nil? || item.blank?
-
-      wanted = symptom_stems(goal.text)
-      offered = symptom_stems(item)
-      shared = wanted & offered
-      return false if wanted.empty? || offered.empty?
-
-      shared.size >= [ 2, wanted.size ].min &&
-        shared.size >= wanted.size * APPLICABLE_SHARE &&
-        shared.size >= offered.size * APPLICABLE_SHARE
-    end
-
-    def symptom_stems(text)
-      CompanionPlanCheck.words(text)
-                        .reject { |word| SYMPTOM_STOPWORDS.include?(word) }
-                        .map { |word| CompanionPlanCheck.stem(word) }
-                        .reject { |stem| GENERIC_STEMS.include?(stem) }
-                        .to_set
+      self.class.applicable?(item, @facts)
     end
 
     def content_stems(text)

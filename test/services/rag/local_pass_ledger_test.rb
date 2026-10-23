@@ -26,6 +26,16 @@ class Rag::LocalPassLedgerTest < ActiveSupport::TestCase
     Thread.current[:rag_validation_capture] = nil
   end
 
+  test "a recorded call cap of 152 is read and a higher one is not" do
+    path = File.join(Dir.mktmpdir("ledger-cap"), "spend.json")
+    File.write(path, JSON.generate("authorization" => { "call_cap" => 152 }))
+    ENV["RAG_ASSIGNMENT_SPEND_PATH"] = path
+    assert_equal 152, Rag::LocalPassLedger.send(:assignment_call_cap)
+
+    File.write(path, JSON.generate("authorization" => { "call_cap" => 400 }))
+    assert_equal Rag::LocalPassLedger::ASSIGNMENT_CALL_CAP, Rag::LocalPassLedger.send(:assignment_call_cap)
+  end
+
   test "a disarmed ledger does not count or block" do
     calls = 0
     Rag::LocalPassLedger.protect!(

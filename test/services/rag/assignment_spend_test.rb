@@ -58,6 +58,54 @@ class Rag::AssignmentSpendTest < ActiveSupport::TestCase
     assert_equal "0.125000", row["reserved_usd"]
   end
 
+  test "an authorization survives another process and unknown still consumes it" do
+    first = spend(call_cap: 152, cost_cap: "4")
+    seed_history(140)
+    grant = first.ensure_authorization!(id: "f2f3-joint-after-134", after_attempt: 134, cost_usd: "0.75", call_cap: 150)
+    assert_equal 134, grant["after_attempt"]
+    assert_equal 140, first.snapshot["entries"].size
+
+    assert_raises(Rag::AssignmentSpend::Stop) do
+      first.ensure_authorization!(id: "f2f3-joint-after-134", after_attempt: 134, cost_usd: "1.50", call_cap: 150)
+    end
+    same = Rag::AssignmentSpend.new(path: @path, call_cap: 152, cost_cap_usd: "4").ensure_authorization!(
+      id: "f2f3-joint-after-134", after_attempt: 134, cost_usd: "0.75", call_cap: 150
+    )
+    assert_equal "0.750000", same["cost_usd"]
+
+    execution = first.admit_execution!(
+      id: "f3-vf5-20261023", cost_usd: "0.30", calls: 12,
+      bump_call_cap_to: 152, bump_only_if_attempts: 140
+    )
+    assert_equal 140, execution["after_attempt"]
+    assert_equal 152, first.snapshot["authorization"]["call_cap"]
+    again = Rag::AssignmentSpend.new(path: @path, call_cap: 152, cost_cap_usd: "4").admit_execution!(
+      id: "f3-vf5-20261023", cost_usd: "0.30", calls: 12,
+      bump_call_cap_to: 152, bump_only_if_attempts: 0
+    )
+    assert_equal 140, again["after_attempt"]
+
+    held = first.reserve!(ceiling_usd: "0.200000", model_id: "haiku", turn: 1)
+    assert_raises(Rag::AssignmentSpend::Stop) do
+      first.reserve!(ceiling_usd: "0.200000", model_id: "haiku", turn: 2)
+    end
+    assert first.unknown!(held, error_class: "timeout")
+    restarted = Rag::AssignmentSpend.new(path: @path, call_cap: 152, cost_cap_usd: "4")
+    assert_raises(Rag::AssignmentSpend::Stop) do
+      restarted.reserve!(ceiling_usd: "0.200000", model_id: "haiku", turn: 3)
+    end
+    assert_equal 141, restarted.snapshot["attempts"]
+    assert_equal 140, restarted.snapshot["entries"].count { |row| row["id"].to_i <= 140 }
+  end
+
+  test "a bump is refused when the ledger is no longer at the authorized attempt" do
+    book = spend(call_cap: 152, cost_cap: "4")
+    seed_history(141)
+    book.ensure_authorization!(id: "f2f3-joint-after-134", after_attempt: 134, cost_usd: "0.75", call_cap: 150)
+    book.admit_execution!(id: "later", cost_usd: "0.30", calls: 12, bump_call_cap_to: 152, bump_only_if_attempts: 140)
+    assert_equal 150, book.snapshot["authorization"]["call_cap"]
+  end
+
   test "an unpriced error keeps the ceiling" do
     book = spend
     id = book.reserve!(ceiling_usd: "0.125000", model_id: "sonnet", turn: 1)
@@ -73,5 +121,22 @@ class Rag::AssignmentSpendTest < ActiveSupport::TestCase
 
   def spend(call_cap: 2, cost_cap: "1")
     Rag::AssignmentSpend.new(path: @path, call_cap: call_cap, cost_cap_usd: cost_cap)
+  end
+
+  def seed_history(attempts)
+    entries = (1..attempts).map do |id|
+      if id == 78
+        { "id" => id, "status" => "unknown", "ceiling_usd" => "0.008617", "reserved_usd" => "0.008617" }
+      elsif id >= 135
+        { "id" => id, "status" => "settled", "ceiling_usd" => "0.020000", "actual_usd" => "0.007000" }
+      else
+        { "id" => id, "status" => "settled", "ceiling_usd" => "0.010000", "actual_usd" => "0.010000" }
+      end
+    end
+    File.write(@path, JSON.generate(
+      "call_cap" => 150, "cost_cap_usd" => "4.000000", "attempts" => attempts, "blocked" => 0,
+      "priced" => attempts - 1, "seq" => attempts, "committed" => "1.400000", "unknown" => "0.008617",
+      "open" => {}, "entries" => entries
+    ))
   end
 end

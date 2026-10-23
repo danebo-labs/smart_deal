@@ -316,9 +316,25 @@ module Rag
 
         AssignmentSpend.new(
           path: ENV[ASSIGNMENT_PATH_ENV],
-          call_cap: ASSIGNMENT_CALL_CAP,
+          call_cap: assignment_call_cap,
           cost_cap_usd: ASSIGNMENT_COST_CAP_USD
         )
+      end
+
+      # 150 is the standing cap. A file that already recorded the one-time
+      # bump to 152 is read back so a new process does not ignore it and
+      # does not grant anything above 152.
+      def assignment_call_cap
+        path = ENV[ASSIGNMENT_PATH_ENV].to_s
+        return ASSIGNMENT_CALL_CAP if path.empty? || !File.exist?(path)
+
+        data = JSON.parse(File.read(path))
+        authorized = data.is_a?(Hash) ? data.dig("authorization", "call_cap").to_i : 0
+        return authorized if authorized.between?(ASSIGNMENT_CALL_CAP, 152)
+
+        ASSIGNMENT_CALL_CAP
+      rescue JSON::ParserError, SystemCallError
+        ASSIGNMENT_CALL_CAP
       end
 
       def reserve_assignment!(operation, model_id, ceiling)

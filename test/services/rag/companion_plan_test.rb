@@ -143,7 +143,9 @@ class Rag::CompanionPlanTest < ActiveSupport::TestCase
     assert_includes text, "- «Si el problema persiste, desconectar el sensor de nivel y pulsar MARCHA» [1]."
     assert_includes text, "Advertencia: «IMPORTANTE: cortar la alimentación antes de abrir la tapa» [1]."
     assert_includes text, "Ojo, el documento no es coherente (C9) [1]:"
-    assert_includes text, "hay que verificarlo en campo"
+    assert_includes text, "entrada auxiliar"
+    assert_includes text, "AUX"
+    assert_not_includes text, "hay que verificarlo en campo"
     assert_not_includes text, "REQUIRES_FIELD_VERIFICATION"
     assert text.end_with?("¿La entrada auxiliar tiene algo conectado?")
     publication = publish(text)
@@ -157,7 +159,8 @@ class Rag::CompanionPlanTest < ActiveSupport::TestCase
 
     assert_includes text, "reportaste «No veo agua en el sensor de nivel», que es una observación: esta comprobación no consta como hecha"
     assert_not_includes text, "ya informaste"
-    assert_includes text, "Si lo que ves es «El motor no arranca», la documentación indica para ese caso [1]:"
+    assert_not_includes text, "El motor no arranca"
+    assert_equal "other_case_without_question", result.rejections.find { |item| item["part"] == "step" }["reason"]
     assert publish(text, observations: [ sensor ]).accepted?
   end
 
@@ -172,11 +175,86 @@ class Rag::CompanionPlanTest < ActiveSupport::TestCase
     assert_nil Rag::CompanionPlan.tool_input(Struct.new(:output).new(nil))
   end
 
+  test "a question that names the other item keeps its step, and another question does not" do
+    skate = step_id("tensión de entrada")
+    kept = check(steps: [ skate ], question: "¿El motor no arranca?")
+    assert_equal [ skate ], kept.steps
+    assert_includes render(kept), "Si lo que ves es «El motor no arranca»"
+
+    dropped = check(steps: [ skate ], question: "¿La entrada auxiliar tiene algo conectado?")
+    assert_empty dropped.steps
+    assert_equal "other_case_without_question", dropped.rejections.find { |item| item["part"] == "step" }["reason"]
+    assert_equal "¿La entrada auxiliar tiene algo conectado?", dropped.question
+  end
+
+  test "a disambiguation question grounded in both items passes, and a foreign word does not" do
+    text = "¿Se vuelve a abrir cuando el patín está cerrando?"
+    manual = <<~TEXT
+      • La puerta se re-abre sola.
+      – Comprobar que la fotocélula no esté activada.
+      • La puerta se vuelve a abrir cuando el patín está cerrando.
+      – Comprobar la regulación del patín.
+    TEXT
+    statements = Rag::CompanionStatements.parse([ chunk(manual) ])
+    skate = statements.statements.find { |item| item.step? && item.text.include?("patín") }
+    result = Rag::CompanionPlanCheck.call(
+      { "links" => [], "steps" => [ skate.id ], "question" => text },
+      facts: case_facts, statements: statements, turns: turns
+    )
+
+    assert_equal text, result.question
+    assert_equal [ skate.id ], result.steps
+    foreign = Rag::CompanionPlanCheck.call(
+      { "links" => [], "steps" => [], "question" => "¿El patín está oscilando?" },
+      facts: case_facts, statements: statements, turns: turns
+    )
+    assert_nil foreign.question
+    assert_match(/\Aungrounded:/, foreign.rejections.find { |item| item["part"] == "question" }["reason"])
+  end
+
+  test "an empty reading still rejects a different operation and a partial report does not apply the result" do
+    review = link("C1", step_id("desconectar el sensor"), "")
+    rejected = check(links: [ review ], steps: [ step_id("desconectar el sensor") ])
+    assert_equal [ "operation_mismatch" ], rejected.rejections.select { |item| item["part"] == "link" }.pluck("reason")
+    text = render(rejected)
+    assert_not_includes text, "ya informaste"
+    assert_includes text, "También informaste: «Ya revisé el sensor de nivel y no está activado»."
+
+    sentence = "Desconecté el sensor de nivel, todavía no pulsé MARCHA."
+    partial_manual = <<~TEXT
+      • El motor se para solo.
+      – En caso que el problema persista, desconectar el sensor de nivel y pulsar MARCHA. Si el motor no arranca, debe haber una obstrucción mecánica en la puerta.
+    TEXT
+    statements = Rag::CompanionStatements.parse([ chunk(partial_manual) ])
+    step = statements.statements.find(&:step?)
+    assert_equal :partial, Rag::ReportedOperation.correspondence(
+      report_text: sentence, result: nil, status: "done", statement_text: step.text
+    )
+    value = Rag::ActiveEpisode.open(correlation_id: "query:t2", now: Time.current)
+    value.assign_goal!("El motor se para solo", correlation_id: "query:t2")
+    value.upsert_check!({ "subject" => "sensor de nivel", "status" => "done", "operation" => [ "disconnect" ] }, correlation_id: "query:t2")
+    local_session = Struct.new(:conversation_history).new([
+      { "role" => "user", "content" => sentence, "correlation_id" => "query:t2" }
+    ])
+    local = Rag::CompanionCaseFacts.build(value, session: local_session)
+    rendered = Rag::CompanionPlanRender.call(
+      Rag::CompanionPlanCheck.call(
+        { "links" => [], "steps" => [ step.id ], "question" => "" },
+        facts: local, statements: statements, turns: []
+      ),
+      facts: local, statements: statements
+    )
+    assert_includes rendered, "no completa esta operación"
+    assert_not_includes rendered, "debe haber una obstrucción mecánica"
+    assert_not_includes rendered, "ya informaste"
+  end
+
   test "the prepared call is one forced tool call with the case, the turns, and the numbered statements" do
     prepared = prepared_plan
 
     assert_equal Rag::CompanionPlan::TOOL_NAME, prepared.params.dig(:tool_config, :tool_choice, :tool, :name)
     assert_equal 0, prepared.params.dig(:inference_config, :temperature)
+    assert_includes prepared.system, "reading no menciona ids"
     assert_includes prepared.user, "Mensaje de este turno:\n¿qué sigue?"
     assert_includes prepared.user, "C1 [comprobación que el técnico dice haber hecho]"
     assert_includes prepared.user, T1

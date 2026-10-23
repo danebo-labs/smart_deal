@@ -71,6 +71,10 @@ module Rag
       words(text).join(" ")
     end
 
+    def self.question_stems
+      QUESTION_WORDS.map { |word| stem(word) }.to_set
+    end
+
     def initialize(plan, facts, statements, turns)
       @plan = plan.is_a?(Hash) ? plan.deep_stringify_keys : {}
       @facts = facts
@@ -81,8 +85,28 @@ module Rag
 
     def call
       links = check_links
-      steps = check_steps
-      question = check_question(steps)
+      candidates = candidate_steps
+      text = @plan["question"].to_s.squish
+      provisional = text.present? && question_reason(text, candidates).nil? ? text : nil
+      steps = []
+      candidates.each do |id|
+        if keep_step?(id, links, provisional)
+          steps << id
+        else
+          reject("step", id, "other_case_without_question")
+        end
+      end
+      final_reason = text.present? ? question_reason(text, steps) : nil
+      question = text.present? && final_reason.nil? ? text : nil
+      if text.present? && question.nil?
+        reject("question", text, final_reason || question_reason(text, candidates) || "invalid")
+        steps.reject! do |id|
+          next false if step_grounded?(id, links)
+
+          reject("step", id, "other_case_without_question")
+          true
+        end
+      end
       Result.new(links: links, steps: steps, question: question, rejections: @rejections)
     end
 
@@ -101,17 +125,28 @@ module Rag
         elsif kept.any? { |item| item[:statement] == statement.id && item[:fact] == fact.id } then "duplicate"
         elsif kept.size >= MAX_LINKS then "over_limit"
         end
+        relation = nil
+        if reason.nil? && check_fact?(fact) && statement.step?
+          relation = ReportedOperation.correspondence(
+            report_text: fact.text, result: fact.result,
+            status: fact.done_check? ? "done" : "not_done",
+            statement_text: statement.text
+          )
+          reason = "operation_mismatch" if %i[none related].include?(relation)
+        end
         reason ||= reading_reason(reading, fact, statement) if reading.present?
         if reason
           reject("link", link, reason)
           next
         end
-        kept << { fact: fact.id, statement: statement.id, reading: reading.presence }
+        kept_link = { fact: fact.id, statement: statement.id, reading: reading.presence }
+        kept_link[:relation] = relation if relation
+        kept << kept_link
       end
       kept
     end
 
-    def check_steps
+    def candidate_steps
       kept = []
       Array(@plan["steps"]).each do |id|
         statement = @statements.find(id)
@@ -127,15 +162,63 @@ module Rag
       kept
     end
 
-    def check_question(steps)
-      text = @plan["question"].to_s.squish
-      return nil if text.empty?
+    # A step of another item stays when the case already names what distinguishes
+    # that item, when a fact is linked to a statement of that item, or when the
+    # question itself names that distinction. Any other question does not import
+    # the other item's actions.
+    def keep_step?(id, links, question)
+      step_grounded?(id, links) || distinguishing_question?(question, @statements.find(id)&.item)
+    end
 
-      reason = question_reason(text, steps)
-      return text unless reason
+    def step_grounded?(id, links)
+      statement = @statements.find(id)
+      return false unless statement
 
-      reject("question", text, reason)
-      nil
+      item_applicable?(statement.item) || case_distinguishes?(statement.item) || linked_to_item?(statement, links)
+    end
+
+    def item_applicable?(item)
+      CompanionPlanRender.applicable?(item, @facts)
+    end
+
+    def case_distinguishes?(item)
+      distinctive = distinctive_stems(item)
+      return false if distinctive.empty?
+
+      @facts.facts.any? do |fact|
+        next false if fact.kind == "goal"
+
+        distinctive.intersect?(content_stems(self.class.normal(fact.text).split))
+      end
+    end
+
+    def linked_to_item?(statement, links)
+      item = statement.item.to_s
+      return false if item.blank?
+
+      links.any? do |link|
+        other = @statements.find(link[:statement])
+        other && (other.item == item || (other.kind == "item" && other.text == item))
+      end
+    end
+
+    def distinguishing_question?(question, item)
+      return false if question.blank?
+
+      distinctive = distinctive_stems(item)
+      return false if distinctive.empty?
+
+      asked = content_stems(self.class.normal(question).split)
+      asked -= QUESTION_WORDS.map { |word| self.class.stem(word) }.to_set
+      distinctive.intersect?(asked)
+    end
+
+    def distinctive_stems(item)
+      CompanionPlanRender.distinctive_stems(item, @facts.goal&.text)
+    end
+
+    def check_fact?(fact)
+      fact.done_check? || fact.kind == "not_done_check"
     end
 
     def reading_reason(reading, fact, statement)
@@ -243,13 +326,33 @@ module Rag
 
     def repeated_fact(normal)
       present = stems(normal)
-      @facts.facts.find do |fact|
-        next false unless %w[observation done_check identity].include?(fact.kind)
+      found = @facts.facts.find { |fact| fact_covered_by_question?(fact, present) }
+      return found if found
 
-        core_text = fact.done_check? ? [ fact.subject, fact.result ].compact.join(" ") : fact.text
-        core = content_stems(self.class.normal(core_text).split.reject { |word| PERCEPTION.include?(word) })
-        core.any? && core.subset?(present)
-      end
+      asked = content_stems(normal.split) - self.class.question_stems
+      return nil if asked.empty?
+
+      @facts.facts.find { |fact| question_covered_by_fact?(fact, asked) }
+    end
+
+    def fact_covered_by_question?(fact, present)
+      return false unless %w[observation done_check identity].include?(fact.kind)
+
+      core = fact_core(fact)
+      core.any? && core.subset?(present)
+    end
+
+    # The question only restates a fact already in the case. An extra word in
+    # the fact ("justo") does not keep the question: what it asks is covered.
+    def question_covered_by_fact?(fact, asked)
+      return false unless %w[observation done_check identity].include?(fact.kind)
+
+      fact_core(fact).any? && asked.subset?(fact_core(fact))
+    end
+
+    def fact_core(fact)
+      core_text = fact.done_check? ? [ fact.subject, fact.result ].compact.join(" ") : fact.text
+      content_stems(self.class.normal(core_text).split.reject { |word| PERCEPTION.include?(word) })
     end
 
     def ungrounded(normal, allowed)

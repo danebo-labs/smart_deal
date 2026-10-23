@@ -81,6 +81,53 @@ class Rag::CompanionPlanRouteTest < ActiveSupport::TestCase
     assert_equal "calculated", consumption["cost_kind"]
   end
 
+  test "a diagram chunk does not leave the companion and an explicit plan request does" do
+    with_flags do
+      [ 0, 7 ].each do |position|
+        @plans.clear
+        invoked = []
+        result = ask(session_with_history, chunks: diagram_chunks(position), invoked: invoked, raw_question: "Corrijo solo el estado del LED: el LED está encendido, no apagado.")
+        assert result[:companion_turn], "position #{position} #{result[:companion_reason].inspect} #{result[:route_outcome]}"
+        assert_equal 1, @plans.size
+        assert_empty invoked
+      end
+    end
+
+    service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "kb-local")
+    applied = Struct.new(:status).new(:scoped)
+    stored = episode
+    before = stored.to_h
+    chunks = diagram_chunks(7)
+    with_flags do
+      assert_equal :plan, service.send(:companion_turn_skip_reason, applied: applied, chunks: chunks, episode: stored, raw_question: "muéstrame el plano de la fotocélula")
+      assert_nil service.send(:companion_turn_skip_reason, applied: applied, chunks: chunks, episode: stored, raw_question: "no necesito el plano")
+      assert_nil service.send(:companion_turn_skip_reason, applied: applied, chunks: chunks, episode: stored, raw_question: "la etiqueta del equipo dice VF5+")
+      assert_nil service.send(:companion_turn_skip_reason, applied: applied, chunks: chunks, episode: stored, raw_question: "¿qué sigue?")
+    end
+    assert_equal before, stored.to_h
+    assert BedrockRagService.plan_context?("¿qué sigue?", nil, [ { content: "Diagrama de la página (etiquetas literales):\n20\n" } ])
+    assert_not BedrockRagService.plan_request?("¿qué sigue?", nil)
+    assert BedrockRagService.plan_request?("muéstrame el plano de la fotocélula", nil)
+    assert_not BedrockRagService.plan_request?("no necesito el plano", nil)
+    assert_not BedrockRagService.plan_request?("la etiqueta del equipo dice VF5+", nil)
+  end
+
+  test "the other companion gates stay closed for the same chunks" do
+    service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "kb-local")
+    applied = Struct.new(:status).new(:scoped)
+    chunks = diagram_chunks(0)
+    with_flags do
+      ENV["RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE"] = "1"
+      assert_equal :system_role, service.send(:companion_turn_skip_reason, applied: applied, chunks: chunks, episode: episode, raw_question: "¿qué sigue?")
+      ENV.delete("RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE")
+      assert_equal :identity, service.send(:companion_turn_skip_reason, applied: Struct.new(:status).new(:no_compatible), chunks: chunks, episode: episode, raw_question: "¿qué sigue?")
+      assert_equal :episode, service.send(:companion_turn_skip_reason, applied: applied, chunks: chunks, episode: nil, raw_question: "¿qué sigue?")
+      assert_equal :raw_question, service.send(:companion_turn_skip_reason, applied: applied, chunks: chunks, episode: episode, raw_question: "  ")
+      marked = [ { content: "FIELD_RECORD todavía en el relato\nLa puerta se para.\n" } ]
+      assert_equal :field_records, service.send(:companion_turn_skip_reason, applied: applied, chunks: marked, episode: episode, raw_question: "¿qué sigue?")
+    end
+  end
+
   private
 
   def write_chunk(document, filename, text, page:, account:, name:)
@@ -124,7 +171,29 @@ class Rag::CompanionPlanRouteTest < ActiveSupport::TestCase
     )
   end
 
-  def ask(session)
+  def diagram_chunks(diagram_at)
+    body = "[DOCUMENT: bomba.pdf]\n[PDF_PAGE: 3]\n6.1 Averías\n• El motor se para solo.\n– Comprobar el ajuste del regulador de caudal (#9).\n"
+    chunks = Array.new(8) { chunk_hash(body) }
+    chunks[diagram_at] = chunk_hash("Diagrama de la página (etiquetas literales):\n20 receptor\n")
+    chunks
+  end
+
+  def chunk_hash(content)
+    {
+      content: content,
+      metadata: {
+        "account_id" => accounts(:legacy).id.to_s,
+        "document_id" => "doc-bomba",
+        "original_source_uri" => "s3://#{BUCKET}/bulk_uploads/doc-bomba.pdf",
+        "original_filename" => "doc-bomba.pdf",
+        "canonical_name" => "Bomba Hidra P2",
+        "aliases" => [ "Hidra P2" ],
+        "page_number" => 3
+      }
+    }
+  end
+
+  def ask(session, chunks: nil, invoked: nil, raw_question: "¿qué sigue?")
     service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "kb-local")
     service.instance_variable_set(:@client, @kb.client)
     plans = @plans
@@ -147,6 +216,13 @@ class Rag::CompanionPlanRouteTest < ActiveSupport::TestCase
     generator = AiProvider.new
     generator.instance_variable_get(:@client).instance_variable_set(:@client, runtime)
     service.instance_variable_set(:@document_identity_generator, generator)
+    if chunks
+      service.define_singleton_method(:retrieve_chunks) { |*_args, **_kwargs| { retrieval: "ok", chunks: chunks } }
+    end
+    runtime.define_singleton_method(:invoke_model) do |*_args, **_kwargs|
+      invoked << :generate_text if invoked
+      Struct.new(:body).new(StringIO.new({ content: [ { text: "desde generate_text" } ], stop_reason: "end_turn", usage: { input_tokens: 3, output_tokens: 2 } }.to_json))
+    end
     service.send(
       :document_identity_scope_result,
       "motor para solo",
@@ -159,7 +235,7 @@ class Rag::CompanionPlanRouteTest < ActiveSupport::TestCase
       user_id: users(:one).id,
       conversation_session_id: session.id,
       correlation_id: "query:t2",
-      raw_question: "¿qué sigue?",
+      raw_question: raw_question,
       conv_session: session
     )
   end

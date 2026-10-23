@@ -276,6 +276,97 @@ Nunca se regenera un turno, ni se sustituye por una respuesta preparada, ni se r
 
 ---
 
+## Ejecución de F3 — 23 de octubre de 2026
+
+F3 quedó implementada y probada en local. La conversación pagada y las dos ramas hipotéticas quedan **no demostrado**: el techo conservador de las doce invocaciones es US$0,318233 y el techo de esta ejecución es US$0,30. No hubo llamada a Bedrock, no se escribió el ledger, no se publicó nada en S3 y no se sincronizó la KB. El manifest de la candidata F2 no se regeneró.
+
+### 1. Cambios y pruebas
+
+Ruta de T2. `companion_turn_skip_reason` devuelve `:plan` solo cuando `plan_request?` encuentra el pedido en el mensaje literal. Un chunk con «Diagrama de la página (etiquetas literales):» sigue haciendo verdadero `plan_context?` para el ensamblado documental y ya no saca el turno del companion. `PLAN_REQUEST` exige límite de palabra en `etiquetas?` y no toma «etiquetas del equipo». Una negación en las tres palabras anteriores de la misma oración («no necesito el plano») tampoco es un pedido. «muéstrame el plano de la fotocélula» sí lo es. El episodio no se reescribe al evaluar el motivo. Los otros motivos (`:system_role`, `:identity`, `:episode`, `:raw_question`, `:field_records`) siguen cerrando el companion. La prueba de ruta coloca el diagrama en la posición 0 y en la 7, pide un plan y comprueba que `invoke_model` no se llama.
+
+Correspondencia. `Rag::ReportedOperation` compara familias de acto y componente. Una operación completa no inventa su resultado: el renderer solo anota «ya informaste» en `:complete` y, en `:partial`, cita las oraciones del paso que contienen el acto. La oración condicional de S1.6 («debe haber una obstrucción mecánica») no se aplica a un reporte parcial. Un link con reading vacío a otra operación se rechaza por `operation_mismatch`. El check hecho que no entra en ningún paso se publica como «También informaste». El episodio reemplaza una fila solo cuando coinciden la familia y el componente: «fotocélula» revisada y «fotocélula» desconectada conviven, y el resultado «no está activada» permanece. `#54` y `el #54` de la misma familia son la misma fila.
+
+Ajuste mínimo de la correspondencia, porque el listado finito de `CompanionPlanCheck::OPERATION` no ve «comprobado» y el pendiente exigido por el plan quedaba sin acto. Se añadieron los participios `ado/ados/ada/adas` a todas las familias salvo `restart`: «apagado» y «encendido» siguen siendo estado, no el acto de apagar o encender. El resto de la terminación tiene que ser la terminación entera (`\A…\z`). Sin ese ancla, «mediciones» coincidía con el sufijo `es` y «No hice mediciones» parecía una medición negada. Con el ancla, esa frase no tiene acto y no se corresponde con «Medir la corriente del motor». «regulación» y «No veo obstrucción» tampoco son actos. Colisión conocida y no corregida: tras transliterar, el sustantivo «ajuste» coincide con el pretérito «ajusté». El paso «Comprobar el ajuste del regulador…» arrastra por eso un acto `adjust`. El caso pendiente «No he comprobado el #9» sigue en `:pending` porque la familia `check` interseca. No se trata como equivalencia semántica.
+
+Orientación. Un paso de otro apartado se conserva si el caso ya contiene un tallo distintivo de ese apartado, si un link vigente apunta a una afirmación de ese apartado, o si la pregunta que sobrevive contiene uno de esos tallos. Una pregunta sobre otro dato no importa las acciones del otro síntoma. Si el caso ya cubre lo que la pregunta pide, la pregunta se retira y el paso permanece. El encabezado pasa a «Para este síntoma» cuando el caso ya distingue. Una contradicción del fabricante se publica con sus dos formulaciones y su id; no se sustituye por «hay que verificarlo en campo» y no se pregunta al técnico qué quiso decir el manual. El prompt de `companion_plan.txt` dice que `reading` no menciona ids ni estados, y que la desambiguación pregunta solo el dato que cambia la orientación.
+
+Presupuesto. `AssignmentSpend` guarda un único bloque `authorization` (`f2f3-joint-after-134`, después del intento 134, US$0,75, cap 150) y un bloque `executions` por id. El mismo id no sube el coste ni las llamadas ni mueve el corte hacia atrás. El cap 150 solo puede pasar a 152 cuando los intentos siguen en 140. Unknown y reservas abiertas cuentan en la exposición del tramo; lo liberado no. Las entradas con id ≤ 134 no consumen los US$0,75. `sync_caps!` no baja un cap ya elevado. `LocalPassLedger.reset!` sigue vaciando solo la memoria del proceso. El archivo manda.
+
+Pruebas, sin inferencia. 117 corridas, 1161 aserciones, 0 fallos, semilla 27215, en `reported_operation_test`, `companion_plan_test`, `companion_plan_route_test`, `companion_f3_sequence_test`, `assignment_spend_test`, `local_pass_ledger_test`, `work_context_reducer_test`, `field_check_state_test`, `work_context_goal_test`, `companion_assembly_test`, `field_case_record_test` y `check_result_contract_test`. La secuencia local recorre T1 → T2 → T3 → T4 con el reducer, el checker, el render, la publicación y el antecedente que el turno siguiente lee. Cubre la corrección del LED vigente, el resultado de la fotocélula, la operación distinta que no se anota como hecha, la pregunta del patín, la aclaración posterior que retira esa pregunta y deja «Para este síntoma», la nota del extractor fuera del bloque y el conflicto C1 con «N» y «Nm». El otro equipo de la correspondencia es el fusible F2 del mismo test de `ReportedOperation`. RuboCop, sin ofensas, en los archivos Ruby de este cambio.
+
+### 2. Candidata F2 usada
+
+Directorio `tmp/field_companion/vf5_correction/f2f3_joint/f2/candidate_r2/`. Manifest SHA-256 `3472b6310640454cb79db75c0a5e9b97cdb9e0f8a7fa1eefebc6498ee8d0abc0`. Adjudicación SHA-256 `6b6b0d214486704a9a48a2b1c7da354a530d47d3eb5542b1c471e114636c24f4`. El `git_sha` interno del manifest sigue siendo `cebd7de6ff95dbd110b6017afc4f76cb828718e2`, el commit que produjo la candidata. 90 hashes de cuerpos y sidecars, 0 ausentes y 0 distintos, medidos contra `candidate_r2/kb`. No se regeneró el manifest para atribuirlo a este commit. El índice remoto no se usó.
+
+### 3. Cuatro respuestas del guion
+
+No hay respuestas publicadas. Los cuatro textos del guion no se enviaron:
+
+1. «Estoy con un operador de puerta Fermator VF5+. La puerta se reabre sola. El LED de fotocélula está apagado. No veo obstrucción. No he comprobado el #54. No hice mediciones.»
+2. «Corrijo solo el estado del LED: el LED de fotocélula está encendido, no apagado.»
+3. «Ya revisé la fotocélula y no está activada.»
+4. «¿qué sigue?»
+
+Los cuatro turnos quedan **no demostrado**.
+
+### 4. Dos continuaciones hipotéticas
+
+Textos fijados antes de cualquier salida de modelo. No se ejecutaron. Son casos simulados, no reportes de campo.
+
+- Caso A: «Se reabre durante el cierre de la puerta, antes de que el patín empiece a cerrar».
+- Caso B: «Se vuelve a abrir justo cuando el patín está cerrando».
+
+El manual, en la candidata, separa esos contextos. `chunk_p12_5` trae «La puerta se re-abre sola» y la comprobación de que la fotocélula no esté activada. `chunk_p13_1` trae «La puerta se vuelve a abrir cuando el patín está cerrando» y «Comprobar la regulación del patín…». A no queda leído como exclusión de las causas del caso general. B no queda leído como prueba de la avería. Las dos respuestas quedan **no demostrado**.
+
+### 5. Evaluación
+
+No hay texto de modelo que evaluar. Lo que sí publicó el render local, con fuentes de prueba y el estado del guion, es esto:
+
+- La revisión «Ya revisé la fotocélula y no está activada» queda en el paso «Comprobar que la fotocélula no esté activada» con «ya informaste» y el resultado «no está activada». La correspondencia de esa frase con el paso de desconectar y pulsar TEST es `:related`, y el link de reading vacío se rechaza. La línea de desconexión no dice «ya informaste».
+- «Desconecté la fotocélula, todavía no pulsé TEST» es `:partial`. La nota dice «no completa esta operación» y no arrastra «debe haber una obstrucción mecánica».
+- «No está activada» permanece como resultado de la familia `check`. «No veo obstrucción» no genera un acto. «No hice mediciones» no genera un acto ni una fila de medición.
+- Con el LED corregido a encendido, el bloque de caso del turno siguiente contiene «encendido» y no contiene «apagado». El mensaje histórico del técnico sigue en el archivo de la conversación.
+- La pregunta «¿Se vuelve a abrir cuando el patín está cerrando?» se conserva mientras el caso no trae ese momento, y se retira cuando la observación ya lo trae. El paso del patín queda con «Para este síntoma, «La puerta se vuelve a abrir cuando el patín está cerrando»».
+- El conflicto de prueba se publica como «Ojo, el documento no es coherente (C1)» con las dos rotulaciones «N» y «Nm». La línea `[NOTA_EXTRACCION]` no entra en el bloque del companion ni en el texto publicado.
+
+Esa evaluación es del código y de las pruebas. No es una evaluación de una respuesta de Haiku.
+
+### 6. Coste, latencia, ledger y llamadas
+
+Configuración leída en el proceso de desarrollo, sin imprimir secretos: base `smart_deal_development`; `SharedSession::ENABLED == true` porque `.env` trae `SHARED_SESSION_ENABLED=true` y el valor queda fijado al arrancar; modelo `global.anthropic.claude-haiku-4-5-20251001-v1:0`. En el entorno de prueba el mismo flag está forzado a false. No se modificó `.env`. Como no hubo llamada, no hizo falta arrancar un proceso con el flag ya en false.
+
+Ledger real, sin escritura: 140 intentos, seq 140, committed US$1,402033, unknown US$0,102140, open vacío, cap de llamadas 150, cap de coste US$4, sin bloque `authorization` ni `executions`. Las entradas 135–140 están liquidadas y suman US$0,046304. Quedan US$0,703696 del tramo de US$0,75 y, con el cap en 150, diez intentos. Subir el cap a 152 daría exactamente doce intentos nuevos. Esa subida no se escribió.
+
+Techo de esta secuencia, medido con `CompanionPlan.prepare` y `TurnInterpreter#converse_params` sobre los ocho chunks más largos de la candidata, el tope de 6000 caracteres de definiciones y el tope de 16000 caracteres de `prompt_reply`. Son techos, no capturas de proveedor. Precio de `LocalPassLedger.price`: la entrada es la longitud en caracteres del request y la salida es el máximo configurado (intérprete 512, plan 1200).
+
+| Request | Caracteres | Techo USD |
+| --- | ---: | ---: |
+| T1 intérprete | 6192 | 0,008752 |
+| T1 plan, sin antecedente | 19206 | 0,025206 |
+| Intérprete posterior | 6167 | 0,008727 |
+| Plan posterior, antecedente al tope | 42128 | 0,048128 |
+| Plan de rama, una frase más | 42235 | 0,048235 |
+
+Secuencia de doce llamadas: T1 más cinco pares posteriores = US$0,318233. Las dos ramas, si usan el plan de rama, quedan en US$0,318447. Ambas cifras superan US$0,30. El tramo de US$0,75 y el global de US$4 sí tendrían sitio; el tope que no entra es el de esta ejecución. No se cambió el modelo, ni los máximos de tokens, ni el alcance para hacerlo entrar.
+
+En una copia del ledger, con cliente ausente, la autorización y la ejecución se registran, el cap pasa de 150 a 152 porque los intentos siguen en 140, se admiten once techos y el duodécimo se rechaza con `assignment_spend`. Otro objeto que lee el mismo archivo también es rechazado. El archivo real quedó en 140 intentos, sin autorización y sin reservas. Latencia de proveedor: no hay. Llamadas usadas: 0. Llamadas autorizadas y no usadas: 12.
+
+### 7. Conclusión
+
+Continuidad. En local, el episodio conserva el síntoma, reemplaza el LED apagado por el encendido, guarda el resultado de la fotocélula y entrega ese estado y la respuesta publicada al turno siguiente. La continuidad de una conversación real con Haiku queda no demostrado.
+
+Fidelidad. En local, el resultado informado no completa otra operación, el reporte parcial no aplica la oración condicional del fabricante, la nota del extractor queda fuera y las dos formulaciones del conflicto se publican con su fuente. La fidelidad de una respuesta generada queda no demostrado.
+
+Utilidad. En local, la revisión de la fotocélula se asocia a la comprobación de activación y la pregunta que distingue el patín se formula antes de tratar ese apartado como el caso ya visto. La utilidad de las cuatro respuestas del guion queda no demostrado.
+
+Desambiguación. En local, el apartado del patín entra cuando la pregunta o el caso nombran lo que lo distingue, y la misma pregunta se retira cuando el caso ya lo dice. Las ramas A y B, que eran la comprobación con intérprete y generación reales, quedan no demostrado. Esta ejecución no acredita que Danebo cambie de orientación al recibir una aclaración.
+
+### 8. Pendiente
+
+Sigue sin demostrarse el ranking de Retrieve real (F4), el pin por la interfaz web (F5), la estabilidad estadística, el aprovechamiento de una aclaración real de campo y los órdenes 3 a 5 del plan padre. También sigue sin demostrarse la conversación de cuatro turnos y las dos ramas hipotéticas de esta autorización: el techo conservador no cabe en US$0,30. Hace falta una autorización que cubra al menos US$0,318447, con el ledger todavía en 140 intentos si se quiere el cap 152, y un proceso arrancado con `SharedSession::ENABLED` ya en false. Esta ejecución no concede esa autorización.
+
+---
+
 ## Revisión de Codex — 23 de octubre de 2026 (vigente con las enmiendas de Opus de arriba)
 
 **Encargo actual: elaborar y revisar el plan. No implementar, invocar modelos, modificar presupuestos, escribir en S3, sincronizar la KB ni desplegar.** Opus valida este diseño; Grok implementará después F2 y, sobre su evidencia aceptada, F3. Esta revisión completa el rediseño iniciado el miércoles 21. Conserva este archivo como única cola de la corrección VF5.

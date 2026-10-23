@@ -24,7 +24,7 @@ class Rag::FieldCheckStateTest < ActiveSupport::TestCase
       apply(episode, payload(checks: [ check("la fotocélula", "not_done") ]), turn)
     end
 
-    assert_equal [ { "subject" => "la fotocélula", "status" => "not_done", "correlation_id" => "turn" } ], episode.checks
+    assert_equal [ { "subject" => "la fotocélula", "status" => "not_done", "correlation_id" => "turn", "operation" => [ "check" ] } ], episode.checks
     assert_empty episode.observations
 
     later = "ya revisé la fotocélula y nada"

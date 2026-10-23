@@ -259,7 +259,7 @@ class Rag::WorkContextGoalTest < ActiveSupport::TestCase
     assert_includes query, "No veo obstrucción"
   end
 
-  test "el #54 does not replace the stored #54 check" do
+  test "el #54 replaces the stored #54 check of the same operation" do
     episode = open_episode
     episode.upsert_check!({ "subject" => "#54", "status" => "not_done" }, correlation_id: "old")
     episode.upsert_check!(
@@ -269,9 +269,8 @@ class Rag::WorkContextGoalTest < ActiveSupport::TestCase
 
     assert_equal "54", Rag::FollowupQueryRewriter.normalize_label("#54")
     assert_equal "el 54", Rag::FollowupQueryRewriter.normalize_label("el #54")
-    assert_equal [ [ "#54", "not_done" ], [ "el #54", "done" ] ], episode.checks.map { |row|
-      [ row["subject"], row["status"] ]
-    }
+    assert_equal [ [ "el #54", "done" ] ], episode.checks.map { |row| [ row["subject"], row["status"] ] }
+    assert_equal "medido", episode.checks.sole["result"]
   end
 
   test "thin new work opens an empty episode and does not store the relational sentence" do

@@ -3597,4 +3597,75 @@ Cero inferencias. El ledger no se escribió. SHA-256 `6ea5d5dd2467307984268593b3
 
 **Siguiente paso, sin ejecutarlo.** F3 sigue abierto. La próxima medición real, si se autoriza, sale del checkpoint posterior a T3, con este control ya en el producto, y no debe confundirse con el ensayo local. F4, el de la sección 7, no arranca. F5 y los órdenes 3 a 5 del plan padre siguen después. F4 y F5 no se declaran hechas.
 
+## F3. La aclaración pregunta el alcance del reporte, 23 de octubre de 2026
+
+**Veredicto.** F3 sigue abierto. F2 permanece aceptada. La pregunta derivada de la sección anterior citaba el reporte y, a continuación, preguntaba si el técnico veía el objeto del paso. Esa segunda parte cambiaba el significado: volvía a consultar la presencia de lo que el reporte ya negaba. El producto ahora pregunta qué cubrió ese reporte. El pendiente guarda el reporte, la dimensión «alcance» y la pregunta publicada. Un «sí» a esa pregunta no confirma el apartado ni cierra la comprobación. Este ensayo es local, con el tool input de `20261023T213823Z-q1p` y respuestas preparadas. No es una conversación observada con Haiku y no se insertó en el historial histórico. No hubo inferencia.
+
+### 1. Causa y métodos
+
+`clarify_report` armaba `Dijiste «reporte». ¿#{objeto del paso} es lo que ves?`. El objeto salía de `Comprobar que no hay…` y la plantilla era la de confirmar un síntoma. El pendiente `documented_context` solo llevaba la pregunta y el ítem padre. Con eso, «sí» se leía como `r=yes` y podía confirmar «La puerta se re-abre sola.».
+
+La sustitución sigue en el mismo método, solo cuando la pregunta del modelo ya fue rechazada por modalidad. Hace falta un reporte único, un paso citado y su ítem padre. El objeto documental se usa para anclar el destino y no entra en la pregunta. El verbo sale del propio reporte, con el mapa ya usado para actos de comprobar: `revisaste`, `observaste`, `comprobaste`, `verificaste`, `miraste`, `controlaste`, `chequeaste`. Si hay un solo verbo de ese mapa, se usa ese. Si no hay ninguno y el reporte tiene un verbo de percepción (`veo`, `ves`, `vi`, `vemos`, `noto`, `notas`, `observo`), la pregunta usa `revisaste`. Si no hay verbo o hay varios distintos, la aclaración queda en `clarification` / `no_scope` y no se publica pregunta. Ese camino de modalidad devuelve vacío: no cae en «¿es lo que ves?» ni en «¿Lo que ves coincide con…?».
+
+La frase publicada es `Dijiste «reporte». ¿Qué #{verbo}?`. «Dijiste» ya es conector y «Qué» ya es palabra de pregunta. «Cuando dices» dejaría «dices» sin respaldo. «exactamente» termina en «mente» junto a un verbo de comprobar y el guard de modalidad rechazaría la pregunta recién construida. No hay una excepción para VF5 ni para la palabra «obstrucción».
+
+`question_scope` se asigna solo si la pregunta aceptada coincide con esa forma y la cita es, literal, una observación guardada. Una pregunta de síntoma («¿El patín está cerrando?», «¿Está activada la entrada de re-apertura (#21)?») no lo lleva. Una pregunta cuya forma normal empieza por «ves» o termina en «es lo que ves», y cuyos tallos cruzan un reporte negado, se rechaza por `presence_reask`. Ese motivo no es derivable, así que no se sustituye por la plantilla de síntoma. La pregunta de alcance no coincide con ese patrón.
+
+### 2. Pregunta anterior y pregunta corregida
+
+Anterior, la que publicaba Ruby en el ensayo de la sección previa:
+
+«Dijiste «No veo obstrucción». ¿Una obstrucción mecánica en la puerta es lo que ves?»
+
+Corregida, con el mismo reporte y el mismo tool input:
+
+«Dijiste «No veo obstrucción». ¿Qué revisaste?»
+
+«No veo» no nombra un acto de comprobar. El verbo de la pregunta es `revisaste` porque el reporte solo percibe. La negación queda dentro de la cita. El preámbulo publicado dice que falta el alcance de «No veo obstrucción» y que la documentación trata «La puerta se re-abre sola.» en su fuente. La pregunta del modelo, con «manualmente» y «visualmente», sigue rechazada por `modality:manualmente,visualmente` y no se publica.
+
+### 3. Pendiente antes y después
+
+Antes: `documented_context` con la pregunta y un destino. El destino era el ítem «La puerta se re-abre sola.», `chunk_p12_5.txt`, página 12. Identificaba la fuente y no decía qué se estaba preguntando.
+
+Después, el mismo tipo y el mismo destino, más dos campos que ya caben en esa estructura:
+
+- `about`: el reporte literal, «No veo obstrucción».
+- `aspect`: `scope`.
+- `question`: la pregunta publicada, «Dijiste «No veo obstrucción». ¿Qué revisaste?».
+
+No hay otro tipo de pendiente ni migración de sesiones. `PendingQuestion.documented_reply` devuelve vacío cuando `aspect` es `scope`: «sí», «no» y «no sé» no se traducen a `yes`, `no` ni `unknown`. Sin `aspect`, el mismo «sí» sigue siendo `r=yes` para una pregunta de síntoma. `answer_code` y la duda parcial abierta ignoran una respuesta con `aspect` `scope`, así que no autorizan el paso ni disparan «¿Qué parte se está cerrando?». Al guardar, `sanitize_answers` conserva `about` y `aspect` y descarta `r` en ese caso.
+
+Un «sí» ante la pregunta de alcance se guarda como observación, con `about` igual al reporte, `aspect` `scope` y sin `r`. El paso de la obstrucción sigue en `case_unconfirmed`. El ítem no entra en `confirmed_items`. El texto siguiente no dice «limitado a «sí»» ni «ya informaste».
+
+### 4. «El marco de la puerta, nada más»
+
+Recorrido en memoria, con dobles, sobre el tool input, el estado y las fuentes de `runs/20261023T213823Z-q1p/q1p_t1`. Esos archivos no se modificaron. El mismo recorrido está en un fixture con el paso de `chunk_p12_5` y, en otro ítem, el paso manual del patín de `chunk_p12_3`.
+
+1. El episodio ya tiene la observación «No veo obstrucción».
+2. El producto publica «Dijiste «No veo obstrucción». ¿Qué revisaste?» y el preámbulo de alcance. La publicación acepta el texto. El historial de un turno compañero guarda exactamente ese texto.
+3. El pendiente queda instalado con `about`, `aspect` `scope`, la pregunta y el destino documental de arriba.
+4. La respuesta preparada «El marco de la puerta, nada más» se incorpora como observación. `answers` lleva la pregunta, `aspect` `scope`, `about` «No veo obstrucción», el ítem padre y `r` vacío. `ActiveEpisode.parse` del episodio serializado conserva ese `aspect`.
+5. El turno siguiente anota el paso de la obstrucción: «reportaste «No veo obstrucción», limitado a «El marco de la puerta, nada más»: esta comprobación no consta como hecha». El bloque de caso dice «alcance de «No veo obstrucción», no es una comprobación completa» y cita la respuesta.
+6. La correspondencia de «El marco de la puerta, nada más» con el paso no es `:complete`. La de «No veo obstrucción» sigue en `:related`. No aparece un check `done` cuyo asunto sea marco, puerta u obstrucción. La respuesta no es el valor que confirma el ítem.
+7. No se lee como obstrucción presente ni como el síntoma general. «¿El patín está cerrando?», con otro destino, sigue publicable: no queda `already_answered`.
+8. El mismo plan no vuelve a publicar la pregunta. El rechazo de la aclaración es `repeats_ask`. Una paráfrasis «¿La obstrucción mecánica en la puerta es lo que ves?» queda en `presence_reask` y no se publica.
+
+«El marco, nada más» recorre el mismo vínculo: alcance, `r` vacío, correspondencia distinta de `:complete`, línea «limitado a «El marco, nada más»» y ninguna comprobación marcada hecha.
+
+El episodio de la captura no cambia de identificador. Siguen Fermator, el LED, la fotocélula hecha con «no está activada» y el #54 no hecho. El checkpoint real posterior a T3 no se reescribió.
+
+### 5. Pruebas y regresiones
+
+Positivas. «No veo obstrucción» y «No veo agua en el sensor» preguntan «¿Qué revisaste?» y conservan la negación dentro de la cita. «No veo agua en el sensor» no se convierte en «¿ves agua?». «Veo agua en el sensor» pregunta el alcance y conserva «Veo agua». «No veo el fusible F2» sigue el mismo camino y no pregunta «¿es lo que ves?». «¿Está activada la entrada de re-apertura (#21)?» sigue permitida cuando solo consta el estado de la fotocélula. «¿Verificaste manualmente el movimiento del patín?» sigue cuando el paso citado dice «Verificar manualmente».
+
+Negativas. «El sensor está seco» no tiene verbo de comprobar ni de percepción: la aclaración queda en `no_scope`, no hay pregunta y el texto no dice «es lo que ves» ni «coincide con». «¿Ves agua en el sensor?» después de «No veo agua en el sensor» queda en `presence_reask` y no se publica. «Sí» ante la pregunta de alcance no pone `r` ni confirma el apartado. «El marco, nada más» y «El marco de la puerta, nada más» no cierran la comprobación mecánica ni toda la duda. «¿Usaste el multímetro…?», un giro, un «debes medir 24 V» y un valor suelto siguen rechazados, no se convierten en aclaración y no instalan pendiente. «¿Has comprobado manualmente el #54?» sigue en `repeats_fact`. El paso del patín incompatible con «antes» sigue fuera de los pasos y no vuelve en la pregunta.
+
+La relación se comprueba por la pregunta publicada, el pendiente, la respuesta guardada, el episodio rehidratado, el texto del turno siguiente y el bloque de caso. RuboCop, en los nueve archivos de este cambio, no marcó ofensas. La suite completa quedó en 5087 pruebas, 36771 aserciones, 0 fallos y 186 omisiones.
+
+### 6. Consumo
+
+Cero inferencias. No se usaron las dos invocaciones que quedan de `f3-q1-20261023`. El ledger no se escribió. SHA-256 `6ea5d5dd2467307984268593b3ada74a7489a50b516079d0cb3e2f81a9c1ee3c`. `attempts` 162, `priced` 157, `blocked` 0, `open` vacío, `committed` US$1,539900, `unknown` US$0,10214, `call_cap` 164. Autorización `f2f3-joint-after-134` y ejecución `f3-q1-20261023` intactas.
+
+**Siguiente paso, sin ejecutarlo.** F3 sigue abierto hasta una validación funcional real. La próxima medición, si se autoriza, sale del checkpoint posterior a T3. No parte del texto de este ensayo. F4 no arranca.
+
 

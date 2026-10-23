@@ -157,7 +157,10 @@ module Rag
 
       lines = []
       targets = question_statements
-      if targets.one? && @check.question.match?(/\A¿(?:Qué parte|Se está cerrando)\b/)
+      scope = @check.respond_to?(:question_scope) ? @check.question_scope : nil
+      if scope.is_a?(Hash) && scope["aspect"] == "scope" && scope["report"].present? && targets.one?
+        lines << "Para orientar falta el alcance de «#{bare(scope["report"])}»: la documentación trata «#{bare(targets.first.text)}» [#{targets.first.source}]."
+      elsif targets.one? && @check.question.match?(/\A¿(?:Qué parte|Se está cerrando)\b/)
         lines << "Para orientar falta distinguir la parte [#{targets.first.source}]."
       elsif targets.one?
         lines << "Para orientar falta un dato: la documentación trata «#{bare(targets.first.text)}» [#{targets.first.source}]."
@@ -253,8 +256,37 @@ module Rag
           "; ya informaste: #{said}"
         end
       when "not_done_check" then "; dijiste #{said}, así que sigue pendiente"
-      else "; reportaste #{said}, que es una observación: esta comprobación no consta como hecha"
+      else observation_note(fact, said)
       end
+    end
+
+    def observation_note(fact, said)
+      limit = scope_limit(fact)
+      if limit
+        "; reportaste #{said}, limitado a «#{bare(limit)}»: esta comprobación no consta como hecha"
+      else
+        "; reportaste #{said}, que es una observación: esta comprobación no consta como hecha"
+      end
+    end
+
+    # The later reply says how far the quoted report went. "Sí" does not.
+    def scope_limit(fact)
+      return nil unless fact.kind == "observation"
+
+      reply = @facts.facts.find { |other|
+        answers = other.answers
+        next false unless answers.is_a?(Hash) && answers["aspect"] == "scope"
+        next false unless CompanionPlanCheck.normal(answers["about"].to_s) == CompanionPlanCheck.normal(fact.text)
+        next false if CompanionPlanCheck.normal(other.text) == CompanionPlanCheck.normal(fact.text)
+
+        other.text.present?
+      }
+      return nil unless reply
+
+      text = reply.text.to_s
+      return nil if CompanionPlanCheck.normal(text).match?(/\A(?:si|no|no se|no lo se|no puedo verlo)\z/)
+
+      text
     end
 
     # A partial report quotes the sentences that carry the operation. A later

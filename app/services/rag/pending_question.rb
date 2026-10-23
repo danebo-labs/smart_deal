@@ -64,7 +64,11 @@ module Rag
       targets = Array(raw["targets"]).filter_map { |item| documented_target(item) }
       return nil unless (1..2).cover?(targets.size)
 
-      { "type" => "documented_context", "question" => text, "targets" => targets }
+      question = { "type" => "documented_context", "question" => text, "targets" => targets }
+      about = raw["about"].to_s.squish.first(ActiveEpisode::MAX_OBSERVATION_CHARS)
+      question["about"] = about if about.present?
+      question["aspect"] = "scope" if raw["aspect"].to_s == "scope" && about.present?
+      question
     end
 
     def documented_target(raw)
@@ -84,6 +88,8 @@ module Rag
 
     def documented_reply(question, raw)
       return nil unless question && question["type"] == "documented_context"
+      # "¿Qué revisaste?" is not a yes/no choice. "Sí" does not confirm the section.
+      return nil if question["aspect"] == "scope"
 
       label = FollowupQueryRewriter.normalize_label(raw)
       code = DOCUMENTED_REPLIES[label]

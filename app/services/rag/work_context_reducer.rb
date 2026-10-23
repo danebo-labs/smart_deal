@@ -220,13 +220,19 @@ module Rag
 
       reply = PendingQuestion.parse_reply(@turn, pending_question: question)
       code = reply.is_a?(Hash) ? reply["r"] : nil
+      scope = scope_question?(question)
       return if @perception.move == "unclear" && code.nil?
       return if next_step_question?
 
       answers = { "q" => question["question"].to_s, "t" => Array(question["targets"]) }
-      answers["r"] = code if code
+      if scope
+        answers["about"] = question["about"]
+        answers["aspect"] = "scope"
+      elsif code
+        answers["r"] = code
+      end
       texts = Array(@perception.observations).map { |text| text.to_s.squish }.compact_blank
-      if texts.empty? && (code || @perception.move == "answer_pending")
+      if texts.empty? && (code || @perception.move == "answer_pending" || (scope && closed_scope_turn?))
         literal = @turn.to_s.squish.first(160)
         texts = [ literal ] if literal.present?
       end
@@ -238,6 +244,16 @@ module Rag
 
     def next_step_question?
       FollowupQueryRewriter.normalize_label(@turn) == "que sigue"
+    end
+
+    def scope_question?(question)
+      question["aspect"] == "scope" && question["about"].present?
+    end
+
+    # "Sí" answers a yes/no choice. It does not say what was reviewed.
+    def closed_scope_turn?
+      label = FollowupQueryRewriter.normalize_label(@turn)
+      PendingQuestion::DOCUMENTED_REPLIES.key?(label) || label.match?(PendingQuestion::UNKNOWN_CLARIFICATION)
     end
 
     # A controller brand fills an empty equipment manufacturer. It does not

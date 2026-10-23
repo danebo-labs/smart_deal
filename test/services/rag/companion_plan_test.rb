@@ -168,6 +168,7 @@ class Rag::CompanionPlanTest < ActiveSupport::TestCase
     )
 
     assert_equal asked, result.question
+    assert_equal({ "report" => "No veo agua en el sensor", "aspect" => "scope" }, result.question_scope)
     assert_nil result.rejections.find { |row| row["part"] == "question" }
     text = render(result, observations: [ [ "No veo agua en el sensor", "query:t1" ] ], done: false)
     assert_includes text, asked
@@ -183,12 +184,52 @@ class Rag::CompanionPlanTest < ActiveSupport::TestCase
     )
 
     assert_match(/\Amodality:.*manualmente/, rejection_reason(result))
-    assert_includes result.question, "«No veo agua en el sensor»"
-    assert_includes result.question, "sensor de nivel"
+    assert_equal "Dijiste «No veo agua en el sensor». ¿Qué revisaste?", result.question
     assert_not_equal original, result.question
     assert_not_includes result.question, "manualmente"
     assert_not_includes result.question, "visualmente"
+    assert_not_includes result.question, "es lo que ves"
+    assert_no_match(/¿ves agua/i, result.question)
+    assert_equal({ "report" => "No veo agua en el sensor", "aspect" => "scope" }, result.question_scope)
     assert_includes result.question_targets, id_of("El motor se para solo.")
+  end
+
+  test "an affirmative report keeps its words when the scope is asked" do
+    original = "¿Has comprobado manualmente que hay agua en el sensor, o solo la observaste visualmente?"
+    result = check(
+      question: original,
+      question_about: [ step_id("sensor de nivel") ],
+      observations: [ [ "Veo agua en el sensor", "query:t1" ] ]
+    )
+
+    assert_equal "Dijiste «Veo agua en el sensor». ¿Qué revisaste?", result.question
+    assert_not_includes result.question, "no ves"
+    assert_not_includes result.question, "es lo que ves"
+    assert_no_match(/¿ves agua/i, result.question)
+  end
+
+  test "a report that names neither a look nor a check is not turned into a presence question" do
+    observations = [ [ "El sensor está seco", "query:t1" ] ]
+    result = check(
+      question: "¿Has comprobado manualmente el sensor, o solo lo observaste visualmente?",
+      question_about: [ step_id("sensor de nivel") ],
+      observations: observations
+    )
+
+    assert_equal "no_scope", result.rejections.find { |row| row["part"] == "clarification" }["reason"]
+    assert_nil result.question
+    assert_nil result.question_scope
+    text = render(result, observations: observations, done: false)
+    assert_not_includes text, "es lo que ves"
+    assert_not_includes text, "coincide con"
+  end
+
+  test "a presence question does not ask again for what a negated report already covers" do
+    result = check(question: "¿Ves agua en el sensor?", observations: [ [ "No veo agua en el sensor", "query:t1" ] ])
+
+    assert_nil result.question
+    assert_match(/\Apresence_reask:/, rejection_reason(result))
+    assert_not_includes render(result, observations: [ [ "No veo agua en el sensor", "query:t1" ] ], done: false), "¿Ves agua"
   end
 
   test "a manual method on another component is not published as the model's sentence" do
@@ -205,8 +246,8 @@ class Rag::CompanionPlanTest < ActiveSupport::TestCase
     )
 
     assert_match(/\Amodality:/, result.rejections.find { |row| row["part"] == "question" }["reason"])
-    assert_includes result.question, "«No veo el fusible F2»"
-    assert_includes result.question, "fusible F2"
+    assert_equal "Dijiste «No veo el fusible F2». ¿Qué revisaste?", result.question
+    assert_not_includes result.question, "es lo que ves"
     assert_not_includes result.question, "manualmente"
   end
 

@@ -109,19 +109,24 @@ class Rag::CompanionF3DisambiguationTest < ActiveSupport::TestCase
     }
 
     checked = check_plan(plan, facts, statements)
+    scope = "Dijiste «#{REPORT}». ¿Qué revisaste?"
     assert_equal "modality:manualmente,visualmente", rejection(checked, "question")
-    assert_includes checked.question, "«#{REPORT}»"
-    assert_includes checked.question, "obstrucción mecánica"
+    assert_equal scope, checked.question
+    assert_not_includes checked.question, "es lo que ves"
+    assert_not_includes checked.question, "mecánica"
     assert_not_equal MODEL_QUESTION, checked.question
     assert_not_includes checked.question, "manualmente"
     assert_not_includes checked.question, "visualmente"
+    assert_equal({ "report" => REPORT, "aspect" => "scope" }, checked.question_scope)
     assert_equal [ parent.id ], checked.question_targets
     assert_equal :related, Rag::ReportedOperation.correspondence(
       report_text: REPORT, result: nil, status: "done", statement_text: obstruction.text
     )
 
     text = render_of(checked, statements, facts)
+    assert_includes text, "falta el alcance de «#{REPORT}»"
     assert_includes text, checked.question
+    assert_not_includes text, "es lo que ves"
     assert_includes text, "no consta como hecha"
     published = publish_case(text, episode, content)
     assert published.accepted?, published.reasons.inspect
@@ -135,6 +140,8 @@ class Rag::CompanionF3DisambiguationTest < ActiveSupport::TestCase
     )
     composed = Rag::CompanionPlan.compose(CompanionPlanResponse.build(plan), prepared)
     assert_equal checked.question, composed.pending["question"]
+    assert_equal REPORT, composed.pending["about"]
+    assert_equal "scope", composed.pending["aspect"]
     assert_equal "La puerta se re-abre sola.", composed.pending.dig("targets", 0, "item")
     assert_equal "chunk_p12_5.txt", composed.pending.dig("targets", 0, "filename")
     assert_equal "12", composed.pending.dig("targets", 0, "page")
@@ -164,20 +171,48 @@ class Rag::CompanionF3DisambiguationTest < ActiveSupport::TestCase
     stored = episode.observations.find { |row| row["text"] == PARTIAL_SCOPE }
     assert_equal checked.question, stored.dig("answers", "q")
     assert_nil stored.dig("answers", "r")
+    assert_equal "scope", stored.dig("answers", "aspect")
+    assert_equal REPORT, stored.dig("answers", "about")
     assert_equal "La puerta se re-abre sola.", stored.dig("answers", "t", 0, "item")
     assert_nil episode.pending_question
     assert_equal episode_id, episode.episode_id
     assert_equal "Fermator", episode.fact("manufacturer")["value"]
 
-    later = Rag::CompanionCaseFacts.build(episode)
+    restored = Rag::ActiveEpisode.parse(episode.to_h, now: Time.current)
+    assert_equal "scope", restored.observations.find { |row| row["text"] == PARTIAL_SCOPE }.dig("answers", "aspect")
+    assert_nil restored.pending_question
+    later = Rag::CompanionCaseFacts.build(restored)
     second = check_plan(plan, later, statements)
     assert_nil second.question
-    assert_not_includes render_of(second, statements, later), checked.question
+    assert_equal "repeats_ask", rejection(second, "clarification")
+    second_text = render_of(second, statements, later)
+    assert_not_includes second_text, checked.question
+    assert_not_includes second_text, "es lo que ves"
+    obstruction_line = second_text.lines.find { |item| item.include?("obstrucción mecánica") }
+    assert_includes obstruction_line, "limitado a «#{PARTIAL_SCOPE}»"
+    assert_includes obstruction_line, "no consta como hecha"
+    assert_not_includes obstruction_line, "ya informaste"
+    assert_includes later.prompt_block, "alcance de «#{REPORT}»"
+    assert_includes later.prompt_block, "no es una comprobación completa"
+    assert_includes later.prompt_block, PARTIAL_SCOPE
+    assert_not_equal :complete, Rag::ReportedOperation.correspondence(
+      report_text: PARTIAL_SCOPE, result: nil, status: "done", statement_text: obstruction.text
+    )
+    assert_equal :related, Rag::ReportedOperation.correspondence(
+      report_text: REPORT, result: nil, status: "done", statement_text: obstruction.text
+    )
+    assert restored.checks.none? { |row| row["subject"].to_s.match?(/marco|puerta|obstruc/) && row["status"] == "done" }
+    assert second.confirmed_items.values.none? { |value| value.to_s.start_with?("O") && later.find(value)&.text == PARTIAL_SCOPE }
+    history = Rag::FieldCaseRecord.attach(second_text, episode: restored, generation_mode: nil, companion_turn: true)
+    assert_equal second_text, history.history
+    again = publish_case(second_text, restored, content)
+    assert again.accepted?, again.reasons.inspect
     paraphrase = check_plan(
       { "question" => "¿La obstrucción mecánica en la puerta es lo que ves?", "question_about" => [ parent.id ] },
       later, statements
     )
     assert_nil paraphrase.question
+    assert_match(/\Apresence_reask:/, rejection(paraphrase, "question"))
     assert_not_includes render_of(paraphrase, statements, later), "es lo que ves"
   end
 
@@ -196,11 +231,13 @@ class Rag::CompanionF3DisambiguationTest < ActiveSupport::TestCase
 
     assert_equal MODEL_QUESTION, plan["question"]
     assert_equal "modality:manualmente,visualmente", rejection(checked, "question")
-    assert_includes checked.question, "«#{REPORT}»"
-    assert_includes checked.question, "obstrucción mecánica"
+    assert_equal "Dijiste «#{REPORT}». ¿Qué revisaste?", checked.question
+    assert_not_includes checked.question, "es lo que ves"
     assert_not_equal MODEL_QUESTION, checked.question
     assert_not_includes checked.question, "manualmente"
     assert_not_includes checked.question, "visualmente"
+    assert_equal REPORT, checked.question_scope["report"]
+    assert_equal "scope", checked.question_scope["aspect"]
 
     prepared = Rag::CompanionPlan::Prepared.new(
       params: {}, system: "", user: "", facts: facts, statements: statements, turns: turns, chunks: chunks
@@ -209,6 +246,8 @@ class Rag::CompanionF3DisambiguationTest < ActiveSupport::TestCase
     assert_includes composed.text, checked.question
     assert_not_includes composed.text, "movimiento del patín"
     assert_equal checked.question, composed.pending["question"]
+    assert_equal REPORT, composed.pending["about"]
+    assert_equal "scope", composed.pending["aspect"]
     target = composed.pending["targets"].first
     assert_includes target["item"], "La puerta se re-abre sola"
     assert_equal "chunk_p12_5.txt", target["filename"]
@@ -236,6 +275,8 @@ class Rag::CompanionF3DisambiguationTest < ActiveSupport::TestCase
     answer = episode.observations.find { |row| row["text"] == PARTIAL_SCOPE }
     assert_equal checked.question, answer.dig("answers", "q")
     assert_nil answer.dig("answers", "r")
+    assert_equal "scope", answer.dig("answers", "aspect")
+    assert_equal REPORT, answer.dig("answers", "about")
     assert_includes answer.dig("answers", "t", 0, "item"), "La puerta se re-abre sola"
     assert_equal episode_id, episode.episode_id
     assert_equal "Fermator", episode.fact("manufacturer")["value"]
@@ -247,7 +288,111 @@ class Rag::CompanionF3DisambiguationTest < ActiveSupport::TestCase
     later = Rag::CompanionCaseFacts.build(episode)
     second = Rag::CompanionPlanCheck.call(plan, facts: later, statements: statements, turns: turns + [ PARTIAL_SCOPE ])
     assert_nil second.question
-    assert_not_includes render_of(second, statements, later), checked.question
+    second_text = render_of(second, statements, later)
+    assert_not_includes second_text, checked.question
+    assert_includes second_text, "limitado a «#{PARTIAL_SCOPE}»"
+    assert_includes second_text, "no consta como hecha"
+    assert_includes later.prompt_block, PARTIAL_SCOPE
+    assert episode.checks.none? { |row| row["status"] == "done" && row["subject"].to_s.match?(/obstruc|marco|puerta/) }
+  end
+
+  test "a short scope reply does not complete the mechanical check" do
+    content = <<~TEXT
+      • La puerta se re-abre sola.
+      – Comprobar que no hay una obstrucción mecánica en la puerta.
+    TEXT
+    statements = Rag::CompanionStatements.parse([ obstruction_chunk(content) ])
+    step = statements.statements.find(&:step?)
+    episode = episode_for("La puerta se reabre sola", [ REPORT ])
+    facts = Rag::CompanionCaseFacts.build(episode)
+    plan = { "steps" => [ step.id ], "question" => MODEL_QUESTION, "question_about" => [ step.id ] }
+    checked = check_plan(plan, facts, statements)
+    prepared = Rag::CompanionPlan::Prepared.new(
+      params: {}, system: "", user: "", facts: facts, statements: statements,
+      turns: [ "¿Qué sigue?" ], chunks: [ obstruction_chunk(content) ]
+    )
+    composed = Rag::CompanionPlan.compose(CompanionPlanResponse.build(plan), prepared)
+    with_flags do
+      Rag::ActiveEpisodeTurn.apply_assistant(
+        state: episode, text: composed.text, pending_question: composed.pending, correlation_id: "query:short"
+      )
+    end
+    settle(episode, follow_up("El marco, nada más"), "El marco, nada más", "query:short-frame")
+    stored = episode.observations.find { |row| row["text"] == "El marco, nada más" }
+    assert_equal "scope", stored.dig("answers", "aspect")
+    assert_nil stored.dig("answers", "r")
+    assert_not_equal :complete, Rag::ReportedOperation.correspondence(
+      report_text: "El marco, nada más", result: nil, status: "done", statement_text: step.text
+    )
+    later = Rag::CompanionCaseFacts.build(episode)
+    second = check_plan(plan, later, statements)
+    line = render_of(second, statements, later).lines.find { |item| item.include?("obstrucción mecánica") }
+    assert_includes line, "limitado a «El marco, nada más»"
+    assert_includes line, "no consta como hecha"
+    assert_nil second.question
+    assert episode.checks.none? { |row| row["status"] == "done" }
+  end
+
+  test "yes to a scope question does not confirm the section" do
+    content = <<~TEXT
+      • La puerta se re-abre sola.
+      – Comprobar que no hay una obstrucción mecánica en la puerta.
+    TEXT
+    statements = Rag::CompanionStatements.parse([ obstruction_chunk(content) ])
+    step = statements.statements.find(&:step?)
+    parent = statements.statements.find { |item| item.kind == "item" }
+    episode = episode_for("La bomba pierde presión", [ REPORT ])
+    facts = Rag::CompanionCaseFacts.build(episode)
+    plan = { "steps" => [ step.id ], "question" => MODEL_QUESTION, "question_about" => [ step.id ] }
+    checked = check_plan(plan, facts, statements)
+    assert_equal "Dijiste «#{REPORT}». ¿Qué revisaste?", checked.question
+    prepared = Rag::CompanionPlan::Prepared.new(
+      params: {}, system: "", user: "", facts: facts, statements: statements,
+      turns: [], chunks: [ obstruction_chunk(content) ]
+    )
+    composed = Rag::CompanionPlan.compose(CompanionPlanResponse.build(plan), prepared)
+    assert_equal "scope", composed.pending["aspect"]
+    assert_nil Rag::PendingQuestion.parse_reply("sí", pending_question: composed.pending)
+    assert_nil Rag::PendingQuestion.parse_reply("no", pending_question: composed.pending)
+    symptom = composed.pending.except("about", "aspect")
+    assert_equal "yes", Rag::PendingQuestion.parse_reply("sí", pending_question: symptom)["r"]
+    with_flags do
+      Rag::ActiveEpisodeTurn.apply_assistant(
+        state: episode, text: composed.text, pending_question: composed.pending, correlation_id: "query:yes"
+      )
+    end
+    settle(episode, follow_up("sí", move: "answer_pending", observations: []), "sí", "query:yes-reply")
+    stored = episode.observations.find { |row| row["text"] == "sí" }
+    assert_equal "scope", stored.dig("answers", "aspect")
+    assert_equal REPORT, stored.dig("answers", "about")
+    assert_nil stored.dig("answers", "r")
+    assert_nil episode.pending_question
+    later = Rag::CompanionCaseFacts.build(episode)
+    blocked = check_plan({ "steps" => [ step.id ], "question" => "" }, later, statements)
+    assert_not_includes blocked.steps, step.id
+    assert_equal "case_unconfirmed", rejection_for(blocked, "step", step.id)
+    assert_nil blocked.confirmed_items[parent.text]
+    text = render_of(blocked, statements, later)
+    assert_not_includes text, "limitado a «sí»"
+    assert_not_includes text, "ya informaste"
+  end
+
+  test "a scope reply leaves a different documentary question open" do
+    statements = statements_for
+    item = skate_item(statements)
+    facts = facts_for("La puerta se reabre sola", [ REPORT, "El marco de la puerta, nada más" ], answer: {
+      "q" => "Dijiste «#{REPORT}». ¿Qué revisaste?",
+      "about" => REPORT,
+      "aspect" => "scope",
+      "t" => [ { "item" => "La puerta se re-abre sola.", "page" => "12" } ]
+    })
+    asked = check_plan(
+      { "question" => "¿El patín está cerrando?", "question_about" => [ item.id ] },
+      facts, statements
+    )
+
+    assert_equal "¿El patín está cerrando?", asked.question
+    assert_nil asked.rejections.find { |row| row["reason"] == "already_answered" }
   end
 
   test "clarifying a report does not restore the incompatible skate procedure" do
@@ -267,9 +412,10 @@ class Rag::CompanionF3DisambiguationTest < ActiveSupport::TestCase
     )
 
     assert_not_includes result.steps, skate.id
+    assert_equal "Dijiste «#{REPORT}». ¿Qué revisaste?", result.question
     assert_not_includes result.question.to_s, "patín"
     assert_not_includes result.question.to_s, "manualmente"
-    assert_includes result.question, "«#{REPORT}»"
+    assert_not_includes result.question.to_s, "es lo que ves"
   end
 
   test "a question that only restates a fact is a repeat and one that adds another valve is not" do

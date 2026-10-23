@@ -106,7 +106,13 @@ module Rag
           statement = prepared.statements.find(id)
           pending_target(statement, prepared.chunks) if statement
         }
-        PendingQuestion.coerce("type" => "documented_context", "question" => question, "targets" => targets)
+        payload = { "type" => "documented_context", "question" => question, "targets" => targets }
+        scope = check.question_scope
+        if scope.is_a?(Hash) && scope["aspect"] == "scope" && scope["report"].present?
+          payload["about"] = scope["report"]
+          payload["aspect"] = "scope"
+        end
+        PendingQuestion.coerce(payload)
       end
 
       def pending_target(statement, chunks)

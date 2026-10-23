@@ -439,8 +439,14 @@ module Rag
       return nil if targets.empty?
 
       answers = { "q" => question, "t" => targets }
-      code = raw["r"].to_s
-      answers["r"] = code if %w[yes no unknown].include?(code)
+      about = raw["about"].to_s.squish.first(MAX_OBSERVATION_CHARS)
+      answers["about"] = about if about.present?
+      if raw["aspect"].to_s == "scope" && about.present?
+        answers["aspect"] = "scope"
+      else
+        code = raw["r"].to_s
+        answers["r"] = code if %w[yes no unknown].include?(code)
+      end
       answers
     end
 

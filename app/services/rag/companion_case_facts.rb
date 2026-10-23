@@ -72,6 +72,10 @@ module Rag
 
     def prompt_line(fact)
       if fact.kind == "observation" && fact.answers.is_a?(Hash) && fact.answers["q"].present?
+        if fact.answers["aspect"] == "scope" && fact.answers["about"].present?
+          return "#{fact.id} [alcance de «#{fact.answers['about']}», no es una comprobación completa]: «#{fact.text.sub(/\.\z/, '')}»."
+        end
+
         return "#{fact.id} [respuesta del técnico a «#{fact.answers['q']}»]: «#{answer_words(fact)}»."
       end
 

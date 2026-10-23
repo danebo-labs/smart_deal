@@ -8,8 +8,10 @@ module Rag
   # already says. A check or perception verb, and a short word before a
   # grounded word, are conversational. A -mente word next to such a verb is
   # a method: the original question stays rejected, and one unambiguous
-  # report can still be clarified from the documentary check. An invalid
-  # part is dropped with its reason; the rest stays.
+  # report can still be clarified from the documentary check. That
+  # clarification asks what the technician looked at. It keeps the report,
+  # including a negation, and it does not ask whether that thing is present.
+  # An invalid part is dropped with its reason; the rest stays.
   # This is lexical. It does not prove that a reading is semantically right.
   class CompanionPlanCheck
     MAX_LINKS = 4
@@ -42,10 +44,23 @@ module Rag
     OPERATION = /\b(?:ajust|gir|rot|aument|reduc|sub|baj|calibr|regul|cambi|reemplaz|sustitu|puente|desconect|conect|med|mid|puls|presion|apret|limpi|muev|mov|forz|reinici|reset)(?:ar|er|ir|aste|iste|a|e|i|as|es|alo|elo|arlo|erlo|irlo|ando|iendo|ala|ela)\b/
     STATUS = /\b(?:comprob|verific|revis|confirm|cheque|prob|realiz)(?:ad[oa]s?|aste|aron|amos|o|e)\b|\bya (?:lo )?(?:hiciste|hizo|hice)\b/
     CHECK_OBJECT = /\A(?:comprobar|verificar|revisar|controlar|observar|mirar|asegurar)\b(?:\s+que)?(?:\s+no\s+hay)?\s+/i
+    # The verb in the question follows the act the technician already used.
+    # A bare "veo" has no check verb: the question asks what was looked at.
+    SCOPE_VERBS = {
+      "revis" => "revisaste",
+      "observ" => "observaste",
+      "comprob" => "comprobaste",
+      "verific" => "verificaste",
+      "mir" => "miraste",
+      "control" => "controlaste",
+      "cheque" => "chequeaste"
+    }.freeze
+    SCOPE_QUESTION = /\ADijiste «([^»]+)»\. ¿Qué (?:#{Regexp.union(SCOPE_VERBS.values).source})\?\z/
+    SIGHT_REASK = /\Aves\b|\bes lo que ves\z/
 
     Result = Data.define(
       :links, :steps, :question, :rejections, :associations, :confirmed_items,
-      :question_targets, :limits, :omissions
+      :question_targets, :limits, :omissions, :question_scope
     ) do
       def usable?
         links.any? || steps.any? || (question.present? && question_targets.any?)
@@ -61,7 +76,8 @@ module Rag
           "confirmed_items" => confirmed_items,
           "question_targets" => question_targets,
           "limits" => limits,
-          "omissions" => omissions
+          "omissions" => omissions,
+          "question_scope" => question_scope
         }
       end
     end
@@ -113,7 +129,8 @@ module Rag
         links: links, steps: steps, question: question, rejections: @rejections,
         associations: @associations, confirmed_items: @confirmed,
         question_targets: question.present? ? targets : [],
-        limits: @limits, omissions: @omissions
+        limits: @limits, omissions: @omissions,
+        question_scope: question.present? ? @question_scope : nil
       )
     end
 
@@ -219,12 +236,12 @@ module Rag
       targets = @targets
       reason = text.present? ? question_reason(text, steps) : nil
       reason = "repeats_heading" if reason.nil? && text.present? && heading_repeat?(text)
-      return [ text, bound_targets(text, targets) ] if text.present? && reason.nil?
+      return accepted_question(text, bound_targets(text, targets)) if text.present? && reason.nil?
 
       reject("question", text, reason || "invalid") if text.present?
       if reason.to_s.start_with?("modality:")
         clarified = clarify_report(text)
-        return clarified if clarified
+        return accepted_question(*clarified) if clarified
 
         return [ nil, [] ]
       end
@@ -234,7 +251,7 @@ module Rag
       partial = open_partial_for(derived_from)
       if partial
         concrete = derived_from.one? ? concrete_question(derived_from.first, partial) : nil
-        return [ concrete, derived_from.map(&:id) ] if concrete.present? && question_reason(concrete, steps).nil?
+        return accepted_question(concrete, derived_from.map(&:id)) if concrete.present? && question_reason(concrete, steps).nil?
 
         remember_partial_limit(derived_from.first, partial)
         return [ nil, [] ]
@@ -244,7 +261,22 @@ module Rag
       derived = derived_question(derived_from)
       return [ nil, [] ] if derived.blank? || question_reason(derived, steps)
 
-      [ derived, derived_from.map(&:id) ]
+      accepted_question(derived, derived_from.map(&:id))
+    end
+
+    def accepted_question(text, targets)
+      assign_scope(text)
+      [ text, targets ]
+    end
+
+    # Only a question that quotes one stored observation and asks the scope
+    # of that report. A symptom choice does not set this.
+    def assign_scope(question)
+      report = question.to_s[SCOPE_QUESTION, 1]
+      return if report.blank?
+      return unless @facts.facts.any? { |fact| fact.kind == "observation" && fact.text == report }
+
+      @question_scope = { "report" => report, "aspect" => "scope" }
     end
 
     # A blank question, a soft wording failure, or a restatement of the
@@ -325,6 +357,7 @@ module Rag
       @facts.facts.find { |fact|
         answers = fact.answers
         answers.is_a?(Hash) && answers["q"].present? && answers["r"].blank? &&
+          answers["aspect"] != "scope" &&
           fact.kind == "observation" &&
           Array(answers["t"]).any? { |target| target_matches?(target, item, statement) }
       }
@@ -345,7 +378,8 @@ module Rag
     end
 
     # The model's method is already rejected. The replacement quotes the
-    # report and the documentary object, and it does not carry the method.
+    # report and asks what that report covered. It does not ask whether the
+    # documentary object is what the technician sees.
     def clarify_report(text)
       observation = unique_report(text)
       unless observation
@@ -363,8 +397,13 @@ module Rag
         reject("clarification", text, focus.present? ? "no_item" : "no_focus")
         return nil
       end
+      verb = scope_verb(observation.text)
+      unless verb
+        reject("clarification", observation.text, "no_scope")
+        return nil
+      end
 
-      question = "Dijiste «#{observation.text}». ¿#{focus.sub(/\A\p{L}/, &:upcase)} es lo que ves?"
+      question = "Dijiste «#{observation.text}». ¿Qué #{verb}?"
       reason = question_reason(question, [])
       if reason
         reject("clarification", question, reason)
@@ -372,6 +411,26 @@ module Rag
       end
 
       [ question, [ parent.id ] ]
+    end
+
+    def scope_verb(text)
+      found = self.class.words(text).filter_map { |word| scope_verb_for(word) }.uniq
+      return nil if found.many?
+      return found.first if found.one?
+      return "revisaste" if self.class.words(text).any? { |word| PERCEPTION.include?(word) }
+
+      nil
+    end
+
+    def scope_verb_for(word)
+      SCOPE_VERBS.each do |prefix, verb|
+        next unless word.start_with?(prefix)
+
+        rest = word.delete_prefix(prefix)
+        next if rest.empty?
+        return verb if rest.match?(ReportedOperation::FINITE) || rest.match?(ReportedOperation::PARTICIPLE)
+      end
+      nil
     end
 
     def unique_report(text)
@@ -551,7 +610,12 @@ module Rag
     end
 
     def answer_code(item, statement)
-      codes = answer_facts(item, statement).map { |fact| fact.answers["r"].to_s }
+      codes = answer_facts(item, statement).filter_map { |fact|
+        next if fact.answers["aspect"] == "scope"
+
+        code = fact.answers["r"].to_s
+        code if %w[yes no unknown].include?(code)
+      }
       return "no" if codes.include?("no")
       return "yes" if codes.include?("yes")
       return "unknown" if codes.include?("unknown")
@@ -649,6 +713,9 @@ module Rag
 
       normal = self.class.normal(text)
       return "repeats_ask" if repeated_ask?(normal)
+      sight = negated_sight(normal)
+      return "presence_reask:#{sight.id}" if sight
+
       repeated = repeated_fact(normal)
       return "operation" if repeated == :different_act
       return "repeats_fact:#{repeated.id}" if repeated
@@ -669,6 +736,25 @@ module Rag
       return "modality:#{manner.first(3).join(',')}" if manner.any?
 
       nil
+    end
+
+    # "¿Ves agua?" or "¿es lo que ves?" asks again for something the
+    # technician already said is absent. Quoting that report inside a scope
+    # question does not match this pattern.
+    def negated_sight(normal)
+      return nil unless normal.match?(SIGHT_REASK)
+
+      asked = content_stems(normal.split) - self.class.question_stems
+      return nil if asked.empty?
+
+      @facts.facts.find { |fact|
+        fact.kind == "observation" && negated_report?(fact.text) &&
+          content_stems(self.class.words(fact.text)).intersect?(asked)
+      }
+    end
+
+    def negated_report?(text)
+      self.class.words(text).any? { |word| word.match?(NEGATION) }
     end
 
     # A -mente word is a method unless the cited step or the case states it.

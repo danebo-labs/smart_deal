@@ -3668,4 +3668,71 @@ Cero inferencias. No se usaron las dos invocaciones que quedan de `f3-q1-2026102
 
 **Siguiente paso, sin ejecutarlo.** F3 sigue abierto hasta una validación funcional real. La próxima medición, si se autoriza, sale del checkpoint posterior a T3. No parte del texto de este ensayo. F4 no arranca.
 
+## F3. Lectura viva del checkpoint posterior a T3, 23 de octubre de 2026
+
+**Veredicto.** F3 no se cierra. F2 permanece aceptada. No hubo turno. A las 20:42 (−03) el código de `2d778f1` lee el checkpoint posterior a T3 como episodio vencido. `ActiveEpisode.parse` lo deja vacío, motivo `expired`. La captura y su `updated_at` siguen igual. No se creó sesión. No se envió «¿Qué sigue?». No hubo inferencia. La aclaración no se ejerció. Gastar las dos invocaciones que quedan no está hecho y no cerraría F3.
+
+### 1. Código que habría corrido
+
+`HEAD` `2d778f191fe196c85ac215f32fc2f8edc0f0c859`, igual que `origin/main`, árbol limpio. No hay trabajo posterior sin commitear. Ese commit es la candidata nombrada para esta medición. Producto, prompts, modelo y validadores quedaron como están.
+
+La lectura arrancó con `SHARED_SESSION_ENABLED=false` antes de cargar Rails. `.env` trae ese flag en true; dotenv no pisa una variable ya presente. `SharedSession::ENABLED` quedó en false. `Rails.env` development. Base `smart_deal_development` en localhost. `BedrockClient::QUERY_MODEL_ID` es `global.anthropic.claude-haiku-4-5-20251001-v1:0`. El proceso tenía `AWS_MAX_ATTEMPTS=1`. `RAG_LOCAL_PASS_GUARD` no estaba armado, así que no reservó ni escribió el ledger.
+
+Candidata F2 `candidate_r2`. Manifiesto SHA-256 `3472b6310640454cb79db75c0a5e9b97cdb9e0f8a7fa1eefebc6498ee8d0abc0`. Adjudicación SHA-256 `6b6b0d214486704a9a48a2b1c7da354a530d47d3eb5542b1c471e114636c24f4`. 90 hashes de cuerpos y sidecars, 0 ausentes y 0 distintos. El manifiesto no se regeneró. No hubo Retrieve ni escritura en S3.
+
+SHA-256 de los archivos que publican el turno, en este `HEAD`: `companion_plan.rb` `55d9a0d5b70559037c9a822399d02538481d945bf5049f61e33dcb81913acccb`, `companion_plan_check.rb` `72e20e087cd127ae3e9784a78ccd19fa144ee10809751c0ead043f064729d1f6`, `companion_plan_render.rb` `b81dbd5c20b88c59fe5ed3b59d9ad7230e8102ec683b0a3a22f2d1660b4f8f1d`, `pending_question.rb` `d323b33bd293e0cc340d3cc6fbfabee70faee63308f130de74088dcfe4796da3`, `active_episode.rb` `d86fad138c48fec021e7ec5001eb8a812647fa8318f8eb037ed851c76d8779df`, `conversation_session.rb` `d902b7df9056ad8a49483aef2effb1bb9b4e08c51aeaa78dbd50dd9fbc97f25a`, `session_context_builder.rb` `8e343249f629158fe25218d8aaa75871aad56575299851a6f295ad9269650b8e`.
+
+### 2. Checkpoint e historial, leídos y no cargados en sesión
+
+Procedencia: `20261023T182442Z-conversation/t3/episode_after.json`. SHA-256 `3196986bdb6e229b4240a199dc6a2d2e42aeda0d99d03a6a3ea2e2da49d7c2b3`, medido antes y después de la lectura. `updated_at` `2026-10-23T15:25:00-03:00`. Episodio `ep_ebaad52adc01a534`. Ventana `ConversationSession::EPISODE_WINDOW`, cuatro horas. El vencimiento es `2026-10-23T19:25:00-03:00`. La lectura con `Time.current` fue `2026-10-23T20:42:10-03:00`, zona `America/Santiago`. Resultado vivo: `blank`, motivo `expired`, `episode_id` vacío. El archivo no se modificó.
+
+El JSON sigue conteniendo el caso que esta medición tenía que conservar:
+
+- Objetivo «La puerta se reabre sola». Identificadores guardados: «Fermator VF5+», «operador de puerta» y «no está activada».
+- Observaciones: «La puerta se reabre sola», «No veo obstrucción», «el LED de fotocélula está encendido». No queda el LED apagado.
+- Checks: `#54` no hecho, `mediciones` no hechas, fotocélula hecha con resultado «no está activada».
+- `pending_question` ausente.
+
+Historial publicado de T1, T2 y T3. En los tres, `answer`, `history_answer` y `answer.txt` coinciden. Ninguna respuesta publicada contiene una pregunta.
+
+- T1, `query:62a4bc84-d00d-427a-861a-3ab58d7127ef`: «Estoy con un operador de puerta Fermator VF5+. La puerta se reabre sola. El LED de fotocélula está apagado. No veo obstrucción. No he comprobado el #54. No hice mediciones.»
+- T2, `query:d6feac50-a40b-4bc0-8a7e-5741db0e5338`: «Corrijo solo el estado del LED: el LED de fotocélula está encendido, no apagado.»
+- T3, `query:3b1387bd-a65a-4791-b5cf-ffdea4806678`: «Ya revisé la fotocélula y no está activada.»
+
+Ese historial no trae las aclaraciones A o B, ni cuándo ocurre la reapertura, ni «¿Qué revisaste?», ni «El marco de la puerta, nada más», ni un pendiente. La palabra «dijiste» aparece solo en la nota ya publicada del #54: «dijiste «No he comprobado el #54», así que sigue pendiente.» El mensaje de T1 conserva «apagado» porque es el reporte original; el episodio y T2 dejan el LED encendido. Eso es el historial publicado, no una corrección de esta lectura.
+
+Normalización vigente, separada del archivo. Con el reloj de las 20:42 el parse no aplica identidad ni checks: descarta el episodio entero. Una lectura contrafactual, `now` fijado en `updated_at` más un minuto (`2026-10-23T15:26:00-03:00`), sí conserva `ep_ebaad52adc01a534`, el objetivo, las tres observaciones, los tres checks y la ausencia de pendiente. `companion_identity` en esa lectura es «Fermator, Fermator VF5+, operador de puerta». Omite el identificador «no está activada» porque repite el resultado de la fotocélula con la misma correlación. Los tres identificadores siguen en el JSON. Esa lectura no es el estado de las 20:42 y no se escribió.
+
+`ConversationSession#apply_recorded_owner_turn!` trata un episodio `expired` como vacío y, aun así, llama a `TurnInterpreter`. Enviar «¿Qué sigue?» habría gastado una invocación sobre un caso vacío y podría abrir otro episodio. Ese método no se ejecutó. El runner `q1p_checkpoint!` también se detiene cuando el parse queda vacío, antes de reservar y antes de llamar. No se arrancó.
+
+### 3. Respuesta publicada
+
+No hay texto. El técnico no recibió orientación ni pregunta. `answer` y `history_answer` no existen para este turno.
+
+### 4. Pregunta de Haiku y transformaciones
+
+No hubo `tool_input`. No hubo pregunta propuesta, motivo de rechazo, sustitución de Ruby, fuentes ni hashes de fragmentos de este turno. El control de alcance de `2d778f1` no se ejerció sobre una salida de modelo.
+
+### 5. Evaluación
+
+La aclaración no se ejerció. No hay una orientación que juzgar por utilidad, fidelidad o pertinencia. Este resultado no dice que la pregunta de alcance falle, ni que Haiku haya elegido otra vía, ni que una lista de comprobaciones haya sustituido a la pregunta. Dice que el caso ya no está vivo para el código que publica.
+
+### 6. Pendiente
+
+El archivo sigue sin pendiente. No se instaló `documented_context`. No quedó una pregunta de alcance que pudiera leerse como confirmación del síntoma. No quedó una pregunta de #21 que heredara «no está activada». No quedó una pregunta rechazada. No hay documento ni fragmento de un destino nuevo.
+
+### 7. Consumo y ledger
+
+Cero inferencias. El ledger no se escribió. SHA-256 antes y después de la lectura de Rails: `6ea5d5dd2467307984268593b3ada74a7489a50b516079d0cb3e2f81a9c1ee3c`. `attempts` 162, `priced` 157, `blocked` 0, `seq` 162, `open` vacío. `committed` US$1,539900. `unknown` US$0,10214. `call_cap` 164. Autorización `f2f3-joint-after-134` intacta en id, corte 134 y US$0,750000. Ejecución `f3-q1-20261023` intacta: corte 152, US$0,750000, 12 llamadas. Los ids 153 a 162 son las 10 usadas. Quedan 2. No se abrió otra ejecución, no se movió el tope y no hubo reintento ni regeneración. El tope global de US$4 sigue por encima de `committed` más `unknown`.
+
+### 8. Qué quedó demostrado y qué falta
+
+Demostrado: con este reloj, este `HEAD` y este archivo, el producto no continúa el episodio `ep_ebaad52adc01a534`. El archivo todavía guarda el caso de T3. La candidata `candidate_r2` y los controles del ledger siguen intactos.
+
+Sigue sin demostrarse con Haiku, desde este checkpoint: una aclaración publicada, un pendiente que conserve el sentido de lo preguntado, y un turno posterior que use la respuesta del técnico. F3 sigue abierto en esa validación. F4 no arranca. F5 y los órdenes 3 a 5 del plan padre siguen después. Una parada por ventana no es estabilidad ni un fallo de la pregunta de alcance.
+
+### 9. Checkpoint para continuar
+
+El mismo archivo, SHA-256 `3196986bdb6e229b4240a199dc6a2d2e42aeda0d99d03a6a3ea2e2da49d7c2b3`, episodio `ep_ebaad52adc01a534`, sin pendiente. No hay checkpoint posterior: no se publicó un turno. Continuar exige una autorización explícita para cargar ese JSON en una sesión local nueva con `updated_at` dentro de la ventana, sin reescribir la captura, y entonces enviar una sola vez «¿Qué sigue?». Esa pasada sigue siendo intérprete y generación, las dos invocaciones que quedan de `f3-q1-20261023`. Hasta esa autorización, esas dos llamadas no se usan. Esta sección no es una continuación ya probada.
+
 

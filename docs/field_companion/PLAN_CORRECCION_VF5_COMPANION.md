@@ -1,5 +1,446 @@
 # Corrección y validación del companion sobre el VF5
 
+## Validación de Opus — 23 de octubre de 2026 (instrucciones vigentes para Grok)
+
+**Veredicto: aprobado con ajustes.** La revisión de Codex que sigue queda vigente, salvo lo que esta sección corrige. Si hay contradicción, manda esta sección, después la de Codex y por último el historial. Esta validación no implementa producto, no invoca modelos, no modifica el ledger ni los techos, no escribe en S3, no sincroniza la KB y no autoriza gasto.
+
+Orden de ejecución para Grok:
+
+1. Cerrar F2 con el alcance de abajo.
+2. Implementar F3 local y sus pruebas.
+3. Solo con una autorización nueva y comprobada en el ledger, la conversación pagada de cuatro turnos.
+4. Después F4 y F5 del plan, y el orden 3 del padre.
+
+No hay aceptación parcial de F2 como vía de ejecución. Si F2 queda bloqueada por algo externo, se detiene y se informa.
+
+### Qué verificó Opus y qué no
+
+Verificado personalmente, sin modelos ni red remota:
+
+- `HEAD` = `origin/main` local = `988eea8`. El único cambio del árbol es este documento. La sección de Codex del archivo coincide con el texto entregado a Opus.
+- SHA-256 del PDF `be7a39a3…f72`. Renders locales nuevos a 110 dpi (`pdftoppm`) de PDF 7, 8, 12 y 13 en `tmp/field_companion/opus_review_20261023/`:
+  - **PDF 12–13.** Las tres comprobaciones de «La puerta se re-abre sola» están al pie de PDF 12, folio 11/21. La raya «En caso que el problema persista, desconectar la fotocélula y volver a pulsar el botón de TEST. Si la puerta no se abre o cierra completamente, debe haber una obstrucción mecánica en la puerta.» abre PDF 13, folio 12/21, dentro del mismo recuadro. El siguiente punto es «La puerta no alcanza la posición de apertura completa». `chunk_p12_5.txt` y `chunk_p13_1.txt` coinciden con eso: agrupación y límite correctos, se conservan. La misma página contiene dos casos vecinos documentados que sirven para desambiguar: «La puerta se vuelve a abrir cuando el patín está cerrando» y 8.3 «La fotocélula se activa de forma intermitente».
+  - **PDF 7.** 5.6 dice «Indicador LED y relé activado cuando la fotocélula o la entrada de re-apertura está activada». 5.5 dice que la entrada 21 Re-apertura sirve para el interruptor de la puerta de cabina o una barrera externa y que tiene prioridad sobre la señal cerrar. La Fig. 6 lleva 20/19 al verde/receptor y 18/17 al amarillo/emisor.
+  - **PDF 8.** 5.11 dice «fuerza de cierre de la puerta (sensibilidad a reaperturas). Este valor es regulable de 60 a 150Nm». La otra mitad del conflicto N/Nm no se contrastó en página.
+- **T2 de `20261023T012855Z`.** De los ocho chunks recuperados, solo `chunk_p10_1` cumple `DIAGRAM_SECTION`, por su línea «Diagrama de la página (etiquetas literales):». `chunk_p4_1`, que es el dibujo de conexionado completo, no la cumple. Estuvo también en el top 8 de T1 y no desvió nada. La detección por contenido es, por tanto, incoherente como criterio de intención. Los ocho chunks tienen un único bloque terminal de registros con claves admitidas por `EVIDENCE_RECORD_LINE`, así que `:field_records` no saltaría. Conclusión por lectura de código y artefactos: con el mismo top 8, cambiar el gate a `plan_request?` basta para que T2 entre al companion. La prueba de D5 debe confirmarlo, porque esta revisión no pudo ejecutar `rails runner`.
+- **Control T4 de `20261023T012747Z`.** El plan del modelo dejó `steps: [S1.3, S1.6]` y no incluyó el paso de activación S1.4. `best_step` asignó «Ya revisé la fotocélula…» a S1.6 porque era el único paso que compartía «fotoc». Los cuatro links se rechazaron porque sus lecturas citaban ids («S1.4») o estados («paso … completado»). La pregunta cayó por `ungrounded:actual`. Se publicó una lista sin el LED ni orientación.
+- **`ActiveEpisode#upsert_check!`.** Reemplaza solo por sujeto normalizado. Un «Desconecté la fotocélula» posterior, con sujeto «fotocélula», sobrescribiría «fotocélula: no está activada». Es una pérdida demostrada por lectura, no ejecutada. `WorkContextReducer` recibe `turn:`, así que el dato para distinguir la operación existe.
+- **Ledger.** 140 intentos; committed US$1,402033; unknown US$0,102140; open vacío; cap 150. Las entradas 135–140 suman US$0,046304, lo que deja US$0,703696 y diez intentos. `run.rb#prepare_env!` fija US$0,75 y llama `LocalPassLedger.reset!` en cada proceso.
+- **Gate `coverage_v2.gate_r1.json`.** Confirma el conjunto: p1/6/21 `needs_visual_review`, p15/16/17/19/20 `failed_text_layer` y p3 descartada. Además, sus `added_lines` muestran notas del extractor que no están en la página («Note: the meaning of the codes…», «Notes: row numbers…», «Nota: en la tabla de frecuencia…»). `CompanionStatements` solo marca como `extraction_note` las líneas con `DATA_NOT_AVAILABLE` o `REQUIRES_FIELD_VERIFICATION`; esas notas entrarían como texto documental.
+
+No verificado por Opus, y por tanto pendiente de Grok:
+
+- Renders de PDF 1, 3, 4, 6, 15–17 y 19–22. Para delimitar se usaron solo el gate y la descripción de Codex.
+- La página que imprime «N» para #54 y las del año de EN 12016.
+- Los callers de `companion_technician_turns` con correlación.
+- El comportamiento real de `PLAN_REQUEST` ante negaciones.
+- Si una reconstrucción desde el código entregado reproduce los bytes del manifest `5e15e2c`.
+- Cualquier recuperación real, porque Retrieve y F4 no se han ejecutado.
+
+### Correcciones al plan de Codex
+
+| # | Punto de Codex | Corrección | Fundamento |
+| --- | --- | --- | --- |
+| O1 | F2, «aceptación parcial» para avanzar a F3 | Se retira como vía de ejecución. F3 empieza cuando F2 cumple el criterio de cierre de abajo. | Secuencia acordada con Lahiri. El conjunto pendiente es pequeño y no exige llamadas. |
+| O2 | D3 y F2.2: reescribir el bloque de estructura de `batch_chunking_prompt.rb` y fixtures de ingesta de otros formatos | **Diferido.** No se toca el prompt de extracción en este ciclo. | No habrá reextracción, así que un cambio de prompt no se puede verificar y solo cambia el SHA sin evidencia. Un fixture prueba el procesamiento, no la interpretación del modelo. Se verifica en la próxima ingesta real de otro manual (orden 3, Elemont) con su propio gate. F3 sí lleva un fixture no VF5 para la correspondencia de operaciones. |
+| O3 | D1 y F2.4: cambios en `PageChunkFidelity#assess_page/#missing_literals/#certification` | No se exige cambiar el detector para cerrar F2. La adjudicación se hace con registros por página (abajo). Un cambio de detector solo entra si demuestra un falso ausente general con un test, y no puede subir una página sin evidencia. | Evita bajar criterios para conseguir verde. Separa automatización de revisión documentada. |
+| O4 | D1 sin notas del extractor | Se añade: toda línea de `added_lines` que sea comentario del extractor se marca como nota de extracción o se elimina del cuerpo. | Lo verificado en el gate: hoy esas líneas llegan al companion como texto del fabricante. |
+| O5 | D5 | Se confirma, con los casos de prueba de abajo. `plan_context?` y `plan_chunk?` siguen sin cambios para el ensamblado del prompt documental. | Lo verificado en T2 y en `chunk_p4_1`. |
+| O6 | D6 y D7: «criterio común» abierto | Queda concretado en «Decisión 2». La única pieza nueva es `Rag::ReportedOperation`. | Lo usan tres consumidores: check, render y episodio. Sin él, D7 no se puede corregir. |
+| O7 | D8 | Se añaden la frase concreta del prompt sobre ids y estados y la regla determinista de pasos de otro caso. | Causa del rechazo total de links en el control T4. |
+| O8 | Parada de la tanda pagada | Queda sustituida por «Decisión 3». | Faltaban criterios operables. |
+| O9 | D9 | Se acepta. Bajo el mismo `flock` de `AssignmentSpend` se guarda un único bloque `authorization` con `{id, after_attempt: 134, cost_usd: "0.75", call_cap: 150}` y se comprueba en `reserve!`. Sin libro nuevo. | Diseño mínimo que impide renovar el cupo reiniciando el proceso. |
+
+### F2: alcance ejecutable y criterio de cierre
+
+**Se conserva sin rehacer:** el grupo de reapertura 12→13 y su límite; los alias de `chunk_p13_1`; las transcripciones visuales de p4, p7 y p16; y `conflicts.json`. Se añade un test de regresión con fixtures versionados pequeños, copias de `chunk_p12_5` y `chunk_p13_1` con su procedencia. Debe probar estas cuatro cosas:
+
+- `CompanionStatements` deja las tres comprobaciones y la continuación como `step` del ítem «La puerta se re-abre sola», con la página 13 en la continuación.
+- «La puerta no alcanza…» es otro ítem.
+- La continuación conserva «En caso que el problema persista».
+- Ningún orden de ejecución se deriva de la lista.
+
+**Correcciones necesarias, por defecto demostrado:**
+
+1. **Adjudicación página por página** de p1, p6, p15, p16, p17, p19, p20 y p21, más la justificación del descarte de p3. La autoridad es el render local del PDF (ruta y SHA del PNG). Se escribe un registro por página en `f2f3_joint/f2/adjudication.json` con estos campos: página, control del gate, check concreto, evidencia, SHA del cuerpo, decisión y autor. Las decisiones posibles son:
+   - `certified_text_layer` o `certified_visual_review`, si el gate las da.
+   - `verified_manual`: el dato existe y el detector no lo mide (por ejemplo, «300 V» unido a la unidad, o «11.1» como encabezado).
+   - `corrected`: el cuerpo omitía o inventaba un dato y se corrige solo ese cuerpo o registro.
+   - `discard_accepted`: solo p3.
+
+   `verified_manual` nunca se presenta como aprobado automático. p16 queda como `certified_visual_review` registrando su revisión en `visual_reviews.json`, como ya se hizo en p4 y p7. En p17, «200 (valor único impreso para las tres columnas)» y la fila sin valor se contrastan con el render antes de aceptarlos.
+2. **Notas del extractor (O4).** Se marcan o se eliminan, sin tocar las notas del fabricante (por ejemplo, la «Nota:» de p10 sí es del fabricante). El localizador es `added_lines` del gate, no una regla nueva.
+3. **Contradicciones.** C1 (L/N) y #8/#12 ya están contrastadas. Para N/Nm se rinde la página que imprime «N» y se registra con su página. Para el año de EN 12016 se rinden las páginas 6, 18, 4 y 16. Ambas versiones quedan literales y ancladas. El fabricante no se corrige.
+4. **Candidata reproducible (D2).** Se recompone en local con `ChunkMergerService.merge_with_report` y `BatchResultsParserService` sobre `LocalChunkDirectory`, con el código que se entrega. Se genera un manifest nuevo con el SHA del código, el del PDF, los resultados originales, los reemplazos y los 45+45 hashes. El diff contra `f2/kb` actual debe mostrar solo los cambios de los puntos 1 a 3. No se sobrescribe `f2/kb` ni `kb.r1`.
+
+**Criterio de cierre de F2:**
+
+- Las 21 páginas retenidas están en `certified_*`, `verified_manual` o `corrected`, cada una con evidencia, y p3 está en `discard_accepted`.
+- No queda ninguna línea añadida sin marcar.
+- Los conflictos C1–C4 están anclados con su página verificada.
+- El manifest corresponde al código entregado.
+- La suite seguida está en verde, salvo los errores Selenium ya conocidos y documentados.
+
+Sin llamadas a modelos. Lo que puede esperar: el prompt de extracción, los fixtures de ingesta de otros formatos, la mejora general del detector y la página 22.
+
+### F3: alcance para los cuatro turnos
+
+Base: la candidata F2 aceptada. Cambios, en este orden y cada uno guiado por un test que falla antes:
+
+1. **Ruta (D5).** `companion_turn_skip_reason` usa `self.class.plan_request?(raw_question.to_s, nil)` en lugar de `plan_context?`. Tests en `companion_plan_route_test.rb`:
+   - T2 con un chunk `DIAGRAM_SECTION` en la posición 1 y en la 8: `companion_turn=true`, un plan y ninguna llamada a `generate_text`.
+   - «muéstrame el plano de la fotocélula»: `:plan`.
+   - «no necesito el plano»: se registra lo que devuelve el regex. Si da `:plan`, se ajusta `PLAN_REQUEST` con ese test y solo ese test.
+   - «la etiqueta del equipo dice VF5+»: el mismo tratamiento.
+   - Se mantienen las salidas `:system_role`, `:identity`, `:episode`, `:raw_question` y `:field_records`.
+
+   **Excepción conservada.** Solo el pedido explícito de plano en el mensaje literal del turno saca ese turno del companion hacia la generación documental con el contrato de plano. Su función es interpretar evidencia de plano cuando el técnico la pide. Su alcance es un turno: el intérprete y el reducer actualizan igualmente el episodio, y el turno siguiente vuelve al companion. Ningún turno del guion de cuatro la activa.
+2. **Correspondencia de operaciones** (Decisión 2).
+3. **Orientación y desambiguación (D8):**
+   - En `companion_plan.txt`, en la línea de `links`, se añade: «reading no menciona ids S… ni dice si un paso está hecho o pendiente; el sistema anota lo que el técnico informó».
+   - En `CompanionPlanCheck#check_steps`, un paso cuyo ítem no supera `CompanionPlanRender#applicable?` se conserva solo si el plan conserva también una pregunta válida tras el check, o si un link de un hecho del caso apunta a una afirmación de ese ítem. Si no, se rechaza con `other_case_without_question`. Así, la acción de otro caso queda condicionada a la pregunta que lo distingue y el render la muestra con el encabezado condicional que ya existe. Si el caso ya distingue (un hecho enlazado), no se repregunta.
+   - `CompanionPlanRender#conflicts` deja de sustituir `REQUIRES_FIELD_VERIFICATION` por «hay que verificarlo en campo». Muestra las dos versiones con su fuente como discrepancia del documento. Preguntar qué rotula la placa instalada sí es contexto de campo; pedir al técnico que decida qué quiso decir el fabricante, no.
+4. **Presupuesto (D9 y O9),** antes de cualquier ejecución pagada.
+
+**Prueba local encadenada sin red:** los ocho puntos de «Validación local» de Codex con los cuatro textos de `run.rb::TURNS`, el `tool_input` fijo del intérprete y del plan, y el top 8 real de cada turno guardado. Se añade la Decisión 2 completa y un fixture de otro equipo (por ejemplo, una botonera con «comprobar el fusible F2» y «sustituir el fusible F2») para probar la correspondencia sin vocabulario del VF5.
+
+**Rúbrica de los cuatro turnos publicados.** Es la de Codex, con estas concreciones:
+
+- **T1.** Orienta desde el síntoma y las observaciones. No da «No veo obstrucción» por comprobación hecha. No ordena ajustar el #54. No presenta la desconexión/TEST como primer paso.
+- **T2.** Usa el LED encendido con la disyunción de 5.6. No declara activa la fotocélula ni la entrada 21 sin un reporte.
+- **T3.** Asocia «no está activada» a la comprobación de activación. No lo convierte en descarte de causa ni en desconexión/TEST. Puede relacionarlo con la otra rama de 5.6 (5.5/21) como posibilidad. Puede preguntar el momento de la reapertura si eso distingue el caso del patín.
+- **T4.** No repregunta lo ya informado. Avanza con lo pendiente sin atribuir al manual un orden.
+
+**Desambiguación en la aceptación (decisión de Lahiri, 23 de octubre de 2026).** La rúbrica valora esta conducta en cualquiera de los cuatro turnos y la exige cuando corresponde.
+
+- **Cuándo corresponde.** Lo informado puede corresponder a más de un síntoma o condición documentados, y esa diferencia cambia la orientación siguiente. En el VF5 hay tres casos verificados así:
+  - «La puerta se re-abre sola» (PDF 12–13) frente a «La puerta se vuelve a abrir cuando el patín está cerrando» (PDF 13). Lo que distingue es el momento de la reapertura.
+  - «La puerta se re-abre sola» frente a 8.3 «La fotocélula se activa de forma intermitente» (PDF 13).
+  - Las dos ramas de 5.6, fotocélula o entrada de re-apertura 21 (5.5, PDF 7), ante el LED encendido.
+- **Qué se acepta.** Explica en una o dos frases cuáles son los casos pertinentes, cita la fuente de cada uno, los relaciona con lo informado y pregunta **solo** el dato que falta para distinguirlos. La acción que depende de esa diferencia queda pendiente o condicionada («si…»), no ordenada.
+- **Qué se penaliza:**
+  - forzar dos alternativas cuando lo documentado no cambia la orientación;
+  - preguntar algo que el contexto o un reporte anterior ya resuelve;
+  - preguntar más de un dato cuando uno basta;
+  - presentar como ambigüedad del caso una contradicción del fabricante (#8/#12, L/N, N/Nm o el año de EN 12016). Esa contradicción se muestra con sus dos fuentes como discrepancia del documento y no se pregunta al técnico. Sí puede pedirse lo que rotula la placa o el equipo instalado.
+- **Regresión.** Se conservan los cuatro mensajes originales de `run.rb::TURNS` sin modificarlos. Si Danebo pregunta algo que esos mensajes no contestan, no se inventa la respuesta ni se cambia el guion, y la pregunta no se penaliza automáticamente. Se juzga si era necesaria y si era única, según los criterios anteriores. Se registra la limitación en `turn.json` como `unanswered_question`, con el turno, la pregunta y los casos citados. En los turnos siguientes no se exige que Danebo la abandone, pero sí que no la convierta en condición para avanzar con lo que no depende de ella.
+- **Continuación prevista.** Cada `unanswered_question` registrada deja definida una continuación de un turno: el turno N+1 sobre el mismo episodio y con la misma respuesta publicada como antecedente. Su texto es la respuesta real que aporte Lahiri o el campo, y no la redacta el agente. Aceptación:
+  - usa la aclaración;
+  - elige el caso documentado que corresponde, con su fuente;
+  - no repite la pregunta;
+  - conserva el estado previo.
+
+  No forma parte de la tanda de cuatro turnos. Exige su propio preflight y una autorización nueva comprobada en el ledger (intérprete y plan, dos invocaciones). Mientras no se ejecute, el aprovechamiento de la aclaración queda «no demostrado».
+- **Parada.** Una pregunta de desambiguación, contestada o no, nunca es motivo de parada en la Decisión 3.
+- **Requisito técnico ya existente.** `CompanionPlanCheck#question_reason` solo admite palabras que aparezcan en las afirmaciones recuperadas, en los hechos o en los turnos. En el control T4, una pregunta cayó por `ungrounded:actual`. Se añade un test: una pregunta de desambiguación redactada con las palabras de los dos ítems citados («¿se vuelve a abrir cuando el patín está cerrando?») pasa el check, y una con una palabra ajena sigue rechazándose. No se relaja el criterio.
+- **Caso diferencial no recuperado.** Si el caso que distinguiría no está entre los chunks recuperados del turno, Danebo no puede citarlo. Por ejemplo, `chunk_p13_1`, el del patín, no estaba en el top 8 de T2 del 23 de octubre. Entonces se registra `differential_not_retrieved` como limitación de recuperación, que corresponde a F4, y no se cuenta como fallo del modelo ni se completa a mano.
+
+### Decisión 2: correspondencia de operaciones
+
+**Datos que se usan, todos ya existentes:**
+
+- `CompanionCaseFacts::Fact`:
+  - `text`: la oración literal del técnico, obtenida por correlación con `companion_report_span` cuando `literal: true`.
+  - `kind`, `subject`, `result`.
+- `CompanionStatements::Statement`: `kind`, `text`, `item` y `section`.
+- El `turn:` que ya recibe `WorkContextReducer`.
+
+No hay migración de base, ni llamada LLM, ni reglas del VF5.
+
+**Pieza única nueva: `Rag::ReportedOperation`** (`app/services/rag/reported_operation.rb`), un PORO con test propio:
+
+- **`ACTS`.** Tabla cerrada de familias de actos de campo en español. Cada familia es un prefijo verbal más un sufijo verbal obligatorio, con la misma forma que el regex `OPERATION` existente, para que «regulación», «mediciones» o «revisión» no cuenten como acto:
+
+  | Familia | Prefijos |
+  | --- | --- |
+  | `check` | comprob, verific, revis, mir, observ, control, asegur, cheque |
+  | `disconnect` | desconect (se evalúa antes que `connect`) |
+  | `connect` | conect |
+  | `press` | puls, presion, apret |
+  | `adjust` | ajust, gir, regul, calibr |
+  | `measure` | med, mid |
+  | `clean` | limpi |
+  | `replace` | cambi, reemplaz, sustitu |
+  | `restart` | reinici, apag, encend |
+
+  La tabla queda cerrada en esta fase. Una familia nueva exige un test que falle con un texto que no sea del VF5.
+- **`parse(text)`** devuelve `acts` como lista de `{family, negated}` y `component`, un conjunto de raíces.
+  - Un acto está negado si `CompanionPlanCheck::NEGATION` aparece en las tres palabras anteriores. «no he comprobado» y «todavía no pulsé» quedan negados.
+  - `component` son las raíces de contenido (`CompanionPlanCheck.words` y `stem`), sin conectores, sin `PERCEPTION`, sin verbos de acto y sin `CompanionPlanRender::GENERIC_STEMS`. Los números se conservan como identificadores: «#54» y «el #54» dan `54`.
+- **`correspondence(report_text:, result:, status:, statement_text:)`** devuelve uno de estos valores:
+  - Si no hay componente compartido: `:none`.
+  - Los actos del reporte (`R`) se calculan así: los no negados si `status` es `done`, o los negados si es `not_done`. Si el reporte no trae ningún verbo, `R` vale `[check]`, porque el intérprete solo guarda verificaciones.
+  - Los actos del paso (`S`) son todos los actos no negados del texto del paso. Una sub-acción condicional del paso también cuenta, lo que es conservador.
+  - Con `not_done` y `R ∩ S ≠ ∅`: `:pending`. Si no: `:related`.
+  - Con `done` y `S ⊆ R`: si `S = {check}`, el predicado `P` del paso (sus raíces menos el componente compartido) debe estar vacío o compartir al menos una raíz con el texto o el resultado del reporte para dar `:complete`; si no, `:related`. Con otros actos, `:complete`.
+  - Con `done` y `R ∩ S ≠ ∅`, sin `S ⊆ R`: `:partial`.
+  - En cualquier otro caso: `:related`.
+- **`key(subject, operation)`** devuelve `[operation || ["check"], component]` ordenados.
+
+**Punto exacto donde se decide cada cosa:**
+
+1. **`WorkContextReducer#write_checks`.** Para cada check, toma la oración de `turn` que contiene el sujeto, con la búsqueda de `SessionContextBuilder.companion_sentence_has?`. Elige el verbo de acto más cercano antes del sujeto, en esa oración. Guarda `row["operation"] = [familia]`, o `["check"]` si no lo hay. `ActiveEpisode#sanitize_checks` admite esa clave, que es derivada y está documentada como tal.
+2. **`ActiveEpisode#upsert_check!`.** Reemplaza solo cuando `ReportedOperation.key` coincide. Una fila histórica sin `operation` vale `["check"]`.
+   - «#54» `not_done` seguido de «el #54» `done`: se reemplaza.
+   - «fotocélula» `check` frente a «Desconecté la fotocélula» `disconnect`: coexisten.
+3. **`CompanionPlanCheck#check_links`.** Si el hecho es `done_check` o `not_done_check` y la afirmación es `step?`, calcula `relation = correspondence(...)` **aunque `reading` esté vacío**:
+   - Con `:none` o `:related`, rechaza `operation_mismatch`.
+   - Con otro valor, guarda `relation` en el link.
+
+   Un link de hecho a afirmación no `step` (texto, ítem o advertencia) es una **relación explicativa**: nunca afirma ejecución y sigue sujeto a `reading_reason`. Un link de observación a paso nunca es ejecución.
+4. **`CompanionPlanRender#best_step` y `#note`.** Para los hechos de check se elige el paso con `:complete` (done) o `:pending` (not_done), y en su defecto `:partial`. **Nunca `:related`.** Las notas son:
+   - `:complete`: «; ya informaste: «…»».
+   - `:partial`: «; informaste «…», que no completa esta operación». El resultado condicional del documento no se aplica.
+   - `:pending`: la nota actual.
+
+   Las observaciones conservan su regla actual.
+5. **Reporte sin paso correspondiente.** Un `done_check` que no quedó en ningún link ni en ninguna nota se conserva al final, en una línea: «También informaste: «…».». No se asocia a ningún paso.
+
+**Pruebas positivas:**
+
+- «Ya revisé la fotocélula y no está activada» frente a «Comprobar que la fotocélula no esté activada»: `:complete`.
+- «Desconecté la fotocélula y pulsé TEST» frente a S1.6: `:complete`.
+- «No he comprobado el #54» frente al paso del #54: `:pending`.
+- «Comprobé la sensibilidad del 54» frente al paso del #54: `:complete`.
+- Las mismas cuatro con el fixture de otro equipo.
+
+**Pruebas negativas:**
+
+- «Ya revisé la fotocélula…» frente a S1.6: `:related`. El link se rechaza aunque `reading` esté vacío. En el render no hay «ya informaste» sobre S1.6 y aparece la línea «También informaste».
+- «Desconecté la fotocélula, todavía no pulsé TEST»: `:partial`. Ningún `done` global y ningún «debe haber una obstrucción mecánica».
+- «No veo obstrucción»: sigue siendo observación y nunca `:complete`.
+- «Revisé el #54» frente a la sensibilidad: `:related`, sin ejecución atribuida.
+- «No hice mediciones»: no se vuelve tarea.
+- La regulación nominal («potenciómetro de regulación») no produce un acto `adjust`.
+- Un episodio con «fotocélula: no está activada» seguido de «Desconecté la fotocélula» conserva las dos filas y el resultado literal.
+
+**Límite declarado.** Es una correspondencia léxica de actos y componentes, no comprensión semántica. Cuando no puede demostrar la equivalencia, no atribuye ejecución. Ese es el fallo aceptado: puede omitir una asociación válida, nunca inventarla.
+
+### Decisión 3: parada de la validación pagada futura
+
+**Antes de la primera llamada, sin reservar:**
+
+- La configuración cargada es la correcta: `SharedSession::ENABLED == false`, el opt-in del companion activo e identidad `scoped`.
+- Los hashes del manifest F2 aceptado, del código y de los prompts coinciden con los congelados.
+- La autorización persistida (O9) existe.
+- Los techos de las ocho invocaciones (intérprete y plan por turno, calculados sobre los requests reales con `LocalPassLedger.price`) caben a la vez en el saldo incremental, en el cap de llamadas y en US$4, con unknown incluido.
+
+Si algo falla, no hay llamada.
+
+**Continuar,** conservando como antecedente la respuesta realmente publicada, cuando el turno N cumple todo esto:
+
+- Pasó por el companion.
+- La respuesta quedó guardada y es la que recibe N+1.
+- El episodio conserva el id, la identidad, el síntoma, las correcciones vigentes y los resultados.
+
+Un fallo semántico (mala orientación, asociación equivocada, pregunta mala o abstención publicada) se registra y la conversación sigue, porque T2→T4 miden continuidad sobre el antecedente real. La conversación queda no aceptada.
+
+**Detener y marcar los turnos restantes como «no demostrado», con el motivo:**
+
+- **Ruta.** El turno no aplicó el companion; por ejemplo, cayó en `generate_text` anterior, como T2. Los turnos siguientes medirían otra ruta.
+- **Estado.** Episodio nuevo o perdido, síntoma perdido, corrección revertida o resultado de un check perdido. Los turnos siguientes solo repetirían un defecto concluyente.
+- **Transporte.** Error del proveedor, timeout o ausencia de `usage`. Sin reintento; la reserva queda en unknown.
+- **Seguridad.** El texto publicado ordena una maniobra, un valor, un sentido de giro o una intervención que las fuentes no contienen, o contradice una advertencia. Continuar heredaría una instrucción insegura como antecedente.
+- **Presupuesto.** Una reserva no cabe tras recalcular con unknown.
+
+Nunca se regenera un turno, ni se sustituye por una respuesta preparada, ni se reintenta dentro de la tanda. Una tanda nueva exige un defecto reproducido en local, su corrección y una autorización nueva comprobada en el ledger. Reiniciar el runner o aprobar este plan no renueva cupo.
+
+### Sigue sin demostrarse
+
+- Recuperación real y ranking de Bedrock (F4).
+- El endpoint web con el pin por la interfaz (F5).
+- Que el modelo produzca, sobre la ruta corregida, una orientación útil en los cuatro turnos.
+- Que Danebo aproveche una aclaración del técnico a su pregunta de desambiguación. Requiere la continuación prevista y una respuesta real.
+- La estabilidad estadística.
+- Los órdenes 3 a 5 del padre.
+
+---
+
+## Revisión de Codex — 23 de octubre de 2026 (vigente con las enmiendas de Opus de arriba)
+
+**Encargo actual: elaborar y revisar el plan. No implementar, invocar modelos, modificar presupuestos, escribir en S3, sincronizar la KB ni desplegar.** Opus valida este diseño; Grok implementará después F2 y, sobre su evidencia aceptada, F3. Esta revisión completa el rediseño iniciado el miércoles 21. Conserva este archivo como única cola de la corrección VF5.
+
+Esta sección sustituye las instrucciones operativas anteriores que la contradigan, incluidas «F2 cerrada», la repetición inmediata de ocho llamadas tras arreglar T2, la obligación de enumerar siempre tres comprobaciones, la prohibición absoluta de relacionar #21 y el antiguo T4 de cambio de equipo. El registro anterior se conserva íntegro al final como historia y evidencia, no como orden ejecutable ni autorización vigente de gasto.
+
+### Objetivo y correspondencia con el plan padre
+
+Danebo debe acompañar al técnico con una respuesta útil, fiel y publicada: conservar equipo, síntoma, observaciones, correcciones y resultados; interpretarlos con documentación aplicable; orientar desde temprano; preguntar solo lo que decide la orientación; y mantener el caso durante T1 → T2 → T3 → T4. Una comprobación hecha no descarta automáticamente una causa. Una observación visual no acredita una comprobación mecánica completa. Comprobar el estado de un componente no equivale a intervenirlo. No se inventan procedimientos, mecanismos, valores, resultados ni prioridades del fabricante.
+
+El recorrido completo sigue siendo **manual e imágenes → ingesta y agrupación → chunks → recuperación → estado conversacional → generación → validadores → respuesta publicada**. La estructura documental ya era responsabilidad de la ingesta; no es una exigencia nueva de F3. La separación anterior de F2 y F3 fue excesiva: se conserva la secuencia de implementación para poder localizar defectos, con un contrato documental común y una aceptación conversacional final.
+
+El [plan de conversación del 7 de octubre](../PLAN_FIELD_COMPANION_CONVERSACION_2026-10-07.md), sección «Secuencia de ejecución», establece los órdenes 1–5: debug, conversación textual VF5, plano Elemont, fotos, cambio de tema y retorno. Sus fases 0–5 del plano son distintas de las F0–F5 de esta corrección. El propio padre mantiene histórico el [master plan del 5 de octubre](../MASTER_PLAN_FIELD_COMPANION_EVIDENCE_INTENT_EPISTEMICS_2026-10-05.md); no se reactivan sus fases desde aquí.
+
+| Etapa de este archivo | Estado y siguiente salida | Continuidad con el objetivo original |
+| --- | --- | --- |
+| F0, línea base | Realizada históricamente; actualizar hashes y configuración antes de implementar. | No repetir modelos para reconstruirla. |
+| F1, implementación local | Existen continuidad documental, conservación de comprobaciones y contrato de companion; aceptación parcial. | Conservar capacidades útiles; los defectos restantes se corrigen en F2/F3. |
+| F2, extracción y base documental | **Cierre global no demostrado.** Hay correcciones locales verificables y un conjunto limitado de controles abiertos. | Cerrar primero los puntos detallados abajo sin repetir toda la ingesta. |
+| F3, intérprete y generación | **Pendiente.** T4 aislado y T1 aportan evidencia parcial; T2 sale del companion y no se llegó a T3/T4 encadenados. | Corregir enrutamiento, asociaciones, desambiguación y utilidad sobre F2 aceptada. |
+| F4, sustitución, sincronización y Retrieve | **No ejecutada en este ciclo.** Depende de F2/F3 y del bloqueo de datasource ya registrado. | Comprobar artefactos e índice reales, con copia de restauración y autorización remota vigente. |
+| F5, conversación integrada | **No demostrada.** Se prepara el recorrido web con cuatro turnos del mismo caso. | Evaluar lo publicado, después revisión de producto de Lahiri. |
+
+El orden 3 del padre (plano Elemont y su `EPISODIO_VALIDADO`), el orden 4 (fotos) y el orden 5 (cambio de tema y retorno) siguen visibles y pendientes; no los cierra el VF5. Siguen diferidos selección automática por foto/código, rescate, escalamiento y recuperación de casos anteriores. No se inventa F6 ni se convierte el cambio de equipo en el cuarto turno de esta aceptación.
+
+### Línea base comprobada en esta revisión
+
+- Repositorio `/Users/lahirisan/smart_deal`: `HEAD` y referencia local `origin/main` = `988eea8d282b2cb383be68c4a9691aa4bf9a6c29`; árbol limpio antes de editar este documento. No se hizo `fetch`: no se afirma el estado del remoto ni de producción.
+- Fuente primaria: `docs/field_companion/fuentes/VF5.pdf`, 22 páginas, SHA-256 `be7a39a3490c92c8381cb883402760cb07d10b0a3beda5348bed22f72abedf72`. Se contrastaron renders locales de PDF 4, 6, 7, 12, 13 y 16, más las ampliaciones existentes de la placa. Se leyeron las otras referencias solo para delimitar los controles pendientes. No se utilizó Scribd ni una transcripción externa.
+- `tmp/field_companion/vf5_correction/f2f3_joint/f2/manifest.json`: 45 cuerpos y 45 sidecars locales, **90/90 hashes coincidentes** con `f2/kb/`. El manifest declara como base `5e15e2c`, no el HEAD actual; no demuestra que una reconstrucción desde HEAD reproduzca esos bytes. Las transcripciones corregidas de PDF 4, 7 y 16 se identifican expresamente como revisión visual local, no como extracción del proveedor.
+- El gate más reciente disponible, `f2f3_joint/f2/coverage_v2.gate_r1.json`, da `corrected_v2`: 22 contabilizadas, 13 certificadas (11 por texto y 2 por revisión visual), 1 descartada, 5 `failed_text_layer` y 3 `needs_visual_review`. `coverage_v2.r1.json` daba 14 certificadas; no intercambiar esos informes ni presentar 22 contabilizadas como 22 aceptadas. Son informes guardados, no una nueva ejecución del gate en esta revisión.
+- `f2f3_joint/e2e_verdict.md` revisa el intento 133 y `3fa8881`; sirve como inventario histórico de defectos. No se lo presenta como informe independiente de `988eea8`. Las observaciones sobre este último aportadas en el encargo se contrastaron con el código actual y `f2f3_joint/runs/`.
+- `runs/20261023T012747Z-control/t4/`: T4 aislado publicado, con asociación errónea de «ya revisé…» al paso desconexión/TEST. `runs/20261023T012807Z-conversation/summary.json`: conversación inválida por configuración compartida. `runs/20261023T012855Z-conversation/`: T1 publicado; T2 conserva el LED encendido en el episodio, recupera `chunk_p10_1.txt`, cae al generador anterior y detiene la secuencia. No hay T3/T4 de esa conversación que evaluar.
+- Ledger `tmp/field_companion/vf5_generator_benchmark/assignment_spend.json`: 140 intentos, 135 con precio, committed **US$1,402033**, unknown **US$0,102140**, open `{}`, call cap **150**, cost cap **US$4**. Exposición US$1,504173. Entradas 135–140: US$0,046304; el adicional histórico de US$0,75 desde después del intento 134 deja US$0,703696 y diez intentos, sujeto al control acumulativo descrito abajo. Esta revisión no consumió ni reservó llamadas.
+
+### Clasificación de lo que ya existe
+
+| Capacidad | Clasificación | Evidencia y límite |
+| --- | --- | --- |
+| Agrupar «La puerta se re-abre sola» con su continuación | **Resuelto y comprobado en los artefactos locales** | `f2/kb/.../chunk_p12_5.txt`: tres comprobaciones, marcas PDF 12/13, folios 11/21 y 12/21, continuación y resultado literales; `SOURCE_PDF_PAGE: 13` en el registro movido. El siguiente síntoma comienza en `chunk_p13_1.txt`. Conservar. |
+| Alias después de mover la continuación | **Resuelto y comprobado en la candidata local** | `chunk_p13_1.txt` identifica apertura incompleta/patín/golpe; no arrastra TEST ni fotocélula del grupo anterior. `SectionPageContinuity#carry_aliases!` ya existe. No reabrir el D4 histórico como defecto actual. |
+| Instrucciones de fragmentación semántica y continuación | **Implementado, insuficientemente comprobado entre formatos** | `BatchChunkingPrompt`, «CHUNK FORMAT» y «PAGE CONTINUATION», ya exigen secciones autocontenidas y apertura literal. No garantizan por sí solas su conservación posterior. |
+| Fusión y procedencia | **Implementado y comprobado para el pasaje; generalidad pendiente de pruebas acotadas** | `ChunkMergerService#merge_with_report`, `SectionPageContinuity#apply!`, registros con `source_pdf_page`; los callers actuales sí pasan textos: `IngestManualBatchResultsJob`, `IngestBatchResultsJob`, `SingleFileChunkingService`. Retirar la afirmación histórica de que ninguno lo hace. |
+| Etiquetas/relaciones visuales de PDF 4, Fig. 6 y PDF 16 | **Corrección local existente; cierre del proceso insuficientemente comprobado** | `f2/pages_v2/`, `visual_reviews.json`, manifest y chunks. El proveedor original omitió información legible; no se atribuye esa omisión a la identidad de un agente. p16 aún falla el gate guardado. |
+| Cobertura, verificación y certificación separadas | **Implementado, con adjudicación pendiente** | `Rag::PageChunkFidelity.assess_coverage`, `assess_page`, `certification`; el informe más reciente no acepta F2 completa. Una advertencia del gate tampoco prueba por sí sola extracción defectuosa. |
+| Definiciones sobre chunks del documento | **Implementado y probado localmente; remoto no demostrado** | `CompanionDefinitionSource#catalog_for`/`#read_directory` ya cargan directorios S3; `BedrockRagService#companion_assembled_chunks` usa el catálogo. `S3DocumentsService` invalida también esta caché. Ya no es correcto afirmar que el producto siempre tiene catálogo nil. No prueba Retrieve real. |
+| LED corregido y lectura de turnos por correlación | **Comprobado parcialmente** | T2 guardado reemplaza apagado por encendido; `SessionContextBuilder.companion_technician_turns` excluye el turno actual por correlación cuando se la pasan. El riesgo histórico de dos «no» iguales está acotado a callers sin correlación; comprobar esos callers, no reimplementar el lector. Continuidad publicada hasta T4 sigue pendiente. |
+| Plan estructurado, check, render y publicación | **Implementado, defectos concretos pendientes** | Opt-in `RAG_COMPANION_TURN=1`; el control demuestra que fidelidad literal y `accepted=true` no certifican asociaciones ni utilidad. Se continúa esta ruta; no se diseña otra arquitectura. |
+
+### Tabla de defectos y verificaciones pendientes
+
+Las rutas de evidencia de esta tabla son relativas a `tmp/field_companion/vf5_correction/`. «Pendiente de verificar» no equivale a fallo de extracción confirmado.
+
+| ID / etapa | Evidencia y causa localizada | Corrección recomendada | Criterio de aceptación |
+| --- | --- | --- | --- |
+| D1 / F2: certificación documental incompleta | `f2f3_joint/f2/coverage_v2.gate_r1.json`: p1/6/21 necesitan revisión; p15/16/17/19/20 fallan texto; p3 descartada. `PageChunkFidelity` compara texto, visual y tablas con medidas diferentes que aún no se han adjudicado. | Resolver solo ese conjunto: distinguir pérdida real, limitación del detector y descarte justificado; separar evidencia visual de textual sin bajar umbrales para obtener verde. | Informe por página con procedencia y estado; ningún fallo sin explicación; cero omisiones relevantes sin corregir. Nunca certificar una tabla solo por presencia de números. |
+| D2 / F2: corrección visual aún no reproducible como entrega aceptada | `ingest/bodies/p04.txt`, p07/p16 originales frente a `f2f3_joint/f2/pages_v2/`; el último ya transcribe la placa/Fig. 6, pero `manifest.json` y los informes r1 no constituyen una reconstrucción única desde HEAD. | Conservar resultados originales; fijar inputs corregidos, revisiones visuales y notas como una candidata trazable; recomponer localmente con merger y parser existentes. | Un manifest nuevo identifica código, PDF, cada reemplazo y todos los cuerpos/sidecars; un diff demuestra que solo cambia lo necesario. No se sobreescribe evidencia histórica. |
+| D3 / F2→F3: estructura general con prueba insuficiente | `SectionPageContinuity` y `CompanionStatements` reconocen principalmente encabezados numéricos, viñetas y rayas. VF5 correcto no demuestra listas con letras, párrafos o tablas. | Completar el contrato de ingesta en el prompt existente y probar su conservación con fixtures de formatos distintos; adaptar solo el punto que pierda una relación demostrada. | Síntoma, condición, operación, resultado y procedencia sobreviven hasta el parser de statements sin depender de una viñeta VF5. Sin agrupaciones adivinadas cuando falte una frontera documental. |
+| D4 / F2→F3: contradicciones y alcance de notas | `f2f3_joint/f2/conflicts.json`, `build.rb#apply_conflicts!`; notas ya ancladas. `CompanionPlanRender#conflicts` convierte `REQUIRES_FIELD_VERIFICATION` en «hay que verificarlo en campo». | Conservar ambas versiones y sus páginas; corregir solo la presentación que hace recaer sobre el técnico la resolución del texto del fabricante. | Si se cita el dato conflictivo, la respuesta muestra la discrepancia pertinente; no elige silenciosamente una versión, convierte N en Nm ni pide al técnico decidir qué quiso decir el fabricante. |
+| D5 / F3: T2 sale por diagrama incidental | `runs/20261023T012855Z-conversation/t2/turn.json`: top 8 incluye p10. `BedrockRagService#companion_turn_skip_reason` llama `plan_context?`; este devuelve true por cualquier `DIAGRAM_SECTION`/`TOPOLOGY_EDGE`. | En ese gate usar la solicitud del técnico (`plan_request?` sobre mensaje literal), no la mera presencia de diagrama en recuperados. Conservar la detección de evidencia de plano para sus consumidores documentales. | Corrección del LED + mismo top 8 produce `companion_turn=true`; no entra a `generate_text` anterior; T3/T4 pueden continuar en el mismo episodio. |
+| D6 / F3: asociación incorrecta en render | Control T4 `answer.txt`: «ya informaste» junto a desconectar/TEST. `CompanionPlanRender#best_step` compara el sujeto y acepta un solapamiento; «fotocélula» basta aunque la operación difiera. | Exigir correspondencia de operación y alcance; usar el mismo criterio para notas y links. Si no se puede demostrar equivalencia, conservar el reporte por separado sin atribuir ejecución. | «No está activada» se asocia a comprobar activación, nunca a desconectar/TEST. Desconexión sin TEST no completa la operación compuesta. |
+| D7 / F3: links y estado insuficientemente protegidos | `CompanionPlanCheck#check_links` omite `reading_reason` si reading está vacío; `reading_reason` controla léxico, no equivalencia del acto reportado. `ActiveEpisode#upsert_check!` identifica por sujeto. | Validar siempre la relación fact/statement, aun sin lectura; no trasladar un done de un acto a otro sobre el mismo componente; conservar literal/result/correlación. | Rechaza link vacío de revisión→desconexión. Comprobaciones distintas del mismo componente coexisten; actualización parcial no las fusiona ni inventa resultados. |
+| D8 / F3: orientación y desambiguación incompletas | T1 repite hechos y lista cuatro pasos; pregunta por #21/voltaje de otro síntoma sin distinguir el caso. Control T4 pierde todos los links y la pregunta, pero se publica una lista. `check_steps` solo verifica tipo/id; `usable?` solo exige links o steps. | Completar pertinencia de pasos, relación caso/evidencia y pregunta decisiva con el contrato de Lahiri detallado abajo; eliminar duplicación al renderizar. | Explica el caso documental relevante, lo relaciona con lo informado y pregunta únicamente el contexto faltante antes de indicar una acción dependiente. Una lista aceptada mecánicamente no basta. |
+| D9 / previo a cualquier pago futuro | `f2f3_joint/run.rb#prepare_env!` fija de nuevo US$0,75 y llama `LocalPassLedger.reset!` en cada proceso; AssignmentSpend solo controla el total US$4. | Añadir a AssignmentSpend un límite acumulativo de esta autorización, persistido y comprobado bajo el mismo lock que la reserva. El límite de proceso queda subordinado. | Dos procesos y un reinicio no renuevan los US$0,75 ni los 16 intentos desde 134; unknown y reservas siguen consumiendo cupo. |
+| D10 / F4–F5: recorrido real aún no probado | Runner local sustituye S3/Retrieve por `LocalChunkDirectory`/`LocalKnowledgeBase`; crea sesión propia y llama el concern. No es la comprobación del endpoint web ni el ranking Bedrock. | Mantener ese arnés para regresión local; después validar F4 y F5 con sus dependencias reales. | F4 conserva capturas de índice/Retrieve; F5 captura cuatro POST `/rag/ask`, pin por endpoint y respuestas publicadas. No declarar `EPISODIO_VALIDADO` por esta muestra. |
+
+### F2 primero: intervención mínima y salida documental
+
+**1. Conservar la agrupación ya correcta.** El PDF 12, folio 11/21, enumera comprobar sensibilidad #54, comprobar que la fotocélula no esté activada y comprobar ausencia de obstrucción mecánica. PDF 13, folio 12/21, continúa «En caso que el problema persista, desconectar la fotocélula y volver a pulsar el botón de TEST…» con su resultado condicional. El grupo termina antes de «La puerta no alcanza la posición de apertura completa». `chunk_p12_5.txt` ya lo representa así. No rehacerlo, imponer un orden de ejecución por el orden gráfico ni exigir completar todas las comprobaciones si el problema desaparece. La persistencia del síntoma gobierna la continuación; no la sustituye «si #54 está correcto».
+
+**2. Completar responsabilidad semántica sin otro prompt experimental.** Revisar el bloque de estructura de `app/prompts/batch_chunking_prompt.rb` y sustituir solo la redacción que falte: conservar temas/secciones/subsecciones, síntoma o condición rectora, comprobaciones/procedimientos, causas solo cuando se enuncien, condiciones/resultados, texto-tabla-figura y referencias/continuaciones. Las listas no implican secuencia salvo indicación documental; una secuencia interna explícita sí conserva sus actos y condiciones. Mantener esquema, identidad inyectada, `field_records_v8`, instrucciones ya útiles y distinción de folio/índice. No subir la versión para eludir deduplicación.
+
+El prompt solicita; el procesamiento demuestra. `ChunkMergerService` y `SectionPageContinuity` deben preservar el texto y `field_records.h/a/r/ev`, detalles `x/u`, `source_pdf_page` y marcas PDF/folio. El contexto de sección puede reutilizar `section_path` ya existente; nunca se rellena con un título supuesto. `BatchResultsParserService#render_field_record` debe conservar procedencia y condición hasta el cuerpo final. Las relaciones de una tabla o figura se transcriben solo si son legibles. Un caso de encabezado en prosa, lista con letras o tabla debe tener un fixture con límites y relaciones esperados; si el mecanismo actual falla, ampliar ese reconocimiento en las clases existentes. No convertirlo en un parser universal nuevo ni añadir ontología o llamada LLM.
+
+**3. Conservar y verificar las correcciones visuales locales.** Usar las páginas renderizadas como autoridad, los informes como guía para localizar y `pages_v2` como candidata. PDF 4 muestra 54 SAFETY, 50 TEST, PHOTOCELL/RECEIVER/EMITTER, los grupos de relés con sus indicadores y un OK STATUS distinto. PDF 7 Fig. 6 sí permite seguir 20/19 al verde/receptor y 18/17 al amarillo/emisor; el texto 5.6 conserva «fotocélula **o** entrada de re-apertura». PDF 16 es otra vista de la placa con cotas, no solo un logotipo. Las marcas pequeñas degradadas y el sentido de giro del #54 no se convierten en instrucciones de ajuste; la figura no establece la equivalencia fuerza/sensibilidad. Conservar lo legible y marcar la incertidumbre específica.
+
+Fuentes de contraste existentes: `tmp/field_companion/vf5_e2e_review_20261022/pages/`, `p04/board_right_x3.png`, `p04/pictos_top.png`, `zoom/p07_fig6.png`; candidata `f2f3_joint/f2/pages_v2/` y `visual_reviews.json`. No usar una descripción de Grok u Opus como prueba primaria. No se necesita otra extracción pagada para incorporar lo que ya está legible y transcrito; una reextracción futura exigiría un defecto residual localizado y su previsión de coste, sin reingesta indiscriminada.
+
+**4. Cerrar únicamente los controles señalados por el gate.** El universo restante está delimitado: PDF 1/6/15/16/17/19/20/21 y la justificación del descarte de PDF 3. En p6 comprobar la Fig. 3 y el alcance de los rótulos eléctricos; en p16 distinguir texto de tabla de etiquetas dibujadas; en p15/17/19/20 contrastar las supuestas cifras/encabezados ausentes con las celdas/encabezados reales; en p1/21 adjudicar los avisos de imagen/ausencia. Comprobar p3 como objetivo/historial de versiones, no exigir un procedimiento que no existe. No reabrir las otras páginas ni alterar la fuente.
+
+En `PageChunkFidelity#assess_page/#without_labels/#missing_literals/#certification`:
+
+- Mantener cobertura, verificación textual, revisión visual y aceptación como resultados separados. Un span visual revisado queda fuera de la precisión de la capa de texto; el resto no queda eximido. Una descripción interpretativa no se disfraza de etiqueta visual para subir precisión.
+- Corregir un falso ausente solo con una coincidencia demostrada en la fila/columna o encabezado, conservando unidad y pertenencia. No concatenar indiscriminadamente todas las celdas: puede hacer pasar un número de otra fila como si fuera el buscado.
+- Una revisión de etiquetas no certifica orden de columnas, polaridad o conexiones. Mantener evidencia específica de esos puntos. `layout_order_verified:false` no se transforma en true por encontrar las mismas cifras.
+- Si el dato existe pero el detector no puede medirlo, registrar verificación manual trazable con el check concreto y hash del cuerpo, sin afirmar que pasó automáticamente. Si falta o se inventó, corregir solo el cuerpo/registro afectado y recomponer. Un descarte justificado cuenta como descarte aceptado, no como página extraída certificada.
+
+**5. Mantener contradicciones del fabricante con procedencia.** El registro `conflicts.json` ya distingue alimentación L/N (placa frente a Fig. 3), funciones #8/#12 (8.2 frente a 5.2/placa), N/Nm para #54 y año EN 12016. En esta revisión se contrastaron directamente la placa/Fig. 3 y #8/#12. Las referencias de unidad y norma conservan su estado de evidencia registrada y requieren la comprobación acotada de sus páginas antes de aceptarlas; no se elevan a verificación visual nueva por citar el informe. No elegir qué texto prevalece. Mantener ambas versiones literales y sus páginas en la candidata y anclar la nota al dato, sin abrir otra búsqueda general de contradicciones.
+
+La corrección aceptada debe transportar las notas pertinentes por cuerpo/metadata y por los statements/definiciones efectivamente citados. Una nota lejana en otro chunk no asegura que llegue al técnico. Mostrar la discrepancia cuando afecte a la orientación; no inundar una consulta sin relación con todos los conflictos del manual. Esta es una obligación de fidelidad de F2 y de presentación de F3, sin detector LLM nuevo de contradicciones.
+
+**Salida y gate de F2.** Recombinar los inputs ya extraídos y los reemplazos verificados con `ChunkMergerService.merge_with_report` y `BatchResultsParserService` usando `LocalChunkDirectory`, sin bucket remoto. Guardar una nueva candidata junto a la evidencia anterior (sin sobrescribirla), con hashes de PDF, código/prompt, resultados originales y sustituciones, diff de agrupaciones/alias/records/notas y manifest de todos los cuerpos/sidecars. La reconstrucción debe usar el código que se propone entregar, no atribuir al HEAD nuevo el manifest de `5e15e2c`.
+
+F2 se acepta cuando cada página retenida está verificada por su evidencia aplicable, el descarte está justificado y todos los controles del conjunto anterior están resueltos o sustituidos por verificación explícita equivalente, sin omisiones abiertas. Si solo está certificado el subconjunto usado por el companion, anotar **aceptación parcial**: sirve para desarrollar las pruebas locales de F3, pero no cierra F2, no permite sustituir el índice ni justifica una nueva tanda pagada. En esta ejecución posterior se recomienda cerrar primero todo el conjunto señalado, no usar la excepción histórica para seguir pagando con F2 abierta.
+
+### F3 después: continuidad, asociaciones y orientación
+
+**Dependencia de entrada.** Manifest F2 aceptado, grupo síntoma–continuación preservado y fuentes relevantes disponibles con procedencia: 8.2, 5.6, 5.5/entrada 21 y, cuando haga falta para desambiguar, el caso del patín/8.3 y las definiciones. No añadirlos siempre por una regla del VF5: conservar el contexto semántico y probar la selección aplicable. No aumentar top-k ni cambiar de modelo como corrección presumida.
+
+**Enrutamiento concreto.** Cambiar exclusivamente `BedrockRagService#companion_turn_skip_reason`: usar `plan_request?(raw_question, nil)` para la exclusión por pedido de plano; no `plan_context?` sobre todo top-k. Se recomienda esta condición y no decidir después por las citas de un plan que aún no existe en ese punto del flujo. Mantener `plan_context?` y `plan_chunk?` para el ensamblado documental que sí necesita saber que su evidencia contiene diagramas. Probar cada consumidor antes de modificar ese método global.
+
+La ruta existente de pedido explícito de plano usa `PLAN_REQUEST` (plano/esquema/etiquetas/schematic/diagram/labels), activa el contrato documental de plano en la generación de identidad y conserva controles de citas/topología. Se la mantiene: su función es interpretar evidencia de plano cuando el técnico la solicita, dentro del caso y foco vigentes. No abre otro companion ni hace al diagrama dueño de la intención. Su calidad funcional completa corresponde al orden 3 del padre; esta intervención solo evita su activación incidental y comprueba que la excepción explícita sigue conservando episodio/LED/pin. No se afirma que el regex actual comprenda toda negación o intención de plano. Casos como «no necesito el plano» se cubren en regresión local; si el regex los clasifica mal, ajustar ese reconocimiento por evidencia antes de usarlo como gate.
+
+Las otras salidas de `companion_turn_skip_reason` se conservan y se capturan con motivo: `:system_role` para el experimento system-role, `:identity` si el alcance no es scoped, `:episode` sin episodio activo, `:raw_question` sin mensaje literal, `:field_records` ante bloques residuales no procesados. Con opt-in apagado se conserva la generación documental existente. No se cambian esos flags ni se atribuye cualquier fallback a extracción. El runner debe detectar la configuración compartida **antes** de reservar o llamar: en Rails importa el valor cargado `SharedSession::ENABLED`, no cambiar ENV después de cargarlo.
+
+**Correspondencia de operaciones y estado.** Mantener `CompanionPlan` → `CompanionPlanCheck` → `CompanionPlanRender` → guardas → `CompanionTurnPublication`. Completar el criterio dentro de las clases existentes; no añadir otro generador/verificador LLM.
+
+1. En `CompanionCaseFacts` derivar del span literal y su correlación la operación reportada y su alcance (componente, acto, condición y resultado); en `CompanionStatements` conservar el acto documental y su condición/resultado completos. Esta representación es derivada para el turno, no un diagnóstico nuevo ni una migración de base. Descomponer actos coordinados solo cuando estén explícitos; no cortar su resultado condicional. Equivalencias conservadoras de verbos de comprobación se admiten únicamente con el mismo alcance; revisar activación no equivale a desconectar, pulsar, ajustar ni medir.
+2. Añadir en `CompanionPlanCheck` un criterio común de correspondencia, reutilizado por `check_links` y `CompanionPlanRender#best_step`. Componente compartido es necesario en esos reportes, pero insuficiente. Para atribuir ejecución completa, los actos y precondiciones reportados deben cubrir el alcance completo. Si falta alguno, devolver correspondencia parcial o no demostrada; nunca promover a done. Ante un span ambiguo, conservarlo como reporte independiente. La observación puede acompañar una comprobación como observación, sin completarla.
+3. En `check_links` validar esa relación aunque `reading` esté vacío. `reading_reason` sigue controlando lecturas, pero una bolsa de palabras comunes no prueba una relación. Los links de objetivo/observación hacia una explicación documental pueden ser pertinentes sin declarar una operación ejecutada; distinguir esos usos de un link de comprobación. Si una lectura repite el hecho sin aportar relación, omitir la repetición, no inventar contenido para reemplazarla.
+4. `CompanionPlanRender#step_notes/#best_step/#note` no debe colocar «ya informaste» sobre desconexión/TEST a partir de revisión de activación. Con ejecución parcial, mostrar solo qué acto informó, qué acto no consta y el resultado literal disponible. No inferir «no hubo obstrucción» por el silencio del técnico. Si el resultado condicional del manual depende de la operación completa, no aplicarlo tras una parte.
+5. `ActiveEpisode#upsert_check!` actualmente reemplaza por sujeto normalizado. Probar dos comprobaciones distintas del mismo componente y una operación compuesta parcial antes de cambiar el almacenamiento. Recomendación: usar en `subject` la descripción de la comprobación/operación, no solo el componente, con `status` referido a ese alcance; el span/correlación y `result` permanecen literales. Ajustar la instrucción existente de checks en `TurnPerception` y su validación, sin otra llamada. Para filas históricas de sujeto genérico, solo actualizar como la misma operación cuando el span lo demuestre; si no, conservar ambas. «Desconecté, no pulsé TEST» no puede convertirse en done de toda la operación. Normalizar #54/el #54 solo como identificador equivalente, sin fusionar comprobar con ajustar.
+6. Probar `SessionContextBuilder.companion_report_span`, contexto vigente y respuesta previa; conservar resultados de checks y omisiones completas por presupuesto. Pasar correlación en todos los callers del companion y mantener dos respuestas «no» de turnos distintos. No reabrir recortes históricos que no afecten a estos cuatro textos.
+
+**Desambiguación decidida por Lahiri.** Cuando la ambigüedad afecte la orientación: explicar brevemente los casos/condiciones documentados pertinentes; relacionarlos con lo informado; preguntar el contexto faltante antes de cerrar diagnóstico o indicar la acción dependiente. Si el contexto disponible ya distingue, usarlo y no preguntar por rutina. Si no cambia la orientación, no añadir aclaración.
+
+Completar `companion_plan.txt`, `CompanionPlanCheck#check_steps/#question_reason` y `CompanionPlanRender#step_heading/#applicable?` con ese criterio. Usar los links hacia afirmaciones/item que explican el diferencial y la pregunta existente; no añadir otra ruta ni otra cadena de prompts. No basta un porcentaje de palabras compartidas para aplicar una maniobra de otro síntoma. Si faltan condiciones, el texto puede explicar ese caso condicionalmente, pero debe posponer sus acciones dependientes. Conservar «A o B» en la interpretación; el LED encendido y la fotocélula no activada permiten considerar la otra vía documentada, no declarar #21 activo sin reporte.
+
+Ejemplo de aceptación conceptual: si falta saber cuándo se reabre, distinguir brevemente la reapertura del caso del patín, relacionar que aún no se informó ese momento y preguntar por él. Si ya se dijo «cuando el patín está cerrando», utilizarlo. La revisión de activación no se repregunta en T4. No exigir exactamente esa pregunta ni una frase objetivo. #21 puede ser una relación pertinente apoyada en 5.6/5.5; lo inválido es importar automáticamente los procedimientos del síntoma vecino o atribuirle activación. Una contradicción interna del manual se muestra con sus fuentes; no se resuelve preguntando al técnico cuál texto quiso imprimir el fabricante. Preguntar qué ve en el equipo sirve para caracterizar el caso, no para declarar corregido el manual.
+
+**Publicación y utilidad.** `Result#usable?` y `publication.accepted?` conservan su función mecánica, pero no son la rúbrica de aceptación. Registrar links/steps/pregunta antes y después del check y cada rechazo. Si se eliminan la relación y la pregunta y solo queda una lista, juzgar si aún orienta en ese turno. No aceptar una respuesta vacía de utilidad por contener una cita literal ni compensarla con otra llamada automática. Eliminar repetición entre links y steps; conservar las condiciones y resultados citados, sin volver la enumeración en agenda obligatoria. En `CompanionPlanRender#conflicts` presentar la discrepancia como documental, retirando la instrucción genérica de resolverla en campo. Mantener los guards y la abstención frente a contenido no publicable; abstenerse no cuenta como acompañamiento exitoso.
+
+### Archivos y pruebas de implementación para Grok
+
+No se modificaron estos archivos en el encargo de planificación. Reutilizar los tests existentes; añadir fixtures que descubran el defecto antes del cambio, sin alterar expectativas para dar por buena una salida histórica incorrecta. Los nombres de métodos nuevos de correspondencia quedan internos a `CompanionPlanCheck`; su contrato de entrada/salida es el descrito arriba.
+
+| Bloque | Archivos / métodos existentes | Prueba que debe conducir el cambio |
+| --- | --- | --- |
+| Estructura F2 | `app/prompts/batch_chunking_prompt.rb`; `ChunkMergerService#merge_with_report`; `SectionPageContinuity#stitch_pair/#carry_aliases!/#retarget_records`; `BatchResultsParserService#render_field_record` | `test/services/section_page_continuity_test.rb`, `chunk_merger_service_test.rb`, `batch_results_parser_service_test.rb`: síntoma/continuación/límite con el siguiente síntoma, procedencia del registro, condición y resultado. Añadir caso no VF5 con encabezado en prosa, letras y tabla. |
+| Gate F2 y candidata | `app/services/rag/page_chunk_fidelity.rb`; inputs de `f2f3_joint/f2/build.rb` y su entrega reproducible; callers de ingesta ya conectados | `page_chunk_coverage_test.rb`, `page_chunk_fidelity_test.rb`: página solo visual, página mixta, valor en celda distinta, unidad conflictiva y falsa ausencia demostrada. El build es un arnés documental, no servicio nuevo del producto. |
+| Ruta F3 | `app/services/bedrock_rag_service.rb`: `companion_turn_skip_reason`, consumidores de `plan_context?` | `companion_plan_route_test.rb`, `companion_turn_generation_test.rb`: T2 con diagrama en cualquier posición, solicitud explícita, solicitud negada, opt-in y gates existentes. Un solo plan; cero uso del generador anterior en T2. |
+| Hechos y asociaciones | `app/services/rag/companion_case_facts.rb`, `companion_statements.rb`, `companion_plan_check.rb`, `companion_plan_render.rb`; `TurnPerception`, `InterpreterPayloadContract`, `WorkContextReducer#write_checks`, `ActiveEpisode#upsert_check!` si la prueba demuestra pérdida | `companion_plan_test.rb`, `turn_perception_test.rb`, `work_context_reducer_test.rb` y tests de episodio: link vacío incorrecto, reporte de activación, acción compuesta parcial, dos operaciones del mismo componente, literal/result conservados. Sin ampliar schema por rutina. |
+| Orientación y contexto | `app/prompts/bedrock/companion_plan.txt`; `SessionContextBuilder`; check/render/publication existentes | `companion_plan_test.rb`, `session_context_builder_test.rb`, `companion_turn_publication_test.rb`: diferencial con y sin contexto suficiente, pregunta no repetida, corrección LED T2→T4, contradicción documental y control de respuesta publicada. |
+| Presupuesto / runner | `app/services/rag/assignment_spend.rb`, `local_pass_ledger.rb`; `tmp/field_companion/vf5_correction/f2f3_joint/run.rb` | `assignment_spend_test.rb`, `local_pass_ledger_test.rb` y prueba del runner con dobles: reinicio entre procesos, reserva concurrente, unknown, sin usage, configuración inválida antes de reservar, ocho llamadas presupuestadas sin hacerlas. |
+
+Los inputs de una prueba durable deben quedar en fixtures versionados pequeños y con procedencia; no depender de que exista un directorio ignorado `tmp/` en otra máquina. La evidencia original y los manifests permanecen preservados. No se añaden reglas de síntomas, números de terminal o IDs de este PDF al código general.
+
+### Validación local, integrada y avance posterior
+
+**Primero, local sin red ni modelos.** Fixtures de página/cuerpo → merger → parser → directorio local → Retrieve doble → ruta real de interpretación con payloads fijos → reducer → plan con tool input fijo → check → render → guardas/publicación → historial del siguiente turno. Los dobles se sitúan en SDK y almacenamiento remoto; escrituras remotas denegadas. Esta capa debe detectar:
+
+1. Grupo de reapertura 12→13 completo, límite con apertura incompleta y conservación de «si persiste» + resultado; no obligatorio ejecutar todo si ya se resolvió.
+2. LED apagado en T1, encendido tras corrección en T2 y vigente en T3/T4, sin borrar síntoma ni otras observaciones.
+3. Diagrama incidental presente en T2 sin desvío; pedido explícito de plano mantiene su ruta y su contexto; configuración compartida inválida aborta antes de llamar.
+4. «Ya revisé la fotocélula y no está activada» queda done para revisión de activación, con resultado literal, sin completar desconexión/TEST; probar también reading vacío.
+5. «Desconecté la fotocélula, todavía no pulsé TEST»: acto parcial, resultado posterior no supuesto, ningún done global ni explicación mecánica atribuida sin ejecución completa. Tras el reporte explícito completo, solo ese alcance puede completarse.
+6. «No veo obstrucción» sigue observación; «No hice mediciones» no se vuelve tarea; #54 sin comprobar no implica una orden de ajustar ni una prioridad fija.
+7. Desambiguación con evidencia y pregunta relevante; caso ya desambiguado sin repregunta; contradicción documental conservada sin delegar al técnico la interpretación del fabricante.
+8. Links rechazados, salida renderizada y texto finalmente publicado coherentes entre sí; no aceptar un enlace equivocado aunque todas sus palabras estén en las fuentes. Misma prueba en un equipo de fixture distinto del VF5.
+
+**Después de cerrar F2 y corregir F3, una conversación encadenada.** Mantener los cuatro textos de `f2f3_joint/run.rb::TURNS`: primer mensaje completo; corrección del LED; revisión de fotocélula no activada; «¿qué sigue?». No cargar en T4 un episodio prefabricado ni saltarse respuestas anteriores. El intérprete, el estado, la consulta efectiva y la respuesta publicada de cada turno alimentan el siguiente. Las preguntas de Danebo no obligan a fabricar respuestas del técnico que el guion no dio; el resultado informado en T3 conserva su significado aunque Danebo hubiera preguntado otra cosa.
+
+El smoke local con S3/Retrieve dobles acredita solo ejecución del producto sobre esa base local. Si se autoriza posteriormente la tanda con modelo real tras los gates, presupuestar de antemano las ocho invocaciones (intérprete + plan por turno), con retry del SDK y de transitorios desactivado, hashes/configuración congelados y reserva suficiente; las dos llamadas restantes del cap no son una autorización de variantes. No repetir 133/134 ni abrir comparaciones de modelos/prompts. Si un turno falla semánticamente, conservarlo como antecedente y completar la captura de los restantes sin regenerarlo cuando sea seguro y haya cupo; si no puede continuar por transporte, falta de estado, presupuesto o seguridad, registrar el tramo restante como **no demostrado**. Nunca sustituir un turno fallido por una respuesta prefabricada para declarar conversación aprobada.
+
+La rúbrica juzga, por cada respuesta publicada: utilidad para ese turno; fidelidad de operaciones/condiciones/resultados; relación con el caso; aplicabilidad; correcciones vigentes; pregunta necesaria o ausencia justificada; continuidad sin repetir datos; ausencia de mecanismos/prioridades/valores inventados. No exige mencionar cada componente, una redacción única ni las tres comprobaciones en cada respuesta. La orientación temprana puede escoger un foco respaldado sin atribuir al fabricante una prioridad que no fijó. Aceptación técnica exige los cuatro turnos, no solo T2 ni un T4 aislado; no afirma estabilidad estadística.
+
+**F4 queda visible y condicionada.** Tras F2 aceptada y F3 verificada, conservar el procedimiento anterior de sustitución acotada del prefijo VF5: copia recuperable de cuerpos/sidecars y lista de claves, rechazo de borrado incompleto, invalidación de cachés ya integrada, datasource configurado exacto, sincronización incremental y captura de estadísticas. Sigue abierto `KbSyncService#find_data_source_id`: si falta el datasource configurado, detenerse; no elegir la fuente antigua ni `summaries.first`. Ese defecto se resuelve antes de F4. La fuente abarca cambios pendientes más allá del VF5; guardar esa información. No se escribe remoto por aprobar este plan. En F4 verificar con Retrieve real que el grupo y sus condiciones proceden del manifest aceptado; un S3 local/BM25 no acredita el índice.
+
+**F5 es el recorrido integrado del producto.** Usar entorno de validación del padre, `SHARED_SESSION_ENABLED=false` cargado correctamente, episodio y turno habilitados, identidad scoped, modo owner y opt-in del companion en el proceso web real. Inicio limpio con copia y pin por el endpoint autorizado de la interfaz; cuatro POST `/rag/ask` en la misma sesión, sin reset intermedio. Capturar correlación, episodio antes/después, query efectiva, filtro/top-k, cuerpos y fuentes añadidas, request/hashes, tool plan, rejections, render, guardas, publicación y respuesta guardada. Comparar lo visible con lo capturado y con el antecedente que recibe el turno siguiente. Registrar coste y latencia con el mecanismo existente. Solo después de aceptación técnica, Lahiri revisa utilidad y esfuerzo de escritura; no se le asigna operar logs ni resolver gates. El siguiente trabajo vuelve al orden 3 del padre; luego fotos y cambio/retorno, con regresión del recorrido aceptado.
+
+### Presupuesto: corrección necesaria antes de cualquier llamada futura
+
+No modificar el ledger ni los techos en esta revisión. Los intentos 133 (contexto ampliado) y 134 (Sonnet con la misma entrada) no resolvieron por sí solos los errores centrales. Una muestra negativa no prueba que el contexto sea irrelevante ni que otro modelo arregle el producto. Se conservan modelo y ruta propuestos, sin otra comparación.
+
+Diseño recomendado para D9: extender el `AssignmentSpend` existente con una autorización persistente identificada, bajo el mismo lock del ledger. Guardar una sola vez ID, límite US$0,75, corte después del intento 134 y cap 150, con la evidencia de la autorización original; rechazar que otro proceso los rebase o cambie silenciosamente. No crear otro libro de gasto ni descontar unknown como si fuera cero.
+
+Calcular el gasto de esa autorización con entradas posteriores a 134: `settled/kept` por importe consumido, `unknown` por techo retenido y `reserved` por reserva abierta. Antes de reservar aplicar simultáneamente límite incremental US$0,75, límite global US$4 y cap acumulativo de 150. La reserva incremental y global debe ser atómica para evitar carreras; `settle!`, `unknown!`, `keep!` y `release!` conservan el historial y la semántica actuales. No reiniciar exposición por `reset!` ni por cambiar de modo del runner. El primer arranque migra solo metadata de autorización validada, no las 140 entradas; si no puede reconstruirla, se detiene antes del proveedor.
+
+Referencia de cálculo comprobada: al terminar 134, committed US$1,355729 y unknown US$0,102140; desde ahí se consumieron US$0,046304. Disponible incremental US$0,703696; diez intentos libres. No se promete que una secuencia cabe solo por esos saldos: calcular techos de los requests reales, sumar reservas y abstenerse de llamar si no caben. No se reconcilian unknown sin evidencia de facturación ni se amplía el presupuesto desde este plan. El ledger separado de ingesta tampoco se reabre. La autorización remota y cualquier pago posterior se comprueban en su etapa; la aprobación de Opus al diseño no los concede.
+
+### Decisiones concretas para validación de Opus
+
+Se recomienda aprobar estas dos decisiones de diseño, o señalar el punto preciso que no queda sustentado:
+
+1. **Cierre F2 acotado y verificable:** conservar agrupación, alias y transcripciones locales ya correctas; cerrar únicamente el conjunto señalado por el gate y la trazabilidad de la candidata, sin repetir la ingesta ni abrir otra auditoría general. Opus valida los contrastes visuales y que cada aceptación distingue automatización de revisión documentada.
+2. **Criterio F3 de operación/alcance y desambiguación:** validar el diseño conservador de correspondencia, incluido el caso parcial, la validación de links vacíos y el aplazamiento de acciones dependientes hasta distinguir el caso; mantener la excepción de solicitud explícita de plano y evaluar los cuatro turnos publicados como salida del mismo producto.
+
+No quedan para Opus elegir un modelo, resolver las contradicciones del fabricante, escoger entre arquitecturas ni autorizar otra variante pagada. Tras validar este plan, Grok implementa primero F2 y documenta aquí sus pruebas y manifest; solo después continúa F3. Cualquier defecto nuevo se localiza por artefacto y transformación, no por el nombre del agente que lo produjo.
+
+---
+
+## Registro histórico anterior a esta revisión
+
+El contenido siguiente conserva el diseño, autorizaciones, aceptaciones parciales y ejecuciones anteriores hasta `988eea8`. Sus «siguientes acciones», cierres de F2 y presupuestos de proceso quedan subordinados a la revisión vigente de arriba. No constituyen otra cola de trabajo.
+
 Documento vivo. Grok 4.7 lo ejecuta tras la orden de ejecución, y actualiza este mismo archivo al cerrar cada fase. No se abren planes secundarios. Redactar o revisar este archivo no implementa, no llama modelos y no modifica S3, la KB ni los ledgers.
 
 ## Objetivo y alcance

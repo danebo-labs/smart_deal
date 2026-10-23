@@ -35,12 +35,15 @@ module Rag
     EXCLUSION = /\b(?:descart\w*|exclu\w*|elimin\w*|no es (?:la|el) (?:causa|problema)|quedan? fuera|no influye|no afecta|ya no|no hace falta|innecesari\w*|no tiene que ver)\b/
     ORDER = /\b(?:primer[oa]?|lo primero|antes de|despues|luego|siguiente paso|por ultimo|finalmente|mas probable|probablemente|probable|principal\w*|prioridad|priorit\w*|urgente|empez\w*|comenz\w*)\b/
     PRESCRIPTION = /\b(?:hay que|tenes que|tienes que|debes|deberias|deberia|conviene|recomiendo|te recomiendo|asegurate)\b/
-    OPERATION = /\b(?:ajust|gir|rot|aument|reduc|sub|baj|calibr|regul|cambi|reemplaz|sustitu|puente|desconect|conect|med|mid|puls|presion|apret|limpi|muev|mov|forz|reinici|reset)(?:ar|er|ir|a|e|i|as|es|alo|elo|arlo|erlo|irlo|ando|iendo|ala|ela)\b/
+    OPERATION = /\b(?:ajust|gir|rot|aument|reduc|sub|baj|calibr|regul|cambi|reemplaz|sustitu|puente|desconect|conect|med|mid|puls|presion|apret|limpi|muev|mov|forz|reinici|reset)(?:ar|er|ir|aste|iste|a|e|i|as|es|alo|elo|arlo|erlo|irlo|ando|iendo|ala|ela)\b/
     STATUS = /\b(?:comprob|verific|revis|confirm|cheque|prob|realiz)(?:ad[oa]s?|aste|aron|amos|o|e)\b|\bya (?:lo )?(?:hiciste|hizo|hice)\b/
 
-    Result = Data.define(:links, :steps, :question, :rejections) do
+    Result = Data.define(
+      :links, :steps, :question, :rejections, :associations, :confirmed_items,
+      :question_targets, :limits, :omissions
+    ) do
       def usable?
-        links.any? || steps.any?
+        links.any? || steps.any? || (question.present? && question_targets.any?)
       end
 
       def to_h
@@ -48,7 +51,12 @@ module Rag
           "links" => links.map { |link| link.transform_keys(&:to_s) },
           "steps" => steps,
           "question" => question,
-          "rejections" => rejections
+          "rejections" => rejections,
+          "associations" => associations.map { |row| row.transform_keys(&:to_s) },
+          "confirmed_items" => confirmed_items,
+          "question_targets" => question_targets,
+          "limits" => limits,
+          "omissions" => omissions
         }
       end
     end
@@ -84,30 +92,24 @@ module Rag
     end
 
     def call
+      @associations = []
+      @limits = []
+      @omissions = []
+      @confirmed = {}
       links = check_links
+      apply_corrections!
+      collapse_associations!
       candidates = candidate_steps
-      text = @plan["question"].to_s.squish
-      provisional = text.present? && question_reason(text, candidates).nil? ? text : nil
-      steps = []
-      candidates.each do |id|
-        if keep_step?(id, links, provisional)
-          steps << id
-        else
-          reject("step", id, "other_case_without_question")
-        end
-      end
-      final_reason = text.present? ? question_reason(text, steps) : nil
-      question = text.present? && final_reason.nil? ? text : nil
-      if text.present? && question.nil?
-        reject("question", text, final_reason || question_reason(text, candidates) || "invalid")
-        steps.reject! do |id|
-          next false if step_grounded?(id, links)
-
-          reject("step", id, "other_case_without_question")
-          true
-        end
-      end
-      Result.new(links: links, steps: steps, question: question, rejections: @rejections)
+      @targets = valid_targets
+      steps = select_steps(candidates)
+      question, targets = resolve_question(steps)
+      note_missing_targets
+      Result.new(
+        links: links, steps: steps, question: question, rejections: @rejections,
+        associations: @associations, confirmed_items: @confirmed,
+        question_targets: question.present? ? targets : [],
+        limits: @limits, omissions: @omissions
+      )
     end
 
     private
@@ -134,7 +136,10 @@ module Rag
           )
           reason = "operation_mismatch" if %i[none related].include?(relation)
         end
+        case_relation = reason.nil? ? remember_case(fact, statement) : nil
         reason ||= reading_reason(reading, fact, statement) if reading.present?
+        reason ||= "case_incompatible" if case_relation&.relation == :incompatible
+        reason ||= "case_unresolved" if case_relation&.relation == :unresolved && statement.step?
         if reason
           reject("link", link, reason)
           next
@@ -162,63 +167,271 @@ module Rag
       kept
     end
 
-    # A step of another item stays when the case already names what distinguishes
-    # that item, when a fact is linked to a statement of that item, or when the
-    # question itself names that distinction. Any other question does not import
-    # the other item's actions.
-    def keep_step?(id, links, question)
-      step_grounded?(id, links) || distinguishing_question?(question, @statements.find(id)&.item)
+    def select_steps(candidates)
+      steps = []
+      candidates.each do |id|
+        reason = step_reason(id)
+        if reason
+          reject("step", id, reason)
+        else
+          steps << id
+          confirm_item(@statements.find(id))
+        end
+      end
+      steps
     end
 
-    def step_grounded?(id, links)
+    # An incompatible relation vetoes the step on every path, including a
+    # matching heading, a link, or a yes. A question does not import it.
+    def step_reason(id)
       statement = @statements.find(id)
-      return false unless statement
+      return "unknown_statement" unless statement
 
-      item_applicable?(statement.item) || case_distinguishes?(statement.item) || linked_to_item?(statement, links)
+      item = statement.item.to_s
+      relation = relation_of(item)
+      return "case_incompatible" if relation == :incompatible
+      return "case_excluded_by_answer" if answer_code(item, statement) == "no"
+      return nil if answer_code(item, statement) == "yes" || item_applicable?(item) || relation == :compatible
+
+      if answer_code(item, statement) == "unknown" || relation == :unresolved
+        remember_limit(statement) if answer_code(item, statement) == "unknown"
+        return "case_unresolved"
+      end
+
+      "case_unconfirmed"
     end
 
     def item_applicable?(item)
       CompanionPlanRender.applicable?(item, @facts)
     end
 
-    def case_distinguishes?(item)
-      distinctive = distinctive_stems(item)
-      return false if distinctive.empty?
-
-      @facts.facts.any? do |fact|
-        next false if fact.kind == "goal"
-
-        distinctive.intersect?(content_stems(self.class.normal(fact.text).split))
-      end
-    end
-
-    def linked_to_item?(statement, links)
-      item = statement.item.to_s
-      return false if item.blank?
-
-      links.any? do |link|
-        other = @statements.find(link[:statement])
-        other && (other.item == item || (other.kind == "item" && other.text == item))
-      end
-    end
-
-    def distinguishing_question?(question, item)
-      return false if question.blank?
-
-      distinctive = distinctive_stems(item)
-      return false if distinctive.empty?
-
-      asked = content_stems(self.class.normal(question).split)
-      asked -= QUESTION_WORDS.map { |word| self.class.stem(word) }.to_set
-      distinctive.intersect?(asked)
-    end
-
-    def distinctive_stems(item)
-      CompanionPlanRender.distinctive_stems(item, @facts.goal&.text)
-    end
-
     def check_fact?(fact)
       fact.done_check? || fact.kind == "not_done_check"
+    end
+
+    def resolve_question(steps)
+      text = @plan["question"].to_s.squish
+      targets = @targets
+      reason = text.present? ? question_reason(text, steps) : nil
+      return [ text, targets ] if text.present? && reason.nil?
+
+      reject("question", text, reason || "invalid") if text.present?
+      derived_from = derivable?(reason) ? item_target_statements : []
+      derived_from = unresolved_items if derived_from.empty? && text.blank?
+      return [ nil, [] ] unless derived_from.any? && derived_from.all? { |item| !closed_target?(item) }
+
+      derived = derived_question(derived_from)
+      return [ nil, [] ] if derived.blank? || question_reason(derived, steps)
+
+      [ derived, derived_from.map(&:id) ]
+    end
+
+    def derivable?(reason)
+      value = reason.to_s
+      value == "too_long" || value == "not_one_question" || value.start_with?("ungrounded:")
+    end
+
+    def valid_targets
+      ids = Array(@plan["question_about"]).map(&:to_s).compact_blank.uniq
+      if ids.size > 2
+        reject("question_about", ids, "over_limit")
+        return []
+      end
+
+      ids.select do |id|
+        statement = @statements.find(id)
+        if statement.nil? || %w[item text].exclude?(statement.kind)
+          reject("question_about", id, statement.nil? ? "unknown_statement" : "statement_kind:#{statement.kind}")
+          false
+        else
+          true
+        end
+      end
+    end
+
+    def item_target_statements
+      @targets.filter_map { |id|
+        statement = @statements.find(id)
+        statement if statement&.kind == "item"
+      }.first(2)
+    end
+
+    def unresolved_items
+      rows = @statements.statements.select { |statement|
+        statement.kind == "item" && relation_of(statement.text) == :unresolved && !closed_target?(statement)
+      }.uniq(&:text)
+      rows.one? ? rows : []
+    end
+
+    def derived_question(statements)
+      rows = Array(statements).first(2)
+      return nil if rows.empty?
+      return one_target_question(rows.first) if rows.one?
+
+      left, right = rows
+      "¿Lo que ves coincide con «#{left.text}» [#{left.source}] o con «#{right.text}» [#{right.source}]?"
+    end
+
+    def one_target_question(statement)
+      "¿Lo que ves coincide con «#{statement.text}» [#{statement.source}]?"
+    end
+
+    def remember_case(fact, statement)
+      return nil unless fact&.kind == "observation"
+      return nil unless case_target?(statement)
+
+      relation = CompanionCaseRelation.call(
+        fact_text: fact.text, item_text: item_text_for(statement), goal_text: @facts.goal&.text
+      )
+      @associations << association_row(fact, statement, relation)
+      relation
+    end
+
+    def case_target?(statement)
+      return false unless statement
+      return true if statement.kind == "item"
+      return false unless %w[step text].include?(statement.kind)
+
+      item = statement.item.to_s
+      item.present? && !item_applicable?(item)
+    end
+
+    def item_text_for(statement)
+      statement.kind == "item" ? statement.text : statement.item.to_s
+    end
+
+    def association_row(fact, statement, relation)
+      {
+        fact: fact.id, statement: statement.id, item: item_text_for(statement),
+        source: statement.source, relation: relation.relation, reason: relation.reason,
+        anchors: relation.anchors
+      }
+    end
+
+    def apply_corrections!
+      corrections = @facts.facts.select { |fact|
+        fact.kind == "observation" && CompanionCaseRelation.explicit_correction?(fact.text)
+      }
+      return if corrections.empty?
+
+      item_statements.each do |statement|
+        corrections.each do |fact|
+          relation = CompanionCaseRelation.call(
+            fact_text: fact.text, item_text: statement.text, goal_text: @facts.goal&.text
+          )
+          next if relation.relation == :unresolved && %w[no_anchor anchor_missing].include?(relation.reason)
+
+          @associations.reject! { |row| row[:item] == statement.text }
+          @associations << association_row(fact, statement, relation)
+        end
+      end
+    end
+
+    def item_statements
+      @statements.statements.select { |statement| statement.kind == "item" }.uniq(&:text)
+    end
+
+    def collapse_associations!
+      @associations = @associations.group_by { |row| row[:item] }.map { |_item, rows|
+        rows.find { |row| row[:relation] == :incompatible } ||
+          rows.find { |row| row[:relation] == :compatible } ||
+          rows.first
+      }
+    end
+
+    def relation_of(item)
+      @associations.find { |row| row[:item] == item.to_s }&.dig(:relation)
+    end
+
+    def confirm_item(statement)
+      item = statement.item.to_s
+      return if item.blank?
+
+      if item_applicable?(item)
+        @confirmed[item] = "goal"
+      elsif (row = @associations.find { |assoc| assoc[:item] == item && assoc[:relation] == :compatible })
+        @confirmed[item] = row[:fact]
+      elsif answer_code(item, statement) == "yes"
+        @confirmed[item] = answer_fact(item, statement, "yes")&.id
+      end
+    end
+
+    def remember_limit(statement)
+      item = statement.item.to_s
+      return if item.blank? || @limits.any? { |row| row["item"] == item }
+
+      @limits << { "item" => item, "source" => statement.source }
+    end
+
+    def answer_code(item, statement)
+      codes = answer_facts(item, statement).map { |fact| fact.answers["r"].to_s }
+      return "no" if codes.include?("no")
+      return "yes" if codes.include?("yes")
+      return "unknown" if codes.include?("unknown")
+
+      nil
+    end
+
+    def answer_fact(item, statement, code)
+      answer_facts(item, statement).find { |fact| fact.answers["r"].to_s == code }
+    end
+
+    def answer_facts(item, statement)
+      @facts.facts.select { |fact|
+        answers = fact.answers
+        answers.is_a?(Hash) && Array(answers["t"]).any? { |target| target_matches?(target, item, statement) }
+      }
+    end
+
+    def target_matches?(target, item, statement)
+      text = target.is_a?(Hash) ? target["item"] : target
+      normal = self.class.normal(text)
+      return false if normal.blank?
+      return false unless normal == self.class.normal(item) || normal == self.class.normal(statement&.text)
+
+      page = target.is_a?(Hash) ? target["page"].to_s : ""
+      page.blank? || statement.nil? || statement.page.to_s == page
+    end
+
+    def closed_target?(statement)
+      item = statement.kind == "item" ? statement.text : statement.item.to_s
+      return true if %w[yes no unknown].include?(answer_code(item, statement))
+
+      %i[compatible incompatible].include?(relation_of(item))
+    end
+
+    def already_answered?
+      return false if @targets.blank?
+
+      @targets.any? { |id| (statement = @statements.find(id)) && closed_target?(statement) }
+    end
+
+    def repeated_ask?(normal)
+      @facts.facts.any? { |fact|
+        question = fact.answers.is_a?(Hash) ? fact.answers["q"] : nil
+        question.present? && self.class.normal(question) == normal
+      }
+    end
+
+    def note_missing_targets
+      @facts.facts.each do |fact|
+        next unless fact.answers.is_a?(Hash)
+
+        Array(fact.answers["t"]).each do |target|
+          text = target.is_a?(Hash) ? target["item"].to_s : target.to_s
+          next if text.blank? || statement_present?(text)
+          next if @omissions.any? { |row| row["item"] == text }
+
+          @omissions << { "item" => text, "reason" => "target_not_loaded" }
+        end
+      end
+    end
+
+    def statement_present?(text)
+      normal = self.class.normal(text)
+      @statements.statements.any? { |statement|
+        self.class.normal(statement.text) == normal || self.class.normal(statement.item) == normal
+      }
     end
 
     def reading_reason(reading, fact, statement)
@@ -256,9 +469,11 @@ module Rag
       return "operation" if normal.match?(OPERATION) && !operation_in?(normal, step_text)
 
       allowed = stems(sources) | stems(case_text) | QUESTION_WORDS.map { |word| self.class.stem(word) }.to_set
-      missing = ungrounded(normal, allowed)
+      cited = text.scan(/\[(\d+)\]/).flatten
+      missing = ungrounded(normal, allowed).reject { |stem| cited.include?(stem) }
       return "ungrounded:#{missing.first(3).join(',')}" if missing.any?
-
+      return "repeats_ask" if repeated_ask?(normal)
+      return "already_answered" if already_answered?
       repeated = repeated_fact(normal)
       return "repeats_fact:#{repeated.id}" if repeated
 
@@ -324,22 +539,13 @@ module Rag
       left_hit != right_hit
     end
 
+    # What the question asks has to fit inside a fact. A fact mentioned inside
+    # a question about something else is not a repeat.
     def repeated_fact(normal)
-      present = stems(normal)
-      found = @facts.facts.find { |fact| fact_covered_by_question?(fact, present) }
-      return found if found
-
       asked = content_stems(normal.split) - self.class.question_stems
       return nil if asked.empty?
 
       @facts.facts.find { |fact| question_covered_by_fact?(fact, asked) }
-    end
-
-    def fact_covered_by_question?(fact, present)
-      return false unless %w[observation done_check identity].include?(fact.kind)
-
-      core = fact_core(fact)
-      core.any? && core.subset?(present)
     end
 
     # The question only restates a fact already in the case. An extra word in

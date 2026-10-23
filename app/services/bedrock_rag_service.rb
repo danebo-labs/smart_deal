@@ -570,7 +570,8 @@ class BedrockRagService
       episode: episode,
       raw_question: raw_question
     )
-    companion_chunks = companion_turn ? companion_assembled_chunks(applied.chunks) : nil
+    @companion_plan_pending = nil
+    companion_chunks = companion_turn ? companion_assembled_chunks(applied.chunks, episode: episode) : nil
     companion_plan = if companion_turn
       Rag::CompanionPlan.prepare(
         raw_question: raw_question, chunks: companion_chunks, episode: episode,
@@ -1273,6 +1274,7 @@ class BedrockRagService
     latency_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
     usage = track_companion_plan_usage(response, latency_ms, tracking)
     composed = Rag::CompanionPlan.compose(response, prepared)
+    @companion_plan_pending = composed.pending
     @companion_plan_stop_reason = composed.stop_reason
     record_companion_plan(composed, usage.merge("latency_ms" => latency_ms, "model_id" => prepared.params[:model_id]))
     composed.text
@@ -1320,9 +1322,11 @@ class BedrockRagService
     @companion_definition_source ||= Rag::CompanionDefinitionSource.new
   end
 
-  def companion_assembled_chunks(chunks)
+  def companion_assembled_chunks(chunks, episode: nil)
     catalog = companion_definition_source.catalog_for(chunks)
-    result = Rag::CompanionDefinitionExpander.expand(chunks, catalog: catalog)
+    result = Rag::CompanionDefinitionExpander.expand(
+      chunks, catalog: catalog, targets: companion_answer_targets(episode)
+    )
     if Rag::ValidationCapture.active?
       Rag::ValidationCapture.record(
         "companion_definitions",
@@ -1333,6 +1337,20 @@ class BedrockRagService
       )
     end
     result.chunks
+  end
+
+  def companion_answer_targets(episode)
+    parsed = episode.is_a?(Rag::ActiveEpisode) ? episode : Rag::ActiveEpisode.parse(episode)
+    return [] if parsed.nil? || parsed.blank?
+
+    parsed.observations.flat_map { |item|
+      answers = item["answers"]
+      answers.is_a?(Hash) ? Array(answers["t"]) : []
+    }.filter_map { |target|
+      next unless target.is_a?(Hash) && target["document_key"].present? && target["filename"].present?
+
+      target
+    }.uniq { |target| [ target["document_key"], target["filename"] ] }
   end
 
   def companion_publication_sources(chunks)
@@ -1659,10 +1677,19 @@ class BedrockRagService
       companion_contract_invalid: !accepted,
       companion_reason: accepted ? nil : "companion_contract_invalid",
       companion_publication: publication.to_h,
-      document_identity: Thread.current[:document_identity_scope]
+      document_identity: Thread.current[:document_identity_scope],
+      pending_question: companion_turn_pending(accepted, answer_text)
     }
     capture_cited_sources(result[:citations])
     result
+  end
+
+  def companion_turn_pending(accepted, answer_text)
+    pending = @companion_plan_pending
+    question = pending.is_a?(Hash) ? pending["question"].to_s : ""
+    return nil unless accepted && question.present? && answer_text.to_s.include?(question)
+
+    pending
   end
 
   def record_companion_publication(publication, stop_reason)

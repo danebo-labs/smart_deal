@@ -20,24 +20,26 @@ module Rag
 
     Result = Struct.new(:chunks, :added, :omitted, keyword_init: true)
 
-    def self.expand(chunks, catalog:)
-      new(Array(chunks), catalog).expand
+    def self.expand(chunks, catalog:, targets: [])
+      new(Array(chunks), catalog, Array(targets)).expand
     end
 
-    def initialize(chunks, catalog)
+    def initialize(chunks, catalog, targets = [])
       @chunks = chunks
       @catalog = catalog
+      @targets = targets
     end
 
     def expand
-      return Result.new(chunks: @chunks, added: [], omitted: []) if @catalog.nil?
+      if @catalog.nil?
+        return Result.new(chunks: @chunks, added: [], omitted: missing_targets)
+      end
 
-      mentions = collect_mentions
       added = []
       omitted = []
       extra = []
-      used = 0
-      mentions.each do |mention|
+      used = add_answer_targets(extra, added, omitted, 0)
+      collect_mentions.each do |mention|
         break if extra.size >= MAX_ADDED
 
         decision = resolve(mention)
@@ -60,6 +62,79 @@ module Rag
     end
 
     private
+
+    def add_answer_targets(extra, added, omitted, used)
+      @targets.each do |target|
+        data = target.is_a?(Hash) ? target.stringify_keys : {}
+        page = @catalog.page(data["document_key"], data["filename"])
+        if page.nil?
+          omitted << target_omission(data)
+          next
+        end
+
+        row = page.to_h.stringify_keys
+        next if loaded_page?(row)
+
+        text = row["text"].to_s
+        if extra.size >= MAX_ADDED || used + text.length > MAX_ADDED_CHARS
+          omitted << target_omission(data)
+          next
+        end
+
+        extra << target_chunk(row)
+        added << {
+          "context" => "answer_target",
+          "item" => data["item"].to_s,
+          "page" => row["page"].to_s,
+          "filename" => row["filename"].to_s,
+          "sha256" => Digest::SHA256.hexdigest(text)
+        }
+        used += text.length
+      end
+      used
+    end
+
+    def missing_targets
+      @targets.map { |target| target_omission(target.is_a?(Hash) ? target.stringify_keys : {}) }
+    end
+
+    def target_omission(target)
+      { "reason" => "target_not_loaded", "item" => target["item"].to_s }
+    end
+
+    def loaded_page?(page)
+      body = page["text"].to_s.squish
+      return true if body.blank?
+
+      filename = page["filename"].to_s
+      key = page["document_key"].to_s
+      @chunks.any? { |chunk|
+        meta = metadata(chunk)
+        same_page = filename.present? && meta["filename"].to_s == filename &&
+          [ meta["document_key"], meta["original_source_uri"], meta["document_id"] ].include?(key)
+        same_page || content_of(chunk).squish.include?(body)
+      }
+    end
+
+    def target_chunk(page)
+      text = page["text"].to_s
+      {
+        content: text,
+        metadata: {
+          "canonical_name" => page["name"].to_s,
+          "original_filename" => page["name"].to_s,
+          "filename" => page["filename"].to_s,
+          "document_key" => page["document_key"].to_s,
+          "original_source_uri" => page["document_key"].to_s,
+          "page_number" => page["page"].to_s,
+          "content_sha256" => Digest::SHA256.hexdigest(text),
+          "companion_context" => "answer_target",
+          "provenance" => page["provenance"].to_s
+        },
+        identity_applicability: "compatible",
+        companion_definition: true
+      }
+    end
 
     def collect_mentions
       grouped = {}

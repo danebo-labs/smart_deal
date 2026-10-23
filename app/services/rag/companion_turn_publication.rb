@@ -105,6 +105,7 @@ module Rag
         AnswerSafetyProcessor.fragments(text).each do |fragment|
           numbers = fragment.scan(CITATION_PATTERN).flatten.map(&:to_i).uniq
           next if numbers.empty?
+          next if not_loaded_notice?(fragment)
 
           cited = numbers.filter_map { |number| sources[number - 1] }
           fragment.to_enum(:scan, QUOTE_PATTERN).map { Regexp.last_match }.each do |quote_match|
@@ -179,6 +180,7 @@ module Rag
           next if fragment.match?(CITATION_PATTERN)
           next if fragment.match?(ABSENCE_PATTERN)
           next if question_only?(fragment)
+          next if not_loaded_notice?(fragment)
           next unless attributes_source?(fragment, name)
 
           reason("R3", fragment)
@@ -221,7 +223,19 @@ module Rag
       end
 
       def technical_without_citation?(text)
-        !text.match?(CITATION_PATTERN) && AnswerSafetyProcessor.requires_evidence?(text)
+        return false if text.match?(CITATION_PATTERN)
+        return false if not_loaded_only?(text)
+
+        AnswerSafetyProcessor.requires_evidence?(text)
+      end
+
+      def not_loaded_only?(text)
+        fragments = AnswerSafetyProcessor.fragments(text)
+        fragments.any? && fragments.all? { |fragment| not_loaded_notice?(fragment) }
+      end
+
+      def not_loaded_notice?(fragment)
+        fragment.to_s.include?("no está en la documentación cargada en este turno")
       end
 
       def guard_signals(guards)

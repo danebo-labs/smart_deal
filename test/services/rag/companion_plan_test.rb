@@ -160,7 +160,7 @@ class Rag::CompanionPlanTest < ActiveSupport::TestCase
     assert_includes text, "reportaste «No veo agua en el sensor de nivel», que es una observación: esta comprobación no consta como hecha"
     assert_not_includes text, "ya informaste"
     assert_not_includes text, "El motor no arranca"
-    assert_equal "other_case_without_question", result.rejections.find { |item| item["part"] == "step" }["reason"]
+    assert_equal "case_unconfirmed", result.rejections.find { |item| item["part"] == "step" }["reason"]
     assert publish(text, observations: [ sensor ]).accepted?
   end
 
@@ -175,15 +175,16 @@ class Rag::CompanionPlanTest < ActiveSupport::TestCase
     assert_nil Rag::CompanionPlan.tool_input(Struct.new(:output).new(nil))
   end
 
-  test "a question that names the other item keeps its step, and another question does not" do
+  test "a question that names another item does not import its step" do
     skate = step_id("tensión de entrada")
-    kept = check(steps: [ skate ], question: "¿El motor no arranca?")
-    assert_equal [ skate ], kept.steps
-    assert_includes render(kept), "Si lo que ves es «El motor no arranca»"
+    named = check(steps: [ skate ], question: "¿El motor no arranca?")
+    assert_empty named.steps
+    assert_equal "case_unconfirmed", named.rejections.find { |item| item["part"] == "step" }["reason"]
+    assert_not_includes render(named), "Si lo que ves es «El motor no arranca»"
 
     dropped = check(steps: [ skate ], question: "¿La entrada auxiliar tiene algo conectado?")
     assert_empty dropped.steps
-    assert_equal "other_case_without_question", dropped.rejections.find { |item| item["part"] == "step" }["reason"]
+    assert_equal "case_unconfirmed", dropped.rejections.find { |item| item["part"] == "step" }["reason"]
     assert_equal "¿La entrada auxiliar tiene algo conectado?", dropped.question
   end
 
@@ -203,7 +204,8 @@ class Rag::CompanionPlanTest < ActiveSupport::TestCase
     )
 
     assert_equal text, result.question
-    assert_equal [ skate.id ], result.steps
+    assert_empty result.steps
+    assert_equal "case_unconfirmed", result.rejections.find { |item| item["part"] == "step" }["reason"]
     foreign = Rag::CompanionPlanCheck.call(
       { "links" => [], "steps" => [], "question" => "¿El patín está oscilando?" },
       facts: case_facts, statements: statements, turns: turns

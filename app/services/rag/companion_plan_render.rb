@@ -41,24 +41,6 @@ module Rag
                         .to_set
     end
 
-    def self.distinctive_stems(item, goal_text)
-      blocked = CompanionPlanCheck::CONNECTORS | CompanionPlanCheck::QUESTION_WORDS.map { |word| CompanionPlanCheck.stem(word) }.to_set
-      (symptom_stems(item) - symptom_stems(goal_text)).reject { |stem| blocked.include?(stem) }.to_set
-    end
-
-    def self.case_distinguishes?(item, facts)
-      goal_text = facts.respond_to?(:goal) ? facts.goal&.text : nil
-      distinctive = distinctive_stems(item, goal_text)
-      return false if distinctive.empty?
-
-      facts.facts.any? do |fact|
-        next false if fact.kind == "goal"
-
-        stems = CompanionPlanCheck.words(fact.text).map { |word| CompanionPlanCheck.stem(word) }.to_set
-        distinctive.intersect?(stems)
-      end
-    end
-
     def initialize(check, facts, statements)
       @check = check
       @facts = facts
@@ -89,9 +71,12 @@ module Rag
         end
         quoted.concat(group)
       end
+      association_lines.each { |line| lines << line }
+      limit_lines.each { |line| lines << line }
+      omission_lines.each { |line| lines << line }
       unmatched_reports(noted).each { |fact| lines << "También informaste: #{case_text(fact)}." }
       conflicts(quoted).each { |note| lines << note }
-      lines << @check.question if @check.question.present?
+      question_lines.each { |line| lines << line }
       lines.join("\n")
     end
 
@@ -104,11 +89,73 @@ module Rag
     end
 
     def step_heading(item, source)
-      if applicable?(item) || self.class.case_distinguishes?(item, @facts)
-        "Para este síntoma, «#{bare(item)}», la documentación indica [#{source}]:"
+      confirmed = confirmed_for(item)
+      if confirmed.present? && confirmed != "goal"
+        fact = @facts.find(confirmed)
+        "Para lo que informaste, #{case_text(fact)}, la documentación indica en «#{bare(item)}» [#{source}]:"
       else
-        "Si lo que ves es «#{bare(item)}», la documentación indica para ese caso [#{source}]:"
+        "Para este síntoma, «#{bare(item)}», la documentación indica [#{source}]:"
       end
+    end
+
+    def confirmed_for(item)
+      confirmed = @check.respond_to?(:confirmed_items) ? @check.confirmed_items : nil
+      confirmed.is_a?(Hash) ? confirmed[item.to_s] : nil
+    end
+
+    def association_lines
+      rows = @check.respond_to?(:associations) ? Array(@check.associations) : []
+      rows.filter_map { |row|
+        next unless row[:relation] == :incompatible || row["relation"].to_s == "incompatible"
+
+        item = row[:item] || row["item"]
+        fact = @facts.find(row[:fact] || row["fact"])
+        source = row[:source] || row["source"]
+        next if item.blank? || fact.nil? || source.blank?
+
+        "La documentación trata aparte «#{bare(item)}» [#{source}]; lo que informaste, #{case_text(fact)}, no coincide con esa condición, así que esa indicación no se aplica aquí."
+      }
+    end
+
+    def limit_lines
+      rows = @check.respond_to?(:limits) ? Array(@check.limits) : []
+      rows.filter_map { |row|
+        item = row["item"] || row[:item]
+        source = row["source"] || row[:source]
+        next if item.blank? || source.blank?
+
+        "Indicaste que no puedes distinguirlo; la indicación de «#{bare(item)}» [#{source}] depende de ese dato."
+      }
+    end
+
+    def omission_lines
+      rows = @check.respond_to?(:omissions) ? Array(@check.omissions) : []
+      rows.filter_map { |row|
+        item = row["item"] || row[:item]
+        next if item.blank?
+
+        "Tu respuesta apunta a «#{bare(item)}», pero ese apartado no está en la documentación cargada en este turno."
+      }
+    end
+
+    def question_lines
+      return [] if @check.question.blank?
+
+      lines = []
+      targets = question_statements
+      if targets.one?
+        lines << "Para orientar falta un dato: la documentación trata «#{bare(targets.first.text)}» [#{targets.first.source}]."
+      elsif targets.size == 2
+        left, right = targets
+        lines << "Para orientar falta distinguir: la documentación trata por separado «#{bare(left.text)}» [#{left.source}] y «#{bare(right.text)}» [#{right.source}]."
+      end
+      lines << @check.question
+      lines
+    end
+
+    def question_statements
+      ids = @check.respond_to?(:question_targets) ? Array(@check.question_targets) : []
+      ids.filter_map { |id| @statements.find(id) }.first(2)
     end
 
     def quote(statement, text = statement.text)
@@ -164,10 +211,14 @@ module Rag
     end
 
     def observation_step(fact, steps, covered)
+      fact_stems = CompanionPlanCheck.words(fact.text).map { |word| CompanionPlanCheck.stem(word) }.to_set
       core = content_stems(fact.text)
       needed = [ 2, core.size ].min
       scored = steps.filter_map do |step|
         next if covered[step.id] || !bare(step.text).match?(CHECK_STEP)
+
+        anchor = CompanionCaseRelation.first_anchor_stem(step.text)
+        next if anchor.nil? || fact_stems.exclude?(anchor)
 
         overlap = (core & content_stems(step.text)).size
         [ step, overlap ] if overlap.positive? && overlap >= needed

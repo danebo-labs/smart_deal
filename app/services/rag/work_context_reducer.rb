@@ -42,12 +42,14 @@ module Rag
       return @episode if @decision&.decision == "meta"
 
       write_checks unless @perception.move == "unclear"
+      bind_documented_answer
       remember_referent_choice if remember_referent_choice?
       promote_carry if promote_existing_carry?
 
       if @decision&.decision == "clarify_first"
         @episode.touch!(@now)
         return @episode if @perception.move == "new_work"
+        return @episode if @perception.move == "unclear" && documented_pending?
 
         preserve_referent_opening if opening_referent?
         write_pending(@decision.pending_question)
@@ -101,6 +103,10 @@ module Rag
 
     # Stated assertions stay. The observation stays the doubt, not an identity.
     # The goal is that doubt, not the whole turn.
+    def documented_pending?
+      @episode.pending_question&.dig("type") == "documented_context"
+    end
+
     def preserve_referent_opening
       write_assertions
       @perception.observations.each do |text|
@@ -185,10 +191,53 @@ module Rag
       end
       @perception.identifiers.each do |item|
         next unless durable_identifier?(item.value)
+        next if identifier_repeats_check_result?(item.value)
 
         @episode.delete_rejected!("identifier", item.value)
         @episode.append_identifier!(item.value, correlation_id: @correlation_id, source: "user")
       end
+    end
+
+    def identifier_repeats_check_result?(value)
+      label = FollowupQueryRewriter.normalize_label(value)
+      return false if label.blank?
+
+      Array(@perception.checks).any? { |check|
+        item = check.is_a?(Hash) ? check.stringify_keys : {}
+        FollowupQueryRewriter.normalize_label(item["result"]) == label
+      }
+    end
+
+    def bind_documented_answer
+      question = @episode.pending_question
+      return unless question.is_a?(Hash) && question["type"] == "documented_context"
+      return if @perception.move == "meta"
+
+      if @perception.move == "new_work"
+        @episode.clear_pending!
+        return
+      end
+
+      reply = PendingQuestion.parse_reply(@turn, pending_question: question)
+      code = reply.is_a?(Hash) ? reply["r"] : nil
+      return if @perception.move == "unclear" && code.nil?
+      return if next_step_question?
+
+      answers = { "q" => question["question"].to_s, "t" => Array(question["targets"]) }
+      answers["r"] = code if code
+      texts = Array(@perception.observations).map { |text| text.to_s.squish }.compact_blank
+      if texts.empty? && (code || @perception.move == "answer_pending")
+        literal = @turn.to_s.squish.first(160)
+        texts = [ literal ] if literal.present?
+      end
+      return if texts.empty?
+
+      texts.each { |text| @episode.append_observation!(text, correlation_id: @correlation_id, answers: answers) }
+      @episode.clear_pending!
+    end
+
+    def next_step_question?
+      FollowupQueryRewriter.normalize_label(@turn) == "que sigue"
     end
 
     # A controller brand fills an empty equipment manufacturer. It does not

@@ -34,13 +34,18 @@ module Rag
           "maxItems" => CompanionPlanCheck::MAX_STEPS,
           "items" => { "type" => "string", "description" => "Id de un paso, p. ej. S1.3." }
         },
-        "question" => { "type" => "string", "description" => "Una pregunta o vacío." }
+        "question" => { "type" => "string", "description" => "Una pregunta o vacío." },
+        "question_about" => {
+          "type" => "array",
+          "maxItems" => 2,
+          "items" => { "type" => "string", "description" => "Id de un apartado o texto, p. ej. S1.3." }
+        }
       },
-      "required" => %w[links steps question]
+      "required" => %w[links steps question question_about]
     }.freeze
 
-    Prepared = Data.define(:params, :system, :user, :facts, :statements, :turns)
-    Composed = Data.define(:text, :check, :input, :stop_reason)
+    Prepared = Data.define(:params, :system, :user, :facts, :statements, :turns, :chunks)
+    Composed = Data.define(:text, :check, :input, :stop_reason, :pending)
 
     class << self
       def prepare(raw_question:, chunks:, episode:, session:, correlation_id: nil)
@@ -63,7 +68,8 @@ module Rag
           user: user,
           facts: facts,
           statements: statements,
-          turns: technician_turns(session, raw_question)
+          turns: technician_turns(session, raw_question),
+          chunks: Array(chunks)
         )
       end
 
@@ -74,7 +80,10 @@ module Rag
           input, facts: prepared.facts, statements: prepared.statements, turns: prepared.turns
         )
         text = check.usable? ? CompanionPlanRender.call(check, facts: prepared.facts, statements: prepared.statements) : ""
-        Composed.new(text: text, check: check, input: input, stop_reason: stop_reason)
+        Composed.new(
+          text: text, check: check, input: input, stop_reason: stop_reason,
+          pending: published_pending(text, check, prepared)
+        )
       end
 
       def tool_input(response)
@@ -87,6 +96,40 @@ module Rag
           return input.is_a?(Hash) ? input.deep_stringify_keys : {}
         end
         nil
+      end
+
+      def published_pending(text, check, prepared)
+        question = check.question.to_s
+        return nil if question.blank? || text.blank? || text.exclude?(question)
+
+        targets = Array(check.question_targets).filter_map { |id|
+          statement = prepared.statements.find(id)
+          pending_target(statement, prepared.chunks) if statement
+        }
+        PendingQuestion.coerce("type" => "documented_context", "question" => question, "targets" => targets)
+      end
+
+      def pending_target(statement, chunks)
+        chunk = Array(chunks)[statement.source - 1]
+        meta = chunk ? (chunk[:metadata] || chunk["metadata"]).to_h.stringify_keys : {}
+        {
+          "item" => statement.kind == "item" ? statement.text : statement.item.to_s,
+          "document_key" => meta["document_key"].presence || meta["original_source_uri"].presence || meta["document_id"].to_s,
+          "filename" => page_filename(meta),
+          "page" => statement.page.to_s
+        }
+      end
+
+      def page_filename(meta)
+        meta["filename"].presence || basename_of(meta["chunk_key"]) || basename_of(meta["source_key"]).to_s
+      end
+
+      def basename_of(value)
+        text = value.to_s
+        return nil if text.blank?
+
+        name = File.basename(text)
+        name.present? && name != "." ? name : nil
       end
 
       def statements_block(statements, chunks)

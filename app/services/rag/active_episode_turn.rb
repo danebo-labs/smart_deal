@@ -100,28 +100,11 @@ module Rag
     end
 
     def self.write_pending!(episode, text, correlation_id:, pending_question: nil)
-      if HaikuQueryAnalysisFlag.owner?
-        question = PendingQuestion.coerce(pending_question)
-        return nil if question.nil?
-
-        episode.clear_pending!
-        episode.pending_question = question
-        if PendingQuestion::FACT_TYPES.include?(question["type"])
-          episode.pending_fact = { "subject" => question["type"], "correlation_id" => correlation_id.to_s }
-        end
-        return nil
-      end
+      question = PendingQuestion.coerce(pending_question)
+      return install_pending!(episode, question, correlation_id) if question
+      return nil if HaikuQueryAnalysisFlag.owner?
 
       episode.clear_pending!
-      question = PendingQuestion.coerce(pending_question)
-      if question
-        episode.pending_question = question
-        if PendingQuestion::FACT_TYPES.include?(question["type"])
-          episode.pending_fact = { "subject" => question["type"], "correlation_id" => correlation_id.to_s }
-        end
-        return nil
-      end
-
       subjects = text.scan(/[^?]+\?/).filter_map { |sentence| pending_subject(FollowupQueryRewriter.normalize_label(sentence)) }
       return nil unless subjects.size == 1
 
@@ -132,6 +115,24 @@ module Rag
 
       episode.pending_fact = { "subject" => subject, "correlation_id" => correlation_id.to_s }
       nil
+    end
+
+    def self.install_pending!(episode, question, correlation_id)
+      previous_question = episode.pending_question
+      previous_fact = episode.pending_fact
+      episode.clear_pending!
+      episode.pending_question = question
+      if PendingQuestion::FACT_TYPES.include?(question["type"])
+        episode.pending_fact = { "subject" => question["type"], "correlation_id" => correlation_id.to_s }
+      end
+      payload = episode.serial_hash
+      payload.compact!
+      return nil unless JSON.generate(payload).bytesize > ActiveEpisode::MAX_BYTES
+
+      episode.pending_question = previous_question
+      episode.pending_fact = previous_fact
+      Rails.logger.info("[companion] pending_overflow")
+      "pending_overflow"
     end
 
     def self.pending_subject(normalized)

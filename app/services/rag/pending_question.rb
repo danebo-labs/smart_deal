@@ -3,11 +3,18 @@
 module Rag
   # Machine-readable question Ruby already knows it asked. No model call.
   module PendingQuestion
-    TYPES = %w[fault_code manufacturer model controller choice absent work_relation referent correction_target].freeze
+    TYPES = %w[fault_code manufacturer model controller choice absent work_relation referent correction_target documented_context].freeze
     CONVERSATIONAL_TYPES = %w[work_relation referent correction_target].freeze
     MAX_CARRY = 2
     FACT_TYPES = %w[fault_code manufacturer model controller].freeze
     CHOICE_OPENING = %w[opening closing].freeze
+    DOCUMENTED_REPLIES = {
+      "si" => "yes",
+      "no" => "no",
+      "no se" => "unknown",
+      "no lo se" => "unknown",
+      "no puedo verlo" => "unknown"
+    }.freeze
 
     module_function
 
@@ -16,6 +23,7 @@ module Rag
 
       type = raw["type"].to_s
       return nil unless TYPES.include?(type)
+      return documented_context(raw) if type == "documented_context"
 
       question = { "type" => type }
       carry = sanitize_carry(raw["carry"])
@@ -40,8 +48,45 @@ module Rag
       if question && question["type"] == "choice" && question["options"] == CHOICE_OPENING && raw.casecmp?("al abrir")
         return { "type" => "choice", "value" => "opening" }
       end
+      documented = documented_reply(question, raw)
+      return documented if documented
 
       nil
+    end
+
+    def documented_context(raw)
+      text = raw["question"].to_s.squish.first(240)
+      return nil if text.blank?
+
+      targets = Array(raw["targets"]).filter_map { |item| documented_target(item) }
+      return nil unless (1..2).cover?(targets.size)
+
+      { "type" => "documented_context", "question" => text, "targets" => targets }
+    end
+
+    def documented_target(raw)
+      item = raw.is_a?(Hash) ? raw : { "item" => raw }
+      return nil unless item.is_a?(Hash)
+
+      text = item["item"].to_s.squish.first(160)
+      return nil if text.blank?
+
+      {
+        "item" => text,
+        "document_key" => item["document_key"].to_s.first(240),
+        "filename" => item["filename"].to_s.first(180),
+        "page" => item["page"].to_s.first(12)
+      }
+    end
+
+    def documented_reply(question, raw)
+      return nil unless question && question["type"] == "documented_context"
+
+      code = DOCUMENTED_REPLIES[FollowupQueryRewriter.normalize_label(raw)]
+      return nil if code.nil?
+      return nil if %w[yes no].include?(code) && Array(question["targets"]).size != 1
+
+      { "type" => "documented_context", "r" => code }
     end
 
     def sanitize_carry(raw)

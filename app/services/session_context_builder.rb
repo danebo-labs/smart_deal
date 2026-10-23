@@ -135,9 +135,24 @@ class SessionContextBuilder
       next unless source.empty? || source == "user"
 
       value = item["value"].to_s.squish
-      parts << value if value.present?
+      next if value.blank? || check_result_identifier?(episode, item, value)
+
+      parts << value
     end
     parts.uniq.join(", ")
+  end
+
+  # A stored check result is not an equipment identifier. The same words with
+  # another correlation stay, because they were not that result.
+  def self.check_result_identifier?(episode, item, value)
+    label = Rag::FollowupQueryRewriter.normalize_label(value)
+    return false if label.blank?
+
+    correlation = item["correlation_id"].to_s
+    Array(episode.checks).any? { |check|
+      check["correlation_id"].to_s == correlation &&
+        Rag::FollowupQueryRewriter.normalize_label(check["result"]) == label
+    }
   end
 
   def self.companion_check_lines(episode, session)

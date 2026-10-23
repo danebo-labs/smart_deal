@@ -202,14 +202,22 @@ module Rag
       end
     end
 
-    def append_observation!(text, correlation_id:)
+    def append_observation!(text, correlation_id:, answers: nil)
       literal = text.to_s.squish.first(MAX_OBSERVATION_CHARS)
       return if literal.blank?
 
-      labels = observations.map { |item| ObservationText.normalize(item["text"]) }
-      return if ObservationText.redundant?(literal, labels)
+      stored_answers = self.class.sanitize_answers(answers)
+      label = ObservationText.normalize(literal)
+      existing = observations.find { |item| ObservationText.normalize(item["text"]) == label }
+      if existing
+        existing["answers"] = stored_answers if stored_answers
+        return
+      end
+      return if ObservationText.redundant?(literal, observations.map { |item| ObservationText.normalize(item["text"]) })
 
-      observations << { "text" => literal, "correlation_id" => correlation_id.to_s }
+      row = { "text" => literal, "correlation_id" => correlation_id.to_s }
+      row["answers"] = stored_answers if stored_answers
+      observations << row
       while observations.size > MAX_STORED_OBSERVATIONS
         index = observation_eviction_index || 0
         observations.delete_at(index)
@@ -259,7 +267,14 @@ module Rag
     def to_h
       return {} if blank?
 
-      payload = {
+      payload = serial_hash
+      payload.compact!
+      shrink_to_budget!(payload)
+      payload
+    end
+
+    def serial_hash
+      {
         "v" => 1,
         "episode_id" => episode_id,
         "status" => status.presence || "active",
@@ -277,9 +292,6 @@ module Rag
         "checks" => checks.presence,
         "rejected" => rejected.presence
       }
-      payload.compact!
-      shrink_to_budget!(payload)
-      payload
     end
 
     def self.coerce(raw)
@@ -409,10 +421,41 @@ module Rag
         text = item["text"].to_s.squish.first(MAX_OBSERVATION_CHARS)
         next if text.blank?
 
-        { "text" => text, "correlation_id" => item["correlation_id"].to_s }
+        row = { "text" => text, "correlation_id" => item["correlation_id"].to_s }
+        answers = sanitize_answers(item["answers"])
+        row["answers"] = answers if answers
+        row
       }.last(MAX_STORED_OBSERVATIONS)
     end
     private_class_method :sanitize_observations
+
+    def self.sanitize_answers(raw)
+      return nil unless raw.is_a?(Hash)
+
+      question = raw["q"].to_s.squish.first(240)
+      return nil if question.blank?
+
+      targets = Array(raw["t"]).filter_map { |item| answer_target(item) }.first(2)
+      return nil if targets.empty?
+
+      answers = { "q" => question, "t" => targets }
+      code = raw["r"].to_s
+      answers["r"] = code if %w[yes no unknown].include?(code)
+      answers
+    end
+
+    def self.answer_target(raw)
+      data = raw.is_a?(Hash) ? raw.stringify_keys : { "item" => raw }
+      text = data["item"].to_s.squish.first(160)
+      return nil if text.blank?
+
+      {
+        "item" => text,
+        "document_key" => data["document_key"].to_s.first(240),
+        "filename" => data["filename"].to_s.first(180),
+        "page" => data["page"].to_s.first(12)
+      }
+    end
 
     def self.sanitize_rejected(raw)
       return [] unless raw.is_a?(Array)

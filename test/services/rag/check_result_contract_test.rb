@@ -6,7 +6,7 @@ class Rag::CheckResultContractTest < ActiveSupport::TestCase
   RESULT_SENTENCE = "result is the outcome the technician states for that verification, " \
     "copied literally from the turn, or null; that outcome stays the result even when it also reads as an observation."
   PREVIOUS_SENTENCE = "result is a literal substring of the turn, or null."
-  PROMPT_SHA256 = "2ba8dc425a17b920a04925c924ae8b497886cffcd941cdece078860bcc461ea4"
+  PROMPT_SHA256 = "78124b2d34fb48e47af0f62502153ed0cb2ba7eea5b40fd70cf7681102016dde"
 
   setup do
     @now = Time.zone.parse("2026-10-21 18:00:00 UTC")

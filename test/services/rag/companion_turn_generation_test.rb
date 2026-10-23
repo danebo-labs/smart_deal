@@ -51,7 +51,7 @@ class Rag::CompanionTurnGenerationTest < ActiveSupport::TestCase
     assert_equal history, session.conversation_history
   end
 
-  test "the opt-in off, a plan chunk, leftover records, and no compatible source keep the previous prompt" do
+  test "the opt-in off, leftover records, and no compatible source keep the previous prompt" do
     episode = known_episode
     session = session_for(episode)
     off = plan = records = foreign = nil
@@ -88,14 +88,18 @@ class Rag::CompanionTurnGenerationTest < ActiveSupport::TestCase
       end
     end
 
-    [ off_calls, plan_calls, record_calls ].each do |calls|
+    [ off_calls, record_calls ].each do |calls|
       assert_equal 1, calls.size
       assert_nil calls.first[:system]
       assert_includes calls.first[:user], "COMPUESTA_Z9"
       assert_not_includes calls.first[:user], "Mensaje del técnico:"
     end
     assert_not off[:companion_turn]
-    assert_not plan[:companion_turn]
+    assert plan[:companion_turn]
+    assert_equal 1, plan_calls.size
+    assert_includes plan_calls.first[:system], "companion_plan"
+    assert_includes plan_calls.first[:user], "Mensaje de este turno:\n#{RAW}"
+    assert_not_includes plan_calls.first[:user], "COMPUESTA_Z9"
     assert_includes record_calls.first[:user], "FIELD_RECORD"
     assert_not records[:companion_turn]
     assert_includes foreign_calls.first[:user], "# FIELD COMPANION"

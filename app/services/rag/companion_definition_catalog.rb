@@ -38,6 +38,13 @@ module Rag
       @sections ||= @pages.flat_map { |page| parse_page(page) }
     end
 
+    def page(document_key, filename)
+      @pages.find { |raw|
+        data = raw.to_h.stringify_keys
+        data["document_key"].to_s == document_key.to_s && data["filename"].to_s == filename.to_s
+      }
+    end
+
     private
 
     def parse_page(page)

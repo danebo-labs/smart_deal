@@ -41,6 +41,8 @@ module Rag
       When pending.clarification_target is set, answer with new_work, follow_up, or correct. A reply that keeps or returns to the open job is follow_up. A reply that only says this is another elevator is new_work with empty assertions and empty observations. A reply that names equipment or a fault includes those spans.
       active_photo_context was read from the active photo. It is not the technician's words. Do not copy it into spans or observations unless the turn contains that text. A turn that only points at that one photo is follow_up with empty assertions and empty observations. Do not describe the photo.
 
+      When pending.clarification_target is documented_context, the turn may answer that question. Record the technician's words as an observation. A partial answer stays an observation and does not fill the missing part.
+
       act: assert states a value as the equipment or the fault. "Nice300 e51" and "PRIVATE900" are assert spans, not mentions and not unclear. negate denies a value that appears in the turn. mention names a token the technician asks about without adopting it. "¿Qué es Q2?" is a mention of Q2 on move report, clarification_target null. It is not unclear and not referent. One unknown token is not two referents.
       slot_hint may only be manufacturer, model, controller, fault_code, or designator. Omit it when unsure. Never put slot_hint on a symptom.
       pending_resolution is null unless move is answer_pending. Then it is only unknown, absent, value, or seek. Never referent. value needs an assert span of that value. seek means search with what is already known. unknown means the technician does not know the pending slot.
@@ -154,6 +156,9 @@ module Rag
           payload["carry"] = carry if carry.is_a?(Array) && carry.any?
         end
         return payload
+      end
+      if type == "documented_context"
+        return { "clarification_target" => "documented_context", "question" => question["question"].to_s }
       end
 
       slot = type || @episode.pending_fact&.dig("subject")

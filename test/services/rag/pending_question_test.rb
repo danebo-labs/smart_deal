@@ -87,7 +87,9 @@ class Rag::PendingQuestionTest < ActiveSupport::TestCase
     )
     assert_equal "fault_code", result.state.dig("pending_question", "type")
     assert_not_includes JSON.generate(result.state), prose
-    assert_not_includes Rails.root.join("app/services/bedrock_rag_service.rb").read, "pending_question"
+    service = Rails.root.join("app/services/bedrock_rag_service.rb").read
+    assert_includes service, "pending_question"
+    assert_not_includes service, "PendingQuestion.parse_reply"
   end
 
   test "a pending question does not evict identifiers inside the 2048-byte budget" do

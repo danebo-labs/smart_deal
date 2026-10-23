@@ -176,6 +176,22 @@ module RagQueryConcern
     )
   end
 
+  def companion_published_pending(pending, attached)
+    return nil unless pending.is_a?(Hash)
+
+    question = pending["question"].to_s
+    return nil if question.blank?
+    return nil if attached.respond_to?(:route_outcome) && attached.route_outcome.to_s == "abstained"
+
+    presented = attached.respond_to?(:presented) ? attached.presented.to_s : ""
+    return nil unless presented.include?(question)
+
+    history = attached.respond_to?(:history) ? attached.history.to_s : ""
+    return nil if history.present? && history.exclude?(question)
+
+    pending
+  end
+
   def field_case_attachment(answer, result, conv_session, companion_turn: false)
     episode = if conv_session.respond_to?(:active_episode)
       Rag::ActiveEpisode.parse(conv_session.active_episode)
@@ -407,6 +423,7 @@ module RagQueryConcern
     end
     route_outcome = attached.route_outcome if attached.respond_to?(:route_outcome) && attached.route_outcome
     companion_reason = attached.companion_reason if attached.respond_to?(:companion_reason) && attached.companion_reason
+    pending_question = companion_published_pending(pending_question, attached) if result[:companion_turn]
 
     RagResult.new(
       success?:            true,

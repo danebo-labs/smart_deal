@@ -96,7 +96,8 @@ class Rag::CompanionF3SequenceTest < ActiveSupport::TestCase
     )
     assert_equal [ "operation_mismatch" ], checked.rejections.select { |item| item["part"] == "link" }.pluck("reason")
     assert_includes checked.steps, activation.id
-    assert_includes checked.steps, skate.id
+    assert_not_includes checked.steps, skate.id
+    assert_equal "case_unconfirmed", checked.rejections.find { |item| item["part"] == "step" && item["value"] == skate.id }["reason"]
     assert_equal question, checked.question
     text = Rag::CompanionPlanRender.call(checked, facts: facts, statements: statements)
     activation_line = text.lines.find { |line| line.include?("no esté activada") }
@@ -132,14 +133,20 @@ class Rag::CompanionF3SequenceTest < ActiveSupport::TestCase
     clarified = episode.fork
     clarified.append_observation!("Se vuelve a abrir justo cuando el patín está cerrando", correlation_id: "query:t5")
     clarified_facts = Rag::CompanionCaseFacts.build(clarified, session: session)
+    reported = clarified_facts.facts.find { |item| item.text.include?("justo cuando el patín") }
+    skate_item = statements.statements.find { |item| item.kind == "item" && item.text.include?("patín") }
     follow = Rag::CompanionPlanCheck.call(
-      { "links" => [], "steps" => [ activation.id, skate.id ], "question" => question },
+      {
+        "links" => [ { "fact" => reported.id, "statement" => skate_item.id, "reading" => "" } ],
+        "steps" => [ activation.id, skate.id ],
+        "question" => question
+      },
       facts: clarified_facts, statements: statements, turns: TURNS + [ "Se vuelve a abrir justo cuando el patín está cerrando" ]
     )
     assert_nil follow.question
     assert_includes follow.steps, skate.id
     follow_text = Rag::CompanionPlanRender.call(follow, facts: clarified_facts, statements: statements)
-    assert_includes follow_text, "Para este síntoma, «La puerta se vuelve a abrir cuando el patín está cerrando»"
+    assert_includes follow_text, "Para lo que informaste, «Se vuelve a abrir justo cuando el patín está cerrando», la documentación indica en «La puerta se vuelve a abrir cuando el patín está cerrando»"
     assert_not_includes follow_text, question
   end
 

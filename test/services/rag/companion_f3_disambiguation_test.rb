@@ -73,6 +73,205 @@ class Rag::CompanionF3DisambiguationTest < ActiveSupport::TestCase
     assert Rag::CompanionCaseRelation.explicit_correction?("me equivoqué: ocurre cuando el patín está cerrando")
   end
 
+  # Local product replay. The sentence below is the question Haiku sent on
+  # 20261023T213823Z-q1p. This test does not call the model and does not say
+  # what a later generation would write. The published question is derived
+  # by Ruby from the report and the documentary step.
+  MODEL_QUESTION = "¿Has comprobado manualmente que no hay obstrucción mecánica en la puerta, o solo la observaste visualmente?"
+  Q1P_RUN = Rails.root.join("tmp/field_companion/vf5_correction/f2f3_joint/runs/20261023T213823Z-q1p")
+  REPORT = "No veo obstrucción"
+  PARTIAL_SCOPE = "El marco de la puerta, nada más"
+
+  test "a neutral clarification of the obstruction report is published and a partial answer binds" do
+    content = <<~TEXT
+      • La puerta se re-abre sola.
+      – Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54).
+      – Comprobar que la fotocélula no esté activada.
+      – Comprobar que no hay una obstrucción mecánica en la puerta.
+      – En caso que el problema persiste, desconectar la fotocélula y pulsar TEST.
+      • El patín no se mueve.
+      – Verificar manualmente el movimiento del patín.
+    TEXT
+    statements = Rag::CompanionStatements.parse([ obstruction_chunk(content) ])
+    obstruction = statements.statements.find { |item| item.step? && item.text.include?("obstrucción mecánica") }
+    parent = statements.statements.find { |item| item.kind == "item" && item.text.include?("re-abre") }
+    episode = episode_for("La puerta se reabre sola", [ "La puerta se reabre sola", REPORT, "el LED de fotocélula está encendido" ])
+    episode.write_fact!("manufacturer", status: "known", value: "Fermator", source: "user", correlation_id: "query:f3", at: Time.current.iso8601)
+    episode.write_fact!("model", status: "known", value: "VF5+", source: "user", correlation_id: "query:f3", at: Time.current.iso8601)
+    episode.upsert_check!({ "subject" => "#54", "status" => "not_done" }, correlation_id: "query:f3")
+    episode.upsert_check!({ "subject" => "fotocélula", "status" => "done", "result" => "no está activada" }, correlation_id: "query:f3")
+    episode_id = episode.episode_id
+    facts = Rag::CompanionCaseFacts.build(episode)
+    plan = {
+      "steps" => statements.statements.select(&:step?).map(&:id),
+      "question" => MODEL_QUESTION,
+      "question_about" => [ obstruction.id ]
+    }
+
+    checked = check_plan(plan, facts, statements)
+    assert_equal "modality:manualmente,visualmente", rejection(checked, "question")
+    assert_includes checked.question, "«#{REPORT}»"
+    assert_includes checked.question, "obstrucción mecánica"
+    assert_not_equal MODEL_QUESTION, checked.question
+    assert_not_includes checked.question, "manualmente"
+    assert_not_includes checked.question, "visualmente"
+    assert_equal [ parent.id ], checked.question_targets
+    assert_equal :related, Rag::ReportedOperation.correspondence(
+      report_text: REPORT, result: nil, status: "done", statement_text: obstruction.text
+    )
+
+    text = render_of(checked, statements, facts)
+    assert_includes text, checked.question
+    assert_includes text, "no consta como hecha"
+    published = publish_case(text, episode, content)
+    assert published.accepted?, published.reasons.inspect
+    history = Rag::FieldCaseRecord.attach(text, episode: episode, generation_mode: nil, companion_turn: true)
+    assert_equal text, history.history
+    assert_equal text, history.presented
+
+    prepared = Rag::CompanionPlan::Prepared.new(
+      params: {}, system: "", user: "", facts: facts, statements: statements,
+      turns: [ "¿Qué sigue?" ], chunks: [ obstruction_chunk(content) ]
+    )
+    composed = Rag::CompanionPlan.compose(CompanionPlanResponse.build(plan), prepared)
+    assert_equal checked.question, composed.pending["question"]
+    assert_equal "La puerta se re-abre sola.", composed.pending.dig("targets", 0, "item")
+    assert_equal "chunk_p12_5.txt", composed.pending.dig("targets", 0, "filename")
+    assert_equal "12", composed.pending.dig("targets", 0, "page")
+    dropped = Rag::CompanionPlan.compose(
+      CompanionPlanResponse.build({ "question" => "¿Usaste el multímetro en la obstrucción?" }),
+      prepared
+    )
+    assert_nil dropped.pending
+    repeated = check_plan({ "question" => "¿Has comprobado manualmente el #54?" }, facts, statements)
+    assert_match(/\Arepeats_fact:/, rejection(repeated, "question"))
+    assert_nil repeated.question
+
+    with_flags do
+      Rag::ActiveEpisodeTurn.apply_assistant(
+        state: episode, text: composed.text, pending_question: composed.pending, correlation_id: "query:local"
+      )
+    end
+    assert_equal episode_id, episode.episode_id
+    assert_equal "Fermator", episode.fact("manufacturer")["value"]
+    assert_equal "VF5+", episode.fact("model")["value"]
+    assert_equal checked.question, episode.pending_question["question"]
+    assert episode.observations.any? { |row| row["text"] == "el LED de fotocélula está encendido" }
+    assert episode.checks.any? { |row| row["subject"] == "fotocélula" && row["result"] == "no está activada" && row["status"] == "done" }
+    assert episode.checks.any? { |row| row["subject"] == "#54" && row["status"] == "not_done" }
+
+    settle(episode, follow_up(PARTIAL_SCOPE), PARTIAL_SCOPE, "query:local-partial")
+    stored = episode.observations.find { |row| row["text"] == PARTIAL_SCOPE }
+    assert_equal checked.question, stored.dig("answers", "q")
+    assert_nil stored.dig("answers", "r")
+    assert_equal "La puerta se re-abre sola.", stored.dig("answers", "t", 0, "item")
+    assert_nil episode.pending_question
+    assert_equal episode_id, episode.episode_id
+    assert_equal "Fermator", episode.fact("manufacturer")["value"]
+
+    later = Rag::CompanionCaseFacts.build(episode)
+    second = check_plan(plan, later, statements)
+    assert_nil second.question
+    assert_not_includes render_of(second, statements, later), checked.question
+    paraphrase = check_plan(
+      { "question" => "¿La obstrucción mecánica en la puerta es lo que ves?", "question_about" => [ parent.id ] },
+      later, statements
+    )
+    assert_nil paraphrase.question
+    assert_not_includes render_of(paraphrase, statements, later), "es lo que ves"
+  end
+
+  test "local replay of the captured obstruction question publishes the clarification" do
+    skip "captura q1p ausente" unless Q1P_RUN.exist? && KB.exist?
+
+    call = Q1P_RUN.join("q1p_t1/calls").children.find { |path| path.basename.to_s.start_with?("02-companion") }
+    plan = JSON.parse(call.join("raw_response.txt").read)
+    stored = JSON.parse(call.join("state_before.json").read)
+    episode = Rag::ActiveEpisode.parse(stored, now: Time.iso8601(stored["updated_at"]) + 60)
+    chunks = JSON.parse(call.join("sources.json").read).fetch("sources").map { |source| live_chunk(source) }
+    statements = Rag::CompanionStatements.parse(chunks)
+    facts = Rag::CompanionCaseFacts.build(episode)
+    turns = [ Q1P_RUN.join("q1p_t1/question.txt").read.strip ]
+    checked = Rag::CompanionPlanCheck.call(plan, facts: facts, statements: statements, turns: turns)
+
+    assert_equal MODEL_QUESTION, plan["question"]
+    assert_equal "modality:manualmente,visualmente", rejection(checked, "question")
+    assert_includes checked.question, "«#{REPORT}»"
+    assert_includes checked.question, "obstrucción mecánica"
+    assert_not_equal MODEL_QUESTION, checked.question
+    assert_not_includes checked.question, "manualmente"
+    assert_not_includes checked.question, "visualmente"
+
+    prepared = Rag::CompanionPlan::Prepared.new(
+      params: {}, system: "", user: "", facts: facts, statements: statements, turns: turns, chunks: chunks
+    )
+    composed = Rag::CompanionPlan.compose(CompanionPlanResponse.build(plan), prepared)
+    assert_includes composed.text, checked.question
+    assert_not_includes composed.text, "movimiento del patín"
+    assert_equal checked.question, composed.pending["question"]
+    target = composed.pending["targets"].first
+    assert_includes target["item"], "La puerta se re-abre sola"
+    assert_equal "chunk_p12_5.txt", target["filename"]
+    assert_equal "12", target["page"]
+    history = Rag::FieldCaseRecord.attach(composed.text, episode: episode, generation_mode: nil, companion_turn: true)
+    assert_equal composed.text, history.history
+    sources = chunks.each_with_index.map { |chunk, index|
+      { "index" => index + 1, "content" => chunk[:content], "applicability" => "compatible", "reference_only" => false }
+    }
+    technician = episode.observations.pluck("text") +
+                 episode.checks.flat_map { |row| [ row["subject"], row["result"] ] } +
+                 episode.identifiers.pluck("value")
+    published = Rag::CompanionTurnPublication.call(
+      text: composed.text, sources: sources, technician_texts: technician.compact, manufacturer: "Fermator"
+    )
+    assert published.accepted?, published.reasons.inspect
+
+    episode_id = episode.episode_id
+    with_flags do
+      Rag::ActiveEpisodeTurn.apply_assistant(
+        state: episode, text: composed.text, pending_question: composed.pending, correlation_id: "query:local-replay"
+      )
+    end
+    settle(episode, follow_up(PARTIAL_SCOPE), PARTIAL_SCOPE, "query:local-replay-partial")
+    answer = episode.observations.find { |row| row["text"] == PARTIAL_SCOPE }
+    assert_equal checked.question, answer.dig("answers", "q")
+    assert_nil answer.dig("answers", "r")
+    assert_includes answer.dig("answers", "t", 0, "item"), "La puerta se re-abre sola"
+    assert_equal episode_id, episode.episode_id
+    assert_equal "Fermator", episode.fact("manufacturer")["value"]
+    assert episode.observations.any? { |row| row["text"] == "el LED de fotocélula está encendido" }
+    assert episode.checks.any? { |row| row["subject"] == "fotocélula" && row["result"] == "no está activada" }
+    assert episode.checks.any? { |row| row["subject"] == "#54" && row["status"] == "not_done" }
+    assert_nil episode.pending_question
+
+    later = Rag::CompanionCaseFacts.build(episode)
+    second = Rag::CompanionPlanCheck.call(plan, facts: later, statements: statements, turns: turns + [ PARTIAL_SCOPE ])
+    assert_nil second.question
+    assert_not_includes render_of(second, statements, later), checked.question
+  end
+
+  test "clarifying a report does not restore the incompatible skate procedure" do
+    statements = statements_for
+    skate = skate_step(statements)
+    item = skate_item(statements)
+    obstruction = statements.statements.find { |row| row.step? && row.text.include?("obstrucción mecánica") }
+    facts = facts_for("La puerta se reabre sola", [ REPORT, BEFORE ])
+    result = check_plan(
+      {
+        "links" => [ link_of("O2", item) ],
+        "steps" => [ skate.id, obstruction.id ],
+        "question" => MODEL_QUESTION,
+        "question_about" => [ obstruction.id ]
+      },
+      facts, statements
+    )
+
+    assert_not_includes result.steps, skate.id
+    assert_not_includes result.question.to_s, "patín"
+    assert_not_includes result.question.to_s, "manualmente"
+    assert_includes result.question, "«#{REPORT}»"
+  end
+
   test "a question that only restates a fact is a repeat and one that adds another valve is not" do
     manual = "• La válvula V1 está cerrada.\n• La válvula V2 está abierta.\n"
     statements = Rag::CompanionStatements.parse([ chunk(manual) ])
@@ -481,6 +680,33 @@ class Rag::CompanionF3DisambiguationTest < ActiveSupport::TestCase
       },
       identity_applicability: "compatible"
     }
+  end
+
+  # Reduced fixture. The obstruction step follows chunk_p12_5. The manual
+  # skate check follows chunk_p12_3 and must not license that modality here.
+  def obstruction_chunk(content)
+    {
+      content: content,
+      metadata: {
+        "canonical_name" => "VF5", "page_number" => "12", "filename" => "chunk_p12_5.txt",
+        "document_key" => "s3://fixture/VF5.pdf", "original_source_uri" => "s3://fixture/VF5.pdf"
+      },
+      identity_applicability: "compatible"
+    }
+  end
+
+  def publish_case(text, episode, content)
+    texts = [ episode.goal&.[]("text") ]
+    texts.concat(episode.observations.pluck("text"))
+    texts.concat(episode.checks.flat_map { |row| [ row["subject"], row["result"] ] })
+    texts << episode.fact("manufacturer")&.[]("value")
+    texts << episode.fact("model")&.[]("value")
+    Rag::CompanionTurnPublication.call(
+      text: text,
+      sources: [ { "index" => 1, "content" => content, "applicability" => "compatible", "reference_only" => false } ],
+      technician_texts: texts.compact,
+      manufacturer: episode.fact("manufacturer")&.[]("value")
+    )
   end
 
   def statements_for

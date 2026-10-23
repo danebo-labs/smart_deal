@@ -5,7 +5,11 @@ module Rag
   # source statement; its reading may only use words of that statement, of
   # the case, and connectives. A step must be a step statement. The question
   # must use words of the sources or the case and must not ask what the case
-  # already says. An invalid part is dropped with its reason; the rest stays.
+  # already says. A check or perception verb, and a short word before a
+  # grounded word, are conversational. A -mente word next to such a verb is
+  # a method: the original question stays rejected, and one unambiguous
+  # report can still be clarified from the documentary check. An invalid
+  # part is dropped with its reason; the rest stays.
   # This is lexical. It does not prove that a reading is semantically right.
   class CompanionPlanCheck
     MAX_LINKS = 4
@@ -37,6 +41,7 @@ module Rag
     PRESCRIPTION = /\b(?:hay que|tenes que|tienes que|debes|deberias|deberia|conviene|recomiendo|te recomiendo|asegurate)\b/
     OPERATION = /\b(?:ajust|gir|rot|aument|reduc|sub|baj|calibr|regul|cambi|reemplaz|sustitu|puente|desconect|conect|med|mid|puls|presion|apret|limpi|muev|mov|forz|reinici|reset)(?:ar|er|ir|aste|iste|a|e|i|as|es|alo|elo|arlo|erlo|irlo|ando|iendo|ala|ela)\b/
     STATUS = /\b(?:comprob|verific|revis|confirm|cheque|prob|realiz)(?:ad[oa]s?|aste|aron|amos|o|e)\b|\bya (?:lo )?(?:hiciste|hizo|hice)\b/
+    CHECK_OBJECT = /\A(?:comprobar|verificar|revisar|controlar|observar|mirar|asegurar)\b(?:\s+que)?(?:\s+no\s+hay)?\s+/i
 
     Result = Data.define(
       :links, :steps, :question, :rejections, :associations, :confirmed_items,
@@ -217,6 +222,12 @@ module Rag
       return [ text, bound_targets(text, targets) ] if text.present? && reason.nil?
 
       reject("question", text, reason || "invalid") if text.present?
+      if reason.to_s.start_with?("modality:")
+        clarified = clarify_report(text)
+        return clarified if clarified
+
+        return [ nil, [] ]
+      end
       derived_from = replacement_items(reason, text)
       return [ nil, [] ] unless derived_from.any? && derived_from.all? { |item| !closed_target?(item) }
 
@@ -331,6 +342,80 @@ module Rag
     def derivable?(reason)
       value = reason.to_s
       value == "too_long" || value == "not_one_question" || value.start_with?("ungrounded:")
+    end
+
+    # The model's method is already rejected. The replacement quotes the
+    # report and the documentary object, and it does not carry the method.
+    def clarify_report(text)
+      observation = unique_report(text)
+      unless observation
+        reject("clarification", text, @report_matches.to_i > 1 ? "several_reports" : "no_report")
+        return nil
+      end
+      step = clarification_step(text, observation)
+      unless step
+        reject("clarification", text, "no_step")
+        return nil
+      end
+      focus = check_object(step.text)
+      parent = parent_of(step)
+      unless focus.present? && parent
+        reject("clarification", text, focus.present? ? "no_item" : "no_focus")
+        return nil
+      end
+
+      question = "Dijiste «#{observation.text}». ¿#{focus.sub(/\A\p{L}/, &:upcase)} es lo que ves?"
+      reason = question_reason(question, [])
+      if reason
+        reject("clarification", question, reason)
+        return nil
+      end
+
+      [ question, [ parent.id ] ]
+    end
+
+    def unique_report(text)
+      asked = report_stems(text)
+      rows = @facts.facts.select { |fact| fact.kind == "observation" && report_stems(fact.text).intersect?(asked) }
+      @report_matches = rows.size
+      rows.one? ? rows.first : nil
+    end
+
+    def clarification_step(text, observation)
+      cited = @rejections.filter_map { |row|
+        next unless row["part"] == "question_about" && row["reason"].to_s.start_with?("statement_kind:")
+
+        step = @statements.find(row["value"])
+        step if step&.step? && report_step?(step, observation)
+      }
+      return cited.first if cited.one?
+      return nil if cited.many?
+
+      rows = @statements.statements.select { |step|
+        step.step? && report_step?(step, observation) &&
+          report_stems(step.text).intersect?(report_stems(text))
+      }
+      rows.one? ? rows.first : nil
+    end
+
+    def report_step?(step, observation)
+      anchor = CompanionCaseRelation.first_anchor_stem(step.text)
+      anchor.present? && report_stems(observation.text).include?(anchor)
+    end
+
+    def parent_of(step)
+      @statements.statements.find { |item|
+        item.kind == "item" && item.source == step.source && item.text == step.item
+      }
+    end
+
+    def check_object(text)
+      body = text.to_s.sub(CHECK_OBJECT, "").split(/[.;]/).first.to_s.squish
+      body.presence
+    end
+
+    def report_stems(text)
+      content_stems(self.class.words(text)) - CompanionPlanRender::GENERIC_STEMS
     end
 
     def valid_targets
@@ -577,11 +662,65 @@ module Rag
       return "operation" if normal.match?(OPERATION) && !operation_in?(normal, step_text)
 
       allowed = stems(sources) | stems(case_text) | QUESTION_WORDS.map { |word| self.class.stem(word) }.to_set
-      cited = text.scan(/\[(\d+)\]/).flatten
-      missing = ungrounded(normal, allowed).reject { |stem| cited.include?(stem) }
+      applicable = stems(self.class.normal(applicable_manner_text(steps))) | stems(case_text)
+      cited = text.scan(/\[(\d+)\]/).flatten.to_set
+      missing, manner = question_gaps(normal.split, allowed, cited, applicable)
       return "ungrounded:#{missing.first(3).join(',')}" if missing.any?
+      return "modality:#{manner.first(3).join(',')}" if manner.any?
 
       nil
+    end
+
+    # A -mente word is a method unless the cited step or the case states it.
+    # Another statement that happens to contain the same stem does not.
+    def question_gaps(words, allowed, cited, applicable)
+      missing = []
+      manner = []
+      words.each_with_index do |word, index|
+        stem = self.class.stem(word)
+        next if CONNECTORS.include?(word) || cited.include?(word) || cited.include?(stem)
+        if manner_word?(word, words, index) && applicable.exclude?(stem)
+          manner << word
+        elsif allowed.include?(stem) || conversational_word?(word, words, index, allowed)
+          next
+        else
+          missing << word
+        end
+      end
+      [ missing.uniq, manner.uniq ]
+    end
+
+    # The cited statement, or the kept step the question is about. A manner
+    # word in a different step does not make the method applicable.
+    def applicable_manner_text(steps)
+      cited = Array(@plan["question_about"]).filter_map { |id| @statements.find(id)&.text }
+      return cited.join(" ") if cited.any?
+
+      asked = content_stems(self.class.words(@plan["question"].to_s).reject { |word| word.end_with?("mente") })
+      steps.filter_map { |id|
+        step = @statements.find(id)
+        step.text if step && content_stems(self.class.words(step.text)).intersect?(asked)
+      }.join(" ")
+    end
+
+    def conversational_word?(word, words, index, allowed)
+      return true if familiar_stems.include?(self.class.stem(word))
+      return true if ReportedOperation.family_of(word) == "check"
+
+      nxt = words[index + 1]
+      word.length < 5 && nxt.present? && allowed.include?(self.class.stem(nxt))
+    end
+
+    def manner_word?(word, words, index)
+      return false unless word.end_with?("mente")
+      return false if familiar_stems.include?(self.class.stem(word.delete_suffix("mente")))
+
+      window = words[[ index - 3, 0 ].max..[ index + 3, words.size - 1 ].min]
+      window.any? { |item| item != word && (ReportedOperation.family_of(item) || PERCEPTION.include?(item)) }
+    end
+
+    def familiar_stems
+      @familiar_stems ||= (PERCEPTION.to_a + QUESTION_WORDS.to_a + CONNECTORS.to_a).map { |item| self.class.stem(item) }.to_set
     end
 
     # Each negated word of the reading follows a negation, within three

@@ -159,6 +159,129 @@ class Rag::CompanionPlanTest < ActiveSupport::TestCase
     assert_no_match(/\Arepeats_fact:/, value.rejections.find { |row| row["part"] == "question" }&.dig("reason").to_s)
   end
 
+  test "conversational wording can ask what an existing report covers" do
+    asked = "Dijiste «No veo agua en el sensor». ¿Qué revisaste?"
+    result = check(
+      question: asked,
+      question_about: [ id_of("El motor se para solo.") ],
+      observations: [ [ "No veo agua en el sensor", "query:t1" ], [ "El LED está encendido", "query:t1" ] ]
+    )
+
+    assert_equal asked, result.question
+    assert_nil result.rejections.find { |row| row["part"] == "question" }
+    text = render(result, observations: [ [ "No veo agua en el sensor", "query:t1" ] ], done: false)
+    assert_includes text, asked
+    assert_not_includes text, "manualmente"
+  end
+
+  test "an unsupported check method is replaced by a clarification of the report" do
+    original = "¿Has comprobado manualmente que no hay agua en el sensor, o solo la observaste visualmente?"
+    result = check(
+      question: original,
+      question_about: [ step_id("sensor de nivel") ],
+      observations: [ [ "No veo agua en el sensor", "query:t1" ] ]
+    )
+
+    assert_match(/\Amodality:.*manualmente/, rejection_reason(result))
+    assert_includes result.question, "«No veo agua en el sensor»"
+    assert_includes result.question, "sensor de nivel"
+    assert_not_equal original, result.question
+    assert_not_includes result.question, "manualmente"
+    assert_not_includes result.question, "visualmente"
+    assert_includes result.question_targets, id_of("El motor se para solo.")
+  end
+
+  test "a manual method on another component is not published as the model's sentence" do
+    manual = <<~TEXT
+      • El variador no entrega caudal.
+      – Comprobar el fusible F2.
+    TEXT
+    statements = Rag::CompanionStatements.parse([ chunk(manual, page: "8") ])
+    facts = case_facts(observations: [ [ "No veo el fusible F2", "query:t1" ] ], done: false)
+    original = "¿Comprobaste manualmente el fusible F2, o solo lo miraste?"
+    result = Rag::CompanionPlanCheck.call(
+      { "question" => original, "question_about" => [ statements.statements.find(&:step?).id ] },
+      facts: facts, statements: statements, turns: []
+    )
+
+    assert_match(/\Amodality:/, result.rejections.find { |row| row["part"] == "question" }["reason"])
+    assert_includes result.question, "«No veo el fusible F2»"
+    assert_includes result.question, "fusible F2"
+    assert_not_includes result.question, "manualmente"
+  end
+
+  test "a tool, a turn, and a repeated open check do not become a report clarification" do
+    observations = [ [ "No veo agua en el sensor", "query:t1" ] ]
+    tool = check(question: "¿Usaste el multímetro en el sensor?", observations: observations)
+    turn = check(question: "¿Puedes girar el regulador manualmente?", observations: observations)
+    repeated = check(question: "¿Has comprobado manualmente el #9?", observations: observations)
+
+    assert_match(/\Aungrounded:/, rejection_reason(tool))
+    assert_nil tool.question
+    assert_equal "operation", rejection_reason(turn)
+    assert_nil turn.question
+    ordered = check(question: "¿Debes medir 24 V en el sensor?", observations: observations)
+    assert_equal "prescription", rejection_reason(ordered)
+    assert_nil ordered.question
+    value = check(question: "¿El sensor marca 24 V?", observations: observations)
+    assert_match(/\Aungrounded:/, rejection_reason(value))
+    assert_nil value.question
+    assert_match(/\Arepeats_fact:/, rejection_reason(repeated))
+    assert_nil repeated.question
+    assert_not_includes render(repeated, observations: observations, done: false), "manualmente"
+    unsupported = check(question: "¿Lo comprobaste manualmente?")
+    assert_equal "modality:manualmente", rejection_reason(unsupported)
+    assert_equal "no_report", unsupported.rejections.find { |row| row["part"] == "clarification" }["reason"]
+    assert_nil unsupported.question
+    assert_not_includes render(unsupported), "coincide con"
+  end
+
+  test "a manner stated on another step does not license it for this check" do
+    manual = <<~TEXT
+      • El motor se para solo.
+      – Comprobar que el sensor de nivel no esté activado.
+      • El patín no se mueve.
+      – Verificar manualmente el movimiento del patín.
+    TEXT
+    statements = Rag::CompanionStatements.parse([ chunk(manual, page: "9") ])
+    sensor = statements.statements.find { |item| item.step? && item.text.include?("sensor") }
+    skate = statements.statements.find { |item| item.step? && item.text.include?("patín") }
+    facts = case_facts(observations: [ [ "No veo agua en el sensor", "query:t1" ] ], done: false)
+    borrowed = "¿Has comprobado manualmente que no hay agua en el sensor, o solo la observaste visualmente?"
+    blocked = Rag::CompanionPlanCheck.call(
+      { "steps" => [ skate.id ], "question" => borrowed, "question_about" => [ sensor.id ] },
+      facts: facts, statements: statements, turns: []
+    )
+    kept = Rag::CompanionPlanCheck.call(
+      { "question" => "¿Verificaste manualmente el movimiento del patín?", "question_about" => [ skate.id ] },
+      facts: facts, statements: statements, turns: []
+    )
+
+    assert_equal "modality:manualmente,visualmente", blocked.rejections.find { |row| row["part"] == "question" }["reason"]
+    assert_not_includes blocked.question, "manualmente"
+    assert_equal "¿Verificaste manualmente el movimiento del patín?", kept.question
+  end
+
+  test "the photocell result does not answer whether input 21 is active" do
+    manual = <<~TEXT
+      • Fotocélula.
+      Indicador LED y relé activado cuando la fotocélula o la entrada de re-apertura (#21) está activada.
+    TEXT
+    statements = Rag::CompanionStatements.parse([ chunk(manual, page: "7") ])
+    episode = episode(observations: [ [ "el LED de fotocélula está encendido", "query:t1" ] ])
+    episode.upsert_check!(
+      { "subject" => "fotocélula", "status" => "done", "result" => "no está activada" },
+      correlation_id: "query:t2"
+    )
+    result = Rag::CompanionPlanCheck.call(
+      { "question" => "¿Está activada la entrada de re-apertura (#21)?", "question_about" => [ statements.statements.find { |item| item.kind == "item" }.id ] },
+      facts: Rag::CompanionCaseFacts.build(episode), statements: statements, turns: []
+    )
+
+    assert_equal "¿Está activada la entrada de re-apertura (#21)?", result.question
+    assert_no_match(/fotoc[eé]lula no est[aá] activada/, result.question.to_s)
+  end
+
   test "the render keeps step conditions, the case status, the warning, and the conflict note" do
     steps = [ step_id("regulador"), step_id("sensor de nivel no esté"), step_id("Si el problema persiste") ]
     result = check(
@@ -358,12 +481,16 @@ class Rag::CompanionPlanTest < ActiveSupport::TestCase
     [ T1, T2, "¿qué sigue?" ]
   end
 
-  def check(links: [], steps: [], question: "", observations: nil)
+  def check(links: [], steps: [], question: "", question_about: [], observations: nil)
     facts = observations ? case_facts(observations: observations, done: false) : case_facts
     Rag::CompanionPlanCheck.call(
-      { "links" => links, "steps" => steps, "question" => question },
+      { "links" => links, "steps" => steps, "question" => question, "question_about" => question_about },
       facts: facts, statements: statements, turns: turns
     )
+  end
+
+  def rejection_reason(result)
+    result.rejections.find { |row| row["part"] == "question" }&.dig("reason")
   end
 
   def question_reason(question)

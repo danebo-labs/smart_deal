@@ -3533,3 +3533,68 @@ Dos invocaciones, liquidadas, ids 161 y 162: US$0,003153 y US$0,009847. Incremen
 
 **Siguiente paso, sin ejecutarlo.** F3 sigue abierto en la aclaración progresiva con modelo real. F4, el de la sección 7, no arranca. F5 y los órdenes 3 a 5 del plan padre siguen después. F4 y F5 no se declaran hechas.
 
+## F3. Aclaración de un reporte sin modalidad no respaldada, 23 de octubre de 2026
+
+**Veredicto.** F3 no se cierra. El control ya no borra una aclaración pertinente por vocabulario de conversación, y no publica la modalidad que la captura proponía. El ensayo de esta sección es local: recorre el tool input capturado con respuestas preparadas. No es una conversación observada y no predice la próxima redacción de Haiku. No hubo inferencia. El checkpoint real sigue siendo el de después de T3, sin pendiente.
+
+### 1. Causa
+
+En `20261023T213823Z-q1p`, ante «¿Qué sigue?», el modelo propuso: «¿Has comprobado manualmente que no hay obstrucción mecánica en la puerta, o solo la observaste visualmente?» `question_about` era el paso `S1.5`, «Comprobar que no hay una obstrucción mecánica en la puerta», y se rechazó por `statement_kind:step`. La pregunta se rechazó por `ungrounded:has,observaste,visualmente`. No se publicó pregunta ni se instaló pendiente.
+
+Ese motivo mezcla dos cosas. «has» es un auxiliar breve delante de «comprobado», y «observaste» es el verbo de comprobar en forma de conversación. Su ausencia literal no quitaba respaldo. «visualmente» sí es una modalidad. «manualmente» no salió entre las tres primeras palabras porque otro paso del mismo turno, en `chunk_p12_3.txt`, dice «Verificar manualmente el correcto movimiento del patín». El tallo `manua` alcanzaba para cualquier pregunta. Ese paso no establece cómo comprobar la obstrucción de la puerta. La nota anterior de este plan describió las dos palabras como ausentes de las fuentes; el archivo muestra que «manualmente» está en el paso del patín, no en el paso citado.
+
+### 2. Qué cambió
+
+Solo `CompanionPlanCheck`. No cambió el prompt, el esquema de la herramienta, el modelo, los parámetros ni los límites de gasto.
+
+`question_reason` separa el texto en cuatro grupos, con las listas que ya tenía la clase:
+
+- Conector, cita o tallo presente en las fuentes o en el caso: contenido respaldado.
+- Verbo de la familia comprobar, palabra de percepción o de pregunta, o palabra de menos de cinco letras cuya siguiente palabra está respaldada: vocabulario de conversación. No se añaden «has», «observaste» ni «revisaste» a una lista de excepciones.
+- Palabra terminada en «mente», junto a un verbo de comprobar o de percepción, cuyo tallo no está en el enunciado citado ni en el caso: modalidad. Un paso distinto, aunque esté entre las fuentes del turno, no la autoriza. Si no hay `question_about`, solo cuenta el paso conservado del que la pregunta habla, sin usar la propia palabra en «mente» para elegirlo.
+- Cualquier otra palabra ausente: contenido técnico sin respaldo. Esa falta gana. La pregunta sigue en `ungrounded:` y no se reescribe.
+
+Si solo queda modalidad, la frase del modelo se rechaza (`modality:manualmente,visualmente` en esta captura) y no se publica. Ruby arma una aclaración solo con un reporte inequívoco y un paso de comprobación que ancla ese reporte. La frase producida cita el reporte y el objeto del paso. No copia la modalidad. El destino del pendiente es el ítem padre, no el paso. En esta captura: «Dijiste «No veo obstrucción». ¿Una obstrucción mecánica en la puerta es lo que ves?» Destino `S1.2`, «La puerta se re-abre sola.», página 12, `chunk_p12_5.txt`.
+
+Esa frase es del producto, no de Haiku. Si faltan el reporte único, el paso, el objeto o el ítem, el rechazo queda en `clarification` con `no_report`, `several_reports`, `no_step`, `no_focus` o `no_item`, y no se publica otra pregunta. Si la frase derivada no pasa el mismo control, se registra ese motivo y tampoco se publica. Una pregunta ya hecha, un check abierto que ya dice que no se hizo, una operación, una prescripción o una herramienta o un valor ausentes siguen eliminando la pregunta y no dejan pendiente. La relación incompatible del patín no se tocó.
+
+### 3. Ensayo local de la captura
+
+Procedencia del tool input, del estado y de las fuentes: `runs/20261023T213823Z-q1p/q1p_t1`, llamada `02-companion_plan-1-query_6cd0bee2-8806-41a8-b56a-b5b2a367049f`. Esos archivos no se modificaron. El estado es `state_before.json` del checkpoint posterior a T3, episodio `ep_ebaad52adc01a534`. No es el `episode_after` de aquel turno, que ya había publicado la orientación sin pregunta.
+
+Recorrido en memoria: plan capturado, check, render, publicación, pendiente, respuesta parcial preparada y turno siguiente. Cero llamadas.
+
+- Pregunta del modelo: la frase de arriba. No pasa entera.
+- Parte rechazada: `modality:manualmente,visualmente`. El destino `S1.5` sigue en `statement_kind:step`.
+- Pregunta derivada por Ruby, y texto que entra en la respuesta publicada: «Dijiste «No veo obstrucción». ¿Una obstrucción mecánica en la puerta es lo que ves?»
+- El historial de un turno compañero guarda exactamente ese texto publicado. `answer` y `history` coinciden en el ensayo.
+- Pendiente `documented_context`: la misma pregunta, ítem «La puerta se re-abre sola.», `chunk_p12_5.txt`, página 12.
+- La respuesta preparada «El marco de la puerta, nada más» queda atada a ese ítem, con `r` vacío. No afirma una comprobación completa.
+- El episodio y el equipo no cambian: `ep_ebaad52adc01a534`, fabricante Fermator. Siguen el LED encendido, la fotocélula hecha con «no está activada» y el #54 no hecho. La observación de la obstrucción no pasa a comprobación hecha: la correspondencia con el paso es `:related`.
+- El mismo plan, ya con esa respuesta, no vuelve a publicar la pregunta. Una paráfrasis «¿La obstrucción mecánica en la puerta es lo que ves?» tampoco. El texto no incorpora el procedimiento del patín ni «manualmente».
+
+Un fixture reducido, con procedencia en el propio test, cubre el mismo recorrido sin el directorio temporal: el paso de obstrucción como en `chunk_p12_5` y, en otro ítem, «Verificar manualmente el movimiento del patín» como en `chunk_p12_3`.
+
+### 4. Pruebas
+
+Positivas. «Dijiste «No veo agua en el sensor». ¿Qué revisaste?» se conserva: el verbo de conversación no se rechaza por no estar literal en el manual, el reporte sigue citado y no se afirma que la comprobación esté hecha. La pregunta del sensor con «manualmente» y «visualmente» no se publica; la sustitución nombra el sensor de nivel y omite las dos modalidades. Lo mismo con el fusible F2. «¿Verificaste manualmente el movimiento del patín?» sí pasa cuando el paso citado dice «Verificar manualmente». «¿Está activada la entrada de re-apertura (#21)?» sigue permitida cuando solo consta el estado de la fotocélula, y no le atribuye «no está activada». Una pregunta válida puede ser el cuerpo de la respuesta. La pregunta publicada instala un pendiente que admite una contestación breve o parcial.
+
+Negativas. No entra un multímetro, un giro, un «debes medir 24 V» ni un valor suelto. Esas órdenes, aunque vayan en forma de pregunta, no se convierten en aclaración y no dejan pendiente. «¿Lo comprobaste manualmente?» sin un reporte que anclar queda en `clarification` / `no_report` y no deriva «¿coincide con…?». «¿Has comprobado manualmente el #54?» sigue en `repeats_fact` porque el check ya está no hecho. La observación «No veo obstrucción» no completa el paso de la obstrucción mecánica. Una pregunta eliminada no instala pendiente. El paso del patín incompatible con «antes de que el patín empiece a cerrar» no vuelve por esta corrección.
+
+Regresión. La suite de `companion_plan` y `companion_f3_disambiguation` queda en verde, incluida la captura real cuando el directorio está presente. La suite completa quedó en 5081 pruebas, 0 fallos y 186 omisiones.
+
+### 5. Qué queda para una comprobación con modelo real
+
+El checkpoint real no se reescribió. Sigue en `20261023T182442Z-conversation/t3/episode_after.json`, SHA-256 `3196986bdb6e229b4240a199dc6a2d2e42aeda0d99d03a6a3ea2e2da49d7c2b3`, episodio `ep_ebaad52adc01a534`, sin pendiente. La continuación real, cuando se autorice, parte de ese estado y de un turno nuevo. No parte del texto de este ensayo: esa pregunta no está en el historial observado.
+
+Lo que el modelo real todavía tiene que mostrar es una pregunta publicada, una respuesta parcial o desconocida incorporada, y un turno posterior que use ese dato sin repetir la pregunta. Este replay solo demuestra que el producto ya puede hacerlo con el tool input capturado. Si en esa corrida `ActiveEpisode` vuelve vacío porque la ventana de cuatro horas desde `updated_at` expiró, hay que detenerse: es pérdida de estado, no un motivo para reescribir la captura.
+
+No se usaron las dos invocaciones que quedan de `f3-q1-20261023`. No se abrió otra ejecución.
+
+### 6. Consumo
+
+Cero inferencias. El ledger no se escribió. SHA-256 `6ea5d5dd2467307984268593b3ada74a7489a50b516079d0cb3e2f81a9c1ee3c`. `attempts` 162, `priced` 157, `blocked` 0, `open` vacío, `committed` US$1,539900, `unknown` US$0,10214, `call_cap` 164. Autorización `f2f3-joint-after-134` y ejecución `f3-q1-20261023` intactas. De las 12 llamadas de esa ejecución siguen usadas 10 y quedan 2.
+
+**Siguiente paso, sin ejecutarlo.** F3 sigue abierto. La próxima medición real, si se autoriza, sale del checkpoint posterior a T3, con este control ya en el producto, y no debe confundirse con el ensayo local. F4, el de la sección 7, no arranca. F5 y los órdenes 3 a 5 del plan padre siguen después. F4 y F5 no se declaran hechas.
+
+

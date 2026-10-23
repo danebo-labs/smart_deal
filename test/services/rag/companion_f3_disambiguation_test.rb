@@ -20,6 +20,7 @@ class Rag::CompanionF3DisambiguationTest < ActiveSupport::TestCase
     – Comprobar la regulación del patín, ya que probablemente el patín roza. Verificar si los LEDs de obstrucción se encienden.
   TEXT
   CAPTURE = Rails.root.join("tmp/field_companion/vf5_correction/f2f3_joint/runs/20261023T182442Z-conversation")
+  Q1_RUN = Rails.root.join("tmp/field_companion/vf5_correction/f2f3_joint/runs/20261023T204654Z-q1")
   KB = Rails.root.join("tmp/field_companion/vf5_correction/f2f3_joint/f2/candidate_r2/kb")
   DEFINITIONS = {
     "1f1bc47d81282a868b149e555545a73adefdf7cc871c5b831dc74f8f8f5d0a89" => <<~TEXT,
@@ -603,6 +604,53 @@ class Rag::CompanionF3DisambiguationTest < ActiveSupport::TestCase
     previous.nil? ? ENV.delete("HAIKU_QUERY_ANALYSIS_MODE") : ENV["HAIKU_QUERY_ANALYSIS_MODE"] = previous
   end
 
+  test "the captured Q1 check questions are dropped and the LED question keeps its chunk" do
+    skip "captura Q1 ausente" unless Q1_RUN.exist? && KB.exist?
+
+    %w[q1_t1 branch_A].each do |name|
+      loaded = q1_replay(name)
+      assert_nil loaded.question, name
+      assert_match(/\Arepeats_fact:/, rejection(loaded.checked, "question"))
+      assert_not_includes loaded.text, "¿Ha comprobado"
+      composed = Rag::CompanionPlan.compose(CompanionPlanResponse.build(loaded.plan), prepared_replay(loaded))
+      assert_nil composed.pending, name
+      assert_not_includes composed.text, "¿Ha comprobado"
+      assert_not_includes composed.text, "Ajustaste"
+    end
+
+    loaded = q1_replay("branch_B", live: true)
+    assert_includes loaded.question, "entrada de re-apertura"
+    assert_no_match(/\Arepeats_fact:/, rejection(loaded.checked, "question").to_s)
+    composed = Rag::CompanionPlan.compose(CompanionPlanResponse.build(loaded.plan), prepared_replay(loaded))
+    assert_includes composed.text, loaded.question
+    target = composed.pending["targets"].first
+    assert_equal "chunk_p7_3.txt", target["filename"]
+    assert_equal "7", target["page"]
+    assert_includes target["document_key"], "VF5.pdf"
+    assert_equal "Fotocélula.", target["item"]
+
+    page_text = KB.join("bulk_chunks/1/be7a39a3490c92c8381cb883402760cb07d1/chunk_p7_3.txt").read
+    catalog = Rag::CompanionDefinitionCatalog.from_pages([
+      {
+        "document_key" => target["document_key"], "filename" => target["filename"], "page" => 7,
+        "name" => "VF5", "provenance" => "chunk chunk_p7_3.txt", "text" => page_text
+      }
+    ])
+    other = { content: "página distinta", metadata: { "page_number" => "12", "filename" => "chunk_p12_5.txt" } }
+    expanded = Rag::CompanionDefinitionExpander.expand([ other ], catalog: catalog, targets: [ target ])
+    assert_includes expanded.chunks.last[:content], "entrada de re-apertura"
+    assert_equal "chunk_p7_3.txt", expanded.added.first["filename"]
+
+    missed = Rag::CompanionDefinitionExpander.expand([ other ], catalog: catalog, targets: [ target.merge("filename" => "") ])
+    assert_equal "target_not_loaded", missed.omitted.first["reason"]
+    assert_equal 1, missed.chunks.size
+
+    step = loaded.statements.statements.find { |item| item.step? && item.text.include?("re-apertura") }
+    rebound = q1_check(loaded, loaded.plan.merge("question_about" => [ step.id ]))
+    assert_includes rebound.question, "#21"
+    assert_equal [ step.item ], rebound.checked.question_targets.map { |id| loaded.statements.find(id).text }
+  end
+
   def replay(name)
     dir = CAPTURE.join(name)
     plan_dir = dir.join("calls").children.find { |path| path.basename.to_s.start_with?("02-companion") }
@@ -617,6 +665,58 @@ class Rag::CompanionF3DisambiguationTest < ActiveSupport::TestCase
     checked = Rag::CompanionPlanCheck.call(plan, facts: facts, statements: statements, turns: turns)
     text = checked.usable? ? Rag::CompanionPlanRender.call(checked, facts: facts, statements: statements) : ""
     Replay.new(plan: plan, facts: facts, statements: statements, checked: checked, text: text, question: checked.question, chunks: chunks, turns: turns)
+  end
+
+  def q1_replay(name, live: false)
+    dir = Q1_RUN.join(name)
+    plan_dir = dir.join("calls").children.find { |path| path.basename.to_s.start_with?("02-companion") }
+    plan = JSON.parse(plan_dir.join("raw_response.txt").read)
+    sources = JSON.parse(plan_dir.join("sources.json").read).fetch("sources")
+    stored = JSON.parse(dir.join("episode_after.json").read)
+    episode = Rag::ActiveEpisode.parse(stored, now: Time.iso8601(stored["updated_at"]) + 60)
+    chunks = sources.map { |source| live ? live_chunk(source) : captured_chunk(source) }
+    q1_check_chunks(plan, episode, chunks, [ dir.join("question.txt").read.strip ])
+  end
+
+  def q1_check(loaded, plan)
+    q1_check_chunks(plan, nil, loaded.chunks, loaded.turns, facts: loaded.facts, statements: loaded.statements)
+  end
+
+  def q1_check_chunks(plan, episode, chunks, turns, facts: nil, statements: nil)
+    statements ||= Rag::CompanionStatements.parse(chunks)
+    facts ||= Rag::CompanionCaseFacts.build(episode)
+    checked = Rag::CompanionPlanCheck.call(plan, facts: facts, statements: statements, turns: turns)
+    text = checked.usable? ? Rag::CompanionPlanRender.call(checked, facts: facts, statements: statements) : ""
+    Replay.new(plan: plan, facts: facts, statements: statements, checked: checked, text: text, question: checked.question, chunks: chunks, turns: turns)
+  end
+
+  def prepared_replay(loaded)
+    Rag::CompanionPlan::Prepared.new(
+      params: {}, system: "", user: "", facts: loaded.facts, statements: loaded.statements,
+      turns: loaded.turns, chunks: loaded.chunks
+    )
+  end
+
+  def live_chunk(source)
+    key = source["key"].to_s
+    content = if key.present?
+      KB.join(key).read
+    else
+      DEFINITIONS.fetch(source["sha256"], "")
+    end
+    uri = key.present? ? "s3://multimodal-source-destination/#{key}" : nil
+    {
+      content: content,
+      location_uri: uri,
+      metadata: {
+        "canonical_name" => "Módulo electrónico VF5+ Fermator",
+        "original_filename" => "VF5.pdf",
+        "original_source_uri" => "s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf",
+        "page_number" => source["page"].to_s,
+        "x-amz-bedrock-kb-source-uri" => uri
+      }.compact,
+      identity_applicability: "compatible"
+    }
   end
 
   def replay_plan(loaded, plan)

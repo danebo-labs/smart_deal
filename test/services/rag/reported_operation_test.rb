@@ -35,6 +35,12 @@ class Rag::ReportedOperationTest < ActiveSupport::TestCase
     assert_empty Rag::ReportedOperation.parse("No veo obstrucción.").acts
   end
 
+  test "a past check and a past adjustment are different acts" do
+    assert_equal [ "check" ], Rag::ReportedOperation.parse("¿Verificaste el fusible F2?").acts.map(&:family)
+    assert_equal [ "adjust" ], Rag::ReportedOperation.parse("¿Ajustaste el #9?").acts.map(&:family)
+    assert_empty Rag::ReportedOperation.parse("potenciómetro de regulación").acts
+  end
+
   test "the same component keeps two operations and normalizes the identifier" do
     episode = Rag::ActiveEpisode.open(correlation_id: "t1", now: Time.current)
     episode.upsert_check!(

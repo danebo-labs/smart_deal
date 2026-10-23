@@ -3313,7 +3313,7 @@ No se declara F3 estable ni F4/F5 completadas.
 
 ## F3. Desambiguación progresiva, implementación local, 23 de octubre de 2026
 
-**Veredicto.** F3 no se cierra. Q1 se ejecutó con Haiku real y la separación A/B queda aceptada por significado. La aclaración progresiva (respuesta parcial, pregunta más concreta y uso posterior de esa aclaración) no llegó a ocurrir: la primera pregunta publicada fue otra y la ficha cerró ese camino. E2 y E3 quedan sin demostrar. No se abre otra tanda.
+**Veredicto.** F3 no se cierra. La primera tanda de Q1, registrada abajo, aceptó la separación A/B y no alcanzó la aclaración progresiva. La corrección local posterior retira la pregunta que repetía una comprobación ya no hecha y deja el destino documental recuperable. La continuación, con otra versión de código y las invocaciones que quedaban de la misma ejecución, incorporó el «no sé» y orientó sin repetir esa pregunta. La aclaración progresiva sigue sin observarse en vivo. El detalle está en la sección final de esta entrega.
 
 **Autorización usada.** Doce invocaciones, con el `call_cap` de 152 a 164. Se usaron seis. El límite global sigue en US$4. No hubo microtecho nuevo ni reinicio de `committed`, `unknown`, reservas o autorizaciones anteriores. La ejecución `f3-q1-20261023` quedó registrada en el ledger local, con corte en el intento 152, US$0,750000 y 12 llamadas. No se reintentó ni se regeneró.
 
@@ -3390,5 +3390,72 @@ La asociación es `compatible`, motivo `markers_agree`, ancla `patin`. El paso c
 
 **Pruebas.** La suite anterior, semilla 4059, es anterior a la pregunta concreta y al tope 164. En este cambio, RuboCop omakase no marca los archivos Ruby tocados. Suite `bin/rails test`, semilla 9620: 5068 corridas, 36467 aserciones, 0 fallos, 0 errores, 186 omisiones.
 
-**Siguiente paso, sin ejecutarlo.** F3 sigue abierto en la aclaración progresiva en vivo. F4 no arranca. Cuando esa aclaración se observe por significado, el paso de la sección 7 es F4: con Retrieve real, el destino de la pregunta publicada se rehidrata o queda visible como no cargado. El pendiente de B, con `filename` vacío, es un dato para esa comprobación, no una razón para empezarla ahora. Después, F5 comprueba en la web el pendiente y que el pin no cambia. Los órdenes 3 a 5 del plan padre siguen después. La F4 de sustitución y sincronización de este plan sigue sujeta a su backlog y a la concesión. F4 y F5 no se declaran hechas.
+**Siguiente paso de aquella tanda, sin ejecutarlo.** F3 seguía abierto en la aclaración progresiva en vivo. La sección siguiente corrige tres defectos de esta Q1 y usa las invocaciones restantes. No abre F4.
+
+## F3. Corrección local y continuación de Q1, 23 de octubre de 2026
+
+**Veredicto.** F3 no se cierra. La corrección local queda aceptada: una comprobación no hecha ya responde si se realizó, la pregunta publicada y su pendiente quedan coherentes, y el fragmento del destino se puede rehidratar cuando sale del top-k. La continuación con Haiku real reconoció el límite de la pregunta del LED y orientó sin repetirla ni inventar una maniobra. No hubo una segunda pregunta más concreta, porque el modelo no preguntó por el momento ni por la parte. Esa aclaración progresiva sigue sin demostrarse. F4 queda preparado y no se ejecuta.
+
+**Dos versiones de Q1.** Los seis primeros turnos son el commit `e63f47e72622a10bce6f2cf63d8aa38953bb8482`. La continuación se ejecutó sobre ese mismo `HEAD`, con los cuatro archivos de producto todavía sin commitear. No es la misma versión. Hashes SHA-256 de esa continuación, en `q1c_code.json`: `companion_plan.rb` `f93f6b99bda913010a0600088e3932f19c6d984f8ba3c3557a79598070095fd5`, `companion_plan_check.rb` `10f096ce7eab38a5d7629e17bdcb44c6a624d963111b5a78a5c818d1d5d43539`, `pending_question.rb` `7ed19ac5d5ef7c9451b1f6c46f242005212523fed6c1ebac0c2de10f008086db`, `reported_operation.rb` `7ccf1380933993aa66f3b3ae1ccca7fb5ec63f2efd0adcd2f1ceceab47fdab0e`. El commit de esta entrega es el que archiva ese diff. No se presenta toda Q1 como una sola versión.
+
+### 1. Corrección local
+
+**A. Comprobación no hecha.** El criterio mira la operación y el sujeto, no una excepción del #54. Si el caso conserva un `not_done_check` y la pregunta es solo de la familia `check` sobre ese mismo componente, es repetición. «¿Ha comprobado el #54?» y «¿Ha comprobado la regulación del potenciómetro #54?» caen por ese criterio. «¿Ajustaste el #9?» sobre un #9 no comprobado es otro acto: se rechaza por `operation` y no se publica en lugar de la comprobación. Una pregunta de resultado sin acto, «¿Qué corriente marca el fusible F2?», no entra en esta regla. La prueba equivalente usa el fusible F2 y el regulador #9. La repetición se decide antes de tratar la pregunta como no respaldada, para que no se sustituya por el encabezado ni por una orden de ajuste.
+
+**B. Pregunta y destino.** Un `question_about` inválido no autoriza la pregunta por sí mismo. Si la pregunta ya es repetición, se retira: los dos `tool_input` capturados del #54 salen del texto publicado y no dejan pendiente. Si los destinos válidos están vacíos y el paso rechazado tiene un único ítem padre cuyas palabras usa la pregunta, ese ítem se ata. La pregunta del LED, con `question_about` reducido al paso de la entrada #21, conserva el texto y el pendiente «Fotocélula.». Una pregunta útil sin `question_about` no se elimina por este camino.
+
+**C. Fragmento recuperable.** El nombre de catálogo es el archivo del chunk, no el PDF. Si los metadatos traen `filename`, `chunk_key` o `source_key`, se usa ese nombre. Si no, se usa el basename de `x-amz-bedrock-kb-source-uri` o de `location_uri`. `original_filename` del PDF no se usa. Con los metadatos vivos de B, el pendiente nuevo queda en `chunk_p7_3.txt`, página 7 y la clave del VF5. El expansor añade ese fragmento cuando no está en el top-k. Un `filename` vacío sigue como no cargado; no se inventa la fuente.
+
+**Respuesta «no sé» más larga.** «No sé cómo distinguir si lo activa la entrada 21 o la fotocélula» cierra el pendiente documental como `unknown`. «No se enciende el LED» no entra en esa lectura.
+
+**Pruebas de esta corrección.** RuboCop omakase, sin avisos, en los ocho archivos Ruby. Suite acotada de companion, semilla 41966: 59 corridas, 623 aserciones, 0 fallos, 0 errores. Incluye el replay de `20261023T204654Z-q1`: el #54 no se publica, la pregunta del #21 se conserva, el pendiente de B lleva `chunk_p7_3.txt` y el expansor lo rehidrata fuera del top-k. La suite completa, semilla 63338: 5072 corridas, 36531 aserciones, 0 fallos, 0 errores, 186 omisiones.
+
+### 2. Procedencia del checkpoint y reparación explícita
+
+La continuación no reejecutó A ni reconstruyó B. Partió de `branch_B/episode_after.json` de `20261023T204654Z-q1`, episodio `ep_ebaad52adc01a534`, `updated_at` `2026-10-23T17:47:14-03:00`. A las 18:19 (−03) seguía dentro de la ventana de cuatro horas. El archivo de captura no se modificó.
+
+Ese pendiente, tal como se observó, no podía rehidratarse: `filename` vacío y el expansor omite un destino sin nombre. La reparación es solo de la sesión local, anterior a las llamadas, y no demuestra que el transporte original funcionara.
+
+- Antes: `documented_context`, ítem «Fotocélula.», página 7, `filename` `""`, `document_key` `s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf`, pregunta «¿El LED de fotocélula se enciende por la entrada de re-apertura (#21) o por la fotocélula misma?».
+- Procedencia: en `branch_B/calls`, `sources.json` de la generación, el único chunk con clave de la página 7 es `bulk_chunks/1/be7a39a3490c92c8381cb883402760cb07d1/chunk_p7_3.txt`. Ese archivo contiene «Fotocélula.» y la frase del LED.
+- Después, en memoria: el mismo pendiente, con `filename` `chunk_p7_3.txt`. Registro: `runs/20261023T211921Z-q1c/q1c_repair.json`.
+
+La ficha de respuesta se fijó en `q1c_card.json` antes de llamar. Primera respuesta, siempre: «No sé cómo distinguir si lo activa la entrada 21 o la fotocélula». «Mientras se está cerrando; no distingo qué parte» solo si la pregunta publicada es de momento o de parte, sin la elección explícita de puerta o patín. «La puerta todavía se está cerrando; el patín no ha empezado a cerrar» solo si la pregunta pide esa elección o si el patín ya empezó. Otra pregunta queda sin contestar. Una orientación sin pregunta cierra el recorrido.
+
+### 3. Continuación con modelo real
+
+Entorno: aplicación y base locales, candidata F2 `candidate_r2`, Haiku `global.anthropic.claude-haiku-4-5-20251001-v1:0`, `SharedSession::ENABLED=false` desde el arranque, Retrieve y S3 locales, converse real, `AWS_MAX_ATTEMPTS=1`. Sin despliegue, sin escritura en S3 y sin sincronización. No se admitió otra ejecución ni se movió el `call_cap`. La copia del ledger admitió seis reservas más y rechazó la séptima sin cambiar el archivo real, el `committed`, las ejecuciones ni el tope.
+
+Se envió un turno. El modelo repitió la pregunta del LED. El control la retiró por `already_answered`. `question_about` `S10.2` se rechazó por `statement_kind:heading` y no sostuvo la pregunta. El texto publicado no contiene pregunta. El pendiente se cerró al incorporar la respuesta: la observación queda con `answers.r` `unknown` y el destino reparado, `chunk_p7_3.txt`. En este turno el Retrieve ya traía ese chunk, así que la rehidratación fuera del top-k no se ejerció en vivo; la cubre la prueba local. Cuatro invocaciones de las seis restantes no se usaron: no había otra pregunta que contestar y no se forzó el recorrido.
+
+**Mensaje enviado.** «No sé cómo distinguir si lo activa la entrada 21 o la fotocélula.»
+
+**Respuesta publicada.**
+
+Sobre lo que reportaste, «el LED de fotocélula está encendido»: la documentación dice «Indicador LED y relé activado cuando la fotocélula o la entrada de re-apertura está activada» [3]; lectura de Danebo: El LED de fotocélula está encendido cuando la fotocélula o la entrada de re-apertura está activada.
+Sobre lo que reportaste, «Se vuelve a abrir justo cuando el patín está cerrando»: la documentación dice «La puerta se vuelve a abrir cuando el patín está cerrando» [1]; lectura de Danebo: La puerta se vuelve a abrir cuando el patín está cerrando.
+Sobre lo que reportaste, «La puerta se reabre sola»: la documentación dice «La puerta se re-abre sola» [4]; lectura de Danebo: La puerta se re-abre sola.
+Para este síntoma, «La puerta se re-abre sola», la documentación indica [4]:
+- «Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)» [4]; dijiste «No he comprobado el #54», así que sigue pendiente.
+- «En caso que el problema persista, desconectar la fotocélula y volver a pulsar el botón de TEST»; «Si la puerta no se abre o cierra completamente, debe haber una obstrucción mecánica en la puerta» [4].
+Para lo que informaste, «Se vuelve a abrir justo cuando el patín está cerrando», la documentación indica en «La puerta se vuelve a abrir cuando el patín está cerrando» [1]:
+- «Comprobar la regulación del patín, ya que probablemente el sistema de bloqueo del patín no esté correctamente ajustado y la puerta tenga fricción mecánica»; «Verificar si los LEDs de obstrucción se encienden» [1].
+También informaste: «Ya revisé la fotocélula y no está activada».
+
+`answer` y `history_answer` coinciden. Publicación aceptada. Ruta `answered`. Turno compañero aplicado. Episodio `ep_ebaad52adc01a534`. El LED sigue encendido. El check de la fotocélula sigue `done` con «no está activada». El #54 sigue `not_done` y la respuesta lo deja pendiente, sin volver a preguntar si se comprobó. No hay identificador nuevo. El procedimiento del patín se conserva porque el hecho de B sigue en el episodio; no depende de distinguir la entrada 21 de la fotocélula y no se inventó una maniobra para averiguarlo.
+
+**Estado entre turnos.** Al entrar, el pendiente era la pregunta del LED, reparado en memoria. Al salir, no hay pendiente. La observación nueva guarda la pregunta, `r` `unknown` y el destino con `chunk_p7_3.txt`. No hubo segundo turno.
+
+### 4. Consumo y saldo
+
+Dos invocaciones, liquidadas, ids 159 y 160: US$0,003363 y US$0,009511. Incremento US$0,012874. `attempts` 160, `priced` 155, `blocked` 0, `open` vacío. `committed` US$1,526900. `unknown` US$0,10214, sin cambio. Autorización `f2f3-joint-after-134` intacta en id, corte 134 y US$0,750000. `call_cap` 164, sin cambio. Ejecución `f3-q1-20261023` intacta: corte 152, US$0,750000, 12 llamadas. De esas 12 se han usado 8; quedan 4 sin usar y no se abre otra ejecución para gastarlas. SHA-256 del ledger después: `ecd004c575df1e2897ae931eae5c5979de3c99f9afe166c332cc02c9986a25fe`. El tope global de US$4 sigue por encima de `committed` más `unknown`.
+
+### 5. Evaluación por separado
+
+1. **Código local.** Aceptado. La repetición usa operación, sujeto y significado. La pregunta del #21 sobrevive. El destino vacío no publica una pregunta redundante y sí conserva una pregunta respaldada con su ítem. El fragmento se rehidrata fuera del top-k en la prueba local.
+2. **Continuación real.** Aceptada en su alcance. El modelo repitió la pregunta; el control la retiró porque la respuesta ya era `unknown`. La orientación conserva el hecho del patín, el LED, el resultado de la fotocélula y el #54 como pendiente.
+3. **Aclaración progresiva.** No observada. No se publicaron la pregunta de parte ni una segunda pregunta más concreta. Las frases «Mientras se está cerrando…» y «La puerta todavía se está cerrando…» no se enviaron.
+4. **Límites.** La ficha no cubre otra pregunta imprevista; no hizo falta. El cupo restante no se usó para provocar esa aclaración. El `filename` reparado no es el estado original de B.
+
+**Siguiente paso, sin ejecutarlo.** F4, el de la sección 7: con Retrieve real, el destino de una pregunta publicada se rehidrata o queda visible como no cargado. El ranking no se da por validado con el stub. F4 no arranca en este encargo, porque la aclaración progresiva en vivo sigue pendiente y no se fuerza el cierre de F3. Después, F5 comprueba en la web el pendiente y que el pin no cambia. Los órdenes 3 a 5 del plan padre siguen después. La F4 de sustitución y sincronización de este plan sigue sujeta a su backlog y a la concesión. F4 y F5 no se declaran hechas.
 

@@ -25,7 +25,7 @@ module Rag
       "replace" => %w[cambi reemplaz sustitu],
       "restart" => %w[reinici apag encend]
     }.freeze
-    FINITE = /\A(?:ar|er|ir|a|e|i|as|es|alo|elo|arlo|erlo|irlo|ando|iendo|ala|ela)\z/
+    FINITE = /\A(?:ar|er|ir|aste|iste|a|e|i|as|es|alo|elo|arlo|erlo|irlo|ando|iendo|ala|ela)\z/
     PARTICIPLE = /\A(?:ado|ados|ada|adas)\z/
     NEGATION_WORD = /\A(?:no|ni|nunca|sin|tampoco|ningun[oa]?)\z/
 

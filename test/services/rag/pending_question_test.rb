@@ -71,6 +71,20 @@ class Rag::PendingQuestionTest < ActiveSupport::TestCase
     assert_nil Rag::PendingQuestion.coerce("type" => "work_relation", "options" => [ "same" ])["options"]
   end
 
+  test "a longer no se answers the documented question and a negated state does not" do
+    question = {
+      "type" => "documented_context",
+      "question" => "¿El LED se enciende por la entrada 21 o por la fotocélula?",
+      "targets" => [ { "item" => "Fotocélula.", "document_key" => "s3://x", "filename" => "chunk_p7_3.txt", "page" => "7" } ]
+    }
+    reply = Rag::PendingQuestion.parse_reply(
+      "No sé cómo distinguir si lo activa la entrada 21 o la fotocélula",
+      pending_question: question
+    )
+    assert_equal({ "type" => "documented_context", "r" => "unknown" }, reply)
+    assert_nil Rag::PendingQuestion.parse_reply("No se enciende el LED", pending_question: question)
+  end
+
   test "prose fallback still sets the subject when no structured object is passed" do
     result = Rag::ActiveEpisodeTurn.apply_assistant(
       state: episode_state, text: "¿Sabes el modelo del equipo?", now: NOW, correlation_id: "query:prose"

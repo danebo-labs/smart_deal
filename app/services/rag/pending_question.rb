@@ -15,6 +15,9 @@ module Rag
       "no lo se" => "unknown",
       "no puedo verlo" => "unknown"
     }.freeze
+    # A longer "no sé cómo / si" answers the open question. "No se enciende"
+    # does not: that is a state, not a limit.
+    UNKNOWN_CLARIFICATION = /\Ano (?:lo )?se(?:\s+como|\s+distingu|\s+ver|\s+si)\b/
 
     module_function
 
@@ -82,7 +85,9 @@ module Rag
     def documented_reply(question, raw)
       return nil unless question && question["type"] == "documented_context"
 
-      code = DOCUMENTED_REPLIES[FollowupQueryRewriter.normalize_label(raw)]
+      label = FollowupQueryRewriter.normalize_label(raw)
+      code = DOCUMENTED_REPLIES[label]
+      code = "unknown" if code.nil? && label.match?(UNKNOWN_CLARIFICATION)
       return nil if code.nil?
       return nil if %w[yes no].include?(code) && Array(question["targets"]).size != 1
 

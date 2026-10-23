@@ -127,6 +127,38 @@ class Rag::CompanionPlanTest < ActiveSupport::TestCase
                  check(steps: [ persists ], question: "¿Puedes desconectar el sensor de nivel?").question
   end
 
+  test "an open check already answers whether that check was performed" do
+    assert_match(/\Arepeats_fact:N1/, question_reason("¿Ha comprobado el #9?"))
+    assert_match(/\Arepeats_fact:N1/, question_reason("¿Verificaste el regulador de caudal #9?"))
+    assert_equal "operation", question_reason("¿Ajustaste el #9?")
+    assert_no_match(/\Arepeats_fact:/, question_reason("¿Qué valor marca el sensor de nivel?").to_s)
+
+    asked = check(steps: [ step_id("regulador") ], question: "¿Ha comprobado el #9?")
+    adjusted = check(steps: [ step_id("regulador") ], question: "¿Ajustaste el #9?")
+    assert_nil asked.question
+    assert_nil adjusted.question
+    assert_not_includes render(asked), "¿Ha comprobado"
+    assert_not_includes render(adjusted), "Ajustaste"
+    assert_includes render(asked), "sigue pendiente"
+
+    fuse = Rag::ActiveEpisode.open(correlation_id: "query:f2", now: Time.current)
+    fuse.assign_goal!("El motor se para solo", correlation_id: "query:f2")
+    fuse.upsert_check!({ "subject" => "fusible F2", "status" => "not_done" }, correlation_id: "query:f2")
+    fuse.upsert_check!(
+      { "subject" => "sensor de nivel", "status" => "done", "result" => "no está activado" },
+      correlation_id: "query:f2"
+    )
+    facts = Rag::CompanionCaseFacts.build(fuse)
+    repeated = Rag::CompanionPlanCheck.call(
+      { "question" => "¿Ha comprobado el fusible F2?" }, facts: facts, statements: statements, turns: []
+    )
+    value = Rag::CompanionPlanCheck.call(
+      { "question" => "¿Qué corriente marca el fusible F2?" }, facts: facts, statements: statements, turns: []
+    )
+    assert_match(/\Arepeats_fact:/, repeated.rejections.find { |row| row["part"] == "question" }["reason"])
+    assert_no_match(/\Arepeats_fact:/, value.rejections.find { |row| row["part"] == "question" }&.dig("reason").to_s)
+  end
+
   test "the render keeps step conditions, the case status, the warning, and the conflict note" do
     steps = [ step_id("regulador"), step_id("sensor de nivel no esté"), step_id("Si el problema persiste") ]
     result = check(

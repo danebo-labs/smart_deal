@@ -115,13 +115,26 @@ module Rag
         {
           "item" => statement.kind == "item" ? statement.text : statement.item.to_s,
           "document_key" => meta["document_key"].presence || meta["original_source_uri"].presence || meta["document_id"].to_s,
-          "filename" => page_filename(meta),
+          "filename" => page_filename(meta, chunk),
           "page" => statement.page.to_s
         }
       end
 
-      def page_filename(meta)
-        meta["filename"].presence || basename_of(meta["chunk_key"]) || basename_of(meta["source_key"]).to_s
+      # The catalog page is the chunk file, not the PDF name. The retrieve
+      # metadata often has only the PDF; the chunk URI is the fragment.
+      def page_filename(meta, chunk = nil)
+        meta["filename"].presence ||
+          basename_of(meta["chunk_key"]) ||
+          basename_of(meta["source_key"]) ||
+          basename_of(meta["x-amz-bedrock-kb-source-uri"]) ||
+          basename_of(chunk_location(chunk)).to_s
+      end
+
+      def chunk_location(chunk)
+        return if chunk.nil?
+
+        chunk[:location_uri].presence || chunk["location_uri"].presence ||
+          chunk[:bedrock_source_uri].presence || chunk["bedrock_source_uri"].presence
       end
 
       def basename_of(value)

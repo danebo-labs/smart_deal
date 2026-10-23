@@ -214,7 +214,7 @@ module Rag
       targets = @targets
       reason = text.present? ? question_reason(text, steps) : nil
       reason = "repeats_heading" if reason.nil? && text.present? && heading_repeat?(text)
-      return [ text, targets ] if text.present? && reason.nil?
+      return [ text, bound_targets(text, targets) ] if text.present? && reason.nil?
 
       reject("question", text, reason || "invalid") if text.present?
       derived_from = replacement_items(reason, text)
@@ -563,6 +563,11 @@ module Rag
       return "already_answered" if already_answered?
 
       normal = self.class.normal(text)
+      return "repeats_ask" if repeated_ask?(normal)
+      repeated = repeated_fact(normal)
+      return "operation" if repeated == :different_act
+      return "repeats_fact:#{repeated.id}" if repeated
+
       sources = self.class.normal(@statements.statements.map { |item| [ item.text, item.item ].compact.join(" ") }.join(" "))
       case_text = self.class.normal((@facts.facts.map(&:text) + @turns).join(" "))
       return "exclusion" if normal.match?(EXCLUSION)
@@ -575,9 +580,6 @@ module Rag
       cited = text.scan(/\[(\d+)\]/).flatten
       missing = ungrounded(normal, allowed).reject { |stem| cited.include?(stem) }
       return "ungrounded:#{missing.first(3).join(',')}" if missing.any?
-      return "repeats_ask" if repeated_ask?(normal)
-      repeated = repeated_fact(normal)
-      return "repeats_fact:#{repeated.id}" if repeated
 
       nil
     end
@@ -641,13 +643,60 @@ module Rag
       left_hit != right_hit
     end
 
+    # A cited step is not a pending target. Its parent item is, when the
+    # question actually uses that step and there is only one such item.
+    def bound_targets(text, targets)
+      return targets if targets.any?
+
+      recovered_step_item(text)
+    end
+
+    def recovered_step_item(text)
+      asked = content_stems(self.class.words(text)) - self.class.question_stems
+      parents = @rejections.filter_map { |row|
+        next unless row["part"] == "question_about" && row["reason"].to_s == "statement_kind:step"
+
+        step = @statements.find(row["value"])
+        next unless step&.step? && asked.intersect?(content_stems(self.class.words(step.text)))
+
+        @statements.statements.find { |item|
+          item.kind == "item" && item.source == step.source && item.text == step.item
+        }
+      }.uniq(&:id)
+      parents.one? ? [ parents.first.id ] : []
+    end
+
     # What the question asks has to fit inside a fact. A fact mentioned inside
-    # a question about something else is not a repeat.
+    # a question about something else is not a repeat. A check the technician
+    # says is not done already answers whether that same check was performed.
     def repeated_fact(normal)
+      open = open_check_question(normal)
+      return open if open
+
       asked = content_stems(normal.split) - self.class.question_stems
       return nil if asked.empty?
 
       @facts.facts.find { |fact| question_covered_by_fact?(fact, asked) }
+    end
+
+    # :different_act is an adjustment or another act on that same subject.
+    # It is not published in place of the open check.
+    def open_check_question(normal)
+      parsed = ReportedOperation.parse(normal)
+      families = parsed.acts.reject(&:negated).map(&:family).uniq
+      return nil if families.empty?
+
+      fact = @facts.facts.find { |item| item.kind == "not_done_check" && same_check_subject?(item, parsed) }
+      return nil unless fact
+      return fact if families == [ "check" ]
+      return :different_act if families.exclude?("check")
+
+      nil
+    end
+
+    def same_check_subject?(fact, parsed)
+      subject = ReportedOperation.parse(fact.subject.to_s).component
+      subject.any? && subject.subset?(parsed.component)
     end
 
     # The question only restates a fact already in the case. An extra word in

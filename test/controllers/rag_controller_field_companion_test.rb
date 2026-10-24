@@ -15,19 +15,21 @@ class RagControllerFieldCompanionTest < ActionDispatch::IntegrationTest
   end
 
   test "episode recording keeps the legacy question except the T-E follow-up" do
-    CASE_IDS.each do |case_id|
-      row = @cases.fetch(case_id)
-      off_queries, off_episode = play(row, flag: nil)
-      on_queries, on_episode = play(row, flag: "true")
+    with_legacy_question_baseline do
+      CASE_IDS.each do |case_id|
+        row = @cases.fetch(case_id)
+        off_queries, off_episode = play(row, flag: nil)
+        on_queries, on_episode = play(row, flag: "true")
 
-      assert_equal({}, off_episode)
-      assert on_episode["episode_id"].present?, "#{case_id} did not write an episode"
-      if case_id == "T-E"
-        assert_equal off_queries[0..-2], on_queries[0..-2], case_id
-        assert_equal "¿qué reviso primero?", off_queries.last
-        assert_equal "¿qué reviso primero? Fuji Yida Cómo se ajustan los resortes de la fijación de cables ?", on_queries.last
-      else
-        assert_equal off_queries, on_queries, "#{case_id} changed the orchestrator text"
+        assert_equal({}, off_episode)
+        assert on_episode["episode_id"].present?, "#{case_id} did not write an episode"
+        if case_id == "T-E"
+          assert_equal off_queries[0..-2], on_queries[0..-2], case_id
+          assert_equal "¿qué reviso primero?", off_queries.last
+          assert_equal "¿qué reviso primero? Fuji Yida Cómo se ajustan los resortes de la fijación de cables ?", on_queries.last
+        else
+          assert_equal off_queries, on_queries, "#{case_id} changed the orchestrator text"
+        end
       end
     end
   end
@@ -198,6 +200,21 @@ class RagControllerFieldCompanionTest < ActionDispatch::IntegrationTest
     BedrockRagService.define_method(:query) { |*args, **kwargs, &block| query.bind_call(self, *args, **kwargs, &block) }
     BedrockRagService.define_method(:retrieve_chunks) do |*args, **kwargs, &block|
       retrieve.bind_call(self, *args, **kwargs, &block)
+    end
+  end
+
+  # The suite shares one process. A leftover turn flag, owner mode, thread-menu
+  # switch, or catalog double changes the text this test compares. CI has none
+  # of the developer .env flags, so the comparison starts from that baseline.
+  def with_legacy_question_baseline
+    isolate_env("FIELD_COMPANION_TURN_ENABLED", nil) do
+      isolate_env("HAIKU_QUERY_ANALYSIS_MODE", nil) do
+        isolate_env("RAG_THREAD_MENU_ENABLED", nil) do
+          Rag::DocumentIdentityCatalog.with_catalog(Rag::DocumentIdentityCatalog.load) do
+            yield
+          end
+        end
+      end
     end
   end
 

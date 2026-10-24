@@ -87,7 +87,9 @@ class IngestManualBatchResultsJobTest < ActiveJob::TestCase
     S3DocumentsService.define_method(:upload_text) { |_key, _body| nil }
     BulkKbSyncService.define_method(:sync!) { |**| nil } # stop after parse — no Bedrock sync path
 
-    IngestManualBatchResultsJob.new.send(:ingest_results, ctx, fake_batch_client)
+    without_live_prefix_clear do
+      IngestManualBatchResultsJob.new.send(:ingest_results, ctx, fake_batch_client)
+    end
 
     assert captured, "shared retry service must run before the merger"
     assert_equal "web_batch_retry",    captured[:tracking_prefix]
@@ -243,7 +245,9 @@ class IngestManualBatchResultsJobTest < ActiveJob::TestCase
 
     ctx = IngestManualBatchResultsJob.new.send(:context_from_record, batch)
     with_topology_flags do
-      IngestManualBatchResultsJob.new.send(:ingest_results, ctx, fake_batch_client, web_manual_batch: batch)
+      without_live_prefix_clear do
+        IngestManualBatchResultsJob.new.send(:ingest_results, ctx, fake_batch_client, web_manual_batch: batch)
+      end
     end
 
     body = uploads.find { |key, _| key.end_with?("chunk_p17_1.txt") }&.last
@@ -297,7 +301,9 @@ class IngestManualBatchResultsJobTest < ActiveJob::TestCase
     ctx = IngestManualBatchResultsJob.new.send(:context_from_record, batch)
     assert_empty ctx[:page_topology_edges]
     with_topology_flags do
-      IngestManualBatchResultsJob.new.send(:ingest_results, ctx, fake_batch_client, web_manual_batch: batch)
+      without_live_prefix_clear do
+        IngestManualBatchResultsJob.new.send(:ingest_results, ctx, fake_batch_client, web_manual_batch: batch)
+      end
     end
 
     body = uploads.find { |key, _| key.end_with?("chunk_p4_1.txt") }&.last
@@ -308,6 +314,19 @@ class IngestManualBatchResultsJobTest < ActiveJob::TestCase
   end
 
   private
+
+  # delete_prefix swallows a missing bucket; list_keys! does not. CI has neither
+  # a bucket nor an instance role, so the rewrite must see an already clear prefix.
+  def without_live_prefix_clear
+    original_delete = S3DocumentsService.instance_method(:delete_prefix)
+    original_list = S3DocumentsService.instance_method(:list_keys!)
+    S3DocumentsService.define_method(:delete_prefix) { |_prefix| 0 }
+    S3DocumentsService.define_method(:list_keys!) { |prefix:| [] }
+    yield
+  ensure
+    S3DocumentsService.define_method(:delete_prefix, original_delete) if original_delete
+    S3DocumentsService.define_method(:list_keys!, original_list) if original_list
+  end
 
   def with_topology_flags
     originals = {

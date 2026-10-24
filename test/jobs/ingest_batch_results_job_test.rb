@@ -94,11 +94,17 @@ class IngestBatchResultsJobTest < ActiveJob::TestCase
   # ── Setup / Teardown ──────────────────────────────────────────────────────────
 
   setup do
-    @orig_upload_text  = S3DocumentsService.instance_method(:upload_text)
-    @orig_sync         = BulkKbSyncService.instance_method(:sync!)
-    @orig_client_new   = ClaudeBatchClient.method(:new)
+    @orig_upload_text   = S3DocumentsService.instance_method(:upload_text)
+    @orig_delete_prefix = S3DocumentsService.instance_method(:delete_prefix)
+    @orig_list_keys     = S3DocumentsService.instance_method(:list_keys!)
+    @orig_sync          = BulkKbSyncService.instance_method(:sync!)
+    @orig_client_new    = ClaudeBatchClient.method(:new)
 
     S3DocumentsService.define_method(:upload_text) { |_key, _body| nil }
+    # Chunk rewrite lists the prefix after delete. CI has no bucket and no
+    # instance role; an empty prefix is the cleared state these tests assert.
+    S3DocumentsService.define_method(:delete_prefix) { |_prefix| 0 }
+    S3DocumentsService.define_method(:list_keys!) { |prefix:| [] }
     BulkKbSyncService.define_method(:sync!) { |**| { job_id: "test-job-123" } }
 
     @fake_client = FakeBatchClient.new
@@ -115,6 +121,8 @@ class IngestBatchResultsJobTest < ActiveJob::TestCase
 
   teardown do
     S3DocumentsService.define_method(:upload_text, @orig_upload_text)
+    S3DocumentsService.define_method(:delete_prefix, @orig_delete_prefix)
+    S3DocumentsService.define_method(:list_keys!, @orig_list_keys)
     BulkKbSyncService.define_method(:sync!, @orig_sync)
     ClaudeBatchClient.singleton_class.remove_method(:new) rescue nil
     PollBulkBedrockIngestionJob.define_singleton_method(:set, @orig_poll_set)

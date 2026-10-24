@@ -3834,4 +3834,73 @@ SHA-256 `a23aa7fce6b8e21868b690c8180577760927cb128c3d3faa85606f5753ff9c8f`. Sesi
 
 La continuación mínima es un turno nuevo, con autorización de gasto distinta porque `f3-q1-20261023` ya no tiene llamadas, que envíe una respuesta del técnico a esa pregunta y compruebe si el turno siguiente la usa como alcance, sin dar por hecha la obstrucción mecánica y sin confirmar el apartado. Este archivo no contiene esa respuesta. No se probó esa continuación.
 
+## F3. La respuesta de alcance queda usada, 23 de octubre de 2026
+
+**Veredicto de esta muestra.** El reporte es hipotético de prueba. Danebo lo usó como alcance de «No veo obstrucción» y de la pregunta que el producto había publicado. Conservó «solo el marco» y «no revisé el resto». La comprobación mecánica de la puerta sigue sin constar como hecha. El síntoma sigue siendo el objetivo del caso. La pregunta ya contestada no volvió a publicarse. El texto orienta con el apartado documentado y aplica el límite. Una muestra no declara estabilidad general.
+
+### Incorporación del alcance
+
+Correcta en esta muestra. El intérprete devolvió `answer_pending`, sin checks, con la observación literal «Revisé solo el marco de la puerta; no revisé el resto» y `pending_resolution` `seek`. El episodio guardó esa observación ligada a la pregunta publicada: aspecto `scope`, `about` «No veo obstrucción», destino «La puerta se re-abre sola.», página 12, `chunk_p12_5.txt`.
+
+El render escribió la viñeta con `observation_note` y `scope_limit`: «reportaste «No veo obstrucción», limitado a «Revisé solo el marco de la puerta; no revisé el resto»: esta comprobación no consta como hecha.»
+
+### Utilidad
+
+Útil en esta muestra. El texto publicado usa el límite dentro de la comprobación documentada y deja esa comprobación abierta, junto con el #54 pendiente y el resultado ya informado de la fotocélula. Guardar la observación no fue lo único que ocurrió: la frase publicada dice hasta dónde llegó el reporte.
+
+Haiku propuso además «¿Qué otras zonas de la puerta revisaste además del marco, o qué zonas quedan por revisar para descartar obstrucción mecánica?». `CompanionPlanCheck#question_reason` la rechazó por `exclusion`: la palabra «descartar» coincide con `EXCLUSION`. `question_about` `S1.5` se rechazó por `statement_kind:step`. Esa pregunta no se publicó y no quedó pendiente. El criterio vigente acepta orientar con la documentación aplicable. Esta muestra lo hace. No exige esa segunda pregunta.
+
+### Continuidad y publicación
+
+El mismo episodio `ep_ebaad52adc01a534`. `opened_at` sigue en `2026-10-23T15:24:43-03:00`. Objetivo «La puerta se reabre sola». Siguen las tres observaciones anteriores, el LED encendido, `#54` y `mediciones` en `not_done`, y la fotocélula hecha con «no está activada». `confirmed_items` deja «La puerta se re-abre sola.» en `goal`, la marca que ya tenía el ítem aplicable. El pendiente `scope` se cerró al guardar la respuesta. No se instaló otro.
+
+`answer`, `history_answer` y `prompt_reply` son el mismo texto. SHA-256 `8f4a95e1202bf1a77ceb584a5243ff7d4f6d9215f5fd407136d7beb8ea30e5a3`. El campo `content` corta a 600 caracteres en «obstrucción me...» y ahí no está el límite. El antecedente del turno siguiente es `prompt_reply`, que sí lo contiene. El antecedente de este turno salió del `prompt_reply` de la aclaración anterior, que incluye «¿Qué revisaste?»; su `content` no la incluye.
+
+### Criterios de F3 que esta muestra deja pendientes
+
+Queda demostrado, en esta muestra, el aprovechamiento de esta aclaración: usa el reporte, permanece en «La puerta se re-abre sola» con la fuente [1], no repite la pregunta y conserva el estado previo.
+
+Sigue sin demostrarse la estabilidad de esa conducta, la orientación útil como tasa de los cuatro turnos del guion, la recuperación real de Bedrock (F4) y el recorrido web con pin (F5). F4 no arranca.
+
+### 1. Autorización y código
+
+`HEAD` al arrancar `a20f42636acd1ec420de6f99f3cf63e88c5ae1a6`. Prompts, modelo y el checker del companion no se modificaron. `companion_plan.rb` `55d9a0d5b70559037c9a822399d02538481d945bf5049f61e33dcb81913acccb`, `companion_plan_check.rb` `72e20e087cd127ae3e9784a78ccd19fa144ee10809751c0ead043f064729d1f6`, `companion_plan_render.rb` `b81dbd5c20b88c59fe5ed3b59d9ad7230e8102ec683b0a3a22f2d1660b4f8f1d`. El único cambio de producto anterior a la llamada es el escalón de cap `164 → 166` en `AssignmentSpend::CALL_CAP_BUMPS` y en `LocalPassLedger.assignment_call_cap`. Sin ese escalón, un cap de 166 se lee como 150 y la reserva se bloquea. Los tests de esos dos archivos cubren el escalón, el rechazo de un cap mayor y que `f3-q1-20261023` no se renueva: 22 pruebas, 0 fallos. La suite completa, lanzada con `RAG_TRANSIENT_ATTEMPT_LIMIT=1` todavía exportado por el turno, marcó 8 fallos de reintento que esperan tres admisiones. Esos mismos tests pasan con la variable sin definir. El escalón de cap no los cambia.
+
+Ejecución nueva `f3-scope-reply-20261023`, corte 164, US$0,100000, 2 llamadas. La autorización `f2f3-joint-after-134` conserva id, corte 134 y US$0,750000. `f3-q1-20261023` conserva corte 152, US$0,750000 y 12 llamadas. El tope global sigue en US$4. No hubo ronda nueva de estimaciones. El proceso `20261024T001046Z-q1s` escribió esa ejecución y se detuvo antes de invocar: comparaba el hash del ledger anterior a la escritura. Sesión local 241, sin el reporte. El proceso `20261024T001234Z-q1s` hizo la única llamada. No hubo reintento ni regeneración.
+
+### 2. Checkpoint
+
+Origen, sin escritura: `runs/20261023T235100Z-q1r/q1r_t1/episode_after.json`, SHA-256 `a23aa7fce6b8e21868b690c8180577760927cb128c3d3faa85606f5753ff9c8f`, igual antes y después. La captura histórica T3 sigue en `3196986bdb6e229b4240a199dc6a2d2e42aeda0d99d03a6a3ea2e2da49d7c2b3`. Sesión de origen 240. Sesión medida 242. Reloj real `2026-10-23T21:12:35-03:00`. El episodio seguía dentro de la ventana: `updated_at` `2026-10-23T20:51:08-03:00` no se movió en la copia. No hubo reactivación temporal ni reloj simulado. `SHARED_SESSION_ENABLED=false` antes de cargar Rails. Base `smart_deal_development`. Candidata `candidate_r2`. Retrieve local. Converse real. Haiku `global.anthropic.claude-haiku-4-5-20251001-v1:0`. `AWS_MAX_ATTEMPTS=1`. `RAG_TRANSIENT_ATTEMPT_LIMIT=1`. Tope de proceso 2.
+
+Preflight antes de reservar: equipo y episodio conservados, LED encendido, fotocélula hecha con «no está activada», `#54` no hecho, reporte «No veo obstrucción», pendiente `scope` con la pregunta publicada y destino `chunk_p12_5.txt`. El historial visible traía la pregunta desde `prompt_reply`. No estaban las ramas A/B ni una respuesta posterior preparada.
+
+### 3. Respuesta publicada
+
+Correlación `query:576d29e9-1f41-4271-b7af-526c18c0c96f`. Ruta `answered`. Turno compañero aplicado. Publicación aceptada, sin motivos. El mensaje enviado fue exactamente «Revisé solo el marco de la puerta; no revisé el resto».
+
+```
+Sobre lo que reportaste, «el LED de fotocélula está encendido»: la documentación dice «Indicador LED y relé activado cuando la fotocélula o la entrada de re-apertura está activada» [2]; lectura de Danebo: LED de fotocélula encendido: indicador LED activado cuando la fotocélula o la entrada de reapertura está activada.
+Para este síntoma, «La puerta se re-abre sola», la documentación indica [1]:
+- «Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)» [1]; dijiste «No he comprobado el #54», así que sigue pendiente.
+- «Comprobar que no hay una obstrucción mecánica en la puerta» [1]; reportaste «No veo obstrucción», limitado a «Revisé solo el marco de la puerta; no revisé el resto»: esta comprobación no consta como hecha.
+- «En caso que el problema persista, desconectar la fotocélula y volver a pulsar el botón de TEST»; «Si la puerta no se abre o cierra completamente, debe haber una obstrucción mecánica en la puerta» [1].
+También informaste: «Ya revisé la fotocélula y no está activada».
+```
+
+### 4. Decisiones del checker
+
+El plan de Haiku enlazó O4, el reporte del marco, con S1.5. Esa lectura decía que la documentación pide comprobar la obstrucción. Se rechazó por `ungrounded:documentacion,pide`. También se rechazaron O1→S1.2 por `operation` y C1→S1.4 por `ungrounded:documentacion,pide`. El enlace que quedó fue O3→S2.9, la lectura del LED. Los pasos publicados fueron S1.3, S1.5 y S1.6. La pregunta de Haiku no sobrevivió al check. El render tomó el límite desde la observación guardada, no desde esa pregunta.
+
+### 5. Fuentes, uso y ledger
+
+Consulta local: «Revisé solo el marco de la puerta; no revisé el resto Fermator VF5+ operador de puerta no está activada el LED de fotocélula está encendido No veo obstrucción La puerta se reabre sola». `number_of_results` 8 sobre 45. Con clave: `chunk_p12_5.txt` `aeab3d5a…bca48`, `chunk_p7_3.txt` `4329d2a4…5524e`, `chunk_p12_4.txt` `5d230dc7…550b3`, `chunk_p13_2.txt` `cc0237f2…a77bff`, `chunk_p12_3.txt` `449f7b35…80c862`, `chunk_p6_1.txt` `ec7118d4…ef0f45`, `chunk_p6_2.txt` `7b5622e4…96faf5`, `chunk_p8_1.txt` `2c96044e…e5a4ad`. Sin clave: página 8 `1f1bc47d…5d0a89` y página 7 `df2848fc…672e4d`. La fuente [1] sigue siendo `chunk_p12_5.txt`.
+
+Dos invocaciones, liquidadas. Id 165, `converse`, `2026-10-24T00:12:36Z`, US$0,003283, techo US$0,009346. La captura del intérprete no guardó tokens ni latencia. Id 166, `converse_message`, `2026-10-24T00:12:42Z`, 7479 de entrada, 464 de salida, `tool_use`, 5062 ms, US$0,009799, techo US$0,024507. Incremento US$0,013082.
+
+`attempts` 166, `priced` 161, `blocked` 0, `seq` 166, `open` vacío. `committed` US$1,565982. `unknown` US$0,10214. Al registrar la ejecución, la reescritura del ledger dejó `committed` como `1.5529`, el mismo importe que `1.552900`. La liquidación lo dejó en `1.565982`. Exposición desde el intento 134: US$0,210253 de US$0,750000. Las dos llamadas de la ejecución nueva están usadas. SHA-256 del ledger: `6f8581e4d99d20e7e0126f1071cd7490aa4565f2bd7c3f74acb72433bcb6c422`.
+
+### 6. Estado posterior
+
+`runs/20261024T001234Z-q1s/q1s_t1/episode_after.json`, SHA-256 `fbfc83eb07c83bb7601dd3392a0d40ca42427bd46f9fcccb386596822b06f1d8`. Sesión 242. `updated_at` `2026-10-23T21:12:42-03:00`. Pendiente vacío. La observación de alcance queda en el episodio y en `prompt_reply`. No se envió otro mensaje.
+
 

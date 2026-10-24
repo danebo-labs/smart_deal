@@ -127,6 +127,34 @@ class Rag::AssignmentSpendTest < ActiveSupport::TestCase
     assert_equal 153, book.snapshot["attempts"]
   end
 
+  test "a scope continuation bumps 164 to 166 and does not renew the spent execution" do
+    book = spend(call_cap: 166, cost_cap: "4")
+    seed_history(164)
+    book.ensure_authorization!(id: "f2f3-joint-after-134", after_attempt: 134, cost_usd: "0.75", call_cap: 164)
+    book.admit_execution!(id: "f3-q1-20261023", cost_usd: "0.75", calls: 12)
+    assert_raises(Rag::AssignmentSpend::Stop) do
+      book.admit_execution!(id: "f3-q1-20261023", cost_usd: "0.75", calls: 14)
+    end
+
+    later = book.admit_execution!(
+      id: "f3-scope-reply-20261023", cost_usd: "0.10", calls: 2,
+      bump_call_cap_to: 166, bump_only_if_attempts: 164
+    )
+    assert_equal 164, later["after_attempt"]
+    assert_equal 2, later["calls"]
+    assert_equal "0.750000", book.snapshot["authorization"]["cost_usd"]
+    assert_equal 134, book.snapshot["authorization"]["after_attempt"]
+    assert_equal "f2f3-joint-after-134", book.snapshot["authorization"]["id"]
+    assert_equal 166, book.snapshot["authorization"]["call_cap"]
+    assert_equal 12, book.snapshot["executions"].find { |row| row["id"] == "f3-q1-20261023" }["calls"]
+    2.times { |index| book.reserve!(ceiling_usd: "0.010000", model_id: "haiku", turn: index + 1) }
+    assert_raises(Rag::AssignmentSpend::Stop) do
+      book.reserve!(ceiling_usd: "0.010000", model_id: "haiku", turn: 3)
+    end
+    assert_equal 166, book.snapshot["attempts"]
+    assert_equal "1.400000", book.snapshot["committed_usd"]
+  end
+
   test "an unpriced error keeps the ceiling" do
     book = spend
     id = book.reserve!(ceiling_usd: "0.125000", model_id: "sonnet", turn: 1)

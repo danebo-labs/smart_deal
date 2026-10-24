@@ -6,8 +6,9 @@ module Rag
   # new process does not start the counters at zero.
   class AssignmentSpend
     Stop = Class.new(Exception)
-    # One recorded step. 150 -> 152, then 152 -> 164. Anything else stays.
-    CALL_CAP_BUMPS = { 150 => 152, 152 => 164 }.freeze
+    # One recorded step. 150 -> 152, then 152 -> 164, then 164 -> 166.
+    # Anything else stays.
+    CALL_CAP_BUMPS = { 150 => 152, 152 => 164, 164 => 166 }.freeze
 
     def initialize(path:, call_cap:, cost_cap_usd:)
       @path = Pathname(path)

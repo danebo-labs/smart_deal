@@ -1,5 +1,47 @@
 # Corrección y validación del companion sobre el VF5
 
+## Diagnóstico del quinto turno — 24 de octubre de 2026
+
+**Precedencia.** Este registro cierra el diagnóstico pedido sobre la prueba web. No reabre F2, F3 ni F4. No aprueba F5. No cambia producto, flags, fuentes, índice ni despliegue. La reparación no está hecha.
+
+La quinta intervención del técnico es la consulta adicional. No hubo un sexto turno. La sesión 128 no se limpió ni se volvió a escribir desde aquí.
+
+### Veredicto
+
+Danebo volvió a pedir el dato de la entrada #21 porque el quinto mensaje no entró al episodio. Ruby lo rechazó como `meta_incompatible` y el respaldo dejó el estado igual. El plan recibió el texto literal, la frase publicada no es una plantilla de Ruby, y el checker dejó usable el plan. Al cerrar el turno se instaló otro pendiente con la misma pregunta.
+
+La hipótesis de que solo se acepta el «no sé» exacto no se confirma. La expresión «No sé cómo identificar…» ya coincide con la regla larga, y esa regla no llegó a ejecutarse.
+
+### Interacción y versión
+
+Cuenta `danebo-legacy`, id 1. Usuario 3, `lahiri.sanchez@danebo.ai`. Sesión 128, identificador `3`, canal web. Episodio `ep_6a97307088a3b106` en los cinco turnos. Pin `VF5`, documento 212, URI `s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf`, puesto a las 14:40:51 hora de Santiago.
+
+Imagen y `KAMAL_VERSION`: `4a356b8cba27ad12eefb3cb6322fa2fb0383d29f`. El código del companion en ese commit es el de HEAD salvo este documento. Zona `America/Santiago`, desplazamiento −10800. La ventana del día cubre desde `2026-10-24T03:00:00Z` hasta `2026-10-25T02:59:59Z`. Los cinco turnos caen entre 14:41 y 14:57 hora local.
+
+Quinto turno: correlación `query:65cffa26-b575-499e-ad3c-aac5e02aac46`. Mensaje a las 14:56:52. Respuesta a las 14:57:15. Modelo `global.anthropic.claude-haiku-4-5-20251001-v1:0`.
+
+### Evidencia
+
+Paquete nuevo, sin tocar el de `tmp/pilot_exports/2026-10-24_2026-10-24_danebo-legacy`:
+
+`~/Library/Application Support/Cursor/AgentStores/cursor_agent_stores/u475498680/files/field_companion_web_trial/exports/20261024T1811Z/2026-10-24_2026-10-24_danebo-legacy/`
+
+Ahí están `report.json`, `source_events.jsonl`, el informe, el valor, el dossier, el CSV, el manifiesto y `SHA256SUMS`. Modo 600. Fuera de git. La lectura de la sesión y las cinco líneas `[COMPANION_PLAN]` están en el mismo directorio padre. `[COMPANION_PLAN]` no entra en los marcadores de `bin/pilot_metrics`; se leyó del log del contenedor web.
+
+`PILOT_AUDIT` y `RAG_QUALITY` no salieron en esta ruta. `ValidationCapture` no estaba activo. No hay propuesta cruda, motivos del checker, `stop_reason`, cuerpos de chunk ni diff de guards.
+
+### Causa
+
+Observado: el mensaje tiene 168 caracteres y es el texto íntegro. `turn_interpreter_status=meta_incompatible`, `turn_interpreter_fallback=true`, sin aserciones. El episodio no cambió en esa fase (`12de77f3…` antes y después). La respuesta guardada, 1366 caracteres, repite la pregunta. `content` corta a 600 y no alcanza a la pregunta; `full_content` y `prompt_reply` son el texto completo y coinciden con `[TURN_EVIDENCE]`. El checker quedó `usable=true` con 2 rechazos. El pendiente final es esa misma pregunta, destino «Fotocélula.», página 7, `chunk_p7_3.txt`.
+
+Reproducción local, con el episodio capturado y sin red: «No sé cómo identificar…» normaliza a una frase que cumple `UNKNOWN_CLARIFICATION` y no es una de las tres respuestas cerradas. Con un pendiente `documented_context` devuelve `r=unknown`. Sin pendiente devuelve nil. La observación que guardaba la pregunta como `answers.q` no entra a los hechos del plan, porque coincide con el resultado de la fotocélula; `repeated_ask` no la ve.
+
+Inferido del código: ese estado solo se escribe cuando el movimiento parseado fue `meta`. El respaldo no guarda el turno como observación ni llama al vínculo del pendiente. La frase de la pregunta no la genera ninguna plantilla de Ruby; el preámbulo de dos citas sí. Las dos citas son pasajes del mismo origen, no dos casos que el técnico tenga que distinguir. En el turno 3 el resultado de la fotocélula quedó asociado a la pregunta y el pendiente se limpió; por eso en el quinto turno no había un pendiente que responder.
+
+### Corrección mínima, sin hacerla
+
+El respaldo de `meta_incompatible` tiene que conservar el límite cuando el texto cumple la aclaración de desconocimiento, aunque la frase no sea «no sé» a secas y aunque el pendiente ya se haya limpiado. El dato se ata a la pregunta publicada. No se vuelve a pedir y no se sustituye por otra pregunta que obligue al técnico a interpretar las citas. La prueba usa el estado posterior al cuarto turno y el texto exacto del quinto: el episodio debe registrar el desconocimiento sobre #21 y la respuesta no debe contener esa pregunta.
+
 ## Preparación de la prueba web — 24 de octubre de 2026
 
 F5 no está aprobada. No se envió el guion, no se fabricó una pregunta y no se pineó el VF5. Esta sección deja el espacio listo para que Lahiri empiece.

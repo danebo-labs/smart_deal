@@ -52,7 +52,7 @@ Una sola llamada `start_ingestion_job`. Job `PTNRRF0BZJ`. Knowledge base `Y7RZWM
 | Borrados | 2 |
 | Fallidos | 1 |
 
-Los 17 nuevos y los 28 modificados suman los 45 cuerpos del VF5. Los 2 borrados coinciden con los dos cuerpos que salieron del prefijo. El fallo no es de este prefijo: `bulk_chunks/3/5b1859a0bfe1c5b11e58214555f8c2fe93e6/chunk_p5_1.txt` superó 8192 tokens de entrada (9048). No se revirtieron objetos ajenos ni se lanzó otro job.
+Los 17 nuevos y los 28 modificados suman los 45 cuerpos del VF5. Los 2 borrados coinciden con los dos cuerpos que salieron del prefijo. El fallo no es de este prefijo: `bulk_chunks/3/5b1859a0bfe1c5b11e58214555f8c2fe93e6/chunk_p5_1.txt` superó 8192 tokens de entrada (9048). No se revirtieron objetos ajenos ni se lanzó otro job. Ese archivo queda revisado en [Incidencia Wiring 905, página 5](INCIDENCIA_WIRING_905_P5_2026-10-24.md). Esta aceptación no cambia.
 
 ### Retrieve
 

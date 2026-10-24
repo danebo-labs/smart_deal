@@ -1,5 +1,57 @@
 # Corrección y validación del companion sobre el VF5
 
+## Preparación de la prueba web — 24 de octubre de 2026
+
+F5 no está aprobada. No se envió el guion, no se fabricó una pregunta y no se pineó el VF5. Esta sección deja el espacio listo para que Lahiri empiece.
+
+### SHA y procesos
+
+Imagen en ejecución: `4a356b8cba27ad12eefb3cb6322fa2fb0383d29f`. Web y worker de ese SHA están en marcha. Kamal marcó el web sano antes de arrancar el worker, y el worker quedó sano. `KAMAL_VERSION` dentro de ambos contenedores es ese SHA. Región `us-east-1`. Bucket `multimodal-source-destination`. Knowledge base `Y7RZWMFJSR`. Datasource `PJ0N58DMHG`. Modelo `global.anthropic.claude-haiku-4-5-20251001-v1:0`. No hubo otra sincronización documental.
+
+La caché de producción no tenía catálogo ni índice de vecinos para `bulk_chunks/1/be7a39a3490c92c8381cb883402760cb07d1`. El primer turno que necesite esas páginas las lee del prefijo publicado.
+
+### Companion por defecto
+
+Leído en el proceso web, no en un archivo: episodio, turno, alcance de episodio, identidad documental y turno companion activos. Modo `owner`. Sesión compartida apagada. Una variable ausente o en blanco activa esas compuertas; `false`, `off` o `0` las apaga. El ejemplo de despliegue versionado nombra los mismos valores. `RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED` y `RAG_FAMILY_AMBIGUITY_GUARD_ENABLED` quedaron en `false` en el despliegue: con un solo pin, un designador como `SW4` hacía elegible la ruta estructurada y esa ruta devolvía antes del companion. El código de esa ruta no se rediseñó. El menú de hilo sigue en su default anterior, activo si no está en `false`.
+
+`field_companion:start_clean_case` sigue rechazando producción.
+
+### Espacio de prueba
+
+Cuenta `danebo-legacy`, id 1. Usuario `lahiri.sanchez@danebo.ai`, id 3, `account_id` 1. Canal web. La petición autenticada resuelve `ConversationSession` 128, identificador `3`. Tras la limpieza, `find_or_create_for` sigue devolviendo la 128.
+
+Episodio inicial: `ep_6a97307088a3b106`. Historial 0. Foco 0. Entidades 0. Procedimiento vacío. Hechos vacíos. Foto activa ausente. Estado `active`. Trabajos pendientes de esa fila: 0. Limpieza de la fila y de esa lectura de cola: `limpio`. El navegador no se recorrió.
+
+Se limpiaron, solo en esa fila: historial, foco, entidades activas, procedimiento y episodio anterior `ep_6c7fb8597f373d40`. El foco que había era el documento 213. Se conservaron la fila 128, el usuario, la cuenta, 2 fotos, 492 `bedrock_queries`, 1456 `pilot_events`, los manuales y las sesiones de humo 132–142. No se destruyó la sesión.
+
+Respaldo local, modo 600, SHA-256 `c84e6a002059b02cb8ffc77661347ff6f99e47379dad4473b3cc673920c73055`:
+
+`~/Library/Application Support/Cursor/AgentStores/cursor_agent_stores/u475498680/files/field_companion_web_trial/20261024T165458Z_4cc30006_session_128.json`
+
+Contiene 20 mensajes, 1 foco y 2 referencias de foto. La copia que quedó en el contenedor se borró después de comprobar el hash. No está en git.
+
+### Captura
+
+`PILOT_AUDIT_CAPTURE=true` y `PILOT_AUDIT_CAPTURE_ACCOUNT_IDS=1`. El texto crudo entra para la cuenta 1 y no para otra cuenta. Aplica al controlador web y al job de foto, no solo al runner. Errores que ya pasan por `emit_interaction_completed` quedan en el mismo registro.
+
+La exportación existente es `bin/pilot_metrics --from 2026-10-24 --to 2026-10-24 --account danebo-legacy`. El paquete copia el trazo a `source_events.jsonl` y el informe trae `session_archive` y, por correlación, `session_turns`. Ahí van el `content` recortado, `full_content` cuando el mensaje lo guardó, y `prompt_reply` cuando existe. Una respuesta mostrada de más de 600 caracteres se guarda en `full_content`, con tope de 16000. El antecedente del turno siguiente sigue siendo `prompt_reply`.
+
+Identificar la prueba por cuenta `danebo-legacy`, usuario 3, sesión 128 y episodio `ep_6a97307088a3b106`, desde `2026-10-24T16:54:58Z`. Lahiri no opera logs.
+
+Esto no es una captura comprobada con una interacción real. Falta el primer mensaje.
+
+### Límites que siguen
+
+- `ValidationCapture` no corre en este contenedor. La propuesta del modelo, el detalle del checker y el registro de publicación no entran en la exportación. El log deja la línea `[COMPANION_PLAN]` con usable y cantidad de rechazos. `stop_reason` no está en la lista de `pilot_events`.
+- `pilot_events` recorta cadenas a 500 caracteres. `[RAG_QUALITY]` recorta la pregunta a 300 y el fragmento de respuesta a 600. El texto completo observado está en `[PILOT_AUDIT]`, `[TURN_EVIDENCE]` y en `session_archive`.
+- El cuerpo de un chunk en `[PILOT_AUDIT]` sigue acotado a 4000 caracteres y la línea a 8 KB.
+- Tokens, modelo, latencia y coste atribuido salen de `BedrockQuery`. El coste de autoridad sigue siendo `bedrock_daily_costs`. `[TURN_EVIDENCE]` no es una fuente de coste.
+- No se recorrió el navegador. Un turno ya pintado en una pestaña abierta no se borra al limpiar la fila.
+
+### Instrucción para Lahiri
+
+Abrir `https://elevator.danebo.ai`, recargar la página o volver a entrar con `lahiri.sanchez@danebo.ai`. En la biblioteca, buscar `VF5` y marcar la casilla del manual cuyo nombre es `VF5`. Esa casilla usa `POST /pinned_documents`. El documento autorizado es el id 212, UID `126cda62-64ad-4469-8674-a29f12e38d48`, cuenta 1. El manual Variodyn de otra cuenta no está autorizado para esta cuenta. No hace falta escribir todavía: el primer mensaje es el de la prueba.
+
 ## Consolidación vigente — F4 ejecutada (24 de octubre de 2026)
 
 **Precedencia.** Esta sección cierra la ejecución autorizada de F4. La consolidación anterior sigue vigente para F3 y para el diseño C1–C7. F2 no se reabre. F5 no se ejecuta aquí.

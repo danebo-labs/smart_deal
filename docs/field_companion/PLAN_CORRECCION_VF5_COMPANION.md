@@ -1,8 +1,106 @@
 # Corrección y validación del companion sobre el VF5
 
-## Validación de Opus — F3: desambiguación progresiva (23 de octubre de 2026, vigente para Grok)
+## Consolidación vigente — F3 aceptada en el alcance demostrado; F4 preparada (23 de octubre de 2026)
 
-**Precedencia.** Esta sección manda sobre todo lo que sigue. Después vale la «Revisión para Opus — F3: desambiguación progresiva» de Codex, solo en lo que esta sección conserva. Luego, la «Validación de Opus» anterior y el historial. Esta validación no implementa producto, no invoca modelos, no toca el ledger ni los caps, no escribe en S3, no sincroniza la KB y no autoriza gasto.
+**Precedencia.** Esta sección decide el cierre funcional de F3 y la preparación de F4. El diseño C1–C7 de la validación de Opus sigue en pie. El resto del archivo es evidencia e historia. Una frase anterior que deja F4 a la espera de estabilidad estadística, de Retrieve real o del recorrido web no gobierna este arranque: esas comprobaciones son F4, F5 o un límite de cobertura.
+
+HEAD de esta consolidación: `3d1d01904d827bfdc3ffa984777f82f62266bb3c`, `main`, igual a `origin/main`. No hubo inferencias, cambios de modelo o prompts, escrituras en el ledger, escrituras en S3, sincronización ni despliegue. No se repitieron las tandas ya capturadas.
+
+### Veredicto de F3
+
+**F3 queda aceptada en el recorrido funcional de alcance que Lahiri acepta.** El alcance es exactamente este, observado en las dos últimas ejecuciones reales:
+
+1. El producto publicó «Dijiste «No veo obstrucción». ¿Qué revisaste?». Replay `a20f426`, correlación `query:7d0ed419-7478-4393-b151-40cd6e67cd91`.
+2. Guardó el pendiente `documented_context`, aspecto `scope`, `about` «No veo obstrucción», destino `chunk_p12_5.txt`, página 12.
+3. Recibió el reporte hipotético «Revisé solo el marco de la puerta; no revisé el resto». Ejecución `3d1d019`, correlación `query:576d29e9-1f41-4271-b7af-526c18c0c96f`.
+4. La respuesta publicada usó ese límite: «reportaste «No veo obstrucción», limitado a «Revisé solo el marco de la puerta; no revisé el resto»: esta comprobación no consta como hecha.»
+5. La comprobación mecánica de toda la puerta sigue sin constar como hecha. No se creó un check de obstrucción en `done`.
+6. Siguieron el episodio `ep_ebaad52adc01a534`, el equipo Fermator VF5+, el LED encendido, `#54` en `not_done` y la fotocélula hecha con «no está activada».
+7. La pregunta ya contestada no volvió a publicarse.
+
+Cuando el contexto permite orientar con documentación aplicable y el límite queda explícito, no se exige otra pregunta. La pregunta de Haiku que contenía «descartar» fue rechazada por `exclusion` y no forma parte de la aceptación.
+
+Esta aceptación es funcional y acotada. No declara estabilidad estadística, ni la resolución de la avería, ni dominio de todas las conversaciones posibles.
+
+### Qué queda demostrado, qué es límite y qué se transfiere
+
+| Clase | Hecho |
+| --- | --- |
+| Criterio funcional demostrado | Continuidad del guion T1–T4 en `20261023T182442Z-conversation`, episodio único, LED corregido, resultado de fotocélula conservado y «No veo obstrucción» como observación. Pregunta de alcance publicada, pendiente persistido y respuesta usada, en `a20f426` y `3d1d019`. Publicación y `prompt_reply` coinciden. |
+| Criterio funcional demostrado en local | Separación temporal: «antes de que el patín empiece a cerrar» queda `incompatible` con el apartado del patín (`companion_f3_disambiguation_test`). Rehidratación: un destino ausente del top se añade desde el catálogo, y si el catálogo o el presupuesto no alcanzan se publica «ese apartado no está en la documentación cargada en este turno» con motivo `target_not_loaded`. |
+| Limitación conocida, no bloquea F4 | Repetición y extensión de las respuestas. Preguntas del modelo retiradas por controles (`modality`, `exclusion`, `ungrounded`, y en la tanda anterior `repeats_fact`). `content` corta a 600 caracteres; el antecedente siguiente es `prompt_reply`. Cobertura limitada de conversaciones y paráfrasis. La marca inferior del dial 54 en la página 4 sigue sin leerse; F2 la aceptó como `certified_visual_review`. |
+| Límite de cobertura | No se observaron aclaraciones sucesivas generales. La rama A real de la tanda de doce llamadas publicó el apartado del patín para un momento anterior al cierre; esa captura es anterior a la regla temporal y no se repitió. La rama B de esa misma tanda sí nombró el momento del apartado. No se declara demostrada la desambiguación sucesiva general. El producto sigue pidiendo contexto cuando la orientación depende de un dato que falta. |
+| Se transfiere a F4 | Sustitución del prefijo VF5, sincronización del datasource exacto y Retrieve real. Ahí se comprueba que el destino publicado `chunk_p12_5.txt` vuelve con el hash aceptado, o que el límite `target_not_loaded` queda visible si ese cuerpo no está cargado. El BM25 local no acredita el índice. |
+| Se transfiere a F5 | Recorrido web, pin por el endpoint de la interfaz y cuatro `POST /rag/ask`. No entra en F4. |
+| Sigue después | Órdenes 3 a 5 del plan padre: plano, fotos y cambio o retorno de tema. |
+
+No queda un criterio obligatorio de F3 sin demostrar que impida F4. La estabilidad, el Retrieve real y el recorrido web no bloquean esta etapa.
+
+### Evidencia y versiones
+
+| Pieza | Versión |
+| --- | --- |
+| Aceptación de F2 en local | `cebd7de`. Candidata `candidate_r2`. Manifest SHA-256 `3472b6310640454cb79db75c0a5e9b97cdb9e0f8a7fa1eefebc6498ee8d0abc0`. `git_sha` interno `cebd7de6ff95dbd110b6017afc4f76cb828718e2`. Adjudicación SHA-256 `6b6b0d214486704a9a48a2b1c7da354a530d47d3eb5542b1c471e114636c24f4`. |
+| Tanda real del guion y ramas hipotéticas | `26777e2` más el registro. Doce invocaciones, Retrieve local. |
+| Pregunta de alcance publicada | `a20f426`. |
+| Uso de la respuesta de alcance y cap `164 → 166` | `3d1d019`. Checker, render y prompts del companion iguales a la medición: `companion_plan_check.rb` `72e20e087cd127ae3e9784a78ccd19fa144ee10809751c0ead043f064729d1f6`, `companion_plan_render.rb` `b81dbd5c20b88c59fe5ed3b59d9ad7230e8102ec683b0a3a22f2d1660b4f8f1d`. |
+| PDF | SHA-256 `be7a39a3490c92c8381cb883402760cb07d10b0a3beda5348bed22f72abedf72`. |
+| Destino publicado | `chunk_p12_5.txt`, SHA-256 `aeab3d5afb150beaad789399355d2c500f746f41ee7183e2a58283122ebbca48`. Contiene «La puerta se re-abre sola». |
+
+Las pruebas locales usan fixtures y dobles. Las dos ejecuciones de alcance usan Haiku real y el Retrieve local de `candidate_r2`. Ninguna de las dos lee el índice de Bedrock.
+
+### Frases históricas que ya no frenan F4
+
+Siguen escritas en el registro y no se borran. Dejan de ser compuerta:
+
+- «Sigue sin demostrarse» el aprovechamiento de una aclaración, en la conclusión de la tanda de doce llamadas y en la lista posterior a la validación de Opus. Ese aprovechamiento quedó observado y Lahiri lo acepta en el alcance de arriba.
+- «F4 no arranca» al cierre de la muestra de alcance, cuando el motivo era la estabilidad, el Retrieve o la web.
+- «Hasta dejar cerrado este punto no hay F4» referido al defecto visual de la página 4. La adjudicación la dejó en `certified_visual_review`, con el cuerpo sin cambios y la marca inferior del dial 54 sin lectura. F2 aceptó ese límite.
+- La tabla que llama a F3 «aceptación pendiente» dentro de la revisión de Codex. Describe el estado de aquella revisión.
+
+Sigue en pie, y es el impedimento de la escritura remota, la frase sobre `KbSyncService#find_data_source_id`: si el id configurado no está en el listado, la sincronización se detiene. El código actual todavía no hace eso.
+
+### Preparación local de F4, leída el 23 de octubre de 2026
+
+El alcance de F4 sigue siendo el original: sustituir el prefijo documental del VF5, sincronizar la fuente exacta y comprobar el Retrieve real, incluida la rehidratación del destino publicado. No se reduce a esa rehidratación.
+
+Comprobado en local, sin red:
+
+- Candidata `tmp/field_companion/vf5_correction/f2f3_joint/f2/candidate_r2/`. 45 cuerpos y 45 sidecars. Los 90 hashes del manifest coinciden con los archivos. Cero ausentes y cero distintos.
+- Los 45 sidecars traen los mismos valores: `account_id` `1`, `document_id` `be7a39a3490c92c8381cb883402760cb07d1`, `original_source_uri` `s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf`, `doc_sha256` el del PDF, `ingestion_path` `manual_batch_v1`, `ingestion_contract_version` `field_records_v8`, nombre «Módulo electrónico VF5+ Fermator».
+- Prefijo previsto: `bulk_chunks/1/be7a39a3490c92c8381cb883402760cb07d1/`. Bucket de esos objetos: `multimodal-source-destination`. KB `Y7RZWMFJSR`. Datasource `PJ0N58DMHG`. Región `us-east-1`.
+- No hay chunk de la página 3. La página 3 está en `discard_accepted`. Hay un cuerpo de la página 4, `chunk_p4_1.txt`.
+- `tmp/review_vf5/` conserva 30 cuerpos y 30 sidecars. No es la candidata. Le faltan 17 cuerpos, entre ellos `chunk_p12_5.txt`, `chunk_p12_2.txt`, `chunk_p12_3.txt`, `chunk_p12_4.txt`, `chunk_p13_3.txt`, `chunk_p6_2.txt` y `chunk_p6_3.txt`. Le sobran `chunk_p7_4.txt` y `chunk_p8_4.txt`, con sus sidecars. Esa copia solo restaura el prefijo si un listado remoto acaba de confirmar que sigue siendo el contenido actual. Si el listado difiere, se refresca antes de escribir.
+- `S3DocumentsService#upload_text`, `#upload_binary` y `#delete_prefix` invalidan `Rag::SectionNeighborExpander` y `Rag::CompanionDefinitionSource` para el prefijo `bulk_chunks/`. La invalidación ya está integrada.
+- C6 está en `CompanionDefinitionExpander#add_answer_targets`. El catálogo local de la candidata puede cargar `chunk_p12_5.txt` por `document_key` y `filename`. Con catálogo nulo o presupuesto lleno, la omisión es `target_not_loaded` y el render dice que el apartado no está cargado en el turno. Eso está probado con fixture. El índice remoto no se ha leído en esta preparación.
+- El `.env` de desarrollo nombra otra KB, `QGVYLPTEGT`, otro bucket, `smart-deal-dev-kb`, y `BEDROCK_BULK_DATA_SOURCE_ID` `1ICX1LL7A5`. No define `BEDROCK_DATA_SOURCE_ID`, que es el id que lee `KbSyncService`. Un proceso arrancado con ese entorno no es el destino del VF5.
+
+### Impedimento concreto antes de la escritura
+
+`KbSyncService#find_data_source_id` (`app/services/kb_sync_service.rb`) y `IngestionStatusService#find_data_source_id` buscan el id preferido y, si no está en el listado, siguen con `summaries.first`.
+
+Criterio vigente: la sincronización usa `PJ0N58DMHG` dentro de `Y7RZWMFJSR`, o se detiene. Captura: las dos métodos, leídos en `3d1d019`, conservan el aviso y el primer elemento. Consecuencia: un `start_ingestion_job` puede abrir otra fuente del mismo knowledge base. Esa fuente indexa `bulk_chunks/` completo, así que el job también recogería cambios ajenos al VF5. Hasta que ambos métodos se detengan cuando el id configurado no aparece, no se llama a `start_ingestion_job`.
+
+Control de la misma ejecución, porque el código no lo impone solo: `BatchResultsParserService#delete_existing_chunks` registra un fallo de borrado y continúa, y `delete_prefix` devuelve 0 si la llamada falla. Después del borrado hay que listar el prefijo y detenerse si quedó algún objeto. Después de la subida, el listado tiene que ser exactamente las 90 claves del manifest.
+
+La página 4 no es este impedimento. Tampoco lo son la estabilidad, el ranking ni F5.
+
+### Operación remota que queda pendiente de autorización
+
+Una sola concesión, en este orden. Cada paso se detiene si la verificación no coincide. No incluye F5, ni otra inferencia de generación, ni otro manual.
+
+1. **Cambio local previo, sin red.** `find_data_source_id` en los dos servicios devuelve ausencia cuando el id pedido no está en el listado. Un test cubre el id presente, el id ausente y la lista vacía. `summaries.first` deja de usarse en ese caso.
+2. **Lectura.** Listar solo `s3://multimodal-source-destination/bulk_chunks/1/be7a39a3490c92c8381cb883402760cb07d1/`. Listar los datasources de `Y7RZWMFJSR` y los jobs de `PJ0N58DMHG`. Verificar que `PJ0N58DMHG` está en la lista y que ninguno está en `STARTING` ni en `IN_PROGRESS`. Si el listado del prefijo difiere de `tmp/review_vf5/`, refrescar esa copia local: es la restauración. No descargar otros prefijos.
+3. **Sustitución, solo si el listado no es ya el de las 90 claves.** Borrar el prefijo. Volver a listarlo y detenerse si queda algún objeto. Subir los 90 archivos de `candidate_r2/kb` con `S3DocumentsService`, sin reextraer y sin pasar por el parser si eso cambiaría los bytes. Verificar que cada objeto subido conserva el hash del manifest y que el listado final es exactamente ese conjunto, sin `chunk_p7_4.txt` ni `chunk_p8_4.txt`. La invalidación de caché ocurre en la subida y en el borrado.
+4. **Sincronización.** `start_ingestion_job` solo con `knowledge_base_id` `Y7RZWMFJSR` y `data_source_id` `PJ0N58DMHG`, después del cambio del paso 1 y de ver ese id en el listado. Guardar `job_id`, estado y estadísticas. Si las estadísticas incluyen cambios fuera del VF5, se anotan y no se revierten objetos ajenos.
+5. **Retrieve real, sin reranker.** Como máximo tres mediciones: k = 3, k = 5 si la primera no trae el grupo, y una después del único ajuste que el plan ya permite. La comprobación del destino publicado pide el grupo de la página 12. Verificación: el cuerpo de `chunk_p12_5.txt` vuelve con SHA-256 `aeab3d5afb150beaad789399355d2c500f746f41ee7183e2a58283122ebbca48`, o el turno muestra `target_not_loaded` y la frase de apartado no cargado. `chunk_p7_4.txt` y `chunk_p8_4.txt` no reaparecen. Esta medición no acepta el ranking como tasa y no abre F5.
+6. **Restauración, solo si la escritura o la sincronización fallan.** Reponer la copia listada en el paso 2 y lanzar un único `start_ingestion_job` sobre el mismo par KB y datasource. Una restauración y una resincronización.
+
+El proceso que ejecute esos pasos fija bucket, KB y datasource en el entorno de esa corrida. No hereda `QGVYLPTEGT` ni `smart-deal-dev-kb`.
+
+## Validación de Opus — F3: desambiguación progresiva (23 de octubre de 2026, diseño)
+
+**Precedencia.** El diseño de esta sección sigue en pie. La consolidación de arriba decide el cierre de F3 y la preparación de F4. Dentro del diseño, esta sección manda sobre la «Revisión para Opus» y sobre el historial. Esta validación no implementa producto, no invoca modelos, no toca el ledger ni los caps, no escribe en S3, no sincroniza la KB y no autoriza gasto.
 
 ### 1. Veredicto
 

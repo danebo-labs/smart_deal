@@ -1547,7 +1547,7 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
 
     outcome = nil
     previous_scope = ENV.fetch("DOCUMENT_IDENTITY_SCOPE_ENABLED", nil)
-    ENV.delete("DOCUMENT_IDENTITY_SCOPE_ENABLED")
+    ENV["DOCUMENT_IDENTITY_SCOPE_ENABLED"] = "false"
     outcome = route.execute
 
     assert_equal 0, generator.calls.size

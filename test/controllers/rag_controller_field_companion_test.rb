@@ -207,8 +207,8 @@ class RagControllerFieldCompanionTest < ActionDispatch::IntegrationTest
   # switch, or catalog double changes the text this test compares. CI has none
   # of the developer .env flags, so the comparison starts from that baseline.
   def with_legacy_question_baseline
-    isolate_env("FIELD_COMPANION_TURN_ENABLED", nil) do
-      isolate_env("HAIKU_QUERY_ANALYSIS_MODE", nil) do
+    isolate_env("FIELD_COMPANION_TURN_ENABLED", "false") do
+      isolate_env("HAIKU_QUERY_ANALYSIS_MODE", "off") do
         isolate_env("RAG_THREAD_MENU_ENABLED", nil) do
           Rag::DocumentIdentityCatalog.with_catalog(Rag::DocumentIdentityCatalog.load) do
             yield
@@ -220,7 +220,7 @@ class RagControllerFieldCompanionTest < ActionDispatch::IntegrationTest
 
   def with_episode_flag(value)
     previous = ENV["FIELD_COMPANION_EPISODE_ENABLED"]
-    value.nil? ? ENV.delete("FIELD_COMPANION_EPISODE_ENABLED") : ENV["FIELD_COMPANION_EPISODE_ENABLED"] = value
+    ENV["FIELD_COMPANION_EPISODE_ENABLED"] = value.nil? ? "false" : value
     yield
   ensure
     previous.nil? ? ENV.delete("FIELD_COMPANION_EPISODE_ENABLED") : ENV["FIELD_COMPANION_EPISODE_ENABLED"] = previous

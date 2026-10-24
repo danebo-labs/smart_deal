@@ -29,22 +29,40 @@ class FieldCompanionResetTest < ActiveSupport::TestCase
       expires_at: 1.day.from_now,
       active_episode: { "v" => 1, "episode_id" => "ep_keep_me" }
     )
+    @isolate = Rake::Task["field_companion:isolate_web_trial"]
     @original_apply = ENV.delete("APPLY")
+    @original_confirm = ENV["FIELD_COMPANION_WEB_TRIAL_CONFIRM"]
+    ENV.delete("FIELD_COMPANION_WEB_TRIAL_CONFIRM")
     @original_copy_dir = ENV["FIELD_COMPANION_CLEAN_START_COPY_DIR"]
     @copy_dir = Rails.root.join("tmp/field_companion_clean_start_test/#{SecureRandom.hex(4)}")
     ENV["FIELD_COMPANION_CLEAN_START_COPY_DIR"] = @copy_dir.to_s
+    @original_trial_dir = ENV["FIELD_COMPANION_WEB_TRIAL_COPY_DIR"]
+    @trial_dir = Rails.root.join("tmp/field_companion_web_trial_test/#{SecureRandom.hex(4)}")
+    ENV["FIELD_COMPANION_WEB_TRIAL_COPY_DIR"] = @trial_dir.to_s
   end
 
   teardown do
     @task.reenable
     @clean.reenable
+    @isolate&.reenable
     @original_apply.nil? ? ENV.delete("APPLY") : ENV["APPLY"] = @original_apply
+    if @original_confirm.nil?
+      ENV.delete("FIELD_COMPANION_WEB_TRIAL_CONFIRM")
+    else
+      ENV["FIELD_COMPANION_WEB_TRIAL_CONFIRM"] = @original_confirm
+    end
     if @original_copy_dir.nil?
       ENV.delete("FIELD_COMPANION_CLEAN_START_COPY_DIR")
     else
       ENV["FIELD_COMPANION_CLEAN_START_COPY_DIR"] = @original_copy_dir
     end
     FileUtils.rm_rf(@copy_dir)
+    if @original_trial_dir.nil?
+      ENV.delete("FIELD_COMPANION_WEB_TRIAL_COPY_DIR")
+    else
+      ENV["FIELD_COMPANION_WEB_TRIAL_COPY_DIR"] = @original_trial_dir
+    end
+    FileUtils.rm_rf(@trial_dir) if @trial_dir
   end
 
   test "dry run reports the exact scope and changes nothing" do
@@ -435,9 +453,75 @@ class FieldCompanionResetTest < ActiveSupport::TestCase
     end
   end
 
+  test "start_clean_case still refuses a production target" do
+    runtime = runtime_session
+    original = FieldCompanionCleanStart.instance_method(:production_target?)
+    FieldCompanionCleanStart.define_method(:production_target?) { true }
+    @clean.reenable
+    stdout, _stderr = capture_io { assert_raises(SystemExit) { @clean.invoke(@account.slug, @user.email) } }
+
+    assert_includes stdout, "ABORT production"
+    assert_equal "ep_old_case", runtime.reload.active_episode["episode_id"]
+    assert_includes runtime.conversation_history.to_json, MARKER
+  ensure
+    FieldCompanionCleanStart.define_method(:production_target?, original) if original
+  end
+
+  test "web trial isolation refuses a mismatched confirmation and does not consult the production guard" do
+    runtime = runtime_session
+    ENV["APPLY"] = "true"
+    ENV["FIELD_COMPANION_WEB_TRIAL_CONFIRM"] = "otra-persona@example.com"
+    original = FieldCompanionCleanStart.instance_method(:production_target?)
+    FieldCompanionCleanStart.define_method(:production_target?) { raise "production guard consulted" }
+
+    @isolate.reenable
+    stdout, _stderr = capture_io { assert_raises(SystemExit) { @isolate.invoke(@account.slug, @user.email) } }
+
+    assert_includes stdout, "ABORT confirm_mismatch"
+    assert_not_includes stdout, "otra-persona@example.com"
+    assert_equal "ep_old_case", runtime.reload.active_episode["episode_id"]
+  ensure
+    FieldCompanionCleanStart.define_method(:production_target?, original) if original
+  end
+
+  test "web trial isolation clears one runtime workspace and keeps the photo row" do
+    runtime = runtime_session
+    photo_id = runtime.active_episode.dig("active_photo", "field_photo_id")
+    photo_key = FieldPhoto.find(photo_id).s3_key_original
+    ENV["APPLY"] = "true"
+    ENV["FIELD_COMPANION_WEB_TRIAL_CONFIRM"] = @user.email
+    original = FieldCompanionCleanStart.instance_method(:production_target?)
+    FieldCompanionCleanStart.define_method(:production_target?) { raise "production guard consulted" }
+
+    output = invoke_isolate.first
+    copy = JSON.parse(File.read(Dir.glob(@trial_dir.join("*.json")).sole))
+    runtime.reload
+
+    assert_includes output, "operation=isolate_web_trial"
+    assert_includes output, "production_guard=not_consulted"
+    assert_includes output, "APPLIED"
+    assert_equal runtime.id, copy.dig("kept", "id")
+    assert_includes copy.dig("replaced", "conversation_history").to_json, MARKER
+    assert_not_includes File.read(Dir.glob(@trial_dir.join("*.json")).sole), "super-secret-value"
+    assert_equal [], runtime.conversation_history
+    assert_equal [], runtime.document_focus
+    assert_equal({}, runtime.active_entities)
+    assert_equal({}, runtime.current_procedure)
+    assert_not_equal "ep_old_case", runtime.active_episode["episode_id"]
+    assert_equal photo_key, FieldPhoto.find(photo_id).s3_key_original
+    assert_equal "ep_keep_me", @other.reload.active_episode["episode_id"]
+  ensure
+    FieldCompanionCleanStart.define_method(:production_target?, original) if original
+  end
+
   private
 
   MARKER = "ANTECEDENTE_ZX9"
+
+  def invoke_isolate
+    @isolate.reenable
+    capture_io { @isolate.invoke(@account.slug, @user.email) }
+  end
 
   def invoke_clean
     @clean.reenable

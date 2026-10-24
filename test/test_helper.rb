@@ -35,6 +35,14 @@ module ActiveSupport
     # the flag set for the next test in the same worker.
     setup do
       Rag::Phase1QueueGuard.disarm! if defined?(Rag::Phase1QueueGuard)
+      # Historical off values. Absence enables the companion at request time.
+      # A test that wants that product default deletes the key inside the example.
+      ENV["FIELD_COMPANION_EPISODE_ENABLED"] = "false"
+      ENV["FIELD_COMPANION_TURN_ENABLED"] = "false"
+      ENV["HAIKU_QUERY_ANALYSIS_MODE"] = "off"
+      ENV["RAG_COMPANION_TURN"] = "0"
+      ENV["DOCUMENT_IDENTITY_SCOPE_ENABLED"] = "false"
+      ENV.delete("PILOT_AUDIT_CAPTURE_ACCOUNT_IDS")
     end
 
     # Completed non-photo ledger with a chunk prefix. Promotion to

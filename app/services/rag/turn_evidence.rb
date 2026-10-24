@@ -3,10 +3,8 @@
 module Rag
   # One reconstruction record per technician turn. Cost stays on BedrockQuery.
   class TurnEvidence
-    CAPTURE_ENV = "PILOT_AUDIT_CAPTURE"
-
     def self.build(correlation_id:, route:, outcome:, original_query: nil, effective_query: nil,
-                   answer: nil, semantic: nil, photo: nil, chunk_ids: [], sources: [])
+                   answer: nil, semantic: nil, photo: nil, chunk_ids: [], sources: [], account_id: nil)
       new(
         correlation_id: correlation_id,
         route: route,
@@ -17,7 +15,8 @@ module Rag
         semantic: semantic,
         photo: photo,
         chunk_ids: chunk_ids,
-        sources: sources
+        sources: sources,
+        account_id: account_id
       ).to_h
     end
 
@@ -52,7 +51,7 @@ module Rag
     end
 
     def initialize(correlation_id:, route:, outcome:, original_query:, effective_query:, answer:,
-                   semantic:, photo:, chunk_ids:, sources:)
+                   semantic:, photo:, chunk_ids:, sources:, account_id:)
       @correlation_id = correlation_id
       @route = route
       @outcome = outcome
@@ -63,6 +62,7 @@ module Rag
       @photo = photo
       @chunk_ids = Array(chunk_ids)
       @sources = Array(sources)
+      @account_id = account_id
     end
 
     def to_h
@@ -78,7 +78,7 @@ module Rag
         "sources" => @sources.map { |source| source.to_h.stringify_keys.slice("title", "page") },
         "answer_sha256" => Digest::SHA256.hexdigest(@answer)
       }
-      if ENV[CAPTURE_ENV] == "true"
+      if Rag::PilotAuditCapture.include_text?(@account_id)
         payload["original_query"] = @original_query
         payload["effective_query"] = @effective_query
         payload["answer"] = @answer

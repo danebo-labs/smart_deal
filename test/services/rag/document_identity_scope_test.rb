@@ -3451,11 +3451,7 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
 
   def with_flag(value)
     original = ENV.fetch("DOCUMENT_IDENTITY_SCOPE_ENABLED", nil)
-    if value.nil?
-      ENV.delete("DOCUMENT_IDENTITY_SCOPE_ENABLED")
-    else
-      ENV["DOCUMENT_IDENTITY_SCOPE_ENABLED"] = value
-    end
+    ENV["DOCUMENT_IDENTITY_SCOPE_ENABLED"] = value.nil? ? "false" : value
     yield
   ensure
     if original.nil?

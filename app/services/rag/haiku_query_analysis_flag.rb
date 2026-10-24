@@ -9,8 +9,8 @@ module Rag
     module_function
 
     def mode
-      raw = ENV.fetch(ENV_KEY, "off").to_s.strip
-      raw = "off" if raw.empty?
+      raw = ENV.fetch(ENV_KEY, "owner").to_s.strip
+      raw = "owner" if raw.empty?
       return raw if MODES.include?(raw)
 
       warn_unknown(raw)

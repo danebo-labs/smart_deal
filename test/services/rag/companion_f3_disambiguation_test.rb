@@ -970,7 +970,7 @@ class Rag::CompanionF3DisambiguationTest < ActiveSupport::TestCase
 
   def without_owner
     previous = ENV["HAIKU_QUERY_ANALYSIS_MODE"]
-    ENV.delete("HAIKU_QUERY_ANALYSIS_MODE")
+    ENV["HAIKU_QUERY_ANALYSIS_MODE"] = "off"
     yield
   ensure
     previous.nil? ? ENV.delete("HAIKU_QUERY_ANALYSIS_MODE") : ENV["HAIKU_QUERY_ANALYSIS_MODE"] = previous

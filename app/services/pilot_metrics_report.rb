@@ -41,6 +41,8 @@ class PilotMetricsReport
     log_data = read_log_data
     @usage_logs_loaded = %w[loaded partial].include?(log_data[:status])
     messages, sessions = daily_messages_and_sessions
+    interaction_report = interactions(rows, log_data[:pilot], log_data[:quality], log_data[:audit])
+    attach_session_turns!(interaction_report, @session_archive)
     users = user_reports(rows, log_data[:pilot], log_data[:quality], messages)
     accounts = account_reports(rows, log_data[:pilot], log_data[:quality], messages)
     gap_signals = knowledge_gap_signals(messages)
@@ -63,7 +65,8 @@ class PilotMetricsReport
         per_user: users,
         per_account: accounts
       },
-      interactions: interactions(rows, log_data[:pilot], log_data[:quality], log_data[:audit]),
+      interactions: interaction_report,
+      session_archive: session_archive_export,
       adoption_signals: adoption_signals(rows, log_data[:pilot], messages, sessions),
       repeat_usage: repeat_usage(log_data[:pilot]),
       evidence_quality: evidence_quality(log_data[:quality]),
@@ -112,29 +115,26 @@ class PilotMetricsReport
   def daily_messages_and_sessions
     messages = []
     sessions = []
+    @session_archive = []
     @messages_without_timestamp = 0
 
     ConversationSession.where(updated_at: @range)
       .where("jsonb_array_length(conversation_history) > 0")
       .find_each do |session|
-        daily = Array(session.conversation_history).filter_map do |raw|
+        daily = []
+        Array(session.conversation_history).each do |raw|
           ts = parse_time(raw["ts"])
           unless ts
             @messages_without_timestamp += 1
             next
           end
           next unless @range.cover?(ts)
+
+          archived = history_archive_row(session, raw, ts)
+          @session_archive << archived if archive_visible?(session, raw)
           next if @user_ids.any? && @user_ids.exclude?(integer_or_nil(raw["user_id"]))
 
-          {
-            session_id: session.id,
-            account_id: session.account_id,
-            user_id: integer_or_nil(raw["user_id"]),
-            correlation_id: raw["correlation_id"].presence,
-            role: raw["role"],
-            content: raw["content"].to_s,
-            ts: ts
-          }
+          daily << archived
         end
         next if daily.empty?
 
@@ -148,6 +148,75 @@ class PilotMetricsReport
       end
 
     [ messages, sessions ]
+  end
+
+  def history_archive_row(session, raw, ts)
+    row = {
+      session_id: session.id,
+      account_id: session.account_id,
+      user_id: integer_or_nil(raw["user_id"]),
+      correlation_id: raw["correlation_id"].presence,
+      role: raw["role"],
+      content: raw["content"].to_s,
+      ts: ts
+    }
+    row[:full_content] = raw["full_content"].to_s if raw["full_content"].present?
+    row[:full_content_truncated] = true if raw["full_content_truncated"] == true
+    if raw.key?("prompt_reply")
+      row[:prompt_reply] = raw["prompt_reply"].to_s
+    end
+    row[:prompt_reply_truncated] = true if raw["prompt_reply_truncated"] == true
+    row
+  end
+
+  # Assistant rows often have no user_id. A user filter still keeps them when
+  # the session itself belongs to that user. The metric filter above does not
+  # change: gap counts stay on rows that carry the user id.
+  def archive_visible?(session, raw)
+    return true if @user_ids.empty?
+
+    user_id = integer_or_nil(raw["user_id"])
+    return true if @user_ids.include?(user_id)
+
+    user_id.nil? && @user_ids.include?(session.user_id)
+  end
+
+  def attach_session_turns!(interactions, archive)
+    rows = interactions.is_a?(Hash) ? interactions[:by_correlation] : nil
+    return interactions unless rows.is_a?(Array)
+
+    grouped = Array(archive).group_by { |message| message[:correlation_id].to_s }
+    rows.each do |row|
+      turns = grouped[row[:correlation_id].to_s]
+      next if turns.blank?
+
+      row[:session_turns] = turns.map { |turn| session_turn_export(turn) }
+    end
+    interactions
+  end
+
+  def session_archive_export
+    Array(@session_archive).map do |row|
+      session_turn_export(row).merge(
+        session_id: row[:session_id],
+        account_id: row[:account_id],
+        user_id: row[:user_id],
+        correlation_id: row[:correlation_id]
+      )
+    end
+  end
+
+  def session_turn_export(turn)
+    exported = {
+      role: turn[:role],
+      content: turn[:content],
+      ts: turn[:ts]&.iso8601
+    }
+    exported[:full_content] = turn[:full_content] if turn.key?(:full_content)
+    exported[:full_content_truncated] = true if turn[:full_content_truncated]
+    exported[:prompt_reply] = turn[:prompt_reply] if turn.key?(:prompt_reply)
+    exported[:prompt_reply_truncated] = true if turn[:prompt_reply_truncated]
+    exported
   end
 
   def read_log_data

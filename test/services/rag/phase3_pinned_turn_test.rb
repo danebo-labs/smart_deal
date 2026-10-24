@@ -260,7 +260,7 @@ class Rag::Phase3PinnedTurnTest < ActiveSupport::TestCase
     end
 
     ENV["PHASE3_PINNED_TURN_AUTHORIZED"] = "1"
-    ENV.delete("HAIKU_QUERY_ANALYSIS_MODE")
+    ENV["HAIKU_QUERY_ANALYSIS_MODE"] = "off"
     assert_no_difference("ConversationSession.count") do
       closed = Rag::Phase3PinnedTurn.run(
         account: accounts(:legacy), user: users(:one), document: pinned_document(accounts(:legacy)),

@@ -1220,9 +1220,13 @@ class BedrockRagService
     ENV["RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE"] == "1"
   end
 
-  # The only read of RAG_COMPANION_TURN. Off keeps the current documentary prompt.
+  # The only read of RAG_COMPANION_TURN. Absent or blank enables the plan
+  # path. "0" and "false" keep the documentary prompt.
   def companion_turn_enabled?
-    ENV["RAG_COMPANION_TURN"] == "1"
+    value = ENV["RAG_COMPANION_TURN"]
+    return true if value.nil? || value.strip.empty?
+
+    value == "1" || value == "true"
   end
 
   def companion_turn_applies?(applied:, chunks:, episode:, raw_question:)

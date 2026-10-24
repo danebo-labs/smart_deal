@@ -7,10 +7,17 @@ class Rag::HaikuQueryAnalysisFlagTest < ActiveSupport::TestCase
 
   setup { F.reset_unknown_warning! }
 
-  test "flag default is off" do
+  test "an absent or blank flag is owner and explicit off stays off" do
     with_mode(nil) do
+      assert_equal "owner", F.mode
+      assert F.owner?
+    end
+    with_mode("") do
+      assert_equal "owner", F.mode
+    end
+    with_mode("off") do
       assert_equal "off", F.mode
-      assert_not F.shadow?
+      assert_not F.owner?
     end
   end
 

@@ -130,7 +130,7 @@ class EquipmentManualFocusTest < ActionDispatch::IntegrationTest
     assert_equal uri, entry["source_uri"]
     focus_before = session.document_focus
 
-    isolate_env("DOCUMENT_IDENTITY_SCOPE_ENABLED", nil) do
+    isolate_env("DOCUMENT_IDENTITY_SCOPE_ENABLED", "false") do
       closed = identity_query(session, uri)
       assert_equal [], closed[:retrieves]
       assert_equal "scope_disabled", closed[:result][:equipment_identity_reason]

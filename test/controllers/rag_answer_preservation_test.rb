@@ -29,7 +29,7 @@ class RagAnswerPreservationTest < ActionDispatch::IntegrationTest
     episode = active_case
     session.update!(active_episode: episode.to_h, conversation_history: [])
 
-    isolate_env("FIELD_COMPANION_EPISODE_ENABLED", nil) do
+    isolate_env("FIELD_COMPANION_EPISODE_ENABLED", "false") do
       isolate_env("HAIKU_QUERY_ANALYSIS_MODE", "off") do
         sign_in @user
         with_mock_orchestrator(orchestrator(raw)) do

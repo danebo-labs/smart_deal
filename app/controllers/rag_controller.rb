@@ -335,7 +335,8 @@ class RagController < ApplicationController
       answer: answer,
       semantic: Rag::SemanticQueryAnalyzer.current_observation,
       chunk_ids: chunk_ids,
-      sources: sources
+      sources: sources,
+      account_id: current_account&.id
     )
   end
 

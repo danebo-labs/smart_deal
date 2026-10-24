@@ -1630,7 +1630,7 @@ class ConversationSessionTest < ActiveSupport::TestCase
 
   def with_episode_flag(value)
     previous = ENV["FIELD_COMPANION_EPISODE_ENABLED"]
-    value.nil? ? ENV.delete("FIELD_COMPANION_EPISODE_ENABLED") : ENV["FIELD_COMPANION_EPISODE_ENABLED"] = value
+    ENV["FIELD_COMPANION_EPISODE_ENABLED"] = value.nil? ? "false" : value
     yield
   ensure
     previous.nil? ? ENV.delete("FIELD_COMPANION_EPISODE_ENABLED") : ENV["FIELD_COMPANION_EPISODE_ENABLED"] = previous

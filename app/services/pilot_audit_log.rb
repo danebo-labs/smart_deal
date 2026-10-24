@@ -13,7 +13,9 @@ class PilotAuditLog
   TAG = "[PILOT_AUDIT] "
 
   def self.log(question:, answer:, citations:, retrieved_chunks:, correlation_id:, attribution:)
-    return unless ENV["PILOT_AUDIT_CAPTURE"] == "true"
+    return unless Rag::PilotAuditCapture.include_text?(
+      attribution[:account_id] || attribution["account_id"]
+    )
 
     new(
       question: question, answer: answer, citations: citations, retrieved_chunks: retrieved_chunks,

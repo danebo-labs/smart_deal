@@ -257,14 +257,20 @@ class Rag::ActiveEpisodeTest < ActiveSupport::TestCase
     assert_not_includes texts, filler.first
   end
 
-  test "field companion flags are off unless the env value is the string true" do
+  test "field companion flags are on when absent and off only for the string false" do
     with_flags(nil) do
-      assert_not Rag::FieldCompanionEpisodeFlag.enabled?
-      assert_not Rag::FieldCompanionTurnFlag.enabled?
+      assert Rag::FieldCompanionEpisodeFlag.enabled?
+      assert Rag::FieldCompanionTurnFlag.enabled?
+    end
+
+    with_flags("") do
+      assert Rag::FieldCompanionEpisodeFlag.enabled?
+      assert Rag::FieldCompanionTurnFlag.enabled?
     end
 
     with_flags("false") do
       assert_not Rag::FieldCompanionEpisodeFlag.enabled?
+      assert_not Rag::FieldCompanionTurnFlag.enabled?
     end
 
     with_flags("true") do

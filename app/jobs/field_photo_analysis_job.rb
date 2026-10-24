@@ -45,7 +45,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
       outcome: "failed",
       original_query: args[:raw_question].nil? ? args[:question] : args[:raw_question],
       effective_query: args[:question],
-      answer: I18n.with_locale(locale) { I18n.t("rag.photo_analysis_failed") }
+      answer: I18n.with_locale(locale) { I18n.t("rag.photo_analysis_failed") },
+      account_id: args[:account_id]
     )
     KbSyncBroadcaster.failed(
       filenames: [ args[:filename].presence || "photo" ],
@@ -701,7 +702,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
       answer: answer,
       photo: photo,
       chunk_ids: chunk_ids,
-      sources: sources
+      sources: sources,
+      account_id: account_id
     )
   end
 

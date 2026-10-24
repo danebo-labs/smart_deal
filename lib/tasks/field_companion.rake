@@ -24,6 +24,8 @@ class FieldCompanionCleanStart
   end
 
   COPY_DIR_ENV = "FIELD_COMPANION_CLEAN_START_COPY_DIR"
+  TRIAL_COPY_DIR_ENV = "FIELD_COMPANION_WEB_TRIAL_COPY_DIR"
+  CONFIRM_ENV = "FIELD_COMPANION_WEB_TRIAL_CONFIRM"
   # Shown references only. Existence uses the full exact-id count.
   REFERENCE_LIMIT = 20
   # Keyword names ActiveJob writes into solid_queue_jobs.arguments.
@@ -89,17 +91,60 @@ class FieldCompanionCleanStart
     :applied
   end
 
+  # Production-capable isolation of one web workspace. start_clean_case keeps
+  # its production refusal. This entry requires the confirmation env to equal
+  # the email argument before it writes. It does not destroy the session row.
+  def isolate_web_trial(account_slug:, user_email:, apply:, confirm:)
+    slug = account_slug.to_s.strip
+    email = user_email.to_s.strip.downcase
+    refuse!("usage: FIELD_COMPANION_WEB_TRIAL_CONFIRM=user@example.com APPLY=true bin/rails \"field_companion:isolate_web_trial[account-slug,user@example.com]\"") if slug.blank? || email.blank?
+
+    say("operation=isolate_web_trial rails_env=#{Rails.env} git=#{git_sha} production_guard=not_consulted")
+    say(flag_text)
+    account = Account.find_by(slug: slug) or refuse!("ABORT no Account with slug #{slug}")
+    user = account.users.find_by(email: email) or refuse!("ABORT no User with email #{email} in account #{slug}")
+    key = selection_key(account, user)
+    say(key)
+    refuse!("ABORT shared_session #{key}") if SharedSession::ENABLED
+
+    rows = self.class.rows_for(account, user)
+    if rows.empty?
+      refuse!("ABORT no_row #{key}")
+    elsif rows.size > 1
+      refuse!("ABORT ambiguous count=#{rows.size} ids=#{rows.map(&:id).join(',')} #{key}")
+    end
+
+    session = rows.first
+    say("session_id=#{session.id} user_id=#{session.user_id.inspect} expires_at=#{session.expires_at.iso8601}")
+    say(attribution_line(session, user))
+    say(FieldCompanionCleanStart::MARKER_UI)
+    say("scope=conversation_history document_focus active_entities current_procedure active_episode")
+    say("kept=session_row photos bedrock_queries pilot_events manuals")
+
+    unless apply
+      say("DRY RUN no_comprobado. Re-run with APPLY=true and #{CONFIRM_ENV} equal to the user email.")
+      return :dry_run
+    end
+
+    confirmed = confirm.to_s.strip.downcase
+    refuse!("ABORT confirm_mismatch") unless confirmed == email
+    refuse!("ABORT row_expired session_id=#{session.id}") if session.expired?
+
+    apply_clean_start!(session, account, user, directory: trial_copy_directory, reason: "web_trial")
+    :applied
+  end
+
   private
 
-  def apply_clean_start!(session, account, user)
+  def apply_clean_start!(session, account, user, directory: nil, reason: "clean_start")
     copy_path = nil
     begin
       session.with_lock do
         session.reload
         opened = @clock.call
         snapshot = snapshot_for(session, account, user, opened)
-        copy_path = write_snapshot!(snapshot)
-        session.start_new_case!(now: opened, reason: "clean_start", correlation_id: "clean_start:#{SecureRandom.uuid}")
+        copy_path = write_snapshot!(snapshot, directory: directory)
+        session.start_new_case!(now: opened, reason: reason, correlation_id: "#{reason}:#{SecureRandom.uuid}")
         session.update!(
           conversation_history: [],
           document_focus: [],
@@ -229,8 +274,8 @@ class FieldCompanionCleanStart
     %("#{key}"[[:space:]]*:[[:space:]]*#{id}([^0-9]|$))
   end
 
-  def write_snapshot!(snapshot)
-    directory = Pathname(ENV.fetch(COPY_DIR_ENV, Rails.root.join("tmp/field_companion/clean_starts").to_s))
+  def write_snapshot!(snapshot, directory: nil)
+    directory = Pathname(directory || ENV.fetch(COPY_DIR_ENV, Rails.root.join("tmp/field_companion/clean_starts").to_s))
     directory.mkpath
     session_id = snapshot.dig("workspace", "conversation_session_id")
     path = directory.join("#{Time.now.utc.strftime('%Y%m%dT%H%M%SZ')}_#{SecureRandom.hex(4)}_session_#{session_id}.json")
@@ -333,6 +378,10 @@ class FieldCompanionCleanStart
     "unavailable"
   end
 
+  def trial_copy_directory
+    ENV.fetch(TRIAL_COPY_DIR_ENV, Rails.root.join("tmp/field_companion/web_trials").to_s)
+  end
+
   def say(line)
     @io.puts(line)
   end
@@ -386,6 +435,18 @@ namespace :field_companion do
       account_slug: args[:account_slug],
       user_email: args[:user_email],
       apply: ENV["APPLY"] == "true"
+    )
+  rescue FieldCompanionCleanStart::Refused => error
+    abort error.message
+  end
+
+  desc "Isolate one production web workspace (APPLY plus email confirmation)"
+  task :isolate_web_trial, %i[account_slug user_email] => :environment do |_task, args|
+    FieldCompanionCleanStart.new(io: $stdout, clock: nil).isolate_web_trial(
+      account_slug: args[:account_slug],
+      user_email: args[:user_email],
+      apply: ENV["APPLY"] == "true",
+      confirm: ENV[FieldCompanionCleanStart::CONFIRM_ENV]
     )
   rescue FieldCompanionCleanStart::Refused => error
     abort error.message

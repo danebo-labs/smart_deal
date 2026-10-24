@@ -1661,7 +1661,8 @@ class ConversationSession < ApplicationRecord
     message["user_id"] = user_id if user_id.present?
     message["correlation_id"] = correlation_id if correlation_id.present?
     message["focus_ids"] = Array(focus_ids).map(&:to_i).uniq.sort unless focus_ids.nil?
-    assign_full_content!(message, content) if role == "user"
+    assign_full_content!(message, content, cap: USER_TEXT_MAX_CHARS) if role == "user"
+    assign_full_content!(message, content, cap: PROMPT_REPLY_MAX_CHARS) if role == "assistant"
     # Shown answer may open with the case record. The next prompt reads this
     # copy, so that record does not occupy the 200 characters reinjected later.
     # content stays on MAX_MSG_LENGTH. prompt_reply has its own cap.
@@ -1670,13 +1671,15 @@ class ConversationSession < ApplicationRecord
   end
 
   # content keeps the shared MAX_MSG_LENGTH cut. A longer technician message
-  # also keeps its text, up to USER_TEXT_MAX_CHARS, for the companion archive.
-  def assign_full_content!(message, content)
+  # also keeps its text, up to USER_TEXT_MAX_CHARS. A longer shown answer
+  # keeps its text, up to PROMPT_REPLY_MAX_CHARS. full_content_truncated
+  # marks a message longer than that cap.
+  def assign_full_content!(message, content, cap:)
     text = content.to_s
     return if text.length <= MAX_MSG_LENGTH
 
-    message["full_content"] = text[0, USER_TEXT_MAX_CHARS]
-    message["full_content_truncated"] = true if text.length > USER_TEXT_MAX_CHARS
+    message["full_content"] = text[0, cap]
+    message["full_content_truncated"] = true if text.length > cap
   end
 
   def assign_prompt_reply!(message, prompt_reply)

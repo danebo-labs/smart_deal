@@ -249,7 +249,7 @@ class Rag::CompanionTurnGenerationTest < ActiveSupport::TestCase
 
   def without_companion
     previous = ENV["RAG_COMPANION_TURN"]
-    ENV.delete("RAG_COMPANION_TURN")
+    ENV["RAG_COMPANION_TURN"] = "0"
     yield
   ensure
     previous.nil? ? ENV.delete("RAG_COMPANION_TURN") : ENV["RAG_COMPANION_TURN"] = previous

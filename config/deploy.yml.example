@@ -71,8 +71,15 @@ env:
     BEDROCK_BULK_DATA_SOURCE_ID: your-bulk-no-chunking-data-source-id
     BEDROCK_EMBEDDING_MODEL_ID: amazon.titan-embed-text-v2:0
     BEDROCK_MODEL_ID: global.anthropic.claude-haiku-4-5-20251001-v1:0
-    # Perception ownership. Rollback is off. always stays inert.
-    HAIKU_QUERY_ANALYSIS_MODE: conditional
+    # Companion is the product default. Absence enables these in code.
+    # The explicit strings below are the deployed contract. Rollback is
+    # false, off, or 0. always stays inert.
+    FIELD_COMPANION_EPISODE_ENABLED: "true"
+    FIELD_COMPANION_TURN_ENABLED: "true"
+    RAG_EPISODE_SCOPE_ENABLED: "true"
+    RAG_COMPANION_TURN: "1"
+    DOCUMENT_IDENTITY_SCOPE_ENABLED: "true"
+    HAIKU_QUERY_ANALYSIS_MODE: owner
     KNOWLEDGE_BASE_S3_BUCKET: your-kb-source-bucket
     INGESTION_REENQUEUE: "true"
     AWS_HTTP_READ_TIMEOUT: "90"
@@ -107,6 +114,10 @@ env:
     # has nothing to surface. Places raw technician text in production logs, so
     # enable it only under the corresponding privacy authorization.
     PILOT_AUDIT_CAPTURE: "false"
+    # Empty or omitted: raw text for every account while the flag is true.
+    # A comma-separated list of account ids restricts that text. An unknown
+    # account is omitted when the list is set.
+    # PILOT_AUDIT_CAPTURE_ACCOUNT_IDS: "1"
     # Kill-switch for the durable pilot_events INSERT. Default is persist
     # (unset or any value other than "false"). Not a privacy gate — that is
     # the PilotUsageLog whitelist plus the rag_quality raw-text exclusions.

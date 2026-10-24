@@ -45,8 +45,8 @@ gem 'jwt', '>= 3.2.0'
 # Bundler-audit: CVE-2026-54904/54905/54906 (concurrent-ruby < 1.3.7)
 gem 'concurrent-ruby', '>= 1.3.7'
 
-# Bundler-audit: GHSA-6jxj/6wmf/8vfg/wwpr (crass CSS DoS) — need >= 1.0.7
-gem 'crass', '>= 1.0.7'
+# Bundler-audit: GHSA-pq4g-8rxf-4g29 (crass CSS sanitizer bypass) — need >= 1.0.8
+gem 'crass', '>= 1.0.8'
 
 # Bundler-audit: CVE-2026-71847 (ResumableParser UAF on truncated streams) — need >= 2.21.2
 gem 'json', '>= 2.21.2', '< 3'

@@ -1,6 +1,6 @@
 # Incidencia: Wiring 905, página 5, chunk por encima del límite de Titan
 
-**Estado.** Corrección local preparada. No está aplicada en S3 ni en el índice. F4 del VF5 sigue aceptada en `3d76aac`. F5 no queda bloqueada: este objeto no está en el prefijo del VF5.
+**Estado.** Reparación aceptada el 24 de octubre de 2026. Job `WICDOPPTFE`, `COMPLETE`, fallidos 0. F4 del VF5 sigue aceptada en `3d76aac`. F5 no queda bloqueada: este objeto no está en el prefijo del VF5. El control general de tamaño antes de publicar sigue pendiente y no forma parte de esta reparación.
 
 Lectura del 24 de octubre de 2026, con el perfil `default` ya usado en F4. STS devolvió la cuenta `935142957735` y `arn:aws:iam::935142957735:user/Lahiri`. No se imprimieron claves. No hubo `PutObject`, `DeleteObject`, `start_ingestion_job`, Retrieve ni llamada de generación.
 
@@ -88,9 +88,9 @@ La estimación es lineal en bytes UTF-8, calibrada para que este cuerpo de 22548
 
 Los 56 pares fila-registro se conservan, sin repetir una posición. Las posiciones 121 y 127, y el alias `LCEFCS LCEFOV`, quedan en el fragmento que las contiene.
 
-Prueba: `bin/rails test test/services/wiring_905_page5_chunk_split_test.rb`. La candidata se reescribe en local con `bin/rails runner script/prepare_wiring_905_page5_split.rb`, bajo `tmp/field_companion/oversized_chunk_review/candidate/`. Ese directorio no se publica.
+Prueba: `bin/rails test test/services/wiring_905_page5_chunk_split_test.rb`. La candidata se reescribe en local con `bin/rails runner script/prepare_wiring_905_page5_split.rb`, bajo `tmp/field_companion/oversized_chunk_review/candidate/`. Ese directorio no se publica. La publicación de estos bytes está en la sección 7.
 
-## 5. Operación remota que queda por autorizar
+## 5. Operación remota
 
 Una sola concesión, sin tocar el prefijo del VF5:
 
@@ -100,8 +100,84 @@ Una sola concesión, sin tocar el prefijo del VF5:
 4. Un `start_ingestion_job` sobre `Y7RZWMFJSR` y `PJ0N58DMHG`. El datasource vuelve a ver todo `bulk_chunks/`. Si el job nombra otro cambio pendiente, se anota y no se revierte.
 5. Parar si la razón de fallo vuelve a nombrar una de estas tres claves.
 
-No está autorizada ahora.
+Esa operación quedó ejecutada. El resultado está en la sección 7.
 
 ## 6. Lo que no se modificó
 
 El prefijo del VF5, `bulk_chunks/1/be7a39a3490c92c8381cb883402760cb07d1/`, no se leyó para escribir y no se restauró. La knowledge base, el datasource y su chunking siguen como estaban. No hubo despliegue. F5 sigue dependiendo del pin del VF5 y de los cuatro `POST /rag/ask`, no de este archivo.
+
+## 7. Publicación
+
+Lectura y escritura del 24 de octubre de 2026, con el mismo perfil `default`. STS devolvió `arn:aws:iam::935142957735:user/Lahiri`. No se imprimieron claves. No hubo reextracción, Retrieve ni generación.
+
+### Respaldo
+
+Antes de escribir se leyeron los dos objetos que existían. El respaldo local, fuera de git, está en `tmp/field_companion/wiring_905_page5_publish/20261024T153932Z/restore/`. Los bytes releídos coinciden con el remoto de ese momento.
+
+| Clave | Bytes | SHA-256 | Content-Type | Metadatos de objeto |
+| --- | --- | --- | --- | --- |
+| `chunk_p5_1.txt` | 22548 | `c116762136452541d3df1116a810bccc6554178b95590f5817470b84d14e1d82` | `text/plain; charset=utf-8` | ninguno |
+| `chunk_p5_1.txt.metadata.json` | 765 | `7717b593b7da334a18b5480453353fe42bb3aba02f95ac01161906dfaa935eb2` | `text/plain; charset=utf-8` | ninguno |
+
+Estaban ausentes, y así quedó registrado:
+
+- `chunk_p5_2.txt`
+- `chunk_p5_2.txt.metadata.json`
+- `chunk_p5_3.txt`
+- `chunk_p5_3.txt.metadata.json`
+
+El prefijo tenía 190 objetos. No había un job `STARTING`, `IN_PROGRESS` ni `STOPPING` sobre `Y7RZWMFJSR` / `PJ0N58DMHG`. El datasource seguía en el bucket `multimodal-source-destination`, con inclusión `bulk_chunks/`, `chunking_strategy` `NONE`. El modelo de embeddings seguía siendo `amazon.titan-embed-text-v2:0`. Esas dos lecturas no modificaron la configuración.
+
+### Metadatos
+
+El sidecar tiene once campos: `account_id`, `document_id`, `original_source_uri`, `original_filename`, `canonical_name`, `doc_sha256`, `ingestion_path`, `ingestion_contract_version`, `prompt_fingerprint_sha256`, `aliases` y `page_number`. Identifican el documento y la página 5. No hay un campo de fragmento. La clave de S3 distingue `chunk_p5_1.txt`, `chunk_p5_2.txt` y `chunk_p5_3.txt`.
+
+Los tres sidecars son los mismos bytes, SHA-256 `7717b593b7da334a18b5480453353fe42bb3aba02f95ac01161906dfaa935eb2`. El sidecar de `chunk_p5_1.txt` no se reescribió. No se añadió ningún campo.
+
+### Objetos publicados
+
+| Clave | SHA-256 |
+| --- | --- |
+| `chunk_p5_1.txt` | `3f432d6b11ca696181d99a5adc277b751e27f8d997b924e6f92fd424909c702f` |
+| `chunk_p5_2.txt` | `a852b9fd17355c4a5198579755fdcca85c4a4f591ae11079c1caa5c262049ab6` |
+| `chunk_p5_3.txt` | `d7aeaabf03a7bc576652b85ad17513a74ccd9e37fbee7ffcaeab755dd7daa47f` |
+
+Tras la sincronización, el prefijo sigue en 194 objetos y una relectura de las seis claves devuelve esos hashes. Al publicar, las otras 189 claves del prefijo conservaron etag, tamaño y fecha. El prefijo del VF5 no se escribió.
+
+Las estimaciones locales siguen siendo 3813, 3600 y 2589 tokens. Son una escala lineal del conteo 9048 de este cuerpo, no una medición de Titan.
+
+### Job
+
+El primer `start_ingestion_job` no creó un job. Aurora `db-X44TTVPZA4IRPMMQUHXIBEAL64` estaba reanudándose tras una pausa automática (`ValidationException`, request `27eeacce-84c4-4153-a59c-27fcfb367753`). La lista de jobs activos no mostró uno nuevo. Los objetos quedaron como se habían publicado.
+
+El job autorizado es el siguiente, ya con la base disponible:
+
+| Campo | Valor |
+| --- | --- |
+| Job | `WICDOPPTFE` |
+| Estado | `COMPLETE` |
+| Escaneados | 14935 |
+| Metadatos escaneados | 14935 |
+| Nuevos | 2 |
+| Modificados | 1 |
+| Metadatos modificados | 0 |
+| Borrados | 0 |
+| Fallidos | 0 |
+| Razones de fallo | ninguna |
+
+El escaneado sube 2 desde los 14933 de `PTNRRF0BZJ`. Los contadores son dos documentos nuevos y uno modificado. El job no nombra la clave modificada. No hay razón de fallo con 9048 tokens ni con ninguna de las tres claves.
+
+La admisión queda comprobada por ese job. No se hizo Retrieve ni una generación, así que esta aceptación no valida el ranking ni la lectura conversacional del plano.
+
+### Caché
+
+`upload_binary` invalidó en este proceso el índice de vecinos y el de definiciones del prefijo. La tienda era `SolidCache::Store` y las dos claves quedaron ausentes. Esa tienda es la de este proceso.
+
+En el contenedor web de producción la tienda también es `SolidCache::Store`. El índice de vecinos de este prefijo no estaba cargado. `Rag::SectionNeighborExpander.invalidate!` se ejecutó ahí y una sonda escrita para comprobarlo quedó ausente. `Rag::CompanionDefinitionSource` no está en la imagen desplegada, así que ese índice no existe en ese proceso. Un objeto que ya tuviera el índice en memoria no se vacía con esta llamada.
+
+### Veredicto
+
+Reparación aceptada. No hizo falta restaurar.
+
+El parser sigue sin medir el cuerpo antes de escribirlo. Ese control general queda pendiente. No se implementó aquí y no bloquea F5.
+

@@ -752,6 +752,60 @@ class BatchResultsParserServiceTest < ActiveSupport::TestCase
     assert_includes @fake_s3.uploads.keys, "#{prefix}/chunk_p2_1.txt"
   end
 
+  test "manual_batch_v1 does not upload when the prefix delete leaves objects" do
+    asset = make_asset
+    s3 = Class.new(FakeS3Service) do
+      def delete_prefix(_prefix) = 0
+      def list_keys!(prefix:) = [ "#{prefix}chunk_p7_4.txt" ]
+    end.new
+    parser = BatchResultsParserService.new(s3_service: s3)
+
+    assert_raises(BatchResultsParserService::ParseError) do
+      parser.call(account_id: 99, document_uid: "manual-uid-xyz", asset: asset, result: make_result, ingestion_path: "manual_batch_v1")
+    end
+
+    assert_empty s3.uploads
+    assert_equal "failed", asset.reload.status
+  end
+
+  test "manual_batch_v1 does not upload when the prefix delete raises" do
+    asset = make_asset
+    s3 = Class.new(FakeS3Service) do
+      def delete_prefix(_prefix)
+        raise StandardError, "delete failed"
+      end
+    end.new
+    parser = BatchResultsParserService.new(s3_service: s3)
+
+    error = assert_raises(BatchResultsParserService::ParseError) do
+      parser.call(account_id: 99, document_uid: "manual-uid-xyz", asset: asset, result: make_result, ingestion_path: "manual_batch_v1")
+    end
+
+    assert_match(/failed to clear/, error.message)
+    assert_empty s3.uploads
+    assert_equal "failed", asset.reload.status
+  end
+
+  test "manual_batch_v1 uploads after a delete that leaves the prefix empty" do
+    asset = make_asset
+    s3 = Class.new(FakeS3Service) do
+      attr_reader :cleared
+
+      def delete_prefix(prefix)
+        @cleared = prefix
+        0
+      end
+
+      def list_keys!(prefix:) = []
+    end.new
+    parser = BatchResultsParserService.new(s3_service: s3)
+
+    parser.call(account_id: 99, document_uid: "manual-uid-xyz", asset: asset, result: make_result, ingestion_path: "manual_batch_v1")
+
+    assert_equal "bulk_chunks/99/manual-uid-xyz", s3.cleared
+    assert_includes s3.uploads.keys, "bulk_chunks/99/manual-uid-xyz/chunk_p1_1.txt"
+  end
+
   # ---------------------------------------------------------------------------
   # Validation failures
   # ---------------------------------------------------------------------------

@@ -23,21 +23,29 @@ class KbSyncServiceTest < ActiveSupport::TestCase
   end
 
   class FakeBedrockAgentClient
-    attr_accessor :should_raise_on_list, :should_raise_on_ingest, :data_sources
+    attr_accessor :should_raise_on_list, :should_raise_on_ingest, :data_sources, :pages
+    attr_reader :ingest_calls, :list_calls
 
     def initialize(*)
       @should_raise_on_list = false
       @should_raise_on_ingest = false
       @data_sources = [ OpenStruct.new(data_source_id: TEST_DS_ID) ]
+      @pages = nil
+      @ingest_calls = []
+      @list_calls = []
     end
 
-    def list_data_sources(_params)
+    def list_data_sources(**params)
+      @list_calls << params
       raise StandardError, 'List data sources error' if @should_raise_on_list
 
-      OpenStruct.new(data_source_summaries: @data_sources)
+      return @pages[params[:next_token]] if @pages
+
+      OpenStruct.new(data_source_summaries: @data_sources, next_token: nil)
     end
 
-    def start_ingestion_job(_params)
+    def start_ingestion_job(**params)
+      @ingest_calls << params
       raise StandardError, 'Ingestion error' if @should_raise_on_ingest
 
       OpenStruct.new(
@@ -153,6 +161,7 @@ class KbSyncServiceTest < ActiveSupport::TestCase
       service = KbSyncService.new
 
       assert_raises(StandardError) { service.sync! }
+      assert_empty client.ingest_calls
     end
   end
 
@@ -188,16 +197,84 @@ class KbSyncServiceTest < ActiveSupport::TestCase
     end
   end
 
-  test 'falls back to first data source when preferred not found' do
-    with_env_vars('BEDROCK_DATA_SOURCE_ID' => 'nonexistent-ds-id') do
+  test 'does not start ingestion when the configured data source is absent' do
+    messages = []
+    original_error = Rails.logger.method(:error)
+    Rails.logger.define_singleton_method(:error) { |*args| messages << args.join(' ') }
+
+    with_env_vars('BEDROCK_DATA_SOURCE_ID' => 'missing-ds') do
       with_fake_agent_client do |client|
         client.data_sources = [ OpenStruct.new(data_source_id: TEST_DS_ID) ]
         service = KbSyncService.new
-        result = service.sync!
 
-        assert_equal TEST_JOB_ID, result[:job_id]
+        assert_nil service.sync!
+        assert_empty client.ingest_calls
       end
     end
+
+    assert messages.any? { |line| line.include?('missing-ds') && line.include?('was not started') }
+  ensure
+    Rails.logger.define_singleton_method(:error, original_error)
+  end
+
+  test 'uses the configured data source when it appears on a later page' do
+    page = Struct.new(:data_source_summaries, :next_token)
+    preferred_id = 'preferred-ds-id'
+
+    with_env_vars('BEDROCK_DATA_SOURCE_ID' => preferred_id) do
+      with_fake_agent_client do |client|
+        client.pages = {
+          nil => page.new([ OpenStruct.new(data_source_id: 'other-ds') ], 'p2'),
+          'p2' => page.new([ OpenStruct.new(data_source_id: preferred_id) ], nil)
+        }
+        result = KbSyncService.new.sync!
+
+        assert_equal preferred_id, result[:data_source_id]
+        assert_equal [ nil, 'p2' ], client.list_calls.pluck(:next_token)
+        assert_equal preferred_id, client.ingest_calls.first[:data_source_id]
+      end
+    end
+  end
+
+  test 'does not start ingestion when the data source list does not finish' do
+    page = Struct.new(:data_source_summaries, :next_token)
+
+    with_env_vars('BEDROCK_DATA_SOURCE_ID' => 'preferred-ds-id') do
+      with_fake_agent_client do |client|
+        client.pages = Hash.new { |_pages, token| page.new([ OpenStruct.new(data_source_id: 'other') ], "next-#{token}") }
+        service = KbSyncService.new
+
+        error = assert_raises(StandardError) { service.sync! }
+        assert_match(/did not finish/, error.message)
+        assert_empty client.ingest_calls
+      end
+    end
+  end
+
+  test 'returns nil and does not start ingestion when the configured source is missing from an empty list' do
+    with_env_vars('BEDROCK_DATA_SOURCE_ID' => 'missing-ds') do
+      with_fake_agent_client do |client|
+        client.data_sources = []
+        service = KbSyncService.new
+
+        assert_nil service.sync!
+        assert_empty client.ingest_calls
+      end
+    end
+  end
+
+  test 'uses explicit client options for the agent client' do
+    received = nil
+    fake = FakeBedrockAgentClient.new
+    original = Aws::BedrockAgent::Client.method(:new)
+    Aws::BedrockAgent::Client.define_singleton_method(:new) { |options| received = options; fake }
+    marker = Object.new
+
+    KbSyncService.new(client_options: { region: 'us-east-1', credentials: marker })
+
+    assert_equal marker, received[:credentials]
+  ensure
+    Aws::BedrockAgent::Client.define_singleton_method(:new) { |*args, **kwargs| original.call(*args, **kwargs) }
   end
 
   test 'uses first data source when no preferred data source configured' do
@@ -227,7 +304,7 @@ class KbSyncServiceTest < ActiveSupport::TestCase
       @calls = 0
     end
 
-    def start_ingestion_job(params)
+    def start_ingestion_job(**params)
       @calls += 1
       if @calls <= @fail_count
         raise Aws::BedrockAgent::Errors::ServiceError.new(

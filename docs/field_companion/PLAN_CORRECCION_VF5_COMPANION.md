@@ -1,6 +1,93 @@
 # Corrección y validación del companion sobre el VF5
 
-## Consolidación vigente — F3 aceptada en el alcance demostrado; F4 preparada (23 de octubre de 2026)
+## Consolidación vigente — F4 ejecutada (24 de octubre de 2026)
+
+**Precedencia.** Esta sección cierra la ejecución autorizada de F4. La consolidación anterior sigue vigente para F3 y para el diseño C1–C7. F2 no se reabre. F5 no se ejecuta aquí.
+
+Partida: `2db230f0a56366a0ff80b5e57f04114cd9cdd457` en `main`. La candidata sigue identificada por su `git_sha` interno `cebd7de6ff95dbd110b6017afc4f76cb828718e2`. No se sustituyó por el HEAD nuevo. Manifest `3472b6310640454cb79db75c0a5e9b97cdb9e0f8a7fa1eefebc6498ee8d0abc0`. Adjudicación `6b6b0d214486704a9a48a2b1c7da354a530d47d3eb5542b1c471e114636c24f4`. 90 archivos, 45 cuerpos y 45 sidecars, verificados contra el manifest antes de escribir. No hubo reextracción ni otra generación.
+
+### Veredicto de F4
+
+**F4 cumple la sustitución, la sincronización y la recuperación del grupo.** El cuerpo publicado de `chunk_p12_5.txt` tiene SHA-256 `aeab3d5afb150beaad789399355d2c500f746f41ee7183e2a58283122ebbca48`, medido al releer los bytes. El Retrieve real, k = 3, sin reranker, lo devolvió en el puesto 1. El catálogo real rehidrató ese destino. No hizo falta el segundo ni el tercer Retrieve, ni cambiar `PINNED_DOCUMENT_RESULTS`. No hubo restauración.
+
+### Cambios locales y pruebas
+
+Si el datasource configurado no aparece, `KbSyncService#find_data_source_id` e `IngestionStatusService#find_data_source_id` se detienen y no eligen `summaries.first` ni otra fuente. El listado sigue páginas. Una lista vacía, un id ausente, un error de listado o una paginación que no termina no inician `start_ingestion_job` ni leen un job de otra fuente. Sin id configurado se mantiene la primera fuente, como ya estaba cubierto.
+
+`S3DocumentsService#replace_prefix!` y `#restore_prefix!` se detienen si el borrado o la subida quedan incompletos, o si el listado y los bytes releídos no coinciden. `BatchResultsParserService#delete_existing_chunks` lanza `ParseError` en ese caso y no sube el lote. La publicación de F4 no pasó por el parser: subió los bytes de la candidata con `upload_binary`.
+
+`Vf5F4Publication` hace la copia, la comparación, la sustitución, la verificación, una sincronización, el Retrieve y la rehidratación. `script/vf5_f4_publish.rb` solo fija el destino, carga el perfil y llama al servicio.
+
+Pruebas en verde: `kb_sync_service_test`, `ingestion_status_service_test`, `s3_documents_service_test`, `batch_results_parser_service_test` y `vf5_f4_publication_test`. Cubren id presente, id ausente, lista vacía, error de listado, página posterior, paginación inconclusa, borrado incompleto, subida incompleta, lectura distinta, restauración y las tres ramas del Retrieve. La última corrida conjunta de sincronización, S3 y publicación dio 77 corridas y 200 aserciones, sin fallos. RuboCop sin ofensas en los archivos tocados.
+
+### Destino efectivo
+
+Región `us-east-1`. Bucket `multimodal-source-destination`. Prefijo exclusivo `bulk_chunks/1/be7a39a3490c92c8381cb883402760cb07d1/`. Knowledge base `Y7RZWMFJSR`. Datasource `PJ0N58DMHG`.
+
+`get_data_source` confirmó el bucket en el ARN `arn:aws:s3:::multimodal-source-destination` y el prefijo de inclusión `bulk_chunks/`. Ese prefijo cubre el VF5 y también el resto de `bulk_chunks/`. El `.env` local sigue apuntando a la KB y al bucket de desarrollo; este proceso no los usó. La base escrita por la caché local es `smart_deal_development`. No se escribió la base de producción.
+
+El usuario de aplicación `bedrock-integration-user` puede leer el datasource y no puede `bedrock:ListIngestionJobs`. Los dos primeros intentos se detuvieron en esa lectura, antes de la copia y de cualquier borrado. El proceso siguió con el perfil `default` ya existente. STS devolvió `arn:aws:iam::935142957735:user/Lahiri`. No se imprimieron claves.
+
+### Copia anterior y diferencia
+
+Antes de borrar había 60 objetos. No había un job `STARTING` ni `IN_PROGRESS`. La copia nueva está en `tmp/field_companion/vf5_correction/f4/20261024T013041Z/restore/`: 60 cuerpos con sus `content_type` y metadatos, y manifest SHA-256 `9b60d938cae35fe20401a4c7d72f69636e806ce65a61557b30edabcfa3d285ee`. `tmp/review_vf5/` coincidía con esos 60 objetos. No se usó como fuente de restauración; la copia nueva es la que habría servido. No se tocó otro prefijo.
+
+La candidata no coincidía. Solo en el remoto: `chunk_p7_4.txt`, `chunk_p8_4.txt` y sus sidecars. Solo en la candidata: 34 claves, entre ellas `chunk_p12_5.txt`. Las 56 claves comunes tenían otro SHA-256. Por eso se reescribió el prefijo.
+
+### Publicado
+
+Tras el borrado el prefijo quedó vacío y se subieron los 90 archivos. El listado posterior es exactamente ese conjunto. `chunk_p7_4.txt` y `chunk_p8_4.txt` no siguen. Un `GetObject` aparte de `chunk_p12_5.txt` devolvió el SHA-256 aceptado. Su `ContentType` es `text/plain; charset=utf-8`. No trae metadatos de usuario. El ETag `"8701fa0c1be9ed7665d2306d8e9938eb"` no es ese SHA-256.
+
+La invalidación de vecinos y de definiciones corrió en la caché local de este proceso (`SolidCache::Store`): las dos claves quedaron ausentes. Esa escritura no alcanza a la caché de otro servidor.
+
+### Sincronización
+
+Una sola llamada `start_ingestion_job`. Job `PTNRRF0BZJ`. Knowledge base `Y7RZWMFJSR`. Datasource `PJ0N58DMHG`. Pasó por `STARTING` e `IN_PROGRESS` y terminó `COMPLETE`.
+
+| Dato | Valor |
+| --- | --- |
+| Escaneados | 14933 |
+| Nuevos indexados | 17 |
+| Modificados | 28 |
+| Borrados | 2 |
+| Fallidos | 1 |
+
+Los 17 nuevos y los 28 modificados suman los 45 cuerpos del VF5. Los 2 borrados coinciden con los dos cuerpos que salieron del prefijo. El fallo no es de este prefijo: `bulk_chunks/3/5b1859a0bfe1c5b11e58214555f8c2fe93e6/chunk_p5_1.txt` superó 8192 tokens de entrada (9048). No se revirtieron objetos ajenos ni se lanzó otro job.
+
+### Retrieve
+
+La consulta quedó fijada antes de llamar. Es el primer turno de `vf5-bound-20261020T1728Z`, correlación `query:0688864e-134f-4f9b-92d7-ead86845c6a6`. El síntoma «vuelve a abrirse sola» está en el texto. `truncated` de esa captura no corta el síntoma, así que el ajuste de `QueryComposer` no aplica. Filtro `or_all` por `x-amz-bedrock-kb-source-uri` y `original_source_uri` iguales a `s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf`. `HYBRID`. Sin reranker.
+
+| k | Puesto | URI | Score | Grupo |
+| --- | --- | --- | --- | --- |
+| 3 | 1 | `.../chunk_p12_5.txt` | 0,5 | Presente |
+| 3 | 2 | `.../chunk_p12_4.txt` | 0,49193548387096775 | Ausente |
+| 3 | 3 | `.../chunk_p5_3.txt` | 0,48412698412698413 | Ausente |
+
+En el puesto 1 están «La puerta se re-abre sola», «Comprobar la sensibilidad», «fotocélula», «obstrucción mecánica», «En caso que el problema persista» y «Si la puerta no se abre o cierra completamente». No está «La puerta no alcanza la posición de apertura completa». No se llamó con k = 5. `PINNED_DOCUMENT_RESULTS` sigue en 3.
+
+El texto devuelto por Retrieve mide 2555 bytes y su SHA-256 es `536d252d19a1803a1ad4e692d34791632339149ee5999dc2efdb0da2c16eb2c9`. El objeto en S3 mide 2556 bytes. La única diferencia es el salto de línea final, que Retrieve no devuelve. No es corrupción del objeto. El hash del cuerpo almacenado es el de 2556 bytes.
+
+### Rehidratación
+
+Con el catálogo leído del prefijo publicado, `CompanionDefinitionExpander` añadió `chunk_p12_5.txt` para el destino del pendiente. El catálogo estaba presente. No hubo `target_not_loaded` ni la frase de apartado no cargado. El SHA-256 del texto añadido, ya sin los registros terminales de evidencia, es `33441a6305bd7ed8cbaa62e25027081144340d56d95dae54f316a94077a9b540`. No es el hash del archivo. El archivo sigue siendo el SHA-256 aceptado. Esta comprobación no depende de que el Retrieve lo hubiera rankeado: el catálogo lista y descarga el directorio.
+
+### Límites
+
+- El datasource indexa todo `bulk_chunks/`. El job vio 14933 documentos y dejó sin indexar un chunk ajeno por exceso de tokens.
+- La caché invalidada es la de este proceso local. Un servidor que ya tenga el directorio cacheado no queda invalidado por esta corrida.
+- La página 4 sigue en `certified_visual_review`. No era el bloqueo de F4.
+- No hubo despliegue ni recorrido web.
+
+### Restauración
+
+No se usó. La copia de los 60 objetos anteriores permanece en el directorio de evidencia citado.
+
+### F5, pendiente
+
+F4 no lo ejecuta. El paso ya escrito está en «F5. Conversación integrada»: servidor local, pin del VF5 por el endpoint de la interfaz, y cuatro `POST /rag/ask`. La configuración de KB, bucket y datasource ya es la de `config/deploy.yml`. No hace falta otro manual ni otra sincronización para ese recorrido. Sigue sin hacerse.
+
+## Consolidación anterior — F3 aceptada en el alcance demostrado; F4 preparada (23 de octubre de 2026)
 
 **Precedencia.** Esta sección decide el cierre funcional de F3 y la preparación de F4. El diseño C1–C7 de la validación de Opus sigue en pie. El resto del archivo es evidencia e historia. Una frase anterior que deja F4 a la espera de estabilidad estadística, de Retrieve real o del recorrido web no gobierna este arranque: esas comprobaciones son F4, F5 o un límite de cobertura.
 

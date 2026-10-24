@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 # app/services/s3_documents_service.rb
+require "digest"
 require 'aws-sdk-s3'
 require 'aws-sdk-core/static_token_provider'
 
@@ -18,8 +19,8 @@ class S3DocumentsService
 
   attr_reader :bucket_name
 
-  def initialize(bucket_name: nil)
-    client_options = build_aws_client_options
+  def initialize(bucket_name: nil, client_options: nil)
+    client_options ||= build_aws_client_options
     @s3 = Aws::S3::Client.new(client_options)
     @bucket_name = bucket_name.presence || find_bucket_name
   end
@@ -60,12 +61,19 @@ class S3DocumentsService
     end
   end
 
+  class IncompleteReplacement < StandardError; end
+
   # Lists object keys under an explicit prefix, following pagination.
   # Unlike #list_documents this never scans the whole bucket.
+  # strict: true raises instead of treating a failed list as an empty prefix.
   # @param prefix [String] e.g. "bulk_chunks/1/<uuid>/"
   # @return [Array<String>] object keys
-  def list_keys(prefix:)
-    return [] if @bucket_name.blank? || prefix.blank?
+  def list_keys(prefix:, strict: false)
+    if @bucket_name.blank? || prefix.blank?
+      raise IncompleteReplacement, "list_keys requires a bucket and a prefix" if strict
+
+      return []
+    end
 
     keys = []
     resp = @s3.list_objects_v2(bucket: @bucket_name, prefix: prefix)
@@ -78,9 +86,17 @@ class S3DocumentsService
       )
     end
     keys
+  rescue IncompleteReplacement
+    raise
   rescue StandardError => e
+    raise if strict
+
     Rails.logger.error("S3DocumentsService#list_keys failed for #{prefix}: #{e.message}")
     []
+  end
+
+  def list_keys!(prefix:)
+    list_keys(prefix: prefix, strict: true)
   end
 
   # Uploads a file to the KB S3 bucket for future indexing.
@@ -194,7 +210,134 @@ class S3DocumentsService
     nil
   end
 
+  # Body plus the object metadata required to put the same object back.
+  # @return [Hash, nil] :body, :content_type, :content_encoding, :metadata
+  def object_record(key)
+    return nil if @bucket_name.blank? || key.blank?
+
+    response = @s3.get_object(bucket: @bucket_name, key: key)
+    {
+      key: key,
+      body: response.body.read.force_encoding(Encoding::BINARY),
+      content_type: response.content_type,
+      content_encoding: response.content_encoding,
+      metadata: response.respond_to?(:metadata) ? response.metadata.to_h.transform_keys(&:to_s) : {}
+    }
+  rescue StandardError => e
+    Rails.logger.error("S3DocumentsService#object_record failed for #{key}: #{e.message}")
+    nil
+  end
+
+  # Deletes the prefix, stops when any object remains or a list fails, then
+  # uploads every object and stops unless the listing and body hashes match.
+  # @param objects [Array<Hash>] :key, :body, :content_type
+  # @return [Array<String>] uploaded keys
+  def replace_prefix!(prefix:, objects:)
+    directory = directory_prefix(prefix)
+    ensure_prefix_empty!(directory)
+
+    objects.each do |object|
+      key = object.fetch(:key).to_s
+      unless key.start_with?(directory)
+        raise IncompleteReplacement, "refusing key outside #{directory}: #{key}"
+      end
+
+      uploaded = upload_binary(key, object.fetch(:body), object[:content_type].presence || "text/plain; charset=utf-8")
+      raise IncompleteReplacement, "upload failed for #{key}" if uploaded != key
+    end
+
+    verify_prefix!(directory, objects)
+    objects.map { |object| object.fetch(:key).to_s }
+  end
+
+  # Puts a previously recorded object, including its content type and metadata.
+  def restore_prefix!(prefix:, records:)
+    directory = directory_prefix(prefix)
+    ensure_prefix_empty!(directory)
+
+    records.each do |record|
+      key = record.fetch(:key).to_s
+      unless key.start_with?(directory)
+        raise IncompleteReplacement, "refusing restore key outside #{directory}: #{key}"
+      end
+
+      uploaded = put_recorded(record)
+      raise IncompleteReplacement, "restore upload failed for #{key}" if uploaded != key
+    end
+
+    records.each do |record|
+      remote = object_record(record.fetch(:key))
+      raise IncompleteReplacement, "restore read failed for #{record.fetch(:key)}" if remote.nil?
+      raise IncompleteReplacement, "restored bytes differ for #{record.fetch(:key)}" unless same_bytes?(remote[:body], record.fetch(:body))
+      raise IncompleteReplacement, "restored content type differs for #{record.fetch(:key)}" unless remote[:content_type].to_s == record[:content_type].to_s
+      raise IncompleteReplacement, "restored metadata differs for #{record.fetch(:key)}" unless remote[:metadata].to_h.transform_keys(&:to_s) == record.fetch(:metadata, {}).to_h.transform_keys(&:to_s)
+    end
+
+    listed = list_keys!(prefix: directory)
+    expected = records.map { |record| record.fetch(:key).to_s }
+    return expected if listed.sort == expected.sort
+
+    raise IncompleteReplacement, "restored listing does not match the backup"
+  end
+
   private
+
+  def directory_prefix(prefix)
+    raise IncompleteReplacement, "prefix required" if prefix.blank?
+
+    prefix.end_with?("/") ? prefix : "#{prefix}/"
+  end
+
+  def ensure_prefix_empty!(directory)
+    delete_prefix(directory)
+    remaining = list_keys!(prefix: directory)
+    return if remaining.empty?
+
+    raise IncompleteReplacement, "delete left #{remaining.size} objects under #{directory}"
+  rescue IncompleteReplacement
+    raise
+  rescue StandardError => e
+    raise IncompleteReplacement, "could not confirm #{directory} was cleared: #{e.message}"
+  end
+
+  def verify_prefix!(directory, objects)
+    listed = list_keys!(prefix: directory)
+    expected = objects.map { |object| object.fetch(:key).to_s }
+    unless listed.sort == expected.sort
+      raise IncompleteReplacement, "listing under #{directory} does not match the uploaded set"
+    end
+
+    objects.each do |object|
+      remote = download(object.fetch(:key))
+      raise IncompleteReplacement, "uploaded body could not be read for #{object.fetch(:key)}" if remote.nil?
+      next if same_bytes?(remote, object.fetch(:body))
+
+      raise IncompleteReplacement, "uploaded bytes differ for #{object.fetch(:key)}"
+    end
+  end
+
+  def put_recorded(record)
+    key = record.fetch(:key).to_s
+    params = {
+      bucket: @bucket_name,
+      key: key,
+      body: record.fetch(:body),
+      content_type: record[:content_type].presence || "application/octet-stream"
+    }
+    metadata = record.fetch(:metadata, {}).to_h.transform_keys(&:to_s)
+    params[:metadata] = metadata if metadata.present?
+    params[:content_encoding] = record[:content_encoding] if record[:content_encoding].present?
+    @s3.put_object(**params)
+    invalidate_section_neighbor_cache(key)
+    key
+  rescue StandardError => e
+    Rails.logger.error("S3DocumentsService#put_recorded failed for #{key}: #{e.message}")
+    nil
+  end
+
+  def same_bytes?(left, right)
+    Digest::SHA256.digest(left.to_s.b) == Digest::SHA256.digest(right.to_s.b)
+  end
 
   # Fires on every #upload_text/#upload_binary write under bulk_chunks/ —
   # initial ingestion and one-off repair scripts alike — so no future direct

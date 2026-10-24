@@ -555,9 +555,26 @@ class BatchResultsParserService
   end
 
   def delete_existing_chunks(prefix)
-    @s3.delete_prefix(prefix) if @s3.respond_to?(:delete_prefix)
+    return unless @s3.respond_to?(:delete_prefix)
+
+    @s3.delete_prefix(prefix)
+    remaining = remaining_prefix_objects(prefix)
+    return if remaining.blank?
+
+    raise ParseError, "prefix #{prefix} still contains #{remaining.size} objects after delete"
+  rescue ParseError
+    raise
   rescue StandardError => e
-    Rails.logger.warn("BatchResultsParserService: failed to clear #{prefix} before rewrite — #{e.message}")
+    raise ParseError, "failed to clear #{prefix} before rewrite — #{e.message}"
+  end
+
+  def remaining_prefix_objects(prefix)
+    directory = prefix.end_with?("/") ? prefix : "#{prefix}/"
+    if @s3.respond_to?(:list_keys!)
+      @s3.list_keys!(prefix: directory)
+    elsif @s3.respond_to?(:list_keys)
+      @s3.list_keys(prefix: directory)
+    end
   end
 
   def append_field_records(text, records, page:)

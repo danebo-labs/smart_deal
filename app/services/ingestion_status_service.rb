@@ -61,10 +61,17 @@ class IngestionStatusService
     fetch_job_status(job_id)
   end
 
+  # The configured data source, after it has been seen in this knowledge base.
+  # Returns nil when that id is absent. Does not substitute another data source.
+  def resolved_data_source_id
+    find_data_source_id
+  end
+
   # Returns failure reasons from a failed ingestion job (for user-facing messages).
   # @return [Array<String>] Empty if job succeeded or reasons unavailable
+
   def failure_reasons(job_id)
-    ds_id = find_data_source_id
+    ds_id = resolved_data_source_id
     return [] unless ds_id
 
     resp = @client.get_ingestion_job(
@@ -82,7 +89,7 @@ class IngestionStatusService
   # Useful for detecting re-ingestions beyond the files the app explicitly uploaded.
   # @return [Hash] keys: scanned, new_indexed, modified_indexed, deleted, failed
   def job_statistics(job_id)
-    ds_id = find_data_source_id
+    ds_id = resolved_data_source_id
     return {} unless ds_id
 
     resp  = @client.get_ingestion_job(
@@ -123,7 +130,7 @@ class IngestionStatusService
   end
 
   def fetch_job_status(job_id)
-    ds_id = find_data_source_id
+    ds_id = resolved_data_source_id
     return nil unless ds_id
 
     resp = @client.get_ingestion_job(
@@ -137,31 +144,56 @@ class IngestionStatusService
     nil
   end
 
+  DATA_SOURCE_LIST_LIMIT = 10
+
   def find_data_source_id
-    return @data_source_id_override if @data_source_id_override.present?
+    preferred_id = configured_data_source_id
+    summaries = data_source_summaries
 
-    ds_list = @client.list_data_sources(knowledge_base_id: @kb_id)
-    summaries = ds_list.data_source_summaries
-
-    return nil if summaries.empty?
-
-    preferred_id = @tenant&.bedrock_config&.data_source_id if @tenant&.respond_to?(:bedrock_config)
-    preferred_id ||= ENV['BEDROCK_DATA_SOURCE_ID'].presence
-    preferred_id ||= Rails.application.credentials.dig(:bedrock, :data_source_id)
+    if summaries.empty?
+      if preferred_id
+        Rails.logger.error("IngestionStatusService: knowledge base #{@kb_id} has no data sources; configured data source #{preferred_id} was not selected")
+      end
+      return nil
+    end
 
     if preferred_id
-      ds = summaries.find { |s| s.data_source_id == preferred_id }
+      ds = summaries.find { |summary| summary.data_source_id == preferred_id }
       if ds
-        Rails.logger.info("IngestionStatusService: Using preferred data source — #{preferred_id}")
+        Rails.logger.info("IngestionStatusService: Using configured data source — #{preferred_id}")
         return ds.data_source_id
-      else
-        Rails.logger.warn("IngestionStatusService: Preferred data source #{preferred_id} not found, using first available")
       end
+
+      Rails.logger.error("IngestionStatusService: configured data source #{preferred_id} is not listed in knowledge base #{@kb_id}; status was not read from another data source")
+      return nil
     end
 
     summaries.first&.data_source_id
   rescue StandardError => e
     Rails.logger.error("IngestionStatusService: list_data_sources failed — #{e.message}")
     nil
+  end
+
+  def configured_data_source_id
+    preferred_id = @data_source_id_override.presence
+    preferred_id ||= @tenant&.bedrock_config&.data_source_id if @tenant&.respond_to?(:bedrock_config)
+    preferred_id ||= ENV['BEDROCK_DATA_SOURCE_ID'].presence
+    preferred_id ||= Rails.application.credentials.dig(:bedrock, :data_source_id)
+    preferred_id.presence
+  end
+
+  def data_source_summaries
+    summaries = []
+    token = nil
+    DATA_SOURCE_LIST_LIMIT.times do
+      params = { knowledge_base_id: @kb_id }
+      params[:next_token] = token if token.present?
+      response = @client.list_data_sources(**params)
+      summaries.concat(Array(response.data_source_summaries))
+      token = response.respond_to?(:next_token) ? response.next_token : nil
+      return summaries if token.blank?
+    end
+
+    raise "IngestionStatusService: data source list for #{@kb_id} did not finish"
   end
 end

@@ -2,6 +2,7 @@
 
 require 'test_helper'
 require 'ostruct'
+require 'stringio'
 
 class S3DocumentsServiceTest < ActiveSupport::TestCase
   parallelize(workers: 1)
@@ -41,7 +42,8 @@ class S3DocumentsServiceTest < ActiveSupport::TestCase
   end
 
   class FakeS3Client
-    attr_accessor :objects, :should_raise_on_list, :should_raise_on_put, :should_raise_on_delete, :uploaded, :deleted
+    attr_accessor :objects, :should_raise_on_list, :should_raise_on_put, :should_raise_on_delete,
+                  :uploaded, :deleted, :retain_after_delete, :put_limit, :corrupt_reads
     # Array<Array<object>> — when set, #list_objects_v2 paginates through it via
     # continuation_token instead of returning `objects` as a single page.
     attr_accessor :list_pages
@@ -54,9 +56,12 @@ class S3DocumentsServiceTest < ActiveSupport::TestCase
       @should_raise_on_delete = false
       @uploaded = []
       @deleted = []
+      @retain_after_delete = false
+      @put_limit = nil
+      @corrupt_reads = false
     end
 
-    def list_objects_v2(params = {})
+    def list_objects_v2(**params)
       raise StandardError, 'S3 list error' if @should_raise_on_list
 
       if @list_pages
@@ -69,22 +74,46 @@ class S3DocumentsServiceTest < ActiveSupport::TestCase
           next_continuation_token: last_page ? nil : (index + 1).to_s
         )
       else
-        FakeS3Page.new(contents: @objects)
+        FakeS3Page.new(contents: visible_contents)
       end
     end
 
-    def put_object(params)
+    def put_object(**params)
       raise StandardError, 'S3 put error' if @should_raise_on_put
+      raise StandardError, 'S3 put limit' if @put_limit && @uploaded.size >= @put_limit
 
       @uploaded << params
       OpenStruct.new(etag: '"abc123"')
     end
 
-    def delete_objects(params)
+    def delete_objects(**params)
       raise StandardError, 'S3 delete error' if @should_raise_on_delete
 
       @deleted.concat(params.dig(:delete, :objects).to_a)
-      OpenStruct.new(deleted: @deleted)
+      OpenStruct.new(deleted: @deleted, errors: [])
+    end
+
+    def get_object(**params)
+      uploaded = @uploaded.reverse.find { |item| item[:key] == params[:key] }
+      raise StandardError, "missing #{params[:key]}" if uploaded.nil?
+
+      body = uploaded[:body].to_s
+      body = "#{body}-corrupt" if @corrupt_reads
+      OpenStruct.new(
+        body: StringIO.new(body),
+        content_type: uploaded[:content_type],
+        content_encoding: uploaded[:content_encoding],
+        metadata: uploaded[:metadata] || {}
+      )
+    end
+
+    def visible_contents
+      deleted_keys = @retain_after_delete ? [] : @deleted.pluck(:key)
+      current = @objects.reject { |obj| deleted_keys.include?(obj.key) }
+      extra = @uploaded.map { |item| item[:key] }.reject { |key|
+        deleted_keys.include?(key) || current.any? { |obj| obj.key == key }
+      }
+      current + extra.map { |key| OpenStruct.new(key: key, size: 1, last_modified: Time.utc(2026, 2, 20)) }
     end
   end
 
@@ -104,6 +133,20 @@ class S3DocumentsServiceTest < ActiveSupport::TestCase
   # ============================================
   # Injectable bucket_name
   # ============================================
+
+  test 'uses explicit client options for the s3 client' do
+    received = nil
+    fake = FakeS3Client.new
+    original = Aws::S3::Client.method(:new)
+    Aws::S3::Client.define_singleton_method(:new) { |options| received = options; fake }
+    marker = Object.new
+
+    S3DocumentsService.new(bucket_name: TEST_BUCKET, client_options: { region: 'us-east-1', credentials: marker })
+
+    assert_equal marker, received[:credentials]
+  ensure
+    Aws::S3::Client.define_singleton_method(:new) { |*args, **kwargs| original.call(*args, **kwargs) }
+  end
 
   test 'uses injected bucket_name over env var' do
     with_fake_s3_client do |fake|
@@ -518,6 +561,106 @@ class S3DocumentsServiceTest < ActiveSupport::TestCase
       ensure
         Rails.application.define_singleton_method(:credentials, original_method)
       end
+    end
+  end
+
+  # ============================================
+  # replace_prefix! / restore_prefix!
+  # ============================================
+
+  test 'replace_prefix! stops before upload when delete leaves objects' do
+    with_fake_s3_client do |fake|
+      fake.objects = [ make_s3_object(key: 'bulk_chunks/1/doc/old.txt', size: 20) ]
+      fake.retain_after_delete = true
+
+      error = assert_raises(S3DocumentsService::IncompleteReplacement) do
+        S3DocumentsService.new.replace_prefix!(
+          prefix: 'bulk_chunks/1/doc/',
+          objects: [ { key: 'bulk_chunks/1/doc/new.txt', body: 'new', content_type: 'text/plain' } ]
+        )
+      end
+
+      assert_match(/delete left/, error.message)
+      assert_empty fake.uploaded
+    end
+  end
+
+  test 'replace_prefix! stops when the prefix cannot be listed' do
+    with_fake_s3_client do |fake|
+      fake.should_raise_on_list = true
+
+      assert_raises(S3DocumentsService::IncompleteReplacement) do
+        S3DocumentsService.new.replace_prefix!(
+          prefix: 'bulk_chunks/1/doc/',
+          objects: [ { key: 'bulk_chunks/1/doc/new.txt', body: 'new', content_type: 'text/plain' } ]
+        )
+      end
+
+      assert_empty fake.uploaded
+      assert_empty fake.deleted
+    end
+  end
+
+  test 'replace_prefix! stops at the first failed upload' do
+    with_fake_s3_client do |fake|
+      fake.put_limit = 1
+
+      assert_raises(S3DocumentsService::IncompleteReplacement) do
+        S3DocumentsService.new.replace_prefix!(
+          prefix: 'bulk_chunks/1/doc/',
+          objects: [
+            { key: 'bulk_chunks/1/doc/a.txt', body: 'a', content_type: 'text/plain' },
+            { key: 'bulk_chunks/1/doc/b.txt', body: 'b', content_type: 'text/plain' }
+          ]
+        )
+      end
+
+      assert_equal [ 'bulk_chunks/1/doc/a.txt' ], fake.uploaded.pluck(:key)
+    end
+  end
+
+  test 'replace_prefix! stops when the reread bytes differ' do
+    with_fake_s3_client do |fake|
+      fake.corrupt_reads = true
+
+      assert_raises(S3DocumentsService::IncompleteReplacement) do
+        S3DocumentsService.new.replace_prefix!(
+          prefix: 'bulk_chunks/1/doc/',
+          objects: [ { key: 'bulk_chunks/1/doc/a.txt', body: 'alpha', content_type: 'text/plain' } ]
+        )
+      end
+    end
+  end
+
+  test 'replace_prefix! returns only after the listing and body hashes match' do
+    with_fake_s3_client do |fake|
+      keys = S3DocumentsService.new.replace_prefix!(
+        prefix: 'bulk_chunks/1/doc/',
+        objects: [
+          { key: 'bulk_chunks/1/doc/a.txt', body: 'alpha', content_type: 'text/plain; charset=utf-8' },
+          { key: 'bulk_chunks/1/doc/a.txt.metadata.json', body: '{}', content_type: 'text/plain; charset=utf-8' }
+        ]
+      )
+
+      assert_equal [ 'bulk_chunks/1/doc/a.txt', 'bulk_chunks/1/doc/a.txt.metadata.json' ], keys
+      assert_equal 'alpha', fake.uploaded.find { |item| item[:key].end_with?('a.txt') }[:body]
+    end
+  end
+
+  test 'restore_prefix! verifies bytes content type and metadata' do
+    with_fake_s3_client do |_fake|
+      records = [
+        {
+          key: 'bulk_chunks/1/doc/a.txt',
+          body: 'alpha',
+          content_type: 'text/plain; charset=utf-8',
+          metadata: { 'origin' => 'backup' }
+        }
+      ]
+
+      restored = S3DocumentsService.new.restore_prefix!(prefix: 'bulk_chunks/1/doc/', records: records)
+
+      assert_equal [ 'bulk_chunks/1/doc/a.txt' ], restored
     end
   end
 end

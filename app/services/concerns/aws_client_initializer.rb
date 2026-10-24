@@ -13,7 +13,7 @@ module AwsClientInitializer
   #
   # @param region [String, nil] AWS region (defaults to us-east-1)
   # @return [Hash] Options hash for AWS client initialization
-  def build_aws_client_options(region: nil)
+  def build_aws_client_options(region: nil, credentials: nil)
     region ||= ENV.fetch('AWS_REGION', nil).presence ||
                Rails.application.credentials.dig(:aws, :region) ||
                'us-east-1'
@@ -31,7 +31,9 @@ module AwsClientInitializer
 
     client_options = { region: region }
 
-    if bearer_token.present?
+    if credentials
+      client_options[:credentials] = credentials
+    elsif bearer_token.present?
       client_options[:token_provider] = Aws::StaticTokenProvider.new(bearer_token)
     elsif access_key_id.present? && secret_access_key.present?
       client_options[:access_key_id] = access_key_id

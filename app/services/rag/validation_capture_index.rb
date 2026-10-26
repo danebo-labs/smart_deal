@@ -65,7 +65,9 @@ module Rag
         label = event_correlation(event)
         label == correlation_id || (attach_unscoped && label.nil?)
       }
-      components = COMPONENTS.index_with { |name| component_status(name, mine) }
+      # index_with belongs to ActiveSupport. bin/pilot_metrics loads this file
+      # with plain Ruby, so the hash is built here.
+      components = COMPONENTS.to_h { |name| [ name, component_status(name, mine) ] } # rubocop:disable Rails/IndexWith
       truncated = truncation(mine)
       {
         "path" => path,
@@ -78,6 +80,7 @@ module Rag
         "capture_scope" => contract_value(mine, "capture_scope"),
         "components" => components,
         "truncated_fields" => truncated,
+        "markers" => markers(mine),
         "status" => components.value?("uncaptured") ? "partial" : "complete"
       }
     end
@@ -118,15 +121,33 @@ module Rag
       }
     end
 
+    def markers(events)
+      found = []
+      events.each do |event|
+        found << "capture_probe" if event["kind"] == "capture_probe" || event["question"] == "capture_probe"
+      end
+      found.uniq
+    end
+
     def event_correlation(event)
-      event["correlation_root"].to_s.presence || event["correlation_id"].to_s.presence
+      [ event["correlation_root"], event["correlation_id"] ].each do |value|
+        return value.to_s if filled?(value)
+      end
+      nil
+    end
+
+    def filled?(value)
+      return false if value.nil? || value == false
+      return !value.empty? if value.respond_to?(:empty?)
+
+      true
     end
 
     def published_text?(events)
       events.any? { |event|
-        (event["kind"] == "published_answer" && event["answer"].present?) ||
-          (event["kind"] == "companion_plan" && event["rendered"].present?) ||
-          (event["kind"] == "assistant_history" && event["presented"].present?)
+        (event["kind"] == "published_answer" && filled?(event["answer"])) ||
+          (event["kind"] == "companion_plan" && filled?(event["rendered"])) ||
+          (event["kind"] == "assistant_history" && filled?(event["presented"]))
       }
     end
 
@@ -162,13 +183,13 @@ module Rag
 
     def episode_label(events)
       direct = first_value(events, "episode_id")
-      return direct if direct.present?
+      return direct if filled?(direct)
 
       events.each do |event|
         next unless event["kind"] == "episode_delta"
 
         [ event["episode_after"], event["episode_before"] ].each do |snapshot|
-          next unless snapshot.is_a?(Hash) && snapshot["episode_id"].present?
+          next unless snapshot.is_a?(Hash) && filled?(snapshot["episode_id"])
 
           return snapshot["episode_id"]
         end

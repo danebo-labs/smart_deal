@@ -38,6 +38,34 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
     FileUtils.remove_entry(@tmpdir) if File.exist?(@tmpdir)
   end
 
+  test "the capture index runs without Rails and does not call a capture unreadable" do
+    capture_root = File.join(@tmpdir, "captures")
+    request = File.join(capture_root, "probe")
+    FileUtils.mkdir_p(request)
+    File.write(File.join(request, "capture.json"), JSON.generate(
+      "events" => [
+        { "kind" => "published_answer", "correlation_id" => "probe:capture", "answer" => "sonda" },
+        { "kind" => "capture_probe", "correlation_id" => "probe:capture", "result" => "write_probe" }
+      ]
+    ))
+    destination = File.join(@tmpdir, "validation_capture_index.json")
+
+    _stdout, stderr, status = Open3.capture3(
+      RbConfig.ruby,
+      Rails.root.join("script/pilot_metrics_validation_index.rb").to_s,
+      capture_root,
+      destination
+    )
+
+    assert status.success?, stderr
+    document = JSON.parse(File.read(destination))
+    assert_equal "partial", document["status"]
+    assert_equal "probe:capture", document.dig("turns", 0, "correlation_id")
+    assert_equal [ "capture_probe" ], document.dig("turns", 0, "markers")
+    assert_equal "present", document.dig("turns", 0, "components", "published_text")
+    assert_not_equal "unreadable", document.dig("turns", 0, "status")
+  end
+
   test "uses direct non-PTY SSH and writes the complete artifact package" do
     stdout, stderr, status = run_command("--format", "both")
 

@@ -319,6 +319,8 @@ else
 fi
 "$RUBY_BIN" script/pilot_metrics_validation_index.rb "$VALIDATION_DIR" "${OUTPUT_DIR}/validation_capture_index.json"
 
+# Local packaging boots Rails. The project gems live in vendor/bundle.
+export BUNDLE_PATH="${BUNDLE_PATH:-vendor/bundle}"
 if [[ -n "$MANUAL_OUTCOMES" ]]; then
   "$RAILS_BIN" runner script/pilot_metrics_package.rb \
     "${OUTPUT_DIR}/report.json" "$OUTPUT_DIR" "$MANUAL_OUTCOMES"

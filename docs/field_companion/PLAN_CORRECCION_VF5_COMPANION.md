@@ -1,8 +1,42 @@
 # Corrección y validación del companion sobre el VF5
 
+## Prueba web del quinto turno — 26 de octubre de 2026, tarde
+
+**Precedencia.** Esta sección registra la corrida de producción posterior al despliegue de `5f0c5b0`. No reabre F2, F3 ni F4. No aprueba F5. F5 sigue siendo el recorrido local de cuatro `POST /rag/ask`. Esta corrida es otra cosa: el guion web de cinco mensajes, más el primer intento que se agotó en la espera.
+
+**Veredicto: recorrido parcialmente conforme.** El caso, el manual y las respuestas del técnico se conservaron, y la quinta respuesta dejó de repetir la pregunta de #21. El desconocimiento no quedó en el episodio y la frase «Indicaste que no puedes distinguirlo…» no se publicó. Completar las seis interacciones no aprueba el arreglo ni F5.
+
+### Ejecución
+
+Imagen `docker.io/lahirisan80/smart-deal:5f0c5b0262b1b6b7b8dc96962fc5584290e735c6`. Cuenta `danebo-legacy`, id 1. Usuario 3, `lahiri.sanchez@danebo.ai`. Sesión 128. Episodio `ep_66034212da76420a` en las seis interacciones. Filtro de cada Retrieve: `s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf`. Modelo de las cinco generaciones: `global.anthropic.claude-haiku-4-5-20251001-v1:0`.
+
+Paquete local, fuera de git: `tmp/pilot_exports/2026-10-26_2026-10-26_danebo-legacy/`. Generado `2026-10-26T16:13:14Z`. Seis interacciones de la sesión 128 entre 12:49:44 y 12:54:30, hora de Santiago. Cinco llamadas de generación, 33828 tokens de entrada, 2582 de salida, coste atribuido 0,046738 USD. La primera espera no está en ese percentil: el Retrieve tardó 101242 ms y la interacción cerró en 108897 ms, sin fila de generación.
+
+No está en el paquete el JSON del episodio, la propuesta del modelo, los motivos del checker ni `[COMPANION_PLAN]`. `checks` entra en el hash del episodio y no entra en `episode_fields_changed`. Un hash igual antes y después sí alcanza para decir que observaciones, pendiente y comprobaciones no cambiaron.
+
+### Qué se vio
+
+El primer mensaje, `query:6de7bbc8-4ef0-4a08-a0a7-1ae1ac94fc9d`, interpretó `report` y guardó equipo Fermator, síntoma, LED apagado, «No veo obstrucción» y `#54` sin hacer. El Retrieve devolvió 3 fragmentos a los 101 s. No hubo generación. Lo publicado antepone el registro del caso a «Ese dato no aparece en los fragmentos de manual recuperados para esta consulta.» `prompt_reply` guarda solo esa segunda frase. Un segundo después, `query:0b3e763e-1445-4f64-8b87-c8eb3f4dae58` repitió el mismo texto. El intérprete falló con `ServiceUnavailableException` y el episodio no cambió. Con la base ya despierta, el Retrieve tardó 511 ms y la respuesta orientó el síntoma, dejó el `#54` pendiente y preguntó si estaba activada la fotocélula o la entrada #21.
+
+La corrección del LED, `query:1ccdab33-3e2b-4b50-8b4c-33d0a95fbe0d`, sustituyó el estado apagado por encendido en la lectura publicada y no lo revirtió. Cambió `pending_question` y `observations`. Siguió con el `#54` pendiente y preguntó solo por #21. La fotocélula, `query:abb98732-0f09-4086-9576-d69c5b902571`, quedó como «También informaste: «Ya revisé la fotocélula y no está activada»», sin decir que la causa quedó descartada. «No veo obstrucción» siguió como observación, no como comprobación hecha. El `#54` no se volvió a preguntar. La pregunta de #21 se publicó otra vez, así que el resultado de la fotocélula no cerró esa duda en el texto. «¿qué sigue?», `query:7cbbda0c-5751-42f1-9566-34f1a6aa1c11`, repitió esa orientación. El hash del episodio cambió y `episode_fields_changed` quedó vacío: encaja con un `updated_at`, que está en el hash y no en esa lista.
+
+El quinto mensaje, `query:1eb6a214-066d-4b7b-ab83-c9efa26d8122`, llegó con `turn_interpreter_status=meta_incompatible` y `turn_interpreter_fallback=true`. El hash del episodio quedó igual (`89843051934730b8b1f77cd4f92a4c93ea7c1ec1a3fcb7df3504cb1ea1ed61d1`). La respuesta mantiene el `#54` pendiente, la obstrucción como observación y la frase literal de la fotocélula. No contiene «¿Está activada la entrada de re-apertura (#21)?», «Para orientar falta distinguir», «Lo que ves coincide» ni ningún `?`. Tampoco contiene «Indicaste que no puedes distinguirlo».
+
+### Asociación y capa
+
+Observado: la fotocélula y el desconocimiento de #21 no se intercambiaron en el texto. El reporte de la fotocélula no contestó #21, y el «No sé cómo…» no se publicó como respuesta de la fotocélula ni del `#54`.
+
+Inferido del código desplegado: `remember_unknown_clarification!` sale sin escribir si no hay un pendiente `documented_context` con uno o dos destinos, ni una observación con `answers.q`, destinos y sin `r`. El texto cumple `UNKNOWN_CLARIFICATION` y el episodio no estaba vacío. El hash no se movió, así que esa salida fue no encontrar la pregunta. La frase de límite solo se publica si ese hecho entra a los hechos del plan. La prueba local partía de la observación que ya tenía `answers.q`; esta corrida no dejó ver ese estado. No se afirma que el modelo haya vuelto a proponer la pregunta: la propuesta no está en el paquete.
+
+La primera transformación que falta es esa: la pregunta visible en los turnos anteriores no estaba recuperable en el episodio cuando llegó el desconocimiento. Lo posterior —no guardar `r=unknown` y no publicar el límite— es consecuencia. La desaparición de la pregunta en el texto publicado queda sin causa observada.
+
+### Corrección mínima, sin hacerla
+
+Hacer que la pregunta ya publicada, con sus destinos, siga en el episodio hasta que ese dato se conteste. El «No sé cómo…» solo puede atarse a esa pregunta si el texto es el de #21, no a la fotocélula ni al `#54` por compartir «activada» o «no sé». No hace falta otra llamada ni otro pendiente equivalente. La prueba local que falta parte del estado en que el pendiente está vacío y ninguna observación tiene `answers.q`, que es lo que esta corrida dejó ver, y comprueba que el quinto texto guarda el límite de #21.
+
 ## Corrección del quinto turno — 26 de octubre de 2026
 
-**Precedencia.** Esta sección cierra la reparación del quinto turno. No reabre F2, F3 ni F4. No aprueba F5. No cambia flags, prompts, ingesta, índice, las etiquetas «Manual / Guía Danebo» ni la sesión 128. No hubo mensajes, inferencias de producción ni despliegue.
+**Precedencia.** Esta sección cierra la reparación hecha en el código y en la prueba local. No reabre F2, F3 ni F4. No aprueba F5. No cambia flags, prompts, ingesta, índice ni las etiquetas «Manual / Guía Danebo». Al escribirla no hubo mensajes, inferencias de producción ni despliegue. La corrida web posterior está en la sección anterior y no confirma que el límite haya quedado guardado.
 
 ### Veredicto
 
@@ -193,7 +227,7 @@ No se usó. La copia de los 60 objetos anteriores permanece en el directorio de 
 
 ### F5, pendiente
 
-F4 no lo ejecuta. El paso ya escrito está en «F5. Conversación integrada»: servidor local, pin del VF5 por el endpoint de la interfaz, y cuatro `POST /rag/ask`. La configuración de KB, bucket y datasource ya es la de `config/deploy.yml`. No hace falta otro manual ni otra sincronización para ese recorrido. Sigue sin hacerse.
+F4 no lo ejecuta. El paso ya escrito está en «F5. Conversación integrada»: servidor local, pin del VF5 por el endpoint de la interfaz, y cuatro `POST /rag/ask`. La configuración de KB, bucket y datasource ya es la de `config/deploy.yml`. No hace falta otro manual ni otra sincronización para ese recorrido. Sigue sin hacerse. La prueba web de la tarde del 26 de octubre no es ese paso y no lo aprueba.
 
 ## Consolidación anterior — F3 aceptada en el alcance demostrado; F4 preparada (23 de octubre de 2026)
 

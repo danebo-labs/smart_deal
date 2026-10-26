@@ -360,8 +360,8 @@ class Vf5F4PublicationTest < ActiveSupport::TestCase
   end
 
   test "rehydrates the published target from the real catalog components" do
-    body = Rails.root.join("tmp/field_companion/vf5_correction/f2f3_joint/f2/candidate_r2/kb/#{Vf5F4Publication::TARGET_KEY}").binread
-    page = Rails.root.join("tmp/field_companion/vf5_correction/f2f3_joint/f2/candidate_r2/kb/#{KEY}").binread
+    body = Rails.root.join("test/fixtures/field_companion/vf5/chunk_p12_5.txt").binread
+    page = "portada"
     report = publish(
       remote: { KEY => page, Vf5F4Publication::TARGET_KEY => body },
       candidate: { KEY => page, Vf5F4Publication::TARGET_KEY => body },

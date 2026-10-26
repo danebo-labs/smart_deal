@@ -451,8 +451,10 @@ class Rag::LabelComparisonVariantTest < ActiveSupport::TestCase
     end
     Rag::Phase3ModelBudget.disarm!
 
-    historical = Rails.root.join("tmp/phase5_generation_replay/case_b/variant_must_not_write")
-    before = Rails.root.join("tmp/phase5_generation_replay/case_b").children.map(&:to_s).sort
+    historical_root = Rails.root.join("tmp/phase5_generation_replay/case_b")
+    FileUtils.mkdir_p(historical_root)
+    historical = historical_root.join("variant_must_not_write")
+    before = historical_root.children.map(&:to_s).sort
     authorized do
       refused = Rag::LabelComparisonVariant.gate(
         phase5_capture: PHASE5, phase3_capture: PHASE3, output_dir: historical

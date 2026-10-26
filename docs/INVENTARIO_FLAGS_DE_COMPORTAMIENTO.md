@@ -695,20 +695,22 @@ Estos controles permanecen configurables.
 |---|---|
 | Propósito | Abrir `ValidationCapture` en el request que pinta el navegador |
 | Qué controla | `WebRequestCapture`. El id debe cumplir el patrón de 1 a 81 caracteres seguros |
-| Valores | Id presente y proceso con base local |
+| Valores | Id presente. En un proceso local captura ese proceso. Fuera de él, solo si `RAG_VALIDATION_CAPTURE_ACCOUNT_IDS` nombra la cuenta |
 | Default real | Apagado |
 | Encendido | Escribe `tmp/field_companion/validation_captures/<run>/<request>/` |
 | Apagado | El request no exporta esa captura. `PILOT_AUDIT_CAPTURE` no la abre |
 | Lectura | Request. El cubo es del hilo. El worker de Solid Queue no lo hereda |
-| Consumidores | `WebRequestCapture` |
-| Dependencias | `LocalPassLedger.local_process?` |
-| Conflictos | No es telemetría de producción |
-| Configuración versionada | Ausente |
-| Clasificación | Operación de pasada local |
+| Consumidores | `WebRequestCapture`, `bin/pilot_metrics` |
+| Dependencias | Proceso local, o la lista de cuentas. No arma `LocalPassLedger` |
+| Conflictos | Una lista vacía no abre producción. El worker no hereda el cubo del request |
+| Configuración versionada | Comentada en `config/deploy.yml.example` |
+| Clasificación | Operación |
 | Vigencia | Activo |
 | Destino propuesto | Conservar |
 | Local observado | Ausente |
 | VF5+ | `vf5-reabre-20261020T0238Z` |
+
+`RAG_VALIDATION_CAPTURE_ACCOUNT_IDS` es la lista, separada por comas, que abre esa misma captura fuera de un proceso local. Vacía, producción sigue apagada. No captura otra cuenta ni el worker.
 
 ### `AWS_MAX_ATTEMPTS`
 

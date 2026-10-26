@@ -1,5 +1,57 @@
 # Corrección y validación del companion sobre el VF5
 
+## Captura del recorrido web — 26 de octubre de 2026, noche
+
+**Precedencia.** Esta sección recupera lo que ya estaba guardado de la corrida de la tarde y deja la captura lista para un turno nuevo. No reabre F2, F3 ni F4. No aprueba F5. No cambia interpretación, preguntas, prompts, modelo, guards, sesión 128, S3 ni el presupuesto. Los ensayos locales no son conversación de Haiku.
+
+### Inventario de la corrida de la tarde
+
+El paquete `tmp/pilot_exports/2026-10-26_2026-10-26_danebo-legacy/` se dejó como estaba. No hay archivos de `ValidationCapture` que integrar: en el contenedor web `92c2b50843a2`, imagen `5f0c5b0262b1b6b7b8dc96962fc5584290e735c6`, `tmp/field_companion/validation_captures` no existe. `RAG_VALIDATION_CAPTURE_RUN` y `RAG_VALIDATION_CAPTURE_ACCOUNT_IDS` no estaban cargadas. `KAMAL_VERSION` de ese proceso es `5f0c5b0262b1b6b7b8dc96962fc5584290e735c6`. La fila actual de la sesión 128 no se leyó como si fuera el antes o el después.
+
+El log de ese contenedor sí tiene cinco líneas `[COMPANION_PLAN]`. El request id de la línea es el mismo que ya está en `source_events.jsonl` junto a la correlación. Esa unión no es por hora.
+
+| Request | Correlación | Plan en el log |
+|---|---|---|
+| `14b059a9-09ad-4628-ad29-ae82e1701b74` | `query:6de7bbc8-4ef0-4a08-a0a7-1ae1ac94fc9d` | sin línea |
+| `2505bca4-4171-4f53-9d34-0a697d8f80ab` | `query:0b3e763e-1445-4f64-8b87-c8eb3f4dae58` | usable, 5 rechazos |
+| `7b9c2046-52ed-4888-b908-1de793fd86bb` | `query:1ccdab33-3e2b-4b50-8b4c-33d0a95fbe0d` | usable, 1 rechazo |
+| `bd258c35-3bf4-4f40-87b4-27df8953bb74` | `query:abb98732-0f09-4086-9576-d69c5b902571` | usable, 3 rechazos |
+| `7fc442a3-170f-48ab-856e-602383c3e03d` | `query:7cbbda0c-5751-42f1-9566-34f1a6aa1c11` | usable, 6 rechazos |
+| `4653c11c-d953-4a13-8286-063e465afecf` | `query:1eb6a214-066d-4b7b-ab83-c9efa26d8122` | usable, 5 rechazos |
+
+Esas líneas no se copiaron al JSONL del exportador: el marcador no las incluye y el texto no es JSON. Un contador no es el motivo. El inventario privado, modo 600 y fuera de git, está en `tmp/pilot_exports/2026-10-26_vf5_capture_inventory.json`.
+
+| Dato | Dónde se buscó | Estado | Consecuencia |
+|---|---|---|---|
+| Episodio y pendiente antes y después | Directorio de captura del contenedor; el paquete no trae el JSON | No capturado | El hash igual del quinto turno sigue sin mostrar el pendiente ni `answers` |
+| Request y respuesta cruda del intérprete | Misma captura | No capturado | El estado `meta_incompatible` sí está en los eventos ya exportados |
+| Percepción y rechazos de campos | Misma captura | No capturado | No se ve qué aceptó el intérprete en cada turno |
+| Propuesta del plan | Log `[COMPANION_PLAN]` unido por request id | Solo usable y cantidad | La pregunta de #21, si el modelo la propuso, no está en esa línea |
+| Motivos del checker | Esa línea y el paquete | No capturado | La ausencia de la pregunta en el texto publicado sigue sin causa observada |
+| Fuentes con cuerpo | `TURN_EVIDENCE` y citas del informe | Metadatos sí; cuerpo no | Las páginas 12, 12, 10, 7, 8, 8 y 8 siguen siendo solo metadatos |
+| Render, guards y diff | Captura de publicación | No capturado | El texto publicado sí está en el archivo de la sesión |
+| Texto presentado e historial | `full_content` y `prompt_reply` del archivo | Presentes; `content` corta a 600 | El quinto texto publicado no tiene la frase de límite ni la pregunta |
+| Modelo, parada, uso y latencia | Informe y filas de generación | Modelo, tokens y latencia sí; `stop_reason` no | El coste de la tarde no cambia |
+| SHA de los seis turnos | Imagen y `KAMAL_VERSION` del proceso web | `5f0c5b0` | Una sola versión atendió la corrida |
+
+### Qué queda confirmado y qué sigue en hipótesis
+
+Confirmado: los cinco turnos con generación ejecutaron el plan y el checker lo dejó usable. El primer turno, el que se abstuvo, no tiene línea de plan. El quinto request es el de cinco rechazos. La imagen fue la misma. El texto publicado del quinto turno no pide #21 y no abre con «Indicaste que no puedes distinguirlo».
+
+Corregido respecto del informe de la tarde: el plan no estaba ausente del contenedor. Estaba ausente del paquete porque el exportador no guarda esa línea. La cantidad de rechazos no dice por qué se rechazó cada parte.
+
+Sigue en hipótesis: que `remember_unknown_clarification!` volvió sin escribir porque la pregunta publicada no estaba en el episodio. El hash sin cambio encaja con esa salida y también con cualquier otra salida anterior a `touch!`. Sin el pendiente y sin la propuesta, no se cierra.
+
+Solo un turno nuevo, con esta captura ya activa, puede mostrar la propuesta, los motivos, el episodio antes y después, y el texto que llegó al historial.
+
+### Captura que queda armada
+
+`WebRequestCapture` sigue abierto en un proceso local. Fuera de él se abre solo si `RAG_VALIDATION_CAPTURE_RUN` tiene id y `RAG_VALIDATION_CAPTURE_ACCOUNT_IDS` nombra la cuenta. La lista vacía no abre producción y no arma el ledger local. El despliegue de la cuenta 1 usa el id `web-danebo-legacy`. El worker no hereda el cubo del request.
+
+En el request, la correlación se asigna al cubo cuando la captura está abierta. El plan, la recuperación y la respuesta publicada quedan en ese id. Al guardar la respuesta se registran el texto presentado, `content`, `full_content`, `prompt_reply` y si alguno se cortó, y el episodio antes y después de esa escritura. Un texto de más de 2000 caracteres sale del JSON a `bodies/`, completo. El directorio queda en modo 700 y los archivos en 600, bajo `tmp/`, fuera de git.
+
+`bin/pilot_metrics` trae ese árbol si el contenedor web lo tiene y escribe `validation_capture_index.json`. El índice dice `complete` solo cuando el turno tiene episodio, intérprete, percepción, propuesta, motivos, texto publicado y antecedente. Si el directorio no está, el estado es `absent` y la exportación sigue. Terminar sin error no declara la captura completa.
+
 ## Prueba web del quinto turno — 26 de octubre de 2026, tarde
 
 **Precedencia.** Esta sección registra la corrida de producción posterior al despliegue de `5f0c5b0`. No reabre F2, F3 ni F4. No aprueba F5. F5 sigue siendo el recorrido local de cuatro `POST /rag/ask`. Esta corrida es otra cosa: el guion web de cinco mensajes, más el primer intento que se agotó en la espera.
@@ -12,7 +64,7 @@ Imagen `docker.io/lahirisan80/smart-deal:5f0c5b0262b1b6b7b8dc96962fc5584290e735c
 
 Paquete local, fuera de git: `tmp/pilot_exports/2026-10-26_2026-10-26_danebo-legacy/`. Generado `2026-10-26T16:13:14Z`. Seis interacciones de la sesión 128 entre 12:49:44 y 12:54:30, hora de Santiago. Cinco llamadas de generación, 33828 tokens de entrada, 2582 de salida, coste atribuido 0,046738 USD. La primera espera no está en ese percentil: el Retrieve tardó 101242 ms y la interacción cerró en 108897 ms, sin fila de generación.
 
-No está en el paquete el JSON del episodio, la propuesta del modelo, los motivos del checker ni `[COMPANION_PLAN]`. `checks` entra en el hash del episodio y no entra en `episode_fields_changed`. Un hash igual antes y después sí alcanza para decir que observaciones, pendiente y comprobaciones no cambiaron.
+No está en el paquete el JSON del episodio, la propuesta del modelo ni los motivos del checker. La lectura posterior del contenedor, en la sección de captura, encontró las cinco líneas `[COMPANION_PLAN]` con la cantidad de rechazos y sin los motivos. `checks` entra en el hash del episodio y no entra en `episode_fields_changed`. Un hash igual antes y después sí alcanza para decir que observaciones, pendiente y comprobaciones no cambiaron.
 
 ### Qué se vio
 

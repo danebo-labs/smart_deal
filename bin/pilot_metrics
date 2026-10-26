@@ -309,6 +309,16 @@ fi
 "$RUBY_BIN" -rjson -e 'JSON.parse(File.read(ARGV.fetch(0)))' "$REPORT_TMP" || fail "invalid report JSON"
 mv "$REPORT_TMP" "${OUTPUT_DIR}/report.json"
 
+VALIDATION_DIR="${WORK_DIR}/validation_captures"
+mkdir -p "$VALIDATION_DIR"
+if remote "docker exec '${WEB_CONTAINER}' tar -c -C /rails/tmp/field_companion/validation_captures ." > "${WORK_DIR}/validation_captures.tar" 2>"${WORK_DIR}/validation_captures.err"; then
+  tar -x -C "$VALIDATION_DIR" -f "${WORK_DIR}/validation_captures.tar" ||
+    echo "pilot_metrics: warning: validation capture archive did not unpack" >&2
+else
+  echo "pilot_metrics: validation captures absent on the web container" >&2
+fi
+"$RUBY_BIN" script/pilot_metrics_validation_index.rb "$VALIDATION_DIR" "${OUTPUT_DIR}/validation_capture_index.json"
+
 if [[ -n "$MANUAL_OUTCOMES" ]]; then
   "$RAILS_BIN" runner script/pilot_metrics_package.rb \
     "${OUTPUT_DIR}/report.json" "$OUTPUT_DIR" "$MANUAL_OUTCOMES"
@@ -354,6 +364,7 @@ printf '%s' "$COHORT_JSON" > "${WORK_DIR}/cohort.json"
 "$RUBY_BIN" -rjson -e '
   cohort = JSON.parse(File.read(ARGV.fetch(2)))
   validation = JSON.parse(File.read(ARGV.fetch(6)))
+  captures = JSON.parse(File.read(ARGV.fetch(9)))
   manifest = {
     range: { from: ARGV.fetch(0), to: ARGV.fetch(1) },
     cohort: cohort,
@@ -364,22 +375,29 @@ printf '%s' "$COHORT_JSON" > "${WORK_DIR}/cohort.json"
     # post-deploy export looks identical to one that read the whole history.
     containers_read: ARGV.fetch(7).split(",").reject(&:empty?),
     containers_unreadable: ARGV.fetch(8).split(",").reject(&:empty?),
-    strict_validation: validation
+    strict_validation: validation,
+    validation_captures: {
+      status: captures["status"],
+      capture_files: captures["capture_files"],
+      turns: Array(captures["turns"]).size,
+      path: "validation_capture_index.json"
+    }
   }
   puts JSON.pretty_generate(manifest)
 ' "$FROM" "$TO" "$WORK_DIR/cohort.json" "$ROLES_CSV" "$IMAGE_VERSION" "$GENERATED_AT" \
-  "$STRICT_VALIDATION" "$CONTAINERS_CSV" "$UNREADABLE_CSV" > "${OUTPUT_DIR}/manifest.json"
+  "$STRICT_VALIDATION" "$CONTAINERS_CSV" "$UNREADABLE_CSV" \
+  "${OUTPUT_DIR}/validation_capture_index.json" > "${OUTPUT_DIR}/manifest.json"
 
 (
   cd "$OUTPUT_DIR"
   shasum -a 256 report.json report.txt valor.json dossier.html interactions.csv \
-    source_events.jsonl manifest.json > SHA256SUMS
+    source_events.jsonl validation_capture_index.json manifest.json > SHA256SUMS
 )
 
 chmod 700 "$OUTPUT_DIR"
 chmod 600 "${OUTPUT_DIR}/report.json" "${OUTPUT_DIR}/report.txt" "${OUTPUT_DIR}/valor.json" \
   "${OUTPUT_DIR}/dossier.html" "${OUTPUT_DIR}/interactions.csv" "${OUTPUT_DIR}/source_events.jsonl" \
-  "${OUTPUT_DIR}/manifest.json" "${OUTPUT_DIR}/SHA256SUMS"
+  "${OUTPUT_DIR}/manifest.json" "${OUTPUT_DIR}/validation_capture_index.json" "${OUTPUT_DIR}/SHA256SUMS"
 echo "pilot_metrics: warning: artifacts contain the full RAG trace, including technician questions; permissions set to 600" >&2
 
 echo "Artifacts: ${OUTPUT_DIR}" >&2

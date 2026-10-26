@@ -53,6 +53,8 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
     assert_equal [ "web", "worker" ], manifest.fetch("roles_downloaded")
     assert_equal "registry.example/smart-deal:abc123", manifest.fetch("image_version")
     assert_equal "not_requested", manifest.dig("strict_validation", "status")
+    assert_equal "absent", manifest.dig("validation_captures", "status")
+    assert_equal "validation_capture_index.json", manifest.dig("validation_captures", "path")
     assert_equal 1, JSON.parse(File.read(File.join(output_dir, "valor.json"))).dig("adoption", "active_users")
     assert_includes File.read(File.join(output_dir, "dossier.html")), "Dossier"
     assert_equal 1, CSV.read(File.join(output_dir, "interactions.csv"), headers: true).size
@@ -257,7 +259,7 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
   def expected_files
     %w[
       report.json report.txt valor.json dossier.html interactions.csv
-      source_events.jsonl manifest.json SHA256SUMS
+      source_events.jsonl validation_capture_index.json manifest.json SHA256SUMS
     ]
   end
 
@@ -337,6 +339,9 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
             puts %(2026-07-22T23:59:59-04:00 [RAG_QUALITY] {"ts":"2026-07-22T23:59:59-04:00","correlation_id":"query:worker","evidence_present":true})
           end
         end
+      when /validation_captures/
+        warn "validation captures absent"
+        exit 1
       when /docker inspect/
         puts "registry.example/smart-deal:abc123"
       when /pilot_metrics_export\.rb/

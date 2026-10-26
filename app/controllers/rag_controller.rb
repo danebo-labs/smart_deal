@@ -22,6 +22,10 @@ class RagController < ApplicationController
     correlation_id = "photo:#{SecureRandom.uuid}"
     images    = extract_images_from_params
     correlation_id = "query:#{SecureRandom.uuid}" if images.empty?
+    # The open capture is thread-local. Naming the turn here links the plan,
+    # the retrieval, and the published answer to this request. It does not
+    # change the question, the route, or the answer.
+    Rag::ValidationCapture.correlation = correlation_id if Rag::ValidationCapture.active?
     documents = extract_documents_from_params
 
     # In shared-session mode, omit user_id to avoid storing "last web user" as owner of the shared row.

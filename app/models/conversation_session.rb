@@ -219,6 +219,10 @@ class ConversationSession < ApplicationRecord
         "assistant", content, user_id: user_id, correlation_id: correlation_id,
         focus_ids: focus_ids, prompt_reply: prompt_reply
       )
+      capture_assistant_write!(
+        correlation_id: correlation_id, presented: content, stored: conversation_history.last,
+        before_state: nil, after_state: nil, dropped: false
+      )
       return :not_recording if writer == "photo_assistant"
 
       return nil
@@ -238,6 +242,10 @@ class ConversationSession < ApplicationRecord
           current_episode_id: current_id,
           correlation_id: correlation_id
         )
+        capture_assistant_write!(
+          correlation_id: correlation_id, presented: content, stored: nil,
+          before_state: nil, after_state: nil, dropped: true
+        )
         dropped = true
         next
       end
@@ -247,6 +255,10 @@ class ConversationSession < ApplicationRecord
         history << history_message(
           "assistant", content, user_id: user_id, correlation_id: correlation_id,
           focus_ids: focus_ids, prompt_reply: prompt_reply
+        )
+        capture_assistant_write!(
+          correlation_id: correlation_id, presented: content, stored: history.last,
+          before_state: nil, after_state: nil, dropped: false
         )
         update!(conversation_history: history)
         next
@@ -265,6 +277,10 @@ class ConversationSession < ApplicationRecord
       history << history_message(
         "assistant", content, user_id: user_id, correlation_id: correlation_id,
         focus_ids: focus_ids, prompt_reply: prompt_reply
+      )
+      capture_assistant_write!(
+        correlation_id: correlation_id, presented: content, stored: history.last,
+        before_state: stored_episode, after_state: result.state, dropped: false
       )
       attrs = { conversation_history: history }
       attrs[:active_episode] = result.state if result.decision == :assistant
@@ -1141,6 +1157,34 @@ class ConversationSession < ApplicationRecord
     return false if status.to_s == "meta_incompatible"
 
     %w[snapshot_changed episode_budget_refused].exclude?(status.to_s)
+  end
+
+  def capture_assistant_write!(correlation_id:, presented:, stored:, before_state:, after_state:, dropped:)
+    return unless Rag::ValidationCapture.active?
+
+    payload = {
+      "stage" => "history",
+      "result" => dropped ? "dropped" : "stored",
+      "presented" => presented.to_s,
+      "correlation_id" => correlation_id
+    }
+    if stored.is_a?(Hash)
+      payload["content"] = stored["content"]
+      payload["full_content"] = stored["full_content"] if stored.key?("full_content")
+      payload["full_content_truncated"] = true if stored["full_content_truncated"] == true
+      payload["prompt_reply"] = stored["prompt_reply"] if stored.key?("prompt_reply")
+      payload["prompt_reply_truncated"] = true if stored["prompt_reply_truncated"] == true
+    end
+    Rag::ValidationCapture.record("assistant_history", payload)
+    return if dropped || !before_state.is_a?(Hash) || !after_state.is_a?(Hash)
+
+    Rag::EpisodeDelta.record(
+      Rag::ActiveEpisode.parse(before_state),
+      Rag::ActiveEpisode.parse(after_state),
+      correlation_id: correlation_id
+    )
+  rescue StandardError => error
+    Rails.logger.warn("assistant history capture failed #{error.class}")
   end
 
   def record_user_message(original, sent)

@@ -118,6 +118,10 @@ env:
     # A comma-separated list of account ids restricts that text. An unknown
     # account is omitted when the list is set.
     # PILOT_AUDIT_CAPTURE_ACCOUNT_IDS: "1"
+    # Same capture the local pass already writes, limited to these account ids
+    # when the process is not a local pass. Empty list keeps production off.
+    # RAG_VALIDATION_CAPTURE_RUN: "web-danebo-legacy"
+    # RAG_VALIDATION_CAPTURE_ACCOUNT_IDS: "1"
     # Kill-switch for the durable pilot_events INSERT. Default is persist
     # (unset or any value other than "false"). Not a privacy gate — that is
     # the PilotUsageLog whitelist plus the rag_quality raw-text exclusions.

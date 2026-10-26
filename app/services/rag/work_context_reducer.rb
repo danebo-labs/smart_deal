@@ -21,6 +21,71 @@ module Rag
       working
     end
 
+    # The interpreter rejected the turn as meta. A "no sé cómo…" still answers
+    # the question already published, even after that pending was cleared.
+    # The check result that happens to carry the same question is not the answer.
+    def self.remember_unknown_clarification!(episode:, turn:, correlation_id:, now:)
+      return episode unless unknown_clarification?(turn)
+      return episode if episode.nil? || episode.blank?
+
+      published = published_documented_question(episode)
+      return episode if published.nil?
+
+      episode.touch!(now)
+      episode.append_observation!(
+        turn.to_s.squish,
+        correlation_id: correlation_id,
+        answers: {
+          "q" => published["question"],
+          "t" => published["targets"],
+          "r" => "unknown"
+        }
+      )
+      clear_matching_pending!(episode, published["question"])
+      episode
+    end
+
+    def self.unknown_clarification?(turn)
+      FollowupQueryRewriter.normalize_label(turn).match?(PendingQuestion::UNKNOWN_CLARIFICATION)
+    end
+
+    def self.published_documented_question(episode)
+      pending = episode.pending_question
+      if open_documented_question?(pending)
+        return { "question" => pending["question"], "targets" => pending["targets"] }
+      end
+
+      Array(episode.observations).reverse_each do |item|
+        answers = item["answers"]
+        next unless open_answer?(answers)
+
+        return { "question" => answers["q"], "targets" => answers["t"] }
+      end
+      nil
+    end
+
+    def self.open_documented_question?(pending)
+      pending.is_a?(Hash) && pending["type"] == "documented_context" &&
+        pending["aspect"] != "scope" && pending["question"].present? &&
+        Array(pending["targets"]).any?
+    end
+
+    def self.open_answer?(answers)
+      answers.is_a?(Hash) && answers["aspect"] != "scope" && answers["r"].blank? &&
+        answers["q"].present? && Array(answers["t"]).any?
+    end
+
+    def self.clear_matching_pending!(episode, question)
+      pending = episode.pending_question
+      return unless open_documented_question?(pending)
+      return unless FollowupQueryRewriter.normalize_label(pending["question"]) ==
+        FollowupQueryRewriter.normalize_label(question)
+
+      episode.clear_pending!
+    end
+    private_class_method :unknown_clarification?, :published_documented_question,
+      :open_documented_question?, :open_answer?, :clear_matching_pending!
+
     def self.apply!(episode:, perception:, decision:, turn:, correlation_id:, now:)
       new(
         episode: episode, perception: perception, decision: decision,

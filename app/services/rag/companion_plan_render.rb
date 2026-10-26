@@ -50,6 +50,7 @@ module Rag
     def call
       lines = []
       quoted = []
+      limit_lines.each { |line| lines << line }
       @check.links.each do |link|
         statement = @statements.find(link[:statement])
         next if statement.nil? || part_question_replaces?(statement)
@@ -73,7 +74,6 @@ module Rag
         quoted.concat(group)
       end
       association_lines.each { |line| lines << line }
-      limit_lines.each { |line| lines << line }
       omission_lines.each { |line| lines << line }
       unmatched_reports(noted).each { |fact| lines << "También informaste: #{case_text(fact)}." }
       conflicts(quoted).each { |note| lines << note }

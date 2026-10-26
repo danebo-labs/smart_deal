@@ -1098,6 +1098,10 @@ class ConversationSession < ApplicationRecord
       episode = Rag::WorkContextReducer.retain_uninterpreted_report!(
         episode: episode, turn: turn, correlation_id: correlation_id, now: now
       )
+    elsif status.to_s == "meta_incompatible"
+      episode = Rag::WorkContextReducer.remember_unknown_clarification!(
+        episode: episode, turn: turn, correlation_id: correlation_id, now: now
+      )
     end
     Rag::EpisodeDelta.record(before_episode, episode, correlation_id: correlation_id)
     decision = Rag::RoutePolicy.fallback(
@@ -1130,7 +1134,8 @@ class ConversationSession < ApplicationRecord
   end
 
   # A rejected meta is searched from the literal turn. The turn stays in the
-  # history and in the audit. It is not stored as a goal, observation, or identity.
+  # history and in the audit. It is not stored as a goal or an identity.
+  # A limit declared on a question already published is kept on that question.
   # Other failed interpretations still keep the literal report.
   def retain_failed_report?(status)
     return false if status.to_s == "meta_incompatible"

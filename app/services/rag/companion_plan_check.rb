@@ -239,6 +239,10 @@ module Rag
       return accepted_question(text, bound_targets(text, targets)) if text.present? && reason.nil?
 
       reject("question", text, reason || "invalid") if text.present?
+      if text.present? && declared_unknown_question?(text)
+        remember_declared_limit(targets)
+        return [ nil, [] ]
+      end
       if reason.to_s.start_with?("modality:")
         clarified = clarify_report(text)
         return accepted_question(*clarified) if clarified
@@ -607,6 +611,25 @@ module Rag
       return if item.blank? || @limits.any? { |row| row["item"] == item }
 
       @limits << { "item" => item, "source" => statement.source }
+    end
+
+    # The technician already said this question cannot be identified. Do not
+    # ask it again and do not replace it with a choice between two citations.
+    def declared_unknown_question?(text)
+      normal = self.class.normal(text)
+      return false if normal.blank?
+
+      @facts.facts.any? { |fact|
+        answers = fact.answers
+        answers.is_a?(Hash) && answers["r"].to_s == "unknown" &&
+          self.class.normal(answers["q"].to_s) == normal
+      }
+    end
+
+    def remember_declared_limit(target_ids)
+      Array(target_ids).filter_map { |id| @statements.find(id) }.each do |statement|
+        remember_limit(statement)
+      end
     end
 
     def answer_code(item, statement)

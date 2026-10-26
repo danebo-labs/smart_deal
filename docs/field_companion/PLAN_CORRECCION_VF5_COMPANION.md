@@ -1,8 +1,22 @@
 # Corrección y validación del companion sobre el VF5
 
+## Corrección del quinto turno — 26 de octubre de 2026
+
+**Precedencia.** Esta sección cierra la reparación del quinto turno. No reabre F2, F3 ni F4. No aprueba F5. No cambia flags, prompts, ingesta, índice, las etiquetas «Manual / Guía Danebo» ni la sesión 128. No hubo mensajes, inferencias de producción ni despliegue.
+
+### Veredicto
+
+El respaldo de `meta_incompatible` guarda el límite cuando el texto cumple `UNKNOWN_CLARIFICATION`, aunque el pendiente ya esté vacío. El desconocimiento queda en una observación nueva: `answers.q` es la pregunta ya publicada y `answers.r` es `unknown`. La fotocélula sigue en `done` con «no está activada» y esa fila no recibe `r`. La observación nueva sobrevive a `companion_observations`, así que el checker la ve. Si el plan vuelve a traer esa pregunta, no se publica y no se sustituye por «¿Lo que ves coincide con…?». `remember_limit` y `limit_lines` escriben «Indicaste que no puedes distinguirlo…» como primera frase. Siguen los pasos que no dependen de #21. No se instala otro pendiente con la misma pregunta.
+
+### Prueba
+
+`test/services/rag/unknown_clarification_turn_test.rb` recorre `record_user_turn!` con el intérprete en `meta` y el texto exacto de 168 caracteres. El estado de partida es el posterior al cuarto turno: pendiente vacío, fotocélula hecha con «no está activada», y la observación de ese resultado con la pregunta de #21 y sin `r`. Con el código anterior el episodio no guardaba el límite. Ahora lo guarda, la respuesta empieza por el límite, nombra el `#54` que sigue pendiente y no contiene la pregunta ni la elección entre las dos citas.
+
+La corrida de esa prueba más `meta_incompatible_turn_test`, `companion_plan_test`, `pending_question_test`, `companion_f3_disambiguation_test`, `work_context_reducer_test`, `work_context_goal_test` y `conversation_session_turn_interpreter_test` dio 157 corridas y 2413 aserciones, sin fallos. RuboCop sin ofensas en los archivos tocados. Sin red.
+
 ## Diagnóstico del quinto turno — 24 de octubre de 2026
 
-**Precedencia.** Este registro cierra el diagnóstico pedido sobre la prueba web. No reabre F2, F3 ni F4. No aprueba F5. No cambia producto, flags, fuentes, índice ni despliegue. La reparación no está hecha.
+**Precedencia.** Este registro cierra el diagnóstico pedido sobre la prueba web. No reabre F2, F3 ni F4. No aprueba F5. No cambia producto, flags, fuentes, índice ni despliegue. La reparación de este diagnóstico está en la sección anterior.
 
 La quinta intervención del técnico es la consulta adicional. No hubo un sexto turno. La sesión 128 no se limpió ni se volvió a escribir desde aquí.
 
@@ -38,9 +52,9 @@ Reproducción local, con el episodio capturado y sin red: «No sé cómo identif
 
 Inferido del código: ese estado solo se escribe cuando el movimiento parseado fue `meta`. El respaldo no guarda el turno como observación ni llama al vínculo del pendiente. La frase de la pregunta no la genera ninguna plantilla de Ruby; el preámbulo de dos citas sí. Las dos citas son pasajes del mismo origen, no dos casos que el técnico tenga que distinguir. En el turno 3 el resultado de la fotocélula quedó asociado a la pregunta y el pendiente se limpió; por eso en el quinto turno no había un pendiente que responder.
 
-### Corrección mínima, sin hacerla
+### Corrección pedida
 
-El respaldo de `meta_incompatible` tiene que conservar el límite cuando el texto cumple la aclaración de desconocimiento, aunque la frase no sea «no sé» a secas y aunque el pendiente ya se haya limpiado. El dato se ata a la pregunta publicada. No se vuelve a pedir y no se sustituye por otra pregunta que obligue al técnico a interpretar las citas. La prueba usa el estado posterior al cuarto turno y el texto exacto del quinto: el episodio debe registrar el desconocimiento sobre #21 y la respuesta no debe contener esa pregunta.
+El respaldo de `meta_incompatible` tiene que conservar el límite cuando el texto cumple la aclaración de desconocimiento, aunque la frase no sea «no sé» a secas y aunque el pendiente ya se haya limpiado. El dato se ata a la pregunta publicada. No se vuelve a pedir y no se sustituye por otra pregunta que obligue al técnico a interpretar las citas. La prueba usa el estado posterior al cuarto turno y el texto exacto del quinto: el episodio debe registrar el desconocimiento sobre #21 y la respuesta no debe contener esa pregunta. Eso quedó hecho en «Corrección del quinto turno — 26 de octubre de 2026».
 
 ## Preparación de la prueba web — 24 de octubre de 2026
 

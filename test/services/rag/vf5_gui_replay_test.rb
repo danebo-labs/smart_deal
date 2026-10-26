@@ -8,6 +8,8 @@ require_relative "../../support/companion_plan_response"
 # the plan check, the render, and publication. The model replies and the
 # chunk bodies are the capture. Nothing here calls Bedrock.
 class Rag::Vf5GuiReplayTest < ActiveSupport::TestCase
+  include ActiveJob::TestHelper
+
   FOCUS_URI = "s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf"
   ABSTAIN = "No pude preparar una orientación fiable"
 
@@ -20,7 +22,9 @@ class Rag::Vf5GuiReplayTest < ActiveSupport::TestCase
     walked = nil
     document = nil
     previous_mode = ENV["HAIKU_QUERY_ANALYSIS_MODE"]
+    previous_episode = ENV["FIELD_COMPANION_EPISODE_ENABLED"]
     ENV["HAIKU_QUERY_ANALYSIS_MODE"] = "owner"
+    ENV["FIELD_COMPANION_EPISODE_ENABLED"] = "true"
     walked, document = walk_sequence
     t1 = walked.fetch("t1")
     t2 = walked.fetch("t2")
@@ -68,7 +72,14 @@ class Rag::Vf5GuiReplayTest < ActiveSupport::TestCase
 
     limit = t5[:episode].observations.find { |item| item.dig("answers", "r") == "unknown" }
     proposed = t5[:raw].dig("tool_input", "question")
+    # The captured tool says answer_pending. The GUI log for this turn is
+    # turn_interpreter_status ok and interpreter_move report: the pending
+    # answer is incomplete, so the validator keeps the turn as a report.
+    # meta_incompatible applies only when that tool move is meta.
+    assert_equal "answer_pending", t5[:raw].dig("interpreter", "move")
+    assert_equal "report", t5[:interpreter_reason]
     assert_includes proposed, "contacto cerrado"
+    assert_includes limit["text"], "identificar"
     assert_includes limit["text"], "#21"
     assert_includes limit["text"], "#23"
     assert_includes limit["text"], "contacto cerrado"
@@ -95,6 +106,7 @@ class Rag::Vf5GuiReplayTest < ActiveSupport::TestCase
     assert_includes previous_unknown.text, proposed
   ensure
     ENV["HAIKU_QUERY_ANALYSIS_MODE"] = previous_mode
+    ENV["FIELD_COMPANION_EPISODE_ENABLED"] = previous_episode
     walked&.each_value&.first&.dig(:session)&.destroy
     document&.destroy
   end
@@ -108,32 +120,45 @@ class Rag::Vf5GuiReplayTest < ActiveSupport::TestCase
     walked = {}
     turns.each do |raw|
       now = Time.current
-      perception = Rag::TurnPerception.build(
-        raw["interpreter"], turn: raw["user"], episode: episode, catalog: catalog, viewer_account: @account
-      )
-      decision = Rag::RoutePolicy.call(
-        previous: episode, perception: perception, focus_count: 1,
-        focus_document_ids: [ 212 ], focus_uris: [ FOCUS_URI ], locale: :es, turn: raw["user"]
-      )
-      episode = Rag::ActiveEpisode.open(correlation_id: raw["correlation_id"], now: now) if episode.blank?
-      Rag::WorkContextReducer.apply!(
-        episode: episode, perception: perception, decision: decision,
-        turn: raw["user"], correlation_id: raw["correlation_id"], now: now
-      )
-      session ||= ConversationSession.create!(
-        identifier: "web:vf5-replay-#{SecureRandom.hex(3)}",
-        channel: "web",
-        expires_at: 1.hour.from_now,
-        user: @user,
-        account: @account,
-        active_episode: episode.to_h,
-        conversation_history: []
-      )
-      history = session.conversation_history + [ {
-        "role" => "user", "content" => raw["user"],
-        "correlation_id" => raw["correlation_id"], "ts" => now.iso8601
-      } ]
-      session.update!(active_episode: episode.to_h, conversation_history: history)
+      interpreter_result = nil
+      if raw["turn"] == "t5"
+        interpreter_result = record_captured_turn(session, raw, now)
+        episode = Rag::ActiveEpisode.parse(session.reload.active_episode, now: now)
+        history = session.conversation_history
+      else
+        perception = Rag::TurnPerception.build(
+          raw["interpreter"], turn: raw["user"], episode: episode, catalog: catalog, viewer_account: @account
+        )
+        decision = Rag::RoutePolicy.call(
+          previous: episode, perception: perception, focus_count: 1,
+          focus_document_ids: [ document.id ], focus_uris: [ FOCUS_URI ], locale: :es, turn: raw["user"]
+        )
+        episode = Rag::ActiveEpisode.open(correlation_id: raw["correlation_id"], now: now) if episode.blank?
+        Rag::WorkContextReducer.apply!(
+          episode: episode, perception: perception, decision: decision,
+          turn: raw["user"], correlation_id: raw["correlation_id"], now: now
+        )
+        session ||= ConversationSession.create!(
+          identifier: "web:vf5-replay-#{SecureRandom.hex(3)}",
+          channel: "web",
+          expires_at: 1.hour.from_now,
+          user: @user,
+          account: @account,
+          active_episode: episode.to_h,
+          conversation_history: [],
+          document_focus: [ {
+            "kb_document_id" => document.id,
+            "source_uri" => FOCUS_URI,
+            "display_name" => "VF5",
+            "added_at" => now.iso8601
+          } ]
+        )
+        history = session.conversation_history + [ {
+          "role" => "user", "content" => raw["user"],
+          "correlation_id" => raw["correlation_id"], "ts" => now.iso8601
+        } ]
+        session.update!(active_episode: episode.to_h, conversation_history: history)
+      end
       composed = compose(raw, episode, session)
       published = publish(composed, raw, episode, session)
       assistant = Rag::ActiveEpisodeTurn.apply_assistant(
@@ -151,10 +176,27 @@ class Rag::Vf5GuiReplayTest < ActiveSupport::TestCase
       snapshot = episode.to_h.deep_dup
       walked[raw["turn"]] = {
         raw: raw, text: composed.text, composed: composed, published: published,
-        episode: Rag::ActiveEpisode.parse(snapshot), history: history.map(&:deep_dup), session: session
+        episode: Rag::ActiveEpisode.parse(snapshot), history: history.map(&:deep_dup), session: session,
+        interpreter_reason: interpreter_result&.reason
       }
     end
     [ walked, document ]
+  end
+
+  # The captured tool says answer_pending. record_user_turn! runs the same
+  # validation as the GUI. This does not build a perception or an answer first.
+  def record_captured_turn(session, raw, now)
+    result = nil
+    assert_no_enqueued_jobs only: TrackBedrockQueryJob do
+      result = session.record_user_turn!(
+        raw["user"],
+        user_id: @user.id,
+        correlation_id: raw["correlation_id"],
+        now: now,
+        interpreter_client: CapturedPerceptionClient.new(raw["interpreter"])
+      )
+    end
+    result
   end
 
   def recompose(snapshot, applicable: nil, led_context: true, unknown_match: nil)
@@ -270,5 +312,21 @@ class Rag::Vf5GuiReplayTest < ActiveSupport::TestCase
     yield
   ensure
     Rag::CompanionPlanCheck.define_method(:declared_unknown_question?, original) if mode == :exact && original
+  end
+end
+
+# Converse response whose only content is the captured turn_perception tool.
+class CapturedPerceptionClient
+  def initialize(input)
+    @input = input
+  end
+
+  def converse(_params)
+    tool = Struct.new(:name, :input).new(Rag::TurnInterpreter::TOOL_NAME, @input)
+    block = Struct.new(:tool_use).new(tool)
+    message = Struct.new(:content).new([ block ])
+    output = Struct.new(:message).new(message)
+    usage = Struct.new(:input_tokens, :output_tokens).new(0, 0)
+    Struct.new(:output, :usage).new(output, usage)
   end
 end

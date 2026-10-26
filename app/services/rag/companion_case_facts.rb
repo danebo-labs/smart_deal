@@ -35,7 +35,8 @@ module Rag
       add("G", "goal", goal, correlation_id: parsed.goal&.[]("correlation_id")) if goal.present?
       SessionContextBuilder.companion_identity(parsed).split(", ").each { |value| add("I", "identity", value) }
       SessionContextBuilder.companion_observations(parsed).each do |item|
-        add("O", "observation", item["text"].to_s.squish, correlation_id: item["correlation_id"], literal: true, answers: item["answers"])
+        text = without_replaced_led(item["text"].to_s, parsed)
+        add("O", "observation", text.squish, correlation_id: item["correlation_id"], literal: true, answers: item["answers"])
       end
       Array(parsed.checks).each do |item|
         next unless item.is_a?(Hash) && item["subject"].present?
@@ -43,7 +44,8 @@ module Rag
         span = SessionContextBuilder.companion_report_span(session, item)
         literal = span[:kind] == :original
         done = item["status"].to_s == "done"
-        text = literal ? span[:text] : [ item["subject"], item["result"] ].compact_blank.join(": ")
+        source = literal ? span[:text] : [ item["subject"], item["result"] ].compact_blank.join(": ")
+        text = without_replaced_led(source, parsed)
         add(done ? "C" : "N", done ? "done_check" : "not_done_check", text.to_s.squish,
             subject: item["subject"].to_s.squish, result: item["result"].to_s.squish.presence,
             correlation_id: item["correlation_id"], literal: literal)
@@ -90,6 +92,32 @@ module Rag
       when "unknown" then "no sé"
       else fact.text.sub(/\.\z/, "")
       end
+    end
+
+    # A stored sentence can still name the LED state the technician replaced.
+    # The history keeps that sentence. The current fact does not.
+    def without_replaced_led(text, episode)
+      clauses = text.to_s.split(/\s+y\s+/i).map(&:squish).reject { |clause|
+        replaced_led_clause?(clause, episode)
+      }
+      clauses.join(" y ")
+    end
+
+    def replaced_led_clause?(clause, episode)
+      state = ObservationCorrection.led_state(clause)
+      return false if state.blank?
+
+      qualifier = clause.to_s.squish[ObservationCorrection::LED_QUALIFIED, 1]
+      current = Array(episode.observations).filter_map { |item|
+        found = ObservationCorrection.led_state(item["text"])
+        next if found.blank? || found.casecmp?(state)
+
+        item_qualifier = item["text"].to_s.squish[ObservationCorrection::LED_QUALIFIED, 1]
+        next unless qualifier.blank? || item_qualifier.blank? || qualifier.casecmp?(item_qualifier)
+
+        found
+      }
+      current.any?
     end
 
     def add(prefix, kind, text, subject: nil, result: nil, correlation_id: nil, literal: false, answers: nil)

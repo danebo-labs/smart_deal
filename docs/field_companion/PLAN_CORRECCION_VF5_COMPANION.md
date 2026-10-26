@@ -1,5 +1,17 @@
 # Corrección y validación del companion sobre el VF5
 
+## Reparación local — 26 de octubre de 2026, tarde
+
+**Precedencia.** Esta sección es el estado vigente de la corrección VF5. No reabre F2, F3 ni F4. No aprueba F5. No cambia fuentes, ingesta, prompts ni las etiquetas «Manual / Guía Danebo».
+
+La ejecución GUI de las 14:58, informe `INFORME_GUI_VF5_2026-10-26.md`, no acepta F5. Tres reparaciones quedaron comprobadas en local, sin llamada al modelo:
+
+- La captura web lee `current_account` aunque el método es privado. `try` devolvía nil y la cuenta 1 no abría captura. Otra cuenta sigue sin abrirla.
+- La pregunta publicada y sus destinos se conservan hasta que el turno nombra ese dato. El «No sé cómo…» de #21 guarda `r: unknown` sobre esa pregunta. La fotocélula y el #54 no la reciben, y la respuesta no vuelve a preguntarla.
+- Tras corregir el LED a encendido, «apagado» deja de ser una observación vigente. El antecedente sigue en el historial de la conversación.
+
+Sigue pendiente la captura de un request web real, después del deploy. Sigue pendiente el guion completo desde un caso limpio. Ninguno de los dos queda hecho por estas pruebas.
+
 ## Captura del recorrido web — 26 de octubre de 2026, noche
 
 **Precedencia.** Esta sección recupera lo que ya estaba guardado de la corrida de la tarde y deja la captura lista para un turno nuevo. No reabre F2, F3 ni F4. No aprueba F5. No cambia interpretación, preguntas, prompts, modelo, guards, sesión 128, S3 ni el presupuesto. Los ensayos locales no son conversación de Haiku.

@@ -464,6 +464,48 @@ class Rag::WorkContextReducerTest < ActiveSupport::TestCase
     end
   end
 
+  test "a repeated led state correction keeps the new state as the current observation" do
+    episode = open_episode
+    episode.append_observation!("El LED está apagado", correlation_id: "seed")
+    episode.append_observation!("El LED está apagado y no veo obstrucción", correlation_id: "seed")
+    episode.append_observation!("El LED de fotocélula está apagado", correlation_id: "seed")
+    turn = "Corrijo un dato: el LED está encendido, no apagado."
+
+    with_owner { settle(episode, correct_observation("el LED está encendido"), turn) }
+
+    texts = episode.observations.pluck("text")
+    assert_includes texts, "el LED está encendido"
+    assert_includes texts, "no veo obstrucción"
+    assert texts.none? { |text| text.match?(/apagado/i) }
+    current = Rag::CompanionCaseFacts.build(episode).facts.select { |fact| fact.kind == "observation" }.map(&:text)
+    assert_includes current, "el LED está encendido"
+    assert_includes current, "no veo obstrucción"
+    assert current.none? { |text| text.match?(/apagado/i) }
+
+    episode.upsert_check!(
+      { "subject" => "la puerta", "status" => "done", "result" => "no veo obstrucción", "operation" => [ "check" ] },
+      correlation_id: "seed"
+    )
+    session = Struct.new(:conversation_history).new([
+      { "role" => "user", "content" => "El LED está apagado y no veo obstrucción.", "correlation_id" => "seed" }
+    ])
+    presented = Rag::CompanionCaseFacts.build(episode, session: session).facts.map(&:text).join("\n")
+    assert_includes presented, "el LED está encendido"
+    assert_includes presented, "no veo obstrucción"
+    assert_not_includes presented.downcase, "apagado"
+  end
+
+  test "two qualified leds stay unchanged when the correction does not name one" do
+    episode = open_episode
+    stored = [ "El LED 7 está apagado", "El LED 5 está apagado" ]
+    stored.each { |text| episode.append_observation!(text, correlation_id: "seed") }
+    turn = "Corrijo un dato: el LED está encendido, no apagado."
+
+    with_owner { settle(episode, correct_observation(nil), turn) }
+
+    assert_equal stored, episode.observations.pluck("text")
+  end
+
   test "an ambiguous state correction leaves both stored observations" do
     episode = open_episode
     stored = [ "el sensor de puerta está apagado", "el indicador de piso está apagado" ]

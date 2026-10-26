@@ -30,6 +30,7 @@ module Rag
 
       published = published_documented_question(episode)
       return episode if published.nil?
+      return episode unless same_published_datum?(published, turn)
 
       episode.touch!(now)
       episode.append_observation!(
@@ -83,8 +84,55 @@ module Rag
 
       episode.clear_pending!
     end
+
+    # The turn has to name the published datum. A bare "no sé" answers the
+    # open question. Another number, or a report that does not share the
+    # question, does not. This does not build a question from the turn.
+    def self.same_published_datum?(question, turn)
+      return false unless question.is_a?(Hash)
+
+      asked = designators(published_blob(question))
+      said = designators(turn)
+      if asked.any?
+        return true if said.intersect?(asked)
+        return false if said.any?
+
+        return closed_reply?(turn)
+      end
+      return true if closed_reply?(turn)
+
+      left = datum_stems(published_blob(question))
+      right = datum_stems(turn)
+      left.any? && left.intersect?(right)
+    end
+
+    def self.published_blob(question)
+      items = Array(question["targets"]).filter_map { |target|
+        target.is_a?(Hash) ? target["item"] : target
+      }
+      [ question["question"], *items ].join(" ")
+    end
+
+    def self.designators(text)
+      text.to_s.scan(/#?\d+/).map { |token| token.delete("#") }.uniq
+    end
+
+    def self.closed_reply?(turn)
+      FollowupQueryRewriter.normalize_label(turn).match?(CLOSED_REPLY)
+    end
+
+    def self.datum_stems(text)
+      CompanionPlanCheck.words(text).filter_map { |word|
+        next if word.length < 4 || STEM_STOP.include?(word)
+
+        CompanionPlanCheck.stem(word)
+      }.uniq
+    end
+    CLOSED_REPLY = /\A(?:si|no|no se|no lo se|no puedo verlo)\z/
+    STEM_STOP = %w[el la los las un una unos unas del que esta estan este como para por con].to_set
     private_class_method :unknown_clarification?, :published_documented_question,
-      :open_documented_question?, :open_answer?, :clear_matching_pending!
+      :open_documented_question?, :open_answer?, :clear_matching_pending!,
+      :published_blob, :designators, :closed_reply?, :datum_stems
 
     def self.apply!(episode:, perception:, decision:, turn:, correlation_id:, now:)
       new(
@@ -303,6 +351,8 @@ module Rag
       end
       return if texts.empty?
 
+      return unless scope || self.class.same_published_datum?(question, @turn)
+
       texts.each { |text| @episode.append_observation!(text, correlation_id: @correlation_id, answers: answers) }
       @episode.clear_pending!
     end
@@ -420,7 +470,7 @@ module Rag
       correction = @perception.respond_to?(:correction) ? @perception.correction : nil
       if correction&.active?
         targets = ObservationCorrection.targets(@episode.observations, correction)
-        return if targets == :ambiguous
+        return if targets.nil? || targets == :ambiguous
 
         phrases = remembered_assertions(correction, targets)
         phrases.each { |phrase| remember_asserted!(phrase) }
@@ -428,6 +478,10 @@ module Rag
         if phrases.any? { |phrase| asserted_stored?(phrase) }
           if targets.one?
             correction.retracted.each { |phrase| excise_selected_observation(targets.first, phrase, phrases) }
+          elsif targets.size > 1
+            targets.each { |item|
+              correction.retracted.each { |phrase| excise_selected_observation(item, phrase, phrases) }
+            }
           else
             correction.retracted.each { |phrase| excise_retracted_phrase(phrase, phrases) }
           end
@@ -665,8 +719,17 @@ module Rag
 
     def clear_pending_unless_meta
       return if @decision&.decision == "meta"
+      return if @perception.move == "meta"
+      return if open_documented_pending?
 
-      @episode.clear_pending! if @perception.move != "meta"
+      @episode.clear_pending!
+    end
+
+    # The published question stays until a corresponding answer clears it.
+    # A later "qué sigue" or an unrelated report does not remove it.
+    def open_documented_pending?
+      question = @episode.pending_question
+      question.is_a?(Hash) && question["type"] == "documented_context"
     end
 
     def write_pending(question)

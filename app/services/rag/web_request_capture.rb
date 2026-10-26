@@ -45,7 +45,9 @@ module Rag
     end
 
     def wrap(controller:)
-      account_id = controller.try(:current_account)&.id
+      account = controller_record(controller, :current_account)
+      user = controller_record(controller, :current_user)
+      account_id = account&.id
       unless enabled_for(account_id)
         yield
         return
@@ -56,8 +58,8 @@ module Rag
       events = ValidationCapture.capture do |bucket|
         ValidationCapture.bind(
           run_id: run_id,
-          user_id: controller.try(:current_user)&.id,
-          account_id: controller.try(:current_account)&.id
+          user_id: user&.id,
+          account_id: account_id
         )
         ValidationCapture.record("web_request", request_meta(controller, request_key))
         ValidationCapture.record("process_contract", process_contract)
@@ -91,6 +93,16 @@ module Rag
       File.write(directory.join("ledger.json"), JSON.generate(LocalPassLedger.snapshot))
       restrict!(directory)
       directory
+    end
+
+    # current_account is private on ApplicationController. try uses
+    # respond_to? without private methods and returns nil, so a real request
+    # never opened the account capture. send reaches the private reader.
+    # current_user is public today; the same reader keeps its id if that changes.
+    def controller_record(controller, name)
+      return nil unless controller.respond_to?(name, true)
+
+      controller.send(name)
     end
 
     def request_key_for(controller)

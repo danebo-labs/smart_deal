@@ -45,19 +45,36 @@ class Rag::WebTurnCaptureExportTest < ActiveSupport::TestCase
     assert_not Rag::WebRequestCapture.enabled_for(2)
     assert_not Rag::WebRequestCapture.enabled_for(nil)
 
-    Rag::WebRequestCapture.wrap(controller: controller_for(account_id: 2, question: "ajena")) do
+    foreign = controller_for(account_id: 2, question: "ajena")
+    assert_not foreign.respond_to?(:current_account)
+    assert_nil foreign.try(:current_account)
+
+    Rag::WebRequestCapture.wrap(controller: foreign) do
       Rag::ValidationCapture.record("user_message", "original" => "ajena", "sent" => "ajena", "transform" => "none")
     end
     assert_empty capture_paths
 
+    correlation = "query:cuenta-uno"
     Rag::WebRequestCapture.wrap(controller: controller_for(account_id: 1, question: "cuenta uno")) do
+      Rag::ValidationCapture.correlation = correlation
       Rag::ValidationCapture.record("user_message", "original" => "cuenta uno", "sent" => "cuenta uno", "transform" => "none")
     end
 
     document = JSON.parse(File.read(capture_paths.sole))
+    recorded = document["events"].find { |event| event["original"] == "cuenta uno" }
     assert_equal "cuenta uno", document["events"].first["question"]
     assert_equal "account", document["events"].first["capture_scope"]
+    assert_equal 1, recorded["account_id"]
+    assert_equal @user.id, recorded["user_id"]
+    assert_equal correlation, recorded["correlation_id"]
     assert_equal 0o600, File.stat(capture_paths.sole).mode & 0o777
+
+    index = Rag::ValidationCaptureIndex.build(Rails.root.join(Rag::WebRequestCapture::ROOT, @run_id))
+    turn = index["turns"].find { |item| item["correlation_id"] == correlation }
+    assert turn
+    assert_not_equal "unreadable", turn["status"]
+    assert_equal 1, turn["account_id"]
+    assert_equal correlation, turn["correlation_id"]
   end
 
   test "a normal turn and a meta turn export episode, proposal, reasons, and the full antecedent" do
@@ -209,16 +226,14 @@ class Rag::WebTurnCaptureExportTest < ActiveSupport::TestCase
   end
 
   def controller_for(account_id:, question:)
-    user_id = @user.id
-    request = Struct.new(:request_id).new(SecureRandom.uuid)
-    params = ActionController::Parameters.new("question" => question)
-    controller = Object.new
-    controller.define_singleton_method(:request) { request }
-    controller.define_singleton_method(:params) { params }
-    controller.define_singleton_method(:controller_path) { "rag" }
-    controller.define_singleton_method(:action_name) { "ask" }
-    controller.define_singleton_method(:current_user) { Struct.new(:id).new(user_id) }
-    controller.define_singleton_method(:current_account) { Struct.new(:id).new(account_id) }
+    controller = RagController.new
+    request = ActionDispatch::TestRequest.create
+    request.request_id = SecureRandom.uuid
+    request.request_parameters = { "question" => question }
+    controller.send(:set_request!, request)
+    controller.action_name = "ask"
+    controller.instance_variable_set(:@current_account, Struct.new(:id).new(account_id))
+    controller.instance_variable_set(:@current_user, Struct.new(:id).new(@user.id))
     controller
   end
 

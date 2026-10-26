@@ -75,6 +75,46 @@ module Rag
       content_words(asserted).any? { |word| word != nucleus && word_in?(label, word) }
     end
 
+    LED_GENERIC = /\A(?:el\s+)?led\s+est[aá]\s+(encendido|apagado)\z/i
+    LED_QUALIFIED = /\A(?:el\s+)?led\s+(.+?)\s+est[aá]\s+(encendido|apagado)\z/i
+
+    # Several sentences about one LED are one datum. Two qualifiers stay
+    # ambiguous. The caller then replaces every returned sentence.
+    def self.same_led_matches(matches, correction)
+      return nil unless correction.retracted.one?
+
+      state = correction.retracted.first
+      return nil unless state.match?(/\A(?:apagado|encendido)\z/i)
+
+      asserted = correction.asserted.filter_map { |phrase| led_state(phrase) }.uniq
+      opposite = state.casecmp?("apagado") ? "encendido" : "apagado"
+      return nil unless asserted.one? && asserted.first.casecmp?(opposite)
+
+      led = matches.select { |text| led_clause?(text, state) }
+      return nil if led.size < 2
+
+      qualifiers = led.flat_map { |text| led_qualifiers(text) }.uniq
+      return nil if qualifiers.size > 1
+
+      led
+    end
+
+    def self.led_state(phrase)
+      body = phrase.to_s.squish
+      body[LED_GENERIC, 1] || body[LED_QUALIFIED, 2]
+    end
+
+    def self.led_clause?(text, state)
+      text.to_s.split(/\s+y\s+/i).any? { |clause|
+        found = led_state(clause)
+        found.present? && found.casecmp?(state)
+      }
+    end
+
+    def self.led_qualifiers(text)
+      text.to_s.split(/\s+y\s+/i).filter_map { |clause| clause.squish[LED_QUALIFIED, 1] }
+    end
+
     def self.content_words(asserted)
       Array(asserted).flat_map { |phrase|
         normalize(phrase).split.reject { |word|
@@ -98,6 +138,9 @@ module Rag
         correction.retracted.any? { |nucleus| retracted?(text, nucleus, correction.asserted) }
       }
       return matches if matches.size <= 1
+
+      led = same_led_matches(matches, correction)
+      return led if led
 
       words = content_words(correction.asserted)
       selected = matches.select { |text|

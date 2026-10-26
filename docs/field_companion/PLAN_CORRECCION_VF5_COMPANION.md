@@ -1,5 +1,17 @@
 # Corrección y validación del companion sobre el VF5
 
+## Orientación recuperada — 26 de octubre de 2026, noche
+
+**Precedencia.** Esta sección es el estado vigente de la corrección VF5. No reabre F2, F3 ni F4. No aprueba F5. La confirmación en la GUI sigue pendiente. No cambia fuentes, ingesta, prompts, modelos ni las etiquetas «Manual / Guía Danebo».
+
+La orientación que ya había funcionado es la de T3 `query:6356039c-528c-4a06-b859-2f24f19f17d9` y T4 `query:e4cebfe4-8fc1-4316-af3f-81d5fef131b5`, en `docs/field_companion/INFORME_GUI_VF5_2026-10-26.md`, y la continuidad T1–T4 de `20261023T182442Z-conversation`. Esa corrida no era un caso limpio y no guardó la propuesta. El episodio limpio `ep_48cf56840172b621` sí guardó las cinco propuestas y se abstuvo en T3 y T4.
+
+La causa demostrada es el objetivo guardado. «La puerta se reabre sola» hace aplicable el síntoma «La puerta se re-abre sola». «La puerta se reabre sola durante el cierre» añade tallos que la fórmula anterior exigía cubrir al 60 %. El síntoma deja de ser aplicable, sus pasos salen `case_unresolved`, la pregunta operativa de #54 se rechaza y la publicación cae en R5. `CompanionPlanCheck` no cambió entre `1bdf5eb` y `91018b9`. `CompanionCaseFacts` y `WorkContextReducer` sí, y no explican esa abstención. La corrida limpia usó el perfil `us.` por un arreglo temporal del contenedor, ya revertido; sin otra llamada no se separa ese perfil de la propuesta. La fórmula rechaza esos pasos con la propuesta capturada.
+
+Recuperado en local, sin llamada al modelo: un síntoma cuyos tallos están en el objetivo sigue aplicable aunque el objetivo nombre una circunstancia. T3 y T4 vuelven a citar el paso documentado, dejan #54 pendiente, tratan «no veo obstrucción» como observación y no repiten la pregunta de #21 para tapar el vacío. «Encendido» no se publica como parpadeante ni como LED de Estado: si el manual distingue indicadores, se pregunta cuál, y esa pregunta no sustituye la de #21. El desconocimiento de #21 y del contacto #21–#23 queda en el episodio, ligado a la pregunta publicada por el recorrido, y no se vuelve a pedir. Siguen Fermator, el VF5 elegido, la fotocélula distinta de #21, las mediciones pendientes y la captura de requests reales.
+
+La regresión está en `test/services/rag/vf5_gui_replay_test.rb`, con los cuerpos capturados en `test/fixtures/vf5_gui_replay/`. Recorre percepción, estado, plan, checker y publicación. Con la fórmula anterior, T3 no publica; sin la distinción de LED, T2 dice parpadeante; sin el cruce de designadores, T5 vuelve a preguntar el contacto. F5 no queda aceptada: falta el mismo guion en la GUI después del deploy.
+
 ## Reparación local — 26 de octubre de 2026, tarde
 
 **Precedencia.** Esta sección es el estado vigente de la corrección VF5. No reabre F2, F3 ni F4. No aprueba F5. No cambia fuentes, ingesta, prompts ni las etiquetas «Manual / Guía Danebo».

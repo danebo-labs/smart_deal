@@ -27,10 +27,14 @@ module Rag
       offered = symptom_stems(item)
       shared = wanted & offered
       return false if wanted.empty? || offered.empty?
+      return false unless shared.size >= offered.size * APPLICABLE_SHARE
+      return false if offered.size >= 2 && shared.size < 2
 
-      shared.size >= [ 2, wanted.size ].min &&
-        shared.size >= wanted.size * APPLICABLE_SHARE &&
-        shared.size >= offered.size * APPLICABLE_SHARE
+      # A circumstance added to the goal ("durante el cierre") does not
+      # erase the manual symptom when that symptom's own stems are covered.
+      return shared.size >= wanted.size * APPLICABLE_SHARE if offered.size < 2
+
+      true
     end
 
     def self.symptom_stems(text)
@@ -205,7 +209,8 @@ module Rag
         covered[step.id] = true if fact.done_check?
         relations[step.id] = relation if relation
         noted << fact.id
-        notes[step.id] << note(fact, relation)
+        addition = note(fact, relation)
+        notes[step.id] << addition unless notes[step.id].include?(addition)
       end
       [ notes, relations, noted ]
     end

@@ -20,7 +20,7 @@ module Rag
       "not_done_check" => "comprobación que el técnico dice no haber hecho"
     }.freeze
 
-    attr_reader :facts
+    attr_reader :facts, :open_question
 
     def self.build(episode, session: nil)
       new(episode, session)
@@ -30,6 +30,12 @@ module Rag
       @facts = []
       parsed = episode.is_a?(ActiveEpisode) ? episode : ActiveEpisode.parse(episode)
       return if parsed.nil? || parsed.blank?
+
+      pending = parsed.pending_question
+      if pending.is_a?(Hash) && pending["type"] == "documented_context" &&
+          pending["aspect"] != "scope" && pending["question"].present?
+        @open_question = pending
+      end
 
       goal = parsed.goal&.[]("text").to_s.squish
       add("G", "goal", goal, correlation_id: parsed.goal&.[]("correlation_id")) if goal.present?

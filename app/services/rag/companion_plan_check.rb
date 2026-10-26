@@ -60,10 +60,10 @@ module Rag
 
     Result = Data.define(
       :links, :steps, :question, :rejections, :associations, :confirmed_items,
-      :question_targets, :limits, :omissions, :question_scope
+      :question_targets, :limits, :omissions, :question_scope, :question_role
     ) do
       def usable?
-        links.any? || steps.any? || (question.present? && question_targets.any?)
+        links.any? || steps.any? || limits.any? || (question.present? && question_targets.any?)
       end
 
       def to_h
@@ -77,7 +77,8 @@ module Rag
           "question_targets" => question_targets,
           "limits" => limits,
           "omissions" => omissions,
-          "question_scope" => question_scope
+          "question_scope" => question_scope,
+          "question_role" => question_role
         }
       end
     end
@@ -130,7 +131,8 @@ module Rag
         associations: @associations, confirmed_items: @confirmed,
         question_targets: question.present? ? targets : [],
         limits: @limits, omissions: @omissions,
-        question_scope: question.present? ? @question_scope : nil
+        question_scope: question.present? ? @question_scope : nil,
+        question_role: question.present? ? @question_role : nil
       )
     end
 
@@ -162,6 +164,10 @@ module Rag
         reason ||= reading_reason(reading, fact, statement) if reading.present?
         reason ||= "case_incompatible" if case_relation&.relation == :incompatible
         reason ||= "case_unresolved" if case_relation&.relation == :unresolved && statement.step?
+        if reason.nil? && (led = led_context_reason(fact, statement))
+          reason = led
+          @led_report = fact.text
+        end
         if reason
           reject("link", link, reason)
           next
@@ -232,16 +238,25 @@ module Rag
     end
 
     def resolve_question(steps)
+      remember_unknown_item_limit
       text = @plan["question"].to_s.squish
       targets = @targets
       reason = text.present? ? question_reason(text, steps) : nil
       reason = "repeats_heading" if reason.nil? && text.present? && heading_repeat?(text)
+      if text.present? && declared_unknown_question?(text)
+        reject("question", text, "declared_unknown")
+        remember_declared_limit(targets)
+        return [ nil, [] ]
+      end
       return accepted_question(text, bound_targets(text, targets)) if text.present? && reason.nil?
 
       reject("question", text, reason || "invalid") if text.present?
-      if text.present? && declared_unknown_question?(text)
-        remember_declared_limit(targets)
-        return [ nil, [] ]
+      if led_context_open? && (text.blank? || reason)
+        clarified = led_context_clarification(steps)
+        if clarified && question_reason(clarified.first, steps).nil?
+          @question_role = "led_context"
+          return accepted_question(*clarified)
+        end
       end
       if reason.to_s.start_with?("modality:")
         clarified = clarify_report(text)
@@ -619,11 +634,35 @@ module Rag
       normal = self.class.normal(text)
       return false if normal.blank?
 
+      asked = designators(text)
       @facts.facts.any? { |fact|
         answers = fact.answers
-        answers.is_a?(Hash) && answers["r"].to_s == "unknown" &&
-          self.class.normal(answers["q"].to_s) == normal
+        next false unless answers.is_a?(Hash) && answers["r"].to_s == "unknown"
+        next true if self.class.normal(answers["q"].to_s) == normal
+
+        asked.any? && asked.intersect?(designators("#{answers["q"]} #{fact.text}"))
       }
+    end
+
+    def designators(text)
+      text.to_s.scan(/#?\d+/).map { |token| token.delete("#") }.uniq
+    end
+
+    def remember_unknown_item_limit
+      @facts.facts.each do |fact|
+        answers = fact.answers
+        next unless answers.is_a?(Hash) && answers["r"].to_s == "unknown"
+
+        Array(answers["t"]).each do |target|
+          item = target.is_a?(Hash) ? target["item"].to_s : target.to_s
+          next if item.blank?
+
+          statement = @statements.statements.find { |row|
+            row.kind == "item" && row.text.to_s.squish == item.squish
+          }
+          remember_limit(statement) if statement
+        end
+      end
     end
 
     def remember_declared_limit(target_ids)
@@ -706,6 +745,77 @@ module Rag
       @statements.statements.any? { |statement|
         self.class.normal(statement.text) == normal || self.class.normal(statement.item) == normal
       }
+    end
+
+    LED_QUALIFIER = /\b(estado|status|fotoc[eé]lula)\b/i
+    LED_WORD = /\bled\b/i
+
+    # A generic "LED encendido" is not the Estado indicator and it is not
+    # blinking. The link stays out. A later question can ask which LED
+    # when the loaded manual names more than one.
+    def led_context_reason(fact, statement)
+      return nil unless fact&.kind == "observation"
+      return nil unless generic_led_report?(fact.text)
+      return nil unless led_statement?(statement)
+      return nil if led_qualifiers(statement).all? { |stem| fact_led_stems(fact.text).include?(stem) }
+
+      "led_context"
+    end
+
+    def led_context_open?
+      @rejections.any? { |row| row["reason"] == "led_context" }
+    end
+
+    def led_context_clarification(_steps)
+      labels = led_indicator_labels
+      return nil if labels.size < 2
+
+      state = ObservationCorrection.led_state(@led_report.to_s)
+      return nil if state.blank?
+
+      question = "¿Cuál LED está #{state}, el de #{labels[0]} o el de #{labels[1]}?"
+      [ question, led_indicator_ids ]
+    end
+
+    def generic_led_report?(text)
+      ObservationCorrection.led_state(text).present? && !text.to_s.match?(LED_QUALIFIER)
+    end
+
+    def led_statement?(statement)
+      blob = "#{statement.item} #{statement.text}"
+      blob.match?(LED_WORD) && (blob.match?(LED_QUALIFIER) || blob.match?(/\bparpadeante\b/i))
+    end
+
+    def led_qualifiers(statement)
+      "#{statement.item} #{statement.text}".scan(LED_QUALIFIER).flatten.map { |word|
+        self.class.stem(self.class.words(word).first.to_s)
+      }.uniq
+    end
+
+    def fact_led_stems(text)
+      self.class.words(text).map { |word| self.class.stem(word) }.to_set
+    end
+
+    def led_indicator_labels
+      led_indicators.map { |statement| statement.text.to_s.sub(/[.\s]+\z/, "") }
+    end
+
+    def led_indicator_ids
+      led_indicators.map(&:id)
+    end
+
+    def led_indicators
+      @statements.statements.filter_map { |statement|
+        next unless statement.kind == "item"
+        next unless statement.text.to_s.match?(LED_QUALIFIER)
+
+        sibling = @statements.statements.find { |other|
+          other.item == statement.text && other.text.to_s.match?(LED_WORD)
+        }
+        next unless sibling
+
+        statement
+      }.uniq { |statement| self.class.stem(self.class.words(statement.text).first.to_s) }.first(2)
     end
 
     def reading_reason(reading, fact, statement)

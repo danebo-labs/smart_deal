@@ -101,6 +101,10 @@ module Rag
       def published_pending(text, check, prepared)
         question = check.question.to_s
         return nil if question.blank? || text.blank? || text.exclude?(question)
+        # Which LED is a clarification. It does not replace a question already published.
+        if check.question_role.to_s == "led_context" && prepared.facts.open_question.present?
+          return nil
+        end
 
         targets = Array(check.question_targets).filter_map { |id|
           statement = prepared.statements.find(id)

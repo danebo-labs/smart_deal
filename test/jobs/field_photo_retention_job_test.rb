@@ -208,6 +208,9 @@ class FieldPhotoRetentionJobTest < ActiveSupport::TestCase
     second  = expired_photo(account, "6")
     report  = report_for(account)
 
+    # Other expired rows change which photo the job reaches first. This example
+    # only needs the two photos it created, in insert order.
+    FieldPhoto.where.not(id: [ first.id, second.id ]).update_all(created_at: Time.current) # rubocop:disable Rails/SkipsModelValidations
     linker = LinkingS3.new do
       InspectionFinding.create!(
         certification_report: report, body: "Hallazgo dictado durante la purga.", field_photo: second

@@ -23,6 +23,12 @@ class WebValidationCaptureTest < ActionDispatch::IntegrationTest
     @user.update!(account: @account)
     @previous = ENV_KEYS.index_with { |key| ENV[key] }
     ENV_KEYS.each { |key| ENV.delete(key) }
+    # Absence now enables these. This file measures one ledger call per
+    # request, so the kill switches stay explicit.
+    ENV["HAIKU_QUERY_ANALYSIS_MODE"] = "off"
+    ENV["FIELD_COMPANION_EPISODE_ENABLED"] = "false"
+    ENV["FIELD_COMPANION_TURN_ENABLED"] = "false"
+    ENV["RAG_EPISODE_SCOPE_ENABLED"] = "false"
     @run_id = "webreq#{SecureRandom.hex(4)}"
     Rag::LocalPassLedger.reset!
     Rag::LocalPassLedger.reset_local_process!

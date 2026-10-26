@@ -673,8 +673,10 @@ module Rag
           "us-east-1"
       end
 
-      # Effective route flags against config/deploy.yml. Recording the
-      # difference does not turn a production flag on and does not edit .env.
+      # Effective route flags against the deploy contract. config/deploy.yml is
+      # gitignored operator state. CI and a fresh clone only have the example.
+      # Recording the difference does not turn a production flag on and does
+      # not edit .env.
       def route_flag_snapshot
         production = production_route_flags
         effective = {
@@ -698,12 +700,19 @@ module Rag
       end
 
       def production_route_flags
-        deployed = YAML.safe_load_file(Rails.root.join("config/deploy.yml"), aliases: true)
+        deployed = YAML.safe_load_file(deploy_contract_path, aliases: true)
         env = deployed.dig("env", "clear") || {}
         {
           "structured_evidence_route" => env["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"].to_s == "true",
           "family_ambiguity_guard" => env["RAG_FAMILY_AMBIGUITY_GUARD_ENABLED"].to_s == "true"
         }
+      end
+
+      def deploy_contract_path
+        preferred = Rails.root.join("config/deploy.yml")
+        return preferred if preferred.file?
+
+        Rails.root.join("config/deploy.yml.example")
       end
 
       def account_kb_id(account)

@@ -650,20 +650,26 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
     assert ledger.dig("cost", "cost_usd").present? || ledger.dig("cost", "cost_usd") == "unavailable"
   end
 
-  test "the harness snapshot records the route flags deploy.yml turns on" do
+  test "the harness snapshot records the route flags in the deploy contract" do
     previous_structured = ENV.fetch("RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED", nil)
     previous_family = ENV.fetch("RAG_FAMILY_AMBIGUITY_GUARD_ENABLED", nil)
     ENV.delete("RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED")
     ENV.delete("RAG_FAMILY_AMBIGUITY_GUARD_ENABLED")
 
     snapshot = Rag::Phase1PinnedTurn.effective_environment
+    contract = YAML.safe_load_file(Rag::Phase1PinnedTurn.send(:deploy_contract_path), aliases: true)
+    env = contract.dig("env", "clear") || {}
+    structured = env["RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED"].to_s == "true"
+    family = env["RAG_FAMILY_AMBIGUITY_GUARD_ENABLED"].to_s == "true"
 
     assert_equal false, snapshot["structured_evidence_route"]
     assert_equal false, snapshot["family_ambiguity_guard"]
-    assert_equal true, snapshot["production_structured_evidence_route"]
-    assert_equal true, snapshot["production_family_ambiguity_guard"]
-    assert_equal %w[structured_evidence_route family_ambiguity_guard],
-                 snapshot["route_flag_differences"].pluck("flag")
+    assert_equal structured, snapshot["production_structured_evidence_route"]
+    assert_equal family, snapshot["production_family_ambiguity_guard"]
+    expected_differences = []
+    expected_differences << "structured_evidence_route" if structured
+    expected_differences << "family_ambiguity_guard" if family
+    assert_equal expected_differences, snapshot["route_flag_differences"].pluck("flag")
   ensure
     restore_env("RAG_STRUCTURED_EVIDENCE_ROUTE_ENABLED", previous_structured)
     restore_env("RAG_FAMILY_AMBIGUITY_GUARD_ENABLED", previous_family)

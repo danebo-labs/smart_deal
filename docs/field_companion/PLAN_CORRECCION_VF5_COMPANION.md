@@ -1,5 +1,13 @@
 # Corrección y validación del companion sobre el VF5
 
+## GUI del 27 de octubre de 2026
+
+**Precedencia.** Esta sección es el estado vigente de la corrección VF5. No reabre F2, F3 ni F4. No aprueba F5. No cambia fuentes, ingesta, prompts, modelos ni las etiquetas «Manual / Guía Danebo».
+
+La muestra es el guion web de cinco mensajes, caso `ep_1f3018d3f7f12e8c`, sesión 128, VF5 documento 212, imagen `4eca6b32451583c29c5d705946cd40b12ab6e15e`, perfil `global.anthropic.claude-haiku-4-5-20251001-v1:0`. El informe está en [INFORME_GUI_VF5_F5_2026-10-27.md](INFORME_GUI_VF5_F5_2026-10-27.md).
+
+T3 y T4 publican la orientación del síntoma. T5 guarda el desconocimiento de #21 y del contacto #21–#23 y no vuelve a pedirlo. T2 no cierra el criterio: la observación «el LED está encendido, no apagado» no retira «apagado» y se publica como el LED parpadeante de Estado. El mensaje llegó como «orrijo un dato…»; el intérprete igual devolvió `correct`. F5 sigue abierta. El siguiente paso es corregir ese reconocimiento con esta captura, sin otra conversación. El plano Elemont no arranca.
+
 ## Orientación recuperada — 26 de octubre de 2026, noche
 
 **Precedencia.** Esta sección es el estado vigente de la corrección VF5. No reabre F2, F3 ni F4. No aprueba F5. La confirmación en la GUI sigue pendiente. No cambia fuentes, ingesta, prompts, modelos ni las etiquetas «Manual / Guía Danebo».

@@ -1,0 +1,83 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: Anexo 2, masa en movimiento, cálculo PL HL, 50/11 VF, Premium PM, factor incremento, telescópica paneles, atamborada]
+
+S16 — ANEXO 2: EJEMPLOS DE CÁLCULO DE MASA EN MOVIMIENTO (PL y HL)
+
+Esta sección (Anexo 2, página 21/21 del documento) presenta dos ejemplos de cálculo de la masa en movimiento de puertas automáticas de ascensor, partiendo de una configuración base definida en el Anexo 1 y aplicando factores de corrección según las diferencias entre la puerta base y la puerta a calcular.
+
+---
+
+**Ejemplo 1: Incremento de PL y HL**
+
+Puerta a ser calculada:
+
+| Modelo | Apertura | Número de paneles | PL [mm] | HL [mm] | Tipo de panel | Homologación contra incendios |
+|--------|----------|-------------------|---------|---------|---------------|------------------------------|
+| 50/11 VF | Telescópica | 2 | 900 | 2.100 | Acero | F.R. E 120 |
+
+Base de cálculo (Anexo 1):
+
+| Modelo | Apertura | Número de paneles | PL [mm] | HL [mm] | Tipo de panel | Protección contra incendios | Masa en movimiento [Kg] |
+|--------|----------|-------------------|---------|---------|---------------|-----------------------------|------------------------|
+| 50/11 VF | Telescópica | 2 | 800 | 2.000 | Acero | F.R. E 120 | 34,49 |
+
+Cálculos:
+- Diferencia por apertura: Son iguales
+- Diferencia por número de paneles: Son iguales
+- Diferencia por PL (cada 100 mm): 34,49 × 0,08 = 2,75 Kg (factor nº 7 de la segunda tabla de la línea 50/11 VF en Anexo 1)
+- Diferencia por HL (cada 100 mm): 34,49 × 0,03 = 1,03 Kg (factor nº 8 de la segunda tabla de la línea 50/11 VF en Anexo 1)
+- Diferencia por tipo de panel: Son iguales
+- Diferencia por homologación contra incendios: Son iguales
+- SUMA de diferencias: 2,75 + 1,03 = 3,78 Kg
+- **Masa en movimiento resultante: 34,49 + 3,78 = 38,27 Kg**
+
+---
+
+**Ejemplo 2: Diferencia en la apertura y número de paneles + incremento de PL y HL**
+
+Puerta a ser calculada:
+
+| Modelo | Apertura | Número de paneles | PL [mm] | HL [mm] | Tipo de panel | Homologación contra incendios |
+|--------|----------|-------------------|---------|---------|---------------|------------------------------|
+| Premium PM | Telescópica | 1 | 800 | 2.000 | Atamborada | F.R. E 120 |
+
+Base de cálculo (Anexo 1):
+
+| Modelo | Apertura | Número de paneles | PL [mm] | HL [mm] | Tipo de panel | Protección contra incendios | Masa en movimiento [Kg] |
+|--------|----------|-------------------|---------|---------|---------------|-----------------------------|------------------------|
+| Premium PM | Telescópica | 2 | 800 | 2.000 | Acero | F.R. E 120 | 36,61 |
+
+Cálculos:
+- Diferencia por apertura (T2 → T1): 36,61 × (−0,17) = −6,13 Kg (factor nº 2 de la segunda tabla de la línea Premium PM en Anexo 1)
+- Diferencia por número de paneles: Son iguales
+- Diferencia por PL (cada 100 mm): Son iguales
+- Diferencia por HL (cada 100 mm): 36,61 × 0,12 = 4,39 Kg
+- Diferencia por tipo de panel (acero → atamborada): Son iguales [nota: factor nº 11 de la segunda tabla de la línea Premium PM en Anexo 1]
+- Diferencia por homologación contra incendios: Son iguales
+- SUMA de diferencias: 4,39 − 6,13 = −1,74 Kg
+- **Masa en movimiento resultante: 36,61 − 1,74 = 34,87 Kg**
+
+Nota: Todas las especificaciones base se encuentran en el Anexo 1 del documento DOC-FE.IE.IN.016172.ES.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-8FE308353C13B463
+SOURCE_SECTION_OR_PAGE: Ejemplo 1: Incremento de PL y HL — Cálculos
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: Para modelo 50/11 VF telescópica 2 paneles con PL=900mm y HL=2100mm: aplicar factor 0,08 por cada 100mm de incremento en PL y factor 0,03 por cada 100mm de incremento en HL sobre la masa base de 34,49 Kg.
+EXPECTED_RESULT: Masa en movimiento resultante: 34,49 + 3,78 = 38,27 Kg
+DETAILS: scope=cálculo masa en movimiento puerta 50/11 VF; criteria=PL incremento +100mm factor 0,08; HL incremento +100mm factor 0,03
+EVIDENCE: 34,49 + 3,78 = 38,27 Kg
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-1E4112E783507504
+SOURCE_SECTION_OR_PAGE: Ejemplo 2: Diferencia en la apertura y número de paneles + incremento de PL y HL — Cálculos
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: Para modelo Premium PM telescópica 1 panel con HL=2000mm y panel atamborado: aplicar factor −0,17 por cambio de T2 a T1, y factor 0,12 por cada 100mm de incremento en HL, sobre la masa base de 36,61 Kg.
+EXPECTED_RESULT: Masa en movimiento resultante: 36,61 − 1,74 = 34,87 Kg
+DETAILS: scope=cálculo masa en movimiento puerta Premium PM; criteria=apertura T2→T1 factor -0,17; HL incremento +100mm factor 0,12
+EVIDENCE: 36,61 – 1,74 = 34,87 Kg
+END_FIELD_RECORD

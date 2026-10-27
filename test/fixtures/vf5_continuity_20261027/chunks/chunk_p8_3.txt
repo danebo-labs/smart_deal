@@ -1,0 +1,103 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: autoajuste, pulsador 51, auto-ajuste, self-adjustment, 5 movimientos, paso libre, dip switch pin 3, EEPROM]
+
+5.8 Pulsador de autoajuste (51) — Proceso de autoajuste
+
+El pulsador de Autoajuste se utiliza para instalar la puerta.
+
+Condiciones según tipo de motor:
+- Con motor PM: autoajuste con puerta de cabina acoplada Y con puerta de rellano.
+- Con motor asíncrono: autoajuste con puerta de cabina acoplada PERO SIN puerta de rellano.
+
+La puerta realiza 5 movimientos para detectar el motor y el paso libre. El microprocesador calcula las rampas de aceleración y desaceleración para optimizar el control de puerta. Los parámetros se guardan en EEPROM no-volátil al completar el autoajuste.
+
+Comportamiento tras fallo de alimentación: Las puertas se abrirán lentamente en la primera operación después de un fallo de alimentación para verificar el paso libre.
+
+Cuándo repetir el autoajuste: Solo es necesario repetirlo para la configuración de los parámetros por defecto o cuando se realicen cambios como la conexión o desconexión de la fotocélula Fermator.
+
+Proceso de autoajuste (pasos):
+1. Apagar el VF y posicionar la puerta en posición cerrada.
+2. Desconectar las entradas (Pines 8, 9, 10, 11 & 12) y las entradas prioritarias (Pines 26, 21, 25 & 23).
+3. Encender el VF y pulsar el botón de auto-ajuste (51).
+
+Secuencia de 5 movimientos:
+- 1er Movimiento: La puerta abre 200 mm. Si la puerta hace pequeños rebotes en lugar de abrir, significa que está intentando cerrar y que el sentido está al revés → cambiar el pin 3 del dip switch.
+- 2do Movimiento: La puerta cierra 150 mm.
+- 3er Movimiento (inicia 2-3 s después del 2do): La puerta cierra completamente a velocidad lenta hasta encontrar el tope de goma para detectar la posición 0.
+- 4to Movimiento: La puerta abre lentamente contando los pulsos del encoder situado en el motor hasta que toca con el tope final de apertura. Se detecta la posición final.
+- 5to Movimiento: Pasados unos segundos, la puerta cierra. Aplica las rampas de aceleración y desaceleración con la información adquirida en el 4to movimiento para optimizar el movimiento.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-836FADFBB74099FB
+SOURCE_SECTION_OR_PAGE: 5.8 Pulsador de autoajuste (51)
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: Con motor PM: realizar el autoajuste con la puerta de cabina acoplada y con la puerta de rellano instalada.
+EXPECTED_RESULT: Configuración correcta para motor PM antes de iniciar el proceso de autoajuste.
+EVIDENCE: Con un motor PM instalado el autoajuste ha de hacerse con la puerta de cabina acoplada y con la puerta de rellano
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-758787BF2E062E5E
+SOURCE_SECTION_OR_PAGE: 5.8 Pulsador de autoajuste (51)
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: Con motor asíncrono: realizar el autoajuste con la puerta de cabina acoplada pero sin la puerta de rellano.
+EXPECTED_RESULT: Configuración correcta para motor asíncrono antes de iniciar el proceso de autoajuste.
+EVIDENCE: Con un motor asíncrono instalado el autoajuste ha de hacerse con la puerta de cabina acoplada pero sin la puerta de rellano
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-799D6E068FD3C611
+SOURCE_SECTION_OR_PAGE: 5.8 Pulsador de autoajuste (51) — Proceso de autoajuste
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: Paso 1: Apagar el VF y posicionar la puerta en posición cerrada.
+EXPECTED_RESULT: Puerta en posición cerrada con módulo VF apagado.
+EVIDENCE: Apagar el VF y posicionar la puerta en posición cerrada
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-E281419FED447550
+SOURCE_SECTION_OR_PAGE: 5.8 Pulsador de autoajuste (51) — Proceso de autoajuste
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: Paso 2: Desconectar las entradas (Pines 8, 9, 10, 11 & 12) y las entradas prioritarias (Pines 26, 21, 25 & 23).
+EXPECTED_RESULT: Todas las entradas estándar y prioritarias desconectadas antes del autoajuste.
+EVIDENCE: Desconectar las entradas (Pines 8, 9, 10, 11 & 12) y las entradas prioritarias (Pines 26, 21, 25 & 23)
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-3243E6DF4965EBF8
+SOURCE_SECTION_OR_PAGE: 5.8 Pulsador de autoajuste (51) — Proceso de autoajuste
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: Paso 3: Encender el VF y pulsar el botón de auto-ajuste (51).
+EXPECTED_RESULT: La puerta inicia la secuencia de 5 movimientos de autoajuste.
+EVIDENCE: Encender el VF y pulsar el botón de auto-ajuste (51)
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-DC0F96FBE459663E
+SOURCE_SECTION_OR_PAGE: 5.8 Pulsador de autoajuste (51) — 1er Movimiento
+RECORD_TYPE: FUNCTIONAL_TEST
+ACTION: Observar el 1er movimiento: la puerta debe abrir 200 mm.
+EXPECTED_RESULT: La puerta abre 200 mm. Si hace pequeños rebotes en lugar de abrir, el sentido está invertido → cambiar pin 3 del dip switch.
+EVIDENCE: La puerta abre 200mm (Si la puerta en vez de abrir hace pequeños rebotes, significa esta intentando cerrar
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-8E3B1935630D54A5
+SOURCE_SECTION_OR_PAGE: 5.8 Pulsador de autoajuste (51) — 1er Movimiento
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Si en el 1er movimiento la puerta hace pequeños rebotes en lugar de abrir, cambiar el pin 3 del dip switch para invertir el sentido de giro.
+EXPECTED_RESULT: Sentido de apertura corregido; la puerta abre correctamente 200 mm.
+EVIDENCE: hay que cambiar el pin 3 del dip switch
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-E5D895938EE279CC
+SOURCE_SECTION_OR_PAGE: 5.8 Pulsador de autoajuste (51) — 5 movimientos
+RECORD_TYPE: FUNCTIONAL_TEST
+ACTION: Verificar que la secuencia completa de 5 movimientos finaliza correctamente: apertura 200 mm, cierre 150 mm, cierre completo lento hasta tope goma, apertura lenta hasta tope final, cierre con rampas optimizadas.
+EXPECTED_RESULT: Parámetros calculados y guardados en EEPROM no-volátil. Autoajuste completado.
+EVIDENCE: Una vez el autoajuste se haya completado los parámetros serán guardados en una EEPROM no-volátil
+END_FIELD_RECORD

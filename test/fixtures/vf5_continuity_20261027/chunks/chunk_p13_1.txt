@@ -1,0 +1,96 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: puerta no abre, puerta golpea, LED STATUS apagado, correa dentada, fusibles Fermator, encoder polea, motor intermitente, fuera de servicio]
+
+(Continuación de sección 8 — Resolución de problemas, página anterior)
+
+Problemas adicionales del operador de puerta VF5+:
+
+• La puerta no alcanza la posición de apertura completa.
+– Verificar los ajustes mecánicos de la puerta. El motor tiene suficiente par para abrir las puertas en circunstancias normales hasta un paso libre de 1.400 mm (sin reducción del motor).
+
+• La puerta se vuelve a abrir cuando el patín está cerrando.
+– Comprobar la regulación del patín, ya que probablemente el sistema de bloqueo del patín no esté correctamente ajustado y la puerta tenga fricción mecánica. Verificar si los LEDs de obstrucción se encienden.
+
+• La puerta golpea cuando abre.
+– Comprobar que el desbloqueo del patín esté bien fijado antes de que la puerta empiece a abrir. En caso de que el patín no esté bien fijado se debe comprobar su ajuste debido a que debe estar demasiado duro.
+
+• La puerta golpea al llegar a la posición de apertura completa, el LED de puerta "abierta" no está activado y el sistema se queda fuera de servicio.
+– Comprobar la tensión de la correa dentada ya que, probablemente, no está correctamente ajustada y resbala sobre la polea del motor haciendo que el encoder envíe información incorrecta. Ajustar la tensión de la correa y volver a realizar el autoajuste.
+
+• El sistema obtiene alimentación pero no funciona y el LED "STATUS" se encuentra apagado.
+– Comprobar si los fusibles externos se han quemado. En este caso cambiarlos por otros fusibles Fermator (250 V, 4 A, cerámicos de alta velocidad).
+
+• El motor se mueve de forma intermitente.
+– Comprobar las conexiones del cableado o si una fase del motor está fallando.
+– Verificar que la polea del encoder esté bien montada.
+
+• El LED "STATUS" está activado y la puerta no obedece a las señales.
+– Ha habido una obstrucción en la apertura y la puerta ha entrado en estado "fuera de servicio" durante 15 segundos.
+– En modo esclavo si hay una obstrucción continuada y la maniobra no ha cambiado la señal de cerrar por la de abrir.
+– Ha habido un cortocircuito en la salida del motor, el sistema estará desactivado durante 3 segundos.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-8677B81AC4AF53FD
+SOURCE_SECTION_OR_PAGE: (continuación de página anterior)
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Verificar los ajustes mecánicos de la puerta cuando no alcanza la posición de apertura completa.
+EXPECTED_RESULT: El motor tiene suficiente par para abrir hasta paso libre de 1.400 mm sin reducción del motor.
+EVIDENCE: El motor tiene suficiente par para abrir las puertas en circunstancias normales hasta un paso libre de 1.400 mm
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-6C7FC7AB5ABDB1C0
+SOURCE_SECTION_OR_PAGE: (continuación de página anterior)
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Comprobar la regulación del patín si la puerta se vuelve a abrir cuando el patín está cerrando; verificar si los LEDs de obstrucción se encienden.
+EXPECTED_RESULT: Sistema de bloqueo del patín correctamente ajustado, sin fricción mecánica.
+EVIDENCE: probablemente el sistema de bloqueo del patín no esté correctamente ajustado y la puerta tenga fricción mecánica
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-3F3248C54F1021B1
+SOURCE_SECTION_OR_PAGE: (continuación de página anterior)
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Comprobar que el desbloqueo del patín esté bien fijado antes de que la puerta empiece a abrir si la puerta golpea al abrir; si no está bien fijado, comprobar su ajuste.
+EXPECTED_RESULT: Patín correctamente desbloqueado antes del inicio de apertura.
+EVIDENCE: Comprobar que el desbloqueo del patín esté bien fijado antes de que la puerta empiece a abrir
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-2246B4DBDD13E68D
+SOURCE_SECTION_OR_PAGE: (continuación de página anterior)
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Comprobar la tensión de la correa dentada si la puerta golpea al llegar a apertura completa y el LED 'abierta' no está activado; ajustar la tensión y volver a realizar el autoajuste.
+EXPECTED_RESULT: Correa correctamente tensada; encoder envía información correcta; sistema vuelve a servicio.
+EVIDENCE: no está correctamente ajustada y resbala sobre la polea del motor haciendo que el encoder envíe información incorrecta
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-F13890D16BBA40C6
+SOURCE_SECTION_OR_PAGE: (continuación de página anterior)
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Comprobar si los fusibles externos se han quemado cuando el sistema tiene alimentación pero no funciona y el LED STATUS está apagado; cambiarlos por fusibles Fermator 250 V, 4 A, cerámicos de alta velocidad.
+EXPECTED_RESULT: Sistema operativo tras reemplazo de fusibles.
+EVIDENCE: cambiarlos por otros fusibles Fermator (250 V, 4 A, cerámicos de alta velocidad)
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-1B863694A7CEC5A6
+SOURCE_SECTION_OR_PAGE: (continuación de página anterior)
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Comprobar las conexiones del cableado o si una fase del motor está fallando si el motor se mueve de forma intermitente; verificar que la polea del encoder esté bien montada.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Comprobar las conexiones del cableado o si una fase del motor está fallando
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-650E7FB279021D49
+SOURCE_SECTION_OR_PAGE: (continuación de página anterior)
+RECORD_TYPE: FAULT_CONDITION
+ACTION: Identificar causa cuando el LED STATUS está activado y la puerta no obedece señales.
+EXPECTED_RESULT: Posibles causas: obstrucción en apertura → estado fuera de servicio 15 s; en modo esclavo obstrucción continuada sin cambio de señal; cortocircuito en salida del motor → sistema desactivado 3 s.
+EVIDENCE: Ha habido un cortocircuito en la salida del motor, el sistema estará desactivado durante 3 segundos
+END_FIELD_RECORD

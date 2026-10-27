@@ -1,0 +1,26 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: DOC-FE.IE.IN.016172.ES, VF5+, Fermator, módulo electrónico, versión 0.4, Rafael Collado, Jaume Borràs]
+
+S0 — DOCUMENT IDENTIFICATION
+
+| Field | Value |
+|-|-|
+| TECHNICAL_ID | Fermator Módulo Electrónico VF5+ |
+| REGIONAL_NORMATIVE | DATA_NOT_AVAILABLE |
+| IMAGE_QUALITY | CLEAR |
+| CONFIDENCE | HIGH |
+| ERA | MODERN_MICROPROCESSOR |
+
+Documento de instrucciones del módulo electrónico VF5+ de Fermator (Automatic Doors for Lifts). Referencia de documento: DOC-FE.IE.IN.016172.ES. Versión: 0.4. Fecha de edición: 02/02/17. Edición: Rafael Collado. Aprobado: Jaume Borràs. Certificación ISO 9001 visible en portada. El documento cubre 21 páginas.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-380B2CF11ABACB05
+SOURCE_SECTION_OR_PAGE: Portada — DOC-FE.IE.IN.016172.ES
+RECORD_TYPE: DOCUMENTATION_REQUIREMENT
+ACTION: Verificar que se utiliza la versión 0.4 del documento DOC-FE.IE.IN.016172.ES (fecha 02/02/17) para el módulo electrónico VF5+
+EXPECTED_RESULT: Versión 0.4, fecha 02/02/17, aprobado por Jaume Borràs
+EVIDENCE: Versión: 0.4 Fecha de edición: 02/02/17 Aprobado: Jaume Borràs
+END_FIELD_RECORD

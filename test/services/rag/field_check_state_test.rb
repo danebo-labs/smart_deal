@@ -125,6 +125,32 @@ class Rag::FieldCheckStateTest < ActiveSupport::TestCase
     assert_equal "over_length", Rag::InterpreterPayloadContract.evaluate(too_long, sent_turn: "la puerta #{'x' * 120}")["reason"]
   end
 
+  test "a null checks list is an empty list only when the rest of the tool is valid" do
+    turn = "¿Qué sigue?"
+    raw = payload(move: "follow_up").merge("checks" => nil)
+    prepared, notes = Rag::TurnPerception.prepare_tool(raw)
+
+    assert_equal [], prepared["checks"]
+    assert_equal "null_as_empty", notes.dig(0, "reason")
+    perception = Rag::TurnPerception.build(raw, turn: turn, episode: open_episode, catalog: nil, viewer_account: nil)
+    assert perception.valid
+    assert_equal "follow_up", perception.move
+    assert_equal [], perception.checks
+    assert_equal "null_as_empty", perception.adjustments.dig(0, "reason")
+    contract = Rag::InterpreterPayloadContract.evaluate(raw, sent_turn: turn)
+    assert_equal true, contract["valid"]
+    assert_equal "null_as_empty", contract.dig("normalized", 0, "reason")
+
+    broken = raw.merge("move" => "sideways")
+    kept, kept_notes = Rag::TurnPerception.prepare_tool(broken)
+    assert_nil kept["checks"]
+    assert_empty kept_notes
+    assert_equal "invalid_move", Rag::InterpreterPayloadContract.evaluate(broken, sent_turn: turn)["reason"]
+
+    item = payload(move: "follow_up").merge("checks" => [ nil ])
+    assert_equal "checks", Rag::InterpreterPayloadContract.evaluate(item, sent_turn: turn)["reason"]
+  end
+
   test "a fault prompt shows the check and omits plan blocks" do
     context = problem_for("la puerta se reabre sola", [ check("la fotocélula", "not_done") ])
     prompt = generation_prompt(context, [ { content: "La puerta se reabre sola. Verificar la fotocélula." } ])

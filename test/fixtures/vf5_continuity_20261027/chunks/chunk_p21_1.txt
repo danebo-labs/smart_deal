@@ -1,0 +1,41 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: Platinum PM, línea Platinum, masa en movimiento, factor de multiplicación, PL mm, HL mm, F.R. E 120, telescópica atamborada]
+
+11.5 Línea de producto Platinum
+
+Tabla de modelos base (línea Platinum):
+
+| # | Modelo | Apertura | Número de paneles | PL [mm] | HL [mm] | Tipo de panel | Homologación de incendios (*) | Masa en movimiento [Kg] |
+|---|---|---|---|---|---|---|---|---|
+| 0 | Platinum PM | Telescópica | 2 | 800 | 2000 | Atamborada | F.R. E 120 | 56,85 |
+
+Tabla de factores de multiplicación para ajuste de masa en movimiento según variación de configuración:
+
+| # | Concepto | Factor de multiplicación |
+|---|---|---|
+| 1 | Diferencia de T2 a C2 | 0,06 |
+| 2 | Diferencia de 100 mm en PL | 0,08 |
+| 3 | Diferencia de 100 mm en HL | 0,07 |
+
+Estas tablas permiten calcular la masa en movimiento real de una puerta Platinum PM en función de las variaciones respecto a la configuración base (apertura 800 mm, altura 2000 mm, panel atamborado, 2 paneles telescópicos). Para cada concepto de ajuste, se aplica el factor de multiplicación indicado.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-DAF7B4488D84F1EA
+SOURCE_SECTION_OR_PAGE: 11.5 Línea de producto Platinum
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Modelo base: Platinum PM — Apertura Telescópica, 2 paneles, PL 800 mm, HL 2000 mm, panel Atamborada, homologación F.R. E 120, masa en movimiento 56,85 Kg
+EXPECTED_RESULT: Configuración base de referencia para cálculo de masa en movimiento
+EVIDENCE: Platinum PM Telescópica 2 800 2000 Atamborada F.R. E 120 56,85
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-B1141AE3FFF9BFEE
+SOURCE_SECTION_OR_PAGE: 11.5 Línea de producto Platinum — Factores de multiplicación
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Aplicar factor 0,06 por diferencia de T2 a C2; factor 0,08 por diferencia de 100 mm en PL; factor 0,07 por diferencia de 100 mm en HL
+EXPECTED_RESULT: Masa en movimiento ajustada según variaciones respecto a configuración base
+EVIDENCE: Diferencia de T2 a C2 0,06 / Diferencia de 100 mm en PL 0,08 / Diferencia de100 mm en HL 0,07
+END_FIELD_RECORD

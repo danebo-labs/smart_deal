@@ -68,7 +68,21 @@ module Rag
       about = raw["about"].to_s.squish.first(ActiveEpisode::MAX_OBSERVATION_CHARS)
       question["about"] = about if about.present?
       question["aspect"] = "scope" if raw["aspect"].to_s == "scope" && about.present?
+      shown = shown_question(raw["shown"])
+      question["shown"] = shown if shown
       question
+    end
+
+    # The question presented now, when it is not the unresolved datum.
+    # Targets may be empty: the clarification still has to be remembered.
+    def shown_question(raw)
+      return nil unless raw.is_a?(Hash)
+
+      text = raw["question"].to_s.squish.first(240)
+      return nil if text.blank?
+
+      targets = Array(raw["targets"]).filter_map { |item| documented_target(item) }.first(2)
+      { "question" => text, "targets" => targets }
     end
 
     def documented_target(raw)

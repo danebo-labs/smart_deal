@@ -1,0 +1,32 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: encoder, ASYNC, PM encoder, 5 cables, 4 cables, pin 55, motor asíncrono encoder, motor síncrono encoder]
+
+S12 — ENCODER (55) (continuación de página anterior)
+
+Compatibilidad con el motor asíncrono Fermator:
+
+- El encoder del VF5+ está preparado para conectarse al encoder de alta resolución del motor síncrono PM (5 cables) y al encoder estándar del motor asíncrono (4 cables).
+- El encoder del motor asíncrono (4 cables) ha de ser conectado a los 4 Pines del encoder marcado como ASYNC.
+
+Nota: En el conector de encoder (55) existen dos grupos de pines identificados físicamente: PM y ASYNC. Usar el grupo incorrecto según el tipo de motor instalado puede resultar en funcionamiento erróneo del control de puerta.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-851F0816B2520E90
+SOURCE_SECTION_OR_PAGE: 5.12 Encoder (55)
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: Conectar el encoder del motor asíncrono (4 cables) a los 4 pines del conector de encoder marcados como ASYNC en el módulo VF5+.
+EXPECTED_RESULT: Encoder del motor asíncrono correctamente conectado al grupo ASYNC del conector 55.
+EVIDENCE: El encoder del motor asíncrono (4 cables) ha de ser conectado a los 4 Pines del encoder marcado como ASYNC
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-6F2373C60828E48F
+SOURCE_SECTION_OR_PAGE: 5.12 Encoder (55)
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Conector 55 — ENCODER: grupo PM (encoder motor síncrono, 5 cables) y grupo ASYNC (encoder motor asíncrono, 4 cables).
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: encoder de alta resolución del motor síncrono PM (5 cables) y al encoder estándar del motor asíncrono (4 cables)
+END_FIELD_RECORD

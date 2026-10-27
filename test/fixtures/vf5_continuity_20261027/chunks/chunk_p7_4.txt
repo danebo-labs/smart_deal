@@ -1,0 +1,18 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: pulsador de test, terminal 50, TEST button, ciclo de apertura, ciclo de cierre]
+
+5.7 Pulsador de Test (50)
+
+Utilizar el pulsador de TEST causará un ciclo de apertura o cierre de la puerta.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-3C28E47458B4D269
+SOURCE_SECTION_OR_PAGE: 5.7 Pulsador de Test (50)
+RECORD_TYPE: FUNCTIONAL_TEST
+ACTION: Pulsar el pulsador de TEST (50).
+EXPECTED_RESULT: Se produce un ciclo de apertura o cierre de la puerta.
+EVIDENCE: Utilizar el pulsador de TEST causará un ciclo de apertura o cierre de la puerta.
+END_FIELD_RECORD

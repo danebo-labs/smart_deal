@@ -92,7 +92,8 @@ class Rag::CausalTraceTest < ActiveSupport::TestCase
       valid: true, move: "report", observations: [], pending_resolution: nil, clarification_target: nil,
       identities: identities, ambiguities: [], field_rejections: [], catalog_disagreements: [], invalid_reason: nil,
       correction: Rag::ObservationCorrection.none,
-      checks: []
+      checks: [],
+      adjustments: []
     )
   end
 

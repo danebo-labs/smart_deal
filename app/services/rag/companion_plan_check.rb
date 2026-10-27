@@ -63,7 +63,8 @@ module Rag
       :question_targets, :limits, :omissions, :question_scope, :question_role
     ) do
       def usable?
-        links.any? || steps.any? || limits.any? || (question.present? && question_targets.any?)
+        links.any? || steps.any? || limits.any? ||
+          (question.present? && (question_targets.any? || question_role.to_s == "referent_clarification"))
       end
 
       def to_h
@@ -239,6 +240,12 @@ module Rag
 
     def resolve_question(steps)
       remember_unknown_item_limit
+      if (clarified = referent_clarification)
+        proposed = @plan["question"].to_s.squish
+        reject("question", proposed, "referent_ambiguous") if proposed.present?
+        @question_role = "referent_clarification"
+        return accepted_question(clarified, [])
+      end
       text = @plan["question"].to_s.squish
       targets = @targets
       reason = text.present? ? question_reason(text, steps) : nil
@@ -510,6 +517,9 @@ module Rag
         statement = @statements.find(id)
         if statement.nil? || %w[item text].exclude?(statement.kind)
           reject("question_about", id, statement.nil? ? "unknown_statement" : "statement_kind:#{statement.kind}")
+          false
+        elsif competing_symptom?(statement)
+          reject("question_about", id, "case_incompatible")
           false
         else
           true
@@ -1039,7 +1049,58 @@ module Rag
           item.kind == "item" && item.source == step.source && item.text == step.item
         }
       }.uniq(&:id)
-      parents.one? ? [ parents.first.id ] : []
+      parents.one? && !competing_symptom?(parents.first) ? [ parents.first.id ] : []
+    end
+
+    # A long fault heading that is not this case is not the missing datum.
+    # A short section title can still be what the question distinguishes.
+    def competing_symptom?(statement)
+      return false unless statement&.kind == "item"
+      return false if item_applicable?(statement.text)
+      return false if question_uses?(statement)
+
+      CompanionPlanRender.symptom_stems(statement.text).count { |stem| stem.length >= 4 } >= 3
+    end
+
+    # The question is about this heading when its words are in the heading,
+    # or when it shares two distinctive words with it. One shared word does
+    # not make a different fault the missing datum.
+    def question_uses?(statement)
+      asked = content_stems(self.class.words(@plan["question"])) - self.class.question_stems
+      asked -= CompanionPlanRender::GENERIC_STEMS
+      return false if asked.empty?
+
+      offered = content_stems(self.class.words(statement.text)) - CompanionPlanRender::GENERIC_STEMS
+      return false if offered.empty?
+      return true if (asked - offered).empty?
+
+      (asked & offered).size >= 2
+    end
+
+    # The technician named neither open matter. Ask which one, using only
+    # the two questions already stored. This does not invent a component.
+    def referent_clarification
+      open = @facts.open_question
+      shown = open.is_a?(Hash) ? open["shown"] : nil
+      return nil unless open.is_a?(Hash) && shown.is_a?(Hash)
+      return nil unless unbound_unknown?
+
+      left = clip_stored_question(open["question"])
+      right = clip_stored_question(shown["question"])
+      return nil if left.blank? || right.blank? || left == right
+
+      "¿Te refieres a «#{left}» o a «#{right}»?"
+    end
+
+    def unbound_unknown?
+      @facts.facts.any? { |fact|
+        answers = fact.answers
+        answers.is_a?(Hash) && answers["r"].to_s == "unknown" && answers["q"].blank?
+      }
+    end
+
+    def clip_stored_question(text)
+      text.to_s.squish.sub(/\?\z/, "").first(80)
     end
 
     # What the question asks has to fit inside a fact. A fact mentioned inside

@@ -1,0 +1,33 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: Motor 56, Interruptor On Off 57, salida motor trifásico, 230V AC red, variador velocidad, control par]
+
+S6 — ELECTRICAL
+
+5.13 Motor (56)
+
+Salida al motor trifásico, variando el voltaje y la frecuencia para controlar la velocidad y el par.
+
+5.14 Interruptor On / Off (57)
+
+Conecta o desconecta la unidad de los 230 V AC de la red.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-9EA05AFE9EA236AD
+SOURCE_SECTION_OR_PAGE: 5.13 Motor (56)
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar conector/terminal Motor (56) como salida al motor trifásico con control de voltaje y frecuencia
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Salida al motor trifásico, variando el voltaje y la frecuencia
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-FFFA266713E123C4
+SOURCE_SECTION_OR_PAGE: 5.14 Interruptor On / Off (57)
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Identificar Interruptor On/Off (57) como elemento que conecta o desconecta la unidad de la red
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Conecta o desconecta la unidad de los 230 V AC de la red
+END_FIELD_RECORD

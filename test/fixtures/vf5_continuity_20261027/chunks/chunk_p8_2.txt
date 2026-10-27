@@ -1,0 +1,21 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: motor, pin 56, conector motor, VF5+ motor connection]
+
+5.13 Motor (56)
+
+En esta entrada se conecta el motor de la puerta. El conector está identificado como MOTOR en la placa del módulo VF5+.
+
+Nota: El conector de motor (56) aparece en el diagrama de la página 7 inmediatamente debajo del conector de encoder (55). La asignación exacta de pines y la tensión de alimentación del motor REQUIRES_FIELD_VERIFICATION — consultar el esquema eléctrico completo del documento.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-D9F213EFA7EB32AA
+SOURCE_SECTION_OR_PAGE: 5.12 Encoder (55) — diagrama visible
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Conector 56 — MOTOR: conexión del motor de puerta al módulo VF5+.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+UNCERTAINTY: La página solo muestra la etiqueta '56 MOTOR' en el diagrama; asignación de pines y tensión no especificadas en esta página — REQUIRES_FIELD_VERIFICATION
+EVIDENCE: 56 MOTOR
+END_FIELD_RECORD

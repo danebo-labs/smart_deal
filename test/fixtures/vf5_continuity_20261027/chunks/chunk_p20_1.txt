@@ -1,0 +1,34 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: 50/11 product line, 50/11 VF, moving mass, multiplier factor, F.R. E 120, panel type, fire homologation]
+
+11.3 50/11 Product line — Moving Mass Reference Table (continued from previous page)
+
+Base configuration for 50/11 product line:
+
+| # | Model | Opening | Number of panels | PL [mm] | HL [mm] | Panel type | Fire homologation | Moving mass [Kg] |
+|---|-------|---------|-----------------|---------|---------|------------|-------------------|------------------|
+| 0 | 50/11 VF | Side | 2 | 800 | 2.000 | Metal sheet | F.R. E 120 | 34,49 |
+
+Multiplier factors for 50/11 product line:
+
+| # | Concept | Multiplier factor |
+|---|---------|------------------|
+| 1 | Difference from T2 to T3 | 0,13 |
+| 2 | Difference from T2 to T4 | 0,36 |
+| 3 | Difference from T2 to C2 | 0,00 |
+| 4 | Difference from T2 to C4 | 0,36 |
+| 5 | Difference from T2 to C6 | 0,13 |
+| 6 | Difference from T2 to C8 | 0,36 |
+| 7 | Difference of 100 mm in PL | 0,08 |
+| 8 | Difference of 100 mm in HL | 0,03 |
+| 9 | Difference from F.R. E 120 to F.R. EI 30 | 0,18 |
+| 10 | Difference from F.R. E 120 to F.R. EI 60 | 0,18 |
+| 11 | Difference from F.R. E 120 to F.R. EI 120 | 0,24 |
+| 12 | Difference from Metal sheet panels to Double skin panels | 0,30 |
+| 13 | Difference from Metal sheet panels to Flush big vision panels | 0,96 |
+| 14 | Difference from Metal sheet panels to Full glass in skirting panels | 0,89 |
+| 16 | Difference from Metal sheet panels to Wien type vision panels | 0,30 |
+| 17 | Difference from Metal sheet panels to Vision panels | 0,57 |
+
+These multiplier factors are applied to the base moving mass (34,49 Kg) to calculate the actual moving mass for non-standard configurations of the 50/11 product line.

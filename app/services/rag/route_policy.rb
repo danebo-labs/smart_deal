@@ -375,7 +375,8 @@ module Rag
         valid: true, move: "report", observations: [], pending_resolution: nil, clarification_target: nil,
         identities: [], ambiguities: [], field_rejections: [], catalog_disagreements: [], invalid_reason: nil,
         correction: ObservationCorrection.none,
-        checks: []
+        checks: [],
+        adjustments: []
       )
     end
 

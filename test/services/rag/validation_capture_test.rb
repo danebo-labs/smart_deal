@@ -674,7 +674,8 @@ class Rag::ValidationCaptureTest < ActiveSupport::TestCase
       valid: true, move: move, observations: [], pending_resolution: nil, clarification_target: nil,
       identities: [], ambiguities: [], field_rejections: [], catalog_disagreements: [], invalid_reason: nil,
       correction: Rag::ObservationCorrection.none,
-      checks: []
+      checks: [],
+      adjustments: []
     )
   end
 

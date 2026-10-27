@@ -47,7 +47,7 @@ module Rag
     Result = Data.define(
       :valid, :move, :observations, :pending_resolution, :clarification_target,
       :identities, :ambiguities, :field_rejections, :catalog_disagreements, :invalid_reason,
-      :correction, :checks
+      :correction, :checks, :adjustments
     ) do
       def facts
         identities.select { |item| item.kind == "fact" }
@@ -180,6 +180,20 @@ module Rag
       value.to_s.unicode_normalize(:nfc).downcase.gsub(/[[:space:]]+/, " ").strip
     end
 
+    # A JSON null is not a list of checks. It is safe as an empty list only
+    # when that is the sole structural defect. Any other defect stays.
+    def self.prepare_tool(raw)
+      return [ raw, [] ] unless raw.is_a?(Hash)
+
+      data = raw.deep_stringify_keys
+      return [ data, [] ] unless data.key?("checks") && data["checks"].nil?
+
+      candidate = data.merge("checks" => [])
+      return [ data, [] ] if structural_failure(candidate)
+
+      [ candidate, [ { "rule" => "normalize_checks", "datum" => "checks", "reason" => "null_as_empty" } ] ]
+    end
+
     def self.checks_failure(data)
       return nil unless data.key?("checks")
 
@@ -221,7 +235,9 @@ module Rag
     end
 
     def build
-      data = coerce_tool(@raw)
+      prepared, notes = self.class.prepare_tool(@raw)
+      notes.each { |note| note_rule(note["rule"], note["datum"], note["reason"]) }
+      data = coerce_tool(prepared)
       return invalid("invalid_schema") if data.nil?
       data = bound_lengths(data)
 
@@ -259,7 +275,8 @@ module Rag
         catalog_disagreements: @catalog_disagreements,
         invalid_reason: nil,
         correction: @correction || ObservationCorrection.none,
-        checks: checks
+        checks: checks,
+        adjustments: @adjustments
       )
       record_perception(result)
       result
@@ -1164,15 +1181,14 @@ module Rag
         identities: [], ambiguities: [], field_rejections: @field_rejections,
         catalog_disagreements: [], invalid_reason: reason,
         correction: ObservationCorrection.none,
-        checks: []
+        checks: [],
+        adjustments: @adjustments
       )
       record_perception(result, original_move: original_move)
       result
     end
 
     def note_rule(rule, datum, reason, detail = nil)
-      return unless ValidationCapture.active?
-
       row = { "rule" => rule, "datum" => datum.to_s, "reason" => reason.to_s }
       row["detail"] = detail if detail.present?
       @adjustments << row

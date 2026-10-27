@@ -11,6 +11,7 @@ module Rag
     # report so the next turn still has this job. Do not write manufacturer,
     # model, controller, or any other extracted identity.
     def self.retain_uninterpreted_report!(episode:, turn:, correlation_id:, now:)
+      return episode if continuity_request?(turn)
       return episode unless RoutePolicy.searchable_symptom?(turn)
 
       working = episode.presence || ActiveEpisode.open(correlation_id: correlation_id, now: now)
@@ -21,28 +22,28 @@ module Rag
       working
     end
 
-    # The interpreter rejected the turn as meta. A "no sé cómo…" still answers
-    # the question already published, even after that pending was cleared.
-    # The check result that happens to carry the same question is not the answer.
+    # The interpreter rejected the turn as meta. A "no sé cómo…" answers the
+    # published datum only when the turn names that datum, or names none.
+    # A different datum stays an unknown and does not borrow the pending question.
     def self.remember_unknown_clarification!(episode:, turn:, correlation_id:, now:)
       return episode unless unknown_clarification?(turn)
       return episode if episode.nil? || episode.blank?
 
       published = published_documented_question(episode)
-      return episode if published.nil?
-      return episode unless same_published_datum?(published, turn)
-
+      shown = shown_documented_question(episode)
       episode.touch!(now)
-      episode.append_observation!(
-        turn.to_s.squish,
-        correlation_id: correlation_id,
-        answers: {
-          "q" => published["question"],
-          "t" => published["targets"],
-          "r" => "unknown"
-        }
-      )
-      clear_matching_pending!(episode, published["question"])
+      chosen = chosen_unknown_datum(published, shown, turn) if published || shown
+      answers = { "r" => "unknown" }
+      if chosen
+        answers["q"] = chosen["question"]
+        answers["t"] = chosen["targets"]
+      end
+      episode.append_observation!(turn.to_s.squish, correlation_id: correlation_id, answers: answers)
+      if chosen && published && same_question_text?(chosen, published)
+        clear_matching_pending!(episode, published["question"])
+      elsif chosen && shown && same_question_text?(chosen, shown)
+        clear_shown!(episode)
+      end
       episode
     end
 
@@ -85,32 +86,155 @@ module Rag
       episode.clear_pending!
     end
 
-    # The turn has to name the published datum. A bare "no sé" answers the
-    # open question. Another number, or a report that does not share the
-    # question, does not. This does not build a question from the turn.
+    # The turn has to name the same entity, property, and scope. A shared
+    # number or a shared root is not that. A bare "no sé" answers the open
+    # question. This does not build a question from the turn or from a catalog.
     def self.same_published_datum?(question, turn)
       return false unless question.is_a?(Hash)
+      return true if unspecified_reply?(turn)
 
-      asked = designators(published_blob(question))
-      said = designators(turn)
-      if asked.any?
-        return true if said.intersect?(asked)
-        return false if said.any?
+      asked = datum_parts(question_datum_text(question))
+      said = datum_parts(turn)
+      return false if other_scope?(asked, said)
+      return false if other_property?(asked, said)
+      return false if other_entity?(asked, said)
 
-        return closed_reply?(turn)
-      end
-      return true if closed_reply?(turn)
-
-      left = datum_stems(published_blob(question))
-      right = datum_stems(turn)
-      left.any? && left.intersect?(right)
+      datum_covers?(asked, said)
     end
 
-    def self.published_blob(question)
-      items = Array(question["targets"]).filter_map { |target|
-        target.is_a?(Hash) ? target["item"] : target
-      }
-      [ question["question"], *items ].join(" ")
+    # A short request to continue, with no component and no measurement.
+    def self.continuity_request?(turn)
+      label = FollowupQueryRewriter.normalize_label(turn)
+      words = label.split
+      return false if words.empty? || words.size > 6
+      return false if designators(turn).any?
+      return false unless words.any? { |word| CONTINUATION.include?(word) }
+
+      words.all? { |word| CONTINUATION.include?(word) || CONTINUATION_FILLER.include?(word) }
+    end
+
+    def self.unspecified_reply?(turn)
+      closed_reply?(turn) || unspecified_unknown?(turn)
+    end
+
+    def self.shown_documented_question(episode)
+      shown = episode.pending_question.is_a?(Hash) ? episode.pending_question["shown"] : nil
+      return nil unless shown.is_a?(Hash) && shown["question"].present?
+
+      { "question" => shown["question"], "targets" => Array(shown["targets"]) }
+    end
+
+    def self.chosen_unknown_datum(published, shown, turn)
+      if unspecified_reply?(turn)
+        return nil if published && shown && !same_question_text?(published, shown)
+
+        return published || shown
+      end
+      return published if published && same_published_datum?(published, turn)
+      return shown if shown && same_published_datum?(shown, turn)
+
+      nil
+    end
+
+    def self.same_question_text?(left, right)
+      FollowupQueryRewriter.normalize_label(left["question"]) ==
+        FollowupQueryRewriter.normalize_label(right["question"])
+    end
+
+    def self.clear_shown!(episode)
+      pending = episode.pending_question
+      return unless pending.is_a?(Hash) && pending["shown"]
+
+      kept = pending.deep_dup
+      kept.delete("shown")
+      episode.pending_question = PendingQuestion.coerce(kept)
+    end
+
+    def self.question_datum_text(question)
+      parts = [ question["question"].to_s ]
+      Array(question["targets"]).each do |target|
+        item = target.is_a?(Hash) ? target["item"].to_s : target.to_s
+        parts << item if CompanionPlanRender.symptom_stems(item).size < 3
+        designators(item).each { |number| parts << "##{number}" }
+      end
+      parts.join(" ")
+    end
+
+    def self.datum_parts(text)
+      properties = []
+      entities = []
+      CompanionPlanCheck.words(text).each do |word|
+        next if word.length < 4 || STEM_STOP.include?(word)
+
+        stem = CompanionPlanCheck.stem(word)
+        next if FRAME_STEMS.include?(stem) || generic_entity?(stem)
+
+        if property_stems.include?(stem)
+          properties << stem
+        else
+          entities << stem
+        end
+      end
+      Datum.new(designators(text), properties.uniq, entities.uniq)
+    end
+
+    def self.other_scope?(asked, said)
+      return false if said.numbers.empty?
+
+      asked.numbers.empty? || (asked.numbers & said.numbers).empty?
+    end
+
+    def self.other_property?(asked, said)
+      asked.properties.any? && said.properties.any? && (asked.properties & said.properties).empty?
+    end
+
+    def self.other_entity?(asked, said)
+      return false if shared_property_without_numbers?(asked, said)
+
+      asked.entities.any? && said.entities.any? && (asked.entities & said.entities).empty?
+    end
+
+    def self.shared_property_without_numbers?(asked, said)
+      asked.numbers.empty? && said.numbers.empty? && (asked.properties & said.properties).any?
+    end
+
+    def self.datum_covers?(asked, said)
+      if asked.numbers.any?
+        return false unless asked.numbers.all? { |number| said.numbers.include?(number) }
+        return false if asked.properties.any? && (asked.properties & said.properties).empty?
+        return false if asked.entities.any? && said.entities.any? && (asked.entities & said.entities).empty?
+
+        return true
+      end
+      return false if said.numbers.any?
+
+      entity_hit = (asked.entities & said.entities).any?
+      property_hit = (asked.properties & said.properties).any?
+      return false if asked.properties.any? && said.properties.any? && !property_hit
+      return false if asked.entities.any? && said.entities.any? && !entity_hit && !property_hit
+
+      entity_hit || property_hit
+    end
+
+    def self.unspecified_unknown?(turn)
+      label = FollowupQueryRewriter.normalize_label(turn)
+      return false unless label.match?(PendingQuestion::UNKNOWN_CLARIFICATION)
+      return false if designators(turn).any?
+
+      rest = label.sub(UNKNOWN_FRAME, "")
+      parts = datum_parts(rest)
+      parts.numbers.empty? && parts.properties.empty? && parts.entities.empty?
+    end
+
+    def self.property_stems
+      @property_stems ||= %w[
+        activada encendido apagado abierto cerrado continuidad voltaje tension
+        corriente resistencia parpadeante obstruida presion
+      ].map { |word| CompanionPlanCheck.stem(word) }.to_set
+    end
+
+    def self.generic_entity?(stem)
+      CompanionPlanRender::GENERIC_STEMS.include?(stem) || %w[equip siste].include?(stem)
     end
 
     def self.designators(text)
@@ -121,18 +245,20 @@ module Rag
       FollowupQueryRewriter.normalize_label(turn).match?(CLOSED_REPLY)
     end
 
-    def self.datum_stems(text)
-      CompanionPlanCheck.words(text).filter_map { |word|
-        next if word.length < 4 || STEM_STOP.include?(word)
-
-        CompanionPlanCheck.stem(word)
-      }.uniq
-    end
+    Datum = Struct.new(:numbers, :properties, :entities)
     CLOSED_REPLY = /\A(?:si|no|no se|no lo se|no puedo verlo)\z/
+    UNKNOWN_FRAME = /\Ano (?:lo )?se(?:\s+como|\s+distingu\w*|\s+ver|\s+si)?\b/
     STEM_STOP = %w[el la los las un una unos unas del que esta estan este como para por con].to_set
+    FRAME_STEMS = %w[disti ident saber recon decir neces orien infor].to_set
+    CONTINUATION = %w[sigue seguir seguimos siguiente ahora luego entonces despues proximo hago hacemos].to_set
+    CONTINUATION_FILLER = %w[que como cual cuando donde y o a el la lo los las un una me te se por para con del].to_set
     private_class_method :unknown_clarification?, :published_documented_question,
       :open_documented_question?, :open_answer?, :clear_matching_pending!,
-      :published_blob, :designators, :closed_reply?, :datum_stems
+      :shown_documented_question, :chosen_unknown_datum, :same_question_text?, :clear_shown!,
+      :question_datum_text, :datum_parts, :other_scope?, :other_property?, :other_entity?,
+      :shared_property_without_numbers?,
+      :datum_covers?, :unspecified_unknown?, :property_stems, :generic_entity?,
+      :designators, :closed_reply?
 
     def self.apply!(episode:, perception:, decision:, turn:, correlation_id:, now:)
       new(
@@ -336,6 +462,14 @@ module Rag
       scope = scope_question?(question)
       return if @perception.move == "unclear" && code.nil?
       return if next_step_question?
+      if ambiguous_open_referent?
+        if unknown_limit_reply?
+          @episode.append_observation!(
+            @turn.to_s.squish, correlation_id: @correlation_id, answers: { "r" => "unknown" }
+          )
+        end
+        return
+      end
 
       answers = { "q" => question["question"].to_s, "t" => Array(question["targets"]) }
       if scope
@@ -358,7 +492,19 @@ module Rag
     end
 
     def next_step_question?
-      FollowupQueryRewriter.normalize_label(@turn) == "que sigue"
+      self.class.continuity_request?(@turn)
+    end
+
+    def ambiguous_open_referent?
+      shown = @episode.pending_question.is_a?(Hash) ? @episode.pending_question["shown"] : nil
+      return false unless shown.is_a?(Hash) && shown["question"].present?
+
+      self.class.unspecified_reply?(@turn)
+    end
+
+    def unknown_limit_reply?
+      label = FollowupQueryRewriter.normalize_label(@turn)
+      label == "no puedo verlo" || label.match?(/\Ano (?:lo )?se\b/) || self.class.unspecified_unknown?(@turn)
     end
 
     def scope_question?(question)

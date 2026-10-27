@@ -1,0 +1,65 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: motor PM, imán permanente síncrono, encoder ABI, requisitos motor, características eléctricas VF5+, instrucciones montaje VF5+]
+
+Características mecánicas (continuación de página anterior)
+
+Esta página continúa la sección de características del módulo VF5+. Los datos de la tabla de la página anterior quedan completados con los siguientes requisitos del motor PM y las instrucciones de montaje físico.
+
+Instrucciones de montaje
+
+La imagen de la sección muestra la vista en perspectiva del módulo VF5+ con su carcasa y los puntos de fijación. No se incluyen pasos textuales de montaje adicionales visibles en esta página más allá de la ilustración del conjunto.
+
+Requisitos Motor PM
+
+El módulo VF5+ está diseñado para funcionar con un motor de imán permanente síncrono con las siguientes especificaciones:
+
+| Parámetro | Valor |
+|-|-|
+| Tipo | Imán permanente síncrono |
+| Número de polos | 10 |
+
+Características eléctricas del motor:
+
+| Parámetro | Mínimo | Nominal | Máximo | Unidades |
+|-|-|-|-|-|
+| Tensión de alimentación | 50 | 103 | 144 | V |
+| Corriente | 0,18 | 1,13 | 2,13 | A |
+| Potencia | 15 | 162 | 405 | W |
+| Par | 0 | 1,5 | 2,5 | N·m |
+| Velocidad | — | 600 | — | r.p.m. |
+
+Clase térmica: DATA_NOT_AVAILABLE en esta página.
+
+Encoder: ABI magnético incremental (canal A, canal B e índice).
+Resolución: 180 pulsos/rev (nominal; mínimo y máximo no especificados en la tabla).
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-667F2A1DDD8EBC56
+SOURCE_SECTION_OR_PAGE: Instrucciones de montaje
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: Montar el módulo VF5+ según la ilustración de perspectiva mostrada; verificar puntos de fijación de la carcasa.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+UNCERTAINTY: La página solo muestra una ilustración sin pasos textuales de montaje visibles; pasos detallados REQUIRES_FIELD_VERIFICATION en páginas adyacentes.
+EVIDENCE: Instrucciones de montaje
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-39778C9853513238
+SOURCE_SECTION_OR_PAGE: Requisitos Motor PM
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: Verificar que el motor conectado al VF5+ es de tipo imán permanente síncrono con 10 polos, tensión de alimentación entre 50 V y 144 V (nominal 103 V), corriente entre 0,18 A y 2,13 A (nominal 1,13 A), potencia entre 15 W y 405 W (nominal 162 W), par entre 0 y 2,5 N·m (nominal 1,5 N·m), velocidad nominal 600 r.p.m.
+EXPECTED_RESULT: Los valores del motor están dentro de los rangos especificados para el VF5+.
+EVIDENCE: Imán permanente síncrono. Número de polos 10. Tensión de alimentación 50 103 144 V.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-7DE12EEF3B4F2678
+SOURCE_SECTION_OR_PAGE: Requisitos Motor PM — Encoder
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: Verificar que el encoder del motor es de tipo ABI magnético incremental (canal A, canal B e índice) con resolución nominal de 180 pulsos/rev.
+EXPECTED_RESULT: El encoder es compatible con los requisitos del módulo VF5+.
+EVIDENCE: ABI magnético incremental (canal A, canal B e índice). Resolución - 180 - pulsos / rev.
+END_FIELD_RECORD

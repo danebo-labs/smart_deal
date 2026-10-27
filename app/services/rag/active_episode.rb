@@ -432,11 +432,13 @@ module Rag
     def self.sanitize_answers(raw)
       return nil unless raw.is_a?(Hash)
 
+      code = raw["r"].to_s
       question = raw["q"].to_s.squish.first(240)
-      return nil if question.blank?
-
       targets = Array(raw["t"]).filter_map { |item| answer_target(item) }.first(2)
-      return nil if targets.empty?
+      # An explicit unknown that cannot be tied to a published question stays.
+      # It does not borrow that question's targets.
+      return { "r" => "unknown" } if question.blank? && code == "unknown" && targets.empty?
+      return nil if question.blank? || targets.empty?
 
       answers = { "q" => question, "t" => targets }
       about = raw["about"].to_s.squish.first(MAX_OBSERVATION_CHARS)

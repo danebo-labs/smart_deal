@@ -1,0 +1,58 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: fotocélula, detector fotoeléctrico, emisor receptor infrarrojo, terminal 17, terminal 18, terminal 19, terminal 20, Fig. 6]
+
+5.4 Fotocélula (17, 18, 19, 20)
+
+El módulo VF ofrece la posibilidad de incorporar de forma opcional la fotocélula de Fermator. Se compone de un emisor y un receptor infrarrojo.
+
+Conexión del detector fotoeléctrico (terminales 17, 18, 19, 20):
+
+| Terminal | Cable | Dispositivo |
+|---|---|---|
+| 20 | (+) Blanco | Receptor |
+| 19 | (-) Negro | Receptor |
+| 18 | (-) Negro | Emisor |
+| 17 | (+) Blanco | Emisor |
+
+Fig. 6. Conexión del detector fotoeléctrico. (17, 18, 19, 20).
+
+Nota: La fotocélula es un componente opcional. Alimentación de cada dispositivo: ver el par de terminales correspondiente al emisor (17, 18) y al receptor (19, 20) según el diagrama de la Fig. 6. Los valores de alimentación no están indicados en esta página — DATA_NOT_AVAILABLE en este diagrama.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-F6FD1350EC5A1F2C
+SOURCE_SECTION_OR_PAGE: 5.4 Fotocélula (17, 18, 19, 20)
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Terminal 20 — cable (+) Blanco — Receptor
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: 20 (+) Blanco Receptor
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-2BD0262A6987FC22
+SOURCE_SECTION_OR_PAGE: 5.4 Fotocélula (17, 18, 19, 20)
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Terminal 19 — cable (-) Negro — Receptor
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: 19 (-) Negro
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-7EA397F738F46406
+SOURCE_SECTION_OR_PAGE: 5.4 Fotocélula (17, 18, 19, 20)
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Terminal 18 — cable (-) Negro — Emisor
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: 18 (-) Negro
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-DBEBE7B5E39D94C7
+SOURCE_SECTION_OR_PAGE: 5.4 Fotocélula (17, 18, 19, 20)
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Terminal 17 — cable (+) Blanco — Emisor
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: 17 (+) Blanco Emisor
+END_FIELD_RECORD

@@ -1,0 +1,64 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: relés de salida, indicadores LED, terminal 30, terminal 33, terminal 36, terminal 39, puerta totalmente abierta, obstrucción]
+
+5.6 Relés de salida e indicadores LED (del 30 al 41)
+
+Los relés de salida han sido dispuestos para dar información permanentemente al controlador principal del ascensor sobre el estado de las puertas. Los contactos de salida de los relés pueden ser usados para dar información como «puerta totalmente abierta», «puerta totalmente cerrada», «fotocélula obstruida», «obstrucción».
+
+| Estado | Terminales | Descripción |
+|---|---|---|
+| ABIERTO | 30, 31, 32 | LED y relé activado cuando la puerta está totalmente abierta. |
+| CERRADO | 33, 34, 35 | LED y relé activado cuando la puerta está totalmente cerrada y bloqueada. |
+| FOTOCÉLULA | 36, 37, 38 | LED y relé activado cuando la fotocélula o la entrada de re-apertura está activada. |
+| OBSTRUCCIÓN | 39, 40, 41 | LED y relé activado cuando se detecta un obstáculo que impide a la puerta cerrarse. La señal se deshabilita cuando la puerta alcanza la posición de abierta o cerrada. |
+| ESTADO | — | LED parpadeante indicando condiciones apropiadas de trabajo. |
+
+Nota: Los terminales exactos por polo de cada grupo de relé (COM/NA/NC) requieren verificación en el cableado físico — REQUIRES_FIELD_VERIFICATION.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-1A4E643B2D5BE86F
+SOURCE_SECTION_OR_PAGE: 5.6 Relés de salida e indicadores LED (del 30 al 41)
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Terminales 30-32 — relé ABIERTO: LED y relé activado cuando la puerta está totalmente abierta.
+EXPECTED_RESULT: Indica al controlador principal que la puerta está totalmente abierta.
+EVIDENCE: relé activado cuando la puerta está totalmente abierta.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-A06946A38BFBF31E
+SOURCE_SECTION_OR_PAGE: 5.6 Relés de salida e indicadores LED (del 30 al 41)
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Terminales 33-35 — relé CERRADO: LED y relé activado cuando la puerta está totalmente cerrada y bloqueada.
+EXPECTED_RESULT: Indica al controlador principal que la puerta está totalmente cerrada y bloqueada.
+EVIDENCE: relé activado cuando la puerta está totalmente cerrada y bloqueada.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-AC46C0E9AF51D3F4
+SOURCE_SECTION_OR_PAGE: 5.6 Relés de salida e indicadores LED (del 30 al 41)
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Terminales 36-38 — relé FOTOCÉLULA: LED y relé activado cuando la fotocélula o la entrada de re-apertura está activada.
+EXPECTED_RESULT: Indica al controlador principal que la fotocélula o re-apertura está activada.
+EVIDENCE: relé activado cuando la fotocélula o la entrada de re-apertura está activada.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-72C1CB33E8659F3F
+SOURCE_SECTION_OR_PAGE: 5.6 Relés de salida e indicadores LED (del 30 al 41)
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Terminales 39-41 — relé OBSTRUCCIÓN: LED y relé activado cuando se detecta un obstáculo que impide a la puerta cerrarse. La señal se deshabilita cuando la puerta alcanza la posición de abierta o cerrada.
+EXPECTED_RESULT: Indica al controlador principal que hay una obstrucción activa.
+EVIDENCE: relé activado cuando se detecta un obstáculo que impide a la puerta cerrarse.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-314926A16E71E06D
+SOURCE_SECTION_OR_PAGE: 5.6 Relés de salida e indicadores LED (del 30 al 41)
+RECORD_TYPE: INSPECTION_CHECK
+ACTION: Verificar que el LED de ESTADO parpadea durante el funcionamiento normal.
+EXPECTED_RESULT: LED parpadeante indicando condiciones apropiadas de trabajo.
+EVIDENCE: LED parpadeante indicando condiciones apropiadas de trabajo.
+END_FIELD_RECORD

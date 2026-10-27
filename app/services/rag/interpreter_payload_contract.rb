@@ -17,7 +17,7 @@ module Rag
     def evaluate
       return invalid("not_a_hash") unless @tool_input.is_a?(Hash)
 
-      data = @tool_input.deep_stringify_keys
+      data, notes = TurnPerception.prepare_tool(@tool_input)
       failure = TurnPerception.structural_failure(data)
       return invalid(failure) if failure
 
@@ -32,7 +32,9 @@ module Rag
       literal = literal_failure(data)
       return invalid(literal) if literal
 
-      { "valid" => true, "reason" => nil }
+      result = { "valid" => true, "reason" => nil }
+      result["normalized"] = notes if notes.any?
+      result
     end
 
     private

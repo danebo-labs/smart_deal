@@ -1,0 +1,72 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: conexionado VF5+, diagrama general VF5+, CFT.FD00.C0000, CFT.FCM.C0000, 12V 2A fuente VF5, Abrir Open Cerrar Close, 230V opcional VF5+]
+
+3 Conexionado
+
+Esta página presenta el diagrama general de conexionado del módulo electrónico VF5+ de Fermator. El diagrama muestra la vista de conjunto del sistema completo, incluyendo las conexiones entre los componentes principales del operador de puertas.
+
+Del diagrama se identifican los siguientes elementos visibles con sus etiquetas literales:
+
+- Módulo VF5+ (etiquetado «VF5+» en el diagrama)
+- Motor Fermator (componente en la parte inferior del diagrama)
+- Fuente de alimentación: 12 V, 2 A (etiquetado en diagrama superior derecho)
+- Alimentación opcional/Optional: 230 V (etiquetado en diagrama superior izquierdo)
+- Cadena de seguridad: Abrir / Open — Cerrar / Close
+- Alimentaciones compatibles indicadas en el diagrama:
+  - 12 V DC, 60 V DC
+  - 100 V AC, 230 V AC (lado Abrir/Open)
+  - 12 V DC, 60 V DC
+  - 100 V AC, 230 V AC (lado Cerrar/Close)
+- Cables de referencia visibles:
+  - 5 m: Ref. CFT.FD00.C0000
+  - 3 m: Ref. CFT.FCM.C0000
+
+NOTA: El diagrama de esta página es una vista de conjunto. Los detalles de conexionado por terminal, valores exactos de señales y asignación pin a pin REQUIRES_FIELD_VERIFICATION — consultar páginas siguientes del documento DOC-FE.IE.IN.016172.ES para el detalle de cada conexión.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-20309F30EE57A853
+SOURCE_SECTION_OR_PAGE: 3 Conexionado
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Módulo principal etiquetado VF5+ en diagrama de conjunto
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: VF5+
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-4B132DFDF8D3960E
+SOURCE_SECTION_OR_PAGE: 3 Conexionado
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Fuente de alimentación indicada en diagrama: 12 V 2 A
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: 12 V 2 A
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-FB250A6EA4D768D0
+SOURCE_SECTION_OR_PAGE: 3 Conexionado
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Alimentación opcional indicada en diagrama superior izquierdo: 230 V
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Opcional / Optional 230V
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-889B10342B266FE7
+SOURCE_SECTION_OR_PAGE: 3 Conexionado
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Señales de control visibles en diagrama: Abrir / Open — Cerrar / Close con compatibilidad 12 V DC, 60 V DC, 100 V AC, 230 V AC
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Abrir / Open Cerrar / Close 12 V DC, 60 V DC, 100 V AC, 230 V AC
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-6EB053B3EECC27A1
+SOURCE_SECTION_OR_PAGE: 3 Conexionado
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Cable de referencia 5 m: Ref. CFT.FD00.C0000; cable de referencia 3 m: Ref. CFT.FCM.C0000
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: 5m: Ref. CFT.FD00.C0000 3m: Ref. CFT.FCM.C0000
+END_FIELD_RECORD

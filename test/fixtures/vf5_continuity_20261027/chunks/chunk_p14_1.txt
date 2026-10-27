@@ -1,0 +1,25 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: VF5+, DOC-FE.IE.IN.016172.ES, EN 81-20, Fermator, página 14]
+
+S4 — SISTEMA DE SEGURIDAD (continuación sección 9 — Normativa EN 81-20)
+
+9.5 Protección contra atrape (si aplica, según contenido de página 14)
+
+NOTA: El contenido de esta página (p. 14/21) no ha sido transmitido directamente; el bloque de documento proporcionado cubre hasta la página 13. A continuación se registra exclusivamente el contenido visible en la imagen de la página 13 que corresponde a secciones que podían continuar en p. 14, marcando como DATA_NOT_AVAILABLE cualquier contenido no visible.
+
+Esta página forma parte del documento DOC-FE.IE.IN.016172.ES, Módulo electrónico VF5+, Versión 0.4, Fermator Group. Las secciones 9.1 a 9.4 finalizan en la página 13. El contenido de la página 14 no está disponible en la imagen proporcionada.
+
+— REQUIRES_FIELD_VERIFICATION: El texto completo de la página 14 no fue incluido en el input. No se puede extraer ni inferir el contenido de dicha página.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-058ECB597CF6647E
+SOURCE_SECTION_OR_PAGE: Page 14
+RECORD_TYPE: DOCUMENTATION_REQUIREMENT
+ACTION: Verificar en el documento físico o digital el contenido completo de la página 14/21 del documento DOC-FE.IE.IN.016172.ES.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+UNCERTAINTY: REQUIRES_FIELD_VERIFICATION: el texto de la página 14 no fue suministrado en este input; no se puede extraer ni inferir contenido.
+EVIDENCE: Página 14 no incluida en el input proporcionado
+END_FIELD_RECORD

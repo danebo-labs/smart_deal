@@ -1,0 +1,7 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: masa en movimiento, moving mass, factor multiplicador, multiplier factor, Fermator, VF5+, DOC-FE.IE.IN.016172.ES]
+
+11.3 Línea de producto / Product line — Tabla de masas en movimiento (continuación de página anterior)
+
+Esta sección continúa las tablas de factores multiplicadores para el cálculo de la masa en movimiento según las variantes de producto de Fermator. Los valores se aplican sobre la masa base del modelo de referencia indicado en cada línea de producto.

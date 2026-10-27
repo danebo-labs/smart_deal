@@ -1,0 +1,97 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: características eléctricas VF5+, tensión entrada VF5, clase protección I, RCD Tipo A, SCCR 1,5 kA, circuitos clase 0, ENTRADAS 8 9 10 11 12, ENCODER MOTOR 55]
+
+S6 — ELECTRICAL
+
+10 Datos de referencia (continuación)
+
+Características eléctricas
+
+| Parámetro | Mínimo | Nominal | Máximo | Unidades |
+|-|-|-|-|-|
+| Tensión de entrada | 100 | 230 | 300 | V AC |
+| Frecuencia | 50 | — | 60 | Hz |
+| Corriente de entrada | — | — | 0,55 | A |
+| Corriente de salida | — | — | 0,85 | A |
+| Potencia de entrada | — | — | 126 | W |
+| Potencia de salida | — | — | 100 | W |
+
+Requisitos de protección
+
+| Parámetro | Valor |
+|-|-|
+| Clase de protección | Clase de protección I (1) |
+| Dispositivo de corriente residual [RCD] | RCD Tipo A [Recomendado] |
+| Categoría de sobre-voltaje | Categoría de sobre-voltaje III |
+| Sistema de suministro eléctrico | Sistema de alimentación de puesta a tierra TT, NT, IT, not corner-earthed |
+| Corriente de cortocircuito [SCCR] | — | — | 1,5 kA |
+| Ratio IP | — | — | 20 |
+
+Nota (1): Las conexiones accesibles y las partes listadas debajo tienen una protección de clase 0. Esto significa que solo tienen el aislamiento básico y en caso de que este aislamiento falle puede ser peligroso. Por lo tanto los dispositivos conectados a estos circuitos deben tener una protección contra descargas eléctricas como si estuvieran conectado a la red eléctrica. Esta información debe ser considerada a la hora de instalar estos dispositivos.
+
+Circuitos clase 0:
+- ENTRADAS 8, 9, 10, 11, 12
+- COMUNICACIÓN SERIAL 13
+- PHOTOCELL 17, 18, 19, 20
+- ENTRADAS PRIORITARIAS 21, 23, 25, 26
+- ENCODER MOTOR 55
+
+Características ambientales
+
+| Parámetro | Mínimo | Nominal | Máximo | Unidades |
+|-|-|-|-|-|
+| Entorno operativo y de almacenamiento | -10 | — | 80 | ºC |
+| Temperatura ambiente | -10 | — | 50 | ºC |
+| Humedad | — | — | 95 | % |
+| Altitud | — | — | 2000 | mm |
+| Grado de polución | — | — | 2 | — |
+| Detalles del envolvente | PA 66 / 6 | — | — | — |
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-6CB834CB29A7EB88
+SOURCE_SECTION_OR_PAGE: Requisitos de protección — Nota 1
+RECORD_TYPE: SAFETY_WARNING
+ACTION: Verificar que los dispositivos conectados a los circuitos clase 0 (ENTRADAS 8, 9, 10, 11, 12; COMUNICACIÓN SERIAL 13; PHOTOCELL 17, 18, 19, 20; ENTRADAS PRIORITARIAS 21, 23, 25, 26; ENCODER MOTOR 55) tengan protección contra descargas eléctricas equivalente a conexión directa a red eléctrica.
+EXPECTED_RESULT: Protección adecuada contra descarga eléctrica confirmada en todos los circuitos clase 0.
+DETAILS: scope=instalación de dispositivos en circuitos clase 0; precondition=clase de protección I solo garantiza aislamiento básico en estos terminales
+EVIDENCE: solo tienen el aislamiento básico y en caso de que este aislamiento falle puede ser peligroso
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-0705D7CD6DB82D88
+SOURCE_SECTION_OR_PAGE: 10 Datos de referencia — Características eléctricas
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: Verificar que la tensión de entrada al módulo VF5+ esté dentro del rango 100–300 V AC (nominal 230 V AC) a 50–60 Hz antes de energizar.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Tensión de entrada: 100 — 230 — 300 V AC
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-4A9B90450BED3AA7
+SOURCE_SECTION_OR_PAGE: 10 Datos de referencia — Requisitos de protección
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: Instalar dispositivo de corriente residual (RCD) Tipo A en el circuito de alimentación del módulo VF5+.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Dispositivo de corriente residual [RCD]: RCD Tipo A [Recomendado]
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-88ED0DE4E2E9CC1C
+SOURCE_SECTION_OR_PAGE: 10 Datos de referencia — Requisitos de protección
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: Confirmar que el sistema de suministro eléctrico sea TT, NT o IT sin puesta a tierra en esquina (not corner-earthed) antes de conectar el VF5+.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Sistema de alimentación de puesta a tierra TT, NT, IT, not corner-earthed
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-08F10BC5D4919482
+SOURCE_SECTION_OR_PAGE: 10 Datos de referencia — Características ambientales
+RECORD_TYPE: INSPECTION_CHECK
+ACTION: Verificar que la temperatura ambiente en el lugar de instalación del VF5+ esté entre -10 ºC y 50 ºC, humedad máxima 95%, altitud máxima 2000 mm y grado de polución no superior a 2.
+EXPECTED_RESULT: Condiciones ambientales dentro de los límites especificados.
+EVIDENCE: Temperatura ambiente -10 — 50 ºC; Humedad — 95 %; Altitud — 2000 mm; Grado de polución — 2
+END_FIELD_RECORD

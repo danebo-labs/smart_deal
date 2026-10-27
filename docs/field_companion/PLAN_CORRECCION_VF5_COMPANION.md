@@ -1,5 +1,21 @@
 # Corrección y validación del companion sobre el VF5
 
+## Continuidad T3–T5 — 27 de octubre de 2026, tarde
+
+**Precedencia.** Esta sección es el estado vigente de la corrección VF5. No reabre F2, F3 ni F4. No aprueba F5. T2 queda como lo demostró la GUI del mediodía sobre `a829713`. No cambia fuentes, ingesta, prompts, modelos, perfiles, costes ni las etiquetas «Manual / Guía Danebo». El empaquetado general de capturas sigue aparte.
+
+El cruce [INFORME_CRUCE_VF5_2026-10-27.md](INFORME_CRUCE_VF5_2026-10-27.md) mostró que mañana (`4eca6b3`) y mediodía (`a829713`) reproducen T3–T5 con las herramientas capturadas. El código de producto entre `a829713` y `038c552` no cambia ese resultado. La variación del modelo deja al descubierto el contrato y el estado.
+
+Tres causas, ninguna atada al turno, al guion ni a los números del VF5:
+
+- Una pregunta aceptada sobre otro dato sustituía el pendiente. La conservación solo ocurría si Ruby marcaba `question_role=led_context`. La misma pregunta, si la proponía el modelo con `question_role` vacío, reemplazaba el dato abierto.
+- «¿Qué sigue?» del mediodía no trae `checks: null`. La herramienta es `follow_up` con `clarification_target: documented_context`, valor fuera de contrato, y la percepción lo resume como `invalid_schema`. El fallback guardaba esa petición como observación porque parecía un síntoma corto. Un `checks: null` que sea el único defecto estructural se normaliza a lista vacía y deja la nota `null_as_empty`. El destino inválido se sigue rechazando.
+- El desconocimiento se ligaba al pendiente por compartir una raíz o un número. En el mediodía eso era la pregunta del LED, no #21 ni el contacto. Un «no sé» sin referente sigue pudiendo responder la única pregunta abierta.
+
+El pendiente conserva el dato no resuelto. La pregunta que se presenta ahora, si nombra otro dato y está en el texto, queda en `pending.question.shown`. El intérprete sigue recibiendo solo la pregunta pendiente. Un episodio anterior, sin `shown`, no cambia. Si el técnico nombra otro dato, el `r: unknown` no se asigna al pendiente; si nombra los dos asuntos abiertos sin elegir, se pregunta a cuál se refiere usando las dos preguntas ya guardadas. Una petición de continuidad no se guarda como hecho del equipo ni como objetivo. Un apartado largo que no es el caso y que la pregunta no usa deja de ser el dato que falta; un apartado que la pregunta sí usa se conserva.
+
+La regresión recorre las dos muestras con `record_user_turn!`, el reducer, el plan, el checker y la publicación. Los cuerpos están en `test/fixtures/vf5_continuity_20261027/`. No llama a Bedrock. Un caso de válvula, indicador y sensor, fuera del VF5, cubre la misma asociación. F5 sigue abierta: esta reproducción local no es la GUI. La recuperación en vivo, después de que la consulta de T2 deja de incluir «apagado», no se ha medido. El plano Elemont no arranca.
+
 ## GUI del 27 de octubre de 2026
 
 **Precedencia.** Esta sección es el estado vigente de la corrección VF5. No reabre F2, F3 ni F4. No aprueba F5. No cambia fuentes, ingesta, prompts, modelos ni las etiquetas «Manual / Guía Danebo».

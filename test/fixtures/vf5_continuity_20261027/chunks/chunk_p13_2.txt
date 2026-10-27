@@ -1,0 +1,91 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: fotocélula, photocell, fotocelula intermitente, conexión tierra #6, conector #17 #20, emisor receptor, cable amarillo verde, interferencias eléctricas]
+
+8.3 Fotocélula
+
+Problema: La fotocélula se activa de forma intermitente.
+
+Acciones de diagnóstico y corrección:
+– Comprobar la conexión de "tierra" (#6).
+– Comprobar la correcta conexión del conector (#17 to #20).
+– Desconectar la fotocélula, hacer un movimiento completo de apertura y cierra, conectar otra vez la fotocélula y probar de nuevo.
+– Verificar que hay un emisor y un receptor (marcados E y R en las cápsulas) conectados a los cables correctos: emisor al cable amarillo y receptor al cable verde.
+– Retirar el cableado de la fotocélula de cualquier lugar que pueda generar "interferencias eléctricas" como motores, cableado de alimentación, asegurando que los cables no están cortocircuitados.
+– Si se puede usar una consola, comprobar la estabilidad de la señal.
+– No alargar los cables de la fotocélula.
+– Tener en cuenta que en modo máster el sistema reconoce automáticamente la fotocélula tras realizar un autoajuste completo con la fotocélula libre.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-F6AD2F39E624A16D
+SOURCE_SECTION_OR_PAGE: 8.3 Fotocélula
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Comprobar la conexión de tierra en terminal #6 cuando la fotocélula se activa de forma intermitente.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Comprobar la conexión de "tierra" (#6)
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-E888D1A732F6A232
+SOURCE_SECTION_OR_PAGE: 8.3 Fotocélula
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Comprobar la correcta conexión del conector en terminales #17 a #20.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Comprobar la correcta conexión del conector (#17 to #20)
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-9C362571D5CFB23E
+SOURCE_SECTION_OR_PAGE: 8.3 Fotocélula
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Desconectar la fotocélula, hacer un movimiento completo de apertura y cierre, reconectar la fotocélula y probar de nuevo.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Desconectar la fotocélula, hacer un movimiento completo de apertura y cierra, conectar otra vez la fotocélula
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-01401665447CC27D
+SOURCE_SECTION_OR_PAGE: 8.3 Fotocélula
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Verificar que el emisor (marcado E) está conectado al cable amarillo y el receptor (marcado R) está conectado al cable verde.
+EXPECTED_RESULT: Emisor en cable amarillo, receptor en cable verde.
+EVIDENCE: emisor al cable amarillo y receptor al cable verde
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-EF4C14DD58E5A28A
+SOURCE_SECTION_OR_PAGE: 8.3 Fotocélula
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Retirar el cableado de la fotocélula de fuentes de interferencias eléctricas (motores, cableado de alimentación); asegurar que los cables no están cortocircuitados.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Retirar el cableado de la fotocélula de cualquier lugar que pueda generar "interferencias eléctricas"
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-BE3B76E273C6A890
+SOURCE_SECTION_OR_PAGE: 8.3 Fotocélula
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Si se dispone de consola, comprobar la estabilidad de la señal de la fotocélula.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Si se puede usar una consola, comprobar la estabilidad de la señal
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-6154FC1A8A23A27E
+SOURCE_SECTION_OR_PAGE: 8.3 Fotocélula
+RECORD_TYPE: INSPECTION_CHECK
+ACTION: No alargar los cables de la fotocélula.
+EXPECTED_RESULT: Longitud de cable original mantenida.
+EVIDENCE: No alargar los cables de la fotocélula
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-A3743E1B519CE35A
+SOURCE_SECTION_OR_PAGE: 8.3 Fotocélula
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: En modo máster, realizar un autoajuste completo con la fotocélula libre para que el sistema reconozca automáticamente la fotocélula.
+EXPECTED_RESULT: El sistema reconoce automáticamente la fotocélula tras el autoajuste completo.
+EVIDENCE: en modo máster el sistema reconoce automáticamente la fotocélula tras realizar un autoajuste completo con la fotocélula libre
+END_FIELD_RECORD

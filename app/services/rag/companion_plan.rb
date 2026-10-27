@@ -101,11 +101,32 @@ module Rag
       def published_pending(text, check, prepared)
         question = check.question.to_s
         return nil if question.blank? || text.blank? || text.exclude?(question)
-        # Which LED is a clarification. It does not replace a question already published.
-        if check.question_role.to_s == "led_context" && prepared.facts.open_question.present?
-          return nil
-        end
+        # Which of two open matters is a clarification. It does not take the slot.
+        return nil if check.question_role.to_s == "referent_clarification"
 
+        payload = pending_payload(question, check, prepared)
+        open = prepared.facts.open_question
+        return hold_open_datum(open, question, payload) if different_open_datum?(open, question)
+
+        PendingQuestion.coerce(payload)
+      end
+
+      # A clarification may be asked. The unresolved datum stays the pending
+      # question. `shown` is what this turn presents, whoever wrote the words.
+      def hold_open_datum(open, question, payload)
+        kept = open.deep_dup
+        kept.delete("shown")
+        targets = Array(payload["targets"]).select { |item| item.is_a?(Hash) }.first(2)
+        kept["shown"] = { "question" => question, "targets" => targets }
+        PendingQuestion.coerce(kept)
+      end
+
+      def different_open_datum?(open, question)
+        open.is_a?(Hash) && open["type"] == "documented_context" && open["question"].present? &&
+          !WorkContextReducer.same_published_datum?(open, question)
+      end
+
+      def pending_payload(question, check, prepared)
         targets = Array(check.question_targets).filter_map { |id|
           statement = prepared.statements.find(id)
           pending_target(statement, prepared.chunks) if statement
@@ -116,7 +137,7 @@ module Rag
           payload["about"] = scope["report"]
           payload["aspect"] = "scope"
         end
-        PendingQuestion.coerce(payload)
+        payload
       end
 
       def pending_target(statement, chunks)

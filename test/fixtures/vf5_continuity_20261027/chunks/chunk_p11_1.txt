@@ -1,0 +1,55 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: fallos de alimentación, anti-banging, enclavamiento electrónico, power failure, motor PM, enclavamiento sin muelle, caída de tensión, cerrado lento]
+
+S4 — SAFETY SYSTEM
+
+7 Fallos de alimentación
+
+El VF5+ incorpora dos sistemas de seguridad nuevos relacionados con los fallos de alimentación:
+
+• Sistema anti-banging
+Cuando ocurre un fallo de alimentación mientras la puerta está abriéndose, cerrándose, o con la puerta completamente abierta, el nuevo sistema anti-banging frena el motor PM para realizar un cerrado lento y evitar que la puerta golpee al cerrarse.
+
+• Enclavamiento electrónico
+Cuando ocurre un fallo de alimentación mientras la puerta está completamente cerrada, el VF5+ detecta la caída de tensión y abre el enclavamiento si la cabina está en el piso. Este nuevo sistema debe ser usado con un enclavamiento sin muelle.
+
+El sistema del enclavamiento electrónico puede ser habilitado o deshabilitado por software.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-829DB81ED719BC2D
+SOURCE_SECTION_OR_PAGE: 7 Fallos de alimentación — Sistema anti-banging
+RECORD_TYPE: SAFETY_WARNING
+ACTION: Verificar que el sistema anti-banging está operativo: cuando ocurra un fallo de alimentación con la puerta abriéndose, cerrándose, o completamente abierta, el sistema debe frenar el motor PM y realizar un cerrado lento.
+EXPECTED_RESULT: La puerta realiza un cerrado lento y no golpea al cerrarse.
+EVIDENCE: el nuevo sistema anti-banging frena el motor PM para realizar un cerrado lento
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-30DB8A9EE42F189E
+SOURCE_SECTION_OR_PAGE: 7 Fallos de alimentación — Enclavamiento electrónico
+RECORD_TYPE: SAFETY_WARNING
+ACTION: Asegurarse de que el enclavamiento electrónico se usa exclusivamente con un enclavamiento sin muelle.
+EXPECTED_RESULT: Sistema compatible y seguro. Si se usa con enclavamiento con muelle, la instalación no cumple el requisito del fabricante.
+EVIDENCE: Este nuevo sistema debe ser usado con un enclavamiento sin muelle
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-2BBA858708E0DE46
+SOURCE_SECTION_OR_PAGE: 7 Fallos de alimentación — Enclavamiento electrónico
+RECORD_TYPE: FAULT_CONDITION
+ACTION: Cuando ocurre un fallo de alimentación con la puerta completamente cerrada, verificar que el VF5+ detecta la caída de tensión y abre el enclavamiento si la cabina está en el piso.
+EXPECTED_RESULT: El enclavamiento se abre; cabina en el piso.
+EVIDENCE: el VF5+ detecta la caída de tensión y abre el enclavamiento si la cabina está en el piso
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-1DCFB18091977F5E
+SOURCE_SECTION_OR_PAGE: 7 Fallos de alimentación — Enclavamiento electrónico
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: Habilitar o deshabilitar el sistema de enclavamiento electrónico según el tipo de instalación mediante la configuración por software del VF5+.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: El sistema del enclavamiento electrónico puede ser habilitado o deshabilitado por software
+END_FIELD_RECORD

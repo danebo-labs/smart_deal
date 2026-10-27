@@ -1,0 +1,41 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: re-apertura sola, potenciómetro #54, fotocélula activada, obstrucción mecánica, funcionamiento normal]
+
+8.2 Funcionamiento normal (continuación)
+
+• La puerta se re-abre sola.
+  – Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54).
+  – Comprobar que la fotocélula no esté activada.
+  – Comprobar que no hay una obstrucción mecánica en la puerta.
+
+Nota: Este contenido continúa directamente desde la página anterior (pág. 11).
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-082D138F30E8B4DB
+SOURCE_SECTION_OR_PAGE: (continuación de página anterior)
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Si la puerta se re-abre sola: comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-041914D98CC390E9
+SOURCE_SECTION_OR_PAGE: (continuación de página anterior)
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Si la puerta se re-abre sola: comprobar que la fotocélula no esté activada
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Comprobar que la fotocélula no esté activada
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-02FBFBC93931CE2F
+SOURCE_SECTION_OR_PAGE: (continuación de página anterior)
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Si la puerta se re-abre sola: comprobar que no hay una obstrucción mecánica en la puerta
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Comprobar que no hay una obstrucción mecánica en la puerta
+END_FIELD_RECORD

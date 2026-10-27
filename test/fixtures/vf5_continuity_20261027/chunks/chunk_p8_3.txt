@@ -1,103 +1,83 @@
 [DOCUMENT: VF5.pdf]
 [SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
-[SEARCH_ALIASES: autoajuste, pulsador 51, auto-ajuste, self-adjustment, 5 movimientos, paso libre, dip switch pin 3, EEPROM]
+[SEARCH_ALIASES: Velocidad de cierre (52), Velocidad de apertura (53), Seguridad (54), Encoder (55), potenciómetro, ASYNC, PM, MOTOR 56]
 
-5.8 Pulsador de autoajuste (51) — Proceso de autoajuste
+5.9 Velocidad de cierre (52)
+Potenciómetro que permite ajustar la velocidad de cierre desde un mínimo de 150 mm/s hasta un máximo de 400 mm/s.
 
-El pulsador de Autoajuste se utiliza para instalar la puerta.
+5.10 Velocidad de apertura (53)
+Potenciómetro que permite ajustar la velocidad de apertura desde un mínimo de 200 mm/s hasta un máximo de 700 mm/s.
 
-Condiciones según tipo de motor:
-- Con motor PM: autoajuste con puerta de cabina acoplada Y con puerta de rellano.
-- Con motor asíncrono: autoajuste con puerta de cabina acoplada PERO SIN puerta de rellano.
+5.11 Seguridad (54)
+Potenciómetro que permite ajustar la fuerza de cierre de la puerta (sensibilidad a reaperturas). Esta valor es regulable de 60 a 150Nm.
+[CONFLICTO_DOCUMENTAL C3: 5.11 (PDF p. 8) da «60 a 150Nm» para el #54; la tabla de características (PDF p. 17) da «Fuerza de seguridad 60 – 150 N» y la consola (PDF p. 14) «Limitar fuerza 150 N». Nm (par) y N (fuerza) no son la misma magnitud y el documento no aclara cuál vale.]
 
-La puerta realiza 5 movimientos para detectar el motor y el paso libre. El microprocesador calcula las rampas de aceleración y desaceleración para optimizar el control de puerta. Los parámetros se guardan en EEPROM no-volátil al completar el autoajuste.
+5.12 Encoder (55)
+En esta entrada se conecta el encoder de cuadratura que está situado en el interior del motor, e informa al control del sentido de giro y velocidad angular del motor.
+Compatibilidad con el motor asíncrono Fermator
+- El encoder del VF5+ está preparado para conectarse al encoder de alta resolución del motor síncrono PM (5 cables) y al encoder estándar del motor asíncrono (4 cables)
+- El encoder del motor asíncrono (4 cables) ha de ser conectado a los 4 Pines del encoder marcado como ASYNC .
 
-Comportamiento tras fallo de alimentación: Las puertas se abrirán lentamente en la primera operación después de un fallo de alimentación para verificar el paso libre.
-
-Cuándo repetir el autoajuste: Solo es necesario repetirlo para la configuración de los parámetros por defecto o cuando se realicen cambios como la conexión o desconexión de la fotocélula Fermator.
-
-Proceso de autoajuste (pasos):
-1. Apagar el VF y posicionar la puerta en posición cerrada.
-2. Desconectar las entradas (Pines 8, 9, 10, 11 & 12) y las entradas prioritarias (Pines 26, 21, 25 & 23).
-3. Encender el VF y pulsar el botón de auto-ajuste (51).
-
-Secuencia de 5 movimientos:
-- 1er Movimiento: La puerta abre 200 mm. Si la puerta hace pequeños rebotes en lugar de abrir, significa que está intentando cerrar y que el sentido está al revés → cambiar el pin 3 del dip switch.
-- 2do Movimiento: La puerta cierra 150 mm.
-- 3er Movimiento (inicia 2-3 s después del 2do): La puerta cierra completamente a velocidad lenta hasta encontrar el tope de goma para detectar la posición 0.
-- 4to Movimiento: La puerta abre lentamente contando los pulsos del encoder situado en el motor hasta que toca con el tope final de apertura. Se detecta la posición final.
-- 5to Movimiento: Pasados unos segundos, la puerta cierra. Aplica las rampas de aceleración y desaceleración con la información adquirida en el 4to movimiento para optimizar el movimiento.
+Imagen de la página (conectores): etiquetas visibles 55, PM, ASYNC, ENCODER, 56, MOTOR.
 
 # FIELD-SAFETY EVIDENCE RECORDS
 
 FIELD_RECORD:
-RECORD_ID: FR-836FADFBB74099FB
-SOURCE_SECTION_OR_PAGE: 5.8 Pulsador de autoajuste (51)
-RECORD_TYPE: COMMISSIONING_STEP
-ACTION: Con motor PM: realizar el autoajuste con la puerta de cabina acoplada y con la puerta de rellano instalada.
-EXPECTED_RESULT: Configuración correcta para motor PM antes de iniciar el proceso de autoajuste.
-EVIDENCE: Con un motor PM instalado el autoajuste ha de hacerse con la puerta de cabina acoplada y con la puerta de rellano
+RECORD_ID: FR-429A074595530D6F
+SOURCE_SECTION_OR_PAGE: 5.9 Velocidad de cierre (52)
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: 52 — Potenciómetro que permite ajustar la velocidad de cierre
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: function=ajuste velocidad de cierre; value=150 mm/s mínimo, 400 mm/s máximo
+EVIDENCE: ajustar la velocidad de cierre desde un mínimo de 150 mm/s hasta un máximo de 400 mm/s
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-758787BF2E062E5E
-SOURCE_SECTION_OR_PAGE: 5.8 Pulsador de autoajuste (51)
-RECORD_TYPE: COMMISSIONING_STEP
-ACTION: Con motor asíncrono: realizar el autoajuste con la puerta de cabina acoplada pero sin la puerta de rellano.
-EXPECTED_RESULT: Configuración correcta para motor asíncrono antes de iniciar el proceso de autoajuste.
-EVIDENCE: Con un motor asíncrono instalado el autoajuste ha de hacerse con la puerta de cabina acoplada pero sin la puerta de rellano
+RECORD_ID: FR-B242FDBAFCBE8B1F
+SOURCE_SECTION_OR_PAGE: 5.10 Velocidad de apertura (53)
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: 53 — Potenciómetro que permite ajustar la velocidad de apertura
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: function=ajuste velocidad de apertura; value=200 mm/s mínimo, 700 mm/s máximo
+EVIDENCE: ajustar la velocidad de apertura desde un mínimo de 200 mm/s hasta un máximo de 700 mm/s
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-799D6E068FD3C611
-SOURCE_SECTION_OR_PAGE: 5.8 Pulsador de autoajuste (51) — Proceso de autoajuste
-RECORD_TYPE: COMMISSIONING_STEP
-ACTION: Paso 1: Apagar el VF y posicionar la puerta en posición cerrada.
-EXPECTED_RESULT: Puerta en posición cerrada con módulo VF apagado.
-EVIDENCE: Apagar el VF y posicionar la puerta en posición cerrada
+RECORD_ID: FR-3BCD3858353A5DE6
+SOURCE_SECTION_OR_PAGE: 5.11 Seguridad (54)
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: 54 — Potenciómetro que permite ajustar la fuerza de cierre de la puerta (sensibilidad a reaperturas)
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: function=fuerza de cierre / sensibilidad a reaperturas; value=60 a 150Nm
+EVIDENCE: Esta valor es regulable de 60 a 150Nm.
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-E281419FED447550
-SOURCE_SECTION_OR_PAGE: 5.8 Pulsador de autoajuste (51) — Proceso de autoajuste
-RECORD_TYPE: COMMISSIONING_STEP
-ACTION: Paso 2: Desconectar las entradas (Pines 8, 9, 10, 11 & 12) y las entradas prioritarias (Pines 26, 21, 25 & 23).
-EXPECTED_RESULT: Todas las entradas estándar y prioritarias desconectadas antes del autoajuste.
-EVIDENCE: Desconectar las entradas (Pines 8, 9, 10, 11 & 12) y las entradas prioritarias (Pines 26, 21, 25 & 23)
+RECORD_ID: FR-F0D8C478AFC8B281
+SOURCE_SECTION_OR_PAGE: 5.12 Encoder (55)
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: 55 — entrada donde se conecta el encoder de cuadratura situado en el interior del motor
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: function=informa al control del sentido de giro y velocidad angular del motor
+EVIDENCE: En esta entrada se conecta el encoder de cuadratura que está situado en el interior del motor
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-3243E6DF4965EBF8
-SOURCE_SECTION_OR_PAGE: 5.8 Pulsador de autoajuste (51) — Proceso de autoajuste
-RECORD_TYPE: COMMISSIONING_STEP
-ACTION: Paso 3: Encender el VF y pulsar el botón de auto-ajuste (51).
-EXPECTED_RESULT: La puerta inicia la secuencia de 5 movimientos de autoajuste.
-EVIDENCE: Encender el VF y pulsar el botón de auto-ajuste (51)
+RECORD_ID: FR-2FDB0EF708582D86
+SOURCE_SECTION_OR_PAGE: 5.12 Encoder (55) — Compatibilidad con el motor asíncrono Fermator
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: Conectar el encoder del motor asíncrono (4 cables) a los 4 Pines del encoder marcado como ASYNC.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: scope=encoder estándar motor asíncrono, 4 cables; connection=ASYNC
+EVIDENCE: ha de ser conectado a los 4 Pines del encoder marcado como ASYNC
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-DC0F96FBE459663E
-SOURCE_SECTION_OR_PAGE: 5.8 Pulsador de autoajuste (51) — 1er Movimiento
-RECORD_TYPE: FUNCTIONAL_TEST
-ACTION: Observar el 1er movimiento: la puerta debe abrir 200 mm.
-EXPECTED_RESULT: La puerta abre 200 mm. Si hace pequeños rebotes en lugar de abrir, el sentido está invertido → cambiar pin 3 del dip switch.
-EVIDENCE: La puerta abre 200mm (Si la puerta en vez de abrir hace pequeños rebotes, significa esta intentando cerrar
-END_FIELD_RECORD
-
-FIELD_RECORD:
-RECORD_ID: FR-8E3B1935630D54A5
-SOURCE_SECTION_OR_PAGE: 5.8 Pulsador de autoajuste (51) — 1er Movimiento
-RECORD_TYPE: TROUBLESHOOTING_STEP
-ACTION: Si en el 1er movimiento la puerta hace pequeños rebotes en lugar de abrir, cambiar el pin 3 del dip switch para invertir el sentido de giro.
-EXPECTED_RESULT: Sentido de apertura corregido; la puerta abre correctamente 200 mm.
-EVIDENCE: hay que cambiar el pin 3 del dip switch
-END_FIELD_RECORD
-
-FIELD_RECORD:
-RECORD_ID: FR-E5D895938EE279CC
-SOURCE_SECTION_OR_PAGE: 5.8 Pulsador de autoajuste (51) — 5 movimientos
-RECORD_TYPE: FUNCTIONAL_TEST
-ACTION: Verificar que la secuencia completa de 5 movimientos finaliza correctamente: apertura 200 mm, cierre 150 mm, cierre completo lento hasta tope goma, apertura lenta hasta tope final, cierre con rampas optimizadas.
-EXPECTED_RESULT: Parámetros calculados y guardados en EEPROM no-volátil. Autoajuste completado.
-EVIDENCE: Una vez el autoajuste se haya completado los parámetros serán guardados en una EEPROM no-volátil
+RECORD_ID: FR-697D517F8BB90925
+SOURCE_SECTION_OR_PAGE: 5.12 Encoder (55) — imagen de conectores
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Etiquetas visibles: 55, PM, ASYNC, ENCODER, 56, MOTOR
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: connection=el texto asocia PM al encoder de alta resolución del motor síncrono PM (5 cables); función de la etiqueta 56 MOTOR no indicada en el texto
+EVIDENCE: El encoder del VF5+ está preparado para conectarse al encoder de alta resolución del motor síncrono PM
 END_FIELD_RECORD

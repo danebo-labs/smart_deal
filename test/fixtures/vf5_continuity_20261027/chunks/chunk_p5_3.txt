@@ -1,0 +1,32 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: SW4, Máster y Esclavo, Máster, Esclavo, FOTOCÉLULA (36, 37, 38), re-apertura]
+
+SW4.- Máster y Esclavo
+ON: Máster.
+La unidad de control de la puerta ejecutará la instrucción directamente. Ejemplo: la activación de la fotocélula provocará una re-apertura inmediata sin el control de la maniobra.
+
+OFF: Esclavo.
+No hay movimientos de re-apertura automáticos. Las puerta solo responden a las instrucciones dadas por el módulo de control del ascensor. Ejemplo: con la fotocélula obstruida la unidad enviará una señal a la maniobra mediante la salida FOTOCÉLULA (36, 37, 38). Entonces, la maniobra desactivara la señal de cerrar y activará la señal de abrir.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-B758ADF24781A027
+SOURCE_SECTION_OR_PAGE: SW4.- Máster y Esclavo
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: SW4 en ON: Máster
+EXPECTED_RESULT: La unidad de control de la puerta ejecutará la instrucción directamente.
+DETAILS: Ejemplo: la activación de la fotocélula provocará una re-apertura inmediata sin el control de la maniobra
+EVIDENCE: La unidad de control de la puerta ejecutará la instrucción directamente.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-05CB134CBEC27C41
+SOURCE_SECTION_OR_PAGE: SW4.- Máster y Esclavo
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: SW4 en OFF: Esclavo
+EXPECTED_RESULT: No hay movimientos de re-apertura automáticos. Las puerta solo responden a las instrucciones dadas por el módulo de control del ascensor.
+DETAILS: Ejemplo: con la fotocélula obstruida la unidad enviará una señal a la maniobra mediante la salida FOTOCÉLULA (36, 37, 38); la maniobra desactivara la señal de cerrar y activará la señal de abrir
+EVIDENCE: No hay movimientos de re-apertura automáticos.
+END_FIELD_RECORD

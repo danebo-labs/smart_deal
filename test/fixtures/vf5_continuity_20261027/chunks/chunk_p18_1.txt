@@ -1,44 +1,14 @@
 [DOCUMENT: VF5.pdf]
 [SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
-[SEARCH_ALIASES: Referencias a normativas, EN 12015:2014, EN 12016:2013, EN 61800-5-1:2007, EMC, Safety normativa, compatibilidad electromagnética, VF5+ normativa]
+[SEARCH_ALIASES: Referencias a normativas, EN 12015 : 2014, EN 12016 : 2013, EN 61800-5-1:2007, EMC, Safety]
 
 Referencias a normativas
 
-Esta página contiene la tabla de referencias normativas aplicables al Módulo electrónico VF5+ (DOC-FE.IE.IN.016172.ES, Versión 0.4, Fermator Group).
-
-| Categoría | Norma | Descripción |
-|-----------|-------|-------------|
-| EMC | EN 12015:2014 | Electromagnetic compatibility. Product family standard for lifts, escalators and moving walks. Emission. |
-| EMC | EN 12016:2013 | Electromagnetic compatibility. Product family standard for lifts, escalators and moving walks. Immunity. |
+[NOTA_EXTRACCION] | Category | Standard | Description |
+|-|-|-|
+| EMC | EN 12015 : 2014 | Electromagnetic compatibility. Product family standard for lifts, escalators and moving walks. Emission. |
+| EMC | EN 12016 : 2013 | Electromagnetic compatibility. Product family standard for lifts, escalators and moving walks. Immunity. |
 | Safety | EN 61800-5-1:2007 | Adjustable speed electrical power drive systems – Part 5-1: Safety requirements – Electrical, thermal and energy. |
+[CONFLICTO_DOCUMENTAL C4: la placa (PDF p. 4 y p. 16) imprime «EN 12016: 2004»; el texto de 5.1 (PDF p. 6) y la tabla de normas (PDF p. 18) citan «EN 12016:2013».]
 
-Estas normativas son las referencias declaradas por el fabricante para compatibilidad electromagnética (emisión e inmunidad) y requisitos de seguridad del sistema de accionamiento de velocidad variable del módulo VF5+.
-
-# FIELD-SAFETY EVIDENCE RECORDS
-
-FIELD_RECORD:
-RECORD_ID: FR-BB5343D635084777
-SOURCE_SECTION_OR_PAGE: Referencias a normativas
-RECORD_TYPE: DOCUMENTATION_REQUIREMENT
-ACTION: Verificar cumplimiento con EN 12015:2014 para emisiones electromagnéticas en ascensores, escaleras mecánicas y pasillos móviles.
-EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: EN 12015 : 2014 Electromagnetic compatibility. Product family standard for lifts, escalators and moving walks. Emission.
-END_FIELD_RECORD
-
-FIELD_RECORD:
-RECORD_ID: FR-E55352212B00DBD1
-SOURCE_SECTION_OR_PAGE: Referencias a normativas
-RECORD_TYPE: DOCUMENTATION_REQUIREMENT
-ACTION: Verificar cumplimiento con EN 12016:2013 para inmunidad electromagnética en ascensores, escaleras mecánicas y pasillos móviles.
-EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: EN 12016 : 2013 Electromagnetic compatibility. Product family standard for lifts, escalators and moving walks. Immunity.
-END_FIELD_RECORD
-
-FIELD_RECORD:
-RECORD_ID: FR-34C6CB50E28FC7C1
-SOURCE_SECTION_OR_PAGE: Referencias a normativas
-RECORD_TYPE: DOCUMENTATION_REQUIREMENT
-ACTION: Verificar cumplimiento con EN 61800-5-1:2007 para requisitos de seguridad eléctrica, térmica y energética del sistema de accionamiento.
-EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: EN 61800-5-1:2007 Adjustable speed electrical power drive systems – Part 5-1: Safety requirements – Electrical, thermal and energy.
-END_FIELD_RECORD
+Page header: INSTRUCCIONES, DOC-FE.IE.IN.016172.ES, Módulo electrónico VF5+, Versión: 0.4. Footer: Fermator Group • www.fermator.com, printed folio Pág. 17 / 21 (PDF page index 18 of 22). The standards are listed as references only; the page states no action, requirement or test derived from them.

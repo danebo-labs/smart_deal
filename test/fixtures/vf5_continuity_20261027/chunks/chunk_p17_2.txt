@@ -1,0 +1,28 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: Señales de entrada, Señales de salida, Contactos de libre potencial, Desempeño, Velocidad de abrir, Velocidad de cerrar, Fuerza de seguridad]
+
+Señales de entrada
+[NOTA_EXTRACCION] | Parámetro | Valor |
+|-|-|
+| Impedancia | 20 kΩ |
+| Voltaje | 12 V DC to 60 V DC |
+| Voltaje | 100 V AC to 230 V AC |
+
+Señales de salida
+| Parámetro | Mínimo | Nominal | Máximo | Unidades |
+|-|-|-|-|-|
+| Contactos | Contactos de libre potencial. | | | |
+| Resistencia de los contactos | - | - | 100 | mΩ |
+| Tiempo de operación | - | - | 7 | ms |
+| Tiempo de liberación | - | - | 3 | ms |
+| Corriente límite | - | - | 150 | mA |
+| Voltaje | - | - | 125 | V AC |
+
+Desempeño
+| Parámetro | Mínimo | Nominal | Máximo | Unidades |
+|-|-|-|-|-|
+| Velocidad de abrir | 0,2 | - | 0,7 | m/s |
+| Velocidad de cerrar | 0,15 | - | 0,4 | m/s |
+| Fuerza de seguridad | 60 | - | 150 | N |
+[CONFLICTO_DOCUMENTAL C3: 5.11 (PDF p. 8) da «60 a 150Nm» para el #54; la tabla de características (PDF p. 17) da «Fuerza de seguridad 60 – 150 N» y la consola (PDF p. 14) «Limitar fuerza 150 N». Nm (par) y N (fuerza) no son la misma magnitud y el documento no aclara cuál vale.]

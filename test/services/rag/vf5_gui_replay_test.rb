@@ -86,7 +86,9 @@ class Rag::Vf5GuiReplayTest < ActiveSupport::TestCase
     assert_includes limit["text"], "#23"
     assert_includes limit["text"], "contacto cerrado"
     assert_equal published_question, limit.dig("answers", "q")
-    assert_nil t5[:episode].pending_question
+    assert_match(/LED está encendido/i, t5[:episode].pending_question["question"])
+    assert_match(/Fotocélula/, t5[:episode].pending_question["question"])
+    assert_match(/Estado/, t5[:episode].pending_question["question"])
     assert_match(/\AIndicaste que no puedes distinguirlo/, t5[:text])
     assert_not_includes t5[:text], proposed
     assert_not_includes t5[:text], "?"

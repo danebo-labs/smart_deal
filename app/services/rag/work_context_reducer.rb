@@ -77,13 +77,40 @@ module Rag
         answers["q"].present? && Array(answers["t"]).any?
     end
 
+    def self.settle_answered_pending!(episode, question)
+      clear_matching_pending!(episode, question)
+    end
+
     def self.clear_matching_pending!(episode, question)
       pending = episode.pending_question
       return unless open_documented_question?(pending)
       return unless FollowupQueryRewriter.normalize_label(pending["question"]) ==
         FollowupQueryRewriter.normalize_label(question)
 
-      episode.clear_pending!
+      shown = pending["shown"]
+      promoted = promote_shown_question(pending, shown)
+      if promoted
+        episode.pending_question = promoted
+      else
+        episode.clear_pending!
+      end
+    end
+
+    # The answered datum leaves. A different clarification that was published
+    # with it, and that still has its targets, becomes the open question.
+    def self.promote_shown_question(pending, shown)
+      return nil unless shown.is_a?(Hash)
+
+      text = shown["question"].to_s.squish
+      return nil if text.blank?
+      return nil if FollowupQueryRewriter.normalize_label(text) ==
+        FollowupQueryRewriter.normalize_label(pending["question"])
+
+      PendingQuestion.coerce(
+        "type" => "documented_context",
+        "question" => text,
+        "targets" => shown["targets"]
+      )
     end
 
     # The turn has to name the same entity, property, and scope. A shared
@@ -261,7 +288,7 @@ module Rag
       :open_documented_question?, :open_answer?, :clear_matching_pending!,
       :shown_documented_question, :chosen_unknown_datum, :same_question_text?, :clear_shown!,
       :question_datum_text, :datum_parts, :other_scope?, :other_property?, :other_entity?,
-      :datum_covers?, :unspecified_unknown?, :property_stems, :generic_entity?,
+      :datum_covers?, :unspecified_unknown?, :promote_shown_question, :generic_entity?,
       :referent_placeholder?,
       :designators, :closed_reply?
 
@@ -493,7 +520,7 @@ module Rag
       return unless scope || self.class.same_published_datum?(question, @turn)
 
       texts.each { |text| @episode.append_observation!(text, correlation_id: @correlation_id, answers: answers) }
-      @episode.clear_pending!
+      self.class.settle_answered_pending!(@episode, question["question"])
     end
 
     def next_step_question?

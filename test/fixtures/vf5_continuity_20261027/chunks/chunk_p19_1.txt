@@ -1,7 +1,30 @@
 [DOCUMENT: VF5.pdf]
 [SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
-[SEARCH_ALIASES: masa en movimiento, moving mass, factor multiplicador, multiplier factor, Fermator, VF5+, DOC-FE.IE.IN.016172.ES]
+[SEARCH_ALIASES: 11.1 Compact y Compact+, Compact, Compact+ PM 150, Compact PM, Multiplier factor, Anexo 1]
 
-11.3 Línea de producto / Product line — Tabla de masas en movimiento (continuación de página anterior)
+11 Anexo 1
 
-Esta sección continúa las tablas de factores multiplicadores para el cálculo de la masa en movimiento según las variantes de producto de Fermator. Los valores se aplican sobre la masa base del modelo de referencia indicado en cada línea de producto.
+11.1 Línea de producto Compact y Compact+
+
+| # | Modelo | Apertura | Número de paneles | PL [mm] | HL [mm] | Tipo de panel | Homologación de incendios (*) | Masa en movimiento [Kg] |
+|-|-|-|-|-|-|-|-|-|
+| 0 | Compact | Telescópica | 2 | 800 | 2000 | Acero | F.R. E 120 | 29,46 |
+
+| # | Concept | Multiplier factor |
+|-|-|-|
+| 1 | Difference from T2 to C2 | 0,02 |
+| 2 | Difference of 100 mm in PL | 0,03 |
+| 3 | Difference of 100 mm in HL | 0,01 |
+| 4 | Difference from F.R. E 120 to F.R. EI 60 | 0,16 |
+| 5 | Difference from F.R. E 120 to F.R. EI 120 | 0,20 |
+| 6 | Difference from F.R. E 120 to F.R. EW 60 | 0,12 |
+| 7 | Difference from F.R. E 120 to F.R. E 30 Russia | 0,00 |
+| 8 | Difference from F.R. E 120 to F.R. EI 60 Russia | 0,16 |
+| 9 | Difference from F.R. E 120 to F.R. EI 60 Ukraine | 0,16 |
+| 10 | Difference from Metal sheet panels to Wien type vision panels | 0,28 |
+| 11 | Difference from Metal sheet panels to Flush big vision panels | 0,23 |
+| 12 | Difference from Metal sheet panels to Full glass in skirting panels | 0,07 |
+| 13 | Difference from Compact to Compact PM model | 0,01 |
+| 14 | Difference from Compact to Compact+ PM 150 model | 0,05 |
+
+[NOTA_EXTRACCION] Notes: the page prints the marker (*) in the column header "Homologación de incendios (*)" but the footnote text for (*) is not visible on this page (DATA_NOT_AVAILABLE). The page does not define PL, HL, T2, C2 or the use of the multiplier factor; those meanings are DATA_NOT_AVAILABLE here. Page footer: Fermator Group • www.fermator.com, Pág. 18 / 21 (printed folio).

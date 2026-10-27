@@ -1,0 +1,142 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: 5.2 Entradas de control, Señal abrir, Señal cerrar, borne 12, borne 8, Común 10, 12 Voltios borne 9, entrada tensión externa]
+
+5.2 Entradas de control (8, 9, 10, 11, 12)
+
+El circuito puede trabajar con entradas de tensión externa o de tensión interna (contacto libre de tensión).
+
+[NOTA_EXTRACCION] Figura (sin número impreso) con dos recuadros:
+ENTRADA TENSIÓN EXTERNA: bornes rotulados Abrir - 12, 0 V - 11, Com - 10, 12 V - 9, Cerrar - 8. Etiquetas: "Tensión 12 V DC... 60 V DC, 100 V AC... 230 V AC. ABRIR" y "Tensión 12 V DC... 60 V DC, 100 V AC...230 V AC. CERRAR".
+[NOTA_EXTRACCION] ENTRADA TENSIÓN INTERNA: bornes rotulados Abrir - 12, 0 V - 11, Com - 10, 12 V - 9, Cerrar - 8, con contactos rotulados ABRIR y CERRAR. El cableado exacto por borne en el dibujo no se transcribe: REQUIRES_FIELD_VERIFICATION.
+
+12.- Señal abrir
+Es una señal que ordena la apertura de la puerta. La tensión a aplicar puede ser desde 12V DC a 60 V DC o des de 100V AC a 230V AC con una alimentación externa entre esta entrada y el común (10).
+
+11.- 0 Voltios
+Es el polo opuesto a 12 V, en el caso de usar tensión interna se conecta esta entrada con el común (10).
+
+10.- Común
+Es la referencia usada para las señales de apertura y cierre.
+
+9.- 12 Voltios
+La salida de 12 Voltios aislada permite el control de la puerta mediante un contacto libre de tensión.
+A tener en cuenta:
+a) Esta alimentación solo se debe usar con este propósito.
+b) Este contacte tiene que estar aislado de cualquier otra fuente de alimentación.
+
+8.- Señal cerrar
+[CONFLICTO_DOCUMENTAL C2: 8.2 (PDF p. 12) llama «entrada OPEN» al #8 y «señal de cerrado» al #12; 5.2 (PDF p. 6) y la placa (PDF p. 4 y p. 16) rotulan 8 = Señal cerrar / CLOSE y 12 = Señal abrir / OPEN. El documento no resuelve la contradicción: REQUIRES_FIELD_VERIFICATION.]
+Esta señal se utiliza para ordenar el cierre de la puerta.
+IMPORTANTE: La maniobra debe mantener activada la señal de cerrar todo el tiempo cuando el ascensor está en movimiento. Cuando la maniobra no mantiene activada la señal de cerrar el patín se abre y la puerta podrá ser abierta con una fuerza no mayor a 300N punto 5.3.15.1 de la normativa EN 81-20).
+
+[NOTA_EXTRACCION] | Borne | Nombre impreso | Descripción impresa |
+|-|-|-|
+| 12 | Señal abrir | ordena la apertura de la puerta; 12V DC a 60 V DC o 100V AC a 230V AC con alimentación externa entre esta entrada y el común (10) |
+| 11 | 0 Voltios | polo opuesto a 12 V; con tensión interna se conecta con el común (10) |
+| 10 | Común | referencia para las señales de apertura y cierre |
+| 9 | 12 Voltios | salida de 12 Voltios aislada; control de la puerta mediante contacto libre de tensión |
+| 8 | Señal cerrar | ordena el cierre de la puerta |
+
+[NOTA_EXTRACCION] Subsistema: DOOR_OPERATOR.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-D3F3AD902D117456
+SOURCE_SECTION_OR_PAGE: 5.2 Entradas de control (8, 9, 10, 11, 12) — ENTRADA TENSIÓN EXTERNA
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Bornes Abrir - 12, 0 V - 11, Com - 10, 12 V - 9, Cerrar - 8 con etiquetas de tensión ABRIR y CERRAR
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: value=12 V DC... 60 V DC, 100 V AC... 230 V AC (etiquetas ABRIR y CERRAR)
+UNCERTAINTY: REQUIRES_FIELD_VERIFICATION: el cableado por borne en el dibujo no se transcribe.
+EVIDENCE: Tensión 12 V DC... 60 V DC, 100 V AC... 230 V AC.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-9BDBBDAAE226988D
+SOURCE_SECTION_OR_PAGE: 5.2 Entradas de control (8, 9, 10, 11, 12) — ENTRADA TENSIÓN INTERNA
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Bornes Abrir - 12, 0 V - 11, Com - 10, 12 V - 9, Cerrar - 8 con contactos rotulados ABRIR y CERRAR
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+UNCERTAINTY: REQUIRES_FIELD_VERIFICATION: las conexiones de los contactos a bornes en el dibujo no se transcriben.
+EVIDENCE: ENTRADA TENSIÓN INTERNA:
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-739462DA4F3917B7
+SOURCE_SECTION_OR_PAGE: 12.- Señal abrir
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: 12.- Señal abrir
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: function=ordena la apertura de la puerta; value=12V DC a 60 V DC o des de 100V AC a 230V AC; connection=alimentación externa entre esta entrada y el común (10)
+EVIDENCE: Es una señal que ordena la apertura de la puerta.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-9D5728DDA90C6DF3
+SOURCE_SECTION_OR_PAGE: 11.- 0 Voltios
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: 11.- 0 Voltios
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: function=polo opuesto a 12 V; connection=con tensión interna se conecta con el común (10)
+EVIDENCE: en el caso de usar tensión interna se conecta esta entrada con el común (10)
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-001FB427B1AC5D14
+SOURCE_SECTION_OR_PAGE: 10.- Común
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: 10.- Común
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: function=referencia usada para las señales de apertura y cierre
+EVIDENCE: Es la referencia usada para las señales de apertura y cierre.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-4FA878DDD9C3AFAA
+SOURCE_SECTION_OR_PAGE: 9.- 12 Voltios
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: 9.- 12 Voltios
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: function=salida de 12 Voltios aislada que permite el control de la puerta mediante un contacto libre de tensión
+EVIDENCE: La salida de 12 Voltios aislada permite el control de la puerta mediante un contacto libre de tensión.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-C79CC821E7529CB0
+SOURCE_SECTION_OR_PAGE: 9.- 12 Voltios — A tener en cuenta
+RECORD_TYPE: SAFETY_WARNING
+ACTION: a) Esta alimentación solo se debe usar con este propósito.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: a) Esta alimentación solo se debe usar con este propósito.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-30226DFC1425C73F
+SOURCE_SECTION_OR_PAGE: 9.- 12 Voltios — A tener en cuenta
+RECORD_TYPE: SAFETY_WARNING
+ACTION: b) Este contacte tiene que estar aislado de cualquier otra fuente de alimentación.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: b) Este contacte tiene que estar aislado de cualquier otra fuente de alimentación.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-795CA18C279B1173
+SOURCE_SECTION_OR_PAGE: 8.- Señal cerrar
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: 8.- Señal cerrar
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: function=ordenar el cierre de la puerta
+EVIDENCE: Esta señal se utiliza para ordenar el cierre de la puerta.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-6F79F0A52AB5405B
+SOURCE_SECTION_OR_PAGE: 8.- Señal cerrar — IMPORTANTE
+RECORD_TYPE: SAFETY_WARNING
+ACTION: La maniobra debe mantener activada la señal de cerrar todo el tiempo cuando el ascensor está en movimiento.
+EXPECTED_RESULT: Cuando la maniobra no mantiene activada la señal de cerrar el patín se abre y la puerta podrá ser abierta con una fuerza no mayor a 300N
+DETAILS: scope=ascensor en movimiento; limit=300N, punto 5.3.15.1 de la normativa EN 81-20 (cita informativa de la fuente)
+EVIDENCE: Cuando la maniobra no mantiene activada la señal de cerrar el patín se abre
+END_FIELD_RECORD

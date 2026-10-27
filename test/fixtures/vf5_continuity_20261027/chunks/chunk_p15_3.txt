@@ -1,0 +1,16 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: Características ambientales, Temperatura ambiente, Humedad máxima, Altitud, Grado de polución, Envolvente PA 66 / 6]
+
+Características ambientales
+
+| Parámetro | Mínimo | Nominal | Máximo | Unidades |
+|-|-|-|-|-|
+| Entorno operativo y de almacenamiento | -10 | - | 80 | ºC |
+| Temperatura ambiente | -10 | - | 50 | ºC |
+| Humedad | - | - | 95 | % |
+| Altitud | - | - | 2000 | mm |
+| Grado de polución | - | - | 2 | |
+| Detalles del envolvente | PA 66 / 6 | | | |
+
+[NOTA_EXTRACCION] La unidad de Altitud figura impresa como "mm" en esta página; se copia tal cual. REQUIRES_FIELD_VERIFICATION: la unidad impresa para Altitud (mm) es dudosa y la página no la aclara.

@@ -1,161 +1,89 @@
 [DOCUMENT: VF5.pdf]
 [SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
-[SEARCH_ALIASES: Pines 8 9 10 11 12, Pin 52 53 54, potenciómetros VF5+, fotocélula VF5+, conexión maniobra VF5+, ENTRADA TENSIÓN EXTERNA, ENTRADA TENSIÓN INTERNA, botón TEST VF5+]
+[SEARCH_ALIASES: Conexión con la maniobra, Pines 8, 9, 10, 11 & 12, entrada prioritaria, Pines 26, 21, 25 y 23, Pines 30 al 41, ENTRADA TENSIÓN EXTERNA, ENTRADA TENSIÓN INTERNA, Abrir - 12]
 
-S6 — ELECTRICAL
+6 Conexión con la maniobra
+Si el autoajuste ha sido realizado correctamente, se pueden realizar las conexiones con el controlador del ascensor. Los tres potenciómetros también pueden ser regulados.
 
-6 Conexión con la maniobra (continuación)
+1.- Conectar los cables que vienen de la maniobra.
+– Conectar los cables de entrada (Pines 8, 9, 10, 11 & 12) y los cables de entrada prioritaria (Pines 26, 21, 25 y 23).
+– Conectar la fotocélula (Pines 17, 18, 19 y 20).
+– Conectar los cables de salida los cuales informan al controlador del ascensor sobre el estado de la puerta (Pines 30 al 41).
 
-Esta sección cubre la conexión del módulo VF5+ con el controlador del ascensor, la regulación de potenciómetros y la instalación opcional de fotocélula.
+Nota: Apagar el control del VF antes de conectar los cables de apertura y cierre. No mezclar los voltajes del controlador del ascensor con los internos del controlador VF (Pin 9: 12 V y Pin 11: 0 V).
 
-**1.- Conectar los cables que vienen de la maniobra.**
-- Conectar los cables de entrada (Pines 8, 9, 10, 11 & 12) y los cables de entrada prioritaria (Pines 26, 21, 25 y 23).
-- Conectar la fotocélula (Pines 17, 18, 19 y 20).
-- Conectar los cables de salida los cuales informan al controlador del ascensor sobre el estado de la puerta (Pines 30 al 41).
-
-**Nota:** Apagar el control del VF antes de conectar los cables de apertura y cierre. No mezclar los voltajes del controlador del ascensor con los internos del controlador VF (Pin 9: 12 V y Pin 11: 0 V).
-
-Tabla de entradas visible en el diagrama:
-
-| Configuración | Pin | Función | Tensión |
-|---|---|---|---|
-| ENTRADA TENSIÓN EXTERNA — Abrir | Pin 12 | Abrir | 12 V DC…60 V DC, 100 V AC…230 V AC |
-| ENTRADA TENSIÓN EXTERNA — 0 V | Pin 11 | Referencia 0 V | — |
-| ENTRADA TENSIÓN EXTERNA — Com | Pin 10 | Común | — |
-| ENTRADA TENSIÓN EXTERNA — 12 V | Pin 9 | Referencia 12 V interna | 12 V DC…60 V DC, 100 V AC…230 V AC |
-| ENTRADA TENSIÓN EXTERNA — Cerrar | Pin 8 | Cerrar | — |
-| ENTRADA TENSIÓN INTERNA — Abrir | Pin 12 | Abrir | — |
-| ENTRADA TENSIÓN INTERNA — 0 V | Pin 11 | Referencia 0 V | — |
-| ENTRADA TENSIÓN INTERNA — Com | Pin 10 | Común | — |
-| ENTRADA TENSIÓN INTERNA — 12 V | Pin 9 | Referencia 12 V interna | — |
-| ENTRADA TENSIÓN INTERNA — Cerrar | Pin 8 | Cerrar | — |
-
-Nota: Los valores de tensión para ENTRADA TENSIÓN INTERNA (Pines 8–12) no se detallan en la tabla del diagrama para esa columna — REQUIRES_FIELD_VERIFICATION.
-
-**2.- Poner potenciómetros al mínimo.**
-- Velocidad de cierre (Pin 52).
-- Velocidad de apertura (Pin 53).
-- Fuerza (Pin 54).
-
-**3.- Comprobación de la puerta.**
-- Comprobar desde la puerta de rellano.
-- Presionar el botón «TEST» y establecer los potenciómetros (velocidad de apertura, velocidad de cierre y fuerza) según el ajuste requerido.
-
-**4.- Instalación de la fotocélula (opcional).**
-- Verificar la presencia de un emisor y un receptor (marcado E y R en las cápsulas) conectados al cable correcto (emisor al cable amarillo y receptor al verde).
-- Conectar la fotocélula al módulo electrónico.
-- Poner las cápsulas cara a cara a una distancia mínima de 50 cm y hacer el proceso de autoajuste sin golpear las cápsulas. Una vez hecho, hacer un movimiento de apertura y cerrado, después, bloquear la fotocélula con la mano durante el movimiento de cerrado para asegurar que el relé de la fotocélula está activo cada vez que la mano intercepta la fotocélula.
-
-**Nota:** Retirar el cableado de la fotocélula de cualquier lugar con "interferencias eléctricas" como motores, cables de alimentación, etc.
-
-**Información adicional:** Los parámetros del VF pueden ser personalizados con la herramienta de programación de Fermator.
+[NOTA_EXTRACCION] Diagrama de la página (etiquetas literales):
+[NOTA_EXTRACCION] | Diagrama | Etiquetas de borne impresas | Etiquetas adicionales |
+|-|-|-|
+| ENTRADA TENSIÓN EXTERNA: | Abrir - 12, 0 V - 11, Com - 10, 12 V - 9, Cerrar - 8 | ABRIR — Tensión 12 V DC... 60 V DC, 100 V AC... 230 V AC.; CERRAR — Tensión 12 V DC... 60 V DC, 100 V AC... 230 V AC. |
+| ENTRADA TENSIÓN INTERNA: | Abrir - 12, 0 V - 11, Com - 10, 12 V - 9, Cerrar - 8 | ABRIR; CERRAR |
+[NOTA_EXTRACCION] El orden exacto de contactos y puentes dibujados entre bornes no está descrito en texto: REQUIRES_FIELD_VERIFICATION contra el diagrama original.
 
 # FIELD-SAFETY EVIDENCE RECORDS
 
 FIELD_RECORD:
-RECORD_ID: FR-CEDD7BB588A84D1A
+RECORD_ID: FR-F97C77E52DCCC615
 SOURCE_SECTION_OR_PAGE: 1.- Conectar los cables que vienen de la maniobra.
 RECORD_TYPE: INSTALLATION_STEP
-ACTION: Conectar los cables de entrada a Pines 8, 9, 10, 11 & 12 y los cables de entrada prioritaria a Pines 26, 21, 25 y 23.
+ACTION: Conectar los cables de entrada (Pines 8, 9, 10, 11 & 12) y los cables de entrada prioritaria (Pines 26, 21, 25 y 23).
 EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: Conectar los cables de entrada (Pines 8, 9, 10, 11 & 12) y los cables de entrada prioritaria (Pines 26, 21, 25 y 23)
+DETAILS: precondition=autoajuste realizado correctamente
+EVIDENCE: Conectar los cables de entrada (Pines 8, 9, 10, 11 & 12)
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-0D30D6CDFCB4EE80
+RECORD_ID: FR-9D8C659F603E96A4
 SOURCE_SECTION_OR_PAGE: 1.- Conectar los cables que vienen de la maniobra.
 RECORD_TYPE: INSTALLATION_STEP
-ACTION: Conectar la fotocélula a los Pines 17, 18, 19 y 20.
+ACTION: Conectar la fotocélula (Pines 17, 18, 19 y 20).
 EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: Conectar la fotocélula (Pines 17, 18, 19 y 20)
+EVIDENCE: Conectar la fotocélula (Pines 17, 18, 19 y 20).
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-5D7D809FC85CFC78
+RECORD_ID: FR-AE473B20A6BF27BA
 SOURCE_SECTION_OR_PAGE: 1.- Conectar los cables que vienen de la maniobra.
 RECORD_TYPE: INSTALLATION_STEP
-ACTION: Conectar los cables de salida que informan al controlador del ascensor sobre el estado de la puerta a los Pines 30 al 41.
+ACTION: Conectar los cables de salida los cuales informan al controlador del ascensor sobre el estado de la puerta (Pines 30 al 41).
 EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: Conectar los cables de salida los cuales informan al controlador del ascensor sobre el estado de la puerta (Pines 30 al 41)
+EVIDENCE: cables de salida los cuales informan al controlador del ascensor sobre el estado de la puerta
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-4F268A4DBD1729F1
-SOURCE_SECTION_OR_PAGE: Nota (conexión maniobra)
+RECORD_ID: FR-9370474654EAAB7A
+SOURCE_SECTION_OR_PAGE: Nota (sección 1.- Conectar los cables que vienen de la maniobra.)
 RECORD_TYPE: SAFETY_WARNING
 ACTION: Apagar el control del VF antes de conectar los cables de apertura y cierre.
 EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: Apagar el control del VF antes de conectar los cables de apertura y cierre
+EVIDENCE: Apagar el control del VF antes de conectar los cables de apertura y cierre.
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-EC1792EEC4E5EE57
-SOURCE_SECTION_OR_PAGE: Nota (conexión maniobra)
+RECORD_ID: FR-E69F7A6A1CA250ED
+SOURCE_SECTION_OR_PAGE: Nota (sección 1.- Conectar los cables que vienen de la maniobra.)
 RECORD_TYPE: SAFETY_WARNING
 ACTION: No mezclar los voltajes del controlador del ascensor con los internos del controlador VF (Pin 9: 12 V y Pin 11: 0 V).
 EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: No mezclar los voltajes del controlador del ascensor con los internos del controlador VF (Pin 9: 12 V y Pin 11: 0 V)
+DETAILS: value=Pin 9: 12 V; Pin 11: 0 V (internos del VF)
+EVIDENCE: No mezclar los voltajes del controlador del ascensor con los internos del controlador VF
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-ABB73B4E7A5ABFBE
-SOURCE_SECTION_OR_PAGE: 2.- Poner potenciómetros al mínimo.
-RECORD_TYPE: INSTALLATION_STEP
-ACTION: Poner al mínimo el potenciómetro de velocidad de cierre (Pin 52), velocidad de apertura (Pin 53) y fuerza (Pin 54).
-EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: Velocidad de cierre (Pin 52). Velocidad de apertura (Pin 53). Fuerza (Pin 54)
-END_FIELD_RECORD
-
-FIELD_RECORD:
-RECORD_ID: FR-6241CA5E08E605AE
-SOURCE_SECTION_OR_PAGE: 3.- Comprobación de la puerta.
-RECORD_TYPE: FUNCTIONAL_TEST
-ACTION: Comprobar desde la puerta de rellano. Presionar el botón «TEST» y establecer los potenciómetros (velocidad de apertura, velocidad de cierre y fuerza) según el ajuste requerido.
-EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: Presionar el botón «TEST» y establecer los potenciómetros (velocidad de apertura, velocidad de cierre y fuerza) según el ajuste requerido
-END_FIELD_RECORD
-
-FIELD_RECORD:
-RECORD_ID: FR-E780BDE5857EF1F2
-SOURCE_SECTION_OR_PAGE: 4.- Instalación de la fotocélula (opcional).
-RECORD_TYPE: INSTALLATION_STEP
-ACTION: Verificar la presencia de un emisor (E) y un receptor (R) conectados al cable correcto: emisor al cable amarillo y receptor al verde.
-EXPECTED_RESULT: Emisor conectado al cable amarillo y receptor al cable verde.
-EVIDENCE: emisor al cable amarillo y receptor al verde
-END_FIELD_RECORD
-
-FIELD_RECORD:
-RECORD_ID: FR-31D2398F68B15BC2
-SOURCE_SECTION_OR_PAGE: 4.- Instalación de la fotocélula (opcional).
-RECORD_TYPE: FUNCTIONAL_TEST
-ACTION: Poner las cápsulas cara a cara a una distancia mínima de 50 cm, realizar autoajuste sin golpear las cápsulas, hacer un movimiento de apertura y cerrado, luego bloquear la fotocélula con la mano durante el movimiento de cerrado.
-EXPECTED_RESULT: El relé de la fotocélula está activo cada vez que la mano intercepta la fotocélula.
-EVIDENCE: bloquear la fotocélula con la mano durante el movimiento de cerrado para asegurar que el relé de la fotocélula está activo
-END_FIELD_RECORD
-
-FIELD_RECORD:
-RECORD_ID: FR-4621BA7911ACC375
-SOURCE_SECTION_OR_PAGE: Nota (fotocélula)
-RECORD_TYPE: SAFETY_WARNING
-ACTION: Retirar el cableado de la fotocélula de cualquier lugar con interferencias eléctricas como motores, cables de alimentación, etc.
-EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: Retirar el cableado de la fotocélula de cualquier lugar con "interferencias eléctricas" como motores, cables de alimentación
-END_FIELD_RECORD
-
-FIELD_RECORD:
-RECORD_ID: FR-458F343307E3062D
-SOURCE_SECTION_OR_PAGE: Diagrama ENTRADA TENSIÓN EXTERNA
+RECORD_ID: FR-6B6ACFF4030A38FA
+SOURCE_SECTION_OR_PAGE: ENTRADA TENSIÓN EXTERNA:
 RECORD_TYPE: SCHEMATIC_LABEL
-ACTION: Pin 12 — ABRIR (tensión externa); Pin 9 — 12 V referencia (tensión externa: 12 V DC…60 V DC, 100 V AC…230 V AC); Pin 11 — 0 V; Pin 10 — Com; Pin 8 — CERRAR (tensión externa: 12 V DC…60 V DC, 100 V AC…230 V AC)
+ACTION: Bornes: Abrir - 12, 0 V - 11, Com - 10, 12 V - 9, Cerrar - 8. ABRIR — Tensión 12 V DC... 60 V DC, 100 V AC... 230 V AC. CERRAR — Tensión 12 V DC... 60 V DC, 100 V AC... 230 V AC.
 EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: Tensión 12 V DC… 60 V DC, 100 V AC… 230 V AC. ABRIR / CERRAR
+UNCERTAINTY: REQUIRES_FIELD_VERIFICATION: la correspondencia exacta de cada tensión impresa con cada borne dibujado no está indicada en texto.
+EVIDENCE: Tensión 12 V DC... 60 V DC, 100 V AC... 230 V AC.
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-018D8523E264F270
-SOURCE_SECTION_OR_PAGE: Diagrama ENTRADA TENSIÓN INTERNA
+RECORD_ID: FR-0D72584EC21F9C2D
+SOURCE_SECTION_OR_PAGE: ENTRADA TENSIÓN INTERNA:
 RECORD_TYPE: SCHEMATIC_LABEL
-ACTION: Pin 12 — ABRIR (tensión interna); Pin 11 — 0 V; Pin 10 — Com; Pin 9 — 12 V referencia interna; Pin 8 — CERRAR (tensión interna). Valores de tensión para tensión interna: DATA_NOT_AVAILABLE en este diagrama.
+ACTION: Bornes: Abrir - 12, 0 V - 11, Com - 10, 12 V - 9, Cerrar - 8; etiquetas ABRIR y CERRAR.
 EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: ENTRADA TENSIÓN INTERNA: Abrir - 12, 0 V - 11, Com - 10, 12 V - 9, Cerrar - 8
+UNCERTAINTY: REQUIRES_FIELD_VERIFICATION: conexiones entre bornes dibujadas sin descripción en texto.
+EVIDENCE: ENTRADA TENSIÓN INTERNA:
 END_FIELD_RECORD

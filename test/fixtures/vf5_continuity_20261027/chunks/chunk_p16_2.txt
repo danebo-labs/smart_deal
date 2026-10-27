@@ -1,0 +1,28 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: Requisitos Motor PM, Motor imán permanente síncrono, Características eléctricas, Encoder ABI magnético incremental, Tensión de alimentación, Clase térmica, Resolución pulsos / rev.]
+
+Requisitos Motor PM
+
+[NOTA_EXTRACCION] | Campo | Valor |
+|-|-|
+| Tipo | Imán permanente síncrono |
+| Número de polos | 10 |
+
+Características eléctricas
+
+| Parámetro | Mínimo | Nominal | Máximo | Unidades |
+|-|-|-|-|-|
+| Tensión de alimentación | 50 | 103 | 144 | V |
+| Corriente | 0,18 | 1,13 | 2,13 | A |
+| Potencia | 15 | 162 | 405 | W |
+| Par | 0 | 1,5 | 2,5 | N·m |
+| Velocidad | 600 | | | r.p.m. |
+[NOTA_EXTRACCION] El 600 está impreso una sola vez, en una celda que abarca Mínimo, Nominal y Máximo.
+
+| Clase térmica | | | | |
+[NOTA_EXTRACCION] La fila Clase térmica está impresa sin valor.
+
+Encoder: ABI magnético incremental (canal A, canal B e índice).
+
+Resolución: Mínimo "-" / Nominal 180 / Máximo "-" (pulsos / rev.).

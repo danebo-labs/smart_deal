@@ -1,0 +1,19 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: Contacto de puerta, contacto de puerta adicional, señal de monitorización, puerta de cabina cerrada]
+
+9.4 Contacto de puerta
+• Una señal de monitorización independiente es necesaria para comprobar que la puerta de cabina está cerrada. Para cumplir este punto se ha añadido un contacto de puerta adicional y la señal se debe conectar a la maniobra.
+La corriente máxima es de 2 A 230 V AC.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-A78C650FAA90BD57
+SOURCE_SECTION_OR_PAGE: 9.4 Contacto de puerta
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: Conectar a la maniobra la señal del contacto de puerta adicional, señal de monitorización independiente para comprobar que la puerta de cabina está cerrada
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: value=corriente máxima 2 A 230 V AC
+EVIDENCE: la señal se debe conectar a la maniobra.
+END_FIELD_RECORD

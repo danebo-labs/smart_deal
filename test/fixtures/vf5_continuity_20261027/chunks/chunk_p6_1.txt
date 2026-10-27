@@ -1,127 +1,58 @@
 [DOCUMENT: VF5.pdf]
 [SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
-[SEARCH_ALIASES: entradas salidas VF5+, terminal 8 cerrar, terminal 12 abrir, alimentación 230V AC, contacto libre de tensión, señal abrir, señal cerrar, puerto serie RJ11]
-
-S6 — ELECTRICAL
+[SEARCH_ALIASES: 5.1 Entrada de alimentación, 230 V AC monofásico, bornes 5 6 7, Fig. 3, conexión a tierra, arranque suave, EN 12016:2013]
 
 5 Entradas/Salidas
 
-5.1 Entrada de alimentación 230 Voltios AC monofásico (terminales 5, 6, 7)
+5.1 Entrada de alimentación 230 Voltios AC monofásico (5, 6, 7)
 
-El circuito ha sido diseñado para funcionar con una alimentación de 230 V AC (+10%, -15%, 50 o 60 Hz). La unidad consumirá de media aproximadamente 1 A de la alimentación.
-
+El circuito ha sido diseñado para funcionar con una alimentación de 230 V AC (+10%,-15%, 50 o 60 Hz).
+La unidad consumirá de media aproximadamente 1 A de la alimentación.
 Es importante que el operador de la puerta tenga una BUENA CONEXIÓN A TIERRA.
-
 El VF5+ incorpora un sistema de arranque suave para controlar la carga de los condensadores y prevenir cortocircuitos.
-
 El circuito se ha diseñado para aprobar el test de nivel en inmunidad industrial de acuerdo con la norma EN 12016:2013.
+[CONFLICTO_DOCUMENTAL C4: la placa (PDF p. 4 y p. 16) imprime «EN 12016: 2004»; el texto de 5.1 (PDF p. 6) y la tabla de normas (PDF p. 18) citan «EN 12016:2013».]
 
-Conexiones (Fig. 3):
-| Terminal | Señal |
-|---|---|
-| 7 (N) | Neutro |
-| 6 (+) | Tierra / PE |
-| 5 (L) | Fase (Line) |
+Fig. 3. Conexiones de entrada de alimentación (5, 6, 7).
+[CONFLICTO_DOCUMENTAL C1: la placa impresa (PDF p. 4 y p. 16) rotula SUPPLY 7 L, 6 PE, 5 N; la Fig. 3 (PDF p. 6) rotula N—7 y L—5. El documento no dice cuál prevalece: REQUIRES_FIELD_VERIFICATION sobre la placa instalada.]
+[NOTA_EXTRACCION] Etiquetas visibles en la figura: N—7, 6 (con un símbolo impreso junto al borne), L—5; las tres líneas de los bornes convergen en la etiqueta "230 V". El texto de la página no asigna función a cada borne más allá del título de la figura; la asignación por borne queda como DATA_NOT_AVAILABLE.
 
-5.2 Entradas de control (terminales 8, 9, 10, 11, 12)
+[NOTA_EXTRACCION] | Terminal | Etiqueta impresa | Valor impreso |
+|-|-|-|
+| 7 | N | 230 V |
+| 6 | (símbolo, sin texto) | 230 V |
+| 5 | L | 230 V |
 
-El circuito puede trabajar con entradas de tensión externa o de tensión interna (contacto libre de tensión).
-
-Entrada tensión externa:
-- Abrir: terminal 12 — Tensión 12 V DC … 60 V DC, 100 V AC … 230 V AC
-- 0 V: terminal 11
-- Común: terminal 10
-- 12 V: terminal 9 — Tensión 12 V DC … 60 V DC, 100 V AC … 230 V AC
-- Cerrar: terminal 8
-
-Entrada tensión interna (contacto libre de tensión):
-- Abrir: terminal 12 — ABRIR
-- 0 V: terminal 11
-- Común: terminal 10
-- 12 V: terminal 9
-- Cerrar: terminal 8 — CERRAR
-
-Descripción de terminales:
-
-12 — Señal abrir: Es una señal que ordena la apertura de la puerta. La tensión a aplicar puede ser desde 12 V DC a 60 V DC o desde 100 V AC a 230 V AC con una alimentación externa entre esta entrada y el común (10).
-
-11 — 0 Voltios: Es el polo opuesto a 12 V; en el caso de usar tensión interna se conecta esta entrada con el común (10).
-
-10 — Común: Es la referencia usada para las señales de apertura y cierre.
-
-9 — 12 Voltios: La salida de 12 Voltios aislada permite el control de la puerta mediante un contacto libre de tensión.
-  a) Esta alimentación solo se debe usar con este propósito.
-  b) Este contacto tiene que estar aislado de cualquier otra fuente de alimentación.
-
-8 — Señal cerrar: Esta señal se utiliza para ordenar el cierre de la puerta.
-
-IMPORTANTE: La maniobra debe mantener activada la señal de cerrar todo el tiempo cuando el ascensor está en movimiento. Cuando la maniobra no mantiene activada la señal de cerrar, el patín se abre y la puerta podrá ser abierta con una fuerza no mayor a 300 N (punto 5.3.15.1 de la normativa EN 81-20).
-
-5.3 Puerto serie (terminal 13)
-
-El puerto serie se utiliza para conectar con un dispositivo externo como la consola de programación, interfaz y futuros dispositivos de expansión. Trabaja a una velocidad de 1.200 Baudios por segundo, lazo de corriente. Se usa un conector RJ11 (Conector jack de teléfono).
+[NOTA_EXTRACCION] Subsistemas: POWER_SUPPLY, DOOR_OPERATOR.
 
 # FIELD-SAFETY EVIDENCE RECORDS
 
 FIELD_RECORD:
-RECORD_ID: FR-8FEE2CE39CB0C2B5
-SOURCE_SECTION_OR_PAGE: Fig. 3. Conexiones de entrada de alimentación (5, 6, 7)
-RECORD_TYPE: SCHEMATIC_LABEL
-ACTION: Terminal 7 (N) — Neutro; Terminal 6 (+) — Tierra/PE; Terminal 5 (L) — Fase
-EXPECTED_RESULT: Alimentación 230 V AC monofásico conectada a terminales 5, 6, 7
-EVIDENCE: El circuito ha sido diseñado para funcionar con una alimentación de 230 V AC
-END_FIELD_RECORD
-
-FIELD_RECORD:
-RECORD_ID: FR-AE0964C4B53F86AD
+RECORD_ID: FR-6C4E66AA40ED4EE0
 SOURCE_SECTION_OR_PAGE: 5.1 Entrada de alimentación 230 Voltios AC monofásico (5, 6, 7)
-RECORD_TYPE: INSTALLATION_STEP
-ACTION: Verificar que el operador de la puerta tenga una BUENA CONEXIÓN A TIERRA en terminal 6
-EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: Es importante que el operador de la puerta tenga una BUENA CONEXIÓN A TIERRA
-END_FIELD_RECORD
-
-FIELD_RECORD:
-RECORD_ID: FR-E792F6A4705E07AC
-SOURCE_SECTION_OR_PAGE: 5.2 Entradas de control (8, 9, 10, 11, 12) — Entrada tensión externa
-RECORD_TYPE: SCHEMATIC_LABEL
-ACTION: Terminal 12: Señal abrir — 12 V DC … 60 V DC o 100 V AC … 230 V AC; Terminal 11: 0 V; Terminal 10: Común; Terminal 9: 12 V (salida aislada); Terminal 8: Señal cerrar
-EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: El circuito puede trabajar con entradas de tensión externa o de tensión interna
-END_FIELD_RECORD
-
-FIELD_RECORD:
-RECORD_ID: FR-ABF043346979FA4C
-SOURCE_SECTION_OR_PAGE: 5.2 Entradas de control (8, 9, 10, 11, 12) — Entrada tensión interna
-RECORD_TYPE: SCHEMATIC_LABEL
-ACTION: Terminal 12: ABRIR (contacto libre de tensión); Terminal 11: 0 V conectado a terminal 10; Terminal 10: Común; Terminal 9: 12 V aislada; Terminal 8: CERRAR (contacto libre de tensión)
-EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: La salida de 12 Voltios aislada permite el control de la puerta mediante un contacto libre de tensión
-END_FIELD_RECORD
-
-FIELD_RECORD:
-RECORD_ID: FR-6F886F8BE4C3B487
-SOURCE_SECTION_OR_PAGE: 5.2 Entradas de control — IMPORTANTE señal cerrar
 RECORD_TYPE: SAFETY_WARNING
-ACTION: La maniobra debe mantener activada la señal de cerrar (terminal 8) todo el tiempo cuando el ascensor está en movimiento
-EXPECTED_RESULT: Si no se mantiene activada, el patín se abre y la puerta podrá ser abierta con fuerza no mayor a 300 N (EN 81-20 punto 5.3.15.1)
-EVIDENCE: La maniobra debe mantener activada la señal de cerrar todo el tiempo cuando el ascensor está en movimiento
-END_FIELD_RECORD
-
-FIELD_RECORD:
-RECORD_ID: FR-BBFA31AF98F4E273
-SOURCE_SECTION_OR_PAGE: 5.2 Entradas de control — terminal 9, 12 Voltios
-RECORD_TYPE: INSTALLATION_STEP
-ACTION: La salida de 12 V del terminal 9 solo se debe usar para control de puerta mediante contacto libre de tensión; aislarla de cualquier otra fuente de alimentación
+ACTION: Es importante que el operador de la puerta tenga una BUENA CONEXIÓN A TIERRA.
 EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: Este contacto tiene que estar aislado de cualquier otra fuente de alimentación
+EVIDENCE: Es importante que el operador de la puerta tenga una BUENA CONEXIÓN A TIERRA.
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-D1A88581418BC672
-SOURCE_SECTION_OR_PAGE: 5.3 Puerto serie (13)
+RECORD_ID: FR-9DF657CEA1959672
+SOURCE_SECTION_OR_PAGE: 5.1 Entrada de alimentación 230 Voltios AC monofásico (5, 6, 7)
 RECORD_TYPE: SCHEMATIC_LABEL
-ACTION: Terminal 13: Puerto serie RJ11 — 1.200 Baudios por segundo, lazo de corriente — para consola de programación, interfaz y dispositivos de expansión
+ACTION: Alimentación de 230 V AC (+10%,-15%, 50 o 60 Hz)
 EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: Trabaja a una velocidad de 1.200 Baudios por segundo, lazo de corriente. Se usa un conector RJ11
+DETAILS: value=230 V AC (+10%,-15%, 50 o 60 Hz); consumo medio aproximadamente 1 A
+EVIDENCE: funcionar con una alimentación de 230 V AC (+10%,-15%, 50 o 60 Hz)
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-09894ED6155A1587
+SOURCE_SECTION_OR_PAGE: Fig. 3. Conexiones de entrada de alimentación (5, 6, 7).
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Bornes N—7, 6, L—5 con etiqueta 230 V
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: connection=las tres líneas de los bornes 7, 6, 5 llegan a la etiqueta 230 V en la figura; value=230 V
+UNCERTAINTY: REQUIRES_FIELD_VERIFICATION: el borne 6 solo muestra un símbolo sin texto y no se asigna función por borne en el texto.
+EVIDENCE: Fig. 3. Conexiones de entrada de alimentación (5, 6, 7).
 END_FIELD_RECORD

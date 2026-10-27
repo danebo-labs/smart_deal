@@ -1,0 +1,40 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: patín, switch 2, salida de puerta cerrada, manual de montaje, la puerta no se cierra completamente, obstrucción]
+
+• La puerta hace el autoajuste correctamente pero el patín permanece abierto cuando el salida de puerta cerrada está activada.
+– Verificar que el switch 2 esté acorde al tipo de puerta. La puerta y el patín deben estar cerrados.
+• La puerta se para en la zona del patín.
+– Verificar manualmente el correcto movimiento del patín (mirar el manual de montaje) .
+• La puerta no se cierra completamente.
+– Desconectar el sistema completo y comprobar que no hay ninguna obstrucción.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-7F77C93439278304
+SOURCE_SECTION_OR_PAGE: 8.1 Autoajuste — La puerta hace el autoajuste correctamente pero el patín permanece abierto cuando el salida de puerta cerrada está activada.
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Verificar que el switch 2 esté acorde al tipo de puerta. La puerta y el patín deben estar cerrados.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: precondition=La puerta y el patín deben estar cerrados
+EVIDENCE: Verificar que el switch 2 esté acorde al tipo de puerta.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-9918AA47841356B3
+SOURCE_SECTION_OR_PAGE: 8.1 Autoajuste — La puerta se para en la zona del patín.
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Verificar manualmente el correcto movimiento del patín (mirar el manual de montaje).
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Verificar manualmente el correcto movimiento del patín (mirar el manual de montaje)
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-668CB53BCB708851
+SOURCE_SECTION_OR_PAGE: 8.1 Autoajuste — La puerta no se cierra completamente.
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Desconectar el sistema completo y comprobar que no hay ninguna obstrucción.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Desconectar el sistema completo y comprobar que no hay ninguna obstrucción.
+END_FIELD_RECORD

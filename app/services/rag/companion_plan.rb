@@ -106,9 +106,12 @@ module Rag
 
         payload = pending_payload(question, check, prepared)
         open = prepared.facts.open_question
-        return hold_open_datum(open, question, payload) if different_open_datum?(open, question)
-
-        PendingQuestion.coerce(payload)
+        pending = if different_open_datum?(open, question)
+          hold_open_datum(open, question, payload)
+        else
+          carry_shown(open, PendingQuestion.coerce(payload))
+        end
+        remember_indicator_clarification(pending, text, check, prepared)
       end
 
       # A clarification may be asked. The unresolved datum stays the pending
@@ -119,6 +122,51 @@ module Rag
         targets = Array(payload["targets"]).select { |item| item.is_a?(Hash) }.first(2)
         kept["shown"] = { "question" => question, "targets" => targets }
         PendingQuestion.coerce(kept)
+      end
+
+      # A later question about the same datum replaces the words. The
+      # clarification already stored stays with it.
+      def carry_shown(open, pending)
+        return pending if pending.blank?
+        return pending if pending["shown"].is_a?(Hash) && pending["shown"]["question"].present?
+        return pending unless open.is_a?(Hash)
+
+        shown = open["shown"]
+        return pending unless shown.is_a?(Hash) && shown["question"].present?
+        return pending if shown["question"] == pending["question"]
+
+        kept = pending.deep_dup
+        kept["shown"] = shown
+        PendingQuestion.coerce(kept) || pending
+      end
+
+      # The which-indicator line is published beside the open datum. It stays
+      # in shown, with the indicator items, until that datum is answered.
+      def remember_indicator_clarification(pending, text, check, prepared)
+        return pending if pending.blank?
+        return pending if pending["shown"].is_a?(Hash) && pending["shown"]["question"].present?
+
+        row = Array(check.rejections).find { |item| item["part"] == "led_context_question" }
+        question = row && row["value"].to_s.squish
+        return pending if question.blank? || text.exclude?(question) || question == pending["question"]
+
+        targets = indicator_targets(question, prepared)
+        return pending if targets.empty?
+
+        kept = pending.deep_dup
+        kept["shown"] = { "question" => question, "targets" => targets }
+        PendingQuestion.coerce(kept) || pending
+      end
+
+      def indicator_targets(question, prepared)
+        prepared.statements.statements.filter_map { |statement|
+          next unless statement.kind == "item"
+
+          label = statement.text.to_s.sub(/[.\s]+\z/, "")
+          next if label.length < 4 || question.downcase.exclude?(label.downcase)
+
+          pending_target(statement, prepared.chunks)
+        }.uniq { |item| item["item"] }.first(2)
       end
 
       def different_open_datum?(open, question)

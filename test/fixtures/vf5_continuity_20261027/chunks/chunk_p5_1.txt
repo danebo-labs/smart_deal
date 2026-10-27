@@ -1,70 +1,60 @@
 [DOCUMENT: VF5.pdf]
 [SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
-[SEARCH_ALIASES: SW4 Máster Esclavo, fotocélula re-apertura, FOTOCÉLULA salida 36 37 38, SW1 entradas cerrar abrir, terminales 8 10 12, modo Máster, modo Esclavo]
+[SEARCH_ALIASES: 4 Programación, interruptores DIP, SW1, 1 & 2 Entradas, 1 Entrada, 2 Entradas, terminales 8 & 10, terminales 10 & 12]
 
-S4 — SAFETY SYSTEM
+4 Programación
+El VF se puede programar utilizando los interruptores DIP en la parte frontal de la unidad. Para que surtan efecto los cambios realizados, desconectar y volver a conectar la alimentación general del módulo electrónico. Las funciones de los interruptores son:
 
-SW1 — Entradas (1 & 2 Entradas)
-
+SW1.- 1 & 2 Entradas
 ON: 1 Entrada.
 La unidad de control de la puerta se controlará mediante una sola entrada. Cualquier tensión entre 12 V DC y 60 V DC o entre 100 V AC y 230 V AC aplicados entre los terminales 8 & 10 cerrará las puertas. Sin ninguna entrada activa la puerta se mantendrá abierta. La entrada abrir no se utiliza.
 
 OFF: 2 Entradas.
 El módulo de control de la puerta será controlado por dos entradas independientes. Cualquier tensión entre 12 V DC y 60 V DC o entre 100 V AC y 230 V AC aplicados en los terminales 8 & 10 provocarán que la puerta se cierre. Y entre los terminales 10 & 12 provocaran que se abra. En ausencia de señal, la puerta se mantendrá estática. Si las dos entradas están activas la señal de abrir tiene prioridad.
 
-SW4 — Máster y Esclavo
-
-ON: Máster.
-La unidad de control de la puerta ejecutará la instrucción directamente. Ejemplo: la activación de la fotocélula provocará una re-apertura inmediata sin el control de la maniobra.
-
-OFF: Esclavo.
-No hay movimientos de re-apertura automáticos. Las puertas solo responden a las instrucciones dadas por el módulo de control del ascensor. Ejemplo: con la fotocélula obstruida la unidad enviará una señal a la maniobra mediante la salida FOTOCÉLULA (36, 37, 38). Entonces, la maniobra desactivará la señal de cerrar y activará la señal de abrir.
-
-NOTA DE SEGURIDAD: En modo Esclavo, la re-apertura de emergencia por fotocélula depende de la respuesta del módulo de maniobra del ascensor. Verificar que la maniobra procesa correctamente la señal FOTOCÉLULA (terminales 36, 37, 38) durante la puesta en marcha.
+[NOTA_EXTRACCION] Diagrama de terminales (etiquetas impresas en la página):
+Bloque de terminales: Cerrar - 8, 12V - 9, Com - 10, 0V - 11, Abrir - 12.
+- "1 Entrada:" textos impresos: "Sin tensión 0V" → "ABRIR"; "Con tensión 12V DC... 60V DC, 100V AC... 230V AC." → "CERRAR".
+- "2 Entradas:" textos impresos: "Tensión 12V DC... 60V DC, 100V AC... 230V AC." → "CERRAR"; "Tensión 12V DC... 60V DC, 100V AC... 230V AC." → "ABRIR".
+[NOTA_EXTRACCION] El orden exacto de la conexión de cada flecha a cada terminal en el dibujo: REQUIRES_FIELD_VERIFICATION (se aplica lo indicado en el texto: 8 & 10 cierra; 10 & 12 abre).
 
 # FIELD-SAFETY EVIDENCE RECORDS
 
 FIELD_RECORD:
-RECORD_ID: FR-D8FC295A115B60EC
+RECORD_ID: FR-250FF99D30B44EA4
+SOURCE_SECTION_OR_PAGE: 4 Programación
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: Tras cambiar los interruptores DIP, desconectar y volver a conectar la alimentación general del módulo electrónico
+EXPECTED_RESULT: Surtan efecto los cambios realizados
+EVIDENCE: Para que surtan efecto los cambios realizados, desconectar y volver a conectar la alimentación general
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-392214811EFAABDE
 SOURCE_SECTION_OR_PAGE: SW1.- 1 & 2 Entradas
 RECORD_TYPE: COMMISSIONING_STEP
-ACTION: Configurar SW1 en ON para modo 1 Entrada: aplicar tensión entre 12 V DC y 60 V DC o entre 100 V AC y 230 V AC en terminales 8 & 10 para cerrar la puerta.
-EXPECTED_RESULT: La puerta se cierra con tensión en terminales 8 & 10; sin entrada activa la puerta se mantiene abierta.
-EVIDENCE: Cualquier tensión entre 12 V DC y 60 V DC o entre 100 V AC y 230 V AC aplicados entre los terminales 8 & 10 cerrará las puertas
+ACTION: SW1 en ON: 1 Entrada
+EXPECTED_RESULT: Cualquier tensión entre 12 V DC y 60 V DC o entre 100 V AC y 230 V AC aplicados entre los terminales 8 & 10 cerrará las puertas. Sin ninguna entrada activa la puerta se mantendrá abierta. La entrada abrir no se utiliza.
+DETAILS: scope=1 sola entrada; value=12 V DC-60 V DC o 100 V AC-230 V AC
+EVIDENCE: aplicados entre los terminales 8 & 10 cerrará las puertas
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-97018593A1510EC8
+RECORD_ID: FR-FAEDE1F9D10476EA
 SOURCE_SECTION_OR_PAGE: SW1.- 1 & 2 Entradas
 RECORD_TYPE: COMMISSIONING_STEP
-ACTION: Configurar SW1 en OFF para modo 2 Entradas: aplicar tensión en terminales 8 & 10 para cerrar y en terminales 10 & 12 para abrir la puerta.
-EXPECTED_RESULT: Cierre con señal en 8 & 10; apertura con señal en 10 & 12; puerta estática sin señal; señal de abrir tiene prioridad si ambas entradas están activas.
-EVIDENCE: Si las dos entradas están activas la señal de abrir tiene prioridad
+ACTION: SW1 en OFF: 2 Entradas
+EXPECTED_RESULT: Tensión entre 12 V DC y 60 V DC o entre 100 V AC y 230 V AC en terminales 8 & 10 cierra la puerta; entre 10 & 12 la abre. En ausencia de señal, la puerta se mantendrá estática. Si las dos entradas están activas la señal de abrir tiene prioridad.
+DETAILS: scope=dos entradas independientes; value=12 V DC-60 V DC o 100 V AC-230 V AC
+EVIDENCE: Si las dos entradas están activas la señal de abrir tiene prioridad.
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-113D5DAB633D0E51
-SOURCE_SECTION_OR_PAGE: SW4.- Máster y Esclavo
-RECORD_TYPE: COMMISSIONING_STEP
-ACTION: Configurar SW4 en ON (Máster): la unidad ejecuta instrucciones directamente, incluyendo re-apertura inmediata por activación de fotocélula sin intervención de la maniobra.
-EXPECTED_RESULT: Re-apertura inmediata al activarse la fotocélula, sin control de la maniobra.
-EVIDENCE: la activación de la fotocélula provocará una re-apertura inmediata sin el control de la maniobra
-END_FIELD_RECORD
-
-FIELD_RECORD:
-RECORD_ID: FR-C02534CE5E0DFAAA
-SOURCE_SECTION_OR_PAGE: SW4.- Máster y Esclavo
-RECORD_TYPE: COMMISSIONING_STEP
-ACTION: Configurar SW4 en OFF (Esclavo): la unidad envía señal a la maniobra mediante salida FOTOCÉLULA (terminales 36, 37, 38) cuando la fotocélula está obstruida; la maniobra desactiva cerrar y activa abrir.
-EXPECTED_RESULT: No hay re-apertura automática directa; la puerta responde únicamente a instrucciones del módulo de control del ascensor.
-EVIDENCE: la maniobra desactivara la señal de cerrar y activará la señal de abrir
-END_FIELD_RECORD
-
-FIELD_RECORD:
-RECORD_ID: FR-0AF3055C5F784300
-SOURCE_SECTION_OR_PAGE: SW4.- Máster y Esclavo
+RECORD_ID: FR-F5BC884BF0E7209F
+SOURCE_SECTION_OR_PAGE: 1 Entrada: / 2 Entradas: (diagrama de terminales)
 RECORD_TYPE: SCHEMATIC_LABEL
-ACTION: Salida FOTOCÉLULA — terminales 36, 37, 38
+ACTION: Cerrar - 8, 12V - 9, Com - 10, 0V - 11, Abrir - 12
 EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: la unidad enviará una señal a la maniobra mediante la salida FOTOCÉLULA (36, 37, 38)
+UNCERTAINTY: REQUIRES_FIELD_VERIFICATION: conexión exacta de cada flecha del dibujo a cada terminal no es legible con certeza
+EVIDENCE: Cerrar - 8 12V - 9 Com - 10 0V - 11 Abrir - 12
 END_FIELD_RECORD

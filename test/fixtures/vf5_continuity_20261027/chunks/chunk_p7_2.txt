@@ -1,64 +1,67 @@
 [DOCUMENT: VF5.pdf]
 [SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
-[SEARCH_ALIASES: señal de piso, terminal 26, re-apertura, terminal 21, cerrado lento, terminal 25, +12V COM, terminal 23]
+[SEARCH_ALIASES: Señal de piso, Re-apertura, Cerrado lento, +12 V COM, Terminal 26, Terminal 21, Terminal 25, Terminal 23]
 
 5.5 Otras entradas (26, 21, 25, 23)
+ 26.- Señal de piso
+Esta entrada sirve para conectar el alimentador de emergencia externo, el cual permite la maniobra de apertura con un batería de 12V en el caso de fallo de alimentación. La batería alimenta el módulo durante 15 segundos para realizar el rescate de los pasajeros.
 
-**26 — Señal de piso**
-Esta entrada sirve para conectar el alimentador de emergencia externo, el cual permite la maniobra de apertura con una batería de 12V en el caso de fallo de alimentación. La batería alimenta el módulo durante 15 segundos para realizar el rescate de los pasajeros.
-
-**21 — Re-apertura**
+ 21.- Re-apertura
 Esta señal se usa para instalar el interruptor de la puerta de cabina o una barrera externa. Para activar esta señal, se debe conectar la entrada re-apertura (21) con la entrada de +12V (23). Utilizar contactos libres de tensión. La señal de re-apertura tiene prioridad sobre la señal cerrar.
 
-**25 — Cerrado lento**
+ 25.- Cerrado lento
 Esta señal se utiliza para ordenar el cerrado lento de la puerta. La señal de cierre lento tiene prioridad sobre las señales control y de la fotocélula. Se ha diseñado para trabajar con los centros de detección de incendios.
 
-**23 — +12 V. COM**
+ 23.- + 12 V. COM
 Este terminal se utiliza para dar un contacto aislado para ordenar una re-apertura o un cerrado lento. Se debe usar siempre contactos libres de tensión y normalmente abierto.
 
 # FIELD-SAFETY EVIDENCE RECORDS
 
 FIELD_RECORD:
-RECORD_ID: FR-5A93A9A5B4B20115
-SOURCE_SECTION_OR_PAGE: 26.- Señal de piso
-RECORD_TYPE: INSTALLATION_STEP
-ACTION: Conectar el alimentador de emergencia externo (batería 12V) al terminal 26 para permitir la maniobra de apertura en caso de fallo de alimentación.
+RECORD_ID: FR-DA4A10151AE3B7AC
+SOURCE_SECTION_OR_PAGE: 5.5 Otras entradas — 26.- Señal de piso
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Entrada 26 Señal de piso: sirve para conectar el alimentador de emergencia externo
 EXPECTED_RESULT: La batería alimenta el módulo durante 15 segundos para realizar el rescate de los pasajeros.
+DETAILS: function=maniobra de apertura con una batería de 12V en caso de fallo de alimentación; value=15 segundos
 EVIDENCE: La batería alimenta el módulo durante 15 segundos para realizar el rescate de los pasajeros.
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-9F70D9FDF9191FF3
-SOURCE_SECTION_OR_PAGE: 21.- Re-apertura
+RECORD_ID: FR-8E041AB9230FC515
+SOURCE_SECTION_OR_PAGE: 5.5 Otras entradas — 21.- Re-apertura
 RECORD_TYPE: INSTALLATION_STEP
-ACTION: Conectar la entrada re-apertura (21) con la entrada +12V (23) mediante contactos libres de tensión para activar la señal de re-apertura.
+ACTION: Para activar la señal de re-apertura, conectar la entrada re-apertura (21) con la entrada de +12V (23). Utilizar contactos libres de tensión.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: role=interruptor de la puerta de cabina o barrera externa; connection=21 a 23; criteria=contactos libres de tensión
+EVIDENCE: se debe conectar la entrada re-apertura (21) con la entrada de +12V (23)
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-AA61461122C8477B
+SOURCE_SECTION_OR_PAGE: 5.5 Otras entradas — 21.- Re-apertura
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Entrada 21 Re-apertura: prioridad de señal
 EXPECTED_RESULT: La señal de re-apertura tiene prioridad sobre la señal cerrar.
 EVIDENCE: La señal de re-apertura tiene prioridad sobre la señal cerrar.
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-B4FBE68D365AD323
-SOURCE_SECTION_OR_PAGE: 21.- Re-apertura
-RECORD_TYPE: SAFETY_WARNING
-ACTION: Utilizar contactos libres de tensión en la entrada de re-apertura (21).
-EXPECTED_RESULT: Contactos libres de tensión correctamente conectados.
-EVIDENCE: Utilizar contactos libres de tensión.
-END_FIELD_RECORD
-
-FIELD_RECORD:
-RECORD_ID: FR-DCAF8BFEE3D63EFD
-SOURCE_SECTION_OR_PAGE: 25.- Cerrado lento
-RECORD_TYPE: INSTALLATION_STEP
-ACTION: Conectar la señal de cerrado lento al terminal 25 para ordenar el cerrado lento de la puerta; diseñado para trabajar con centros de detección de incendios.
+RECORD_ID: FR-FAB09E9464FABCD3
+SOURCE_SECTION_OR_PAGE: 5.5 Otras entradas — 25.- Cerrado lento
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Entrada 25 Cerrado lento: ordena el cerrado lento de la puerta
 EXPECTED_RESULT: La señal de cierre lento tiene prioridad sobre las señales control y de la fotocélula.
+DETAILS: function=diseñada para trabajar con los centros de detección de incendios
 EVIDENCE: La señal de cierre lento tiene prioridad sobre las señales control y de la fotocélula.
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-3B436C80B7FA02FD
-SOURCE_SECTION_OR_PAGE: 23.- +12 V. COM
-RECORD_TYPE: INSTALLATION_STEP
-ACTION: Usar siempre contactos libres de tensión y normalmente abierto en el terminal 23 (+12V COM) para ordenar re-apertura o cerrado lento.
-EXPECTED_RESULT: Contacto aislado operativo para re-apertura o cerrado lento.
+RECORD_ID: FR-23A7BA6B9AB3A518
+SOURCE_SECTION_OR_PAGE: 5.5 Otras entradas — 23.- + 12 V. COM
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Terminal 23 + 12 V. COM: da un contacto aislado para ordenar una re-apertura o un cerrado lento
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: criteria=siempre contactos libres de tensión y normalmente abierto
 EVIDENCE: Se debe usar siempre contactos libres de tensión y normalmente abierto.
 END_FIELD_RECORD

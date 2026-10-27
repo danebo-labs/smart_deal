@@ -1,0 +1,31 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: 11.2 40/10, 40/10 Product line, 40/10 VF model, 40/10 PM model, Multiplier factor, Double skin panels]
+
+11.2 40/10 Product line
+
+| # | Model | Opening | Number of panels | PL [mm] | HL [mm] | Panel type | Fire homologation | Moving mass [Kg] |
+|-|-|-|-|-|-|-|-|-|
+| 0 | 40/10 | Side | 2 | 800 | 2.000 | Metal sheet | F.R. E 120 | 31,61 |
+
+| # | Concept | Multiplier factor |
+|-|-|-|
+| 1 | Difference from T2 to T3 | 0,08 |
+| 2 | Difference from T2 to T4 | 0,26 |
+| 3 | Difference from T2 to C2 | 0,00 |
+| 4 | Difference from T2 to C4 | 0,26 |
+| 5 | Difference from T2 to C6 | 0,08 |
+| 6 | Difference of 100 mm in PL | 0,07 |
+| 7 | Difference of 100 mm in HL | 0,03 |
+| 8 | Difference from F.R. E 120 to F.R. EI 30 | 0,19 |
+| 9 | Difference from F.R. E 120 to F.R. EI 60 | 0,19 |
+| 10 | Difference from F.R. E 120 to F.R. EI 120 | 0,25 |
+| 11 | Difference from Metal sheet panels to Double skin panels | 0,32 |
+| 12 | Difference from Metal sheet panels to Flush big vision panels | 1,02 |
+| 13 | Difference from Metal sheet panels to Full glass in skirting panels | 0,95 |
+| 15 | Difference from Metal sheet panels to Wien type vision panels | 0,32 |
+| 16 | Difference from Metal sheet panels to Vision panels | 0,61 |
+| 19 | Difference from 40/10 to 40/10 VF model | 0,03 |
+| 20 | Difference from 40/10 to 40/10 PM model | 0,01 |
+
+[NOTA_EXTRACCION] Notes: row numbers are printed as shown (the table skips 14, 17 and 18). The page does not define PL, HL, T2, T3, T4, C2, C4, C6 or the use of the multiplier factor; those meanings are DATA_NOT_AVAILABLE here.

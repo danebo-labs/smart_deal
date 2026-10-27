@@ -1,19 +1,15 @@
 [DOCUMENT: VF5.pdf]
 [SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
-[SEARCH_ALIASES: 50/11 product line, 50/11 VF, moving mass, multiplier factor, F.R. E 120, panel type, fire homologation]
+[SEARCH_ALIASES: 11.3 50/11 Product line, 50/11 VF, Moving mass 34,49, Multiplier factor, F.R. E 120, Metal sheet]
 
-11.3 50/11 Product line — Moving Mass Reference Table (continued from previous page)
-
-Base configuration for 50/11 product line:
+11.3 50/11 Product line
 
 | # | Model | Opening | Number of panels | PL [mm] | HL [mm] | Panel type | Fire homologation | Moving mass [Kg] |
-|---|-------|---------|-----------------|---------|---------|------------|-------------------|------------------|
+|-|-|-|-|-|-|-|-|-|
 | 0 | 50/11 VF | Side | 2 | 800 | 2.000 | Metal sheet | F.R. E 120 | 34,49 |
 
-Multiplier factors for 50/11 product line:
-
 | # | Concept | Multiplier factor |
-|---|---------|------------------|
+|-|-|-|
 | 1 | Difference from T2 to T3 | 0,13 |
 | 2 | Difference from T2 to T4 | 0,36 |
 | 3 | Difference from T2 to C2 | 0,00 |
@@ -31,4 +27,4 @@ Multiplier factors for 50/11 product line:
 | 16 | Difference from Metal sheet panels to Wien type vision panels | 0,30 |
 | 17 | Difference from Metal sheet panels to Vision panels | 0,57 |
 
-These multiplier factors are applied to the base moving mass (34,49 Kg) to calculate the actual moving mass for non-standard configurations of the 50/11 product line.
+[NOTA_EXTRACCION] Note: the page prints no row numbered 15 in this table (numbering jumps from 14 to 16). The meaning of the codes T2, T3, T4, C2, C4, C6, C8, PL and HL is DATA_NOT_AVAILABLE on this page; they are kept as printed. The page does not state how the multiplier factors are applied to the moving mass; that is DATA_NOT_AVAILABLE.

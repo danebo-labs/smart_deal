@@ -1,0 +1,28 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: Ejemplo 2, Premium PM, Diferencia en la apertura, Número de paneles, Panel atamborado, 36,61, 34,87 Kg]
+
+Ejemplo 2: Diferencia en la apertura y número de paneles + incremento de PL y HL
+
+Puerta a ser calculada:
+| Modelo | Apertura | Número de paneles | PL [mm] | HL [mm] | Tipo de panel | Homologación contra incendios |
+|-|-|-|-|-|-|-|
+| Premium PM | Telescópica | 1 | 800 | 2000 | Atamborada | F.R. E 120 |
+
+Tomando como base(1):
+| Modelo | Apertura | Número de paneles | PL [mm] | HL [mm] | Tipo de panel | Protección contra incendios | Masa en movimiento [Kg] |
+|-|-|-|-|-|-|-|-|
+| Premium PM | Telescópica | 2 | 800 | 2.000 | Acero | F.R. E 120 | 36,61 |
+
+Cálculos:
+| Diferencia por apertura(2) | Diferencia por número de paneles(2) | Diferencia por PL (cada 100 mm) | Diferencia por HL (cada 100 mm) | Diferencia por tipo de panel(3) | Diferencia por homologación contra incendios | SUMA | Masa en movimiento |
+|-|-|-|-|-|-|-|-|
+| 36,61 x (-0,17) = -6,13 Kg | | Son iguales | Son iguales | 36,61 x 0,12 = 4,39 Kg | Son iguales | 4,39 – 6,13 = -1,74 Kg | 36,61 – 1,74 = 34,87 Kg |
+[NOTA_EXTRACCION] La fórmula 36,61 x (-0,17) = -6,13 Kg está impresa en una celda que abarca las dos primeras columnas de esa fila.
+
+[NOTA_EXTRACCION] Notas al pie:
+1. Estas especificaciones se encuentra en el Anexo 1.
+2. Este factor es la diferencia entre T2 (telescópica de 2 paneles) a T1 (telescópica de 1 panel). Este dato es el número 2 de la segunda tabla de la línea de producto Premium PM en el Anexo 1.
+3. Este factor es la diferencia entre panel de acero a panel atambarado. Este dato es el número 11 de la segunda tabla de la línea de producto Premium PM en el Anexo 1.
+
+[NOTA_EXTRACCION] Nota de página: el pie de página impreso indica "Pág. 21 / 21" (Fermator Group • www.fermator.com); este es el índice de PDF 22 de 22.

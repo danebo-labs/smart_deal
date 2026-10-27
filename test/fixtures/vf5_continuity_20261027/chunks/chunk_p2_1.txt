@@ -1,31 +1,26 @@
 [DOCUMENT: VF5.pdf]
 [SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
-[SEARCH_ALIASES: objetivo documento, registro modificaciones, versión 0.4, Fermator VF5+, DOC-FE.IE.IN.016172.ES]
+[SEARCH_ALIASES: Lista de contenido, Índice VF5+, Fermator, DOC-FE.IE.IN.016172.ES, Versión 0.4, Solución de problemas, Entradas/Salidas, Conexión con la maniobra]
 
-1 Objetivo del documento
+INSTRUCCIONES
+DOC-FE.IE.IN.016172.ES
+Módulo electrónico VF5+
+Versión: 0.4
+Módulo electrónico VF5+
+Instrucciones
+0 Lista de contenido
+1 Objetivo del documento ........ 3
+2 Registro de modificaciones ........ 3
+3 Conexionado ........ 4
+4 Programación ........ 5
+5 Entradas/Salidas ........ 6
+6 Conexión con la maniobra ........ 10
+7 Fallos de alimentación ........ 11
+8 Solución de problemas ........ 12
+9 Normativa ascensores EN 81-20 ........ 14
+10 Datos de referencia ........ 15
+11 Anexo 1 ........ 19
+12 Anexo 2 ........ 22
+Fermator Group • www.fermator.com Pág. 1 / 21
 
-Este documento describe las instrucciones de uso, conexionado, programación, entradas/salidas, conexión con la maniobra, fallos de alimentación, solución de problemas, normativa EN 81-20, datos de referencia y anexos del Módulo electrónico VF5+ de Fermator Group.
-
-2 Registro de modificaciones
-
-Este apartado recoge el historial de versiones del documento. La versión actual visible en la portada es la 0.4. El contenido detallado de las modificaciones registradas no es visible en esta página — véanse las páginas correspondientes del documento para el detalle completo.
-
-# FIELD-SAFETY EVIDENCE RECORDS
-
-FIELD_RECORD:
-RECORD_ID: FR-EA5AC310CF58D215
-SOURCE_SECTION_OR_PAGE: 1 Objetivo del documento
-RECORD_TYPE: DOCUMENTATION_REQUIREMENT
-ACTION: Consultar este documento para instrucciones de uso, conexionado, programación, entradas/salidas, conexión con la maniobra, fallos de alimentación, solución de problemas, normativa EN 81-20 y datos de referencia del módulo VF5+.
-EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: Módulo electrónico VF5+ Instrucciones
-END_FIELD_RECORD
-
-FIELD_RECORD:
-RECORD_ID: FR-5D39E158BE88EE13
-SOURCE_SECTION_OR_PAGE: 2 Registro de modificaciones
-RECORD_TYPE: DOCUMENTATION_REQUIREMENT
-ACTION: Verificar la versión del documento antes de aplicar las instrucciones; la versión actual es 0.4.
-EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: Versión: 0.4
-END_FIELD_RECORD
+Nota de la página: esta página es la portada con la lista de contenido del documento. El pie de página impreso indica "Pág. 1 / 21", mientras que el índice de la lista de contenido llega hasta el Anexo 2 en la página 22. Esta página no contiene procedimientos, valores técnicos, esquemas ni advertencias; solo identifica el documento y sus secciones.

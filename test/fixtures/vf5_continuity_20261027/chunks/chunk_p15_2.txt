@@ -1,0 +1,37 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: Requisitos de protección, Circuitos clase 0, Clase de protección I, RCD Tipo A, SCCR 1,5 kA, PHOTOCELL 17 18 19 20, ENCODER MOTOR 55, ENTRADAS PRIORITARIAS]
+
+Requisitos de protección
+
+[NOTA_EXTRACCION] | Parámetro | Valor |
+|-|-|
+| Clase de protección | Clase de protección I (1) |
+| Dispositivo de corriente residual [RCD] | RCD Tipo A [Recomendado] |
+| Categoría de sobre-voltaje | Categoría de sobre-voltaje III |
+| Sistema de suministro eléctrico | Sistema de alimentación de puesta a tierra TT, NT, IT, not corner-earthed. |
+| Corriente de cortocircuito [SCCR] | Máximo 1,5 kA |
+| Ratio IP | Máximo 20 |
+
+Nota (1), texto impreso: "Las conexiones accesibles y las partes listadas debajo tienen una protección de clase 0. Esto significa que solo tienen el aislamiento básico y en caso de que este aislamiento falle puede ser peligroso. Por lo tanto los dispositivos conectados a estos circuitos deben tener una protección contra descargas eléctricas como si estuvieran conectado a la red eléctrica. Esta información debe ser considerada a la hora de instalar estos dispositivos."
+
+Circuitos clase 0:
+- ENTRADAS 8, 9, 10, 11, 12.
+- COMUNICACIÓN SERIAL 13.
+- PHOTOCELL 17, 18, 19, 20.
+- ENTRADAS PRIORITARIAS 21, 23, 25, 26.
+- ENCODER MOTOR 55.
+
+[NOTA_EXTRACCION] La nota (1) está asociada en la página a "Clase de protección I". La página imprime "Clase de protección I" para el módulo y "protección de clase 0" para las conexiones accesibles listadas; no explica la relación entre ambas. REQUIRES_FIELD_VERIFICATION si se necesita aclarar esa relación.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-ADB03708D42A5E89
+SOURCE_SECTION_OR_PAGE: Requisitos de protección — nota (1) Circuitos clase 0
+RECORD_TYPE: SAFETY_WARNING
+ACTION: Los dispositivos conectados a circuitos clase 0 deben tener protección contra descargas eléctricas como si estuvieran conectados a la red eléctrica
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: scope=ENTRADAS 8, 9, 10, 11, 12; COMUNICACIÓN SERIAL 13; PHOTOCELL 17, 18, 19, 20; ENTRADAS PRIORITARIAS 21, 23, 25, 26; ENCODER MOTOR 55; precondition=esta información debe ser considerada a la hora de instalar estos dispositivos
+EVIDENCE: deben tener una protección contra descargas eléctricas como si estuvieran conectado a la red eléctrica
+END_FIELD_RECORD

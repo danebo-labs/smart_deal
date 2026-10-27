@@ -1,0 +1,86 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: potenciómetros al mínimo, Velocidad de cierre Pin 52, Velocidad de apertura Pin 53, Fuerza Pin 54, botón TEST, instalación de la fotocélula, emisor amarillo receptor verde, herramienta de programación de Fermator]
+
+2.- Poner potenciómetros al mínimo.
+– Velocidad de cierre (Pin 52).
+– Velocidad de apertura (Pin 53).
+– Fuerza (Pin 54).
+
+3.- Comprobación de la puerta.
+– Comprobar desde la puerta de rellano.
+– Presionar el botón «TEST» y establecer los potenciómetros (velocidad de apertura, velocidad de cierre y fuerza) según el ajuste requerido.
+
+4.- Instalación de la fotocélula (opcional).
+– Verificar la presencia de un emisor y un receptor (marcado E y R en las cápsulas) conectados al cable correcto (emisor al cable amarillo y receptor al verde).
+– Conectar la fotocélula al módulo electrónico.
+– Poner las capsulas cara a cara a una distancia mínima de 50 cm y hacer el proceso de autoajuste sin golpear las cápsulas. Una vez hecho, hacer un movimiento de apertura y cerrado, después, bloquear la fotocélula con la mano durante el movimiento de cerrado para asegurar que el relé de la fotocélula está activo cada vez que la mano intercepta la fotocélula.
+Nota: Retirar el cableado de la fotocélula de cualquier lugar con “interferencias eléctricas” como motores, cables de alimentación, etc.
+
+Información adicional: Los parámetros del VF pueden ser personalizados con la herramienta de programación de Fermator.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-818A4FBADBABFB43
+SOURCE_SECTION_OR_PAGE: 2.- Poner potenciómetros al mínimo.
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: Poner al mínimo los potenciómetros: Velocidad de cierre (Pin 52), Velocidad de apertura (Pin 53), Fuerza (Pin 54).
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Velocidad de cierre (Pin 52). Velocidad de apertura (Pin 53). Fuerza (Pin 54).
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-C2920BCF49C4D59C
+SOURCE_SECTION_OR_PAGE: 3.- Comprobación de la puerta.
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: Comprobar desde la puerta de rellano.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Comprobar desde la puerta de rellano.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-9BA5A3219C796E9D
+SOURCE_SECTION_OR_PAGE: 3.- Comprobación de la puerta.
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: Presionar el botón «TEST» y establecer los potenciómetros (velocidad de apertura, velocidad de cierre y fuerza) según el ajuste requerido.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Presionar el botón «TEST» y establecer los potenciómetros
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-9F4293F5F1A9D7A3
+SOURCE_SECTION_OR_PAGE: 4.- Instalación de la fotocélula (opcional).
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: Verificar la presencia de un emisor y un receptor (marcado E y R en las cápsulas) conectados al cable correcto (emisor al cable amarillo y receptor al verde).
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: emisor al cable amarillo y receptor al verde
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-F7F5BC7E395A7E29
+SOURCE_SECTION_OR_PAGE: 4.- Instalación de la fotocélula (opcional).
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: Conectar la fotocélula al módulo electrónico.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Conectar la fotocélula al módulo electrónico.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-86382610B689EB97
+SOURCE_SECTION_OR_PAGE: 4.- Instalación de la fotocélula (opcional).
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: Poner las cápsulas cara a cara a una distancia mínima de 50 cm y hacer el proceso de autoajuste sin golpear las cápsulas; hacer un movimiento de apertura y cerrado; bloquear la fotocélula con la mano durante el movimiento de cerrado.
+EXPECTED_RESULT: el relé de la fotocélula está activo cada vez que la mano intercepta la fotocélula
+DETAILS: limit=distancia mínima de 50 cm
+EVIDENCE: distancia mínima de 50 cm y hacer el proceso de autoajuste sin golpear las cápsulas
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-40EB58D4C9BDFC96
+SOURCE_SECTION_OR_PAGE: Nota (sección 4.- Instalación de la fotocélula (opcional).)
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: Retirar el cableado de la fotocélula de cualquier lugar con “interferencias eléctricas” como motores, cables de alimentación, etc.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Retirar el cableado de la fotocélula de cualquier lugar con “interferencias eléctricas”
+END_FIELD_RECORD

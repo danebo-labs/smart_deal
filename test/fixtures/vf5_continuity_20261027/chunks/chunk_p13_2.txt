@@ -1,91 +1,85 @@
 [DOCUMENT: VF5.pdf]
 [SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
-[SEARCH_ALIASES: fotocélula, photocell, fotocelula intermitente, conexión tierra #6, conector #17 #20, emisor receptor, cable amarillo verde, interferencias eléctricas]
+[SEARCH_ALIASES: correa dentada, autoajuste, LED STATUS, fusibles externos, polea del encoder, motor intermitente, fuera de servicio, modo esclavo]
 
-8.3 Fotocélula
-
-Problema: La fotocélula se activa de forma intermitente.
-
-Acciones de diagnóstico y corrección:
-– Comprobar la conexión de "tierra" (#6).
-– Comprobar la correcta conexión del conector (#17 to #20).
-– Desconectar la fotocélula, hacer un movimiento completo de apertura y cierra, conectar otra vez la fotocélula y probar de nuevo.
-– Verificar que hay un emisor y un receptor (marcados E y R en las cápsulas) conectados a los cables correctos: emisor al cable amarillo y receptor al cable verde.
-– Retirar el cableado de la fotocélula de cualquier lugar que pueda generar "interferencias eléctricas" como motores, cableado de alimentación, asegurando que los cables no están cortocircuitados.
-– Si se puede usar una consola, comprobar la estabilidad de la señal.
-– No alargar los cables de la fotocélula.
-– Tener en cuenta que en modo máster el sistema reconoce automáticamente la fotocélula tras realizar un autoajuste completo con la fotocélula libre.
+• La puerta golpea al llegar a la posición de apertura completa, el LED de puerta “abierta” no está activado y el sistema se queda fuera de servicio.
+– Comprobar la tensión de la correa dentada ya que, probablemente, no está correctamente ajustada y resbala sobre la polea del motor haciendo que el encoder envíe información incorrecta. Ajustar la tensión de la correa y volver a realizar el autoajuste.
+• El sistema obtiene alimentación pero no funciona y el LED “STATUS” se encuentra apagado.
+– Comprobar si los fusibles externos se han quemado. En este caso cambiarlos por otros fusibles Fermator (250 V, 4 A, cerámicos de alta velocidad).
+• El motor se mueve de forma intermitente.
+– Comprobar las conexiones del cableado o si una fase del motor está fallando.
+– Verificar que la polea del encoder esté bien montada.
+• El LED “STATUS” está activado y la puerta no obedece a las señales.
+– Ha habido una obstrucción en la apertura y la puerta ha entrado en estado “fuera de servicio” durante 15 segundos.
+– En modo esclavo si hay una obstrucción continuada y la maniobra no ha cambiado la señal de cerrar por la de abrir.
+– Ha habido un cortocircuito en la salida del motor, el sistema estará desactivado durante 3 segundos.
 
 # FIELD-SAFETY EVIDENCE RECORDS
 
 FIELD_RECORD:
-RECORD_ID: FR-F6AD2F39E624A16D
-SOURCE_SECTION_OR_PAGE: 8.3 Fotocélula
+RECORD_ID: FR-3174CC057B6A6B7E
+SOURCE_SECTION_OR_PAGE: • La puerta golpea al llegar a la posición de apertura completa, el LED de puerta “abierta” no está activado y el sistema se queda fuera de servicio.
 RECORD_TYPE: TROUBLESHOOTING_STEP
-ACTION: Comprobar la conexión de tierra en terminal #6 cuando la fotocélula se activa de forma intermitente.
+ACTION: Comprobar la tensión de la correa dentada. Ajustar la tensión de la correa y volver a realizar el autoajuste.
 EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: Comprobar la conexión de "tierra" (#6)
+DETAILS: criteria=probable causa indicada: correa mal ajustada que resbala sobre la polea del motor y el encoder envía información incorrecta
+EVIDENCE: Ajustar la tensión de la correa y volver a realizar el autoajuste.
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-E888D1A732F6A232
-SOURCE_SECTION_OR_PAGE: 8.3 Fotocélula
+RECORD_ID: FR-CD977937431A7469
+SOURCE_SECTION_OR_PAGE: • El sistema obtiene alimentación pero no funciona y el LED “STATUS” se encuentra apagado.
 RECORD_TYPE: TROUBLESHOOTING_STEP
-ACTION: Comprobar la correcta conexión del conector en terminales #17 a #20.
+ACTION: Comprobar si los fusibles externos se han quemado. En este caso cambiarlos por otros fusibles Fermator.
 EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: Comprobar la correcta conexión del conector (#17 to #20)
+DETAILS: value=250 V, 4 A, cerámicos de alta velocidad
+EVIDENCE: cambiarlos por otros fusibles Fermator (250 V, 4 A, cerámicos de alta velocidad)
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-9C362571D5CFB23E
-SOURCE_SECTION_OR_PAGE: 8.3 Fotocélula
+RECORD_ID: FR-BBDCD582E6648245
+SOURCE_SECTION_OR_PAGE: • El motor se mueve de forma intermitente.
 RECORD_TYPE: TROUBLESHOOTING_STEP
-ACTION: Desconectar la fotocélula, hacer un movimiento completo de apertura y cierre, reconectar la fotocélula y probar de nuevo.
+ACTION: Comprobar las conexiones del cableado o si una fase del motor está fallando.
 EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: Desconectar la fotocélula, hacer un movimiento completo de apertura y cierra, conectar otra vez la fotocélula
+DETAILS: scope=primera de dos comprobaciones listadas
+EVIDENCE: Comprobar las conexiones del cableado o si una fase del motor está fallando.
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-01401665447CC27D
-SOURCE_SECTION_OR_PAGE: 8.3 Fotocélula
+RECORD_ID: FR-3B72960B44F16BBB
+SOURCE_SECTION_OR_PAGE: • El motor se mueve de forma intermitente.
 RECORD_TYPE: TROUBLESHOOTING_STEP
-ACTION: Verificar que el emisor (marcado E) está conectado al cable amarillo y el receptor (marcado R) está conectado al cable verde.
-EXPECTED_RESULT: Emisor en cable amarillo, receptor en cable verde.
-EVIDENCE: emisor al cable amarillo y receptor al cable verde
-END_FIELD_RECORD
-
-FIELD_RECORD:
-RECORD_ID: FR-EF4C14DD58E5A28A
-SOURCE_SECTION_OR_PAGE: 8.3 Fotocélula
-RECORD_TYPE: TROUBLESHOOTING_STEP
-ACTION: Retirar el cableado de la fotocélula de fuentes de interferencias eléctricas (motores, cableado de alimentación); asegurar que los cables no están cortocircuitados.
+ACTION: Verificar que la polea del encoder esté bien montada.
 EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: Retirar el cableado de la fotocélula de cualquier lugar que pueda generar "interferencias eléctricas"
+DETAILS: scope=segunda de dos comprobaciones listadas
+EVIDENCE: Verificar que la polea del encoder esté bien montada.
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-BE3B76E273C6A890
-SOURCE_SECTION_OR_PAGE: 8.3 Fotocélula
-RECORD_TYPE: TROUBLESHOOTING_STEP
-ACTION: Si se dispone de consola, comprobar la estabilidad de la señal de la fotocélula.
+RECORD_ID: FR-54069BD6781FEF35
+SOURCE_SECTION_OR_PAGE: • El LED “STATUS” está activado y la puerta no obedece a las señales.
+RECORD_TYPE: FAULT_CONDITION
+ACTION: Causa indicada: obstrucción en la apertura
+EXPECTED_RESULT: la puerta ha entrado en estado “fuera de servicio” durante 15 segundos
+EVIDENCE: Ha habido una obstrucción en la apertura y la puerta ha entrado en estado “fuera de servicio” durante 15 segundos.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-F69DA5059710376A
+SOURCE_SECTION_OR_PAGE: • El LED “STATUS” está activado y la puerta no obedece a las señales.
+RECORD_TYPE: FAULT_CONDITION
+ACTION: Causa indicada: en modo esclavo, obstrucción continuada y la maniobra no ha cambiado la señal de cerrar por la de abrir
 EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: Si se puede usar una consola, comprobar la estabilidad de la señal
+DETAILS: scope=modo esclavo
+EVIDENCE: En modo esclavo si hay una obstrucción continuada y la maniobra no ha cambiado la señal de cerrar por la de abrir.
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-6154FC1A8A23A27E
-SOURCE_SECTION_OR_PAGE: 8.3 Fotocélula
-RECORD_TYPE: INSPECTION_CHECK
-ACTION: No alargar los cables de la fotocélula.
-EXPECTED_RESULT: Longitud de cable original mantenida.
-EVIDENCE: No alargar los cables de la fotocélula
-END_FIELD_RECORD
-
-FIELD_RECORD:
-RECORD_ID: FR-A3743E1B519CE35A
-SOURCE_SECTION_OR_PAGE: 8.3 Fotocélula
-RECORD_TYPE: COMMISSIONING_STEP
-ACTION: En modo máster, realizar un autoajuste completo con la fotocélula libre para que el sistema reconozca automáticamente la fotocélula.
-EXPECTED_RESULT: El sistema reconoce automáticamente la fotocélula tras el autoajuste completo.
-EVIDENCE: en modo máster el sistema reconoce automáticamente la fotocélula tras realizar un autoajuste completo con la fotocélula libre
+RECORD_ID: FR-8CE950BD23D25758
+SOURCE_SECTION_OR_PAGE: • El LED “STATUS” está activado y la puerta no obedece a las señales.
+RECORD_TYPE: FAULT_CONDITION
+ACTION: Causa indicada: cortocircuito en la salida del motor
+EXPECTED_RESULT: el sistema estará desactivado durante 3 segundos
+EVIDENCE: Ha habido un cortocircuito en la salida del motor, el sistema estará desactivado durante 3 segundos.
 END_FIELD_RECORD

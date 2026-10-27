@@ -1,0 +1,62 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: ciclo de aprendizaje, verificación del encoder, encoder, Pin 55, Pin 56, DIP switch número 3, la puerta se abre en vez de cerrarse]
+
+• La puerta se para antes de terminar el ciclo de aprendizaje.
+Verificación del encoder :
+– La puerta se mantiene abierta sin realizar ningún movimiento → sentido de apertura al revés, intercambia los dos cables del medio en el conector (Pin 55).
+– La puerta cierra y abre solo 20cm y luego para → encoder desconectado, encoder sin alimentación o dañado, tornillo de la polea no está bien apretado.
+– Si no se soluciona cambia el encoder.
+• La puerta se abre en vez de cerrarse.
+– Verificar el DIP switch número 3.
+– Invertir las dos fases de la conexión del motor (Pin 56).
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-092AA80D3D3A65C5
+SOURCE_SECTION_OR_PAGE: 8.1 Autoajuste — La puerta se para antes de terminar el ciclo de aprendizaje. Verificación del encoder
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Caso: la puerta se mantiene abierta sin realizar ningún movimiento.
+EXPECTED_RESULT: sentido de apertura al revés, intercambia los dos cables del medio en el conector (Pin 55).
+DETAILS: scope=encoder; connection=conector (Pin 55)
+EVIDENCE: intercambia los dos cables del medio en el conector (Pin 55).
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-3C3650EFFB9EA4A8
+SOURCE_SECTION_OR_PAGE: 8.1 Autoajuste — La puerta se para antes de terminar el ciclo de aprendizaje. Verificación del encoder
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Caso: la puerta cierra y abre solo 20cm y luego para.
+EXPECTED_RESULT: encoder desconectado, encoder sin alimentación o dañado, tornillo de la polea no está bien apretado.
+DETAILS: scope=encoder
+EVIDENCE: La puerta cierra y abre solo 20cm y luego para
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-4C6D325B0AE381E7
+SOURCE_SECTION_OR_PAGE: 8.1 Autoajuste — La puerta se para antes de terminar el ciclo de aprendizaje. Verificación del encoder
+RECORD_TYPE: REPAIR_ACTION
+ACTION: Si no se soluciona cambia el encoder.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Si no se soluciona cambia el encoder.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-E10C8DB4CD317E67
+SOURCE_SECTION_OR_PAGE: 8.1 Autoajuste — La puerta se abre en vez de cerrarse.
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Verificar el DIP switch número 3.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Verificar el DIP switch número 3.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-BE21A9805FECD69B
+SOURCE_SECTION_OR_PAGE: 8.1 Autoajuste — La puerta se abre en vez de cerrarse.
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Invertir las dos fases de la conexión del motor (Pin 56).
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: connection=conexión del motor (Pin 56)
+EVIDENCE: Invertir las dos fases de la conexión del motor (Pin 56).
+END_FIELD_RECORD

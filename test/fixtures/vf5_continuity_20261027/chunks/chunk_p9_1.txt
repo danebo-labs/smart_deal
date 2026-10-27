@@ -1,33 +1,33 @@
 [DOCUMENT: VF5.pdf]
 [SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
-[SEARCH_ALIASES: Motor 56, Interruptor On Off 57, salida motor trifásico, 230V AC red, variador velocidad, control par]
-
-S6 — ELECTRICAL
+[SEARCH_ALIASES: 5.13 Motor (56), 5.14 Interruptor On / Off (57), Motor (56), Interruptor On / Off (57), motor trifásico, 230 V AC]
 
 5.13 Motor (56)
-
 Salida al motor trifásico, variando el voltaje y la frecuencia para controlar la velocidad y el par.
 
 5.14 Interruptor On / Off (57)
-
 Conecta o desconecta la unidad de los 230 V AC de la red.
+
+Página impresa: Pág. 8 / 21. Documento: INSTRUCCIONES DOC-FE.IE.IN.016172.ES, Módulo electrónico VF5+, Versión: 0.4, Fermator Group.
 
 # FIELD-SAFETY EVIDENCE RECORDS
 
 FIELD_RECORD:
-RECORD_ID: FR-9EA05AFE9EA236AD
+RECORD_ID: FR-DB901B56F4220AF9
 SOURCE_SECTION_OR_PAGE: 5.13 Motor (56)
 RECORD_TYPE: SCHEMATIC_LABEL
-ACTION: Identificar conector/terminal Motor (56) como salida al motor trifásico con control de voltaje y frecuencia
-EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: Salida al motor trifásico, variando el voltaje y la frecuencia
+ACTION: Motor (56)
+EXPECTED_RESULT: Salida al motor trifásico, variando el voltaje y la frecuencia para controlar la velocidad y el par.
+DETAILS: function=salida al motor trifásico; value=número de referencia (56)
+EVIDENCE: Salida al motor trifásico, variando el voltaje y la frecuencia para controlar la velocidad y el par.
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-FFFA266713E123C4
+RECORD_ID: FR-C6D8EA5A846BBB05
 SOURCE_SECTION_OR_PAGE: 5.14 Interruptor On / Off (57)
 RECORD_TYPE: SCHEMATIC_LABEL
-ACTION: Identificar Interruptor On/Off (57) como elemento que conecta o desconecta la unidad de la red
-EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: Conecta o desconecta la unidad de los 230 V AC de la red
+ACTION: Interruptor On / Off (57)
+EXPECTED_RESULT: Conecta o desconecta la unidad de los 230 V AC de la red.
+DETAILS: function=conecta o desconecta la unidad de la red; value=230 V AC
+EVIDENCE: Conecta o desconecta la unidad de los 230 V AC de la red.
 END_FIELD_RECORD

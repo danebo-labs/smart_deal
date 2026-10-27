@@ -1,0 +1,74 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: Barrera fotoeléctrica, cierre lento Pin 25, sensores clixon, protección contra sobretemperatura, conector ENCODER, Temperature sensor input, primer sensor, segundo sensor]
+
+9.2 Barrera fotoeléctrica
+• La barrera fotoeléctrica es obligatorio y debe ir conectada a la maniobra.
+• En caso de fallo o desactivación de la barrera fotoeléctrica la energía cinética de la puerta debe limitarse a 4 J. Para limitarla la maniobra ha de activar la entrada de cierre lento, Pin 25, del módulo VF5+.
+
+9.3 Protección contra sobretemperatura
+• Dos sensores clixon de temperatura han sido añadido en el bobinado del motor para medir la temperatura y así proteger el motor contra sobrecalentamientos. Estos sensores son normalmente cerrados.
+• El primer sensor:
+– Indica que el motor está llegando a la temperatura crítica.
+– Este sensor debe ir conectado a la maniobra.
+– Cuando el motor llega a esta temperatura la maniobra debe parar la cabina en un rellano para dejar salir a los pasajeros.
+• El segundo sensor:
+– Indica que el motor ha alcanzado la temperatura crítica.
+– Este sensor ha de ser conectado al VF5+ in uno de los pines del conector del encoder.
+– El VF5+ debe quitar la alimentación del motor hasta que la temperatura descienda lo suficiente y activar una alarma.
+• La corriente máxima de los sensores es de 3 A 250 V AC.
+Diagrama (9.3): conector con etiquetas impresas “Temperature sensor input” (con flecha hacia el conector), “55”, “PM”, “ASYNC” y “ENCODER”.
+[NOTA_EXTRACCION] La página no imprime qué terminal exacto corresponde al sensor ni asigna función a “55”, “PM” o “ASYNC”.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-DD786EB75CDF9494
+SOURCE_SECTION_OR_PAGE: 9.2 Barrera fotoeléctrica
+RECORD_TYPE: CERTIFICATION_REQUIREMENT
+ACTION: La barrera fotoeléctrica es obligatoria y debe ir conectada a la maniobra
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: La barrera fotoeléctrica es obligatorio y debe ir conectada a la maniobra.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-07EF05991F9306F8
+SOURCE_SECTION_OR_PAGE: 9.2 Barrera fotoeléctrica
+RECORD_TYPE: CERTIFICATION_REQUIREMENT
+ACTION: En caso de fallo o desactivación de la barrera fotoeléctrica, limitar la energía cinética de la puerta; la maniobra ha de activar la entrada de cierre lento, Pin 25, del módulo VF5+
+EXPECTED_RESULT: energía cinética limitada a 4 J
+DETAILS: connection=entrada de cierre lento, Pin 25, módulo VF5+
+EVIDENCE: la energía cinética de la puerta debe limitarse a 4 J
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-65B96198A78B9D48
+SOURCE_SECTION_OR_PAGE: 9.3 Protección contra sobretemperatura
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: Conectar el primer sensor clixon (indica que el motor está llegando a la temperatura crítica) a la maniobra
+EXPECTED_RESULT: Cuando el motor llega a esta temperatura la maniobra debe parar la cabina en un rellano para dejar salir a los pasajeros
+DETAILS: role=primer sensor, normalmente cerrado; value=corriente máxima de los sensores 3 A 250 V AC
+EVIDENCE: Este sensor debe ir conectado a la maniobra.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-A9510B2636FA7617
+SOURCE_SECTION_OR_PAGE: 9.3 Protección contra sobretemperatura
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: Conectar el segundo sensor clixon (indica que el motor ha alcanzado la temperatura crítica) al VF5+ en uno de los pines del conector del encoder
+EXPECTED_RESULT: El VF5+ debe quitar la alimentación del motor hasta que la temperatura descienda lo suficiente y activar una alarma
+DETAILS: role=segundo sensor, normalmente cerrado; connection=conector del encoder, pin no especificado en el texto; value=corriente máxima de los sensores 3 A 250 V AC
+UNCERTAINTY: El pin exacto del conector del encoder no se indica en el texto; el diagrama imprime “55” junto al conector sin declarar su función
+EVIDENCE: Este sensor ha de ser conectado al VF5+ in uno de los pines del conector del encoder.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-30261CC84D394BC1
+SOURCE_SECTION_OR_PAGE: 9.3 Protección contra sobretemperatura (diagrama del conector ENCODER)
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Temperature sensor input
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: connection=flecha impresa hacia un pin del conector; etiquetas visibles 55, PM, ASYNC, ENCODER
+UNCERTAINTY: Asignación exacta de terminal no impresa; REQUIRES_FIELD_VERIFICATION
+EVIDENCE: Temperature sensor input
+END_FIELD_RECORD

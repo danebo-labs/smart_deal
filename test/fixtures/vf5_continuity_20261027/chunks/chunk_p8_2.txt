@@ -1,21 +1,70 @@
 [DOCUMENT: VF5.pdf]
 [SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
-[SEARCH_ALIASES: motor, pin 56, conector motor, VF5+ motor connection]
+[SEARCH_ALIASES: 1er movimiento autoajuste, 2ndo movimiento, 3er movimiento, 4to movimiento, 5to movimiento, pin 3 dip switch, rebotes puerta, tope de goma]
 
-5.13 Motor (56)
+5.8 Pulsador de autoajuste (51) — movimientos del autoajuste
+Los dos próximos movimientos (Los dos primeros) son para detectar el tipo de motor instalado en la puerta.
+• 1er Movimiento: La puerta abre 200mm (Si la puerta en vez de abrir hace pequeños rebotes, significa esta intentando cerrar y que el sentido esta al revés. Hay que cambiar el pin 3 del dip switch.).
+• 2ndo Movimiento: La puerta cierra 150mm.
 
-En esta entrada se conecta el motor de la puerta. El conector está identificado como MOTOR en la placa del módulo VF5+.
-
-Nota: El conector de motor (56) aparece en el diagrama de la página 7 inmediatamente debajo del conector de encoder (55). La asignación exacta de pines y la tensión de alimentación del motor REQUIRES_FIELD_VERIFICATION — consultar el esquema eléctrico completo del documento.
+Los 3 próximos movimientos son para detectar el paso libre de la puerta. El 3er movimiento empieza unos 2 o 3 segundos después de finalizar el 2ndo.
+• 3er Movimiento: La puerta cierra completamente a velocidad lenta hasta encontrar el tope de goma para detectar la posición 0.
+• 4to Movimiento: La puerta abre lentamente contando los pulsos de encoder situado en el motor hasta que toca con el tope final de apertura. Se detecta la posición final.
+• 5to Movimiento: Pasados unos segundos, la puerta cierra. Con la información adquirida en el movimiento anterior, aplica las rampas de aceleración y desaceleración en todo el 5to movimiento para optimizar al máximo el movimiento de las puertas.
 
 # FIELD-SAFETY EVIDENCE RECORDS
 
 FIELD_RECORD:
-RECORD_ID: FR-D9F213EFA7EB32AA
-SOURCE_SECTION_OR_PAGE: 5.12 Encoder (55) — diagrama visible
-RECORD_TYPE: SCHEMATIC_LABEL
-ACTION: Conector 56 — MOTOR: conexión del motor de puerta al módulo VF5+.
-EXPECTED_RESULT: DATA_NOT_AVAILABLE
-UNCERTAINTY: La página solo muestra la etiqueta '56 MOTOR' en el diagrama; asignación de pines y tensión no especificadas en esta página — REQUIRES_FIELD_VERIFICATION
-EVIDENCE: 56 MOTOR
+RECORD_ID: FR-EFDCB35589392529
+SOURCE_SECTION_OR_PAGE: Proceso de autoajuste — 1er Movimiento
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: 1er Movimiento (detección del tipo de motor).
+EXPECTED_RESULT: La puerta abre 200mm
+EVIDENCE: 1er Movimiento: La puerta abre 200mm
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-4B849D2212A54D63
+SOURCE_SECTION_OR_PAGE: Proceso de autoajuste — 1er Movimiento
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Si la puerta en vez de abrir hace pequeños rebotes (significa que intenta cerrar y el sentido está al revés).
+EXPECTED_RESULT: Hay que cambiar el pin 3 del dip switch.
+DETAILS: function=sentido de movimiento
+EVIDENCE: Hay que cambiar el pin 3 del dip switch.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-B4B2BEEB594C8E42
+SOURCE_SECTION_OR_PAGE: Proceso de autoajuste — 2ndo Movimiento
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: 2ndo Movimiento (detección del tipo de motor).
+EXPECTED_RESULT: La puerta cierra 150mm.
+EVIDENCE: 2ndo Movimiento: La puerta cierra 150mm.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-6AD1D750C0199C80
+SOURCE_SECTION_OR_PAGE: Proceso de autoajuste — 3er Movimiento
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: 3er Movimiento (detección del paso libre); empieza unos 2 o 3 segundos después de finalizar el 2ndo.
+EXPECTED_RESULT: La puerta cierra completamente a velocidad lenta hasta encontrar el tope de goma para detectar la posición 0.
+EVIDENCE: La puerta cierra completamente a velocidad lenta hasta encontrar el tope de goma
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-13D04DF6BCCB8080
+SOURCE_SECTION_OR_PAGE: Proceso de autoajuste — 4to Movimiento
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: 4to Movimiento (detección del paso libre).
+EXPECTED_RESULT: La puerta abre lentamente contando los pulsos de encoder situado en el motor hasta que toca con el tope final de apertura. Se detecta la posición final.
+EVIDENCE: La puerta abre lentamente contando los pulsos de encoder situado en el motor
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-746B154A325B771B
+SOURCE_SECTION_OR_PAGE: Proceso de autoajuste — 5to Movimiento
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: 5to Movimiento: pasados unos segundos, la puerta cierra.
+EXPECTED_RESULT: Con la información adquirida en el movimiento anterior, aplica las rampas de aceleración y desaceleración en todo el 5to movimiento.
+EVIDENCE: aplica las rampas de aceleración y desaceleración en todo el 5to movimiento
 END_FIELD_RECORD

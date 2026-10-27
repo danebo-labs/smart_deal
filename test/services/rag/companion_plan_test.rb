@@ -323,6 +323,45 @@ class Rag::CompanionPlanTest < ActiveSupport::TestCase
     assert_no_match(/fotoc[eé]lula no est[aá] activada/, result.question.to_s)
   end
 
+  test "a check does not lend its reading another component's reported state" do
+    manual = <<~TEXT
+      • Válvula.
+      El piloto se enciende cuando la válvula está abierta.
+    TEXT
+    statements = Rag::CompanionStatements.parse([ chunk(manual, page: "2") ])
+    sentence = statements.statements.find { |item| item.text.include?("piloto") }
+    episode = episode(observations: [ [ "el piloto está encendido", "query:t1" ] ], done: false)
+    episode.upsert_check!(
+      { "subject" => "compuerta", "status" => "done", "result" => "no está abierta" },
+      correlation_id: "query:t2"
+    )
+    facts = Rag::CompanionCaseFacts.build(episode)
+    check_fact = facts.facts.find { |item| item.kind == "done_check" }
+    borrowed = "La compuerta no está abierta, pero el piloto está encendido. El piloto se enciende cuando la válvula está abierta."
+    result = Rag::CompanionPlanCheck.call(
+      {
+        "links" => [ { "fact" => check_fact.id, "statement" => sentence.id, "reading" => borrowed } ],
+        "question" => "Si la compuerta no está abierta pero el piloto está encendido, ¿está abierta la válvula?",
+        "question_about" => [ sentence.id ]
+      },
+      facts: facts, statements: statements, turns: [ "el piloto está encendido", "La compuerta no está abierta" ]
+    )
+
+    assert_equal "unbacked_component", result.rejections.find { |row| row["part"] == "link" }["reason"]
+    assert_equal "unbacked_component", result.rejections.find { |row| row["part"] == "question" }["reason"]
+    assert_nil result.question
+
+    named = "Si el piloto encendido es el de la válvula, ¿está abierta?"
+    independent = "¿Está abierta la válvula?"
+    [ named, independent ].each do |question|
+      checked = Rag::CompanionPlanCheck.call(
+        { "question" => question, "question_about" => [ sentence.id ] },
+        facts: facts, statements: statements, turns: [ "el piloto está encendido" ]
+      )
+      assert_equal question, checked.question
+    end
+  end
+
   test "the render keeps step conditions, the case status, the warning, and the conflict note" do
     steps = [ step_id("regulador"), step_id("sensor de nivel no esté"), step_id("Si el problema persiste") ]
     result = check(

@@ -1,72 +1,121 @@
 [DOCUMENT: VF5.pdf]
 [SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
-[SEARCH_ALIASES: conexionado VF5+, diagrama general VF5+, CFT.FD00.C0000, CFT.FCM.C0000, 12V 2A fuente VF5, Abrir Open Cerrar Close, 230V opcional VF5+]
+[SEARCH_ALIASES: 3 Conexionado, PRIORITY INPUTS 21 RE-OPEN, PHOTOCELL RECEIVER EMITTER, 54 SAFETY, SUPPLY L PE N, INPUTS CLOSE OPEN, ALIMENTADOR DE EMERGENCIA, relés OBSTRUCTION PHOTOCELL]
 
 3 Conexionado
+[TRANSCRIPCIÓN_VISUAL_LOCAL: etiquetas y trazados leídos del dibujo por revisión visual propia de Danebo (2026-10-22). No es salida del proveedor de extracción. Las marcas degradadas se señalan como tales.]
 
-Esta página presenta el diagrama general de conexionado del módulo electrónico VF5+ de Fermator. El diagrama muestra la vista de conjunto del sistema completo, incluyendo las conexiones entre los componentes principales del operador de puertas.
+Dibujo de conexionado del módulo VF5+ (Fermator AUTOMATIC DOORS FOR LIFTS). La página no tiene texto explicativo, pasos ni tabla: lo que sigue son las etiquetas impresas en el dibujo y las conexiones que el dibujo traza.
 
-Del diagrama se identifican los siguientes elementos visibles con sus etiquetas literales:
+Placa VF5+, bornes y elementos impresos:
+- INPUTS: 8 CLOSE, 9 OUT +12V, 10 COM, 11 0V, 12 OPEN.
+- SUPPLY: 7 L, 6 PE, 5 N. Dos fusibles FUS 4A SF. Rango impreso: 100…230V AC / DC.
+[CONFLICTO_DOCUMENTAL C1: la placa impresa (PDF p. 4 y p. 16) rotula SUPPLY 7 L, 6 PE, 5 N; la Fig. 3 (PDF p. 6) rotula N—7 y L—5. El documento no dice cuál prevalece: REQUIRES_FIELD_VERIFICATION sobre la placa instalada.]
+- MOTOR 56. ENCODER 55 (PM / ASYNC).
+- PHOTOCELL: RECEIVER 19 y 20, EMITTER 17 y 18.
+- PRIORITY INPUTS: 26 FLOOR LEVEL, 21 RE-OPEN, 25 SLOW CLOSE, 23 +12V COM.
+- Relés de salida, cada uno con su LED: OPEN 30 31 32, CLOSED 33 34 35, PHOTOCELL 36 37 38, OBSTRUCTION 39 40 41. LED OK STATUS.
+- Pulsadores: 50 TEST «Push to check the door», 51 AUTOADJUSTMENT «Push to calibrate the door».
+- Potenciómetros: 52 CLOSE SPEED, 53 OPEN SPEED, 54 SAFETY.
+- 13 SERIAL PORT, cableado en el dibujo al dispositivo de mano.
+- Interruptor DIP 1 a 4 (ON / OFF): DIP 1 ON 1 INPUT / OFF 2 INPUTS; DIP 2 LANDING DOOR ON AUTOMATIC / OFF MANUAL; DIP 3 pictograma de sentido de apertura, ON / OFF; DIP 4 MASTER ON / SLAVE OFF.
+- «Immunity EN 12016: 2004 Industrial level». «DO NOT OPEN THE COVER».
+[CONFLICTO_DOCUMENTAL C4: la placa (PDF p. 4 y p. 16) imprime «EN 12016: 2004»; el texto de 5.1 (PDF p. 6) y la tabla de normas (PDF p. 18) citan «EN 12016:2013».]
+- Código impreso junto a la alimentación, lectura incierta en esta reproducción: «Q0LVF5B/C00E0».
 
-- Módulo VF5+ (etiquetado «VF5+» en el diagrama)
-- Motor Fermator (componente en la parte inferior del diagrama)
-- Fuente de alimentación: 12 V, 2 A (etiquetado en diagrama superior derecho)
-- Alimentación opcional/Optional: 230 V (etiquetado en diagrama superior izquierdo)
-- Cadena de seguridad: Abrir / Open — Cerrar / Close
-- Alimentaciones compatibles indicadas en el diagrama:
-  - 12 V DC, 60 V DC
-  - 100 V AC, 230 V AC (lado Abrir/Open)
-  - 12 V DC, 60 V DC
-  - 100 V AC, 230 V AC (lado Cerrar/Close)
-- Cables de referencia visibles:
-  - 5 m: Ref. CFT.FD00.C0000
-  - 3 m: Ref. CFT.FCM.C0000
+Potenciómetros 52, 53 y 54, marcas del dibujo:
+- 52 CLOSE SPEED y 53 OPEN SPEED: «−» arriba a la izquierda del dial y «+» abajo a la izquierda. Una flecha curva bajo cada dial.
+- 54 SAFETY: «−» arriba a la izquierda. La marca de abajo a la izquierda está degradada en esta reproducción (probablemente «+», sin certeza): REQUIRES_FIELD_VERIFICATION. Una flecha curva bajo el dial.
+- El significado de la flecha curva y el efecto de cada sentido de giro no están rotulados: REQUIRES_FIELD_VERIFICATION.
+- Pictogramas: 53 puerta abriéndose con velocímetro − / +; 52 puerta cerrándose con velocímetro − / +; 54 rampa de barras con «N» y puerta cerrándose sobre una persona, con marcas de impacto y flecha curva; 50 puerta con flechas circulares de abrir y cerrar; 51 regla sobre la puerta.
 
-NOTA: El diagrama de esta página es una vista de conjunto. Los detalles de conexionado por terminal, valores exactos de señales y asignación pin a pin REQUIRES_FIELD_VERIFICATION — consultar páginas siguientes del documento DOC-FE.IE.IN.016172.ES para el detalle de cada conexión.
+Conexiones trazadas en el dibujo:
+- Contactos «Abrir / Open» y «Cerrar / Close», cada uno rotulado «12 V DC...60 V DC / 100 V AC...230 V AC», van a una regleta de 5 bornes que el dibujo lleva hacia INPUTS de la placa. Qué borne de INPUTS recibe cada línea: REQUIRES_FIELD_VERIFICATION.
+- Los cables «5m..Ref.CFT-FC00.C0000» y «3m..Ref.CFT-FCDM.C0000» van de la fotocélula al bloque PHOTOCELL de la placa.
+- «Opcional / Optional» rotula los recuadros grises punteados: el alimentador de emergencia y el dispositivo de mano.
+
+Alimentador de emergencia («ALIMENTADOR DE EMERGENCIA / EMERGENCY SUPPLIER», opcional):
+- SALIDA VVVF4+ / VVVF4+ OUTPUT: 5 L1', 6 GND, 7 L2'. Líneas punteadas hacia la alimentación de la placa; borne exacto de llegada: REQUIRES_FIELD_VERIFICATION.
+- ALIMENTACIÓN / 230v. AC SUPPLY: 1 L2, 2 GND, 3 L1, desde «230V».
+- RELLANO PISO / LANDING FLOOR: 66 y 67, con un interruptor.
+- CONTROL VVVF4+: 26 PISO / FLOOR, 23 12V COM. Sus líneas van hacia las entradas prioritarias de la placa (lectura del trazado: REQUIRES_FIELD_VERIFICATION).
+- ENTRADAS / INPUTS: DIP ON 1 / OFF 2. ESTADO / STANDBY: BAT ON. BATERÍA / BATTERY: 29 (+), 28 (−). Batería «12 V 2 Ah».
+- FUSE 20A (letra pequeña, lectura incierta). «NO ABRIR LA TAPA / DO NOT OPEN THE COVER».
 
 # FIELD-SAFETY EVIDENCE RECORDS
 
 FIELD_RECORD:
-RECORD_ID: FR-20309F30EE57A853
+RECORD_ID: FR-E9AB95EA4C572E65
 SOURCE_SECTION_OR_PAGE: 3 Conexionado
 RECORD_TYPE: SCHEMATIC_LABEL
-ACTION: Módulo principal etiquetado VF5+ en diagrama de conjunto
+ACTION: Entradas prioritarias de la placa
 EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: VF5+
+EVIDENCE: PRIORITY INPUTS: 26 FLOOR LEVEL, 21 RE-OPEN, 25 SLOW CLOSE, 23 +12V COM.
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-4B132DFDF8D3960E
+RECORD_ID: FR-FB370CF826ECFE4A
 SOURCE_SECTION_OR_PAGE: 3 Conexionado
 RECORD_TYPE: SCHEMATIC_LABEL
-ACTION: Fuente de alimentación indicada en diagrama: 12 V 2 A
+ACTION: Bornes de la fotocélula en la placa
 EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: 12 V 2 A
+EVIDENCE: PHOTOCELL: RECEIVER 19 y 20, EMITTER 17 y 18.
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-FB250A6EA4D768D0
+RECORD_ID: FR-1265D3C583EEA03E
 SOURCE_SECTION_OR_PAGE: 3 Conexionado
 RECORD_TYPE: SCHEMATIC_LABEL
-ACTION: Alimentación opcional indicada en diagrama superior izquierdo: 230 V
+ACTION: Relés de salida con LED
 EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: Opcional / Optional 230V
+EVIDENCE: OPEN 30 31 32, CLOSED 33 34 35, PHOTOCELL 36 37 38, OBSTRUCTION 39 40 41.
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-889B10342B266FE7
+RECORD_ID: FR-78915208BF581223
 SOURCE_SECTION_OR_PAGE: 3 Conexionado
 RECORD_TYPE: SCHEMATIC_LABEL
-ACTION: Señales de control visibles en diagrama: Abrir / Open — Cerrar / Close con compatibilidad 12 V DC, 60 V DC, 100 V AC, 230 V AC
+ACTION: Entradas de maniobra
 EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: Abrir / Open Cerrar / Close 12 V DC, 60 V DC, 100 V AC, 230 V AC
+EVIDENCE: INPUTS: 8 CLOSE, 9 OUT +12V, 10 COM, 11 0V, 12 OPEN.
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-6EB053B3EECC27A1
+RECORD_ID: FR-F610D84DA89D6625
 SOURCE_SECTION_OR_PAGE: 3 Conexionado
 RECORD_TYPE: SCHEMATIC_LABEL
-ACTION: Cable de referencia 5 m: Ref. CFT.FD00.C0000; cable de referencia 3 m: Ref. CFT.FCM.C0000
+ACTION: Alimentación de la placa
 EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: 5m: Ref. CFT.FD00.C0000 3m: Ref. CFT.FCM.C0000
+UNCERTAINTY: REQUIRES_FIELD_VERIFICATION: la Fig. 3 de la p. 6 rotula N—7 y L—5
+EVIDENCE: SUPPLY: 7 L, 6 PE, 5 N.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-F85CF62745D150F3
+SOURCE_SECTION_OR_PAGE: 3 Conexionado
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Potenciómetro 54 SAFETY
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+UNCERTAINTY: REQUIRES_FIELD_VERIFICATION: la marca inferior está degradada y el sentido de giro no está rotulado
+EVIDENCE: 54 SAFETY: «−» arriba a la izquierda.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-31820D2A0C2E7D53
+SOURCE_SECTION_OR_PAGE: 3 Conexionado
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Contactos de maniobra Abrir y Cerrar
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+UNCERTAINTY: REQUIRES_FIELD_VERIFICATION: el borne de INPUTS que recibe cada línea no se distingue
+EVIDENCE: Contactos «Abrir / Open» y «Cerrar / Close»
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-BD531B94B783E98A
+SOURCE_SECTION_OR_PAGE: 3 Conexionado
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Salida del alimentador de emergencia
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+UNCERTAINTY: REQUIRES_FIELD_VERIFICATION: borne exacto de llegada a la placa
+EVIDENCE: SALIDA VVVF4+ / VVVF4+ OUTPUT: 5 L1', 6 GND, 7 L2'.
 END_FIELD_RECORD

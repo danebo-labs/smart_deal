@@ -1,41 +1,61 @@
 [DOCUMENT: VF5.pdf]
 [SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
-[SEARCH_ALIASES: re-apertura sola, potenciómetro #54, fotocélula activada, obstrucción mecánica, funcionamiento normal]
+[SEARCH_ALIASES: 8.1 Autoajuste, botón TEST, botón AUTOAJUSTE, la puerta no se mueve, cable del motor, conector del motor, herramienta de programación de Fermator]
 
-8.2 Funcionamiento normal (continuación)
-
-• La puerta se re-abre sola.
-  – Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54).
-  – Comprobar que la fotocélula no esté activada.
-  – Comprobar que no hay una obstrucción mecánica en la puerta.
-
-Nota: Este contenido continúa directamente desde la página anterior (pág. 11).
+8 Solución de problemas
+8.1 Autoajuste
+• El control no responde al botón de TEST o AUTOAJUSTE.
+– Apagar y encender el controlador y realizar el test otra vez.
+– Si no ocurre nada, cambiar el controlador.
+• La puerta no se mueve.
+– Verificar el cable del motor y su conexión con el conector del motor.
+– Verificar que se aplica un voltaje variable al motor cuando se realiza una orden de movimiento. El voltaje del motor debe ser comprobado con la herramienta de programación de Fermator. Si el motor no realiza ningún movimiento cuando se le aplica un voltaje, debe ser cambiado.
 
 # FIELD-SAFETY EVIDENCE RECORDS
 
 FIELD_RECORD:
-RECORD_ID: FR-082D138F30E8B4DB
-SOURCE_SECTION_OR_PAGE: (continuación de página anterior)
+RECORD_ID: FR-DBEA76B81D2F5156
+SOURCE_SECTION_OR_PAGE: 8.1 Autoajuste — El control no responde al botón de TEST o AUTOAJUSTE.
 RECORD_TYPE: TROUBLESHOOTING_STEP
-ACTION: Si la puerta se re-abre sola: comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)
+ACTION: Apagar y encender el controlador y realizar el test otra vez.
 EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)
+EVIDENCE: Apagar y encender el controlador y realizar el test otra vez.
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-041914D98CC390E9
-SOURCE_SECTION_OR_PAGE: (continuación de página anterior)
-RECORD_TYPE: TROUBLESHOOTING_STEP
-ACTION: Si la puerta se re-abre sola: comprobar que la fotocélula no esté activada
+RECORD_ID: FR-05B9F636EA2C538C
+SOURCE_SECTION_OR_PAGE: 8.1 Autoajuste — El control no responde al botón de TEST o AUTOAJUSTE.
+RECORD_TYPE: REPAIR_ACTION
+ACTION: Si no ocurre nada, cambiar el controlador.
 EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: Comprobar que la fotocélula no esté activada
+EVIDENCE: Si no ocurre nada, cambiar el controlador.
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-02FBFBC93931CE2F
-SOURCE_SECTION_OR_PAGE: (continuación de página anterior)
+RECORD_ID: FR-A2C8E382361A55E9
+SOURCE_SECTION_OR_PAGE: 8.1 Autoajuste — La puerta no se mueve.
 RECORD_TYPE: TROUBLESHOOTING_STEP
-ACTION: Si la puerta se re-abre sola: comprobar que no hay una obstrucción mecánica en la puerta
+ACTION: Verificar el cable del motor y su conexión con el conector del motor.
 EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: Comprobar que no hay una obstrucción mecánica en la puerta
+EVIDENCE: Verificar el cable del motor y su conexión con el conector del motor.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-BED8B740D031F479
+SOURCE_SECTION_OR_PAGE: 8.1 Autoajuste — La puerta no se mueve.
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Verificar que se aplica un voltaje variable al motor cuando se realiza una orden de movimiento.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: tools=herramienta de programación de Fermator; function=comprobar el voltaje del motor
+EVIDENCE: El voltaje del motor debe ser comprobado con la herramienta de programación de Fermator.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-5C02DD4C5AA9795C
+SOURCE_SECTION_OR_PAGE: 8.1 Autoajuste — La puerta no se mueve.
+RECORD_TYPE: REPAIR_ACTION
+ACTION: Si el motor no realiza ningún movimiento cuando se le aplica un voltaje, debe ser cambiado.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: precondition=se aplica un voltaje al motor y el motor no realiza ningún movimiento
+EVIDENCE: Si el motor no realiza ningún movimiento cuando se le aplica un voltaje, debe ser cambiado.
 END_FIELD_RECORD

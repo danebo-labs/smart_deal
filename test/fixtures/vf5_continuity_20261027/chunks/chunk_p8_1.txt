@@ -1,32 +1,75 @@
 [DOCUMENT: VF5.pdf]
 [SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
-[SEARCH_ALIASES: encoder, ASYNC, PM encoder, 5 cables, 4 cables, pin 55, motor asíncrono encoder, motor síncrono encoder]
+[SEARCH_ALIASES: Pulsador de autoajuste (51), autoajuste, auto-ajuste, motor PM, motor asíncrono, EEPROM no-volátil, fotocélula Fermator, Proceso de autoajuste]
 
-S12 — ENCODER (55) (continuación de página anterior)
+5.8 Pulsador de autoajuste (51)
+El pulsador de Autoajuste se utiliza para instalar la puerta.
+Con un motor PM instalado el autoajuste ha de hacerse con la puerta de cabina acoplada y con la puerta de rellano.
+Con un motor asíncrono instalado el autoajuste ha de hacerse con la puerta de cabina acoplada pero sin la puerta de rellano.
+La puerta realizarán 5 movimientos para detectar el motor y el paso libre. De la información obtenida el microprocesador calculará las rampas de aceleración y desaceleración para dar un control óptimo a la puerta. Una vez el autoajuste se haya completado los parámetros serán guardados en una EEPROM no-volátil. Las puertas se abrirán lentamente en la primera operación después de un fallo de alimentación para verificar el paso libre. Solo es necesario realizar otra vez el autoajuste para la configuración de los parámetros por defecto o cuando se realicen cambios como la conexión o desconexión de la fotocélula Fermator.
 
-Compatibilidad con el motor asíncrono Fermator:
+Proceso de autoajuste:
+- Apagar el VF y posicionar la puerta en posición cerrada.
+- Desconectar las entradas (Pines 8, 9, 10, 11 & 12) y las entradas prioritarias (Pines 26, 21, 25 & 23).
+- Encender el VF y pulsar el botón de auto-ajuste (51)
 
-- El encoder del VF5+ está preparado para conectarse al encoder de alta resolución del motor síncrono PM (5 cables) y al encoder estándar del motor asíncrono (4 cables).
-- El encoder del motor asíncrono (4 cables) ha de ser conectado a los 4 Pines del encoder marcado como ASYNC.
-
-Nota: En el conector de encoder (55) existen dos grupos de pines identificados físicamente: PM y ASYNC. Usar el grupo incorrecto según el tipo de motor instalado puede resultar en funcionamiento erróneo del control de puerta.
+Documento: Módulo electrónico VF5+ (Fermator Group), DOC-FE.IE.IN.016172.ES, Versión 0.4, Pág. 7 / 21 impresa. Los movimientos del proceso continúan en el siguiente chunk.
 
 # FIELD-SAFETY EVIDENCE RECORDS
 
 FIELD_RECORD:
-RECORD_ID: FR-851F0816B2520E90
-SOURCE_SECTION_OR_PAGE: 5.12 Encoder (55)
+RECORD_ID: FR-DDE2AB57A71E5D2D
+SOURCE_SECTION_OR_PAGE: 5.8 Pulsador de autoajuste (51)
 RECORD_TYPE: INSTALLATION_STEP
-ACTION: Conectar el encoder del motor asíncrono (4 cables) a los 4 pines del conector de encoder marcados como ASYNC en el módulo VF5+.
-EXPECTED_RESULT: Encoder del motor asíncrono correctamente conectado al grupo ASYNC del conector 55.
-EVIDENCE: El encoder del motor asíncrono (4 cables) ha de ser conectado a los 4 Pines del encoder marcado como ASYNC
+ACTION: Con un motor PM instalado, hacer el autoajuste con la puerta de cabina acoplada y con la puerta de rellano.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: scope=motor PM; precondition=puerta de cabina acoplada y puerta de rellano
+EVIDENCE: Con un motor PM instalado el autoajuste ha de hacerse con la puerta de cabina acoplada y con la puerta de rellano.
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-6F2373C60828E48F
-SOURCE_SECTION_OR_PAGE: 5.12 Encoder (55)
-RECORD_TYPE: SCHEMATIC_LABEL
-ACTION: Conector 55 — ENCODER: grupo PM (encoder motor síncrono, 5 cables) y grupo ASYNC (encoder motor asíncrono, 4 cables).
+RECORD_ID: FR-B51B3D351CCD75BC
+SOURCE_SECTION_OR_PAGE: 5.8 Pulsador de autoajuste (51)
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: Con un motor asíncrono instalado, hacer el autoajuste con la puerta de cabina acoplada pero sin la puerta de rellano.
 EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: encoder de alta resolución del motor síncrono PM (5 cables) y al encoder estándar del motor asíncrono (4 cables)
+DETAILS: scope=motor asíncrono; precondition=puerta de cabina acoplada, sin puerta de rellano
+EVIDENCE: Con un motor asíncrono instalado el autoajuste ha de hacerse con la puerta de cabina acoplada pero sin la puerta de rellano.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-C6B96D5B799D1CF7
+SOURCE_SECTION_OR_PAGE: Proceso de autoajuste
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: Apagar el VF y posicionar la puerta en posición cerrada.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Apagar el VF y posicionar la puerta en posición cerrada.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-C7C532944BE9F6D2
+SOURCE_SECTION_OR_PAGE: Proceso de autoajuste
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: Desconectar las entradas (Pines 8, 9, 10, 11 & 12) y las entradas prioritarias (Pines 26, 21, 25 & 23).
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Desconectar las entradas (Pines 8, 9, 10, 11 & 12) y las entradas prioritarias (Pines 26, 21, 25 & 23).
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-0BF1D2F7AFB2DE8A
+SOURCE_SECTION_OR_PAGE: Proceso de autoajuste
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: Encender el VF y pulsar el botón de auto-ajuste (51).
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Encender el VF y pulsar el botón de auto-ajuste (51)
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-E81DD46FD628CB6E
+SOURCE_SECTION_OR_PAGE: 5.8 Pulsador de autoajuste (51)
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: Repetir el autoajuste solo para la configuración de los parámetros por defecto o cuando se realicen cambios como la conexión o desconexión de la fotocélula Fermator.
+EXPECTED_RESULT: Una vez completado el autoajuste, los parámetros se guardan en una EEPROM no-volátil.
+DETAILS: scope=fotocélula Fermator; function=autoajuste
+EVIDENCE: Solo es necesario realizar otra vez el autoajuste para la configuración de los parámetros por defecto
 END_FIELD_RECORD

@@ -1,119 +1,36 @@
 [DOCUMENT: VF5.pdf]
 [SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
-[SEARCH_ALIASES: requisitos motor VF, trifásico asíncrono, cables conectores hembra, señales de entrada VF5, señales de salida VF5, desempeño VF5+, velocidad abrir cerrar, fuerza de seguridad puerta]
+[SEARCH_ALIASES: Requisitos Motor VF, Trifásico asíncrono, Características eléctricas, Requisitos de cables, conectores hembra, Encoder motor, Potencia motor, Fotocélula]
 
-S6 — ELECTRICAL (continuación: Especificaciones técnicas — página 16)
+Requisitos Motor VF
+(Página con encabezado: INSTRUCCIONES — DOC-FE.IE.IN.016172.ES — Módulo electrónico VF5+ — Versión: 0.4. Pie: Fermator Group • www.fermator.com • Pág. 16 / 21)
 
-Esta sección recoge las especificaciones eléctricas y de desempeño del Módulo electrónico VF5+ (DOC-FE.IE.IN.016172.ES, Versión 0.4), Fermator Group. Las tablas siguientes son la continuación directa de la página 16.
-
-**Requisitos Motor VF**
-
-| Parámetro | Valor |
-|---|---|
+[NOTA_EXTRACCION] | Campo | Valor |
+|-|-|
 | Tipo | Trifásico asíncrono |
 | Número de polos | 6 |
-| Tensión de alimentación | 200 V AC |
-| Corriente mín / nom / máx | 0,58 / 0,82 / 1,53 A |
-| Potencia mín / nom / máx | 90 / 220 / 440 W |
-| Par mín / nom / máx | 0,38 / 1,28 / 1,98 N·m |
-| Velocidad mín / nom / máx | 975 / 900 / 630 r.p.m |
-| Clase térmica | DATA_NOT_AVAILABLE |
-| Encoder | DATA_NOT_AVAILABLE |
-| Resolución encoder | 8 pulsos/rev (nominal) |
 
-Nota: Los valores de «Clase térmica» y tipo de «Encoder» no están especificados en el texto visible de esta página.
-
-**Requisitos de cables para los conectores hembra**
-
-| Conector | Mínimo | Nominal | Máximo | Unidades |
-|---|---|---|---|---|
-| Potencia | 0,08 / 28 | — | 2,5 / 12 | mm² / AWG |
-| Entradas | 0,08 / 28 | — | 2,5 / 12 | mm² / AWG |
-| Entradas prioritarias | 0,08 / 28 | — | 2,5 / 12 | mm² / AWG |
-| Salidas | 0,08 / 28 | — | 2,5 / 12 | mm² / AWG |
-| Potencia motor | — | 0,75 / 18 | — | mm² / AWG |
-| Encoder motor | — | 0,14 / 26 | — | mm² / AWG |
-| Fotocélula | 0,08 / 28 | — | 2,5 / 12 | mm² / AWG |
-
-**Señales de entrada**
-
-| Parámetro | Valor |
-|---|---|
-| Impedancia | 20 kΩ |
-| Voltaje (DC) | 12 V DC a 60 V DC |
-| Voltaje (AC) | 100 V AC a 230 V AC |
-
-**Señales de salida**
-
+Características eléctricas
 | Parámetro | Mínimo | Nominal | Máximo | Unidades |
-|---|---|---|---|---|
-| Contactos | Contactos de libre potencial | — | — | — |
-| Resistencia de los contactos | — | — | 100 | mΩ |
-| Tiempo de operación | — | — | 7 | ms |
-| Tiempo de liberación | — | — | 3 | ms |
-| Corriente límite | — | — | 150 | mA |
-| Voltaje | — | — | 125 | V AC |
+|-|-|-|-|-|
+| Tensión de alimentación | 200 | | | V AC |
+[NOTA_EXTRACCION] El 200 está impreso una sola vez, en una celda que abarca Mínimo, Nominal y Máximo.
+| Corriente | 0,58 | 0,82 | 1,53 | A |
+| Potencia | 90 | 220 | 440 | W |
+| Par | 0,38 | 1,28 | 1,98 | N·m |
+| Velocidad | 975 | 900 | 630 | r.p.m |
+| Clase térmica | | | | |
+[NOTA_EXTRACCION] La fila Clase térmica está impresa sin valor.
+| Encoder | - | | | |
+| Resolución | - | 8 | - | pulsos / rev. |
 
-**Desempeño**
-
-| Parámetro | Mínimo | Nominal | Máximo | Unidades |
-|---|---|---|---|---|
-| Velocidad de abrir | 0,2 | — | 0,7 | m/s |
-| Velocidad de cerrar | 0,15 | — | 0,4 | m/s |
-| Fuerza de seguridad | 60 | — | 150 | N |
-
-# FIELD-SAFETY EVIDENCE RECORDS
-
-FIELD_RECORD:
-RECORD_ID: FR-97561DDF17A83D62
-SOURCE_SECTION_OR_PAGE: Requisitos Motor VF
-RECORD_TYPE: INSPECTION_CHECK
-ACTION: Verificar que el motor conectado al VF5+ es trifásico asíncrono de 6 polos, alimentado a 200 V AC, con corriente nominal 0,82 A y potencia nominal 220 W.
-EXPECTED_RESULT: Motor cumple tipo trifásico asíncrono, 6 polos, 200 V AC, corriente 0,58–1,53 A, potencia 90–440 W
-EVIDENCE: Tipo Trifásico asíncrono, Número de polos 6, Tensión de alimentación 200 V AC
-END_FIELD_RECORD
-
-FIELD_RECORD:
-RECORD_ID: FR-E59FEC282FA0BBA6
-SOURCE_SECTION_OR_PAGE: Requisitos Motor VF
-RECORD_TYPE: INSPECTION_CHECK
-ACTION: Verificar que la resolución del encoder del motor es de 8 pulsos/revolución (valor nominal).
-EXPECTED_RESULT: Resolución nominal: 8 pulsos/rev
-EVIDENCE: Resolución - 8 - pulsos / rev.
-END_FIELD_RECORD
-
-FIELD_RECORD:
-RECORD_ID: FR-430DECE204D26AB8
-SOURCE_SECTION_OR_PAGE: Requisitos de cables para los conectores hembra
-RECORD_TYPE: INSPECTION_CHECK
-ACTION: Verificar que el cable de potencia motor tiene sección nominal de 0,75 mm² (AWG 18); cable de encoder motor sección nominal 0,14 mm² (AWG 26); resto de conectores (potencia, entradas, salidas, fotocélula) entre 0,08 mm² (AWG 28) y 2,5 mm² (AWG 12).
-EXPECTED_RESULT: Secciones de cable dentro de los rangos especificados por conector
-EVIDENCE: Potencia motor - 0,75 / 18 - mm2 / AWG; Encoder motor - 0,14 / 26 - mm2 / AWG
-END_FIELD_RECORD
-
-FIELD_RECORD:
-RECORD_ID: FR-80522A91522E2EA7
-SOURCE_SECTION_OR_PAGE: Señales de entrada
-RECORD_TYPE: INSPECTION_CHECK
-ACTION: Verificar que las señales de entrada al VF5+ tienen impedancia de 20 kΩ y voltaje dentro de los rangos: 12–60 V DC o 100–230 V AC según corresponda.
-EXPECTED_RESULT: Impedancia 20 kΩ; voltaje DC 12–60 V DC o AC 100–230 V AC
-EVIDENCE: Impedancia 20 kΩ, Voltaje 12 V DC to 60 V DC, 100 V AC to 230 V AC
-END_FIELD_RECORD
-
-FIELD_RECORD:
-RECORD_ID: FR-04950715D2AD12D0
-SOURCE_SECTION_OR_PAGE: Señales de salida
-RECORD_TYPE: INSPECTION_CHECK
-ACTION: Verificar que los contactos de salida del VF5+ son de libre potencial, con resistencia máx. 100 mΩ, tiempo de operación máx. 7 ms, tiempo de liberación máx. 3 ms, corriente límite máx. 150 mA, y voltaje máx. 125 V AC.
-EXPECTED_RESULT: Contactos de libre potencial; resistencia ≤100 mΩ; t_op ≤7 ms; t_lib ≤3 ms; I_lim ≤150 mA; V ≤125 V AC
-EVIDENCE: Contactos de libre potencial. Resistencia de los contactos - - 100 mΩ
-END_FIELD_RECORD
-
-FIELD_RECORD:
-RECORD_ID: FR-D1DA5D40D3929518
-SOURCE_SECTION_OR_PAGE: Desempeño
-RECORD_TYPE: INSPECTION_CHECK
-ACTION: Verificar que la velocidad de apertura de puerta está entre 0,2 y 0,7 m/s, la de cierre entre 0,15 y 0,4 m/s, y la fuerza de seguridad entre 60 y 150 N.
-EXPECTED_RESULT: V_abrir: 0,2–0,7 m/s; V_cerrar: 0,15–0,4 m/s; Fuerza seguridad: 60–150 N
-EVIDENCE: Velocidad de abrir 0,2 - 0,7 m/s; Fuerza de seguridad 60 - 150 N
-END_FIELD_RECORD
+Requisitos de cables para los conectores hembra
+| Conexión | Mínimo | Nominal | Máximo | Unidades |
+|-|-|-|-|-|
+| Potencia | 0,08 / 28 | - | 2,5 / 12 | mm² / AWG |
+| Entradas | 0,08 / 28 | - | 2,5 / 12 | mm² / AWG |
+| Entradas prioritarias | 0,08 / 28 | - | 2,5 / 12 | mm² / AWG |
+| Salidas | 0,08 / 28 | - | 2,5 / 12 | mm² / AWG |
+| Potencia motor | - | 0,75 / 18 | - | mm² / AWG |
+| Encoder motor | - | 0,14 / 26 | - | mm² / AWG |
+| Fotocélula | 0,08 / 28 | - | 2,5 / 12 | mm² / AWG |

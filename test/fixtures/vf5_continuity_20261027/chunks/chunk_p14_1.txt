@@ -1,25 +1,66 @@
 [DOCUMENT: VF5.pdf]
 [SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
-[SEARCH_ALIASES: VF5+, DOC-FE.IE.IN.016172.ES, EN 81-20, Fermator, página 14]
+[SEARCH_ALIASES: EUNAP, protección TOTAL, Energía cinética, Límite Energía Cinética, Limitar fuerza 150 N, Puerta de vidrio, consola VCP-VFCP.C00, EN 81-20 punto 5.3.15.1]
 
-S4 — SISTEMA DE SEGURIDAD (continuación sección 9 — Normativa EN 81-20)
+9 Normativa ascensores EN 81-20
+En esta sección están listadas las modificaciones necesarias para el conocimiento del cliente con el objetivo de cumplir la nueva normativa de seguridad en ascensores EN 81-20.
+Es importante activar la opción EUNAP dentro del menú Opciones con la consola de programación (Ref. VCP-VFCP.C00) y hacer un autoajuste. Recordar activar la protección TOTAL si se quiere guardar la configuración. La opción EUNAP está activada por defecto.
+IMPORTANTE: La maniobra debe mantener la señal de cierre durante todo el tiempo que el ascensor esté en movimiento. Cuando la maniobra deja de activar la señal de cierre el patín se abre para permitir abrir la puerta con una fuerza no mayor a 300 N (punto 5.3.15.1 de la normativa EN 81-20).
 
-9.5 Protección contra atrape (si aplica, según contenido de página 14)
-
-NOTA: El contenido de esta página (p. 14/21) no ha sido transmitido directamente; el bloque de documento proporcionado cubre hasta la página 13. A continuación se registra exclusivamente el contenido visible en la imagen de la página 13 que corresponde a secciones que podían continuar en p. 14, marcando como DATA_NOT_AVAILABLE cualquier contenido no visible.
-
-Esta página forma parte del documento DOC-FE.IE.IN.016172.ES, Módulo electrónico VF5+, Versión 0.4, Fermator Group. Las secciones 9.1 a 9.4 finalizan en la página 13. El contenido de la página 14 no está disponible en la imagen proporcionada.
-
-— REQUIRES_FIELD_VERIFICATION: El texto completo de la página 14 no fue incluido en el input. No se puede extraer ni inferir el contenido de dicha página.
+9.1 Energía cinética
+• La velocidad media de cierre debe estar limitada a 10 J. Para limitarla es necesario saber la masa en movimiento, el tipo de apertura de la puerta (telescópica o central) y el número de paneles. Estos parámetros están programados por defecto excepto en los recambios. En este caso se han de introducir mediante la consola de programación (Ref, VCP-VFCP.C00). Estas opciones están disponibles a partir las consolas de programación entregadas a partir del 01/07/2016.
+• Para modificar los parámetros con la consola es necesario entrar en el menú “Cine” → Menú de Entrada → Dentro están los parámetros “Límite Energía Cinética”, “Limitar fuerza 150 N”, “Puerta de vidrio”, “Tipo de Puerta”, “Número de hojas” y “Masa de la puerta Kg”.
+[CONFLICTO_DOCUMENTAL C3: 5.11 (PDF p. 8) da «60 a 150Nm» para el #54; la tabla de características (PDF p. 17) da «Fuerza de seguridad 60 – 150 N» y la consola (PDF p. 14) «Limitar fuerza 150 N». Nm (par) y N (fuerza) no son la misma magnitud y el documento no aclara cuál vale.]
+Instrucciones: Activar “Límite Energía Cinética”. Después activar la opción “Limitar fuerza 150 N” y dependiendo de si la puerta es de vidrio o no activar o desactivar la opción “Puerta de vidrio”. Después se ha de configurar “Tipo de Puerta”, “Número de hojas” y “Masa de la puerta Kg”.
+En el Anexo 1 se explica como calcular la masa de la puerta y en el Anexo 2 se encuentra unos ejemplos de muestra.
 
 # FIELD-SAFETY EVIDENCE RECORDS
 
 FIELD_RECORD:
-RECORD_ID: FR-058ECB597CF6647E
-SOURCE_SECTION_OR_PAGE: Page 14
-RECORD_TYPE: DOCUMENTATION_REQUIREMENT
-ACTION: Verificar en el documento físico o digital el contenido completo de la página 14/21 del documento DOC-FE.IE.IN.016172.ES.
+RECORD_ID: FR-496524E0076B0F3E
+SOURCE_SECTION_OR_PAGE: 9 Normativa ascensores EN 81-20
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: Activar la opción EUNAP dentro del menú Opciones con la consola de programación (Ref. VCP-VFCP.C00) y hacer un autoajuste
 EXPECTED_RESULT: DATA_NOT_AVAILABLE
-UNCERTAINTY: REQUIRES_FIELD_VERIFICATION: el texto de la página 14 no fue suministrado en este input; no se puede extraer ni inferir contenido.
-EVIDENCE: Página 14 no incluida en el input proporcionado
+DETAILS: tools=consola de programación Ref. VCP-VFCP.C00; value=la opción EUNAP está activada por defecto
+EVIDENCE: Es importante activar la opción EUNAP dentro del menú Opciones con la consola de programación
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-8690B535CBF0FD80
+SOURCE_SECTION_OR_PAGE: 9 Normativa ascensores EN 81-20
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: Recordar activar la protección TOTAL si se quiere guardar la configuración
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Recordar activar la protección TOTAL si se quiere guardar la configuración.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-1470E36BA4018EA8
+SOURCE_SECTION_OR_PAGE: 9 Normativa ascensores EN 81-20
+RECORD_TYPE: SAFETY_WARNING
+ACTION: La maniobra debe mantener la señal de cierre durante todo el tiempo que el ascensor esté en movimiento
+EXPECTED_RESULT: Cuando la maniobra deja de activar la señal de cierre el patín se abre para permitir abrir la puerta con una fuerza no mayor a 300 N
+DETAILS: scope=punto 5.3.15.1 de la normativa EN 81-20 citado por la fuente
+EVIDENCE: La maniobra debe mantener la señal de cierre durante todo el tiempo que el ascensor esté en movimiento
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-6A17C19F8DB4816B
+SOURCE_SECTION_OR_PAGE: 9.1 Energía cinética
+RECORD_TYPE: CERTIFICATION_REQUIREMENT
+ACTION: La velocidad media de cierre debe estar limitada; para limitarla es necesario saber la masa en movimiento, el tipo de apertura de la puerta (telescópica o central) y el número de paneles
+EXPECTED_RESULT: 10 J
+DETAILS: precondition=parámetros programados por defecto excepto en los recambios; en ese caso se introducen mediante la consola VCP-VFCP.C00; opciones disponibles en consolas entregadas a partir del 01/07/2016
+EVIDENCE: La velocidad media de cierre debe estar limitada a 10 J.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-B1B1A0992C5E498D
+SOURCE_SECTION_OR_PAGE: 9.1 Energía cinética
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: En la consola, menú “Cine” → Menú de Entrada: activar “Límite Energía Cinética”; después activar “Limitar fuerza 150 N”; activar o desactivar “Puerta de vidrio” según la puerta sea de vidrio o no; después configurar “Tipo de Puerta”, “Número de hojas” y “Masa de la puerta Kg”
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: tools=consola de programación Ref. VCP-VFCP.C00; scope=Anexo 1 explica cómo calcular la masa de la puerta, Anexo 2 contiene ejemplos
+EVIDENCE: Activar “Límite Energía Cinética”. Después activar la opción “Limitar fuerza 150 N”
 END_FIELD_RECORD

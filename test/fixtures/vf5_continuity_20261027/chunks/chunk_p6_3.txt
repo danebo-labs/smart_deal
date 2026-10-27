@@ -1,0 +1,21 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: 5.3 Puerto serie, puerto serie 13, conector RJ11, consola de programación, 1.200 Baudios, lazo de corriente]
+
+5.3 Puerto serie (13)
+
+El puerto serie se utiliza para conectar con un dispositivo externo como la consola de programación, interfaz y futuros dispositivos de expansión. Trabaja a una velocidad de 1.200 Baudios por segundo, lazo de corriente. Se usa un conector RJ11 (Conector jack de teléfono)
+
+[NOTA_EXTRACCION] Subsistema: CONTROLLER_LOGIC.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-85CA0110758866BB
+SOURCE_SECTION_OR_PAGE: 5.3 Puerto serie (13)
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: 13 Puerto serie
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: function=conectar con un dispositivo externo como la consola de programación, interfaz y futuros dispositivos de expansión; value=1.200 Baudios por segundo, lazo de corriente; connection=conector RJ11 (Conector jack de teléfono)
+EVIDENCE: Trabaja a una velocidad de 1.200 Baudios por segundo, lazo de corriente.
+END_FIELD_RECORD

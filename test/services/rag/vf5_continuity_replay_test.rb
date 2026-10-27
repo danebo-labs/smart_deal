@@ -28,6 +28,80 @@ class Rag::Vf5ContinuityReplayTest < ActiveSupport::TestCase
     assert_sample(walked, led_question_replaces: true)
   end
 
+  test "the 15:00 run does not name the generic led and keeps the clarification" do
+    walk("fifteen") do |walked|
+      t2 = walked.fetch("t2")
+      t3 = walked.fetch("t3")
+      t4 = walked.fetch("t4")
+      t5 = walked.fetch("t5")
+      open_question = t2[:episode].pending_question["question"]
+      shown = t2[:episode].pending_question.dig("shown", "question").to_s
+
+      assert_match(/#21/, open_question)
+      assert_equal "el LED está encendido", t2[:episode].observations.pluck("text").find { |text| text.match?(/\bled\b/i) }
+      assert t2[:episode].observations.none? { |item| item["text"].match?(/apagado/i) }
+      assert t2[:episode].observations.none? { |item| item["text"].match?(/led de (?:fotoc[eé]lula|estado)/i) }
+      assert_not_includes t2[:text], "parpadeante"
+      assert_match(/Cu[aá]l LED est[aá] encendido/i, shown)
+      assert_match(/Fotoc[eé]lula/, shown)
+      assert_match(/Estado/, shown)
+      assert_equal 2, t2[:episode].pending_question.dig("shown", "targets").size
+
+      assert_equal open_question, t3[:episode].pending_question["question"]
+      assert_equal shown, t3[:episode].pending_question.dig("shown", "question")
+      assert_equal "done", check_status(t3[:episode], /fotoc[eé]lula/)
+      assert_equal "not_done", check_status(t3[:episode], /#54/)
+      assert_equal "not_done", check_status(t3[:episode], /medicion/)
+      assert t3[:episode].checks.none? { |item| item["subject"].to_s.match?(/obstruc/) && item["status"] == "done" }
+      assert_not_includes t3[:text], "pero el LED está encendido"
+      assert_not_includes t3[:text], STATUS_SENTENCE
+      assert_includes t3[:text], "potenciómetro"
+      assert_includes t3[:text], "fotocélula"
+
+      assert t4[:episode].observations.none? { |item| item["text"].match?(/qu[eé] sigue/i) }
+      assert_match(/#21/, t4[:episode].pending_question["question"])
+      assert_equal shown, t4[:episode].pending_question.dig("shown", "question")
+      assert_not_includes t4[:text], STATUS_SENTENCE
+
+      unknown = t5[:episode].observations.find { |item| item.dig("answers", "r") == "unknown" }
+      assert_includes unknown["text"], "#21"
+      assert_includes unknown["text"], "contacto"
+      assert_includes unknown.dig("answers", "q").to_s, "#21"
+      assert_no_match(/Cu[aá]l LED/i, unknown.dig("answers", "q").to_s)
+      assert_equal shown, t5[:episode].pending_question["question"]
+      assert_not_includes t5[:text], "El LED se activa cuando"
+      assert_not_includes t5[:text], STATUS_SENTENCE
+      assert_equal "done", check_status(t5[:episode], /fotoc[eé]lula/)
+      assert_equal "not_done", check_status(t5[:episode], /#54/)
+
+      before_t3 = compose_captured(t3, backing: false)
+      before_t5 = compose_captured(t5, backing: false)
+      assert_includes before_t3.text, "pero el LED está encendido"
+      assert_includes before_t5.text, "El LED se activa cuando"
+    end
+  end
+
+  test "the replay catalog is the published candidate" do
+    provenance = JSON.parse(Rails.root.join("test/fixtures/vf5_continuity_20261027/catalog_provenance.json").read)
+    root = ChunkStore::ROOT
+    names = Dir[root.join("chunk_p*.txt")].map { |path| File.basename(path) }.sort
+
+    assert_equal "candidate_r2", provenance["source"]
+    assert_equal "3472b6310640454cb79db75c0a5e9b97cdb9e0f8a7fa1eefebc6498ee8d0abc0", provenance["manifest_sha256"]
+    assert_equal "cebd7de6ff95dbd110b6017afc4f76cb828718e2", provenance["git_sha"]
+    assert_equal "be7a39a3490c92c8381cb883402760cb07d10b0a3beda5348bed22f72abedf72", provenance["pdf_sha256"]
+    assert_equal provenance.fetch("files").keys.sort, names
+    assert_not_includes names, "chunk_p7_4.txt"
+    assert_not_includes names, "chunk_p8_4.txt"
+    provenance["files"].each do |name, sha|
+      assert_equal sha, Digest::SHA256.file(root.join(name)).hexdigest, name
+    end
+    page = File.read(root.join("chunk_p7_3.txt"))
+    assert_includes page, "LED parpadeante indicando condiciones apropiadas de trabajo."
+    assert_not_includes page, "Verificar que el LED de ESTADO parpadea"
+    assert_includes File.read(root.join("chunk_p8_3.txt")), "Esta valor es regulable de 60 a 150Nm"
+  end
+
   private
 
   def assert_sample(walked, led_question_replaces:)
@@ -83,7 +157,7 @@ class Rag::Vf5ContinuityReplayTest < ActiveSupport::TestCase
     session = nil
     document = nil
     document = fermator_document
-    session = ConversationSession.create!(
+    @replay_session = session = ConversationSession.create!(
       identifier: "web:vf5-continuity-#{sample}-#{SecureRandom.hex(3)}",
       channel: "web",
       expires_at: 1.hour.from_now,
@@ -136,14 +210,21 @@ class Rag::Vf5ContinuityReplayTest < ActiveSupport::TestCase
         stored = Rag::ActiveEpisode.parse(session.reload.active_episode, now: now)
         walked[raw["turn"]] = {
           text: composed.text, episode: stored, reason: result&.reason,
-          published: published, question: composed.check&.question
+          published: published, question: composed.check&.question,
+          at: {
+            episode: episode.to_h,
+            history: session.conversation_history.map(&:deep_dup),
+            raw: raw
+          }
         }
       end
     end
+    yield walked if block_given?
     walked
   ensure
     ENV["HAIKU_QUERY_ANALYSIS_MODE"] = previous_mode
     ENV["FIELD_COMPANION_EPISODE_ENABLED"] = previous_episode
+    @replay_session = nil
     session&.destroy
     document&.destroy
   end
@@ -178,6 +259,33 @@ class Rag::Vf5ContinuityReplayTest < ActiveSupport::TestCase
     Rails.root.glob("test/fixtures/vf5_continuity_20261027/#{sample}/t*.json").sort.map { |path|
       JSON.parse(File.read(path))
     }
+  end
+
+  def compose_captured(snapshot, backing: true)
+    with_component_backing(backing) do
+      raw = snapshot[:at][:raw]
+      episode = Rag::ActiveEpisode.parse(snapshot[:at][:episode])
+      @replay_session.update!(
+        active_episode: episode.to_h,
+        conversation_history: snapshot[:at][:history]
+      )
+      chunks = expanded_chunks(raw)
+      prepared = Rag::CompanionPlan.prepare(
+        raw_question: raw["user"], chunks: chunks, episode: episode, session: @replay_session,
+        correlation_id: raw["correlation_id"]
+      )
+      Rag::CompanionPlan.compose(CompanionPlanResponse.build(raw["plan"]), prepared)
+    end
+  end
+
+  def with_component_backing(enabled)
+    return yield if enabled
+
+    original = Rag::CompanionPlanCheck.instance_method(:unbacked_component_reason)
+    Rag::CompanionPlanCheck.define_method(:unbacked_component_reason) { |*| nil }
+    yield
+  ensure
+    Rag::CompanionPlanCheck.define_method(:unbacked_component_reason, original) if !enabled && original
   end
 
   def fermator_document

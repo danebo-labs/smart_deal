@@ -1,5 +1,17 @@
 # Corrección y validación del companion sobre el VF5
 
+## Respaldo del componente — 27 de octubre de 2026, 15:00
+
+**Precedencia.** Esta sección es el estado local vigente. No reabre F2, F3 ni F4. No aprueba F5. No cambia S3, la base, los embeddings, fuentes, ingesta, prompts, modelos ni las etiquetas «Manual / Guía Danebo». El plano Elemont no arranca.
+
+La corrida de las 15:00, episodio `ep_bd974d75c0b6d6fb`, imagen `e45088f`, está en [INFORME_GUI_VF5_F5_2026-10-27_15h.md](INFORME_GUI_VF5_F5_2026-10-27_15h.md). Producción leyó `candidate_r2`. El técnico dijo que el LED estaba encendido y no dijo cuál. T3 y T5 usaron ese LED como el de fotocélula. El catálogo del replay era el espejo anterior a F4 y no explica ese uso.
+
+La reparación es el respaldo de la entidad y la propiedad en la afirmación, sea pregunta o lectura, y venga de una observación o de una comprobación. Una comprobación de un componente no identifica otro. La hipótesis que nombra el indicador sigue. #21 y la orientación que no usan ese LED siguen. La pregunta de cuál LED, cuando se publica, queda en `shown` y no ocupa el puesto de #21; si #21 se responde, esa pregunta queda. El catálogo del replay pasa a los 45 cuerpos de la candidata publicada. Los JSON históricos no se reescriben.
+
+La regresión recorre la entrada, el estado, el plan, el checker y la publicación de las 15:00 con las respuestas capturadas. Compara T3 y T5 con la guarda apagada. Mañana y mediodía siguen. Un caso de piloto y válvula cubre otra entidad. Nada llama a Bedrock.
+
+F5 sigue abierta. La comprobación web mínima es el mismo guion de cinco frases sobre la imagen de esta reparación: T2 sin «apagado» y sin parpadeo, con la pregunta del indicador junto a #21; T3 sin fundar #21 en el LED genérico; T5 sin la lectura que le aplica la función de fotocélula, con el desconocimiento en #21 y la pregunta del indicador todavía en el episodio.
+
 ## Continuidad T3–T5 — 27 de octubre de 2026, tarde
 
 **Precedencia.** Esta sección es el estado vigente de la corrección VF5. No reabre F2, F3 ni F4. No aprueba F5. T2 queda como lo demostró la GUI del mediodía sobre `a829713`. No cambia fuentes, ingesta, prompts, modelos, perfiles, costes ni las etiquetas «Manual / Guía Danebo». El empaquetado general de capturas sigue aparte.

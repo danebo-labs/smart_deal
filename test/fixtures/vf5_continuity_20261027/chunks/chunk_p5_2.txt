@@ -1,74 +1,59 @@
 [DOCUMENT: VF5.pdf]
 [SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
-[SEARCH_ALIASES: SW2 automática semiautomática, SW3 sentido rotación, patín correa motor, puertas rellano automáticas, puertas rellano semiautomáticas, DIP switch programación, bloquear desbloquear patín]
+[SEARCH_ALIASES: SW2, Automática / Semiautomática, operadores con patín, puertas de rellano semiautomáticas, SW3, Sentido de rotación, patín fijo en la correa]
 
-4 Programación — Configuración mediante interruptores DIP
-
-El VF5+ se programa utilizando los interruptores DIP en la parte frontal de la unidad. Para que surtan efecto los cambios realizados, desconectar y volver a conectar la alimentación general del módulo electrónico.
-
-SW2 — Automática / Semiautomática
-
+SW2.- Automática / Semiautomática
 ON: Automática.
 Operadores con patín (Puertas de rellano automáticas). En ese caso se realiza un movimiento especial para bloquear y desbloquear el patín.
 
 OFF: Semiautomática.
 Operadores sin patín (Puertas de rellano semiautomáticas).
 
-SW3 — Sentido de rotación
-
+SW3.- Sentido de rotación
 ON: Observar la imagen:
 - Patín fijo en la parte superior de la correa y el motor en la parte izquierda.
 - Patín fijo en la parte inferior de la correa y el motor en la parte derecha.
 
 OFF: Observar la imagen:
-- Patín fijo en la parte inferior de la correa y el motor en la parte izquierda.
+- Patín fijo en la parte inferior de la correa y el motor en la parte la izquierda.
 - Patín fijo en la parte superior de la correa y el motor en la parte derecha.
 
-NOTA: Para que cualquier cambio de interruptor DIP surta efecto, es obligatorio desconectar y volver a conectar la alimentación general del módulo electrónico.
+[NOTA_EXTRACCION] La imagen de SW3 muestra dos esquemas rotulados "ON" y "OFF" (patín, correa y motor); no se transcribe más detalle que los textos impresos.
 
 # FIELD-SAFETY EVIDENCE RECORDS
 
 FIELD_RECORD:
-RECORD_ID: FR-4875E2E8A908E2D3
+RECORD_ID: FR-A2ABDA058D6C6AD7
 SOURCE_SECTION_OR_PAGE: SW2.- Automática / Semiautomática
 RECORD_TYPE: COMMISSIONING_STEP
-ACTION: Configurar SW2 en ON para operadores con patín (puertas de rellano automáticas). El módulo realizará un movimiento especial para bloquear y desbloquear el patín.
-EXPECTED_RESULT: Movimiento especial de bloqueo/desbloqueo de patín ejecutado correctamente.
-EVIDENCE: En ese caso se realiza un movimiento especial para bloquear y desbloquear el patín
+ACTION: SW2 en ON: Automática
+EXPECTED_RESULT: Operadores con patín (Puertas de rellano automáticas). En ese caso se realiza un movimiento especial para bloquear y desbloquear el patín.
+EVIDENCE: se realiza un movimiento especial para bloquear y desbloquear el patín
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-BC0B70CB5377A624
+RECORD_ID: FR-0947EA780E3FED82
 SOURCE_SECTION_OR_PAGE: SW2.- Automática / Semiautomática
 RECORD_TYPE: COMMISSIONING_STEP
-ACTION: Configurar SW2 en OFF para operadores sin patín (puertas de rellano semiautomáticas).
-EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: Operadores sin patín (Puertas de rellano semiautomáticas)
+ACTION: SW2 en OFF: Semiautomática
+EXPECTED_RESULT: Operadores sin patín (Puertas de rellano semiautomáticas).
+EVIDENCE: Operadores sin patín (Puertas de rellano semiautomáticas).
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-7DD0D24268589F25
+RECORD_ID: FR-29F8C6CDF759E893
 SOURCE_SECTION_OR_PAGE: SW3.- Sentido de rotación
 RECORD_TYPE: COMMISSIONING_STEP
-ACTION: Configurar SW3 en ON cuando el patín fijo esté en la parte superior de la correa y el motor en la parte izquierda, o cuando el patín fijo esté en la parte inferior y el motor en la parte derecha.
-EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: Patín fijo en la parte superior de la correa y el motor en la parte izquierda
+ACTION: SW3 en ON: Observar la imagen
+EXPECTED_RESULT: Patín fijo en la parte superior de la correa y el motor en la parte izquierda; patín fijo en la parte inferior de la correa y el motor en la parte derecha.
+EVIDENCE: Patín fijo en la parte superior de la correa y el motor en la parte izquierda.
 END_FIELD_RECORD
 
 FIELD_RECORD:
-RECORD_ID: FR-49353997EBFE06AB
+RECORD_ID: FR-5462FD2DE2362615
 SOURCE_SECTION_OR_PAGE: SW3.- Sentido de rotación
 RECORD_TYPE: COMMISSIONING_STEP
-ACTION: Configurar SW3 en OFF cuando el patín fijo esté en la parte inferior de la correa y el motor en la parte izquierda, o cuando el patín fijo esté en la parte superior y el motor en la parte derecha.
-EXPECTED_RESULT: DATA_NOT_AVAILABLE
-EVIDENCE: Patín fijo en la parte inferior de la correa y el motor en la parte la izquierda
-END_FIELD_RECORD
-
-FIELD_RECORD:
-RECORD_ID: FR-EADF72D50C5FBEDC
-SOURCE_SECTION_OR_PAGE: 4 Programación
-RECORD_TYPE: COMMISSIONING_STEP
-ACTION: Tras cualquier cambio en los interruptores DIP, desconectar y volver a conectar la alimentación general del módulo electrónico.
-EXPECTED_RESULT: Los cambios de configuración DIP surten efecto tras el ciclo de alimentación.
-EVIDENCE: Para que surtan efecto los cambios realizados, desconectar y volver a conectar la alimentación general del módulo electrónico
+ACTION: SW3 en OFF: Observar la imagen
+EXPECTED_RESULT: Patín fijo en la parte inferior de la correa y el motor en la parte la izquierda; patín fijo en la parte superior de la correa y el motor en la parte derecha.
+EVIDENCE: Patín fijo en la parte inferior de la correa y el motor en la parte la izquierda.
 END_FIELD_RECORD

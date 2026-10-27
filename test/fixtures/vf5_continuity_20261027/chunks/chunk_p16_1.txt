@@ -1,65 +1,34 @@
 [DOCUMENT: VF5.pdf]
 [SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
-[SEARCH_ALIASES: motor PM, imán permanente síncrono, encoder ABI, requisitos motor, características eléctricas VF5+, instrucciones montaje VF5+]
+[SEARCH_ALIASES: Características mecánicas, Instrucciones de montaje, VF5+ dimensiones, VF5+ masa, 278 mm, 1,59 kg, Fermator VF5+]
 
-Características mecánicas (continuación de página anterior)
+INSTRUCCIONES
+DOC-FE.IE.IN.016172.ES
+Módulo electrónico VF5+
+Versión: 0.4
 
-Esta página continúa la sección de características del módulo VF5+. Los datos de la tabla de la página anterior quedan completados con los siguientes requisitos del motor PM y las instrucciones de montaje físico.
+Características mecánicas
+[TRANSCRIPCIÓN_VISUAL_LOCAL: etiquetas del dibujo leídas por revisión visual propia de Danebo (2026-10-22). No es salida del proveedor de extracción.]
+Dibujo acotado de la placa del módulo VF5+, vista frontal en otra orientación que la de la página de conexionado. Cotas visibles: 278, 123, 262 y 34.
+Etiquetas impresas legibles en el dibujo:
+- PRIORITY INPUTS: 23 +12V COM, 25 SLOW CLOSE, 21 RE-OPEN, 26 FLOOR LEVEL.
+- PHOTOCELL: 17 EMITTER, 19 RECEIVER (bornes 18 y 20 junto a ellos).
+- Relés: OPEN 30 31 32, CLOSED 33 34 35, PHOTOCELL 36 37 38, OBSTRUCTION 39 40 41. «OK STATUS» (parcialmente legible).
+- 13 SERIAL PORT, 52 CLOSE SPEED, 51 AUTOADJUSTMENT, 50 TEST, 54 SAFETY, 53 OPEN SPEED.
+- «Immunity EN 12016: 2004 Industrial level». «DO NOT OPEN THE COVER».
+[CONFLICTO_DOCUMENTAL C4: la placa (PDF p. 4 y p. 16) imprime «EN 12016: 2004»; el texto de 5.1 (PDF p. 6) y la tabla de normas (PDF p. 18) citan «EN 12016:2013».]
+- SUPPLY: N 5, PE 6, L 7. FUS 4A SF.
+[CONFLICTO_DOCUMENTAL C1: la placa impresa (PDF p. 4 y p. 16) rotula SUPPLY 7 L, 6 PE, 5 N; la Fig. 3 (PDF p. 6) rotula N—7 y L—5. El documento no dice cuál prevalece: REQUIRES_FIELD_VERIFICATION sobre la placa instalada.]
+- INPUTS: OPEN 12, 0V 11, COM 10, OUT +12V 9, CLOSE 8.
+- MOTOR 56, ENCODER 55.
+- DIP 1 a 4: SLAVE OFF / MASTER ON; LANDING DOOR OFF MANUAL / ON AUTOMATIC; OFF 2 INPUTS / ON 1 INPUT.
+
+[NOTA_EXTRACCION] | Campo | Valor |
+|-|-|
+| Dimensiones | L: 278 mm / W: 123 mm / D: 34 mm |
+| Masa | 1,59 kg |
 
 Instrucciones de montaje
+[NOTA_EXTRACCION] (Solo ilustración, sin texto de pasos. Muestra el módulo VF5+ sobre una placa o chapa de la puerta, con dos líneas discontinuas que apuntan a dos tornillos. El par de apriete, el tipo de tornillo y la secuencia de montaje son DATA_NOT_AVAILABLE en esta página.)
 
-La imagen de la sección muestra la vista en perspectiva del módulo VF5+ con su carcasa y los puntos de fijación. No se incluyen pasos textuales de montaje adicionales visibles en esta página más allá de la ilustración del conjunto.
-
-Requisitos Motor PM
-
-El módulo VF5+ está diseñado para funcionar con un motor de imán permanente síncrono con las siguientes especificaciones:
-
-| Parámetro | Valor |
-|-|-|
-| Tipo | Imán permanente síncrono |
-| Número de polos | 10 |
-
-Características eléctricas del motor:
-
-| Parámetro | Mínimo | Nominal | Máximo | Unidades |
-|-|-|-|-|-|
-| Tensión de alimentación | 50 | 103 | 144 | V |
-| Corriente | 0,18 | 1,13 | 2,13 | A |
-| Potencia | 15 | 162 | 405 | W |
-| Par | 0 | 1,5 | 2,5 | N·m |
-| Velocidad | — | 600 | — | r.p.m. |
-
-Clase térmica: DATA_NOT_AVAILABLE en esta página.
-
-Encoder: ABI magnético incremental (canal A, canal B e índice).
-Resolución: 180 pulsos/rev (nominal; mínimo y máximo no especificados en la tabla).
-
-# FIELD-SAFETY EVIDENCE RECORDS
-
-FIELD_RECORD:
-RECORD_ID: FR-667F2A1DDD8EBC56
-SOURCE_SECTION_OR_PAGE: Instrucciones de montaje
-RECORD_TYPE: INSTALLATION_STEP
-ACTION: Montar el módulo VF5+ según la ilustración de perspectiva mostrada; verificar puntos de fijación de la carcasa.
-EXPECTED_RESULT: DATA_NOT_AVAILABLE
-UNCERTAINTY: La página solo muestra una ilustración sin pasos textuales de montaje visibles; pasos detallados REQUIRES_FIELD_VERIFICATION en páginas adyacentes.
-EVIDENCE: Instrucciones de montaje
-END_FIELD_RECORD
-
-FIELD_RECORD:
-RECORD_ID: FR-39778C9853513238
-SOURCE_SECTION_OR_PAGE: Requisitos Motor PM
-RECORD_TYPE: COMMISSIONING_STEP
-ACTION: Verificar que el motor conectado al VF5+ es de tipo imán permanente síncrono con 10 polos, tensión de alimentación entre 50 V y 144 V (nominal 103 V), corriente entre 0,18 A y 2,13 A (nominal 1,13 A), potencia entre 15 W y 405 W (nominal 162 W), par entre 0 y 2,5 N·m (nominal 1,5 N·m), velocidad nominal 600 r.p.m.
-EXPECTED_RESULT: Los valores del motor están dentro de los rangos especificados para el VF5+.
-EVIDENCE: Imán permanente síncrono. Número de polos 10. Tensión de alimentación 50 103 144 V.
-END_FIELD_RECORD
-
-FIELD_RECORD:
-RECORD_ID: FR-7DE12EEF3B4F2678
-SOURCE_SECTION_OR_PAGE: Requisitos Motor PM — Encoder
-RECORD_TYPE: COMMISSIONING_STEP
-ACTION: Verificar que el encoder del motor es de tipo ABI magnético incremental (canal A, canal B e índice) con resolución nominal de 180 pulsos/rev.
-EXPECTED_RESULT: El encoder es compatible con los requisitos del módulo VF5+.
-EVIDENCE: ABI magnético incremental (canal A, canal B e índice). Resolución - 180 - pulsos / rev.
-END_FIELD_RECORD
+Pie de página: Fermator Group • www.fermator.com • Pág. 15 / 21 (folio impreso; la página PDF indicada es la 16 de 22).

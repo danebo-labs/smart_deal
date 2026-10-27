@@ -169,6 +169,10 @@ module Rag
           reason = led
           @led_report = fact.text
         end
+        if reason.nil? && reading.present? && !observation_led_indicator?(fact, statement) &&
+            (extra = unbacked_component_reason(reading, statement))
+          reason = extra
+        end
         if reason
           reject("link", link, reason)
           next
@@ -763,6 +767,115 @@ module Rag
     LED_QUALIFIER = /\b(estado|status|fotoc[eé]lula)\b/i
     LED_WORD = /\bled\b/i
 
+    # A statement names its item and may mention another component. A case
+    # report of that component, without this item, does not make the claim
+    # about this item. The claim has to identify it ("de {item}") or stay
+    # with a property the statement already uses. Questions and readings
+    # both count. The observation guard above still owns a generic LED
+    # report linked to an indicator statement.
+    def unbacked_question_reason(text)
+      ids = (Array(@plan["question_about"]) + Array(@targets)).uniq
+      ids.each do |id|
+        statement = @statements.find(id)
+        next unless statement
+
+        reason = unbacked_component_reason(text, statement)
+        return reason if reason
+      end
+      nil
+    end
+
+    def unbacked_component_reason(text, statement)
+      backing_statements(statement).each do |item|
+        reason = unbacked_on_statement(text, item)
+        return reason if reason
+      end
+      nil
+    end
+
+    def unbacked_on_statement(text, statement)
+      qualifier = qualifier_stem(statement)
+      return nil if qualifier.blank?
+
+      claim = word_stem_list(text)
+      component_stems(statement, qualifier).each do |component|
+        next if component_identified?(claim, component, qualifier)
+        next unless imported_component_property?(claim, statement, component, qualifier)
+
+        return "unbacked_component"
+      end
+      nil
+    end
+
+    def backing_statements(statement)
+      return [ statement ] unless statement.kind == "item"
+
+      children = @statements.statements.select { |other|
+        other.kind == "text" && other.item == statement.text
+      }
+      [ statement, *children ]
+    end
+
+    def qualifier_stem(statement)
+      label = statement.kind == "item" ? statement.text : statement.item
+      words = self.class.words(label.to_s)
+      return nil unless words.size == 1
+
+      stem = self.class.stem(words.first)
+      stem.length >= 4 ? stem : nil
+    end
+
+    def component_stems(statement, qualifier)
+      self.class.words(statement.text).filter_map { |word|
+        next if word.length < 3 || CONNECTORS.include?(word)
+
+        stem = self.class.stem(word)
+        next if stem == qualifier || stem.length < 3
+        next if WorkContextReducer.property_stems.include?(stem)
+        next if CompanionPlanRender::GENERIC_STEMS.include?(stem)
+
+        stem
+      }.uniq
+    end
+
+    def component_identified?(stems, component, qualifier)
+      stems.each_with_index.any? do |stem, index|
+        next false unless stem == component
+
+        rest = stems[index..]
+        at = rest.index(qualifier)
+        next false unless at
+
+        rest[0...at].any? { |item| item == "de" || item == "del" }
+      end
+    end
+
+    def imported_component_property?(claim, statement, component, qualifier)
+      reports = @facts.facts.select { |fact|
+        stems = word_stem_list([ fact.text, fact.result, fact.subject ].compact.join(" "))
+        stems.include?(component) && stems.exclude?(qualifier)
+      }
+      return false if reports.empty? || claim.exclude?(component)
+
+      stated = property_stem_list(statement.text)
+      reports.any? { |fact|
+        imported = property_stem_list([ fact.text, fact.result ].compact.join(" ")) - stated
+        imported.any? { |stem| claim.include?(stem) }
+      }
+    end
+
+    def property_stem_list(text)
+      word_stem_list(text).select { |stem| WorkContextReducer.property_stems.include?(stem) }
+    end
+
+    def word_stem_list(text)
+      self.class.words(text).map { |word| self.class.stem(word) }
+    end
+
+    def observation_led_indicator?(fact, statement)
+      fact&.kind == "observation" && generic_led_report?(fact.text) && led_statement?(statement)
+    end
+
     # A generic "LED encendido" is not the Estado indicator and it is not
     # blinking. The link stays out. A later question can ask which LED
     # when the loaded manual names more than one.
@@ -895,6 +1008,9 @@ module Rag
       missing, manner = question_gaps(normal.split, allowed, cited, applicable)
       return "ungrounded:#{missing.first(3).join(',')}" if missing.any?
       return "modality:#{manner.first(3).join(',')}" if manner.any?
+
+      extra = unbacked_question_reason(text)
+      return extra if extra
 
       nil
     end

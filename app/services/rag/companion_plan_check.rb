@@ -769,10 +769,12 @@ module Rag
 
     # A statement names its item and may mention another component. A case
     # report of that component, without this item, does not make the claim
-    # about this item. The claim has to identify it ("de {item}") or stay
-    # with a property the statement already uses. Questions and readings
-    # both count. The observation guard above still owns a generic LED
-    # report linked to an indicator statement.
+    # about this item. Naming it in the generated text does not identify it.
+    # A question may ask whether it is that item. Otherwise the claim has to
+    # stay with a property the statement already uses, or the technician's
+    # report has to carry the item. Questions and readings both count. The
+    # observation guard above still owns a generic LED report linked to an
+    # indicator statement.
     def unbacked_question_reason(text)
       ids = (Array(@plan["question_about"]) + Array(@targets)).uniq
       ids.each do |id|
@@ -838,6 +840,9 @@ module Rag
       }.uniq
     end
 
+    # "LED de fotocélula" only names the component. That wording can come
+    # from the generation, so it does not identify the case. Asking whether
+    # it is that item does: "es el de" or "el de".
     def component_identified?(stems, component, qualifier)
       stems.each_with_index.any? do |stem, index|
         next false unless stem == component
@@ -846,7 +851,12 @@ module Rag
         at = rest.index(qualifier)
         next false unless at
 
-        rest[0...at].any? { |item| item == "de" || item == "del" }
+        between = rest[1...at]
+        marker = between.rindex { |item| item == "de" || item == "del" }
+        next false if marker.nil?
+
+        between.include?("es") || between.include?("cual") || between.include?("cuales") ||
+          (marker.positive? && between[marker - 1] == "el")
       end
     end
 

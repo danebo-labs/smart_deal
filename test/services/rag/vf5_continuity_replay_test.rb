@@ -81,6 +81,47 @@ class Rag::Vf5ContinuityReplayTest < ActiveSupport::TestCase
     end
   end
 
+  test "a generated photocell name does not identify the generic led" do
+    named = "La fotocélula no está activada, pero el LED de fotocélula está encendido. El LED se activa cuando la fotocélula o la entrada de re-apertura está activada."
+    hypothesis = "¿El LED encendido es el de fotocélula?"
+    walk("fifteen") do |walked|
+      t5 = walked.fetch("t5")
+      forged = compose_plan(t5, plan: plan_with_reading(t5, "C1", "S1.9", named))
+      rejection = forged.check.rejections.find { |row|
+        row["part"] == "link" && row["value"].is_a?(Hash) && row["value"]["fact"] == "C1" && row["value"]["statement"] == "S1.9"
+      }
+
+      assert_equal "unbacked_component", rejection&.dig("reason")
+      assert_not_includes forged.text, "LED de fotocélula está encendido"
+      unknown = t5[:episode].observations.find { |item| item.dig("answers", "r") == "unknown" }
+      assert_includes unknown.dig("answers", "q").to_s, "#21"
+      assert_match(/Cu[aá]l LED/i, t5[:episode].pending_question["question"])
+
+      blocked = compose_plan(t5, plan: {
+        "links" => [], "steps" => [],
+        "question" => hypothesis, "question_about" => [ "S1.9" ]
+      })
+      assert_equal "already_answered", blocked.check.rejections.find { |row| row["part"] == "question" }&.dig("reason")
+      assert_nil blocked.check.question
+
+      asked = compose_plan(walked.fetch("t2"), plan: {
+        "links" => [], "steps" => [],
+        "question" => hypothesis, "question_about" => [ "S2.9" ]
+      })
+      assert_equal hypothesis, asked.check.question, asked.check.rejections.inspect
+
+      identified = t5[:at][:episode].deep_dup
+      identified.fetch("observations").each do |item|
+        item["text"] = "el LED de fotocélula está encendido" if item["text"] == "el LED está encendido"
+      end
+      known = compose_plan(
+        t5, episode: identified, plan: plan_with_reading(t5, "C1", "S1.9", named)
+      )
+      assert known.check.links.any? { |link| link[:fact] == "C1" && link[:statement] == "S1.9" }
+      assert_includes known.text, "LED de fotocélula está encendido"
+    end
+  end
+
   test "the replay catalog is the published candidate" do
     provenance = JSON.parse(Rails.root.join("test/fixtures/vf5_continuity_20261027/catalog_provenance.json").read)
     root = ChunkStore::ROOT
@@ -259,6 +300,33 @@ class Rag::Vf5ContinuityReplayTest < ActiveSupport::TestCase
     Rails.root.glob("test/fixtures/vf5_continuity_20261027/#{sample}/t*.json").sort.map { |path|
       JSON.parse(File.read(path))
     }
+  end
+
+  def plan_with_reading(snapshot, fact, statement, reading)
+    plan = snapshot[:at][:raw]["plan"].deep_dup
+    plan.fetch("links").each do |link|
+      link["reading"] = reading if link["fact"] == fact && link["statement"] == statement
+    end
+    plan
+  end
+
+  def compose_plan(snapshot, plan:, episode: nil, backing: true)
+    with_component_backing(backing) do
+      raw = snapshot[:at][:raw].deep_dup
+      raw["plan"] = plan
+      state = episode || snapshot[:at][:episode]
+      parsed = Rag::ActiveEpisode.parse(state)
+      @replay_session.update!(
+        active_episode: parsed.to_h,
+        conversation_history: snapshot[:at][:history]
+      )
+      chunks = expanded_chunks(raw)
+      prepared = Rag::CompanionPlan.prepare(
+        raw_question: raw["user"], chunks: chunks, episode: parsed, session: @replay_session,
+        correlation_id: raw["correlation_id"]
+      )
+      Rag::CompanionPlan.compose(CompanionPlanResponse.build(plan), prepared)
+    end
   end
 
   def compose_captured(snapshot, backing: true)

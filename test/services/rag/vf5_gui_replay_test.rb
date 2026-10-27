@@ -111,6 +111,79 @@ class Rag::Vf5GuiReplayTest < ActiveSupport::TestCase
     document&.destroy
   end
 
+  test "the 27 October turn keeps encendido and does not publish the blinking estado led" do
+    previous_mode = ENV["HAIKU_QUERY_ANALYSIS_MODE"]
+    previous_episode = ENV["FIELD_COMPANION_EPISODE_ENABLED"]
+    document = nil
+    session = nil
+    raw = JSON.parse(Rails.root.join("test/fixtures/vf5_gui_replay/october27_t2.json").read)
+    assert_equal "orrijo un dato: el LED está encendido, no apagado.", raw["user"]
+    assert_equal [ "el LED está encendido, no apagado" ], raw.dig("interpreter", "observations")
+    blink = raw.dig("tool_input", "links").find { |link| link["reading"].to_s.match?(/parpadeante/) }
+    assert_equal "O4", blink["fact"]
+
+    ENV["HAIKU_QUERY_ANALYSIS_MODE"] = "owner"
+    ENV["FIELD_COMPANION_EPISODE_ENABLED"] = "true"
+    _catalog, document = fermator_catalog
+    now = Time.current
+    state = raw["episode_before"].deep_dup
+    state["opened_at"] = now.iso8601
+    state["updated_at"] = now.iso8601
+    state["opened_by"] = raw["prior_correlation_id"]
+    session = ConversationSession.create!(
+      identifier: "web:vf5-october27-#{SecureRandom.hex(3)}",
+      channel: "web",
+      expires_at: 1.hour.from_now,
+      user: @user,
+      account: @account,
+      active_episode: state,
+      conversation_history: [ {
+        "role" => "user", "content" => raw["prior_user"],
+        "correlation_id" => raw["prior_correlation_id"], "ts" => now.iso8601
+      } ],
+      document_focus: [ {
+        "kb_document_id" => document.id,
+        "source_uri" => FOCUS_URI,
+        "display_name" => "VF5",
+        "added_at" => now.iso8601
+      } ]
+    )
+    record_captured_turn(session, raw, now)
+    episode = Rag::ActiveEpisode.parse(session.reload.active_episode, now: now)
+    texts = episode.observations.pluck("text")
+    assert_includes texts, "el LED está encendido"
+    assert texts.none? { |text| text.match?(/apagado/i) }
+    assert_equal raw["user"], session.conversation_history.reverse.find { |message| message["role"] == "user" }["content"]
+
+    pages = JSON.parse(Rails.root.join("test/fixtures/vf5_gui_replay/t2.json").read)
+    facts = Rag::CompanionCaseFacts.build(episode, session: session)
+    led = facts.facts.find { |fact|
+      fact.kind == "observation" && Rag::ObservationCorrection.led_state(fact.text).to_s.casecmp?("encendido")
+    }
+    assert led
+    plan = raw["tool_input"].deep_dup
+    plan["links"].each { |link| link["fact"] = led.id if link["reading"].to_s.match?(/parpadeante/) }
+    replay = raw.merge("chunks" => pages["chunks"].first(2), "tool_input" => plan)
+    composed = compose(replay, episode, session)
+    published = publish(composed, replay, episode, session)
+    rejection = composed.check.rejections.find { |row| row["part"] == "link" && row["reason"] == "led_context" }
+
+    assert rejection, composed.check.rejections.inspect
+    assert_match(/parpadeante/, rejection.dig("value", "reading").to_s)
+    assert_not_includes composed.text, "parpadeante"
+    assert_not_includes composed.text, "apagado"
+    assert_includes composed.text, "¿Cuál LED está encendido, el de Fotocélula o el de Estado?"
+    assert published.accepted?, published.reasons.inspect
+    if composed.text.include?("(#21)")
+      assert_equal raw.dig("tool_input", "question"), composed.pending["question"]
+    end
+  ensure
+    ENV["HAIKU_QUERY_ANALYSIS_MODE"] = previous_mode
+    ENV["FIELD_COMPANION_EPISODE_ENABLED"] = previous_episode
+    session&.destroy
+    document&.destroy
+  end
+
   private
 
   def walk_sequence

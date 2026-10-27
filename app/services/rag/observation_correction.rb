@@ -77,6 +77,15 @@ module Rag
 
     LED_GENERIC = /\A(?:el\s+)?led\s+est[aá]\s+(encendido|apagado)\z/i
     LED_QUALIFIED = /\A(?:el\s+)?led\s+(.+?)\s+est[aá]\s+(encendido|apagado)\z/i
+    LED_CONTRAST = /
+      \A
+      (?<head>.+?)
+      (?:[,;:]\s*|\s+y\s+)
+      no\s+(?<denied>encendido|apagado)
+      \z
+    /ix
+    LED_OPPOSITE = { "encendido" => "apagado", "apagado" => "encendido" }.freeze
+    LedContrast = Data.define(:head, :state, :denied)
 
     # Several sentences about one LED are one datum. Two qualifiers stay
     # ambiguous. The caller then replaces every returned sentence.
@@ -99,7 +108,26 @@ module Rag
       led
     end
 
+    # "el LED está encendido, no apagado" names encendido and denies apagado.
+    # A hedge, a different indicator, or a number contrast does not match:
+    # the denied word has to be the opposite state and nothing after it.
+    def self.led_contrast(phrase)
+      body = phrase.to_s.squish.sub(/[.!?]+\z/, "")
+      match = body.match(LED_CONTRAST)
+      return nil if match.nil?
+
+      head = match[:head].squish
+      state = head[LED_GENERIC, 1] || head[LED_QUALIFIED, 2]
+      denied = match[:denied].to_s.downcase
+      return nil if state.blank? || LED_OPPOSITE[state.downcase] != denied
+
+      LedContrast.new(head: head, state: state, denied: denied)
+    end
+
     def self.led_state(phrase)
+      contrast = led_contrast(phrase)
+      return contrast.state if contrast
+
       body = phrase.to_s.squish
       body[LED_GENERIC, 1] || body[LED_QUALIFIED, 2]
     end
@@ -165,19 +193,30 @@ module Rag
       return bare if bare
 
       match = @turn.match(TAIL)
-      return self.class.none if match.nil?
+      unless match.nil?
+        clause = clause_before(match)
+        retracted = nuclei(clause)
+        unless retracted.empty?
+          asserted = asserted_phrases(clause, retracted)
+          return Result.new(asserted: asserted, retracted: retracted) if asserted.any?
+        end
+      end
 
-      clause = clause_before(match)
-      retracted = nuclei(clause)
-      return self.class.none if retracted.empty?
-
-      asserted = asserted_phrases(clause, retracted)
-      return self.class.none if asserted.empty?
-
-      Result.new(asserted: asserted, retracted: retracted)
+      led_observation_contrast || self.class.none
     end
 
     private
+
+    # The interpreter can return the whole contrast as the observation while
+    # the turn cue is not the word "corrijo". The head is the current value.
+    # The denied state is the retraction. Two such observations stay unresolved.
+    def led_observation_contrast
+      found = @observations.filter_map { |text| self.class.led_contrast(text) }
+      return nil unless found.one?
+
+      contrast = found.first
+      self.class::Result.new(asserted: [ contrast.head ], retracted: [ contrast.denied ])
+    end
 
     def bare_state
       match = @turn.match(BARE_STATE)

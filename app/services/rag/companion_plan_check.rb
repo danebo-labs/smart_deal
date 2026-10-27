@@ -248,7 +248,10 @@ module Rag
         remember_declared_limit(targets)
         return [ nil, [] ]
       end
-      return accepted_question(text, bound_targets(text, targets)) if text.present? && reason.nil?
+      if text.present? && reason.nil?
+        note_led_context_question(steps, text)
+        return accepted_question(text, bound_targets(text, targets))
+      end
 
       reject("question", text, reason || "invalid") if text.present?
       if led_context_open? && (text.blank? || reason)
@@ -763,7 +766,22 @@ module Rag
     end
 
     def led_context_open?
-      @rejections.any? { |row| row["reason"] == "led_context" }
+      @rejections.any? { |row| row["part"] == "link" && row["reason"] == "led_context" }
+    end
+
+    # The accepted question stays the pending question. Which indicator is a
+    # separate line and does not take that slot.
+    def note_led_context_question(steps, accepted)
+      return unless led_context_open?
+
+      clarified = led_context_clarification(steps)
+      return if clarified.nil?
+
+      question = clarified.first.to_s
+      return if question.blank? || question == accepted
+      return if question_reason(question, steps)
+
+      reject("led_context_question", question, "led_context")
     end
 
     def led_context_clarification(_steps)

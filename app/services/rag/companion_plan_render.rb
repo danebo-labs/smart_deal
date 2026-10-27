@@ -157,23 +157,33 @@ module Rag
     end
 
     def question_lines
-      return [] if @check.question.blank?
-
       lines = []
-      targets = question_statements
-      scope = @check.respond_to?(:question_scope) ? @check.question_scope : nil
-      if scope.is_a?(Hash) && scope["aspect"] == "scope" && scope["report"].present? && targets.one?
-        lines << "Para orientar falta el alcance de «#{bare(scope["report"])}»: la documentación trata «#{bare(targets.first.text)}» [#{targets.first.source}]."
-      elsif targets.one? && @check.question.match?(/\A¿(?:Qué parte|Se está cerrando)\b/)
-        lines << "Para orientar falta distinguir la parte [#{targets.first.source}]."
-      elsif targets.one?
-        lines << "Para orientar falta un dato: la documentación trata «#{bare(targets.first.text)}» [#{targets.first.source}]."
-      elsif targets.size == 2
-        left, right = targets
-        lines << "Para orientar falta distinguir: la documentación trata por separado «#{bare(left.text)}» [#{left.source}] y «#{bare(right.text)}» [#{right.source}]."
+      if @check.question.present?
+        targets = question_statements
+        scope = @check.respond_to?(:question_scope) ? @check.question_scope : nil
+        if scope.is_a?(Hash) && scope["aspect"] == "scope" && scope["report"].present? && targets.one?
+          lines << "Para orientar falta el alcance de «#{bare(scope["report"])}»: la documentación trata «#{bare(targets.first.text)}» [#{targets.first.source}]."
+        elsif targets.one? && @check.question.match?(/\A¿(?:Qué parte|Se está cerrando)\b/)
+          lines << "Para orientar falta distinguir la parte [#{targets.first.source}]."
+        elsif targets.one?
+          lines << "Para orientar falta un dato: la documentación trata «#{bare(targets.first.text)}» [#{targets.first.source}]."
+        elsif targets.size == 2
+          left, right = targets
+          lines << "Para orientar falta distinguir: la documentación trata por separado «#{bare(left.text)}» [#{left.source}] y «#{bare(right.text)}» [#{right.source}]."
+        end
+        lines << @check.question
       end
-      lines << @check.question
+      extra = led_context_question
+      lines << extra if extra.present? && lines.exclude?(extra)
       lines
+    end
+
+    def led_context_question
+      row = Array(@check.rejections).find { |item|
+        (item["part"] || item[:part]).to_s == "led_context_question"
+      }
+      value = row && (row["value"] || row[:value])
+      value.to_s.squish.presence
     end
 
     def question_statements

@@ -1,0 +1,112 @@
+{
+  "turn": "t2_20261027",
+  "correlation_id": "query:2c007d43-8987-41e2-a730-5527383648d9",
+  "episode_id": "ep_1f3018d3f7f12e8c",
+  "user": "orrijo un dato: el LED está encendido, no apagado.",
+  "prior_user": "Estoy revisando un operador de puerta Fermator VF5+. La puerta se reabre sola durante el cierre. El LED está apagado y no veo obstrucción. Todavía no he revisado el ajuste de #54 ni he hecho mediciones. ¿Cómo seguimos?",
+  "prior_correlation_id": "query:009ccbb5-6351-471c-8b1e-7510572722fa",
+  "interpreter": {
+    "move": "correct",
+    "assertions": [
+      {
+        "span": "el LED está encendido",
+        "act": "assert",
+        "slot_hint": null
+      }
+    ],
+    "observations": [
+      "el LED está encendido, no apagado"
+    ],
+    "checks": [],
+    "pending_resolution": null,
+    "clarification_target": null
+  },
+  "tool_input": {
+    "links": [
+      {
+        "fact": "O1",
+        "statement": "S1.2",
+        "reading": "La puerta se re-abre sola durante el cierre; hay que comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54), que la fotocélula no esté activada, que no hay obstrucción mecánica, y en caso que el problema persista, desconectar la fotocélula y volver a pulsar el botón de TEST."
+      },
+      {
+        "fact": "O4",
+        "statement": "S2.14",
+        "reading": "El LED está encendido; el LED parpadeante indica condiciones apropiadas de trabajo."
+      },
+      {
+        "fact": "O3",
+        "statement": "S1.5",
+        "reading": "No hay obstrucción mecánica visible en la puerta."
+      }
+    ],
+    "steps": [
+      "S1.3",
+      "S1.4",
+      "S1.6"
+    ],
+    "question": "¿Está activada la fotocélula o la entrada de re-apertura (#21)?",
+    "question_about": [
+      "S1.4",
+      "S2.9"
+    ]
+  },
+  "episode_before": {
+    "v": 1,
+    "episode_id": "ep_1f3018d3f7f12e8c",
+    "status": "active",
+    "goal": {
+      "text": "La puerta se reabre sola durante el cierre",
+      "correlation_id": "query:009ccbb5-6351-471c-8b1e-7510572722fa",
+      "truncated": false
+    },
+    "facts": {
+      "manufacturer": {
+        "status": "known",
+        "source": "user",
+        "correlation_id": "query:009ccbb5-6351-471c-8b1e-7510572722fa",
+        "at": "2026-10-27T11:06:28-03:00",
+        "value": "Fermator"
+      }
+    },
+    "identifiers": [
+      {
+        "value": "Fermator VF5+",
+        "source": "user",
+        "correlation_id": "query:009ccbb5-6351-471c-8b1e-7510572722fa"
+      }
+    ],
+    "observations": [
+      {
+        "text": "La puerta se reabre sola durante el cierre",
+        "correlation_id": "query:009ccbb5-6351-471c-8b1e-7510572722fa"
+      },
+      {
+        "text": "El LED está apagado",
+        "correlation_id": "query:009ccbb5-6351-471c-8b1e-7510572722fa"
+      },
+      {
+        "text": "no veo obstrucción",
+        "correlation_id": "query:009ccbb5-6351-471c-8b1e-7510572722fa"
+      }
+    ],
+    "checks": [
+      {
+        "subject": "ajuste de #54",
+        "status": "not_done",
+        "correlation_id": "query:009ccbb5-6351-471c-8b1e-7510572722fa",
+        "operation": [
+          "check"
+        ]
+      },
+      {
+        "subject": "mediciones",
+        "status": "not_done",
+        "correlation_id": "query:009ccbb5-6351-471c-8b1e-7510572722fa",
+        "operation": [
+          "adjust"
+        ]
+      }
+    ],
+    "conflicts": []
+  }
+}

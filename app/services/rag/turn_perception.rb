@@ -888,7 +888,7 @@ module Rag
     end
 
     def correction_tail?(text)
-      ObservationCorrection.tail?(text)
+      ObservationCorrection.tail?(text) || ObservationCorrection.led_contrast(text)
     end
 
     def asserts_fault?(item, code)

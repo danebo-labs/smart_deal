@@ -47,6 +47,52 @@ class Rag::ObservationCorrectionTest < ActiveSupport::TestCase
     assert_empty correction.retracted
   end
 
+  test "the complete generic led observation is encendido and retracts apagado" do
+    phrase = "el LED está encendido, no apagado"
+    correction = Rag::ObservationCorrection.resolve(
+      turn: "orrijo un dato: #{phrase}.",
+      observations: [ phrase ],
+      assertions: [ { "span" => "el LED está encendido", "act" => "assert" } ]
+    )
+
+    assert_equal "encendido", Rag::ObservationCorrection.led_state(phrase)
+    assert_equal [ "el LED está encendido" ], correction.asserted
+    assert_equal [ "apagado" ], correction.retracted
+  end
+
+  test "a led contrast keeps a qualified led, a hedge, and a different indicator apart" do
+    qualified = "el LED de fotocélula está encendido, no apagado"
+    contrast = Rag::ObservationCorrection.led_contrast(qualified)
+
+    assert_equal "el LED de fotocélula está encendido", contrast.head
+    assert_equal "encendido", contrast.state
+    assert_nil Rag::ObservationCorrection.led_state("el LED está encendido, no sé")
+    assert_nil Rag::ObservationCorrection.led_state("el LED está encendido, no estoy seguro")
+    assert_nil Rag::ObservationCorrection.led_state("el LED de fotocélula está encendido, no el de estado")
+    assert_nil Rag::ObservationCorrection.led_state("el LED que está apagado es el 5, no el 7")
+    assert_nil Rag::ObservationCorrection.led_contrast("el LED está encendido, no encendido")
+
+    indicator = Rag::ObservationCorrection.resolve(
+      turn: "El indicador está encendido, no apagado.",
+      observations: [ "El indicador está encendido, no apagado." ]
+    )
+    assert_empty indicator.asserted
+    assert_empty indicator.retracted
+  end
+
+  test "a generic led contrast does not choose between two different leds" do
+    stored = [
+      { "text" => "El LED de fotocélula está apagado" },
+      { "text" => "El LED de estado está apagado" }
+    ]
+    correction = Rag::ObservationCorrection.resolve(
+      turn: "orrijo un dato: el LED está encendido, no apagado.",
+      observations: [ "el LED está encendido, no apagado" ]
+    )
+
+    assert_equal :ambiguous, Rag::ObservationCorrection.targets(stored, correction)
+  end
+
   test "a report that contrasts two actions without a cue is not a retraction" do
     correction = Rag::ObservationCorrection.resolve(turn: "La puerta llega al marco, no retiene el imán.")
 

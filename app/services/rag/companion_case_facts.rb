@@ -110,20 +110,22 @@ module Rag
     end
 
     def replaced_led_clause?(clause, episode)
+      return false if ObservationCorrection.led_contrast(clause)
+
       state = ObservationCorrection.led_state(clause)
       return false if state.blank?
 
       qualifier = clause.to_s.squish[ObservationCorrection::LED_QUALIFIED, 1]
-      current = Array(episode.observations).filter_map { |item|
-        found = ObservationCorrection.led_state(item["text"])
-        next if found.blank? || found.casecmp?(state)
+      Array(episode.observations).any? { |item|
+        text = item["text"].to_s
+        next false if ObservationCorrection.led_contrast(text)
 
-        item_qualifier = item["text"].to_s.squish[ObservationCorrection::LED_QUALIFIED, 1]
-        next unless qualifier.blank? || item_qualifier.blank? || qualifier.casecmp?(item_qualifier)
+        found = ObservationCorrection.led_state(text)
+        next false if found.blank? || found.casecmp?(state)
 
-        found
+        item_qualifier = text.squish[ObservationCorrection::LED_QUALIFIED, 1]
+        qualifier.blank? || item_qualifier.blank? || qualifier.casecmp?(item_qualifier)
       }
-      current.any?
     end
 
     def add(prefix, kind, text, subject: nil, result: nil, correlation_id: nil, literal: false, answers: nil)

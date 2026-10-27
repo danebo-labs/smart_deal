@@ -464,6 +464,42 @@ class Rag::WorkContextReducerTest < ActiveSupport::TestCase
     end
   end
 
+  test "a correct move stores encendido when the observation still names the denied state" do
+    episode = open_episode
+    episode.append_observation!("El LED está apagado", correlation_id: "seed")
+    episode.append_observation!("no veo obstrucción", correlation_id: "seed")
+    turn = "orrijo un dato: el LED está encendido, no apagado."
+
+    with_owner { settle(episode, correct_observation("el LED está encendido, no apagado"), turn) }
+
+    texts = episode.observations.pluck("text")
+    assert_includes texts, "el LED está encendido"
+    assert_includes texts, "no veo obstrucción"
+    assert texts.none? { |text| text.match?(/apagado/i) }
+  end
+
+  test "a generic led contrast leaves two different leds in place" do
+    episode = open_episode
+    stored = [ "El LED de fotocélula está apagado", "El LED de estado está apagado" ]
+    stored.each { |text| episode.append_observation!(text, correlation_id: "seed") }
+    turn = "orrijo un dato: el LED está encendido, no apagado."
+
+    with_owner { settle(episode, correct_observation("el LED está encendido, no apagado"), turn) }
+
+    texts = episode.observations.pluck("text")
+    stored.each { |text| assert_includes texts, text, turn }
+  end
+
+  test "an uncertain led report does not retract the stored state" do
+    episode = open_episode
+    episode.append_observation!("El LED está apagado", correlation_id: "seed")
+    turn = "orrijo un dato: el LED está encendido, no sé."
+
+    with_owner { settle(episode, correct_observation("el LED está encendido, no sé"), turn) }
+
+    assert_includes episode.observations.pluck("text"), "El LED está apagado"
+  end
+
   test "a repeated led state correction keeps the new state as the current observation" do
     episode = open_episode
     episode.append_observation!("El LED está apagado", correlation_id: "seed")

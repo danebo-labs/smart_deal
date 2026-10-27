@@ -6,7 +6,9 @@
 
 La muestra es el guion web de cinco mensajes, caso `ep_1f3018d3f7f12e8c`, sesión 128, VF5 documento 212, imagen `4eca6b32451583c29c5d705946cd40b12ab6e15e`, perfil `global.anthropic.claude-haiku-4-5-20251001-v1:0`. El informe está en [INFORME_GUI_VF5_F5_2026-10-27.md](INFORME_GUI_VF5_F5_2026-10-27.md).
 
-T3 y T4 publican la orientación del síntoma. T5 guarda el desconocimiento de #21 y del contacto #21–#23 y no vuelve a pedirlo. T2 no cierra el criterio: la observación «el LED está encendido, no apagado» no retira «apagado» y se publica como el LED parpadeante de Estado. El mensaje llegó como «orrijo un dato…»; el intérprete igual devolvió `correct`. F5 sigue abierta. El siguiente paso es corregir ese reconocimiento con esta captura, sin otra conversación. El plano Elemont no arranca.
+T3 y T4 publican la orientación del síntoma. T5 guarda el desconocimiento de #21 y del contacto #21–#23 y no vuelve a pedirlo. En esa GUI, T2 no cerró el criterio: la observación «el LED está encendido, no apagado» no retiraba «apagado» y se publicó como el LED parpadeante de Estado. El mensaje llegó como «orrijo un dato…»; el intérprete devolvió `correct`.
+
+Esa observación queda reconocida en local. Encendido es el valor vigente, apagado deja de ser un dato actual y el mensaje original sigue en el historial. El reporte no se publica como parpadeo ni como el LED de Estado; si el manual distingue indicadores, se pregunta cuál y esa pregunta no sustituye la de #21. La regresión recorre la captura real con `record_user_turn!`. F5 sigue abierta: esta corrección no es una conversación nueva. El plano Elemont no arranca.
 
 ## Orientación recuperada — 26 de octubre de 2026, noche
 

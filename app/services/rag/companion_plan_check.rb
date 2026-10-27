@@ -1083,7 +1083,7 @@ module Rag
       open = @facts.open_question
       shown = open.is_a?(Hash) ? open["shown"] : nil
       return nil unless open.is_a?(Hash) && shown.is_a?(Hash)
-      return nil unless unbound_unknown?
+      return nil unless unbound_unknown? || ambiguous_open_reply?
 
       left = clip_stored_question(open["question"])
       right = clip_stored_question(shown["question"])
@@ -1096,6 +1096,25 @@ module Rag
       @facts.facts.any? { |fact|
         answers = fact.answers
         answers.is_a?(Hash) && answers["r"].to_s == "unknown" && answers["q"].blank?
+      }
+    end
+
+    # A reply that fits both stored questions was left unbound.
+    def ambiguous_open_reply?
+      open = @facts.open_question
+      shown = open.is_a?(Hash) ? open["shown"] : nil
+      return false unless shown.is_a?(Hash) && shown["question"].present?
+
+      left = { "question" => open["question"], "targets" => open["targets"] }
+      right = { "question" => shown["question"], "targets" => shown["targets"] }
+      @facts.facts.any? { |fact|
+        next false unless fact.kind == "observation"
+
+        answers = fact.answers
+        next false if answers.is_a?(Hash) && answers["q"].present?
+
+        WorkContextReducer.same_published_datum?(left, fact.text) &&
+          WorkContextReducer.same_published_datum?(right, fact.text)
       }
     end
 

@@ -18,6 +18,8 @@ class Rag::ContinuityDatumTest < ActiveSupport::TestCase
     El indicador de marcha está encendido cuando la marcha está activa.
     • Fallo.
     El indicador de fallo está encendido cuando hay un fallo.
+    • La compuerta no abre.
+    – Comprobar si la compuerta está abierta.
   TEXT
 
   setup do
@@ -114,6 +116,76 @@ class Rag::ContinuityDatumTest < ActiveSupport::TestCase
 
       assert_equal VALVE, limit.dig("answers", "q")
       assert_nil answered.pending_question
+    end
+  end
+
+  test "a shared property does not make two unnamed components the same datum" do
+    question = { "question" => "¿La válvula está abierta?", "targets" => [ { "item" => "Válvula." } ] }
+
+    assert_not Rag::WorkContextReducer.same_published_datum?(question, "No sé si la compuerta está abierta")
+    assert Rag::WorkContextReducer.same_published_datum?(question, "Está abierta")
+    assert Rag::WorkContextReducer.same_published_datum?(question, "No sé")
+
+    with_flags do
+      session = open_session
+      session.record_user_turn!(
+        "La bomba no arranca.",
+        user_id: @user.id, correlation_id: "query:pump",
+        interpreter_client: tool_client("report", [ "La bomba no arranca." ])
+      )
+      publish(session, "¿La válvula está abierta?", "La válvula no abre.")
+      session.record_user_turn!(
+        "No sé si la compuerta está abierta",
+        user_id: @user.id, correlation_id: "query:gate",
+        interpreter_client: tool_client("report", [ "No sé si la compuerta está abierta" ])
+      )
+      kept = Rag::ActiveEpisode.parse(session.reload.active_episode)
+      gate = kept.observations.find { |item| item["text"].include?("compuerta") }
+
+      assert gate
+      assert_nil gate.dig("answers", "q")
+      assert_equal "¿La válvula está abierta?", kept.pending_question["question"]
+
+      session.record_user_turn!(
+        "Está abierta",
+        user_id: @user.id, correlation_id: "query:open",
+        interpreter_client: tool_client("report", [ "Está abierta" ])
+      )
+      answered = Rag::ActiveEpisode.parse(session.reload.active_episode)
+      opening = answered.observations.find { |item| item["text"] == "Está abierta" }
+
+      assert_equal "¿La válvula está abierta?", opening.dig("answers", "q")
+      assert_nil answered.pending_question
+
+      both = open_session
+      both.record_user_turn!(
+        "La bomba no arranca.",
+        user_id: @user.id, correlation_id: "query:pump-both",
+        interpreter_client: tool_client("report", [ "La bomba no arranca." ])
+      )
+      publish(both, "¿La válvula está abierta?", "La válvula no abre.")
+      publish(both, "¿La compuerta está abierta?", "La compuerta no abre.")
+      held = Rag::ActiveEpisode.parse(both.reload.active_episode)
+      assert_equal "¿La válvula está abierta?", held.pending_question["question"]
+      assert_equal "¿La compuerta está abierta?", held.pending_question.dig("shown", "question")
+
+      both.record_user_turn!(
+        "Está abierta",
+        user_id: @user.id, correlation_id: "query:which",
+        interpreter_client: tool_client("report", [ "Está abierta" ])
+      )
+      waiting = Rag::ActiveEpisode.parse(both.reload.active_episode)
+      reply = waiting.observations.find { |item| item["text"] == "Está abierta" }
+
+      assert_nil reply.dig("answers", "q")
+      assert_equal "¿La válvula está abierta?", waiting.pending_question["question"]
+      assert_equal "¿La compuerta está abierta?", waiting.pending_question.dig("shown", "question")
+
+      composed = publish(both, "¿La válvula está abierta?", "La válvula no abre.", ask: false)
+      assert_equal "referent_clarification", composed.check.question_role
+      assert_includes composed.text, "válvula está abierta"
+      assert_includes composed.text, "compuerta está abierta"
+      assert_nil composed.pending
     end
   end
 

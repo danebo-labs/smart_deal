@@ -130,8 +130,11 @@ module Rag
 
         return published || shown
       end
-      return published if published && same_published_datum?(published, turn)
-      return shown if shown && same_published_datum?(shown, turn)
+      published_hit = published && same_published_datum?(published, turn)
+      shown_hit = shown && same_published_datum?(shown, turn)
+      return nil if published_hit && shown_hit
+      return published if published_hit
+      return shown if shown_hit
 
       nil
     end
@@ -167,7 +170,8 @@ module Rag
         next if word.length < 4 || STEM_STOP.include?(word)
 
         stem = CompanionPlanCheck.stem(word)
-        next if FRAME_STEMS.include?(stem) || generic_entity?(stem)
+        next if FRAME_STEMS.include?(stem) || generic_entity?(stem) || referent_placeholder?(stem)
+        next if CompanionPlanCheck::CONNECTORS.include?(word) && property_stems.exclude?(stem)
 
         if property_stems.include?(stem)
           properties << stem
@@ -189,13 +193,7 @@ module Rag
     end
 
     def self.other_entity?(asked, said)
-      return false if shared_property_without_numbers?(asked, said)
-
       asked.entities.any? && said.entities.any? && (asked.entities & said.entities).empty?
-    end
-
-    def self.shared_property_without_numbers?(asked, said)
-      asked.numbers.empty? && said.numbers.empty? && (asked.properties & said.properties).any?
     end
 
     def self.datum_covers?(asked, said)
@@ -211,7 +209,7 @@ module Rag
       entity_hit = (asked.entities & said.entities).any?
       property_hit = (asked.properties & said.properties).any?
       return false if asked.properties.any? && said.properties.any? && !property_hit
-      return false if asked.entities.any? && said.entities.any? && !entity_hit && !property_hit
+      return false if asked.entities.any? && said.entities.any? && !entity_hit
 
       entity_hit || property_hit
     end
@@ -237,6 +235,12 @@ module Rag
       CompanionPlanRender::GENERIC_STEMS.include?(stem) || %w[equip siste].include?(stem)
     end
 
+    # "parte" names no component. "mientras" is a connective, not an entity.
+    # A property word that the plan checker also lists as a connective stays.
+    def self.referent_placeholder?(stem)
+      REFERENT_PLACEHOLDERS.include?(stem)
+    end
+
     def self.designators(text)
       text.to_s.scan(/#?\d+/).map { |token| token.delete("#") }.uniq
     end
@@ -250,14 +254,15 @@ module Rag
     UNKNOWN_FRAME = /\Ano (?:lo )?se(?:\s+como|\s+distingu\w*|\s+ver|\s+si)?\b/
     STEM_STOP = %w[el la los las un una unos unas del que esta estan este como para por con].to_set
     FRAME_STEMS = %w[disti ident saber recon decir neces orien infor].to_set
+    REFERENT_PLACEHOLDERS = %w[parte].to_set
     CONTINUATION = %w[sigue seguir seguimos siguiente ahora luego entonces despues proximo hago hacemos].to_set
     CONTINUATION_FILLER = %w[que como cual cuando donde y o a el la lo los las un una me te se por para con del].to_set
     private_class_method :unknown_clarification?, :published_documented_question,
       :open_documented_question?, :open_answer?, :clear_matching_pending!,
       :shown_documented_question, :chosen_unknown_datum, :same_question_text?, :clear_shown!,
       :question_datum_text, :datum_parts, :other_scope?, :other_property?, :other_entity?,
-      :shared_property_without_numbers?,
       :datum_covers?, :unspecified_unknown?, :property_stems, :generic_entity?,
+      :referent_placeholder?,
       :designators, :closed_reply?
 
     def self.apply!(episode:, perception:, decision:, turn:, correlation_id:, now:)
@@ -462,7 +467,7 @@ module Rag
       scope = scope_question?(question)
       return if @perception.move == "unclear" && code.nil?
       return if next_step_question?
-      if ambiguous_open_referent?
+      if ambiguous_open_referent? || ambiguous_named_referent?
         if unknown_limit_reply?
           @episode.append_observation!(
             @turn.to_s.squish, correlation_id: @correlation_id, answers: { "r" => "unknown" }
@@ -502,9 +507,20 @@ module Rag
       self.class.unspecified_reply?(@turn)
     end
 
+    # The reply fits both open matters. It stays unbound so the next plan
+    # can ask which stored question it answers.
+    def ambiguous_named_referent?
+      pending = @episode.pending_question
+      shown = pending.is_a?(Hash) ? pending["shown"] : nil
+      return false unless shown.is_a?(Hash) && shown["question"].present?
+
+      self.class.same_published_datum?(pending, @turn) &&
+        self.class.same_published_datum?(shown, @turn)
+    end
+
     def unknown_limit_reply?
       label = FollowupQueryRewriter.normalize_label(@turn)
-      label == "no puedo verlo" || label.match?(/\Ano (?:lo )?se\b/) || self.class.unspecified_unknown?(@turn)
+      label == "no puedo verlo" || label.match?(/\Ano (?:lo )?se\b/)
     end
 
     def scope_question?(question)

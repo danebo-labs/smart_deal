@@ -16,6 +16,8 @@ El pendiente conserva el dato no resuelto. La pregunta que se presenta ahora, si
 
 La regresión recorre las dos muestras con `record_user_turn!`, el reducer, el plan, el checker y la publicación. Los cuerpos están en `test/fixtures/vf5_continuity_20261027/`. No llama a Bedrock. Un caso de válvula, indicador y sensor, fuera del VF5, cubre la misma asociación. F5 sigue abierta: esta reproducción local no es la GUI. La recuperación en vivo, después de que la consulta de T2 deja de incluir «apagado», no se ha medido. El plano Elemont no arranca.
 
+Una propiedad compartida no une dos componentes. «¿La válvula está abierta?» no recibe «No sé si la compuerta está abierta». «Está abierta» y «No sé» siguen respondiendo cuando hay un solo asunto. Si los dos asuntos abiertos encajan, se conservan y se pregunta a cuál se refiere.
+
 ## GUI del 27 de octubre de 2026
 
 **Precedencia.** Esta sección es el estado vigente de la corrección VF5. No reabre F2, F3 ni F4. No aprueba F5. No cambia fuentes, ingesta, prompts, modelos ni las etiquetas «Manual / Guía Danebo».

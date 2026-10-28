@@ -801,7 +801,7 @@ module Rag
 
       claim = word_stem_list(text)
       component_stems(statement, qualifier).each do |component|
-        next if component_identified?(claim, component, qualifier)
+        next if asking_identity?(text) && component_identified?(claim, component, qualifier)
         next unless imported_component_property?(claim, statement, component, qualifier)
 
         return "unbacked_component"
@@ -840,9 +840,14 @@ module Rag
       }.uniq
     end
 
-    # "LED de fotocélula" only names the component. That wording can come
-    # from the generation, so it does not identify the case. Asking whether
-    # it is that item does: "es el de" or "el de".
+    # A reading that says "es el de fotocélula" is still the generation's
+    # claim. Only a question may ask which item the component is.
+    def asking_identity?(text)
+      text.to_s.rstrip.end_with?("?")
+    end
+
+    # "LED de fotocélula" only names the component. A question that asks
+    # whether it is that item uses "es el de" or "el de".
     def component_identified?(stems, component, qualifier)
       stems.each_with_index.any? do |stem, index|
         next false unless stem == component

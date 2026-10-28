@@ -93,6 +93,14 @@ class Rag::Vf5ContinuityReplayTest < ActiveSupport::TestCase
 
       assert_equal "unbacked_component", rejection&.dig("reason")
       assert_not_includes forged.text, "LED de fotocélula está encendido"
+
+      conditional = "La fotocélula no está activada, pero el LED encendido es el de fotocélula. El LED se activa cuando la fotocélula o la entrada de re-apertura está activada."
+      posed = compose_plan(t5, plan: plan_with_reading(t5, "C1", "S1.9", conditional))
+      posed_rejection = posed.check.rejections.find { |row|
+        row["part"] == "link" && row["value"].is_a?(Hash) && row["value"]["fact"] == "C1" && row["value"]["statement"] == "S1.9"
+      }
+      assert_equal "unbacked_component", posed_rejection&.dig("reason"), posed.check.rejections.inspect
+      assert_not_includes posed.text, "es el de fotocélula"
       unknown = t5[:episode].observations.find { |item| item.dig("answers", "r") == "unknown" }
       assert_includes unknown.dig("answers", "q").to_s, "#21"
       assert_match(/Cu[aá]l LED/i, t5[:episode].pending_question["question"])

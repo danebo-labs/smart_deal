@@ -32,6 +32,16 @@ Not active: WhatsApp-first workflows, Twilio conversational UX as primary channe
 
 ## Current retrieval contract
 
+> **Correction, 2026-10-28 (code `39f2d63`).** The audit identifies
+> `RetrieveAndGenerate` as uncalled in `app/` since 5 October. The current
+> text lane uses the mandatory Companion interpreter, `Retrieve`, and separate
+> generation (`companion_plan` Converse or an alternative generator).
+> The older RetrieveAndGenerate-specific bullets below are historical and must
+> not be used to count current model calls or price subscriptions. Current
+> call paths, evidence limits and costs are consolidated in
+> [SAAS_COST_MODEL_2026-06-12.md](SAAS_COST_MODEL_2026-06-12.md).
+
+
 - The normal web RAG lane uses Bedrock `RetrieveAndGenerate`. It keeps retrieval,
   generation, native source attribution, and Bedrock session continuity in one
   managed call.

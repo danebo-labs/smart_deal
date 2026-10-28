@@ -25,13 +25,14 @@ remove the historical activation flags and the obsolete alternatives that
 sit beside them. WhatsApp stays disabled. Capture, budget, retry,
 authorization, and data-protection controls stay configurable.
 
-That target is not the code at the current SHA. A normal boot still depends
-on exported flags. Shared session blocks episode recording. The `.env`
-observed in this checkout on 2026-10-20 sets `SHARED_SESSION_ENABLED=true`
-and does not set the Companion flags. The deploy template sets Haiku mode
-`conditional`; the path exercised by the phase harnesses and the VF5+ textual
-pass is `owner`. Known equipment with `DOCUMENT_IDENTITY_SCOPE_ENABLED` unset
-abstains before generation retrieval.
+The 2026-10-28 cost audit records Companion enabled and Haiku mode `owner`
+in the observed 27 October process, with shared session disabled; the current
+deploy example also selects `owner`. A developer's local `.env` is not evidence
+of production settings. Not every container variable was read: see the dated
+configuration limits in the [consolidated cost model](docs/SAAS_COST_MODEL_2026-06-12.md).
+Companion is the product; its `companion_plan` generation branch is not a second
+product switch. Historical flag-inventory statements must be checked against
+the current code and dated process evidence.
 
 Canonical catalog, effects, and the retirement proposal:
 **[docs/INVENTARIO_FLAGS_DE_COMPORTAMIENTO.md](docs/INVENTARIO_FLAGS_DE_COMPORTAMIENTO.md)**.
@@ -50,7 +51,7 @@ Canonical catalog, effects, and the retirement proposal:
 | **Field-photo diagnosis** | Direct visual recognition for technician photos; diagnostic output remains separate from indexed organizational knowledge |
 | **Retrieval fidelity** | Pins are the current session's evidence scope and the user can change them. A pinned miss does not silently reopen that session's unpinned corpus and does not change another account's catalog. Explicit source narrowing, adaptive retrieval budgets, and literal-label safety for photos stay as they are. Quality/cost baseline: [RAG benchmark 2026-06-09](docs/RAG_QUALITY_BENCHMARK_2026-06-09.md) |
 | **Chat uploads** | Field photos use direct diagnosis; documents use Claude chunking via `CustomChunkingPipeline` — text, PDF, **Word, Excel, PowerPoint** (via LibreOffice); see [WEB_CUSTOM_CHUNKING.md](docs/WEB_CUSTOM_CHUNKING.md) |
-| **Cost-optimized parse** | Per-page 8k cap with bounded 16k/32k retry, windowed Haiku filtering, Sonnet-default photo routing, automatic Batch for long manuals, and SHA dedup. Reconciled variable COGS: **~$9.54 expected / ~$13.27 conservative monthly** for 1,000 queries + 200 photos; a 200-page manual is **$5.32 one-time onboarding**. **Canonical model:** [SAAS_COST_MODEL_2026-06-12.md](docs/SAAS_COST_MODEL_2026-06-12.md). **Routing:** [INGESTION_ROUTING.md](docs/INGESTION_ROUTING.md) |
+| **Cost and call accounting** | **Current consolidated source, updated 2026-10-28:** [SAAS_COST_MODEL_2026-06-12.md](docs/SAAS_COST_MODEL_2026-06-12.md). Separates Companion calls, manual ingestion, vision, shared base, vector activity, taxes and unreconciled spend. June package totals are historical, not current pricing. Document routing: [INGESTION_ROUTING.md](docs/INGESTION_ROUTING.md). |
 | **Bulk ZIP** | Anthropic Message Batches implementation preserved; `/bulk_uploads` routes are disabled for the MVP pilot |
 | **KB workspace** | Paginated doc list, pins, image lightbox, indexing status over Turbo |
 | **Metrics** | Async token/cost/latency attribution; the chat usage footer is shown only with `SHOW_USAGE_METRICS=true` |

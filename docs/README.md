@@ -15,6 +15,7 @@ evidence and are not descriptions of the active product.
 | Local setup and configuration | [README.md](../README.md) |
 | Production deployment and AWS operations | [PRODUCTION.md](PRODUCTION.md) |
 | Current RAG closure checkpoint | [GATE9R_STATUS.md](GATE9R_STATUS.md) |
+| Current costs, call paths, infrastructure and reconciliation gaps | [SAAS_COST_MODEL_2026-06-12.md](SAAS_COST_MODEL_2026-06-12.md) — consolidated 2026-10-28 |
 | Strategy, priorities, runway, and decision gates | [PLAN_GENERAL_2026-09-03.md](PLAN_GENERAL_2026-09-03.md) |
 
 ## Business planning (living documents)
@@ -34,7 +35,7 @@ older dated versions are historical evidence, not the current plan.
 
 Conventions that hold across all of them: business planning is written in
 Spanish, only weekdays are planned, and `SAAS_COST_MODEL_2026-06-12.md` plus
-`bedrock_daily_costs` remain the only cost authorities.
+dated provider invoices/usage are the cost authorities. `bedrock_daily_costs` is a reconciliation mechanism, not proof of populated or complete coverage; the 2026-10-28 audit found no rows in the exported window.
 
 ## Active product and engineering references
 
@@ -48,7 +49,7 @@ Spanish, only weekdays are planned, and `SAAS_COST_MODEL_2026-06-12.md` plus
 | Web document ingestion | [WEB_CUSTOM_CHUNKING.md](WEB_CUSTOM_CHUNKING.md) | Active for documents; not for live diagnostic photos |
 | Metrics and queues | [METRICS.md](METRICS.md) | Active; dashboard routes and home usage footer are disabled by default |
 | Pilot traceability | [PILOT_TRACEABILITY.md](PILOT_TRACEABILITY.md) | Active contract for engineering observability. Cost authority stays in METRICS.md |
-| SaaS cost model | [SAAS_COST_MODEL_2026-06-12.md](SAAS_COST_MODEL_2026-06-12.md) | Current commercial baseline; dated evidence is retained |
+| SaaS cost model | [SAAS_COST_MODEL_2026-06-12.md](SAAS_COST_MODEL_2026-06-12.md) | Consolidated 2026-10-28: partial unit costs, shared base/activity split and open reconciliation. June economics retained as historical appendix |
 | Bedrock configuration | [BEDROCK_SETUP.md](../BEDROCK_SETUP.md) | Active |
 | Performance constraints | [PERFORMANCE_CONSTRAINTS.md](PERFORMANCE_CONSTRAINTS.md) | Active |
 | Account branding | [ACCOUNT_BRANDING.md](ACCOUNT_BRANDING.md) | Active |

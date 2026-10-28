@@ -309,15 +309,45 @@ fi
 "$RUBY_BIN" -rjson -e 'JSON.parse(File.read(ARGV.fetch(0)))' "$REPORT_TMP" || fail "invalid report JSON"
 mv "$REPORT_TMP" "${OUTPUT_DIR}/report.json"
 
-VALIDATION_DIR="${WORK_DIR}/validation_captures"
-mkdir -p "$VALIDATION_DIR"
+# The downloaded tar lives only in WORK_DIR. Unpack into the package, delete
+# that tar, then index the tree that remains. The EXIT trap still removes
+# WORK_DIR; it must not be the only copy of capture.json or bodies/.
+PACKAGE_CAPTURES="${OUTPUT_DIR}/validation_captures"
+rm -rf "$PACKAGE_CAPTURES"
+ARCHIVE_STATE="absent"
 if remote "docker exec '${WEB_CONTAINER}' tar -c -C /rails/tmp/field_companion/validation_captures ." > "${WORK_DIR}/validation_captures.tar" 2>"${WORK_DIR}/validation_captures.err"; then
-  tar -x -C "$VALIDATION_DIR" -f "${WORK_DIR}/validation_captures.tar" ||
+  if tar -tf "${WORK_DIR}/validation_captures.tar" > "${WORK_DIR}/validation_capture_names.txt" 2>"${WORK_DIR}/validation_captures_list.err" &&
+    "$RUBY_BIN" -e '
+      unsafe = false
+      File.readlines(ARGV.fetch(0), chomp: true).each do |name|
+        name = name.sub(%r{/+\z}, "")
+        next if name.empty?
+        if name.start_with?("/") || name.start_with?("\\") || name.split("/").any? { |part| part == ".." }
+          unsafe = true
+          break
+        end
+      end
+      exit(unsafe ? 1 : 0)
+    ' "${WORK_DIR}/validation_capture_names.txt"
+  then
+    mkdir -p "$PACKAGE_CAPTURES"
+    if tar -x -C "$PACKAGE_CAPTURES" -f "${WORK_DIR}/validation_captures.tar"; then
+      ARCHIVE_STATE="present"
+    else
+      echo "pilot_metrics: warning: validation capture archive did not unpack" >&2
+      rm -rf "$PACKAGE_CAPTURES"
+      ARCHIVE_STATE="unpack_failed"
+    fi
+  else
     echo "pilot_metrics: warning: validation capture archive did not unpack" >&2
+    rm -rf "$PACKAGE_CAPTURES"
+    ARCHIVE_STATE="unpack_failed"
+  fi
+  rm -f "${WORK_DIR}/validation_captures.tar" "${WORK_DIR}/validation_capture_names.txt"
 else
   echo "pilot_metrics: validation captures absent on the web container" >&2
 fi
-"$RUBY_BIN" script/pilot_metrics_validation_index.rb "$VALIDATION_DIR" "${OUTPUT_DIR}/validation_capture_index.json"
+"$RUBY_BIN" script/pilot_metrics_validation_index.rb "$PACKAGE_CAPTURES" "${OUTPUT_DIR}/validation_capture_index.json" "$ARCHIVE_STATE"
 
 # Local packaging boots Rails. The project gems live in vendor/bundle.
 export BUNDLE_PATH="${BUNDLE_PATH:-vendor/bundle}"
@@ -380,6 +410,7 @@ printf '%s' "$COHORT_JSON" > "${WORK_DIR}/cohort.json"
     strict_validation: validation,
     validation_captures: {
       status: captures["status"],
+      archive: captures["archive"],
       capture_files: captures["capture_files"],
       turns: Array(captures["turns"]).size,
       path: "validation_capture_index.json"
@@ -390,13 +421,40 @@ printf '%s' "$COHORT_JSON" > "${WORK_DIR}/cohort.json"
   "$STRICT_VALIDATION" "$CONTAINERS_CSV" "$UNREADABLE_CSV" \
   "${OUTPUT_DIR}/validation_capture_index.json" > "${OUTPUT_DIR}/manifest.json"
 
-(
-  cd "$OUTPUT_DIR"
-  shasum -a 256 report.json report.txt valor.json dossier.html interactions.csv \
-    source_events.jsonl validation_capture_index.json manifest.json > SHA256SUMS
-)
+# Hash the package after the capture tar is gone. The second read checks the
+# sums against the files that remain, including every capture.json and body.
+"$RUBY_BIN" -rdigest -rpathname -e '
+  root = Pathname(ARGV.fetch(0))
+  names = %w[
+    report.json report.txt valor.json dossier.html interactions.csv
+    source_events.jsonl validation_capture_index.json manifest.json
+  ]
+  captures = root.join("validation_captures")
+  if captures.directory?
+    Dir.glob(captures.join("**", "*").to_s).select { |path| File.file?(path) }.sort.each do |path|
+      names << Pathname(path).relative_path_from(root).to_s
+    end
+  end
+  lines = names.map { |name|
+    "#{Digest::SHA256.file(root.join(name)).hexdigest}  #{name}"
+  }
+  sums = root.join("SHA256SUMS")
+  sums.write(lines.join("\n") + "\n")
+  listed = File.readlines(sums, chomp: true).map { |line| line.split(/\s+/, 2) }
+  abort("pilot_metrics: package hash list does not match exported files") unless listed.map(&:last) == names
+  listed.each do |expected, name|
+    path = root.join(name)
+    abort("pilot_metrics: packaged file missing: #{name}") unless path.file?
+    actual = Digest::SHA256.file(path).hexdigest
+    abort("pilot_metrics: hash mismatch: #{name}") unless actual == expected
+  end
+' "$OUTPUT_DIR"
 
 chmod 700 "$OUTPUT_DIR"
+if [[ -d "$PACKAGE_CAPTURES" ]]; then
+  find "$PACKAGE_CAPTURES" -type d -exec chmod 700 {} +
+  find "$PACKAGE_CAPTURES" -type f -exec chmod 600 {} +
+fi
 chmod 600 "${OUTPUT_DIR}/report.json" "${OUTPUT_DIR}/report.txt" "${OUTPUT_DIR}/valor.json" \
   "${OUTPUT_DIR}/dossier.html" "${OUTPUT_DIR}/interactions.csv" "${OUTPUT_DIR}/source_events.jsonl" \
   "${OUTPUT_DIR}/manifest.json" "${OUTPUT_DIR}/validation_capture_index.json" "${OUTPUT_DIR}/SHA256SUMS"

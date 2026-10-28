@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "digest"
 require "json"
 require "pathname"
 
@@ -17,24 +18,36 @@ module Rag
       published_text
       antecedent
     ].freeze
+    ARCHIVE_STATES = %w[present absent unpack_failed].freeze
+    NOTE = "A finished export is not a complete capture. uncaptured means the file does not contain that stage. unresolved_bodies lists evidence files that are not in this directory or whose bytes do not match the recorded sha256. This index does not reconstruct them."
 
-    def self.build(directory)
-      new(directory).build
+    def self.build(directory, archive: nil)
+      new(directory, archive: archive).build
     end
 
-    def initialize(directory)
+    def initialize(directory, archive: nil)
       @directory = Pathname(directory.to_s)
+      unless archive.nil? || ARCHIVE_STATES.include?(archive)
+        raise ArgumentError, "unknown validation archive state"
+      end
+
+      @archive = archive
     end
 
     def build
+      return closed_document("unreadable", "unpack_failed") if @archive == "unpack_failed"
+      return closed_document("absent", "absent") if @archive == "absent"
+
       files = capture_files
       turns = files.flat_map { |path| turns_for(path) }
-      {
+      document = {
         "status" => status_for(files, turns),
         "capture_files" => files.size,
         "turns" => turns,
-        "note" => "A finished export is not a complete capture. uncaptured means the file does not contain that stage. This index does not reconstruct it."
+        "note" => NOTE
       }
+      document["archive"] = @archive if @archive
+      document
     end
 
     private
@@ -51,7 +64,8 @@ module Rag
       relative = path.relative_path_from(@directory).to_s
       correlations = events.filter_map { |event| event_correlation(event) }.uniq
       groups = correlations.empty? ? [ nil ] : correlations
-      groups.map { |correlation_id| turn_row(relative, correlation_id, events, attach_unscoped: groups.one?) }
+      unresolved = unresolved_bodies(path, body_references(events))
+      groups.map { |correlation_id| turn_row(relative, correlation_id, events, unresolved, attach_unscoped: groups.one?) }
     rescue StandardError => error
       [ {
         "path" => path.to_s,
@@ -60,7 +74,7 @@ module Rag
       } ]
     end
 
-    def turn_row(path, correlation_id, events, attach_unscoped:)
+    def turn_row(path, correlation_id, events, unresolved, attach_unscoped:)
       mine = events.select { |event|
         label = event_correlation(event)
         label == correlation_id || (attach_unscoped && label.nil?)
@@ -81,8 +95,65 @@ module Rag
         "components" => components,
         "truncated_fields" => truncated,
         "markers" => markers(mine),
-        "status" => components.value?("uncaptured") ? "partial" : "complete"
+        "unresolved_bodies" => unresolved,
+        "status" => (components.value?("uncaptured") || unresolved.any?) ? "partial" : "complete"
       }
+    end
+
+    def closed_document(status, archive)
+      {
+        "status" => status,
+        "archive" => archive,
+        "capture_files" => 0,
+        "turns" => [],
+        "note" => NOTE
+      }
+    end
+
+    def body_references(events)
+      found = []
+      walk_bodies(events, found)
+      found.uniq { |reference| reference["path"] }
+    end
+
+    def walk_bodies(value, found)
+      case value
+      when Hash
+        if value["evidence"] == "external" && value["path"].is_a?(String) && value["absent"] != true
+          found << { "path" => value["path"], "sha256" => value["sha256"] }
+        end
+        value.each_value { |child| walk_bodies(child, found) }
+      when Array
+        value.each { |child| walk_bodies(child, found) }
+      end
+    end
+
+    # path is relative to the directory that contains capture.json, which is
+    # where ValidationCapture writes bodies/. A missing file stays missing.
+    def unresolved_bodies(capture_json, references)
+      root = capture_json.dirname
+      references.filter_map { |reference| unresolved_body(root, reference) }
+    end
+
+    def unresolved_body(root, reference)
+      relative = reference["path"]
+      return { "path" => relative, "status" => "absent" } unless contained_body?(relative)
+
+      file = root.join(relative)
+      return { "path" => relative, "status" => "absent" } if file.symlink? || !file.file?
+
+      expected = reference["sha256"]
+      return nil unless expected.is_a?(String) && !expected.empty?
+      return nil if Digest::SHA256.file(file).hexdigest == expected
+
+      { "path" => relative, "status" => "hash_mismatch" }
+    end
+
+    def contained_body?(relative)
+      return false if relative.empty? || relative.start_with?("/", "\\") || relative.include?("\0")
+
+      parts = Pathname(relative).each_filename.to_a
+      !parts.empty? && parts.none? { |part| part == "." || part == ".." }
     end
 
     def component_status(name, events)

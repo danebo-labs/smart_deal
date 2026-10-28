@@ -7,6 +7,7 @@ require "fileutils"
 require "json"
 require "open3"
 require "rbconfig"
+require "rubygems/package"
 require "tmpdir"
 
 class PilotMetricsCommandTest < ActiveSupport::TestCase
@@ -30,7 +31,8 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
       "PILOT_METRICS_RAILS_BIN" => File.join(@fake_bin, "rails"),
       "PILOT_METRICS_RUBY" => RbConfig.ruby,
       "FAKE_SSH_LOG" => @ssh_log,
-      "FAKE_SOURCE_CAPTURE" => @source_capture
+      "FAKE_SOURCE_CAPTURE" => @source_capture,
+      "FAKE_VALIDATION_TAR" => ""
     }
   end
 
@@ -82,7 +84,13 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
     assert_equal "registry.example/smart-deal:abc123", manifest.fetch("image_version")
     assert_equal "not_requested", manifest.dig("strict_validation", "status")
     assert_equal "absent", manifest.dig("validation_captures", "status")
+    assert_equal "absent", manifest.dig("validation_captures", "archive")
     assert_equal "validation_capture_index.json", manifest.dig("validation_captures", "path")
+    index = JSON.parse(File.read(File.join(output_dir, "validation_capture_index.json")))
+    assert_equal "absent", index["status"]
+    assert_equal "absent", index["archive"]
+    assert_equal [], index["turns"]
+    assert_not File.exist?(File.join(output_dir, "validation_captures"))
     assert_equal 1, JSON.parse(File.read(File.join(output_dir, "valor.json"))).dig("adoption", "active_users")
     assert_includes File.read(File.join(output_dir, "dossier.html")), "Dossier"
     assert_equal 1, CSV.read(File.join(output_dir, "interactions.csv"), headers: true).size
@@ -278,6 +286,116 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
     assert_not File.exist?(@ssh_log)
   end
 
+  test "keeps validation captures in the package after the temporary archive is removed" do
+    body = "observacion local de prueba"
+    tar = File.join(@tmpdir, "captures.tar")
+    write_capture_tar(tar, body)
+    scratch = File.join(@tmpdir, "scratch")
+    FileUtils.mkdir_p(scratch)
+
+    _stdout, stderr, status = run_command(
+      "--format", "raw",
+      env: { "FAKE_VALIDATION_TAR" => tar, "TMPDIR" => scratch }
+    )
+
+    assert status.success?, stderr
+    assert_not_includes stderr, body
+    assert_empty Dir.children(scratch)
+
+    capture = File.join(output_dir, "validation_captures", "turn", "capture.json")
+    body_path = File.join(output_dir, "validation_captures", "turn", "bodies", "b0001.txt")
+    assert_equal body, File.read(body_path)
+    assert_equal 0o600, File.stat(capture).mode & 0o777
+    assert_equal 0o600, File.stat(body_path).mode & 0o777
+    assert_equal 0o700, File.stat(File.dirname(capture)).mode & 0o777
+    assert_equal 0o700, File.stat(File.dirname(body_path)).mode & 0o777
+
+    index = JSON.parse(File.read(File.join(output_dir, "validation_capture_index.json")))
+    turn = index["turns"].sole
+    assert_equal "present", index["archive"]
+    assert_equal "turn/capture.json", turn["path"]
+    assert_equal [], turn["unresolved_bodies"]
+    assert_not_includes JSON.generate(index), body
+    assert File.exist?(File.join(output_dir, "validation_captures", "turn", "capture.json"))
+    verify_hashes
+    listed = File.readlines(File.join(output_dir, "SHA256SUMS"), chomp: true).map { |line| line.split(/\s+/, 2).last }
+    assert_includes listed, "validation_captures/turn/capture.json"
+    assert_includes listed, "validation_captures/turn/bodies/b0001.txt"
+  end
+
+  test "declares a missing body and does not create the file" do
+    capture_root = File.join(@tmpdir, "missing-body")
+    request = File.join(capture_root, "turn")
+    FileUtils.mkdir_p(request)
+    body = "cuerpo que no debe fabricarse"
+    File.write(File.join(request, "capture.json"), JSON.generate(capture_document(body)))
+
+    document = Rag::ValidationCaptureIndex.build(capture_root)
+    turn = document["turns"].sole
+
+    assert_equal "partial", document["status"]
+    assert_equal "partial", turn["status"]
+    assert_equal [ { "path" => "bodies/b0001.txt", "status" => "absent" } ], turn["unresolved_bodies"]
+    assert_not File.exist?(File.join(request, "bodies", "b0001.txt"))
+    assert_not_includes JSON.generate(document), body
+  end
+
+  test "declares a body whose bytes do not match the recorded sha256" do
+    capture_root = File.join(@tmpdir, "mismatched-body")
+    request = File.join(capture_root, "turn", "bodies")
+    FileUtils.mkdir_p(request)
+    stored = "bytes reales del paquete"
+    File.write(File.join(request, "b0001.txt"), stored)
+    File.write(File.join(capture_root, "turn", "capture.json"), JSON.generate(capture_document("otros bytes")))
+
+    document = Rag::ValidationCaptureIndex.build(capture_root)
+
+    assert_equal [ { "path" => "bodies/b0001.txt", "status" => "hash_mismatch" } ], document.dig("turns", 0, "unresolved_bodies")
+    assert_equal "partial", document.dig("turns", 0, "status")
+    assert_equal stored, File.read(File.join(request, "b0001.txt"))
+    assert_not_includes JSON.generate(document), stored
+  end
+
+  test "an unreadable validation archive is declared and leaves no capture tree" do
+    tar = File.join(@tmpdir, "broken.tar")
+    File.binwrite(tar, "not a tar")
+
+    _stdout, stderr, status = run_command("--format", "raw", env: { "FAKE_VALIDATION_TAR" => tar })
+
+    assert status.success?, stderr
+    assert_match(/did not unpack/, stderr)
+    index = JSON.parse(File.read(File.join(output_dir, "validation_capture_index.json")))
+    manifest = JSON.parse(File.read(File.join(output_dir, "manifest.json")))
+    assert_equal "unreadable", index["status"]
+    assert_equal "unpack_failed", index["archive"]
+    assert_equal 0, index["capture_files"]
+    assert_equal [], index["turns"]
+    assert_equal "unreadable", manifest.dig("validation_captures", "status")
+    assert_equal "unpack_failed", manifest.dig("validation_captures", "archive")
+    assert_not File.exist?(File.join(output_dir, "validation_captures"))
+    verify_hashes
+  end
+
+  test "a validation archive with a parent path is not unpacked" do
+    tar = File.join(@tmpdir, "escape.tar")
+    body = "fuera-del-paquete"
+    File.open(tar, "wb") do |file|
+      Gem::Package::TarWriter.new(file) do |writer|
+        writer.add_file_simple("../outside.txt", 0o600, body.bytesize) { |io| io.write(body) }
+      end
+    end
+
+    _stdout, stderr, status = run_command("--format", "raw", env: { "FAKE_VALIDATION_TAR" => tar })
+
+    assert status.success?, stderr
+    assert_not_includes stderr, body
+    index = JSON.parse(File.read(File.join(output_dir, "validation_capture_index.json")))
+    assert_equal "unpack_failed", index["archive"]
+    assert_not File.exist?(File.join(output_dir, "validation_captures"))
+    assert_not File.exist?(File.join(output_dir, "outside.txt"))
+    assert_not File.exist?(File.join(@output_root, "outside.txt"))
+  end
+
   private
 
   def output_dir
@@ -368,8 +486,12 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
           end
         end
       when /validation_captures/
-        warn "validation captures absent"
-        exit 1
+        tar_path = ENV["FAKE_VALIDATION_TAR"].to_s
+        if tar_path.empty?
+          warn "validation captures absent"
+          exit 1
+        end
+        IO.copy_stream(tar_path, $stdout)
       when /docker inspect/
         puts "registry.example/smart-deal:abc123"
       when /pilot_metrics_export\.rb/
@@ -446,6 +568,35 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
       end
     RUBY
     File.chmod(0o755, path)
+  end
+
+  def capture_document(body)
+    {
+      "events" => [
+        {
+          "kind" => "published_answer",
+          "correlation_id" => "turn:local",
+          "answer" => {
+            "evidence" => "external",
+            "path" => "bodies/b0001.txt",
+            "sha256" => Digest::SHA256.hexdigest(body),
+            "absent" => false
+          }
+        }
+      ]
+    }
+  end
+
+  def write_capture_tar(path, body)
+    json = JSON.generate(capture_document(body))
+    File.open(path, "wb") do |file|
+      Gem::Package::TarWriter.new(file) do |writer|
+        writer.mkdir("turn", 0o700)
+        writer.mkdir("turn/bodies", 0o700)
+        writer.add_file_simple("turn/capture.json", 0o600, json.bytesize) { |io| io.write(json) }
+        writer.add_file_simple("turn/bodies/b0001.txt", 0o600, body.bytesize) { |io| io.write(body) }
+      end
+    end
   end
 
   def write_fake_rails

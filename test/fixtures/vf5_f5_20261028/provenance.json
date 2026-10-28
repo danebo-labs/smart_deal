@@ -1,0 +1,18 @@
+{
+  "episode": "ep_71e5c284b0315a41",
+  "image": "39f2d63c54b6d7fa5d40da0d632033a892a9e82f",
+  "captured_on": "2026-10-28",
+  "turns": {
+    "t1_open": "f759b2a9-bb50-4d7c-8965-ef1797cd5c8d",
+    "t1_focused": "6d0691f7-d6ce-43ce-869a-d841a9925133",
+    "t2": "a0d2407a-4176-4e09-8ab7-93c58c3da10d",
+    "t3": "e40a8445-f605-4eeb-9630-c8cee1974dc7",
+    "t4": "603a12cc-95bd-4ef5-ab3d-0ce79b5534d3",
+    "t5": "3328a88a-b63b-4165-8987-3fbbd52bd704"
+  },
+  "bodies": "capture retrieval bodies, not reconstructed plans",
+  "definition_catalog": "test/fixtures/vf5_continuity_20261027/chunks",
+  "definition_catalog_manifest_sha256": "3472b6310640454cb79db75c0a5e9b97cdb9e0f8a7fa1eefebc6498ee8d0abc0",
+  "definition_catalog_source": "candidate_r2",
+  "omitted": "account emails, user ids, and model prompts are not copied; turn values are the capture request ids"
+}

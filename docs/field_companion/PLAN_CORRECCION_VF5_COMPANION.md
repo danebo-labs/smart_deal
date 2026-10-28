@@ -6,6 +6,21 @@
 
 La comprobación web del guion de cinco frases, episodio `ep_71e5c284b0315a41`, imagen `39f2d63`, está en [INFORME_GUI_VF5_F5_2026-10-28.md](INFORME_GUI_VF5_F5_2026-10-28.md). F5 cumple. T2 deja el LED encendido sin indicador y guarda la pregunta de cuál LED junto a #21. T3 no funda #21 en el LED genérico. T5 guarda el desconocimiento de #21 y del contacto sobre esa pregunta y deja la pregunta del LED pendiente. La selección explícita del VF5 no acredita selección automática. El episodio `ep_032b31a16efcf861` queda fuera: no recorre las cinco frases.
 
+`test/controllers/vf5_f5_web_regression_test.rb` protege ese recorrido aceptado: entrada HTTP, interpretación y plan capturados el 28, episodio recargado, filtro documental tras la confirmación explícita y antecedente del turno siguiente. No sustituye la observación web ni demuestra estabilidad del modelo en vivo. No reproduce el timeout de transporte de T4 ni el episodio anterior. No llama a AWS.
+
+```
+BUNDLE_PATH=vendor/bundle RAILS_ENV=test bin/rails test \
+  test/controllers/vf5_f5_web_regression_test.rb \
+  test/services/rag/vf5_continuity_replay_test.rb \
+  test/services/rag/vf5_gui_replay_test.rb \
+  test/services/rag/continuity_datum_test.rb \
+  test/services/rag/work_context_reducer_test.rb \
+  test/services/rag/companion_plan_test.rb \
+  test/services/rag/companion_f3_disambiguation_test.rb
+```
+
+Tres ejemplos de ese archivo de F3 ya fallan en este `main`: después de responder la pregunta de alcance, el pendiente no queda vacío. No son este recorrido y no se corrigen aquí.
+
 ## Respaldo del componente — 27 de octubre de 2026, 15:00
 
 **Precedencia.** Esta sección es el estado local vigente. No reabre F2, F3 ni F4. No aprueba F5. No cambia S3, la base, los embeddings, fuentes, ingesta, prompts, modelos ni las etiquetas «Manual / Guía Danebo». El plano Elemont no arranca.

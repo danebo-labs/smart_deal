@@ -588,7 +588,9 @@ class Vf5F4Publication
   def omission_sentence(omitted)
     return nil if omitted.empty?
 
-    check = Struct.new(:links, :steps, :question, :omissions).new([], [], nil, omitted)
+    check = Struct.new(:links, :steps, :question, :omissions, :rejections, keyword_init: true).new(
+      links: [], steps: [], question: nil, omissions: omitted, rejections: []
+    )
     facts = Struct.new(:facts).new([])
     statements = Struct.new(:statements).new([])
     Rag::CompanionPlanRender.call(check, facts: facts, statements: statements)

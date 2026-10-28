@@ -314,8 +314,8 @@ class Rag::Phase2PinnedTurnTest < ActiveSupport::TestCase
     assert_empty(first_bodies.pluck("sha256") & second_bodies.pluck("sha256"))
     assert_equal first_answer, File.binread(turn1.join("answer.txt"))
     assert_equal second_answer, File.binread(turn2.join("answer.txt"))
-    assert_equal [ first_answer ], body_texts(turn1, first_bodies)
-    assert_equal [ second_answer ], body_texts(turn2, second_bodies)
+    assert_answer_references(turn1, first_bodies, first_answer)
+    assert_answer_references(turn2, second_bodies, second_answer)
     %w[session_id active_episode live_episode_id document_focus pending_question counters].each do |key|
       assert_same_observed first_after[key], before[key], key
     end
@@ -419,8 +419,33 @@ class Rag::Phase2PinnedTurnTest < ActiveSupport::TestCase
     end
   end
 
-  def body_texts(turn_directory, refs)
-    refs.map { |ref| File.binread(Pathname(turn_directory).join(ref["path"])) }
+  # The published answer, the shown text, and the stored full text are three
+  # captures of the same reply. prompt_reply is the same text when the turn
+  # stores one. Each reference keeps its own file.
+  def assert_answer_references(turn_directory, refs, answer)
+    fields = refs.pluck("field")
+    assert_empty(fields - %w[answer presented full_content prompt_reply])
+    %w[answer presented full_content].each do |field|
+      assert_equal 1, fields.count(field), field
+    end
+    assert_operator fields.count("prompt_reply"), :<=, 1
+
+    published = refs.find { |ref| ref["field"] == "answer" }
+    presented = refs.find { |ref| ref["field"] == "presented" }
+    full = refs.find { |ref| ref["field"] == "full_content" }
+    reply = refs.find { |ref| ref["field"] == "prompt_reply" }
+    assert_equal presented["sequence"], full["sequence"]
+    assert_not_equal published["sequence"], presented["sequence"]
+    assert_equal presented["sequence"], reply["sequence"] if reply
+    paths = refs.pluck("path")
+    assert_equal paths.size, paths.tally.size
+
+    refs.each do |ref|
+      path = Pathname(turn_directory).join(ref["path"])
+      body = File.binread(path)
+      assert_equal answer, body, ref["field"]
+      assert_equal Digest::SHA256.hexdigest(body), ref["sha256"], ref["field"]
+    end
   end
 
   def quiet_converse

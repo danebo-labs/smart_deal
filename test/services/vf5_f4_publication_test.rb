@@ -380,6 +380,7 @@ class Vf5F4PublicationTest < ActiveSupport::TestCase
     report = publish(remote: { KEY => "solo la portada" }, candidate: { KEY => "solo la portada" }, rehydrate: true)
 
     assert_nil report["stopped"], report.dig("stopped", "message")
+    assert_nil report["rehydrate_stopped"], report.dig("rehydrate_stopped", "message")
     assert_equal "present", report.dig("rehydration", "catalog")
     assert_nil report.dig("rehydration", "added_filename")
     assert_equal "target_not_loaded", report.dig("rehydration", "omitted", 0, "reason")

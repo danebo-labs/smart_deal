@@ -19,7 +19,7 @@ BUNDLE_PATH=vendor/bundle RAILS_ENV=test bin/rails test \
   test/services/rag/companion_f3_disambiguation_test.rb
 ```
 
-Tres ejemplos de ese archivo de F3 ya fallan en este `main`: después de responder la pregunta de alcance, el pendiente no queda vacío. No son este recorrido y no se corrigen aquí.
+La pregunta de alcance contestada se retira del pendiente. `bind_documented_answer` ya guardaba la respuesta; el cierre la dejaba fuera porque `open_documented_question?` excluye `aspect: scope`, y el mensaje siguiente podía heredar esa pregunta. El cierre de la pregunta contestada ahora incluye ese alcance. Una aclaración distinta que sigue en `shown` permanece. Un «sí» sigue sin decir qué se revisó y sin confirmar la comprobación mecánica. F5 no se reabre: el recorrido web observado sigue aceptado.
 
 ## Respaldo del componente — 27 de octubre de 2026, 15:00
 

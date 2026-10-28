@@ -83,7 +83,7 @@ module Rag
 
     def self.clear_matching_pending!(episode, question)
       pending = episode.pending_question
-      return unless open_documented_question?(pending)
+      return unless closable_documented_question?(pending)
       return unless FollowupQueryRewriter.normalize_label(pending["question"]) ==
         FollowupQueryRewriter.normalize_label(question)
 
@@ -94,6 +94,16 @@ module Rag
       else
         episode.clear_pending!
       end
+    end
+
+    # A scope question is not the open #21 datum. The answer that belongs to
+    # it still retires it. A different clarification kept in shown stays open.
+    def self.closable_documented_question?(pending)
+      return false unless pending.is_a?(Hash) && pending["type"] == "documented_context"
+      return false if pending["question"].blank?
+      return pending["about"].present? if pending["aspect"] == "scope"
+
+      Array(pending["targets"]).any?
     end
 
     # The answered datum leaves. A different clarification that was published
@@ -286,6 +296,7 @@ module Rag
     CONTINUATION_FILLER = %w[que como cual cuando donde y o a el la lo los las un una me te se por para con del].to_set
     private_class_method :unknown_clarification?, :published_documented_question,
       :open_documented_question?, :open_answer?, :clear_matching_pending!,
+      :closable_documented_question?,
       :shown_documented_question, :chosen_unknown_datum, :same_question_text?, :clear_shown!,
       :question_datum_text, :datum_parts, :other_scope?, :other_property?, :other_entity?,
       :datum_covers?, :unspecified_unknown?, :promote_shown_question, :generic_entity?,

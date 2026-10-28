@@ -214,6 +214,12 @@ class Rag::CompanionF3DisambiguationTest < ActiveSupport::TestCase
     assert_nil paraphrase.question
     assert_match(/\Apresence_reask:/, rejection(paraphrase, "question"))
     assert_not_includes render_of(paraphrase, statements, later), "es lo que ves"
+
+    settle(episode, follow_up("Revisé la fotocélula y no está activada"), "Revisé la fotocélula y no está activada", "query:later-cell")
+    cell = episode.observations.find { |row| row["text"] == "Revisé la fotocélula y no está activada" }
+    assert_nil cell["answers"]
+    assert_nil episode.pending_question
+    assert episode.checks.none? { |row| row["subject"].to_s.match?(/marco|puerta|obstruc/) && row["status"] == "done" }
   end
 
   test "local replay of the captured obstruction question publishes the clarification" do
@@ -375,6 +381,56 @@ class Rag::CompanionF3DisambiguationTest < ActiveSupport::TestCase
     text = render_of(blocked, statements, later)
     assert_not_includes text, "limitado a «sí»"
     assert_not_includes text, "ya informaste"
+  end
+
+  test "a scope limit retires the answered question and leaves another clarification open" do
+    content = <<~TEXT
+      • La puerta se re-abre sola.
+      – Comprobar que no hay una obstrucción mecánica en la puerta.
+    TEXT
+    statements = Rag::CompanionStatements.parse([ obstruction_chunk(content) ])
+    step = statements.statements.find(&:step?)
+    episode = episode_for("La puerta se reabre sola", [ REPORT ])
+    facts = Rag::CompanionCaseFacts.build(episode)
+    plan = { "steps" => [ step.id ], "question" => MODEL_QUESTION, "question_about" => [ step.id ] }
+    checked = check_plan(plan, facts, statements)
+    prepared = Rag::CompanionPlan::Prepared.new(
+      params: {}, system: "", user: "", facts: facts, statements: statements,
+      turns: [], chunks: [ obstruction_chunk(content) ]
+    )
+    composed = Rag::CompanionPlan.compose(CompanionPlanResponse.build(plan), prepared)
+    led = "¿Cuál LED está encendido?"
+    pending = composed.pending.merge(
+      "shown" => {
+        "question" => led,
+        "targets" => [
+          {
+            "item" => "Fotocélula.", "document_key" => "s3://fixture/VF5.pdf",
+            "filename" => "chunk_p7_3.txt", "page" => "7"
+          }
+        ]
+      }
+    )
+    with_flags do
+      Rag::ActiveEpisodeTurn.apply_assistant(
+        state: episode, text: composed.text, pending_question: pending, correlation_id: "query:scope-shown"
+      )
+    end
+    limit = "Solo el marco de la puerta; no revisé el resto"
+    settle(episode, follow_up(limit), limit, "query:scope-limit")
+    stored = episode.observations.find { |row| row["text"] == limit }
+    assert_equal checked.question, stored.dig("answers", "q")
+    assert_equal "scope", stored.dig("answers", "aspect")
+    assert_equal REPORT, stored.dig("answers", "about")
+    assert_nil stored.dig("answers", "r")
+    assert_equal led, episode.pending_question["question"]
+    assert_nil episode.pending_question["aspect"]
+    assert_nil episode.pending_question["shown"]
+    assert_equal "Fotocélula.", episode.pending_question.dig("targets", 0, "item")
+    assert_not_equal :complete, Rag::ReportedOperation.correspondence(
+      report_text: limit, result: nil, status: "done", statement_text: step.text
+    )
+    assert episode.checks.none? { |row| row["status"] == "done" }
   end
 
   test "a scope reply leaves a different documentary question open" do

@@ -1,5 +1,11 @@
 # Corrección y validación del companion sobre el VF5
 
+## Comprobación web — 28 de octubre de 2026
+
+**Precedencia.** Esta sección es el estado vigente. No reabre F2, F3 ni F4. No cambia S3, la base, los embeddings, fuentes, ingesta, prompts, modelos ni las etiquetas «Manual / Guía Danebo». El plano Elemont no arranca.
+
+La comprobación web del guion de cinco frases, episodio `ep_71e5c284b0315a41`, imagen `39f2d63`, está en [INFORME_GUI_VF5_F5_2026-10-28.md](INFORME_GUI_VF5_F5_2026-10-28.md). F5 cumple. T2 deja el LED encendido sin indicador y guarda la pregunta de cuál LED junto a #21. T3 no funda #21 en el LED genérico. T5 guarda el desconocimiento de #21 y del contacto sobre esa pregunta y deja la pregunta del LED pendiente. La selección explícita del VF5 no acredita selección automática. El episodio `ep_032b31a16efcf861` queda fuera: no recorre las cinco frases.
+
 ## Respaldo del componente — 27 de octubre de 2026, 15:00
 
 **Precedencia.** Esta sección es el estado local vigente. No reabre F2, F3 ni F4. No aprueba F5. No cambia S3, la base, los embeddings, fuentes, ingesta, prompts, modelos ni las etiquetas «Manual / Guía Danebo». El plano Elemont no arranca.

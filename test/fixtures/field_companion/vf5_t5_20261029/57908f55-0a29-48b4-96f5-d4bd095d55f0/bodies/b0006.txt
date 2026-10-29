@@ -1,0 +1,98 @@
+Mensaje de este turno:
+No sé cómo identificar si está activada la entrada #21 ni cómo saber si hay un contacto cerrado entre #21 y #23. ¿Qué información necesitas de mí para orientar el caso?
+
+Caso (estado actual, dicho por el técnico; no es documentación):
+G1 [objetivo del técnico]: «La puerta se reabre sola durante el cierre».
+I1 [identidad del equipo]: «Fermator».
+I2 [identidad del equipo]: «Fermator VF5+».
+O1 [observación del técnico]: «La puerta se reabre sola durante el cierre».
+O2 [observación del técnico]: «no veo obstrucción».
+O3 [observación del técnico]: «el LED está encendido».
+O4 [respuesta del técnico a «¿Está activada la fotocélula o la entrada de re-apertura (#21)?»]: «no sé».
+N1 [comprobación que el técnico dice no haber hecho]: «Todavía no he revisado el ajuste de #54 ni he hecho mediciones».
+N2 [comprobación que el técnico dice no haber hecho]: «Todavía no he revisado el ajuste de #54 ni he hecho mediciones».
+C1 [comprobación que el técnico dice haber hecho]: «Revisé la fotocélula y no está activada». Resultado: «no está activada».
+
+Turnos del técnico, en orden. El mensaje de este turno no se repite.
+- [correlación: query:b3dc47c1-d192-42b5-9db4-b9a22db8e781] Estoy revisando un operador de puerta Fermator VF5+. La puerta se reabre sola durante el cierre. El LED está apagado y no veo obstrucción. Todavía no he revisado el ajuste de #54 ni he hecho mediciones. ¿Cómo seguimos?
+- [correlación: query:f530efb7-0cc3-415c-863e-9b3aa9a3e8c1] Corrijo un dato: el LED está encendido, no apagado.
+- [correlación: query:657f37aa-98a5-444e-8e68-ebccdc65014e] Revisé la fotocélula y no está activada.
+- [correlación: query:95143d54-8030-4dc8-9118-c6b5a7c7e440] ¿Qué sigue?
+
+Conclusión previa de Danebo. No es un hecho confirmado.
+Para este síntoma, «La puerta se re-abre sola», la documentación indica [1]:
+- «Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)» [1]; dijiste «Todavía no he revisado el ajuste de #54 ni he hecho mediciones», así que sigue pendiente.
+- «Comprobar que no hay una obstrucción mecánica en la puerta» [1]; reportaste «no veo obstrucción», que es una observación: esta comprobación no consta como hecha.
+- «En caso que el problema persista, desconectar la fotocélula y volver a pulsar el botón de TEST»; «Si la puerta no se abre o cierra completamente, debe haber una obstrucción mecánica en la puerta» [1].
+También informaste: «Revisé la fotocélula y no está activada».
+
+Documentación (afirmaciones numeradas; usa sus ids):
+[1] Módulo electrónico VF5+ Fermator, página 7.0
+S1.1 (título): 5.6 Relés de salida e indicadores LED (del 30 al 41)
+S1.2 (texto): Los relés de salida han sido dispuestos para dar información permanentemente al controlador principal del ascensor sobre el estado de las puertas.
+S1.3 (texto): Los contactos de salida de los relés pueden ser usados para dar información como «puerta totalmente abierta», «puerta totalmente cerrada», «fotocélula obstruida», «obstrucción».
+S1.4 (síntoma o apartado): Abierta.
+S1.5 (texto): Indicador LED y relé activado cuando la puerta está totalmente abierta.
+S1.6 (síntoma o apartado): Cerrada.
+S1.7 (texto): Indicador LED y relé activado cuando la puerta está totalmente cerrada y bloqueada.
+S1.8 (síntoma o apartado): Fotocélula.
+S1.9 (texto): Indicador LED y relé activado cuando la fotocélula o la entrada de re-apertura está activada.
+S1.10 (síntoma o apartado): Obstrucción.
+S1.11 (texto): Indicador LED y relé activado cuando se detecta un obstáculo que impide a la puerta cerrarse.
+S1.12 (texto): La señal se deshabilita cuando la puerta alcanza la posición de abierta o cerrada.
+S1.13 (síntoma o apartado): Estado.
+S1.14 (texto): LED parpadeante indicando condiciones apropiadas de trabajo.
+S1.15 (texto): Etiquetas de la figura (cuatro bloques de contacto de relé, cada uno con tres bornes):
+S1.16 (texto): ABIERTO — bornes 30, 31, 32
+S1.17 (texto): CERRADO — bornes 33, 34, 35
+S1.18 (texto): FOTOCÉLULA — bornes 36, 37, 38
+S1.19 (texto): OBSTRUCCIÓN — bornes 39, 40, 41
+S1.21 (título): 5.7 Pulsador de Test (50)
+S1.22 (texto): Utilizar el pulsador de TEST causará un ciclo de apertura o cierre de la puerta.
+[2] Módulo electrónico VF5+ Fermator, página 12.0
+S2.1 (título): 8.2 Funcionamiento normal
+S2.2 (síntoma o apartado): La puerta solo cierra 35 cm.
+S2.3 (paso de «La puerta solo cierra 35 cm.»): Este es el paso libre de un controlador que no ha sido ajustado. Por tanto, se requiere un autoajuste (ver proceso de autoajuste).
+S2.4 (síntoma o apartado): La puerta se abre pero no se cierra.
+S2.5 (paso de «La puerta se abre pero no se cierra.»): Comprobar si el LED de la fotocélula esta activado. Si lo está, verificar que la fotocélula no está bloqueada, o la entrada OPEN está activa (#8) continuamente.
+S2.6 (nota de conflicto): [CONFLICTO_DOCUMENTAL C2: 8.2 (PDF p. 12) llama «entrada OPEN» al #8 y «señal de cerrado» al #12; 5.2 (PDF p. 6) y la placa (PDF p. 4 y p. 16) rotulan 8 = Señal cerrar / CLOSE y 12 = Señal abrir / OPEN. El documento no resuelve la contradicción: REQUIRES_FIELD_VERIFICATION.]
+S2.7 (paso de «La puerta se abre pero no se cierra.»): Comprobar que la señal de cerrado (#12) llega al sistema, utilizando un multímetro o la consola. Cambiar el control VF si la tensión llega pero la puerta no se cierra.
+S2.8 (paso de «La puerta se abre pero no se cierra.»): Comprobar si la señal de re-apertura (#21) está activada.
+S2.9 (paso de «La puerta se abre pero no se cierra.»): Comprobar que en la señal de apertura no hay un voltaje erróneo.
+[3] Módulo electrónico VF5+ Fermator, página 4.0
+S3.1 (texto): 3 Conexionado
+S3.2 (texto): Dibujo de conexionado del módulo VF5+ (Fermator AUTOMATIC DOORS FOR LIFTS).
+S3.3 (texto): La página no tiene texto explicativo, pasos ni tabla: lo que sigue son las etiquetas impresas en el dibujo y las conexiones que el dibujo traza.
+S3.4 (texto): Placa VF5+, bornes y elementos impresos:
+S3.5 (texto): INPUTS: 8 CLOSE, 9 OUT +12V, 10 COM, 11 0V, 12 OPEN.
+S3.6 (texto): SUPPLY: 7 L, 6 PE, 5 N. Dos fusibles FUS 4A SF. Rango impreso: 100…230V AC / DC.
+S3.7 (nota de conflicto): [CONFLICTO_DOCUMENTAL C1: la placa impresa (PDF p. 4 y p. 16) rotula SUPPLY 7 L, 6 PE, 5 N; la Fig. 3 (PDF p. 6) rotula N—7 y L—5. El documento no dice cuál prevalece: REQUIRES_FIELD_VERIFICATION sobre la placa instalada.]
+S3.8 (texto): MOTOR 56. ENCODER 55 (PM / ASYNC).
+S3.9 (texto): PHOTOCELL: RECEIVER 19 y 20, EMITTER 17 y 18.
+S3.10 (texto): PRIORITY INPUTS: 26 FLOOR LEVEL, 21 RE-OPEN, 25 SLOW CLOSE, 23 +12V COM.
+S3.11 (texto): Relés de salida, cada uno con su LED: OPEN 30 31 32, CLOSED 33 34 35, PHOTOCELL 36 37 38, OBSTRUCTION 39 40 41. LED OK STATUS.
+S3.12 (texto): Pulsadores: 50 TEST «Push to check the door», 51 AUTOADJUSTMENT «Push to calibrate the door».
+S3.13 (texto): Potenciómetros: 52 CLOSE SPEED, 53 OPEN SPEED, 54 SAFETY.
+S3.14 (texto): 13 SERIAL PORT, cableado en el dibujo al dispositivo de mano.
+S3.15 (texto): Interruptor DIP 1 a 4 (ON / OFF): DIP 1 ON 1 INPUT / OFF 2 INPUTS; DIP 2 LANDING DOOR ON AUTOMATIC / OFF MANUAL; DIP 3 pictograma de sentido de apertura, ON / OFF; DIP 4 MASTER ON / SLAVE OFF.
+S3.16 (texto): «Immunity EN 12016: 2004 Industrial level». «DO NOT OPEN THE COVER».
+S3.17 (nota de conflicto): [CONFLICTO_DOCUMENTAL C4: la placa (PDF p. 4 y p. 16) imprime «EN 12016: 2004»; el texto de 5.1 (PDF p. 6) y la tabla de normas (PDF p. 18) citan «EN 12016:2013».]
+S3.18 (texto): Código impreso junto a la alimentación, lectura incierta en esta reproducción: «Q0LVF5B/C00E0».
+S3.19 (texto): Potenciómetros 52, 53 y 54, marcas del dibujo:
+S3.20 (texto): 52 CLOSE SPEED y 53 OPEN SPEED: «−» arriba a la izquierda del dial y «+» abajo a la izquierda. Una flecha curva bajo cada dial.
+S3.23 (texto): Pictogramas: 53 puerta abriéndose con velocímetro − / +; 52 puerta cerrándose con velocímetro − / +; 54 rampa de barras con «N» y puerta cerrándose sobre una persona, con marcas de impacto y flecha curva; 50 puerta con flechas circulares de abrir y cerrar; 51 regla sobre la puerta.
+S3.24 (texto): Conexiones trazadas en el dibujo:
+S3.26 (texto): Los cables «5m..Ref.CFT-FC00.C0000» y «3m..Ref.CFT-FCDM.C0000» van de la fotocélula al bloque PHOTOCELL de la placa.
+S3.27 (texto): «Opcional / Optional» rotula los recuadros grises punteados: el alimentador de emergencia y el dispositivo de mano.
+S3.28 (texto): Alimentador de emergencia («ALIMENTADOR DE EMERGENCIA / EMERGENCY SUPPLIER», opcional):
+S3.30 (texto): ALIMENTACIÓN / 230v. AC SUPPLY: 1 L2, 2 GND, 3 L1, desde «230V».
+S3.31 (texto): RELLANO PISO / LANDING FLOOR: 66 y 67, con un interruptor.
+S3.33 (texto): ENTRADAS / INPUTS: DIP ON 1 / OFF 2. ESTADO / STANDBY: BAT ON. BATERÍA / BATTERY: 29 (+), 28 (−). Batería «12 V 2 Ah».
+S3.34 (texto): FUSE 20A (letra pequeña, lectura incierta). «NO ABRIR LA TAPA / DO NOT OPEN THE COVER».
+[4] Módulo electrónico VF5+ Fermator, página 7, definición añadida de #21
+S4.1 (título): 5.5 Otras entradas (26, 21, 25, 23)
+S4.2 (título): 21.- Re-apertura
+S4.3 (texto): Esta señal se usa para instalar el interruptor de la puerta de cabina o una barrera externa.
+S4.4 (texto): Para activar esta señal, se debe conectar la entrada re-apertura (21) con la entrada de +12V (23).
+S4.5 (texto): Utilizar contactos libres de tensión.
+S4.6 (texto): La señal de re-apertura tiene prioridad sobre la señal cerrar.

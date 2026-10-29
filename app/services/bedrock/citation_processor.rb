@@ -76,7 +76,7 @@ class Bedrock::CitationProcessor
   # @return [Array<Hash>]
   def build_numbered_references(citations, answer_text, question: nil)
     citation_numbers = answer_text.to_s.scan(/\[(\d+)\]/).flatten.map(&:to_i).uniq.sort
-    seen_titles = {}
+    seen_fragments = {}
     rewrites = {}
 
     references = citation_numbers.filter_map do |num|
@@ -84,13 +84,14 @@ class Bedrock::CitationProcessor
       next unless citation
 
       reference = numbered_reference(citation, num, question: question)
-      earlier = seen_titles[reference[:title]]
+      key = duplicate_key(citation)
+      earlier = key && seen_fragments[key]
       if earlier
         rewrites[num] = earlier
         next
       end
 
-      seen_titles[reference[:title]] = num
+      seen_fragments[key] = num if key
       reference
     end
     rewrite_duplicate_markers(answer_text, rewrites)
@@ -148,8 +149,10 @@ class Bedrock::CitationProcessor
     }
   end
 
-  # A later [n] whose title and page already appear keeps the earlier number.
-  # Consecutive markers that land on that same number become one chip.
+  # A later [n] that cites the same document fragment keeps the earlier number.
+  # Title and page are not that identity: two chunks of one page stay apart,
+  # and each keeps the excerpt of the passage that supports its claim.
+  # Consecutive markers that land on the same number become one chip.
   def rewrite_duplicate_markers(answer_text, rewrites)
     return if rewrites.empty? || answer_text.nil? || answer_text.frozen?
 
@@ -158,6 +161,42 @@ class Bedrock::CitationProcessor
       "[#{rewrites.fetch(number, number)}]"
     end
     answer_text.replace(rewritten.gsub(/(\[\d+\])\1+/, '\1'))
+  end
+
+  # Location when the citation has one; otherwise the definition or chunk
+  # provenance already stored on the citation. A content digest is only the
+  # fallback when those identifiers are absent, so identical text of the same
+  # document still collapses and a different passage does not.
+  def duplicate_key(citation)
+    metadata = (citation[:metadata] || citation["metadata"] || {}).to_h.stringify_keys
+    document = metadata["original_source_uri"].presence ||
+               metadata["document_id"].presence ||
+               metadata["document_key"].presence
+    fragment = fragment_key(citation, metadata)
+    return if fragment.blank?
+
+    [ document.to_s, fragment ]
+  end
+
+  def fragment_key(citation, metadata)
+    location = citation[:location] || citation["location"]
+    if location.present?
+      located = location[:uri].presence || location["uri"].presence ||
+                location[:key].presence || location["key"].presence
+      return located if located.present?
+    end
+
+    metadata["definition_provenance"].presence ||
+      metadata["provenance"].presence ||
+      metadata["content_sha256"].presence ||
+      content_digest(citation[:content] || citation["content"])
+  end
+
+  def content_digest(content)
+    text = content.to_s
+    return if text.blank?
+
+    Digest::SHA256.hexdigest(text)
   end
 
   TOOLTIP_EXCERPT_MAX_CHARS = 150

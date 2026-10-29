@@ -1,0 +1,86 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: Relés de salida, Indicadores LED, Abierta, Cerrada, Fotocélula, Obstrucción, Estado LED, Pulsador de Test 50]
+
+5.6 Relés de salida e indicadores LED (del 30 al 41)
+Los relés de salida han sido dispuestos para dar información permanentemente al controlador principal del ascensor sobre el estado de las puertas. Los contactos de salida de los relés pueden ser usados para dar información como «puerta totalmente abierta», «puerta totalmente cerrada», «fotocélula obstruida», «obstrucción».
+ • Abierta.
+Indicador LED y relé activado cuando la puerta está totalmente abierta.
+ • Cerrada.
+Indicador LED y relé activado cuando la puerta está totalmente cerrada y bloqueada.
+ • Fotocélula.
+Indicador LED y relé activado cuando la fotocélula o la entrada de re-apertura está activada.
+ • Obstrucción.
+Indicador LED y relé activado cuando se detecta un obstáculo que impide a la puerta cerrarse. La señal se deshabilita cuando la puerta alcanza la posición de abierta o cerrada.
+ • Estado.
+LED parpadeante indicando condiciones apropiadas de trabajo.
+
+Etiquetas de la figura (cuatro bloques de contacto de relé, cada uno con tres bornes):
+- ABIERTO — bornes 30, 31, 32
+- CERRADO — bornes 33, 34, 35
+- FOTOCÉLULA — bornes 36, 37, 38
+- OBSTRUCCIÓN — bornes 39, 40, 41
+[NOTA_EXTRACCION] La función de cada borne individual dentro de cada grupo (común / normalmente abierto / normalmente cerrado) no está impresa: DATA_NOT_AVAILABLE; REQUIRES_FIELD_VERIFICATION (símbolo de contacto de la figura sin texto).
+
+5.7 Pulsador de Test (50)
+Utilizar el pulsador de TEST causará un ciclo de apertura o cierre de la puerta.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-F6E84199D91E0DD2
+SOURCE_SECTION_OR_PAGE: 5.6 Relés de salida e indicadores LED (del 30 al 41) — Abierta
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Relé/LED Abierta (figura: ABIERTO, bornes 30, 31, 32)
+EXPECTED_RESULT: Indicador LED y relé activado cuando la puerta está totalmente abierta.
+DETAILS: connection=bornes 30-32 según etiqueta ABIERTO de la figura
+EVIDENCE: Indicador LED y relé activado cuando la puerta está totalmente abierta.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-926C4C39629DB5DD
+SOURCE_SECTION_OR_PAGE: 5.6 Relés de salida e indicadores LED (del 30 al 41) — Cerrada
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Relé/LED Cerrada (figura: CERRADO, bornes 33, 34, 35)
+EXPECTED_RESULT: Indicador LED y relé activado cuando la puerta está totalmente cerrada y bloqueada.
+DETAILS: connection=bornes 33-35 según etiqueta CERRADO de la figura
+EVIDENCE: Indicador LED y relé activado cuando la puerta está totalmente cerrada y bloqueada.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-C190739E1B28BAD8
+SOURCE_SECTION_OR_PAGE: 5.6 Relés de salida e indicadores LED (del 30 al 41) — Fotocélula
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Relé/LED Fotocélula (figura: FOTOCÉLULA, bornes 36, 37, 38)
+EXPECTED_RESULT: Indicador LED y relé activado cuando la fotocélula o la entrada de re-apertura está activada.
+DETAILS: connection=bornes 36-38 según etiqueta FOTOCÉLULA de la figura
+EVIDENCE: cuando la fotocélula o la entrada de re-apertura está activada
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-FA05844E9673A336
+SOURCE_SECTION_OR_PAGE: 5.6 Relés de salida e indicadores LED (del 30 al 41) — Obstrucción
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Relé/LED Obstrucción (figura: OBSTRUCCIÓN, bornes 39, 40, 41)
+EXPECTED_RESULT: Indicador LED y relé activado cuando se detecta un obstáculo que impide a la puerta cerrarse. La señal se deshabilita cuando la puerta alcanza la posición de abierta o cerrada.
+DETAILS: connection=bornes 39-41 según etiqueta OBSTRUCCIÓN de la figura
+EVIDENCE: La señal se deshabilita cuando la puerta alcanza la posición de abierta o cerrada.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-AB89A8219FC9D343
+SOURCE_SECTION_OR_PAGE: 5.6 Relés de salida e indicadores LED (del 30 al 41) — Estado
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: LED Estado
+EXPECTED_RESULT: LED parpadeante indicando condiciones apropiadas de trabajo.
+EVIDENCE: LED parpadeante indicando condiciones apropiadas de trabajo.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-33D95443650BAE45
+SOURCE_SECTION_OR_PAGE: 5.7 Pulsador de Test (50)
+RECORD_TYPE: FUNCTIONAL_TEST
+ACTION: Utilizar el pulsador de TEST (50)
+EXPECTED_RESULT: causará un ciclo de apertura o cierre de la puerta.
+EVIDENCE: Utilizar el pulsador de TEST causará un ciclo de apertura o cierre de la puerta.
+END_FIELD_RECORD

@@ -454,6 +454,7 @@ class Bedrock::CitationProcessorTest < ActiveSupport::TestCase
     duplicate = cited.find { |row| row["number"] == 7 }
     assert_equal first["title"], duplicate["title"]
     assert_equal first["page"], duplicate["page"]
+    assert_equal first["filename"], duplicate["filename"]
 
     citations = cited.map do |row|
       {
@@ -477,6 +478,7 @@ class Bedrock::CitationProcessorTest < ActiveSupport::TestCase
     pair = [ cited.find { |row| row["number"] == 1 }, cited.find { |row| row["number"] == 7 } ]
     assert_equal pair[0]["title"], pair[1]["title"]
     assert_equal pair[0]["page"], pair[1]["page"]
+    assert_equal pair[0]["filename"], pair[1]["filename"]
 
     citations = pair.map do |row|
       {
@@ -492,5 +494,204 @@ class Bedrock::CitationProcessorTest < ActiveSupport::TestCase
     assert_equal [ 1 ], references.pluck(:number)
     assert_equal "Codigos de Error BL6 — p. 4", references.first[:title]
     assert_equal "Er29 [1].", answer
+  end
+
+  test "keeps distinct fragments of the same document and page" do
+    manual = {
+      "canonical_name" => "Manual de puerta",
+      "page_number" => 7,
+      "original_source_uri" => "s3://bucket/manual.pdf",
+      "document_id" => "doc-1"
+    }
+    opening = "La puerta queda abierta cuando el relé de apertura está activo."
+    priority = "La señal de re-apertura tiene prioridad sobre la señal cerrar."
+    citations = [
+      fragment_citation("bulk_chunks/doc-1/chunk_p7_3.txt", opening, manual),
+      fragment_citation("bulk_chunks/doc-1/chunk_p12_1.txt", "Página distinta.", manual.merge("page_number" => 12)),
+      fragment_citation("bulk_chunks/doc-1/chunk_p4_1.txt", "Otra página.", manual.merge("page_number" => 4)),
+      fragment_citation("bulk_chunks/doc-1/chunk_p7_2.txt", priority, manual)
+    ]
+    answer = +"Indicación de abierta [1]. «#{priority}» [4]."
+
+    references = Bedrock::CitationProcessor.new.build_numbered_references(citations, answer)
+
+    assert_equal [ 1, 4 ], references.pluck(:number)
+    assert_equal "Manual de puerta — p. 7", references[0][:title]
+    assert_equal references[0][:title], references[1][:title]
+    assert_equal "chunk_p7_3.txt", references[0][:filename]
+    assert_equal "chunk_p7_2.txt", references[1][:filename]
+    assert_equal "bulk_chunks/doc-1/chunk_p7_3.txt", references[0][:location][:key]
+    assert_equal "bulk_chunks/doc-1/chunk_p7_2.txt", references[1][:location][:key]
+    assert_equal opening, references[0][:tooltip_excerpt]
+    assert_equal priority, references[1][:tooltip_excerpt]
+    assert_equal "Indicación de abierta [1]. «#{priority}» [4].", answer
+    references.each { |reference| assert_not reference.key?(:content) }
+  end
+
+  test "does not merge different documents that share a title and page" do
+    title = { "canonical_name" => "Manual de puerta", "page_number" => 7 }
+    cabin = "El contacto de cabina cierra el circuito."
+    landing = "El contacto de planta abre el circuito."
+    citations = [
+      fragment_citation(
+        "chunk_p7_1.txt",
+        cabin,
+        title.merge("original_source_uri" => "s3://bucket/cabina.pdf", "document_id" => "cabina")
+      ),
+      fragment_citation(
+        "chunk_p7_1.txt",
+        landing,
+        title.merge("original_source_uri" => "s3://bucket/planta.pdf", "document_id" => "planta")
+      )
+    ]
+    answer = +"Cabina [1]. Planta [2]."
+
+    references = Bedrock::CitationProcessor.new.build_numbered_references(citations, answer)
+
+    assert_equal [ 1, 2 ], references.pluck(:number)
+    assert_equal references[0][:title], references[1][:title]
+    assert_equal references[0][:page], references[1][:page]
+    assert_equal "chunk_p7_1.txt", references[0][:filename]
+    assert_equal "chunk_p7_1.txt", references[1][:filename]
+    assert_equal "s3://bucket/cabina.pdf", references[0][:metadata]["original_source_uri"]
+    assert_equal "s3://bucket/planta.pdf", references[1][:metadata]["original_source_uri"]
+    assert_equal cabin, references[0][:tooltip_excerpt]
+    assert_equal landing, references[1][:tooltip_excerpt]
+    assert_equal "Cabina [1]. Planta [2].", answer
+    references.each { |reference| assert_not reference.key?(:content) }
+  end
+
+  test "keeps the captured T5 priority fragment after citation processing" do
+    turn = t5_priority_turn
+    answer = turn.rendered.dup
+    references = Bedrock::CitationProcessor.new.build_numbered_references(
+      turn.citations, answer, question: turn.question
+    )
+    marker = answer[/#{Regexp.escape(turn.sentence)}» \[(\d+)\]/, 1].to_i
+    priority = references.find { |reference| reference[:number] == marker }
+    photo_marker = answer[/«Fotocélula» \[(\d+)\]/, 1].to_i
+    photo = references.find { |reference| reference[:number] == photo_marker }
+
+    assert_equal turn.priority_source, turn.citations.size
+    assert_equal turn.definition, turn.citations.last[:content]
+    assert_nil turn.citations.last[:location]
+    assert_equal turn.citations.first[:metadata]["x-amz-bedrock-kb-source-uri"],
+      turn.citations.last[:metadata]["x-amz-bedrock-kb-source-uri"]
+    assert_equal turn.rendered, answer
+    assert_not_equal turn.published, answer
+    assert_equal photo[:title], priority[:title]
+    assert_equal photo[:page], priority[:page]
+    assert_equal turn.priority_source, marker
+    assert_equal turn.photo_source, photo_marker
+    assert_includes priority[:metadata]["definition_provenance"], "chunk_p7_2.txt"
+    assert_equal turn.definition.truncate(150), priority[:tooltip_excerpt]
+    assert_includes turn.definition, turn.sentence
+    assert_nil priority[:location]
+    assert photo[:location][:key].end_with?("chunk_p7_3.txt")
+    assert_equal turn.indicators.truncate(150), photo[:tooltip_excerpt]
+    assert_includes turn.indicators, "Fotocélula"
+    assert_not_includes turn.indicators, turn.sentence
+    assert_not_equal priority[:tooltip_excerpt], photo[:tooltip_excerpt]
+    if priority[:matched_excerpt]
+      excerpt = priority[:matched_excerpt].delete_suffix("...").squish
+      assert_includes turn.definition.squish, excerpt
+      assert_not_includes turn.indicators, excerpt
+    end
+    references.each { |reference| assert_not reference.key?(:content) }
+  end
+
+  def fragment_citation(key, content, metadata)
+    {
+      content: content,
+      location: { key: key, uri: "s3://bucket/#{key}" },
+      metadata: metadata
+    }
+  end
+
+  T5PriorityTurn = Struct.new(
+    :citations, :rendered, :published, :question, :definition, :indicators,
+    :sentence, :priority_source, :photo_source, keyword_init: true
+  )
+
+  def t5_priority_turn
+    root = Rails.root.join(
+      "test/fixtures/field_companion/vf5_t5_20261029/57908f55-0a29-48b4-96f5-d4bd095d55f0"
+    )
+    events = JSON.parse(root.join("capture.json").read).fetch("events")
+    rendered = events.find { |event| event["kind"] == "companion_plan" }.fetch("rendered")
+    published = events.find { |event| event["kind"] == "published_answer" }.fetch("answer")
+    question = events.find { |event| event["kind"] == "user_message" }.fetch("sent")
+    quotes = events.find { |event| event["kind"] == "companion_publication" }.fetch("quotes")
+    sentence = "La señal de re-apertura tiene prioridad sobre la señal cerrar"
+    priority_quote = quotes.find { |item| item["text"] == sentence }
+    photo_quote = quotes.find { |item| item["text"] == "Fotocélula" }
+    retrieved = events.find { |event|
+      event["kind"] == "retrieval_results" && event["rows"]&.first&.dig("text").is_a?(Hash)
+    }
+    added = events.find { |event| event["kind"] == "companion_definitions" }.fetch("added").first
+    prompt = root.join("bodies/b0006.txt").read
+    definition = captured_source_text(prompt, priority_quote.fetch("source"))
+    rows = retrieved.fetch("rows")
+    indicators = root.join(rows.first.dig("text", "path")).read
+    citations = rows.map { |row| captured_retrieval_citation(root, row) }
+    citations << captured_definition_citation(citations.first, added, definition)
+
+    T5PriorityTurn.new(
+      citations: citations,
+      rendered: rendered,
+      published: published,
+      question: question,
+      definition: definition,
+      indicators: indicators,
+      sentence: sentence,
+      priority_source: priority_quote.fetch("source"),
+      photo_source: photo_quote.fetch("source")
+    )
+  end
+
+  def captured_retrieval_citation(root, row)
+    body = root.join(row.dig("text", "path")).read
+    uri = row.fetch("uri")
+    bucket, key = uri.delete_prefix("s3://").split("/", 2)
+    {
+      content: body,
+      location: { bucket: bucket, key: key, uri: uri, type: "s3" },
+      metadata: {
+        "canonical_name" => row["document"],
+        "page_number" => row["page"],
+        "document_id" => row["document_id"],
+        "original_source_uri" => body[/\[SOURCE_URI: (.+)\]/, 1],
+        "x-amz-bedrock-kb-source-uri" => uri
+      }
+    }
+  end
+
+  def captured_definition_citation(source, added, definition)
+    {
+      content: definition,
+      metadata: source[:metadata].merge(
+        "page_number" => added["page"],
+        "definition_of" => added["definition_of"],
+        "definition_provenance" => [
+          added["provenance"],
+          "página #{added["page"]}",
+          "sección #{added["section"]}",
+          "encabezado #{added["heading"]}"
+        ].join("; ")
+      )
+    }
+  end
+
+  def captured_source_text(prompt, source)
+    capturing = false
+    prompt.each_line.filter_map { |line|
+      if (heading = line.match(/\A\[(\d+)\]/))
+        capturing = heading[1].to_i == source
+        next
+      end
+      next unless capturing
+
+      line[/\AS#{source}\.\d+ \([^)]+\): (.+)\s*\z/, 1]
+    }.join("\n")
   end
 end

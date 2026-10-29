@@ -1,0 +1,61 @@
+[DOCUMENT: VF5.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]
+[SEARCH_ALIASES: 8.2 Funcionamiento normal, la puerta solo cierra 35 cm, paso libre, la puerta se abre pero no se cierra, LED de la fotocélula, entrada OPEN (#8), señal de cerrado (#12), señal de re-apertura (#21)]
+
+8.2 Funcionamiento normal
+• La puerta solo cierra 35 cm.
+– Este es el paso libre de un controlador que no ha sido ajustado. Por tanto, se requiere un autoajuste (ver proceso de autoajuste).
+• La puerta se abre pero no se cierra.
+– Comprobar si el LED de la fotocélula esta activado. Si lo está, verificar que la fotocélula no está bloqueada, o la entrada OPEN está activa (#8) continuamente.
+[CONFLICTO_DOCUMENTAL C2: 8.2 (PDF p. 12) llama «entrada OPEN» al #8 y «señal de cerrado» al #12; 5.2 (PDF p. 6) y la placa (PDF p. 4 y p. 16) rotulan 8 = Señal cerrar / CLOSE y 12 = Señal abrir / OPEN. El documento no resuelve la contradicción: REQUIRES_FIELD_VERIFICATION.]
+– Comprobar que la señal de cerrado (#12) llega al sistema, utilizando un multímetro o la consola. Cambiar el control VF si la tensión llega pero la puerta no se cierra.
+– Comprobar si la señal de re-apertura (#21) está activada.
+– Comprobar que en la señal de apertura no hay un voltaje erróneo.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-F91A9F9B22E54127
+SOURCE_SECTION_OR_PAGE: 8.2 Funcionamiento normal — La puerta solo cierra 35 cm.
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Se requiere un autoajuste (ver proceso de autoajuste).
+EXPECTED_RESULT: Este es el paso libre de un controlador que no ha sido ajustado.
+EVIDENCE: Este es el paso libre de un controlador que no ha sido ajustado.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-DB174242254A8BEE
+SOURCE_SECTION_OR_PAGE: 8.2 Funcionamiento normal — La puerta se abre pero no se cierra.
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Comprobar si el LED de la fotocélula esta activado.
+EXPECTED_RESULT: Si lo está, verificar que la fotocélula no está bloqueada, o la entrada OPEN está activa (#8) continuamente.
+EVIDENCE: Comprobar si el LED de la fotocélula esta activado.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-285A80F316C180EB
+SOURCE_SECTION_OR_PAGE: 8.2 Funcionamiento normal — La puerta se abre pero no se cierra.
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Comprobar que la señal de cerrado (#12) llega al sistema, utilizando un multímetro o la consola.
+EXPECTED_RESULT: Cambiar el control VF si la tensión llega pero la puerta no se cierra.
+DETAILS: tools=multímetro o la consola
+EVIDENCE: Cambiar el control VF si la tensión llega pero la puerta no se cierra.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-FF7D00F7CF9A3DB4
+SOURCE_SECTION_OR_PAGE: 8.2 Funcionamiento normal — La puerta se abre pero no se cierra.
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Comprobar si la señal de re-apertura (#21) está activada.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Comprobar si la señal de re-apertura (#21) está activada.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-33ADA964517BE8E8
+SOURCE_SECTION_OR_PAGE: 8.2 Funcionamiento normal — La puerta se abre pero no se cierra.
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Comprobar que en la señal de apertura no hay un voltaje erróneo.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Comprobar que en la señal de apertura no hay un voltaje erróneo.
+END_FIELD_RECORD

@@ -17,6 +17,78 @@ El segundo guion es la comprobación adicional acordada para ampliar el recorrid
 
 La imagen productiva más reciente acreditada por la exportación es `4a6deb9`. Los cambios documentales posteriores no implican deploy. Antes de una nueva ejecución confirmar imagen y episodio; conservar el caso investigado y usar únicamente el mecanismo delimitado de archivo e inicio limpio cuando corresponda. No asumir que logout, recarga o deploy limpian el caso.
 
+## Segundo guion VF5: primera apertura lenta tras un corte — 29 de octubre de 2026
+
+**Estado: preparado; pendiente de ejecución GUI y diagnóstico.** Desarrolla el primer punto de la cola vigente. No reabre F5, no declara `EPISODIO_VALIDADO` y no exige repetir el guion anterior. Es una conversación lineal de tres turnos del mismo caso, con selección explícita del VF5; no tres consultas independientes.
+
+### Respaldo comprobado en el PDF
+
+Manual **Módulo electrónico VF5+**, código **DOC-FE.IE.IN.016172.ES**, versión **0.4**, sección **5.8 Pulsador de autoajuste (51)**, **página impresa 7 / página 8 del archivo PDF**. ChatGPT revisó el texto y la página renderizada antes de preparar el guion.
+
+Extracto literal, con los saltos de línea recompuestos:
+
+> Una vez el autoajuste se haya completado los parámetros serán guardados en una EEPROM no-volátil. Las puertas se abrirán lentamente en la primera operación después de un fallo de alimentación para verificar el paso libre. Solo es necesario realizar otra vez el autoajuste para la configuración de los parámetros por defecto o cuando se realicen cambios como la conexión o desconexión de la fotocélula Fermator.
+
+Este es texto del fabricante, no una respuesta generada por Danebo. Las respuestas orientativas de abajo son interpretaciones acotadas para evaluar significado; no se exige que el modelo reproduzca su redacción. La vuelta al funcionamiento habitual en T2 es un dato aportado por el técnico en el escenario, no un resultado garantizado por el PDF. Tampoco se presupone que el autoajuste anterior estuviera correctamente realizado.
+
+### Tres intervenciones y expectativas
+
+**T1 — Técnico**
+
+> Estoy con un Fermator VF5+. Después de un corte de alimentación, al volver la corriente la puerta abrió muy despacio. ¿Por dónde empiezo?
+
+**Significado esperado:** reconocer el corte como antecedente; explicar con §5.8 que la primera apertura lenta puede corresponder a la verificación del paso libre y distinguirla de una lentitud persistente. Una pregunta útil es si ocurrió solo en la primera apertura o continúa en las siguientes.
+
+**Respuesta orientativa:** «El manual describe una primera apertura lenta tras un fallo de alimentación para verificar el paso libre. ¿Ocurrió solo esa primera vez o también en las siguientes aperturas?»
+
+No atribuir pérdida de parámetros ni indicar repetir el autoajuste únicamente por ese antecedente.
+
+**T2 — Técnico**
+
+> Fue solo la primera apertura. Después volvió a abrir y cerrar como antes.
+
+**Significado esperado:** incorporar que fue transitorio, relacionarlo con el comportamiento documentado y conservar ese dato para T3. No volver a preguntar si la lentitud persiste, ni registrar comprobaciones mecánicas, eléctricas o de seguridad que no se comunicaron.
+
+**Respuesta orientativa:** «Lo que describes es compatible con esa primera apertura lenta documentada. El manual indica que los parámetros del autoajuste se conservan en memoria no volátil.»
+
+La compatibilidad no valida todo el equipo ni acredita que se haya comprobado su seguridad.
+
+**T3 — Técnico**
+
+> No he cambiado la configuración ni conectado o desconectado la fotocélula. Con lo que te conté, ¿hace falta repetir el autoajuste?
+
+**Significado esperado:** integrar los tres turnos. El corte por sí solo y la primera apertura lenta descrita no justifican repetir el autoajuste con el respaldo de §5.8; el técnico informa además que no realizó esos cambios. No convertir esto en una regla universal de que nunca deba repetirse.
+
+**Respuesta orientativa:** «Por lo que has contado, esa primera apertura lenta tras el corte no es por sí sola motivo para repetir el autoajuste. La sección 5.8 conserva los parámetros en memoria no volátil y relaciona repetirlo con restablecer parámetros por defecto o realizar cambios como conectar o desconectar la fotocélula.»
+
+La pregunta no se guarda como un hecho; no se registra un autoajuste como realizado ni una avería como reparada. No se exigen números de cita concretos, preguntas idénticas ni respuestas con esta redacción literal.
+
+### Preparación, ejecución y exportación
+
+Grok prepara y recopila; Lahiri ejecuta la GUI. No modificar código, desplegar ni cambiar modelos/perfiles para preparar el recorrido.
+
+1. Verificar HEAD, imagen productiva y modelo/perfil efectivos por separado. Preservar fuera del contenedor las evidencias anteriores antes de aislar el caso.
+2. Verificar el mecanismo vigente `field_companion:isolate_web_trial`, comenzar por dry-run y confirmar la fila web exacta de `danebo-legacy` / `lahiri.sanchez@danebo.ai`. Cuenta esperada 1, usuario esperado 3 y sesión habitual 128: confirmarlos, no asumirlos. Aplicar solo tras las comprobaciones del mecanismo, con archivo previo y confirmación delimitada; preservar también la copia fuera del contenedor. No forzar `field_companion:start_clean_case` en producción.
+3. Comprobar episodio nuevo y contexto limpio. Lahiri recarga la GUI y selecciona explícitamente el VF5, documento esperado 212. Confirmar foco efectivo; la selección no es uno de los tres turnos.
+4. Enviar T1–T3 uno por uno, esperando cada respuesta. Son datos de un escenario conversacional: no provocar cortes ni realizar maniobras físicas. Si se rompe la continuidad o aparece una maniobra ajena al recorrido, preservar la evidencia y detenerse antes de seguir esa indicación; no añadir mensajes para forzar el resultado.
+5. Exportar inmediatamente después, antes de reemplazar contenedores, con fechas reales y directorio único:
+
+```sh
+PILOT_METRICS_OUTPUT_ROOT=tmp/<directorio_unico> bin/pilot_metrics --from YYYY-MM-DD --to YYYY-MM-DD --account danebo-legacy
+```
+
+Preservar `validation_captures/`, `capture.json`, `bodies/` e índice. Verificar manifiesto y hashes e informar los recuentos reales; el pin parcial no acredita por sí mismo pérdida de cuerpos. Registrar horarios con zona, imagen, modelo/perfil, episodio, sesión y correlaciones.
+
+### Diagnóstico posterior y límite de lo comprobado
+
+El PDF original es el respaldo de la expectativa. **Aún no se ha comprobado que los fragmentos indexados y recuperados para este nuevo guion contengan fielmente ese pasaje.** No confundir lectura correcta del PDF con ingesta, recuperación o respuesta ya validadas.
+
+Comparar por turno el texto real publicado y el estado guardado con el PDF y las capturas. Ante una discrepancia, localizar la primera divergencia: texto indexado/fragmento fuente si está disponible, selección y recuperación, contexto y estado, interpretación/propuesta, checker y publicación. Distinguir información ausente de información contradictoria. Si falta evidencia de alguna etapa, declararla; no atribuirle el fallo ni reindexar o reparar por suposición. Revisar también cualquier otra fuente pertinente que Danebo cite antes de rechazar su respuesta.
+
+El pasaje es textual y explícito; preparar este guion no requiere otra revisión de modelo. Una duda concreta de lectura, aplicabilidad o contradicción sí justifica una segunda revisión focalizada del PDF antes de cambiar las expectativas o el código.
+
+Si este segundo recorrido cumple, se podrá concretar un **tercer guion breve inspirado en Gonzalo**: el diagnóstico necesita un código o parámetro de consola, el asistente solicita el dato respaldado y continúa al recibirlo. Solo prepararlo si el manual aporta un caso verificable; no inventar códigos ni interpretaciones. No es una nueva fase obligatoria ni un motivo para aplazar indefinidamente la cola original: **Elemont MH → fotos → cambio de tema y retorno**. Si el segundo recorrido falla, diagnosticar primero su evidencia.
+
 ## Estado actual, 2026-10-19
 
 Cola operativa de este documento. Los registros de «Estado de este corte, 2026-10-14», de las fases 0 a 5 y del registro de revisión se conservan, incluidos los del 16 de octubre que estaban sin commit. Esta sección no los reabre y no añade otra numeración de fases. Esta reconciliación no declara `EPISODIO_VALIDADO`. Ese nombre sigue reservado al episodio del plano Elemont, fases 0 a 5, y una aceptación del manual textual no lo otorga.

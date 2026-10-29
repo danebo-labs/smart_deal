@@ -1,5 +1,26 @@
 # Corrección y validación del companion sobre el VF5
 
+## Cierre vigente del subplan VF5 — 29 de octubre de 2026
+
+**Precedencia.** Esta sección sustituye los estados operativos anteriores de este documento. Se conserva el historial como evidencia; las frases históricas «F5 sigue abierta», «estado vigente» y «El plano Elemont no arranca» no reabren este subplan ni bloquean por sí mismas la continuación de la cola del plan de conversación. Lahiri confirmó el cierre de F5 y de este subplan tras revisar la corrida de las 15:45 del 29 de octubre.
+
+**Estado: subplan cerrado; F2, F3, F4 y F5 aceptadas en sus alcances documentados.** La aceptación inicial de F5 corresponde a `ep_71e5c284b0315a41`, imagen `39f2d63`, informe [INFORME_GUI_VF5_F5_2026-10-28.md](INFORME_GUI_VF5_F5_2026-10-28.md). Las correcciones posteriores de continuidad, respuestas parciales y citas conservan sus pruebas y evidencias propias. La comprobación web más reciente corresponde a `ep_63de315872dfed14`, sesión 128, imagen `4a6deb9`, informe [INFORME_GUI_VF5_4a6deb9_2026-10-29.md](INFORME_GUI_VF5_4a6deb9_2026-10-29.md).
+
+Esta última muestra conserva la corrección del LED sin identificar su indicador, la fotocélula comprobada aparte de #21, #54 y mediciones sin hacer, y «no veo obstrucción» como observación. «¿Qué sigue?» no se guarda como hecho. T5 guarda el desconocimiento y retira la pregunta compuesta; la aclaración del LED pasa a pendiente. La prioridad de re-apertura conserva [4], procedente de `chunk_p7_2.txt`, separada de los indicadores [1] de `chunk_p7_3.txt`. Según el informe, los 50 archivos del manifiesto coinciden y los cinco turnos tienen captura completa.
+
+**Límites del cierre.** Es una aceptación funcional acotada, no una garantía de estabilidad general para cualquier conversación o manual. La última corrida usa `same_published_datum?`; no demuestra en vivo `answered_part`, cuya cobertura procede del replay y de pruebas. La selección explícita del manual no acredita selección automática. Este cierre no declara `EPISODIO_VALIDADO` del plano Elemont ni cierra el plan general del companion.
+
+**Pendientes registrados, sin bloquear este cierre:**
+
+- La definición añadida de [4] no tiene ubicación S3 en la cita; el extracto de 150 caracteres no alcanza la frase citada. Su metadata conserva `definition_provenance`, pero también hereda una URI del fragmento que originó la expansión: revisar esa procedencia antes de utilizarla como ubicación de la definición.
+- Mejorar la utilidad de la respuesta cuando el técnico no sabe identificar un dato, conservando el límite y sin inventar una comprobación.
+- Mejorar la presentación «Manual / Guía Danebo».
+- Las capturas productivas se exportan desde el contenedor activo; no asumir que sobreviven a un reemplazo de contenedor. Preservar los paquetes exportados.
+
+**Continuación acordada.** No repetir las cinco frases como requisito de cierre. Preparar un segundo guion sencillo y lineal de tres turnos, sobre otro asunto del mismo VF5, respaldado antes por el PDF y sin cambiar código para prepararlo. Después continuar la cola original: plano Elemont MH, fotos, cambio de tema y retorno. La regresión es transversal. No abrir un rediseño ni renumerar las fases del plano.
+
+Este cambio es documental. No requiere deploy ni modifica código, modelos, fuentes, índice, configuración o sesiones.
+
 ## Aclaración publicada sin repetir la pregunta retenida — 29 de octubre de 2026
 
 **Precedencia.** Esta sección cubre una rama adicional. No reabre F2, F3 ni F4. No reabre la aceptación de F5: esa aceptación sigue siendo la corrida `ep_71e5c284b0315a41`, imagen `39f2d63`. No cambia el checker, el render, el reducer, los prompts, los modelos, la recuperación ni el empaquetado. El plano Elemont no arranca.

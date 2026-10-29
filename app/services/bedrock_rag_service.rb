@@ -571,6 +571,7 @@ class BedrockRagService
       raw_question: raw_question
     )
     @companion_plan_pending = nil
+    @companion_plan_retained = nil
     companion_chunks = companion_turn ? companion_assembled_chunks(applied.chunks, episode: episode) : nil
     companion_plan = if companion_turn
       Rag::CompanionPlan.prepare(
@@ -1279,6 +1280,7 @@ class BedrockRagService
     usage = track_companion_plan_usage(response, latency_ms, tracking)
     composed = Rag::CompanionPlan.compose(response, prepared)
     @companion_plan_pending = composed.pending
+    @companion_plan_retained = prepared.facts.open_question
     @companion_plan_stop_reason = composed.stop_reason
     record_companion_plan(composed, usage.merge("latency_ms" => latency_ms, "model_id" => prepared.params[:model_id]))
     composed.text
@@ -1689,11 +1691,9 @@ class BedrockRagService
   end
 
   def companion_turn_pending(accepted, answer_text)
-    pending = @companion_plan_pending
-    question = pending.is_a?(Hash) ? pending["question"].to_s : ""
-    return nil unless accepted && question.present? && answer_text.to_s.include?(question)
+    return nil unless accepted
 
-    pending
+    Rag::PendingQuestion.presented(@companion_plan_pending, answer_text, retained: @companion_plan_retained)
   end
 
   def record_companion_publication(publication, stop_reason)

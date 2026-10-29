@@ -1,5 +1,21 @@
 # Corrección y validación del companion sobre el VF5
 
+## Aclaración publicada sin repetir la pregunta retenida — 29 de octubre de 2026
+
+**Precedencia.** Esta sección cubre una rama adicional. No reabre F2, F3 ni F4. No reabre la aceptación de F5: esa aceptación sigue siendo la corrida `ep_71e5c284b0315a41`, imagen `39f2d63`. No cambia el checker, el render, el reducer, los prompts, los modelos, la recuperación ni el empaquetado. El plano Elemont no arranca.
+
+La corrida posterior del mismo guion, episodio `ep_6dba74e041c77794`, imagen `eb8e097`, publicó en T2 y T3 solo la aclaración del indicador. La pregunta anterior seguía abierta y no estaba en el texto. Las dos guardas exigían esa pregunta en la respuesta y descartaban el payload completo, incluida la aclaración que el técnico sí vio. Al resolver la pregunta anterior no quedaba la aclaración.
+
+`Rag::PendingQuestion.presented` es el único predicado de las dos guardas. Conserva una pregunta que está en el texto final o que es exactamente la ya guardada, y una aclaración solo si ese texto la contiene o si ya estaba guardada. Una aclaración que figura en la propuesta anterior a la publicación y no está en la respuesta final no se registra. Siguen la aceptación, la abstención, el texto presentado, el historial y el episodio vigente.
+
+La regresión HTTP está en `test/controllers/vf5_f5_web_regression_test.rb`, con los cuerpos y los hashes en `test/fixtures/vf5_f5_regression_20261028/`. Los casos genéricos, entrada A e indicador X o Y, están en `test/services/rag/pending_question_test.rb`. El recorrido aceptado de la mañana permanece en el mismo controlador y no se reescribe. No llama a AWS ni sustituye otra comprobación en la GUI.
+
+```
+BUNDLE_PATH=vendor/bundle RAILS_ENV=test bin/rails test \
+  test/controllers/vf5_f5_web_regression_test.rb \
+  test/services/rag/pending_question_test.rb
+```
+
 ## Comprobación web — 28 de octubre de 2026
 
 **Precedencia.** Esta sección es el estado vigente. No reabre F2, F3 ni F4. No cambia S3, la base, los embeddings, fuentes, ingesta, prompts, modelos ni las etiquetas «Manual / Guía Danebo». El plano Elemont no arranca.

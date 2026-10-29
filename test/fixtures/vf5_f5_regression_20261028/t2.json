@@ -1,0 +1,73 @@
+{
+  "user": "Corrijo un dato: el LED está encendido, no apagado.",
+  "interpreter": {
+    "move": "correct",
+    "assertions": [
+      {
+        "span": "el LED está encendido",
+        "act": "assert",
+        "slot_hint": null
+      }
+    ],
+    "observations": [
+      "el LED está encendido"
+    ],
+    "checks": [],
+    "pending_resolution": null,
+    "clarification_target": null
+  },
+  "plan": {
+    "links": [
+      {
+        "fact": "O3",
+        "statement": "S2.14",
+        "reading": "El LED está encendido, indicando condiciones apropiadas de trabajo."
+      },
+      {
+        "fact": "O1",
+        "statement": "S1.2",
+        "reading": "La puerta se reabre sola durante el cierre."
+      }
+    ],
+    "steps": [
+      "S1.4",
+      "S1.3",
+      "S1.5",
+      "S1.6"
+    ],
+    "question": "¿Está activada la fotocélula o la entrada de re-apertura (#21)?",
+    "question_about": [
+      "S1.4",
+      "S2.9"
+    ]
+  },
+  "chunks": [
+    {
+      "filename": "chunk_p12_5.txt",
+      "uri": "s3://multimodal-source-destination/bulk_chunks/1/be7a39a3490c92c8381cb883402760cb07d1/chunk_p12_5.txt",
+      "page": 12.0,
+      "document": "Módulo electrónico VF5+ Fermator",
+      "score": 0.5,
+      "source_uri": "s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf",
+      "content": "[DOCUMENT: VF5.pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]\n[SEARCH_ALIASES: la puerta se re-abre sola, potenciómetro de regulación de fuerza de re-apertura, #54, fotocélula, obstrucción mecánica, botón de TEST]\n\n[PDF_PAGE: 12]\n[PRINTED_PAGE: 11/21]\n8.2 Funcionamiento normal\n\n• La puerta se re-abre sola.\n– Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54).\n– Comprobar que la fotocélula no esté activada.\n– Comprobar que no hay una obstrucción mecánica en la puerta.\n\n[PDF_PAGE: 13]\n[PRINTED_PAGE: 12/21]\n– En caso que el problema persista, desconectar la fotocélula y volver a pulsar el botón de TEST. Si la puerta no se abre o cierra completamente, debe haber una obstrucción mecánica en la puerta.\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-25C752F61083C06F\nSOURCE_SECTION_OR_PAGE: 8.2 Funcionamiento normal — La puerta se re-abre sola.\nRECORD_TYPE: TROUBLESHOOTING_STEP\nACTION: Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54).\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54).\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-780BFE187C304EF0\nSOURCE_SECTION_OR_PAGE: 8.2 Funcionamiento normal — La puerta se re-abre sola.\nRECORD_TYPE: TROUBLESHOOTING_STEP\nACTION: Comprobar que la fotocélula no esté activada.\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Comprobar que la fotocélula no esté activada.\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-1A0C34BF91373E41\nSOURCE_SECTION_OR_PAGE: 8.2 Funcionamiento normal — La puerta se re-abre sola.\nRECORD_TYPE: TROUBLESHOOTING_STEP\nACTION: Comprobar que no hay una obstrucción mecánica en la puerta.\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Comprobar que no hay una obstrucción mecánica en la puerta.\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-7A74B652F51E3263\nSOURCE_SECTION_OR_PAGE: 8.2 Funcionamiento normal — La puerta se re-abre sola.\nSOURCE_PDF_PAGE: 13\nRECORD_TYPE: TROUBLESHOOTING_STEP\nACTION: En caso que el problema persista, desconectar la fotocélula y volver a pulsar el botón de TEST.\nEXPECTED_RESULT: Si la puerta no se abre o cierra completamente, debe haber una obstrucción mecánica en la puerta.\nDETAILS: precondition=el problema persiste (síntoma no visible en esta página)\nEVIDENCE: Si la puerta no se abre o cierra completamente, debe haber una obstrucción mecánica en la puerta.\nEND_FIELD_RECORD"
+    },
+    {
+      "filename": "chunk_p7_3.txt",
+      "uri": "s3://multimodal-source-destination/bulk_chunks/1/be7a39a3490c92c8381cb883402760cb07d1/chunk_p7_3.txt",
+      "page": 7.0,
+      "document": "Módulo electrónico VF5+ Fermator",
+      "score": 0.49193548387096775,
+      "source_uri": "s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf",
+      "content": "[DOCUMENT: VF5.pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]\n[SEARCH_ALIASES: Relés de salida, Indicadores LED, Abierta, Cerrada, Fotocélula, Obstrucción, Estado LED, Pulsador de Test 50]\n\n5.6 Relés de salida e indicadores LED (del 30 al 41)\nLos relés de salida han sido dispuestos para dar información permanentemente al controlador principal del ascensor sobre el estado de las puertas. Los contactos de salida de los relés pueden ser usados para dar información como «puerta totalmente abierta», «puerta totalmente cerrada», «fotocélula obstruida», «obstrucción».\n • Abierta.\nIndicador LED y relé activado cuando la puerta está totalmente abierta.\n • Cerrada.\nIndicador LED y relé activado cuando la puerta está totalmente cerrada y bloqueada.\n • Fotocélula.\nIndicador LED y relé activado cuando la fotocélula o la entrada de re-apertura está activada.\n • Obstrucción.\nIndicador LED y relé activado cuando se detecta un obstáculo que impide a la puerta cerrarse. La señal se deshabilita cuando la puerta alcanza la posición de abierta o cerrada.\n • Estado.\nLED parpadeante indicando condiciones apropiadas de trabajo.\n\nEtiquetas de la figura (cuatro bloques de contacto de relé, cada uno con tres bornes):\n- ABIERTO — bornes 30, 31, 32\n- CERRADO — bornes 33, 34, 35\n- FOTOCÉLULA — bornes 36, 37, 38\n- OBSTRUCCIÓN — bornes 39, 40, 41\n[NOTA_EXTRACCION] La función de cada borne individual dentro de cada grupo (común / normalmente abierto / normalmente cerrado) no está impresa: DATA_NOT_AVAILABLE; REQUIRES_FIELD_VERIFICATION (símbolo de contacto de la figura sin texto).\n\n5.7 Pulsador de Test (50)\nUtilizar el pulsador de TEST causará un ciclo de apertura o cierre de la puerta.\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-F6E84199D91E0DD2\nSOURCE_SECTION_OR_PAGE: 5.6 Relés de salida e indicadores LED (del 30 al 41) — Abierta\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: Relé/LED Abierta (figura: ABIERTO, bornes 30, 31, 32)\nEXPECTED_RESULT: Indicador LED y relé activado cuando la puerta está totalmente abierta.\nDETAILS: connection=bornes 30-32 según etiqueta ABIERTO de la figura\nEVIDENCE: Indicador LED y relé activado cuando la puerta está totalmente abierta.\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-926C4C39629DB5DD\nSOURCE_SECTION_OR_PAGE: 5.6 Relés de salida e indicadores LED (del 30 al 41) — Cerrada\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: Relé/LED Cerrada (figura: CERRADO, bornes 33, 34, 35)\nEXPECTED_RESULT: Indicador LED y relé activado cuando la puerta está totalmente cerrada y bloqueada.\nDETAILS: connection=bornes 33-35 según etiqueta CERRADO de la figura\nEVIDENCE: Indicador LED y relé activado cuando la puerta está totalmente cerrada y bloqueada.\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-C190739E1B28BAD8\nSOURCE_SECTION_OR_PAGE: 5.6 Relés de salida e indicadores LED (del 30 al 41) — Fotocélula\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: Relé/LED Fotocélula (figura: FOTOCÉLULA, bornes 36, 37, 38)\nEXPECTED_RESULT: Indicador LED y relé activado cuando la fotocélula o la entrada de re-apertura está activada.\nDETAILS: connection=bornes 36-38 según etiqueta FOTOCÉLULA de la figura\nEVIDENCE: cuando la fotocélula o la entrada de re-apertura está activada\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-FA05844E9673A336\nSOURCE_SECTION_OR_PAGE: 5.6 Relés de salida e indicadores LED (del 30 al 41) — Obstrucción\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: Relé/LED Obstrucción (figura: OBSTRUCCIÓN, bornes 39, 40, 41)\nEXPECTED_RESULT: Indicador LED y relé activado cuando se detecta un obstáculo que impide a la puerta cerrarse. La señal se deshabilita cuando la puerta alcanza la posición de abierta o cerrada.\nDETAILS: connection=bornes 39-41 según etiqueta OBSTRUCCIÓN de la figura\nEVIDENCE: La señal se deshabilita cuando la puerta alcanza la posición de abierta o cerrada.\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-AB89A8219FC9D343\nSOURCE_SECTION_OR_PAGE: 5.6 Relés de salida e indicadores LED (del 30 al 41) — Estado\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: LED Estado\nEXPECTED_RESULT: LED parpadeante indicando condiciones apropiadas de trabajo.\nEVIDENCE: LED parpadeante indicando condiciones apropiadas de trabajo.\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-33D95443650BAE45\nSOURCE_SECTION_OR_PAGE: 5.7 Pulsador de Test (50)\nRECORD_TYPE: FUNCTIONAL_TEST\nACTION: Utilizar el pulsador de TEST (50)\nEXPECTED_RESULT: causará un ciclo de apertura o cierre de la puerta.\nEVIDENCE: Utilizar el pulsador de TEST causará un ciclo de apertura o cierre de la puerta.\nEND_FIELD_RECORD"
+    },
+    {
+      "filename": "chunk_p13_2.txt",
+      "uri": "s3://multimodal-source-destination/bulk_chunks/1/be7a39a3490c92c8381cb883402760cb07d1/chunk_p13_2.txt",
+      "page": 13.0,
+      "document": "Módulo electrónico VF5+ Fermator",
+      "score": 0.48412698412698413,
+      "source_uri": "s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf",
+      "content": "[DOCUMENT: VF5.pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/VF5.pdf]\n[SEARCH_ALIASES: correa dentada, autoajuste, LED STATUS, fusibles externos, polea del encoder, motor intermitente, fuera de servicio, modo esclavo]\n\n• La puerta golpea al llegar a la posición de apertura completa, el LED de puerta “abierta” no está activado y el sistema se queda fuera de servicio.\n– Comprobar la tensión de la correa dentada ya que, probablemente, no está correctamente ajustada y resbala sobre la polea del motor haciendo que el encoder envíe información incorrecta. Ajustar la tensión de la correa y volver a realizar el autoajuste.\n• El sistema obtiene alimentación pero no funciona y el LED “STATUS” se encuentra apagado.\n– Comprobar si los fusibles externos se han quemado. En este caso cambiarlos por otros fusibles Fermator (250 V, 4 A, cerámicos de alta velocidad).\n• El motor se mueve de forma intermitente.\n– Comprobar las conexiones del cableado o si una fase del motor está fallando.\n– Verificar que la polea del encoder esté bien montada.\n• El LED “STATUS” está activado y la puerta no obedece a las señales.\n– Ha habido una obstrucción en la apertura y la puerta ha entrado en estado “fuera de servicio” durante 15 segundos.\n– En modo esclavo si hay una obstrucción continuada y la maniobra no ha cambiado la señal de cerrar por la de abrir.\n– Ha habido un cortocircuito en la salida del motor, el sistema estará desactivado durante 3 segundos.\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-3174CC057B6A6B7E\nSOURCE_SECTION_OR_PAGE: • La puerta golpea al llegar a la posición de apertura completa, el LED de puerta “abierta” no está activado y el sistema se queda fuera de servicio.\nRECORD_TYPE: TROUBLESHOOTING_STEP\nACTION: Comprobar la tensión de la correa dentada. Ajustar la tensión de la correa y volver a realizar el autoajuste.\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nDETAILS: criteria=probable causa indicada: correa mal ajustada que resbala sobre la polea del motor y el encoder envía información incorrecta\nEVIDENCE: Ajustar la tensión de la correa y volver a realizar el autoajuste.\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-CD977937431A7469\nSOURCE_SECTION_OR_PAGE: • El sistema obtiene alimentación pero no funciona y el LED “STATUS” se encuentra apagado.\nRECORD_TYPE: TROUBLESHOOTING_STEP\nACTION: Comprobar si los fusibles externos se han quemado. En este caso cambiarlos por otros fusibles Fermator.\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nDETAILS: value=250 V, 4 A, cerámicos de alta velocidad\nEVIDENCE: cambiarlos por otros fusibles Fermator (250 V, 4 A, cerámicos de alta velocidad)\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-BBDCD582E6648245\nSOURCE_SECTION_OR_PAGE: • El motor se mueve de forma intermitente.\nRECORD_TYPE: TROUBLESHOOTING_STEP\nACTION: Comprobar las conexiones del cableado o si una fase del motor está fallando.\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nDETAILS: scope=primera de dos comprobaciones listadas\nEVIDENCE: Comprobar las conexiones del cableado o si una fase del motor está fallando.\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-3B72960B44F16BBB\nSOURCE_SECTION_OR_PAGE: • El motor se mueve de forma intermitente.\nRECORD_TYPE: TROUBLESHOOTING_STEP\nACTION: Verificar que la polea del encoder esté bien montada.\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nDETAILS: scope=segunda de dos comprobaciones listadas\nEVIDENCE: Verificar que la polea del encoder esté bien montada.\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-54069BD6781FEF35\nSOURCE_SECTION_OR_PAGE: • El LED “STATUS” está activado y la puerta no obedece a las señales.\nRECORD_TYPE: FAULT_CONDITION\nACTION: Causa indicada: obstrucción en la apertura\nEXPECTED_RESULT: la puerta ha entrado en estado “fuera de servicio” durante 15 segundos\nEVIDENCE: Ha habido una obstrucción en la apertura y la puerta ha entrado en estado “fuera de servicio” durante 15 segundos.\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-F69DA5059710376A\nSOURCE_SECTION_OR_PAGE: • El LED “STATUS” está activado y la puerta no obedece a las señales.\nRECORD_TYPE: FAULT_CONDITION\nACTION: Causa indicada: en modo esclavo, obstrucción continuada y la maniobra no ha cambiado la señal de cerrar por la de abrir\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nDETAILS: scope=modo esclavo\nEVIDENCE: En modo esclavo si hay una obstrucción continuada y la maniobra no ha cambiado la señal de cerrar por la de abrir.\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-8CE950BD23D25758\nSOURCE_SECTION_OR_PAGE: • El LED “STATUS” está activado y la puerta no obedece a las señales.\nRECORD_TYPE: FAULT_CONDITION\nACTION: Causa indicada: cortocircuito en la salida del motor\nEXPECTED_RESULT: el sistema estará desactivado durante 3 segundos\nEVIDENCE: Ha habido un cortocircuito en la salida del motor, el sistema estará desactivado durante 3 segundos.\nEND_FIELD_RECORD"
+    }
+  ]
+}

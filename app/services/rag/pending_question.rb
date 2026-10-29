@@ -73,6 +73,27 @@ module Rag
       question
     end
 
+    # What this turn may store. A question counts when this text contains it,
+    # or when it is the open question already stored. A clarification counts
+    # as shown only when this text contains it, or when that same clarification
+    # was already stored. A proposal that the final answer removed does not.
+    def presented(pending, text, retained: nil)
+      question = coerce(pending)
+      return nil if question.nil? || question["question"].blank?
+
+      body = text.to_s
+      stored = retained.is_a?(Hash) ? retained : {}
+      shown = question["shown"]
+      if shown && body.exclude?(shown["question"]) && shown["question"] != stored.dig("shown", "question")
+        question = question.except("shown")
+        shown = nil
+      end
+      return question if body.include?(question["question"])
+      return question if shown && body.include?(shown["question"]) && question["question"] == stored["question"]
+
+      nil
+    end
+
     # The question presented now, when it is not the unresolved datum.
     # Targets may be empty: the clarification still has to be remembered.
     def shown_question(raw)

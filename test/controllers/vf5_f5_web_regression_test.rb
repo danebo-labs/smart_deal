@@ -2,10 +2,12 @@
 
 require "test_helper"
 
-# HTTP path of the accepted 28 Oct 2026 web run, episode ep_71e5c284b0315a41.
-# Interpreter, Retrieve, and the plan are the captured tool inputs and bodies.
-# Definition pages are the published candidate. Nothing calls AWS.
-# The T4 transport timeout is not replayed: the fixture is the successful read.
+# HTTP path of two 28 Oct 2026 web runs. The accepted run is episode
+# ep_71e5c284b0315a41. The later run, ep_6dba74e041c77794, is an additional
+# branch: T2 and T3 publish only the clarification. Interpreter, Retrieve,
+# and the plan are the captured tool inputs and bodies. Definition pages are
+# the published candidate. Nothing calls AWS. The T4 transport timeout of the
+# accepted run is not replayed: that fixture is the successful read.
 class Vf5F5WebRegressionTest < ActionDispatch::IntegrationTest
   include Devise::Test::IntegrationHelpers
 
@@ -102,6 +104,72 @@ class Vf5F5WebRegressionTest < ActionDispatch::IntegrationTest
       assert_equal 6, cassette.filters.size, cassette.filters.map { |filter| pinned_filter?(filter) }.inspect
       assert_not pinned_filter?(cassette.filters.first), cassette.filters.first.to_json
       cassette.filters.drop(1).each { |filter| assert pinned_filter?(filter), filter.to_json }
+    end
+  end
+
+  test "a later run that publishes only the clarification keeps it beside the open question" do
+    directory = "test/fixtures/vf5_f5_regression_20261028"
+    with_captured_externals(directory, %w[t1 t2 t3 t4 t5]) do |cassette|
+      assert_capture_provenance(directory)
+      post pinned_documents_path, params: { kb_document_id: @document.id }, as: :json
+      assert_response :no_content
+      focus = reloaded_session.document_focus_entries.sole
+      assert_equal @document.id, focus["kb_document_id"]
+      assert_equal @focus_uri, focus["source_uri"]
+
+      opened = ask(TURN_1)
+      assert_turn_one(opened)
+      assert_nil episode.pending_question["shown"]
+      assert_includes opened["answer"], "¿Está activada la fotocélula o la entrada de re-apertura (#21)?"
+
+      first_led = "¿Cuál LED está encendido, el de Fotocélula o el de Estado?"
+      corrected = ask(TURN_2)
+      assert_includes corrected["answer"], first_led
+      assert_not_includes corrected["answer"], "#21)?"
+      state = episode
+      assert_match(/#21/, state.pending_question["question"])
+      assert_equal first_led, state.pending_question.dig("shown", "question")
+      assert_equal 2, state.pending_question.dig("shown", "targets").size
+      assert_next_case_still_open(state)
+
+      later_led = "¿El LED encendido es el de Fotocélula o el de Estado?"
+      reported = ask(TURN_3)
+      state = episode
+      assert_equal "done", check_status(state, /fotoc[eé]lula/)
+      assert_match(/#21/, state.pending_question["question"])
+      assert_equal later_led, state.pending_question.dig("shown", "question")
+      assert_includes reported["answer"], later_led
+      assert_not_includes reported["answer"], "#21)?"
+      assert_next_case_still_open(state)
+
+      followed = ask(TURN_4)
+      state = episode
+      assert_equal "¿Está activada la fotocélula o la entrada de re-apertura (#21)?", state.pending_question["question"]
+      assert_equal later_led, state.pending_question.dig("shown", "question")
+      assert_not_includes followed["answer"], "¿Qué sigue?"
+      assert_not_includes followed["answer"], later_led
+      assert_next_case_still_open(state)
+
+      unknown = ask(TURN_5)
+      state = episode
+      limit = state.observations.find { |item| item.dig("answers", "r") == "unknown" }
+      assert_includes limit["text"], "#21"
+      assert_includes limit["text"], "contacto"
+      assert_includes limit.dig("answers", "q").to_s, "#21"
+      assert_no_match(/LED encendido/i, limit.dig("answers", "q").to_s)
+      assert_equal later_led, state.pending_question["question"]
+      assert_nil state.pending_question["shown"]
+      assert_equal 2, state.pending_question["targets"].size
+      targets = state.pending_question["targets"].to_json
+      assert_match(/Fotoc[eé]lula/, targets)
+      assert_match(/Estado/, targets)
+      assert_not_includes unknown["answer"], CONTACT_QUESTION
+      assert_not_includes unknown["answer"], "¿Está activada la fotocélula o la entrada de re-apertura (#21)?"
+      assert_equal "done", check_status(state, /fotoc[eé]lula/)
+      assert_equal "not_done", check_status(state, /#54/)
+      assert_equal "not_done", check_status(state, /medicion/)
+      assert_equal 5, cassette.filters.size
+      cassette.filters.each { |filter| assert pinned_filter?(filter), filter.to_json }
     end
   end
 
@@ -268,8 +336,24 @@ class Vf5F5WebRegressionTest < ActionDispatch::IntegrationTest
     Rag::CompanionDefinitionCatalog.current = catalog
   end
 
-  def with_captured_externals
-    cassette = Cassette.new(self)
+  def assert_capture_provenance(directory)
+    root = Rails.root.join(directory)
+    provenance = JSON.parse(root.join("provenance.json").read)
+    assert_equal "ep_6dba74e041c77794", provenance["episode"]
+    assert_equal "eb8e097ade60e99b0a55e955b6290082d129674f", provenance["image"]
+    provenance["turns"].each do |name, turn|
+      fixture = JSON.parse(root.join("#{name}.json").read)
+      bodies = Array(turn["bodies"])
+      assert_equal bodies.size, fixture["chunks"].size, name
+      bodies.each_with_index do |body, index|
+        digest = Digest::SHA256.hexdigest(fixture.dig("chunks", index, "content").to_s)
+        assert_equal body["sha256"], digest, "#{name} #{body["path"]}"
+      end
+    end
+  end
+
+  def with_captured_externals(directory = nil, names = nil)
+    cassette = Cassette.new(self, directory, names)
     original_converse = BedrockClient.instance_method(:converse)
     original_message = BedrockClient.instance_method(:converse_message)
     original_client = Aws::BedrockAgentRuntime::Client.method(:new)
@@ -304,10 +388,10 @@ class Vf5F5WebRegressionTest < ActionDispatch::IntegrationTest
   end
 
   class Cassette
-    def initialize(test)
-      @turns = %w[t1_open t1_focused t2 t3 t4 t5].map { |name|
-        JSON.parse(Rails.root.join("test/fixtures/vf5_f5_20261028/#{name}.json").read)
-      }
+    def initialize(test, directory = nil, names = nil)
+      root = Rails.root.join(directory || "test/fixtures/vf5_f5_20261028")
+      list = names || %w[t1_open t1_focused t2 t3 t4 t5]
+      @turns = list.map { |name| JSON.parse(root.join("#{name}.json").read) }
       @viewer_id = test.instance_variable_get(:@account).id
       @pilot_id = test.instance_variable_get(:@pilot).id
       @focus_uri = test.instance_variable_get(:@focus_uri)

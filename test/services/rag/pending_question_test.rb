@@ -122,7 +122,113 @@ class Rag::PendingQuestionTest < ActiveSupport::TestCase
     assert_operator JSON.generate(stored).bytesize, :<=, Rag::ActiveEpisode::MAX_BYTES
   end
 
+  test "both the open question and the clarification count when the text has both" do
+    text = "#{entry_question}\n#{indicator_question}"
+    assert_equal held_question, Rag::PendingQuestion.presented(held_question, text, retained: open_question)
+  end
+
+  test "a clarification published alone keeps the open question already stored" do
+    kept = Rag::PendingQuestion.presented(held_question, indicator_question, retained: open_question)
+    assert_equal held_question, kept
+    assert_equal indicator_question, kept.dig("shown", "question")
+  end
+
+  test "a clarification absent from the text is not stored as shown" do
+    assert_nil Rag::PendingQuestion.presented(held_question, "texto sin preguntas", retained: open_question)
+    kept = Rag::PendingQuestion.presented(held_question, entry_question, retained: open_question)
+    assert_equal open_question, kept
+    assert_nil kept["shown"]
+  end
+
+  test "a question that was not stored and did not reach the text is not kept through its clarification" do
+    assert_nil Rag::PendingQuestion.presented(held_question, indicator_question, retained: nil)
+    other = open_question.merge("question" => "¿Otra pregunta?")
+    assert_nil Rag::PendingQuestion.presented(held_question, indicator_question, retained: other)
+  end
+
+  test "a clarification already stored stays when the same datum is reworded and published" do
+    reworded = held_question.merge("question" => "¿La entrada A está activa?")
+    assert_equal reworded, Rag::PendingQuestion.presented(reworded, "¿La entrada A está activa?", retained: held_question)
+    assert_nil Rag::PendingQuestion.presented(reworded, indicator_question, retained: held_question)
+  end
+
+  test "a clarification withdrawn from the final answer is not stored even though the proposal had it" do
+    proposal_text = "Orientación.\n#{entry_question}\n#{indicator_question}"
+    final_answer = "Orientación.\n#{entry_question}"
+    assert_includes proposal_text, indicator_question
+    assert_not_includes final_answer, indicator_question
+
+    service = BedrockRagService.allocate
+    service.instance_variable_set(:@companion_plan_pending, held_question)
+    service.instance_variable_set(:@companion_plan_retained, open_question)
+    published_proposal = service.send(:companion_turn_pending, true, proposal_text)
+    assert_equal indicator_question, published_proposal.dig("shown", "question")
+    withdrawn = service.send(:companion_turn_pending, true, final_answer)
+    assert_equal open_question, withdrawn
+    assert_nil withdrawn["shown"]
+    assert_nil service.send(:companion_turn_pending, true, "Orientación sin preguntas.")
+    assert_nil service.send(:companion_turn_pending, false, proposal_text)
+
+    only_clarification = "Orientación.\n#{indicator_question}"
+    kept = service.send(:companion_turn_pending, true, only_clarification)
+    assert_equal entry_question, kept["question"]
+    assert_equal indicator_question, kept.dig("shown", "question")
+
+    episode = Rag::ActiveEpisode.open(correlation_id: "query:open", now: NOW)
+    episode.assign_goal!("el conjunto no responde", correlation_id: "query:open")
+    episode.pending_question = open_question
+    session = Struct.new(:active_episode).new(episode.to_h)
+    host = Object.new.extend(RagQueryConcern)
+    final = publication(final_answer, final_answer)
+    published = host.send(:companion_published_pending, held_question, final, session)
+    assert_equal open_question, published
+    assert_nil published["shown"]
+
+    history_drops_it = publication(proposal_text, final_answer)
+    from_history = host.send(:companion_published_pending, held_question, history_drops_it, session)
+    assert_equal open_question, from_history
+    assert_nil from_history["shown"]
+
+    abstained = publication(proposal_text, "", route_outcome: :abstained, companion_reason: "companion_contract_invalid")
+    assert_nil host.send(:companion_published_pending, held_question, abstained, session)
+  end
+
   private
+
+  def entry_question
+    "¿Está activada la entrada A?"
+  end
+
+  def indicator_question
+    "¿Cuál indicador está encendido, X o Y?"
+  end
+
+  def entry_target
+    [ { "item" => "Conjunto.", "document_key" => "doc", "filename" => "p12.txt", "page" => "12" } ]
+  end
+
+  def indicator_targets
+    [
+      { "item" => "Indicador X.", "document_key" => "doc", "filename" => "p7.txt", "page" => "7" },
+      { "item" => "Indicador Y.", "document_key" => "doc", "filename" => "p7.txt", "page" => "7" }
+    ]
+  end
+
+  def open_question
+    Rag::PendingQuestion.coerce(
+      "type" => "documented_context", "question" => entry_question, "targets" => entry_target
+    )
+  end
+
+  def held_question
+    open_question.merge("shown" => { "question" => indicator_question, "targets" => indicator_targets })
+  end
+
+  def publication(presented, history, route_outcome: :answered, companion_reason: nil)
+    RagQueryConcern::CompanionPublication.new(
+      presented: presented, history: history, route_outcome: route_outcome, companion_reason: companion_reason
+    )
+  end
 
   def episode_state
     episode = Rag::ActiveEpisode.open(correlation_id: "query:open", now: NOW)

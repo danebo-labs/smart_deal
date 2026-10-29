@@ -1,0 +1,125 @@
+{
+  "episode": "ep_6dba74e041c77794",
+  "image": "eb8e097ade60e99b0a55e955b6290082d129674f",
+  "captured_on": "2026-10-28",
+  "branch": "clarification_published_without_retained_question",
+  "package": "tmp/vf5_regression_20261028/2026-10-28_2026-10-28_danebo-legacy",
+  "turns": {
+    "t1": {
+      "capture": "c4be83ae-6dec-417b-8443-074c498472c0",
+      "correlation_id": "query:c0167f46-601a-43b6-8150-6b06cd4c4d3d",
+      "episode_id": "ep_6dba74e041c77794",
+      "bodies": [
+        {
+          "path": "bodies/b0003.txt",
+          "sha256": "536d252d19a1803a1ad4e692d34791632339149ee5999dc2efdb0da2c16eb2c9",
+          "bytes": 2555
+        },
+        {
+          "path": "bodies/b0004.txt",
+          "sha256": "24f08fdca592c3a8c8fea6d1c6d3b4a416b7f5a1cb581e023ff393e2a705cbf3",
+          "bytes": 4970
+        },
+        {
+          "path": "bodies/b0005.txt",
+          "sha256": "99af390bb3baa6984bffb9abec5f481d0ddabac8e6b93427e98dd23acc7bf0eb",
+          "bytes": 3439
+        }
+      ]
+    },
+    "t2": {
+      "capture": "1b0bdc48-fe91-4fc2-af4f-50034d37328e",
+      "correlation_id": "query:dba3475f-4189-4764-ba99-c9c10fe36a06",
+      "episode_id": "ep_6dba74e041c77794",
+      "bodies": [
+        {
+          "path": "bodies/b0003.txt",
+          "sha256": "536d252d19a1803a1ad4e692d34791632339149ee5999dc2efdb0da2c16eb2c9",
+          "bytes": 2555
+        },
+        {
+          "path": "bodies/b0004.txt",
+          "sha256": "34c7d25fa5e3214cf138696f46a5b314c049e2ccdc27db3ce223ac0da777e9dc",
+          "bytes": 4660
+        },
+        {
+          "path": "bodies/b0005.txt",
+          "sha256": "24f08fdca592c3a8c8fea6d1c6d3b4a416b7f5a1cb581e023ff393e2a705cbf3",
+          "bytes": 4970
+        }
+      ]
+    },
+    "t3": {
+      "capture": "bf289b66-5e4b-4316-bd81-162c1f6c4fbe",
+      "correlation_id": "query:488b2b6f-f6db-4f0b-827a-cad602a58097",
+      "episode_id": "ep_6dba74e041c77794",
+      "bodies": [
+        {
+          "path": "bodies/b0003.txt",
+          "sha256": "536d252d19a1803a1ad4e692d34791632339149ee5999dc2efdb0da2c16eb2c9",
+          "bytes": 2555
+        },
+        {
+          "path": "bodies/b0004.txt",
+          "sha256": "99af390bb3baa6984bffb9abec5f481d0ddabac8e6b93427e98dd23acc7bf0eb",
+          "bytes": 3439
+        },
+        {
+          "path": "bodies/b0005.txt",
+          "sha256": "34c7d25fa5e3214cf138696f46a5b314c049e2ccdc27db3ce223ac0da777e9dc",
+          "bytes": 4660
+        }
+      ]
+    },
+    "t4": {
+      "capture": "30a3648b-dad9-474b-a2b9-3a81d60de6d8",
+      "correlation_id": "query:58c128e9-e0f1-4ea0-9d03-74e8211fc5d2",
+      "episode_id": "ep_6dba74e041c77794",
+      "bodies": [
+        {
+          "path": "bodies/b0003.txt",
+          "sha256": "536d252d19a1803a1ad4e692d34791632339149ee5999dc2efdb0da2c16eb2c9",
+          "bytes": 2555
+        },
+        {
+          "path": "bodies/b0004.txt",
+          "sha256": "99af390bb3baa6984bffb9abec5f481d0ddabac8e6b93427e98dd23acc7bf0eb",
+          "bytes": 3439
+        },
+        {
+          "path": "bodies/b0005.txt",
+          "sha256": "3eeac5d40e3163d1c3e766bfd29a49f9397dd0e94272937a1a938c350d06a12e",
+          "bytes": 4588
+        }
+      ]
+    },
+    "t5": {
+      "capture": "8de0cbf6-99e7-4d43-b2dc-a5b6483e76be",
+      "correlation_id": "query:fcc39079-7b58-466f-b368-a434a7ccdd72",
+      "episode_id": "ep_6dba74e041c77794",
+      "bodies": [
+        {
+          "path": "bodies/b0003.txt",
+          "sha256": "99af390bb3baa6984bffb9abec5f481d0ddabac8e6b93427e98dd23acc7bf0eb",
+          "bytes": 3439
+        },
+        {
+          "path": "bodies/b0004.txt",
+          "sha256": "536d252d19a1803a1ad4e692d34791632339149ee5999dc2efdb0da2c16eb2c9",
+          "bytes": 2555
+        },
+        {
+          "path": "bodies/b0005.txt",
+          "sha256": "34c7d25fa5e3214cf138696f46a5b314c049e2ccdc27db3ce223ac0da777e9dc",
+          "bytes": 4660
+        }
+      ]
+    }
+  },
+  "bodies": "capture retrieval bodies, not reconstructed plans",
+  "definition_catalog": "test/fixtures/vf5_continuity_20261027/chunks",
+  "definition_catalog_manifest_sha256": "3472b6310640454cb79db75c0a5e9b97cdb9e0f8a7fa1eefebc6498ee8d0abc0",
+  "definition_catalog_source": "candidate_r2",
+  "focus_before_t1": "library pin of VF5 document 212; the pin request is not a companion turn and is not replayed as a model call",
+  "omitted": "account emails, user ids, and model prompts are not copied; turn values are the capture request ids and the retrieval body hashes"
+}

@@ -1,5 +1,22 @@
 # Field Companion: conversación técnica real
 
+## Continuación vigente tras el cierre VF5 — 29 de octubre de 2026
+
+**Precedencia.** Esta sección sustituye el estado operativo del 19 de octubre y las indicaciones históricas de que no existe una conversación textual aceptada. No reabre las fases del plano ni declara `EPISODIO_VALIDADO`. El resto del documento conserva el historial y el contrato del trabajo pendiente.
+
+Lahiri acepta el cierre de F5 y del [subplan de corrección VF5](field_companion/PLAN_CORRECCION_VF5_COMPANION.md). La aceptación inicial corresponde a `ep_71e5c284b0315a41`, imagen `39f2d63`, del 28 de octubre. La última comprobación web, episodio `ep_63de315872dfed14`, imagen `4a6deb9`, conserva continuidad y separación de citas: [informe del 29 de octubre](field_companion/INFORME_GUI_VF5_4a6deb9_2026-10-29.md). Son aceptaciones acotadas, no estabilidad general ni selección automática del manual.
+
+**Cola acordada, sin añadir fases ni reabrir las aceptadas:**
+
+1. Segundo guion sencillo y lineal de tres turnos, sobre otro asunto del mismo VF5. Preparar mensajes y expectativas leyendo primero el PDF. No repetir las cinco frases ya aceptadas ni modificar código para preparar el guion.
+2. Continuar el caso del plano Elemont MH, con sus fases originales y su evidencia; el cierre textual no acredita la fidelidad del plano.
+3. Incorporar fotos.
+4. Cambio de tema y retorno al tema anterior.
+
+El segundo guion es la comprobación adicional acordada para ampliar el recorrido textual; no es una condición retroactiva para aceptar F5. Las regresiones HTTP y de componentes siguen siendo transversales. Los pendientes de presentación de fuentes, procedencia de definiciones y utilidad ante desconocimiento quedan registrados en el cierre del subplan, sin convertirlos en un rediseño ni en otra matriz extensa.
+
+La imagen productiva más reciente acreditada por la exportación es `4a6deb9`. Los cambios documentales posteriores no implican deploy. Antes de una nueva ejecución confirmar imagen y episodio; conservar el caso investigado y usar únicamente el mecanismo delimitado de archivo e inicio limpio cuando corresponda. No asumir que logout, recarga o deploy limpian el caso.
+
 ## Estado actual, 2026-10-19
 
 Cola operativa de este documento. Los registros de «Estado de este corte, 2026-10-14», de las fases 0 a 5 y del registro de revisión se conservan, incluidos los del 16 de octubre que estaban sin commit. Esta sección no los reabre y no añade otra numeración de fases. Esta reconciliación no declara `EPISODIO_VALIDADO`. Ese nombre sigue reservado al episodio del plano Elemont, fases 0 a 5, y una aceptación del manual textual no lo otorga.

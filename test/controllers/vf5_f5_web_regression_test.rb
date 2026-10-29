@@ -173,6 +173,93 @@ class Vf5F5WebRegressionTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "an unknown about the designated part of a compound question binds to that part only" do
+    directory = "test/fixtures/vf5_f5_regression_20261029"
+    compound = "¿Está activada la fotocélula o hay una señal de re-apertura (#21) activa continuamente?"
+    led = "¿Cuál LED está encendido, el de Fotocélula o el de Estado?"
+    with_captured_externals(directory, %w[t1_open t1_focused t2 t3 t4 t5]) do |cassette|
+      assert_capture_provenance(directory, episode: "ep_b19f32863b51fb99", image: "c1040bbc153f690958bd2c50a01785c2a48f7497")
+      confirm_manual(ask(TURN_1))
+      replay = reloaded_session.conversation_history.find { |item| item["role"] == "user" }["correlation_id"]
+      ask(nil, replay: replay)
+      state = episode
+      assert_equal compound, state.pending_question["question"]
+      fragment = JSON.parse(Rails.root.join(directory, "t1_focused.json").read)["chunks"].find { |chunk|
+        chunk["content"].include?("La puerta se re-abre sola.")
+      }
+      symptom = state.pending_question["targets"].find { |item| item["item"].include?("re-abre") }
+      # The stored page is the fragment name. The fixture has no filename field.
+      assert_equal File.basename(fragment["uri"]), symptom["filename"]
+      assert_equal "chunk_p12_5.txt", symptom["filename"]
+
+      ask(TURN_2)
+      state = episode
+      assert_equal led, state.pending_question.dig("shown", "question")
+      shown_targets = state.pending_question.dig("shown", "targets")
+      assert shown_targets.any?
+      assert shown_targets.all? { |item| item["filename"] == "chunk_p7_3.txt" }
+
+      ask(TURN_3)
+      state = episode
+      assert_equal "done", check_status(state, /fotoc[eé]lula/)
+      assert state.observations.none? { |item| item.dig("answers", "q").present? }, state.observations.inspect
+      assert_equal compound, state.pending_question["question"]
+      assert_equal led, state.pending_question.dig("shown", "question")
+
+      ask(TURN_4)
+      assert_equal compound, episode.pending_question["question"]
+
+      unknown = ask(TURN_5)
+      state = episode
+      limit = state.observations.find { |item| item.dig("answers", "r") == "unknown" }
+      assert limit, state.observations.inspect
+      assert_includes limit["text"], "contacto"
+      assert_equal "¿Hay una señal de re-apertura (#21) activa continuamente?", limit.dig("answers", "q")
+      assert state.observations.none? { |item| item.dig("answers", "r") == "no" }
+      assert_equal led, state.pending_question["question"]
+      assert_nil state.pending_question["shown"]
+      assert_equal "done", check_status(state, /fotoc[eé]lula/)
+      assert_equal "not_done", check_status(state, /#54/)
+      assert_equal "not_done", check_status(state, /medicion/)
+      assert state.checks.none? { |item| item["subject"].to_s.match?(/obstruc/i) }
+
+      # Publication follows the bound unknown. It is not part of the state contract above.
+      assert_includes unknown["answer"], "Indicaste que no puedes distinguirlo; la indicación de «La puerta se re-abre sola» depende de ese dato."
+      assert_includes unknown["answer"], "ya informaste: «Revisé la fotocélula y no está activada»."
+      assert_includes unknown["answer"], "esta comprobación no consta como hecha"
+      assert_not_includes unknown["answer"], CONTACT_QUESTION
+      assert_equal 6, cassette.filters.size
+    end
+  end
+
+  test "the retrieve stub keeps the PDF and the fragment on the keys Bedrock uses" do
+    capture = JSON.parse(Rails.root.join("test/fixtures/files/field_companion/phase3_summary_20261014T194442Z/turn_3/capture.json").read)
+    observed = nil
+    visit = lambda { |value|
+      return if observed
+      fragment = value["x-amz-bedrock-kb-source-uri"].to_s.end_with?(".txt") if value.is_a?(Hash)
+      pdf = value["original_filename"].to_s.end_with?(".pdf") if value.is_a?(Hash)
+      if fragment && pdf
+        observed = value
+      elsif value.is_a?(Hash)
+        value.each_value { |child| visit.call(child) }
+      elsif value.is_a?(Array)
+        value.each { |child| visit.call(child) }
+      end
+    }
+    visit.call(capture["events"])
+    assert_match %r{chunk_p\d+_\d+\.txt\z}, observed["x-amz-bedrock-kb-source-uri"]
+    assert observed["original_source_uri"].end_with?(".pdf")
+
+    chunk = JSON.parse(Rails.root.join("test/fixtures/vf5_f5_regression_20261029/t1_focused.json").read)["chunks"].first
+    retrieved = Retrieved.new(chunk, @account.id, @pilot.id, @focus_uri)
+    assert_equal chunk["uri"], retrieved.metadata["x-amz-bedrock-kb-source-uri"]
+    assert_equal chunk["uri"], retrieved.location.s3_location.uri
+    assert_equal @focus_uri, retrieved.metadata["original_source_uri"]
+    assert_equal "VF5.pdf", retrieved.metadata["original_filename"]
+    assert_equal File.basename(chunk["uri"]), File.basename(retrieved.metadata["x-amz-bedrock-kb-source-uri"])
+  end
+
   private
 
   def assert_recommendation_does_not_pin(body)
@@ -336,11 +423,11 @@ class Vf5F5WebRegressionTest < ActionDispatch::IntegrationTest
     Rag::CompanionDefinitionCatalog.current = catalog
   end
 
-  def assert_capture_provenance(directory)
+  def assert_capture_provenance(directory, episode: "ep_6dba74e041c77794", image: "eb8e097ade60e99b0a55e955b6290082d129674f")
     root = Rails.root.join(directory)
     provenance = JSON.parse(root.join("provenance.json").read)
-    assert_equal "ep_6dba74e041c77794", provenance["episode"]
-    assert_equal "eb8e097ade60e99b0a55e955b6290082d129674f", provenance["image"]
+    assert_equal episode, provenance["episode"]
+    assert_equal image, provenance["image"]
     provenance["turns"].each do |name, turn|
       fixture = JSON.parse(root.join("#{name}.json").read)
       bodies = Array(turn["bodies"])
@@ -461,11 +548,13 @@ class Vf5F5WebRegressionTest < ActionDispatch::IntegrationTest
       vf5 = chunk["source_uri"].to_s.include?("VF5.pdf")
       # The capture body stays intact. The pin URI is the one this process
       # stores for that same VF5 key, so identity sees the confirmed manual.
+      # Bedrock keeps the PDF on original_source_uri and the fragment on
+      # x-amz-bedrock-kb-source-uri; page_filename uses that fragment's name.
       source = vf5 ? focus_uri : chunk["source_uri"]
       @metadata = {
         "account_id" => (vf5 ? viewer_id : pilot_id).to_s,
         "original_source_uri" => source,
-        "x-amz-bedrock-kb-source-uri" => source,
+        "x-amz-bedrock-kb-source-uri" => chunk["uri"],
         "page_number" => chunk["page"],
         "canonical_name" => chunk["document"],
         "original_filename" => vf5 ? "VF5.pdf" : File.basename(chunk["source_uri"].to_s)

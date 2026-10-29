@@ -139,6 +139,44 @@ module Rag
       datum_covers?(asked, said)
     end
 
+    # One part that carries designators, inside a question split on "o".
+    # The reply has to name those designators and a property of that part.
+    # A shared number does not identify another component. Entrada, salida,
+    # or contacto says how a numbered point is wired; two different ones
+    # still differ. A part without a designator is not recognized. This is
+    # not a general reading of compound questions.
+    def self.answered_part(question, turn)
+      return nil unless question.is_a?(Hash)
+
+      parts = question_parts(question["question"])
+      return nil if parts.size < 2
+
+      said = datum_parts(turn)
+      return nil if said.numbers.empty?
+
+      named = parts.select { |part| (numbers = designators(part)).any? && (numbers - said.numbers).empty? }
+      return nil unless named.size == 1
+
+      asked = datum_parts(named.first)
+      properties = asked.properties.presence || datum_parts(question["question"]).properties
+      return nil if (properties & said.properties).empty?
+      return nil if other_connection?(asked, said)
+      return nil if other_entity?(component_parts(asked), component_parts(said))
+
+      named.first
+    end
+
+    # The rest of a compound question is settled by a check the technician
+    # reports as done. An observation or an unknown does not settle it.
+    def self.other_parts_checked?(episode, question, part)
+      (question_parts(question["question"]) - [ part ]).all? { |other|
+        Array(episode.checks).any? { |check|
+          check["status"] == "done" &&
+            same_published_datum?({ "question" => other }, "#{check["subject"]} #{check["result"]}")
+        }
+      }
+    end
+
     # A short request to continue, with no component and no measurement.
     def self.continuity_request?(turn)
       label = FollowupQueryRewriter.normalize_label(turn)
@@ -268,6 +306,24 @@ module Rag
       ].map { |word| CompanionPlanCheck.stem(word) }.to_set
     end
 
+    def self.connection_stems
+      @connection_stems ||= %w[entrada salida contacto borne terminal].map { |word| CompanionPlanCheck.stem(word) }.to_set
+    end
+
+    def self.question_parts(text)
+      text.to_s.delete("¿?").split(/\s+o\s+/i).map(&:squish).compact_blank
+    end
+
+    def self.component_parts(datum)
+      Datum.new(datum.numbers, datum.properties, datum.entities.reject { |stem| connection_stems.include?(stem) })
+    end
+
+    def self.other_connection?(asked, said)
+      left = asked.entities.select { |stem| connection_stems.include?(stem) }
+      right = said.entities.select { |stem| connection_stems.include?(stem) }
+      left.any? && right.any? && (left & right).empty?
+    end
+
     def self.generic_entity?(stem)
       CompanionPlanRender::GENERIC_STEMS.include?(stem) || %w[equip siste].include?(stem)
     end
@@ -301,7 +357,8 @@ module Rag
       :question_datum_text, :datum_parts, :other_scope?, :other_property?, :other_entity?,
       :datum_covers?, :unspecified_unknown?, :promote_shown_question, :generic_entity?,
       :referent_placeholder?,
-      :designators, :closed_reply?
+      :designators, :closed_reply?, :connection_stems, :question_parts, :component_parts,
+      :other_connection?
 
     def self.apply!(episode:, perception:, decision:, turn:, correlation_id:, now:)
       new(
@@ -528,9 +585,17 @@ module Rag
       end
       return if texts.empty?
 
-      return unless scope || self.class.same_published_datum?(question, @turn)
+      part = nil
+      unless scope || self.class.same_published_datum?(question, @turn)
+        part = self.class.answered_part(question, @turn)
+        return if part.nil?
+
+        answers["q"] = "¿#{part.upcase_first}?"
+      end
 
       texts.each { |text| @episode.append_observation!(text, correlation_id: @correlation_id, answers: answers) }
+      return if part && !self.class.other_parts_checked?(@episode, question, part)
+
       self.class.settle_answered_pending!(@episode, question["question"])
     end
 
@@ -552,8 +617,8 @@ module Rag
       shown = pending.is_a?(Hash) ? pending["shown"] : nil
       return false unless shown.is_a?(Hash) && shown["question"].present?
 
-      self.class.same_published_datum?(pending, @turn) &&
-        self.class.same_published_datum?(shown, @turn)
+      (self.class.same_published_datum?(pending, @turn) || self.class.answered_part(pending, @turn)) &&
+        (self.class.same_published_datum?(shown, @turn) || self.class.answered_part(shown, @turn))
     end
 
     def unknown_limit_reply?

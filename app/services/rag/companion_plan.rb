@@ -39,7 +39,9 @@ module Rag
           "type" => "array",
           "maxItems" => 2,
           "items" => { "type" => "string", "description" => "Id de un apartado o texto, p. ej. S1.3." }
-        }
+        },
+        "question_ref" => { "type" => "string", "description" => "Id ya publicado de la pregunta, o vacío." },
+        "part_ref" => { "type" => "string", "description" => "Id ya publicado de la parte, o vacío." }
       },
       "required" => %w[links steps question question_about]
     }.freeze
@@ -82,7 +84,7 @@ module Rag
         text = check.usable? ? CompanionPlanRender.call(check, facts: prepared.facts, statements: prepared.statements) : ""
         Composed.new(
           text: text, check: check, input: input, stop_reason: stop_reason,
-          pending: published_pending(text, check, prepared)
+          pending: published_pending(text, check, prepared, input)
         )
       end
 
@@ -98,7 +100,12 @@ module Rag
         nil
       end
 
-      def published_pending(text, check, prepared)
+      def published_pending(text, check, prepared, plan = nil)
+        open = prepared.facts.open_question
+        if AnswerContract.keep_open_formulation?(open, plan)
+          return PendingQuestion.coerce(open.deep_dup) || open
+        end
+
         question = check.question.to_s
         return nil if question.blank? || text.blank? || text.exclude?(question)
         # Which of two open matters is a clarification. It does not take the slot.

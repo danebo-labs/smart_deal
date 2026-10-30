@@ -100,6 +100,11 @@ class SessionContextBuilder
     companion_check_lines(episode, session).each do |line|
       units << companion_unit(line, keep: !line.start_with?("- "), protect: companion_protected_text?(line))
     end
+    if session
+      Rag::AnswerContract.context_lines(episode, session).each do |line|
+        units << companion_unit(line, protect: companion_protected_text?(line))
+      end
+    end
     text = fit_companion_units(units, companion_case_budget, trace, "companion_case").join("\n")
     finish_problem_fit(text, trace)
   end

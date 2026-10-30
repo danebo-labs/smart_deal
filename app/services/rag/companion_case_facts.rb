@@ -28,12 +28,15 @@ module Rag
 
     def initialize(episode, session)
       @facts = []
-      parsed = episode.is_a?(ActiveEpisode) ? episode : ActiveEpisode.parse(episode)
+      @session = session
+      @episode_record = episode.is_a?(ActiveEpisode) ? episode : ActiveEpisode.parse(episode)
+      parsed = @episode_record
       return if parsed.nil? || parsed.blank?
 
       pending = parsed.pending_question
       if pending.is_a?(Hash) && pending["type"] == "documented_context" &&
-          pending["aspect"] != "scope" && pending["question"].present?
+          pending["aspect"] != "scope" && pending["question"].present? &&
+          open_contract_question?(pending, parsed)
         @open_question = pending
       end
 
@@ -67,13 +70,32 @@ module Rag
     end
 
     def prompt_block
-      return "" if @facts.empty?
+      lines = @episode_record ? AnswerContract.context_lines(@episode_record, @session) : []
+      return "" if @facts.empty? && lines.empty?
 
-      lines = [ "Caso (estado actual, dicho por el técnico; no es documentación):" ]
-      @facts.each do |fact|
-        lines << prompt_line(fact)
+      body = []
+      if @facts.any?
+        body << "Caso (estado actual, dicho por el técnico; no es documentación):"
+        @facts.each { |fact| body << prompt_line(fact) }
       end
-      lines.join("\n")
+      body.concat(lines)
+      body.join("\n")
+    end
+
+    def settled_part?(part_id)
+      return false if @episode_record.nil? || @episode_record.blank?
+
+      AnswerContract::SETTLED.include?(AnswerContract.part_state(@episode_record, part_id))
+    end
+
+    def settled_question?(question_id)
+      question = @episode_record&.pending_question
+      return false unless question.is_a?(Hash) && question["id"].to_s == question_id.to_s
+
+      parts = Array(question["parts"]).select { |part| part.is_a?(Hash) && part["id"].present? }
+      return false if parts.empty?
+
+      parts.all? { |part| settled_part?(part["id"]) }
     end
 
     private
@@ -92,12 +114,20 @@ module Rag
     end
 
     def answer_words(fact)
+      return fact.text.sub(/\.\z/, "") if fact.answers["contract"] == "ref"
+
       case fact.answers["r"]
       when "yes" then "sí"
       when "no" then "no"
       when "unknown" then "no sé"
       else fact.text.sub(/\.\z/, "")
       end
+    end
+
+    def open_contract_question?(pending, episode)
+      return true if pending["id"].blank? || !pending["parts"].is_a?(Array) || pending["parts"].empty?
+
+      AnswerContract.open_parts(episode).any?
     end
 
     # A stored sentence can still name the LED state the technician replaced.

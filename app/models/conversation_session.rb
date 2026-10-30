@@ -942,6 +942,7 @@ class ConversationSession < ApplicationRecord
     self.turn_causal = nil
     original_text = content.to_s
     turn = Rag::TurnText.truncate(original_text)
+    admitted = Rag::AnswerContract.admitted_text(original_text)
     if original_text == turn
       self.interpreter_input_chars = nil
     else
@@ -986,11 +987,11 @@ class ConversationSession < ApplicationRecord
 
       focus = fresh_focus_snapshot
       if same_episode?(snapshot, active_episode)
-        result = apply_owner_perception!(turn, interpreted, correlation_id, user_id, now, locale, focus, photo_context)
+        result = apply_owner_perception!(admitted, interpreted, correlation_id, user_id, now, locale, focus, photo_context)
       else
         photo_status = photo_context.status == "absent" ? "absent" : "stale"
         self.turn_active_photo_context = nil
-        result = apply_owner_fallback!(turn, correlation_id, user_id, now, locale, focus, "snapshot_changed")
+        result = apply_owner_fallback!(admitted, correlation_id, user_id, now, locale, focus, "snapshot_changed")
       end
     end
     log_turn_interpreter(interpreted, result, correlation_id, user_id, photo_status)

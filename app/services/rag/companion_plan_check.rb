@@ -253,6 +253,10 @@ module Rag
       text = @plan["question"].to_s.squish
       targets = @targets
       reason = text.present? ? question_reason(text, steps) : nil
+      if reason == "part_settled"
+        reject("question", text, reason)
+        return [ nil, [] ]
+      end
       reason = "repeats_heading" if reason.nil? && text.present? && heading_repeat?(text)
       if text.present? && declared_unknown_question?(text)
         reject("question", text, "declared_unknown")
@@ -403,6 +407,17 @@ module Rag
       @limits << {
         "item" => item, "source" => statement.source, "note" => "partial", "fact" => partial.text.to_s
       }
+    end
+
+    def settled_reference?
+      return false unless @facts.respond_to?(:settled_part?)
+
+      part_id = @plan["part_ref"].to_s
+      question_id = @plan["question_ref"].to_s
+      return @facts.settled_part?(part_id) if part_id.match?(/\Ap\d+\z/)
+      return false unless question_id.match?(/\Aq\d+\z/)
+
+      @facts.respond_to?(:settled_question?) && @facts.settled_question?(question_id)
     end
 
     def derivable?(reason)
@@ -996,6 +1011,7 @@ module Rag
     end
 
     def question_reason(text, steps)
+      return "part_settled" if text == @plan["question"].to_s.squish && settled_reference?
       return "too_long" if text.length > MAX_QUESTION_CHARS
       return "not_one_question" unless text.end_with?("?") && text.count("?") == 1
       return "already_answered" if already_answered?

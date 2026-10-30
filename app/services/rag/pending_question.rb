@@ -65,6 +65,10 @@ module Rag
       return nil unless (1..2).cover?(targets.size)
 
       question = { "type" => "documented_context", "question" => text, "targets" => targets }
+      id = raw["id"].to_s
+      question["id"] = id if id.match?(/\Aq\d+\z/)
+      parts = contract_parts(raw["parts"])
+      question["parts"] = parts if parts.any?
       about = raw["about"].to_s.squish.first(ActiveEpisode::MAX_OBSERVATION_CHARS)
       question["about"] = about if about.present?
       question["aspect"] = "scope" if raw["aspect"].to_s == "scope" && about.present?
@@ -104,6 +108,24 @@ module Rag
 
       targets = Array(raw["targets"]).filter_map { |item| documented_target(item) }.first(2)
       { "question" => text, "targets" => targets }
+    end
+
+    def contract_parts(raw)
+      return [] unless raw.is_a?(Array)
+
+      kept = []
+      raw.each do |part|
+        next unless part.is_a?(Hash)
+
+        id = part["id"].to_s
+        role = part["role"].to_s
+        text = part["text"].to_s.squish.first(240)
+        next unless id.match?(/\Ap\d+\z/) && AnswerContract::ROLES.include?(role) && text.present?
+        next if kept.any? { |item| item["role"] == role }
+
+        kept << { "id" => id, "role" => role, "text" => text }
+      end
+      kept
     end
 
     def documented_target(raw)

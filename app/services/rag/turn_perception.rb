@@ -44,10 +44,14 @@ module Rag
     Identity = Data.define(:span, :act, :kind, :slot, :value, :source, :manufacturer)
     Ambiguity = Data.define(:span, :candidates)
 
-    Result = Data.define(
+    # Struct, not Data: Data freezes the instance, so a reply list cannot be
+    # attached afterwards. The two reply members stay optional for callers
+    # that build a perception without this contract.
+    Result = Struct.new(
       :valid, :move, :observations, :pending_resolution, :clarification_target,
       :identities, :ambiguities, :field_rejections, :catalog_disagreements, :invalid_reason,
-      :correction, :checks, :adjustments
+      :correction, :checks, :adjustments, :part_replies, :part_replies_given,
+      keyword_init: true
     ) do
       def facts
         identities.select { |item| item.kind == "fact" }
@@ -65,6 +69,14 @@ module Rag
         observations.any? || ambiguities.any? || identities.any? { |item|
           item.kind == "fact" || (item.act == "assert" && item.kind == "identifier")
         }
+      end
+
+      def part_replies
+        self[:part_replies] || []
+      end
+
+      def part_replies_given?
+        self[:part_replies_given] == true
       end
     end
 
@@ -113,6 +125,23 @@ module Rag
                 result: { type: %w[string null], maxLength: ActiveEpisode::MAX_CHECK_CHARS }
               }
             }
+          },
+          part_replies: {
+            type: "array",
+            maxItems: 4,
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: %w[question_id part_id state],
+              properties: {
+                question_id: { type: "string" },
+                part_id: { type: "string" },
+                state: { type: "string", enum: AnswerContract::STATES },
+                start: { type: %w[integer null] },
+                end: { type: %w[integer null] },
+                supersedes: { type: %w[array null] }
+              }
+            }
           }
         }
       }
@@ -124,7 +153,7 @@ module Rag
       return "not_a_hash" unless raw.is_a?(Hash)
 
       data = raw.deep_stringify_keys
-      return "extra_keys" if (data.keys - ROOT_KEYS - [ "checks" ]).any?
+      return "extra_keys" if (data.keys - ROOT_KEYS - [ "checks", "part_replies" ]).any?
       return "invalid_move" unless MOVES.include?(data["move"])
       return "invalid_assertions" unless data["assertions"].is_a?(Array)
       return "invalid_observations" unless data["observations"].is_a?(Array)
@@ -182,16 +211,68 @@ module Rag
 
     # A JSON null is not a list of checks. It is safe as an empty list only
     # when that is the sole structural defect. Any other defect stays.
+    PART_REPLY_KEYS = %w[question_id part_id state start end supersedes].freeze
+    MAX_PART_REPLIES = 4
+
     def self.prepare_tool(raw)
       return [ raw, [] ] unless raw.is_a?(Hash)
 
       data = raw.deep_stringify_keys
-      return [ data, [] ] unless data.key?("checks") && data["checks"].nil?
+      notes = []
+      if data.key?("part_replies")
+        cleaned, reply_notes = clean_part_replies(data["part_replies"])
+        data = data.merge("part_replies" => cleaned)
+        notes.concat(reply_notes)
+      end
+      return [ data, notes ] unless data.key?("checks") && data["checks"].nil?
 
       candidate = data.merge("checks" => [])
-      return [ data, [] ] if structural_failure(candidate)
+      return [ data, notes ] if structural_failure(candidate)
 
-      [ candidate, [ { "rule" => "normalize_checks", "datum" => "checks", "reason" => "null_as_empty" } ] ]
+      [ candidate, notes + [ { "rule" => "normalize_checks", "datum" => "checks", "reason" => "null_as_empty" } ] ]
+    end
+
+    def self.clean_part_replies(raw)
+      unless raw.is_a?(Array)
+        return [ [], [ { "rule" => "part_replies", "datum" => "part_replies", "reason" => "not_a_list" } ] ]
+      end
+
+      notes = []
+      cleaned = []
+      raw.each_with_index do |item, index|
+        if cleaned.size >= MAX_PART_REPLIES
+          notes << { "rule" => "part_replies", "datum" => index.to_s, "reason" => "too_many" }
+          next
+        end
+        row = clean_part_reply(item)
+        if row
+          cleaned << row
+        else
+          notes << { "rule" => "part_replies", "datum" => index.to_s, "reason" => "invalid_reply" }
+        end
+      end
+      [ cleaned, notes ]
+    end
+
+    def self.clean_part_reply(item)
+      return nil unless item.is_a?(Hash)
+
+      item = item.deep_stringify_keys
+      return nil if (item.keys - PART_REPLY_KEYS).any?
+      return nil unless item["question_id"].is_a?(String) && item["part_id"].is_a?(String)
+      return nil unless AnswerContract::STATES.include?(item["state"].to_s)
+      return nil unless item["start"].nil? || item["start"].is_a?(Integer)
+      return nil unless item["end"].nil? || item["end"].is_a?(Integer)
+
+      supersedes = item["supersedes"]
+      if supersedes.is_a?(String)
+        item = item.merge("supersedes" => [ supersedes ])
+        supersedes = item["supersedes"]
+      end
+      return nil unless supersedes.nil? || supersedes.is_a?(Array)
+      return nil if supersedes.is_a?(Array) && supersedes.any? { |id| !id.is_a?(String) }
+
+      item
     end
 
     def self.checks_failure(data)
@@ -235,6 +316,7 @@ module Rag
     end
 
     def build
+      @part_replies_given = part_replies_given_in?(@raw)
       prepared, notes = self.class.prepare_tool(@raw)
       notes.each { |note| note_rule(note["rule"], note["datum"], note["reason"]) }
       data = coerce_tool(prepared)
@@ -263,6 +345,7 @@ module Rag
       resolution = nil unless move == "answer_pending"
       identities = apply_structured_slots(move, resolution, identities)
 
+      replies = prepared.is_a?(Hash) ? Array(prepared["part_replies"]) : []
       result = Result.new(
         valid: true,
         move: move,
@@ -276,10 +359,18 @@ module Rag
         invalid_reason: nil,
         correction: @correction || ObservationCorrection.none,
         checks: checks,
-        adjustments: @adjustments
+        adjustments: @adjustments,
+        part_replies: replies,
+        part_replies_given: @part_replies_given
       )
       record_perception(result)
       result
+    end
+
+    def part_replies_given_in?(raw)
+      return false unless raw.is_a?(Hash)
+
+      raw.key?("part_replies") || raw.key?(:part_replies)
     end
 
     private

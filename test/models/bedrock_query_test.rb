@@ -269,4 +269,38 @@ class BedrockQueryTest < ActiveSupport::TestCase
     assert_equal BigDecimal("0.018"), Rag::LocalPassLedger.price(global_id, 1000, 1000)
     assert_not_equal Rag::LocalPassLedger.price(haiku.model_id, 1000, 1000), Rag::LocalPassLedger.price(global_id, 1000, 1000)
   end
+
+  test "haiku 5.5 direct uses the short rate and the long rate above 100k" do
+    short = BedrockQuery.new(
+      model_id: "claude-haiku-5-5-direct",
+      input_tokens: 1_000,
+      output_tokens: 1_000,
+      cache_read_tokens: 1_000,
+      cache_creation_tokens: 1_000
+    )
+    boundary = BedrockQuery.new(
+      model_id: "claude-haiku-5-5-direct",
+      input_tokens: 100_000,
+      output_tokens: 0
+    )
+    long = BedrockQuery.new(
+      model_id: "claude-haiku-5-5-direct",
+      input_tokens: 1_000_000,
+      output_tokens: 1_000_000,
+      cache_read_tokens: 1_000_000,
+      cache_creation_tokens: 1_000_000
+    )
+    haiku45 = BedrockQuery.new(
+      model_id: "claude-haiku-4-5-20251001-direct",
+      input_tokens: 1_000,
+      output_tokens: 1_000
+    )
+
+    assert_in_delta 0.000735, short.cost, 0.0000005
+    assert_equal 0.01, boundary.cost
+    assert_in_delta 3.675, long.cost, 0.0000005
+    assert_equal 0.006, haiku45.cost
+    assert_not_equal short.pricing_for, haiku45.pricing_for
+    assert_not_equal BedrockQuery::BEDROCK_PRICING.fetch("default"), short.pricing_for
+  end
 end

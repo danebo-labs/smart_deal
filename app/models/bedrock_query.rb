@@ -100,6 +100,12 @@ class BedrockQuery < ApplicationRecord
     # Five-minute cache write is $2.50 / MTok. The one-hour write is not stored.
     'claude-sonnet-5-5-direct'                         => { input: 0.002,   output: 0.01,    cache_read: 0.0002,   cache_creation: 0.0025   },
     'claude-haiku-4-5-20251001-direct'                 => { input: 0.001,   output: 0.005,   cache_read: 0.0001,   cache_creation: 0.00125  },
+    # Haiku 5.5 Direct, short context. Page filter only, behind HAIKU55_PAGE_FILTER.
+    # https://platform.claude.com/docs/en/about-claude/pricing (2026-10-30): $0.10 / $0.50 per MTok
+    # below 100k prompt tokens. Five-minute cache write is $0.125 / MTok. Cache read is $0.01.
+    # Above 100k the published rate is $0.50 / $2.50; #cost switches this key there.
+    # The one-hour cache write is not stored. Not an alias of the Haiku 4.5 row.
+    'claude-haiku-5-5-direct'                          => { input: 0.0001,  output: 0.0005,  cache_read: 0.00001,  cache_creation: 0.000125 },
     # Bedrock Inference Profiles (global. ~10% cheaper than us.)
     'global.anthropic.claude-opus-4-6-v1'              => { input: 0.005,  output: 0.025  },
     'global.anthropic.claude-haiku-4-5-20251001-v1:0'  => { input: 0.001,  output: 0.005  },
@@ -131,8 +137,16 @@ class BedrockQuery < ApplicationRecord
       BEDROCK_PRICING['default']
   end
 
+  HAIKU_55_DIRECT = "claude-haiku-5-5-direct"
+  HAIKU_55_LONG_PROMPT = 100_000
+  HAIKU_55_LONG_PRICING = { input: 0.0005, output: 0.0025, cache_read: 0.00005, cache_creation: 0.000625 }.freeze
+
   def cost
     pricing = pricing_for
+    if model_id == HAIKU_55_DIRECT
+      prompt = input_tokens.to_i + cache_read_tokens.to_i + cache_creation_tokens.to_i
+      pricing = HAIKU_55_LONG_PRICING if prompt > HAIKU_55_LONG_PROMPT
+    end
 
     input_cost          = (input_tokens.to_i          / 1000.0) * pricing[:input]
     output_cost         = (output_tokens.to_i          / 1000.0) * pricing[:output]

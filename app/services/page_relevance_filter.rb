@@ -214,6 +214,30 @@ class PageRelevanceFilter
   # @return [Hash{Integer => Hash}] page_number => { keep:, reason:, source: :haiku_batch, force_opus: }
   def self.call_batch(pages:, filename:, haiku_client: nil, correlation_id: nil)
     return {} if pages.empty?
+    unless Haiku55PageFilterFlag.enabled?
+      return run_batch(pages: pages, filename: filename, haiku_client: haiku_client, correlation_id: correlation_id)
+    end
+
+    SelectivePageRepresentation.call(pages) do |payload_pages, failures|
+      results = if payload_pages.empty?
+        {}
+      else
+        run_batch(pages: payload_pages, filename: filename, haiku_client: haiku_client, correlation_id: correlation_id)
+      end
+      failures.each do |page|
+        results[page.number] = {
+          keep: true,
+          reason: :visual_render_failed,
+          source: :visual_render,
+          force_opus: scanned_dense?(page.binary)
+        }
+      end
+      results
+    end
+  end
+
+  def self.run_batch(pages:, filename:, haiku_client: nil, correlation_id: nil)
+    return {} if pages.empty?
 
     total_pages      = pages.map(&:number).compact.max || pages.size
     windows          = build_batch_windows(pages)
@@ -234,6 +258,7 @@ class PageRelevanceFilter
     log_batch_windows(filename: filename, total_pages: total_pages, windows: windows, fallback_windows: fallback_windows)
     results
   end
+  private_class_method :run_batch
 
   def self.build_batch_windows(pages)
     windows       = []
@@ -550,12 +575,18 @@ class PageRelevanceFilter
 
     def invoke(client, max_tokens:)
       start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      response = client.messages.create(
+      params = {
         model:      PageRelevanceFilter::HAIKU_MODEL,
         max_tokens: max_tokens,
         system:     IngestionVisualTriageFlag.enabled? ? HAIKU_BATCH_SYSTEM_V2 : HAIKU_BATCH_SYSTEM,
         messages:   [ { role: "user", content: build_content } ]
-      )
+      }
+      if Haiku55PageFilterFlag.enabled?
+        params[:model] = Haiku55PageFilterFlag::MODEL
+        params[:output_config] = { effort: Haiku55PageFilterFlag::EFFORT }
+        params[:thinking] = { type: "disabled" }
+      end
+      response = client.messages.create(**params)
       latency_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000).round
       [ response, latency_ms ]
     end
@@ -591,12 +622,24 @@ class PageRelevanceFilter
           source: {
             type:       "base64",
             media_type: "application/pdf",
-            data:       Base64.strict_encode64(page.binary)
+            data:       Base64.strict_encode64(classification_binary_for(page))
           }
         }
       end
       content << { type: "text", text: "Classify each slide. Return ONLY the JSON object." }
       content
+    end
+
+    def classification_binary_for(page)
+      page.respond_to?(:classification_binary) ? page.classification_binary : page.binary
+    end
+
+    def batch_tracking_model_id
+      if Haiku55PageFilterFlag.enabled?
+        Haiku55PageFilterFlag::TRACKING_MODEL_ID
+      else
+        PageRelevanceFilter::HAIKU_TRACKING_MODEL_ID
+      end
     end
 
     def dynamic_max_tokens
@@ -680,7 +723,7 @@ class PageRelevanceFilter
     def track_usage(response, latency_ms, max_tokens:, attempt:)
       usage = response.usage
       TrackBedrockQueryJob.perform_later(
-        model_id:              PageRelevanceFilter::HAIKU_TRACKING_MODEL_ID,
+        model_id:              batch_tracking_model_id,
         user_query:            "page_filter_batch: #{@filename} #{window_label}/#{@total_pages}",
         latency_ms:            latency_ms,
         input_tokens:          usage.input_tokens.to_i,

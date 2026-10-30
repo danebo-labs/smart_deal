@@ -149,6 +149,8 @@ Each window uses `max(256, 64 + pages_in_window * 32)` output tokens. If the res
 
 Tracking: `page_filter_batch: <filename> <window_min>..<window_max>/<total_pages>` in `bedrock_queries`. `PageRelevanceFilter` also logs `windows_count`, `window_ranges`, `window_bytes`, and `fallback_windows`.
 
+`HAIKU55_PAGE_FILTER=1` switches only this batch path to `claude-haiku-5-5` with `output_config.effort=low` and `thinking.type=disabled`. A page with a text layer is sent as a temporary image-only copy; an adequate scan (`text_layer_chars < 100` and `image_area_ratio > 0.7`) is sent as the original page. The copy is not stored or indexed. Guards, `scanned_dense?`, `force_opus`, and the Sonnet/Opus builders keep the original bytes. A one-page document stays on Haiku 4.5. `config/deploy.yml` sets the variable. Removing it and redeploying is the rollback. Tracked as `claude-haiku-5-5-direct`.
+
 Observed retained 200-page manual yield: **168/200 pages kept (84%)**. Yield is
 content-dependent; derive cost from actual filtered pages, not a fixed ratio.
 
@@ -160,7 +162,8 @@ Models (`BatchChunkingPrompt`):
 
 - **Sonnet 4.6** — `MODEL_TEXT` — default parse
 - **Opus 4.8** — `MODEL_MULTIMODAL` — dense scans, large field photos
-- **Haiku 4.5** — page filter + optional photo gate only (not chunk generation)
+- **Haiku 4.5** — single-page filter and optional photo gate (not chunk generation)
+- **Haiku 5.5** — multi-page batch filter when `HAIKU55_PAGE_FILTER=1`
 
 | File type | Filter | Parse model | Prompt | API mode (chat) | API mode (bulk) |
 |-----------|--------|-------------|--------|-----------------|-----------------|

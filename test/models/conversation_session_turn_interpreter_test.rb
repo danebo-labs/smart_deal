@@ -907,17 +907,20 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     assert_not_includes Array(session.active_episode["identifiers"]).pluck("value"), "ABC900"
   end
 
-  test "Haiku sees the same truncated turn that is stored and validated" do
+  test "the interpreter receives the admitted turn and history keeps the preview" do
     session = web_session
     text = ("palabra " * ((ConversationSession::MAX_MSG_LENGTH / 8) + 1)) + "COLADETRAS"
     interpreter = client(perception("report", assertions: [ assertion("COLADETRAS", "assert") ]))
     with_owner { ask(session, text, interpreter) }
 
-    stored = session.reload.conversation_history.last["content"]
+    message = session.reload.conversation_history.last
     sent = JSON.parse(interpreter.payloads.first[:messages].first[:content].first[:text])
-    assert_equal Rag::TurnText.truncate(text), stored
-    assert_equal stored, sent["turn"]
-    assert_not_includes stored, "COLADETRAS"
+    assert_equal Rag::TurnText.truncate(text), message["content"]
+    assert_equal Rag::AnswerContract.admitted_text(text), sent["turn"]
+    assert_equal text, message["full_content"]
+    assert_includes sent["turn"], "COLADETRAS"
+    assert_not_includes message["content"], "COLADETRAS"
+    # Span checks still use the history preview, so this tail is not an identifier.
     assert_not_includes Array(session.active_episode["identifiers"]).pluck("value"), "COLADETRAS"
   end
 

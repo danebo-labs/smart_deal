@@ -386,7 +386,8 @@ module Rag
       return @episode if @decision&.decision == "meta"
 
       write_checks unless @perception.move == "unclear"
-      bind_documented_answer unless @perception.part_replies_given?
+      @contract_at_entry = AnswerContract.active?(@episode)
+      bind_documented_answer unless @contract_at_entry
       remember_referent_choice if remember_referent_choice?
       promote_carry if promote_existing_carry?
 
@@ -1001,14 +1002,23 @@ module Rag
     end
 
     def record_part_replies
-      return unless @perception.part_replies_given?
-
-      AnswerContract.apply!(
+      field = part_reply_field
+      proposals = field == "present" ? @perception.part_replies : []
+      @episode.answer_report = AnswerContract.apply!(
         @episode,
         turn: @turn,
         correlation_id: @correlation_id,
-        proposals: @perception.part_replies
+        proposals: proposals,
+        contract: @contract_at_entry,
+        field: field
       )
+    end
+
+    def part_reply_field
+      return @perception.part_replies_field if @perception.respond_to?(:part_replies_field)
+
+      given = @perception.respond_to?(:part_replies_given?) && @perception.part_replies_given?
+      given ? "present" : "absent"
     end
 
     # The published question stays until a corresponding answer clears it.

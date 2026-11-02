@@ -51,6 +51,7 @@ module Rag
       :valid, :move, :observations, :pending_resolution, :clarification_target,
       :identities, :ambiguities, :field_rejections, :catalog_disagreements, :invalid_reason,
       :correction, :checks, :adjustments, :part_replies, :part_replies_given,
+      :part_replies_field,
       keyword_init: true
     ) do
       def facts
@@ -77,6 +78,14 @@ module Rag
 
       def part_replies_given?
         self[:part_replies_given] == true
+      end
+
+      def part_replies_field
+        stored = self[:part_replies_field]
+        return stored if stored.present?
+        return "absent" unless part_replies_given?
+
+        part_replies.empty? ? "empty" : "present"
       end
     end
 
@@ -317,6 +326,7 @@ module Rag
 
     def build
       @part_replies_given = part_replies_given_in?(@raw)
+      @part_replies_field = self.class.part_reply_field(@raw)
       prepared, notes = self.class.prepare_tool(@raw)
       notes.each { |note| note_rule(note["rule"], note["datum"], note["reason"]) }
       data = coerce_tool(prepared)
@@ -361,7 +371,8 @@ module Rag
         checks: checks,
         adjustments: @adjustments,
         part_replies: replies,
-        part_replies_given: @part_replies_given
+        part_replies_given: @part_replies_given,
+        part_replies_field: @part_replies_field
       )
       record_perception(result)
       result
@@ -371,6 +382,22 @@ module Rag
       return false unless raw.is_a?(Hash)
 
       raw.key?("part_replies") || raw.key?(:part_replies)
+    end
+
+    # absent: the tool omitted the field. empty: it sent a list with nothing
+    # in it. invalid: the field was not a list, or every item was dropped.
+    # present: at least one item kept its shape. Membership is checked later.
+    def self.part_reply_field(raw)
+      return "absent" unless raw.is_a?(Hash)
+      return "absent" unless raw.key?("part_replies") || raw.key?(:part_replies)
+
+      value = raw["part_replies"]
+      value = raw[:part_replies] if value.nil? && raw.key?(:part_replies)
+      return "invalid" unless value.is_a?(Array)
+      return "empty" if value.empty?
+
+      cleaned, _notes = clean_part_replies(value)
+      cleaned.empty? ? "invalid" : "present"
     end
 
     private

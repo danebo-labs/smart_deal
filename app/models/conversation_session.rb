@@ -25,7 +25,8 @@ class ConversationSession < ApplicationRecord
   DOCUMENT_FOCUS_KEYS = %w[added_at display_name kb_document_id source_uri].freeze
   PHOTO_PENDING_SLOTS = %w[manufacturer model].freeze
 
-  attr_accessor :turn_active_photo_context, :turn_causal, :context_truncated, :interpreter_input_chars
+  attr_accessor :turn_active_photo_context, :turn_causal, :context_truncated, :interpreter_input_chars,
+                :last_answer_report
 
   def self.media_type_for(document_or_uri)
     source = document_or_uri.respond_to?(:s3_key) ? document_or_uri.s3_key : document_or_uri
@@ -165,7 +166,7 @@ class ConversationSession < ApplicationRecord
   # Flag off: the same single UPDATE as add_to_history_and_refresh, and nil.
   # Flag on: history and active_episode in one UPDATE. The caller does not
   # read the Result while the episode flag is the only one enabled.
-  def record_user_turn!(content, user_id:, correlation_id:, selection_turn: false, now: Time.current, locale: :es, interpreter_client: nil, interpreter_sleeper: nil)
+  def record_user_turn!(content, user_id:, correlation_id:, selection_turn: false, now: Time.current, locale: :es, interpreter_client: nil, interpreter_sleeper: nil, answer_contract: nil)
     self.interpreter_input_chars = nil
     unless episode_recording?
       add_to_history_and_refresh("user", content, user_id: user_id, correlation_id: correlation_id)
@@ -174,7 +175,8 @@ class ConversationSession < ApplicationRecord
     if owner_typed_turn?(selection_turn)
       return record_owner_turn!(
         content, user_id: user_id, correlation_id: correlation_id, now: now,
-        locale: locale, interpreter_client: interpreter_client, interpreter_sleeper: interpreter_sleeper
+        locale: locale, interpreter_client: interpreter_client, interpreter_sleeper: interpreter_sleeper,
+        answer_contract: answer_contract
       )
     end
 
@@ -923,7 +925,7 @@ class ConversationSession < ApplicationRecord
     Rag::HaikuQueryAnalysisFlag.owner? && !selection_turn
   end
 
-  def record_owner_turn!(content, user_id:, correlation_id:, now:, locale:, interpreter_client:, interpreter_sleeper: nil)
+  def record_owner_turn!(content, user_id:, correlation_id:, now:, locale:, interpreter_client:, interpreter_sleeper: nil, answer_contract: nil)
     Rag::ValidationCapture.with_turn(correlation_id) do
       apply_recorded_owner_turn!(
         content,
@@ -932,21 +934,22 @@ class ConversationSession < ApplicationRecord
         now: now,
         locale: locale,
         interpreter_client: interpreter_client,
-        interpreter_sleeper: interpreter_sleeper
+        interpreter_sleeper: interpreter_sleeper,
+        answer_contract: answer_contract
       )
     end
   end
 
-  def apply_recorded_owner_turn!(content, user_id:, correlation_id:, now:, locale:, interpreter_client:, interpreter_sleeper: nil)
+  def apply_recorded_owner_turn!(content, user_id:, correlation_id:, now:, locale:, interpreter_client:, interpreter_sleeper: nil, answer_contract: nil)
     focus_before = :unset
     self.turn_causal = nil
     original_text = content.to_s
     turn = Rag::TurnText.truncate(original_text)
     admitted = Rag::AnswerContract.admitted_text(original_text)
-    if original_text == turn
+    if original_text == admitted
       self.interpreter_input_chars = nil
     else
-      self.interpreter_input_chars = { original: original_text.length, sent: turn.length }
+      self.interpreter_input_chars = { original: original_text.length, sent: admitted.length }
     end
     record_user_message(original_text, turn)
     focus_before = Rag::ValidationCapture.active? ? document_focus_entries : :unset
@@ -957,24 +960,32 @@ class ConversationSession < ApplicationRecord
 
     snapshot = active_episode
     parsed = Rag::ActiveEpisode.parse(snapshot, now: now)
-    context_episode = stale_episode?(parsed) ? Rag::ActiveEpisode.new : parsed
+    opened_episode = nil
+    if stale_episode?(parsed)
+      opened_episode = open_owner_episode(correlation_id, now, answer_contract)
+      context_episode = opened_episode
+    else
+      context_episode = parsed
+    end
     Rag::ValidationCapture.bind(
       session_id: id,
       account_id: account_id,
       user_id: user_id,
       episode_id: context_episode.episode_id
     )
+    record_answer_contract(opened_episode) if opened_episode
     photo_context = Rag::ActivePhotoContext.resolve(episode: context_episode, viewer_account: account)
     photo_status = photo_context.status
     interpreted = Rag::TurnInterpreter.call(
-      turn: turn,
+      turn: admitted,
       episode: context_episode,
       viewer_account: account,
       correlation_id: correlation_id,
       attribution: { account_id: account_id, user_id: user_id, conversation_session_id: id },
       client: interpreter_client,
       active_photo_context: photo_context,
-      sleeper: interpreter_sleeper
+      sleeper: interpreter_sleeper,
+      session: self
     )
 
     result = nil
@@ -987,7 +998,10 @@ class ConversationSession < ApplicationRecord
 
       focus = fresh_focus_snapshot
       if same_episode?(snapshot, active_episode)
-        result = apply_owner_perception!(admitted, interpreted, correlation_id, user_id, now, locale, focus, photo_context)
+        result = apply_owner_perception!(
+          admitted, interpreted, correlation_id, user_id, now, locale, focus, photo_context,
+          opened_episode: opened_episode, answer_contract: answer_contract
+        )
       else
         photo_status = photo_context.status == "absent" ? "absent" : "stale"
         self.turn_active_photo_context = nil
@@ -1001,7 +1015,7 @@ class ConversationSession < ApplicationRecord
     record_document_focus(focus_before)
   end
 
-  def apply_owner_perception!(turn, interpreted, correlation_id, user_id, now, locale, focus, photo_context)
+  def apply_owner_perception!(turn, interpreted, correlation_id, user_id, now, locale, focus, photo_context, opened_episode: nil, answer_contract: nil)
     perception = interpreted.perception
     if interpreted.status == "service_failure"
       self.turn_active_photo_context = nil
@@ -1009,7 +1023,9 @@ class ConversationSession < ApplicationRecord
     end
     if interpreted.fallback || perception.nil? || !perception.valid
       self.turn_active_photo_context = nil
-      return apply_owner_fallback!(turn, correlation_id, user_id, now, locale, focus, interpreted.status)
+      return apply_owner_fallback!(
+        turn, correlation_id, user_id, now, locale, focus, interpreted.status, opened_episode: opened_episode
+      )
     end
 
     stored = active_episode
@@ -1027,8 +1043,10 @@ class ConversationSession < ApplicationRecord
       turn: turn
     )
     before_episode = base.fork
-    working = if perception.move == "new_work" || base.blank?
-      Rag::ActiveEpisode.open(correlation_id: correlation_id, now: now)
+    working = if base.blank?
+      opened_episode || open_recorded_episode(correlation_id, now, answer_contract)
+    elsif perception.move == "new_work"
+      open_recorded_episode(correlation_id, now, answer_contract)
     else
       base
     end
@@ -1036,6 +1054,7 @@ class ConversationSession < ApplicationRecord
       episode: working, perception: perception, decision: decision,
       turn: turn, correlation_id: correlation_id, now: now
     )
+    self.last_answer_report = working.answer_report
     payload = working.to_h
     if Rag::ActiveEpisode.budget_refused?(payload)
       Rails.logger.info({ event: "episode_budget_refused", conversation_session_id: id, correlation_id: correlation_id }.to_json)
@@ -1099,10 +1118,14 @@ class ConversationSession < ApplicationRecord
     result
   end
 
-  def apply_owner_fallback!(turn, correlation_id, user_id, now, locale, focus, status)
+  def apply_owner_fallback!(turn, correlation_id, user_id, now, locale, focus, status, opened_episode: nil)
     stored = active_episode
     parsed = Rag::ActiveEpisode.parse(stored, now: now)
-    episode = stale_episode?(parsed) ? Rag::ActiveEpisode.new : parsed
+    episode = if stale_episode?(parsed)
+      opened_episode || Rag::ActiveEpisode.new
+    else
+      parsed
+    end
     Rag::ValidationCapture.bind(
       session_id: id,
       account_id: account_id,
@@ -1261,6 +1284,28 @@ class ConversationSession < ApplicationRecord
 
   def stale_episode?(parsed)
     parsed.nil? || parsed.blank? || %w[expired invalid_state].include?(parsed.reason)
+  end
+
+  # Version of one new episode. The default is the legacy reading.
+  # An episode that already exists does not pass through here.
+  def open_owner_episode(correlation_id, now, answer_contract)
+    Rag::ActiveEpisode.open(correlation_id: correlation_id, now: now, contract: answer_contract)
+  end
+
+  def open_recorded_episode(correlation_id, now, answer_contract)
+    episode = open_owner_episode(correlation_id, now, answer_contract)
+    record_answer_contract(episode)
+    episode
+  end
+
+  def record_answer_contract(episode)
+    Rag::ValidationCapture.record(
+      "answer_contract",
+      "stage" => "prepare",
+      "result" => Rag::AnswerContract.label(episode),
+      "qc" => episode.qc,
+      "episode_id" => episode.episode_id
+    )
   end
 
   def persist_user_turn!(stored_episode, result, content, user_id, correlation_id, now, keep_episode: false)

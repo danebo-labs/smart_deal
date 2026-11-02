@@ -93,18 +93,18 @@ class Rag::AuditCaptureTest < ActiveSupport::TestCase
     File.write(directory.join("capture.json"), JSON.pretty_generate(document))
 
     request = events.find { |event| event["kind"] == "interpreter_request" }
-    assert_equal original, request.dig("turn_transform", "original")
+    assert_nil request["turn_transform"]
     assert_equal client.received.dig(:messages, 0, :content, 0, :text), request["message_text"]
-    assert_includes request["message_text"], request.dig("turn_transform", "sent")
-    assert_not_includes request["message_text"], original
+    assert_includes request["message_text"], original
     exported = document["events"].find { |event| event["kind"] == "interpreter_request" }
-    body = exported.dig("turn_transform", "original")
+    body = exported["message_text"]
     assert_equal "external", body["evidence"]
     assert_equal false, body["truncated"]
     assert_equal true, body["summary_truncated"]
     assert_equal false, body["absent"]
     stored = File.read(directory.join(body["path"]), encoding: "UTF-8")
-    assert_equal original, stored
+    assert_equal request["message_text"], stored
+    assert_includes stored, original
     assert_equal Digest::SHA256.hexdigest(stored), body["sha256"]
     assert_operator body["summary"].length, :<, original.length
     system = exported["system"]

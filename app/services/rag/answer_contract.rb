@@ -2,10 +2,12 @@
 
 module Rag
   # Versioned question and answer contract stored on the existing episode.
-  # Ruby assigns local ids when a question is published. A reply points at the
-  # history message and, when it names a slice, at character offsets Ruby has
-  # checked. The reply does not replace the turn with a label or a paraphrase.
-  # Episodes without qc stay on the previous reading.
+  # The version is chosen once, when the episode is opened, and then stays
+  # fixed. Publishing a question does not select it. On the new contract,
+  # Ruby assigns local ids when a question is published. A reply points at
+  # the history message and, when it names a slice, at character offsets Ruby
+  # has checked. The reply does not replace the turn with a label or a
+  # paraphrase. Episodes without qc stay on the previous reading.
   module AnswerContract
     VERSION = 1
     STATES = %w[complete partial unknown contradictory].freeze
@@ -15,12 +17,15 @@ module Rag
 
     module_function
 
+    # Ids and parts belong to an episode already selected as the new contract.
+    # This does not write qc. A legacy episode stays legacy.
     def stamp!(episode)
+      return unless active?(episode)
+
       question = episode.pending_question
       return unless question.is_a?(Hash) && question["type"] == "documented_context"
       return if question["question"].blank?
 
-      episode.qc = VERSION
       question["id"] = question["id"].presence || allocate_id!(episode, "q", "q")
       return if question["id"].blank?
 
@@ -91,14 +96,47 @@ module Rag
       rows.reject { |reply| covered.include?(reply["id"]) }
     end
 
-    # Proposals that do not belong to this episode are ignored. A rejected
-    # proposal does not close a part and does not allocate a reply id.
-    def apply!(episode, turn:, correlation_id:, proposals:)
+    def active?(episode)
+      episode.respond_to?(:qc) && episode.qc == VERSION
+    end
+
+    # The only writer of qc. ActiveEpisode.open calls this on a new episode,
+    # before that episode is interpreted. Only VERSION selects the new
+    # contract. Any other argument leaves the legacy reading.
+    def select!(episode, requested)
+      episode.qc = requested == VERSION ? VERSION : nil
+      episode
+    end
+
+    def label(episode)
+      active?(episode) ? "contract" : "legacy"
+    end
+
+    # contract is the version selected when this episode was opened.
+    # Publishing a question does not change it. field is absent, empty,
+    # invalid, or present. None of those values invents an association.
+    def apply!(episode, turn:, correlation_id:, proposals:, contract:, field:)
+      report = {
+        "route" => contract ? "contract" : "legacy",
+        "field" => field.to_s,
+        "stored" => [],
+        "refused" => []
+      }
+      unless contract
+        Array(proposals).each { |raw| report["refused"] << refusal(raw, "not_contract") }
+        return report
+      end
+
       admitted = admitted_text(turn)
       Array(proposals).each do |raw|
-        store_one!(episode, admitted, correlation_id, raw)
+        reason = store_one!(episode, admitted, correlation_id, raw)
+        if reason
+          report["refused"] << refusal(raw, reason)
+        else
+          report["stored"] << episode.replies.last["id"]
+        end
       end
-      episode
+      report
     end
 
     def reconstruct(reply, session)
@@ -119,17 +157,62 @@ module Rag
     end
 
     def context_lines(episode, session)
-      return [] unless episode.respond_to?(:replies) && episode.qc == VERSION
+      return [] unless active?(episode)
 
-      Array(episode.replies).map { |reply|
+      lines = Array(episode.replies).map { |reply|
         text = reconstruct(reply, session)
-        label = "#{reply['q']}.#{reply['p']} #{reply['state']}"
         cut = cut_note(session, reply)
         if text.nil?
-          "Respuesta #{reply['id']} a #{label}: el texto no se reconstruyó desde el historial.#{cut}"
+          "Respuesta #{reply['id']} a #{reply['q']}.#{reply['p']}: el texto no se reconstruyó desde el historial. El estado almacenado no se usa como respuesta reconstruida.#{cut}"
         else
-          "Respuesta #{reply['id']} a #{label}: «#{text}».#{cut}"
+          "Respuesta #{reply['id']} a #{reply['q']}.#{reply['p']} #{reply['state']}: «#{text}».#{cut}"
         end
+      }
+      lines + conflict_lines(episode)
+    end
+
+    # Settled parts stay out of the open question. The ids let a later turn
+    # name the reply it replaces. A missing source does not carry the state
+    # as if the text had been reconstructed.
+    def correction_refs(episode, session = nil)
+      return [] unless active?(episode)
+
+      question = episode.pending_question
+      return [] unless question.is_a?(Hash)
+
+      qid = question["id"].to_s
+      Array(question["parts"]).flat_map { |part|
+        next [] unless part.is_a?(Hash)
+        next [] if open_part?(episode, question, part)
+
+        current_replies(episode, part["id"]).map { |reply|
+          text = session ? reconstruct(reply, session) : nil
+          row = { "id" => reply["id"], "question_id" => qid, "part_id" => part["id"] }
+          if text.nil?
+            row["text_available"] = false
+          else
+            row["text"] = text
+            row["state"] = reply["state"]
+          end
+          row
+        }
+      }
+    end
+
+    def conflict_refs(episode)
+      return [] unless active?(episode)
+
+      question = episode.pending_question
+      return [] unless question.is_a?(Hash)
+
+      Array(question["parts"]).filter_map { |part|
+        next unless part.is_a?(Hash)
+        next unless part_state(episode, part["id"]) == "contradictory"
+
+        ids = current_replies(episode, part["id"]).pluck("id")
+        next if ids.size < 2
+
+        { "question_id" => question["id"], "part_id" => part["id"], "reply_ids" => ids }
       }
     end
 
@@ -150,25 +233,26 @@ module Rag
     end
 
     def store_one!(episode, admitted, correlation_id, raw)
-      return false unless raw.is_a?(Hash)
+      return "not_a_reply" unless raw.is_a?(Hash)
 
       question = episode.pending_question
-      return false unless question.is_a?(Hash)
+      return "unknown_question" unless question.is_a?(Hash)
 
       qid = raw["question_id"].to_s
       pid = raw["part_id"].to_s
       state = raw["state"].to_s
-      return false unless qid == question["id"].to_s && qid.match?(/\Aq\d+\z/)
+      return "unknown_question" unless qid == question["id"].to_s && qid.match?(/\Aq\d+\z/)
+      return "invalid_state" unless STATES.include?(state)
 
       part = Array(question["parts"]).find { |item| item.is_a?(Hash) && item["id"] == pid }
-      return false unless part && STATES.include?(state)
+      return "unknown_part" unless part
 
       span = span_for(admitted, raw)
-      return false if span.nil?
+      return "invalid_span" if span.nil?
 
       referenced = supersedes_ids(raw)
-      return false if referenced == :invalid
-      return false unless allow_reply?(episode, pid, state, referenced)
+      blocked = reply_block(episode, pid, state, referenced)
+      return blocked if blocked
 
       seq = episode.id_seq.dup
       seq["r"] = seq["r"].to_i + 1
@@ -184,12 +268,11 @@ module Rag
         reply["b"] = span[:b]
       end
       reply["of"] = referenced if referenced.any?
-      return false unless fits?(episode, reply, seq)
+      return "budget" unless fits?(episode, reply, seq)
 
-      episode.qc = VERSION
       episode.id_seq = seq
       episode.replies = Array(episode.replies) + [ reply ]
-      true
+      nil
     end
 
     def span_for(admitted, raw)
@@ -213,18 +296,33 @@ module Rag
       ids
     end
 
-    def allow_reply?(episode, part_id, state, ids)
+    def reply_block(episode, part_id, state, ids)
+      return "invalid_supersedes" if ids == :invalid
+
       current = current_replies(episode, part_id)
-      return false if ids.any? && ids.any? { |id| current.none? { |reply| reply["id"] == id } }
+      return "invalid_supersedes" if ids.any? && ids.any? { |id| current.none? { |reply| reply["id"] == id } }
 
       state_now = state_of(current)
       if state_now == "contradictory" && state != "contradictory"
         conflicting = current.select { |reply| reply["state"] == "contradictory" }.pluck("id")
-        return false if (conflicting - ids).any?
+        return "invalid_supersedes" if (conflicting - ids).any?
       end
-      return false if SETTLED.include?(state_now) && ids.empty? && state != "contradictory"
+      return "settled" if SETTLED.include?(state_now) && ids.empty? && state != "contradictory"
 
-      true
+      nil
+    end
+
+    def refusal(raw, reason)
+      row = { "reason" => reason }
+      row["part_id"] = raw["part_id"].to_s if raw.is_a?(Hash) && raw["part_id"].present?
+      row
+    end
+
+    def conflict_lines(episode)
+      conflict_refs(episode).map { |conflict|
+        ids = conflict["reply_ids"].join(", ")
+        "#{conflict['question_id']}.#{conflict['part_id']} en conflicto: hay versiones vigentes (#{ids}). Ninguna queda elegida como hecho resuelto."
+      }
     end
 
     def state_of(current)
@@ -249,6 +347,7 @@ module Rag
 
       " Texto almacenado truncado en el historial, no es el mensaje íntegro."
     end
-    private_class_method :store_one!, :span_for, :supersedes_ids, :allow_reply?, :state_of, :fits?, :cut_note, :allocate_id!
+    private_class_method :store_one!, :span_for, :supersedes_ids, :reply_block, :refusal,
+      :conflict_lines, :state_of, :fits?, :cut_note, :allocate_id!
   end
 end

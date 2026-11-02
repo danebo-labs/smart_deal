@@ -29,7 +29,7 @@ module Rag
 
     attr_accessor :episode_id, :status, :opened_at, :updated_at, :opened_by,
                   :goal, :facts, :identifiers, :pending_fact, :pending_question, :active_photo, :conflicts,
-                  :observations, :checks, :rejected, :qc, :id_seq, :replies
+                  :observations, :checks, :rejected, :qc, :id_seq, :replies, :answer_report
     attr_reader :reason
 
     def initialize
@@ -85,13 +85,14 @@ module Rag
       episode
     end
 
-    def self.open(correlation_id:, now:)
+    def self.open(correlation_id:, now:, contract: nil)
       episode = new
       episode.episode_id = "ep_#{SecureRandom.hex(8)}"
       episode.status = "active"
       episode.opened_at = now.iso8601
       episode.updated_at = now.iso8601
       episode.opened_by = correlation_id.to_s.presence
+      AnswerContract.select!(episode, contract)
       episode
     end
 

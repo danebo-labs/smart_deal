@@ -520,6 +520,8 @@ module Rag
         end
         referenced = Array(item["of"]).select { |ref| ref.is_a?(String) && ref.match?(/\Ar\d+\z/) }
         reply["of"] = referenced if referenced.any?
+        targets = Array(item["t"]).filter_map { |row| PendingQuestion.documented_target(row) }.first(2)
+        reply["t"] = targets if targets.any?
         reply
       }
     end

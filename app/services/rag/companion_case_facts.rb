@@ -118,6 +118,28 @@ module Rag
       }
     end
 
+    # Wording of a part closed as unknown, and the reply reconstructed from
+    # the history. A missing source leaves the reply blank. It does not
+    # invent the technician's sentence.
+    def unknown_declarations
+      episode = @episode_record
+      return [] unless episode && AnswerContract.active?(episode)
+
+      question = episode.pending_question
+      return [] unless question.is_a?(Hash)
+
+      Array(question["parts"]).filter_map { |part|
+        next unless part.is_a?(Hash)
+        next unless AnswerContract.part_state(episode, part["id"]) == "unknown"
+
+        reply = AnswerContract.current_replies(episode, part["id"]).reverse.find { |row|
+          row["state"] == "unknown"
+        }
+        text = reply && @session ? AnswerContract.reconstruct(reply, @session).to_s : ""
+        { question: part["text"].to_s, reply: text, targets: reply && reply["t"] }
+      }
+    end
+
     private
 
     def prompt_line(fact)

@@ -107,6 +107,8 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
 
       assert_equal "complete", Rag::AnswerContract.part_state(stored, part_id(stored, "main"))
       assert_nil Rag::AnswerContract.part_state(stored, part_id(stored, "clarification"))
+      assert_equal CLARIFICATION, stored.pending_question["question"]
+      assert_nil stored.pending_question["shown"]
       assert_equal [ CLARIFICATION ], payload["questions"].first["parts"].pluck("text")
       assert_equal CLARIFICATION, payload["question"]
     end
@@ -225,6 +227,28 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
       assert_nil Rag::AnswerContract.part_state(stored, part_id(stored, "clarification"))
       assert_equal CLARIFICATION, checked.question
       assert checked.rejections.none? { |row| row["reason"] == "part_settled" }
+    end
+  end
+
+  test "an unknown reply rejects a question that adds a designator from that reply" do
+    with_flags do
+      session = boot_session
+      episode = publish(session, MAIN, shown: CLARIFICATION)
+      answer(session, "No sé si la válvula 4 está abierta ni si el contacto #9 está cerrado.", [
+        reply_for(episode, part_id(episode, "main"), "unknown")
+      ])
+      stored = reload_episode(session)
+      added = check_again(session, "¿El contacto #9 está cerrado?")
+      paraphrase = check_again(session, "¿Sigue abierta la válvula 4 en este momento?")
+
+      assert_equal "unknown", Rag::AnswerContract.part_state(stored, part_id(stored, "main"))
+      assert_equal [ "Primera apertura." ], stored.replies.last["t"].pluck("item")
+      assert_equal CLARIFICATION, stored.pending_question["question"]
+      assert_nil added.question
+      assert_equal "declared_unknown", added.rejections.find { |row| row["part"] == "question" }["reason"]
+      assert_equal "¿Sigue abierta la válvula 4 en este momento?", paraphrase.question
+      assert paraphrase.rejections.none? { |row| row["reason"] == "declared_unknown" }
+      assert paraphrase.rejections.none? { |row| row["reason"] == "part_settled" }
     end
   end
 

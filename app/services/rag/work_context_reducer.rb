@@ -81,6 +81,17 @@ module Rag
       clear_matching_pending!(episode, question)
     end
 
+    # The settled datum stays on its part. A different clarification published
+    # with it becomes the question still open. No clarification leaves the
+    # pending question where it is.
+    def self.promote_open_clarification!(episode)
+      pending = episode.pending_question
+      return unless pending.is_a?(Hash)
+
+      promoted = promote_shown_question(pending, pending["shown"])
+      episode.pending_question = promoted if promoted
+    end
+
     def self.clear_matching_pending!(episode, question)
       pending = episode.pending_question
       return unless closable_documented_question?(pending)
@@ -1012,6 +1023,30 @@ module Rag
         contract: @contract_at_entry,
         field: field
       )
+      promote_settled_main_clarification if @contract_at_entry
+    end
+
+    # A settled main leaves the clarification that was published with it as
+    # the open question. The reply stays on the part. This does not bind a
+    # turn that named no part, and it does not drop a settled question that
+    # has no clarification left to ask.
+    def promote_settled_main_clarification
+      question = @episode.pending_question
+      return unless question.is_a?(Hash)
+
+      shown = question["shown"]
+      return unless shown.is_a?(Hash) && shown["question"].present?
+
+      parts = Array(question["parts"])
+      main = parts.find { |part| part.is_a?(Hash) && part["role"] == "main" }
+      return unless main && AnswerContract.settled?(AnswerContract.part_state(@episode, main["id"]))
+
+      clarification = parts.find { |part| part.is_a?(Hash) && part["role"] == "clarification" }
+      if clarification && AnswerContract.settled?(AnswerContract.part_state(@episode, clarification["id"]))
+        return
+      end
+
+      self.class.promote_open_clarification!(@episode)
     end
 
     def part_reply_field

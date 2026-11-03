@@ -679,17 +679,30 @@ module Rag
 
     # The technician already said this question cannot be identified. Do not
     # ask it again and do not replace it with a choice between two citations.
+    # A contract reply does not copy that mark onto the observation. A later
+    # question is the same limit when it names a designator from the reply
+    # that the settled wording did not already contain. A paraphrase whose
+    # designators are only those of the settled wording stays a different
+    # publication: equality, not this check, decides that one.
     def declared_unknown_question?(text)
       normal = self.class.normal(text)
       return false if normal.blank?
 
       asked = designators(text)
-      @facts.facts.any? { |fact|
+      return true if @facts.facts.any? { |fact|
         answers = fact.answers
         next false unless answers.is_a?(Hash) && answers["r"].to_s == "unknown"
         next true if self.class.normal(answers["q"].to_s) == normal
 
         asked.any? && asked.intersect?(designators("#{answers["q"]} #{fact.text}"))
+      }
+      return false if asked.empty? || !@facts.respond_to?(:unknown_declarations)
+
+      @facts.unknown_declarations.any? { |row|
+        told = designators(row[:reply])
+        published = designators(row[:question])
+        shared = asked & told
+        shared.any? && (shared - published).any?
       }
     end
 
@@ -698,19 +711,25 @@ module Rag
     end
 
     def remember_unknown_item_limit
-      @facts.facts.each do |fact|
+      rows = @facts.facts.filter_map { |fact|
         answers = fact.answers
-        next unless answers.is_a?(Hash) && answers["r"].to_s == "unknown"
+        answers["t"] if answers.is_a?(Hash) && answers["r"].to_s == "unknown"
+      }
+      if @facts.respond_to?(:unknown_declarations)
+        rows.concat(@facts.unknown_declarations.filter_map { |row| row[:targets] })
+      end
+      rows.each { |targets| remember_item_targets(targets) }
+    end
 
-        Array(answers["t"]).each do |target|
-          item = target.is_a?(Hash) ? target["item"].to_s : target.to_s
-          next if item.blank?
+    def remember_item_targets(targets)
+      Array(targets).each do |target|
+        item = target.is_a?(Hash) ? target["item"].to_s : target.to_s
+        next if item.blank?
 
-          statement = @statements.statements.find { |row|
-            row.kind == "item" && row.text.to_s.squish == item.squish
-          }
-          remember_limit(statement) if statement
-        end
+        statement = @statements.statements.find { |row|
+          row.kind == "item" && row.text.to_s.squish == item.squish
+        }
+        remember_limit(statement) if statement
       end
     end
 

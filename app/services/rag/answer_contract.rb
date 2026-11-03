@@ -270,6 +270,8 @@ module Rag
         reply["b"] = span[:b]
       end
       reply["of"] = referenced if referenced.any?
+      targets = reply_targets(question, part, state)
+      reply["t"] = targets if targets
       return "budget" unless fits?(episode, reply, seq)
 
       episode.id_seq = seq
@@ -334,6 +336,20 @@ module Rag
       current.last["state"]
     end
 
+    # The documented item the unknown reply could not identify. It belongs to
+    # the part's own question, so a later clarification does not replace it.
+    def reply_targets(question, part, state)
+      return nil unless state == "unknown"
+
+      source = if part["text"].to_s == question["question"].to_s
+        question["targets"]
+      elsif question["shown"].is_a?(Hash) && part["text"].to_s == question.dig("shown", "question").to_s
+        question.dig("shown", "targets")
+      end
+      targets = Array(source).filter_map { |item| PendingQuestion.documented_target(item) }.first(2)
+      targets.presence
+    end
+
     def fits?(episode, reply, seq)
       payload = episode.serial_hash
       payload["qc"] = VERSION
@@ -350,6 +366,6 @@ module Rag
       " Texto almacenado truncado en el historial, no es el mensaje íntegro."
     end
     private_class_method :store_one!, :span_for, :supersedes_ids, :reply_block, :refusal,
-      :conflict_lines, :state_of, :fits?, :cut_note, :allocate_id!
+      :conflict_lines, :state_of, :reply_targets, :fits?, :cut_note, :allocate_id!
   end
 end

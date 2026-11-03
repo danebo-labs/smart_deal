@@ -358,6 +358,41 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
     end
   end
 
+  test "declared offsets from different messages are not the same span" do
+    first = "No sé la válvula 4. No sé el borne 12."
+    left = "No sé la válvula 4."
+    second = "No sé el LED de marcha."
+    third = "No sé el potenciómetro."
+    with_flags do
+      session = boot_session
+      episode = publish(session, MAIN)
+      answer(session, first, [
+        declared_reply(episode, first, left),
+        declared_reply(episode, first, first)
+      ], correlation_id: "query:span-same")
+      assert_equal "overlap", session.last_answer_report["refused"].first["reason"]
+
+      answer(session, second, [
+        declared_reply(reload_episode(session), second, second)
+      ], correlation_id: "query:span-other")
+      reloaded = reload_episode(session)
+      declared = reloaded.pending_question["parts"].select { |part| part["role"] == "declared" }
+      replies = declared.map { |part| reloaded.replies.find { |row| row["p"] == part["id"] } }
+
+      assert_equal [ left, second ], declared.pluck("text")
+      assert_equal [ 0, 0 ], replies.pluck("a")
+      assert_equal [ "query:span-same", "query:span-other" ], replies.pluck("cid")
+      assert_equal left, Rag::AnswerContract.reconstruct(replies[0], session)
+      assert_equal second, Rag::AnswerContract.reconstruct(replies[1], session)
+
+      answer(session, third, [
+        declared_reply(reloaded, third, third)
+      ], correlation_id: "query:span-third")
+      assert_equal "declared_limit", session.last_answer_report["refused"].first["reason"]
+      assert_equal 2, reload_episode(session).pending_question["parts"].count { |part| part["role"] == "declared" }
+    end
+  end
+
   test "a declared clause that does not fit is refused without keeping the part" do
     with_flags do
       session = boot_session
@@ -1149,9 +1184,9 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
     reload_episode(session)
   end
 
-  def answer(session, text, replies = :omit, observations: [])
+  def answer(session, text, replies = :omit, observations: [], correlation_id: nil)
     session.record_user_turn!(
-      text, user_id: @user.id, correlation_id: "query:ans-#{SecureRandom.hex(2)}",
+      text, user_id: @user.id, correlation_id: correlation_id || "query:ans-#{SecureRandom.hex(2)}",
       interpreter_client: tool_client("report", observations, part_replies: replies)
     )
   end

@@ -180,6 +180,8 @@ class Rag::Vf5AcceptedScriptContractTest < ActiveSupport::TestCase
         # and it does not decide whether the contact is another datum.
         assert_equal contact, unnamed.question
         assert unnamed.rejections.none? { |row| row["reason"] == "part_ref_missing" }
+        assert_equal final.composed.check.limits, named.limits
+        assert_equal named.limits, unnamed.limits
         assert_match(/\AIndicaste que no puedes distinguirlo/, final.text)
         assert_includes final.text, "potenciómetro"
         assert_includes final.text, "ya informaste"

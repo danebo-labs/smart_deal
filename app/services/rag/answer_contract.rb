@@ -284,8 +284,9 @@ module Rag
 
     # A clause the technician added, not an answer to a published part. The
     # part text is that slice. It carries no documentary target. Two is the
-    # maximum kept on the current question. A span that meets another
-    # declared span is refused. The byte budget is the episode budget.
+    # maximum kept on the current question. Offsets name a slice of one
+    # message: a span overlaps another declared span only when both replies
+    # carry the same correlation id. The byte budget is the episode budget.
     def store_declared!(episode, admitted, correlation_id, raw, question)
       return "invalid_state" unless raw["state"].to_s == "unknown"
 
@@ -299,7 +300,9 @@ module Rag
       fragment = admitted[span[:a]...span[:b]]
       return "overlap" if declared.any? { |part|
         range = current_span(episode, part["id"])
-        range && spans_overlap?(span[:a], span[:b], range[0], range[1])
+        next false unless range && range[2] == correlation_id.to_s
+
+        spans_overlap?(span[:a], span[:b], range[0], range[1])
       }
 
       referenced = supersedes_ids(raw)
@@ -338,7 +341,7 @@ module Rag
       reply = current_replies(episode, part_id).reverse.find { |row|
         row["a"].is_a?(Integer) && row["b"].is_a?(Integer)
       }
-      reply && [ reply["a"], reply["b"] ]
+      reply && [ reply["a"], reply["b"], reply["cid"].to_s ]
     end
 
     def spans_overlap?(left, left_end, right, right_end)

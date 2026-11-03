@@ -116,11 +116,16 @@ module Rag
       return nil if FollowupQueryRewriter.normalize_label(text) ==
         FollowupQueryRewriter.normalize_label(pending["question"])
 
-      PendingQuestion.coerce(
+      payload = {
         "type" => "documented_context",
         "question" => text,
         "targets" => shown["targets"]
-      )
+      }
+      if pending["id"].to_s.match?(/\Aq\d+\z/)
+        payload["id"] = pending["id"]
+        payload["parts"] = pending["parts"] if pending["parts"].is_a?(Array)
+      end
+      PendingQuestion.coerce(payload)
     end
 
     # The turn has to name the same entity, property, and scope. A shared
@@ -381,11 +386,13 @@ module Rag
       return @episode if @decision&.decision == "meta"
 
       write_checks unless @perception.move == "unclear"
-      bind_documented_answer
+      @contract_at_entry = AnswerContract.active?(@episode)
+      bind_documented_answer unless @contract_at_entry
       remember_referent_choice if remember_referent_choice?
       promote_carry if promote_existing_carry?
 
       if @decision&.decision == "clarify_first"
+        record_part_replies
         @episode.touch!(@now)
         return @episode if @perception.move == "new_work"
         return @episode if @perception.move == "unclear" && documented_pending?
@@ -394,7 +401,10 @@ module Rag
         write_pending(@decision.pending_question)
         return @episode
       end
-      return @episode if @perception.move == "unclear"
+      if @perception.move == "unclear"
+        record_part_replies
+        return @episode
+      end
 
       apply_negations
       write_assertions
@@ -402,6 +412,7 @@ module Rag
       write_absent_fault_code
       write_observations unless @decision&.decision == "clarify_first"
       assign_goal_if_needed
+      record_part_replies
       clear_pending_unless_meta
       @episode.touch!(@now)
       @episode
@@ -990,6 +1001,26 @@ module Rag
       @episode.clear_pending!
     end
 
+    def record_part_replies
+      field = part_reply_field
+      proposals = field == "present" ? @perception.part_replies : []
+      @episode.answer_report = AnswerContract.apply!(
+        @episode,
+        turn: @turn,
+        correlation_id: @correlation_id,
+        proposals: proposals,
+        contract: @contract_at_entry,
+        field: field
+      )
+    end
+
+    def part_reply_field
+      return @perception.part_replies_field if @perception.respond_to?(:part_replies_field)
+
+      given = @perception.respond_to?(:part_replies_given?) && @perception.part_replies_given?
+      given ? "present" : "absent"
+    end
+
     # The published question stays until a corresponding answer clears it.
     # A later "qué sigue" or an unrelated report does not remove it.
     def open_documented_pending?
@@ -1003,6 +1034,7 @@ module Rag
       return if coerced.nil?
 
       @episode.pending_question = coerced
+      AnswerContract.stamp!(@episode) if coerced["type"] == "documented_context"
       return unless PendingQuestion::FACT_TYPES.include?(coerced["type"])
 
       @episode.pending_fact = { "subject" => coerced["type"], "correlation_id" => @correlation_id.to_s }

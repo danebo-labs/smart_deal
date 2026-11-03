@@ -29,7 +29,7 @@ module Rag
 
     attr_accessor :episode_id, :status, :opened_at, :updated_at, :opened_by,
                   :goal, :facts, :identifiers, :pending_fact, :pending_question, :active_photo, :conflicts,
-                  :observations, :checks, :rejected
+                  :observations, :checks, :rejected, :qc, :id_seq, :replies, :answer_report
     attr_reader :reason
 
     def initialize
@@ -39,6 +39,9 @@ module Rag
       @observations = []
       @checks = []
       @rejected = []
+      @replies = []
+      @id_seq = { "q" => 0, "p" => 0, "r" => 0 }
+      @qc = nil
       @status = "active"
     end
 
@@ -76,16 +79,20 @@ module Rag
       episode.observations = sanitize_observations(data["observations"])
       episode.checks = sanitize_checks(data["checks"])
       episode.rejected = sanitize_rejected(data["rejected"])
+      episode.qc = data["qc"].to_i == AnswerContract::VERSION ? AnswerContract::VERSION : nil
+      episode.id_seq = sanitize_id_seq(data["id_seq"])
+      episode.replies = episode.qc == AnswerContract::VERSION ? sanitize_replies(data["replies"]) : []
       episode
     end
 
-    def self.open(correlation_id:, now:)
+    def self.open(correlation_id:, now:, contract: nil)
       episode = new
       episode.episode_id = "ep_#{SecureRandom.hex(8)}"
       episode.status = "active"
       episode.opened_at = now.iso8601
       episode.updated_at = now.iso8601
       episode.opened_by = correlation_id.to_s.presence
+      AnswerContract.select!(episode, contract)
       episode
     end
 
@@ -112,6 +119,9 @@ module Rag
       copy.observations = observations.deep_dup
       copy.checks = checks.deep_dup
       copy.rejected = rejected.deep_dup
+      copy.qc = qc
+      copy.id_seq = id_seq.deep_dup
+      copy.replies = replies.deep_dup
       copy
     end
 
@@ -290,7 +300,10 @@ module Rag
         "conflicts" => conflicts,
         "observations" => observations.presence,
         "checks" => checks.presence,
-        "rejected" => rejected.presence
+        "rejected" => rejected.presence,
+        "qc" => (qc == AnswerContract::VERSION ? AnswerContract::VERSION : nil),
+        "id_seq" => (qc == AnswerContract::VERSION ? id_seq : nil),
+        "replies" => (qc == AnswerContract::VERSION ? replies.presence : nil)
       }
     end
 
@@ -449,6 +462,7 @@ module Rag
         code = raw["r"].to_s
         answers["r"] = code if %w[yes no unknown].include?(code)
       end
+      answers["contract"] = "ref" if raw["contract"].to_s == "ref"
       answers
     end
 
@@ -462,6 +476,51 @@ module Rag
         "document_key" => data["document_key"].to_s.first(240),
         "filename" => data["filename"].to_s.first(180),
         "page" => data["page"].to_s.first(12)
+      }
+    end
+
+    def self.sanitize_id_seq(raw)
+      base = { "q" => 0, "p" => 0, "r" => 0 }
+      return base unless raw.is_a?(Hash)
+
+      raw.each do |key, value|
+        name = key.to_s
+        next unless base.key?(name)
+
+        number = value.to_i
+        base[name] = number if number >= 0 && number < AnswerContract::ID_LIMIT
+      end
+      base
+    end
+
+    def self.sanitize_replies(raw)
+      return [] unless raw.is_a?(Array)
+
+      raw.filter_map { |item|
+        next unless item.is_a?(Hash)
+
+        item = item.stringify_keys
+        id = item["id"].to_s
+        qid = item["q"].to_s
+        pid = item["p"].to_s
+        state = item["state"].to_s
+        cid = item["cid"].to_s
+        next unless id.match?(/\Ar\d+\z/) && qid.match?(/\Aq\d+\z/) && pid.match?(/\Ap\d+\z/)
+        next unless AnswerContract::STATES.include?(state) && cid.present?
+
+        reply = { "id" => id, "q" => qid, "p" => pid, "state" => state, "cid" => cid }
+        if item.key?("a") || item.key?("b")
+          start = item["a"]
+          finish = item["b"]
+          next unless start.is_a?(Integer) && finish.is_a?(Integer)
+          next unless start >= 0 && finish >= start
+
+          reply["a"] = start
+          reply["b"] = finish
+        end
+        referenced = Array(item["of"]).select { |ref| ref.is_a?(String) && ref.match?(/\Ar\d+\z/) }
+        reply["of"] = referenced if referenced.any?
+        reply
       }
     end
 

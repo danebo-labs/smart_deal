@@ -120,8 +120,11 @@ module Rag
     def self.install_pending!(episode, question, correlation_id)
       previous_question = episode.pending_question
       previous_fact = episode.pending_fact
+      previous_qc = episode.qc
+      previous_seq = episode.id_seq.deep_dup
       episode.clear_pending!
       episode.pending_question = question
+      AnswerContract.stamp!(episode) if question["type"] == "documented_context"
       if PendingQuestion::FACT_TYPES.include?(question["type"])
         episode.pending_fact = { "subject" => question["type"], "correlation_id" => correlation_id.to_s }
       end
@@ -131,6 +134,8 @@ module Rag
 
       episode.pending_question = previous_question
       episode.pending_fact = previous_fact
+      episode.qc = previous_qc
+      episode.id_seq = previous_seq
       Rails.logger.info("[companion] pending_overflow")
       "pending_overflow"
     end

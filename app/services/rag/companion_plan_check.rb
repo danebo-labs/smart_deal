@@ -253,6 +253,10 @@ module Rag
       text = @plan["question"].to_s.squish
       targets = @targets
       reason = text.present? ? question_reason(text, steps) : nil
+      if reason == "part_settled"
+        reject("question", text, reason)
+        return [ nil, [] ]
+      end
       reason = "repeats_heading" if reason.nil? && text.present? && heading_repeat?(text)
       if text.present? && declared_unknown_question?(text)
         reject("question", text, "declared_unknown")
@@ -403,6 +407,34 @@ module Rag
       @limits << {
         "item" => item, "source" => statement.source, "note" => "partial", "fact" => partial.text.to_s
       }
+    end
+
+    # Closed wording rejects on its own. A reference does not bypass it.
+    # When the wording differs, a reference to a closed part still rejects.
+    def settled_reference?
+      settled_wording? || settled_by_reference?
+    end
+
+    def settled_by_reference?
+      return false unless @facts.respond_to?(:settled_part?)
+
+      part_id = @plan["part_ref"].to_s
+      question_id = @plan["question_ref"].to_s
+      return @facts.settled_part?(part_id) if part_id.match?(/\Ap\d+\z/)
+      return false unless question_id.match?(/\Aq\d+\z/)
+
+      @facts.respond_to?(:settled_question?) && @facts.settled_question?(question_id)
+    end
+
+    # Same normalized publication of a part closed as complete or unknown.
+    # A paraphrase is a different wording and is not this match.
+    def settled_wording?
+      return false unless @facts.respond_to?(:settled_part_texts)
+
+      proposed = self.class.normal(@plan["question"])
+      return false if proposed.blank?
+
+      Array(@facts.settled_part_texts).any? { |text| self.class.normal(text) == proposed }
     end
 
     def derivable?(reason)
@@ -996,6 +1028,7 @@ module Rag
     end
 
     def question_reason(text, steps)
+      return "part_settled" if text == @plan["question"].to_s.squish && settled_reference?
       return "too_long" if text.length > MAX_QUESTION_CHARS
       return "not_one_question" unless text.end_with?("?") && text.count("?") == 1
       return "already_answered" if already_answered?

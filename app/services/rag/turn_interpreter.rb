@@ -42,6 +42,7 @@ module Rag
       active_photo_context was read from the active photo. It is not the technician's words. Do not copy it into spans or observations unless the turn contains that text. A turn that only points at that one photo is follow_up with empty assertions and empty observations. Do not describe the photo.
 
       When pending.clarification_target is documented_context, the turn may answer that question. Record the technician's words as an observation. A partial answer stays an observation and does not fill the missing part.
+      When pending.questions lists parts, each part has an id, a role, and the wording that was published. You may add part_replies. Each item has question_id, part_id, and state. state is only complete, partial, unknown, or contradictory. start is the first character and end is the index after the last character of that slice of the turn you were given; omit both to cite that whole turn for that one part. Do not send a paraphrase. Do not cite one part's words as the answer to another part. supersedes is a list of reply ids this item replaces, or null. An id that is not in pending.questions or pending.corrections is not an answer. A part listed only under pending.corrections is not an open question. To correct it, send part_replies whose supersedes names the reply ids shown there. If pending.conflicts names a part, more than one reply is current; do not choose one as the resolved fact.
 
       act: assert states a value as the equipment or the fault. "Nice300 e51" and "PRIVATE900" are assert spans, not mentions and not unclear. negate denies a value that appears in the turn. mention names a token the technician asks about without adopting it. "¿Qué es Q2?" is a mention of Q2 on move report, clarification_target null. It is not unclear and not referent. One unknown token is not two referents.
       slot_hint may only be manufacturer, model, controller, fault_code, or designator. Omit it when unsure. Never put slot_hint on a symptom.
@@ -58,11 +59,11 @@ module Rag
       :error_class, :error_reason, :stage
     )
 
-    def self.call(turn:, episode:, viewer_account:, correlation_id:, attribution: nil, client: nil, catalog: nil, active_photo_context: nil, sleeper: nil, rng: nil)
+    def self.call(turn:, episode:, viewer_account:, correlation_id:, attribution: nil, client: nil, catalog: nil, active_photo_context: nil, sleeper: nil, rng: nil, session: nil)
       new(
         turn: turn, episode: episode, viewer_account: viewer_account,
         correlation_id: correlation_id, attribution: attribution, client: client, catalog: catalog,
-        active_photo_context: active_photo_context, sleeper: sleeper, rng: rng
+        active_photo_context: active_photo_context, sleeper: sleeper, rng: rng, session: session
       ).call
     end
 
@@ -82,9 +83,12 @@ module Rag
       )
     end
 
-    def initialize(turn:, episode:, viewer_account:, correlation_id:, attribution:, client:, catalog:, active_photo_context: nil, sleeper: nil, rng: nil)
+    def initialize(turn:, episode:, viewer_account:, correlation_id:, attribution:, client:, catalog:, active_photo_context: nil, sleeper: nil, rng: nil, session: nil)
       @turn_input = turn
-      @turn = TurnText.truncate(turn)
+      # The message, the offset check, and later reconstruction share this
+      # text. History content keeps the shorter preview.
+      @turn = AnswerContract.admitted_text(turn)
+      @session = session
       @episode = episode || ActiveEpisode.new
       @viewer_account = viewer_account
       @correlation_id = correlation_id
@@ -158,6 +162,23 @@ module Rag
         return payload
       end
       if type == "documented_context"
+        if question["id"].present? && question["parts"].is_a?(Array) && question["parts"].any?
+          questions = AnswerContract.payload_questions(@episode)
+          corrections = AnswerContract.correction_refs(@episode, @session)
+          conflicts = AnswerContract.conflict_refs(@episode)
+          return nil if questions.nil? && corrections.empty? && conflicts.empty?
+
+          payload = { "clarification_target" => "documented_context" }
+          if questions
+            open_parts = questions.first["parts"]
+            asked = open_parts.find { |part| part["role"] == "main" } || open_parts.first
+            payload["question"] = asked["text"]
+            payload["questions"] = questions
+          end
+          payload["corrections"] = corrections if corrections.any?
+          payload["conflicts"] = conflicts if conflicts.any?
+          return payload
+        end
         return { "clarification_target" => "documented_context", "question" => question["question"].to_s }
       end
 
@@ -459,7 +480,7 @@ module Rag
     def turn_transform
       {
         "operation" => "truncate",
-        "limit" => ConversationSession::MAX_MSG_LENGTH,
+        "limit" => ConversationSession::USER_TEXT_MAX_CHARS,
         "original" => @turn_input.to_s,
         "sent" => @turn.to_s
       }

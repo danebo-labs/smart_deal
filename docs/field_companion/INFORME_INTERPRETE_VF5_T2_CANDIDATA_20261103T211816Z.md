@@ -1,6 +1,8 @@
-# Candidata del intérprete — reserva por encima de US$0,06
+# Candidata del intérprete — bloqueo de US$0,06 y ejecución de US$0,07
 
-Corrida `vf5-t2-candidate-20261103T211816Z`. El prompt de esta candidata es `Rag::TurnInterpreter::PROMPT`, SHA-256 `a5de394a7d87687763b0cd4bd03313ed687a29637698e45e34e05b3aed015b3e`, 8178 bytes. No se llamó al modelo. Este informe no aprueba el texto para despliegue.
+El prompt de esta candidata es `Rag::TurnInterpreter::PROMPT`, SHA-256 `a5de394a7d87687763b0cd4bd03313ed687a29637698e45e34e05b3aed015b3e`, 8178 bytes. Este informe no aprueba el texto para despliegue.
+
+Hay dos momentos distintos. La corrida `vf5-t2-candidate-20261103T211816Z` preparó las cinco peticiones y se detuvo antes de llamar al modelo porque la reserva sumaba US$0.060379 y el tope de aquella evaluación era US$0.06. La corrida `vf5-t2-candidate-20261103T213216Z` usó el mismo prompt, el mismo modelo y las mismas cinco peticiones, con el tope de esta evaluación ampliado a US$0.07, y sí llamó al modelo.
 
 Sustituye dos párrafos del prompt que estaba en `6c518bd` (SHA-256 `ef088eac3b579224a2eb914bb0c5a44235f46b3b6dcfda44f5d696e7197d43a1`). El resto del prompt no cambia. El párrafo ensayado en `vf5-t2-interpreter-20261103T204811Z` no forma parte de esta candidata; su texto y su hash están en [INFORME_INTERPRETE_VF5_T2_20261103T204811Z.md](INFORME_INTERPRETE_VF5_T2_20261103T204811Z.md).
 
@@ -56,6 +58,59 @@ No están en el repositorio.
 - `tmp/field_companion/vf5_t2_interpreter/vf5-t2-candidate-20261103T211816Z/preflight.json` — preflight completo, estado `blocked`, motivo `ceiling`
 - `tmp/field_companion/vf5_t2_interpreter/vf5-t2-candidate-20261103T211639Z/preflight.json` — el mismo bloqueo, sin el desglose; el proceso reemplazó el detalle al salir
 
-## Veredicto
+## Veredicto del bloqueo
 
-No hay resultado de interpretación. El modelo no vio estos cinco turnos, así que no se puede decir si las dos frases de T2 quedan sueltas, si el directo y el mixto coinciden, si el fragmento mixto corta una palabra, ni si el partial del código sobrevive. El problema pendiente es de cupo: con este prompt, estas cinco peticiones no reservan dentro de US$0.06.
+En `211816Z` no hay resultado de interpretación. El modelo no vio estos cinco turnos. El problema de aquella preparación era de cupo: con este prompt, estas cinco peticiones no reservan dentro de US$0.06.
+
+## Ejecución `vf5-t2-candidate-20261103T213216Z`
+
+El contador seguía en 175. El paso existente `175 => 180` se anotó al admitir la ejecución `vf5-t2-candidate-20261103`: cinco llamadas, US$0.070000, `after_attempt` 175. El historial anterior quedó en el archivo. El costo autorizado sigue en US$0.750000 desde el intento 134. El techo global sigue en US$4. El prompt, el modelo, la temperatura, `max_tokens`, los contextos y los criterios no se modificaron para esta corrida.
+
+Un preflight anterior de la misma preparación, `vf5-t2-candidate-20261103T213135Z`, ya tenía la suma US$0.060379 dentro de US$0.07 y salió antes de admitir porque el proceso veía la sesión compartida activa. No reservó ni llamó. La ejecución partió con `SHARED_SESSION_ENABLED=false`, que es la condición con la que el corredor preparado sigue, y entonces admitió e hizo las cinco llamadas. Cada llamada fue el intento 1, `stop_reason` `tool_use`, sin reintento. No hubo evento `retrieve`, `retrieval_results`, `model_call` ni `companion_plan`. La decisión de ruta quedó en `retrieve` con `retrieval` verdadero, igual que la captura de origen. La sesión 198 no cambió su `updated_at`. Los flujos se grabaron en sesiones nuevas, 252 a 256.
+
+`user_transform` fue `none` en los cinco. `turn_transform` quedó vacío. No hubo `field_rejections`. Ningún `part_reply` trajo `start` ni `end`. El contrato toma esa omisión como cita del turno entero, y `AnswerContract.reconstruct` devuelve el mensaje completo cuando la respuesta no tiene `a` ni `b`. Ruby aceptó las cinco estructuras. Esa aceptación no es el veredicto.
+
+| Caso | Observaciones del modelo | Asociación | Estado | Offsets | Texto reconstruido | Transformación | Persistencia | Costo USD |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| t2 | «Después volvió a abrir y cerrar como antes» | q1.p1 | partial | ausentes | Fue solo la primera apertura. Después volvió a abrir y cerrar como antes. | move `follow_up`; sin ajustes | r1 guardada y recargada; p1 sigue abierta | 0.004322 |
+| led | «El LED STATUS está apagado» | q1.p1; assert «El LED STATUS está apagado» | complete | ausentes | El LED STATUS está apagado. | move `answer_pending` pasado a `report` por `pending_answer_incomplete`; el assert queda como identificador | r1 guardada y recargada; p1 queda cerrada | 0.004373 |
+| mixed | «Fue solo la primera apertura» | q1.p1; assert «El LED STATUS está apagado» | partial | ausentes | El LED STATUS está apagado. Fue solo la primera apertura. | igual que led: `answer_pending` a `report`, assert como identificador | r1 guardada y recargada; p1 sigue abierta | 0.004366 |
+| ac | «Esto pasa solo cuando hace mucho calor afuera»; «De noche enfría bien» | q1.p1 | unknown | ausentes | Esto pasa solo cuando hace mucho calor afuera. De noche enfría bien. | move `follow_up`; sin ajustes | r1 guardada y recargada; `unknown` cierra p1 | 0.004211 |
+| code | «Solo aparece después de las dos de la tarde» | q1.p1; assert «E4» con `slot_hint` `fault_code` | partial | ausentes | Muestra E4. Solo aparece después de las dos de la tarde. | `answer_pending` a `report` por `pending_answer_incomplete`; E4 queda como hecho `fault_code` | r1 guardada y recargada; p1 sigue abierta | 0.004189 |
+
+Reservado US$0.060379. Liquidado US$0.021461. El comprometido del archivo pasó de US$1.605990 a US$1.627451. Los intentos quedaron en 180, el tope de llamadas en 180 y el techo global en US$4. Las cinco entradas están `settled`.
+
+### Cortes de palabras
+
+Ningún `part_reply` trae un rango, así que no hay corte dentro de una palabra medible por offsets. El texto reconstruido de cada respuesta es el turno completo.
+
+Las observaciones conservan las palabras de la frase que el modelo eligió y omiten el punto final:
+
+- t2: la segunda frase, sin el punto. La primera frase, «Fue solo la primera apertura.», no está en `observations`.
+- led: «El LED STATUS está apagado», sin el punto.
+- mixed: «Fue solo la primera apertura», sin el punto. «El LED STATUS está apagado» está en el assert, no en `observations`, y también sin el punto.
+- ac: las dos frases, cada una sin su punto.
+- code: «Solo aparece después de las dos de la tarde», sin el punto. «E4» está en el assert.
+
+### Lectura de los criterios
+
+t2 no cumple. Falta la primera frase como observación y hay un `part_reply` partial sobre el turno entero. p1 permanece abierta.
+
+led cumple la lectura semántica: p1 queda `complete` y la frase del LED es una observación. El punto final no está en esa cadena. El cambio de move a `report` queda registrado arriba.
+
+mixed no cumple. p1 queda `partial`, no `complete`, y solo la segunda frase entra en `observations`.
+
+ac cumple las dos observaciones literales. El `part_reply` `unknown` no está pedido: asocia el turno a q1.p1 y, al ser un estado asentado, cierra la parte.
+
+code conserva el partial, deja la frase temporal como observación y afirma E4. p1 sigue abierta. La omisión de offsets hace que el texto almacenado sea el turno entero, incluida la frase temporal. Ese desvío de fragmento queda separado del hecho de que el partial sí sobrevivió.
+
+Que Ruby haya guardado las cinco respuestas no aprueba ningún caso. El acierto de led no se extiende a t2, mixed ni ac. El partial de code no se perdió. La candidata, con estas cinco llamadas, no separa las dos frases de T2 ni deja el mixto en el mismo estado que el directo.
+
+## Evidencias de la ejecución
+
+Tampoco están en el repositorio.
+
+- `tmp/field_companion/vf5_t2_interpreter/vf5-t2-candidate-20261103T213135Z/preflight.json` — techo dentro de US$0.07, salida por sesión compartida, sin admisión
+- `tmp/field_companion/vf5_t2_interpreter/vf5-t2-candidate-20261103T213216Z/summary.json` — cinco llamadas, costo y estado recargado
+- `tmp/field_companion/validation_captures/vf5-t2-candidate-20261103T213216Z/` — `t2`, `led`, `mixed`, `ac`, `code` y cada flujo `*-flow`
+- `tmp/field_companion/vf5_generator_benchmark/assignment_spend.json` — archivo local; intentos 180, techo US$4, ejecución `vf5-t2-candidate-20261103`

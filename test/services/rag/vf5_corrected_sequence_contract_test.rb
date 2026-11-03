@@ -48,6 +48,57 @@ class Vf5CorrectedSequenceContractTest < ActiveSupport::TestCase
     assert_not_includes runner, "VF5_ANSWER_CONTRACT"
   end
 
+  test "this turn's answer report is not the previous turn and not the written row by itself" do
+    session = ConversationSession.create!(
+      identifier: "web:vf5-report-#{SecureRandom.hex(4)}",
+      channel: "web",
+      expires_at: 1.hour.from_now,
+      user: @user,
+      account: @account,
+      active_episode: {},
+      conversation_history: []
+    )
+    first_id = "query:vf5-report-a"
+    second_id = "query:vf5-report-b"
+    client = interpreter
+    first = nil
+    second = nil
+    assert_no_enqueued_jobs only: TrackBedrockQueryJob do
+      first = Rag::ValidationCapture.capture do
+        session.record_user_turn!(
+          VF5_APERTURA_TURNS.first,
+          user_id: @user.id,
+          correlation_id: first_id,
+          locale: :es,
+          interpreter_client: client
+        )
+      end
+      second = Rag::ValidationCapture.capture do
+        session.record_user_turn!(
+          VF5_APERTURA_TURNS.last,
+          user_id: @user.id,
+          correlation_id: second_id,
+          locale: :es,
+          interpreter_client: client
+        )
+      end
+    end
+    memory = first.select { |event| event["kind"] == "answer_report" && event["stage"] == "memory" }
+    persisted = first.select { |event| event["kind"] == "answer_report" && event["stage"] == "persisted" }
+    reloaded = Array(session.reload.active_episode["replies"]).pluck("id")
+
+    assert_equal 1, memory.size
+    assert_equal first_id, memory.first["correlation_id"]
+    assert_equal false, memory.first["persisted"]
+    assert_equal "in_memory", memory.first["result"]
+    assert_equal 1, persisted.size
+    assert_equal first_id, persisted.first["correlation_id"]
+    assert_equal reloaded, persisted.first["persisted_reply_ids"]
+    assert_equal persisted.first["stored"].all? { |id| reloaded.include?(id) }, persisted.first["persisted"]
+    assert second.none? { |event| event["kind"] == "answer_report" && event["correlation_id"] == first_id }
+    assert_equal second_id, second.find { |event| event["kind"] == "answer_report" && event["stage"] == "memory" }["correlation_id"]
+  end
+
   test "either script still opens through the application default" do
     [ nil, "apertura_lenta" ].each do |script|
       restore_env("VF5_SCRIPT", script)

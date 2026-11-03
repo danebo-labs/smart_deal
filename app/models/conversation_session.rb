@@ -943,6 +943,8 @@ class ConversationSession < ApplicationRecord
   def apply_recorded_owner_turn!(content, user_id:, correlation_id:, now:, locale:, interpreter_client:, interpreter_sleeper: nil, answer_contract: Rag::AnswerContract::VERSION)
     focus_before = :unset
     self.turn_causal = nil
+    self.last_answer_report = nil
+    @answer_report_correlation = nil
     original_text = content.to_s
     turn = Rag::TurnText.truncate(original_text)
     admitted = Rag::AnswerContract.admitted_text(original_text)
@@ -1054,7 +1056,7 @@ class ConversationSession < ApplicationRecord
       episode: working, perception: perception, decision: decision,
       turn: turn, correlation_id: correlation_id, now: now
     )
-    self.last_answer_report = working.answer_report
+    remember_answer_report!(working.answer_report, correlation_id)
     payload = working.to_h
     if Rag::ActiveEpisode.budget_refused?(payload)
       Rails.logger.info({ event: "episode_budget_refused", conversation_session_id: id, correlation_id: correlation_id }.to_json)
@@ -1309,6 +1311,35 @@ class ConversationSession < ApplicationRecord
     )
   end
 
+  # The report belongs to this turn. A previous turn's report was cleared
+  # at entry, and the ids apply! accepted are not the row that update! writes.
+  def remember_answer_report!(report, correlation_id)
+    return unless report.is_a?(Hash)
+
+    self.last_answer_report = report
+    @answer_report_correlation = correlation_id.to_s
+    Rag::ValidationCapture.record_answer_report(report, correlation_id: correlation_id)
+  end
+
+  def capture_persisted_answer_report!(correlation_id, written)
+    return unless @answer_report_correlation == correlation_id.to_s
+
+    Rag::ValidationCapture.record_persisted_replies(
+      correlation_id: correlation_id,
+      reply_ids: written_episode_reply_ids(written)
+    )
+  end
+
+  def written_episode_reply_ids(state)
+    raw = state.is_a?(Hash) ? state : {}
+    rows = raw["replies"] || raw[:replies]
+    Array(rows).filter_map { |row|
+      next unless row.is_a?(Hash)
+
+      row["id"] || row[:id]
+    }
+  end
+
   def persist_user_turn!(stored_episode, result, content, user_id, correlation_id, now, keep_episode: false)
     history = conversation_history.last(MAX_HISTORY - 1)
     history << history_message("user", content, user_id: user_id, correlation_id: correlation_id)
@@ -1323,6 +1354,7 @@ class ConversationSession < ApplicationRecord
     boundary = case_boundary_changes(stored_episode, result, now)
     attrs.merge!(boundary.attributes) if boundary
     update!(attrs)
+    capture_persisted_answer_report!(correlation_id, keep_episode ? stored_episode : result.state)
     log_case_boundary!(
       episode_before: episode_before,
       episode_after: raw_episode_id(keep_episode ? stored_episode : result.state),

@@ -679,6 +679,57 @@ class Rag::ValidationCaptureTest < ActiveSupport::TestCase
     )
   end
 
+  test "an answer report stays on its correlation and memory acceptance is not the row" do
+    first = {
+      "route" => "contract",
+      "field" => "present",
+      "stored" => [ "r1" ],
+      "refused" => [ { "reason" => "overlap", "part_id" => "p1" }, { "reason" => "" } ]
+    }
+    replacement = {
+      "route" => "contract", "field" => "present", "stored" => [ "r9" ],
+      "refused" => [ { "reason" => "budget" } ]
+    }
+    later = {
+      "route" => "contract", "field" => "present", "stored" => [ "r2" ],
+      "refused" => [ { "reason" => "settled", "part_id" => "p2" } ]
+    }
+
+    Rag::ValidationCapture.record_answer_report(first, correlation_id: "query:t1")
+    assert_nil Thread.current[:rag_validation_capture]
+
+    events = Rag::ValidationCapture.capture do
+      Rag::ValidationCapture.record_answer_report(first, correlation_id: "query:t1")
+      Rag::ValidationCapture.record_answer_report(replacement, correlation_id: "query:t1")
+      Rag::ValidationCapture.record_persisted_replies(correlation_id: "query:t1", reply_ids: [])
+      Rag::ValidationCapture.record_persisted_replies(correlation_id: "query:t2", reply_ids: [ "r2" ])
+      Rag::ValidationCapture.record_answer_report(later, correlation_id: "query:t2")
+      Rag::ValidationCapture.record_persisted_replies(correlation_id: "query:t2", reply_ids: [ "r2" ])
+    end
+    reports = events.select { |event| event["kind"] == "answer_report" }
+    memory = reports.select { |event| event["stage"] == "memory" }
+    persisted = reports.select { |event| event["stage"] == "persisted" }
+    t1 = persisted.find { |event| event["correlation_id"] == "query:t1" }
+    t2 = persisted.find { |event| event["correlation_id"] == "query:t2" }
+
+    assert_equal [ "query:t1", "query:t2" ], memory.pluck("correlation_id")
+    assert_equal [ "r1" ], memory[0]["stored"]
+    assert_equal [ { "reason" => "overlap", "part_id" => "p1" } ], memory[0]["refused"]
+    assert_equal false, memory[0]["persisted"]
+    assert_equal "in_memory", memory[0]["result"]
+    assert_equal [ "r2" ], memory[1]["stored"]
+    assert_equal [ { "reason" => "settled", "part_id" => "p2" } ], memory[1]["refused"]
+    assert_equal "dropped", t1["result"]
+    assert_equal false, t1["persisted"]
+    assert_equal [ "r1" ], t1["stored"]
+    assert_equal [], t1["persisted_reply_ids"]
+    assert_equal [ { "reason" => "overlap", "part_id" => "p1" } ], t1["refused"]
+    assert_equal "kept", t2["result"]
+    assert_equal true, t2["persisted"]
+    assert_equal [ "r2" ], t2["persisted_reply_ids"]
+    assert_equal 2, persisted.size
+  end
+
   def build_correction_perception
     Rag::TurnPerception.build(
       {

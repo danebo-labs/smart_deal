@@ -15,6 +15,8 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
   T1 = "Estoy con un Fermator VF5+. Después de un corte de alimentación, al volver la corriente la puerta abrió muy despacio. ¿Por dónde empiezo?"
   T2 = "Fue solo la primera apertura. Después volvió a abrir y cerrar como antes."
   SLOW = "¿La primera apertura después del corte fue lenta?"
+  SLOW_OBSERVATION = "Después de un corte de alimentación, al volver la corriente la puerta abrió muy despacio"
+  LED_STATUS_QUESTION = "¿Lo que ves coincide con «El sistema obtiene alimentación pero no funciona y el LED “STATUS” se encuentra apagado.» [2] o con «El LED “STATUS” está activado y la puerta no obedece a las señales.» [2]?"
 
   setup do
     @user = users(:one)
@@ -953,6 +955,36 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
       assert_equal "COLA_LARGA", Rag::AnswerContract.reconstruct(reply, session)
       assert_equal start, reply["a"]
       assert_equal finish, reply["b"]
+    end
+  end
+
+  test "spontaneous facts on the second VF5 turn stay observations and leave q1.p1 open" do
+    with_flags do
+      session = boot_session(T1, SLOW_OBSERVATION)
+      episode = publish(session, LED_STATUS_QUESTION)
+      before = episode.replies.size
+      facts = [ "Fue solo la primera apertura", "Después volvió a abrir y cerrar como antes" ]
+      session.record_user_turn!(
+        T2, user_id: @user.id, correlation_id: "query:t2-open-#{SecureRandom.hex(2)}",
+        interpreter_client: tool_client("follow_up", facts, part_replies: [])
+      )
+      report = session.last_answer_report
+      stored = reload_episode(session)
+      texts = stored.observations.pluck("text")
+
+      assert_equal "q1", episode.pending_question["id"]
+      assert_equal "p1", part_id(episode, "main")
+      assert_includes texts, SLOW_OBSERVATION
+      assert_includes texts, facts[0]
+      assert_includes texts, facts[1]
+      assert_equal before, stored.replies.size
+      assert_empty report["stored"]
+      assert_empty report["refused"]
+      assert_equal "empty", report["field"]
+      assert_nil Rag::AnswerContract.part_state(stored, "p1")
+      assert_includes Rag::AnswerContract.open_parts(stored).pluck("id"), "p1"
+      assert_equal "q1", stored.pending_question["id"]
+      assert_equal LED_STATUS_QUESTION, stored.pending_question["question"]
     end
   end
 

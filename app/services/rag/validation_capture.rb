@@ -306,5 +306,83 @@ module Rag
       }
       [ reference, index ]
     end
+
+    # apply!'s decision for this correlation. stored is acceptance in the
+    # episode object. persisted false means this event is not the written row.
+    # A second call for the same correlation does not replace the first report.
+    def record_answer_report(report, correlation_id:)
+      return unless active?
+      return unless report.is_a?(Hash)
+
+      cid = correlation_id.to_s
+      return if cid.empty?
+      return if answer_report_event(cid, "memory")
+
+      record(
+        "answer_report",
+        "stage" => "memory",
+        "result" => "in_memory",
+        "correlation_id" => cid,
+        "route" => report["route"].to_s,
+        "field" => report["field"].to_s,
+        "stored" => Array(report["stored"]).map(&:to_s),
+        "refused" => answer_report_refusals(report["refused"]),
+        "persisted" => false,
+        "provenance" => "observed"
+      )
+    end
+
+    # Reply ids in the episode hash passed to update!. Compared with the
+    # memory report already recorded for this correlation, not with a report
+    # supplied again by the caller.
+    def record_persisted_replies(correlation_id:, reply_ids:)
+      return unless active?
+
+      cid = correlation_id.to_s
+      return if cid.empty?
+
+      memory = answer_report_event(cid, "memory")
+      return unless memory
+      return if answer_report_event(cid, "persisted")
+
+      stored = Array(memory["stored"]).map(&:to_s)
+      persisted_ids = Array(reply_ids).map(&:to_s)
+      kept = stored.select { |id| persisted_ids.include?(id) }
+      record(
+        "answer_report",
+        "stage" => "persisted",
+        "result" => kept == stored ? "kept" : "dropped",
+        "correlation_id" => cid,
+        "route" => memory["route"].to_s,
+        "field" => memory["field"].to_s,
+        "stored" => stored,
+        "refused" => answer_report_refusals(memory["refused"]),
+        "persisted_reply_ids" => persisted_ids,
+        "persisted" => kept == stored,
+        "provenance" => "observed"
+      )
+    end
+
+    def answer_report_event(correlation_id, stage)
+      bucket = Thread.current[:rag_validation_capture]
+      return nil unless bucket
+
+      bucket.find { |event|
+        event.is_a?(Hash) &&
+          event["kind"] == "answer_report" &&
+          event["stage"] == stage &&
+          event["correlation_id"] == correlation_id
+      }
+    end
+
+    def answer_report_refusals(rows)
+      Array(rows).filter_map do |row|
+        next unless row.is_a?(Hash) && row["reason"].present?
+
+        refusal = { "reason" => row["reason"].to_s }
+        refusal["part_id"] = row["part_id"].to_s if row["part_id"].present?
+        refusal
+      end
+    end
   end
 end

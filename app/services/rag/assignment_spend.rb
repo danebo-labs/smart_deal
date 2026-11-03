@@ -7,8 +7,9 @@ module Rag
   class AssignmentSpend
     Stop = Class.new(Exception)
     # One recorded step. 150 -> 152, then 152 -> 164, then 164 -> 166,
-    # then 166 -> 174, then 174 -> 175, then 175 -> 180. Anything else stays.
-    CALL_CAP_BUMPS = { 150 => 152, 152 => 164, 164 => 166, 166 => 174, 174 => 175, 175 => 180 }.freeze
+    # then 166 -> 174, then 174 -> 175, then 175 -> 180, then 180 -> 185.
+    # Anything else stays.
+    CALL_CAP_BUMPS = { 150 => 152, 152 => 164, 164 => 166, 166 => 174, 174 => 175, 175 => 180, 180 => 185 }.freeze
 
     def initialize(path:, call_cap:, cost_cap_usd:)
       @path = Pathname(path)

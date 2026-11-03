@@ -193,7 +193,8 @@ class Rag::AssignmentSpendTest < ActiveSupport::TestCase
     assert_equal 2, snap["executions"].find { |row| row["id"] == "f3-scope-reply-20261023" }["calls"]
     assert_equal 175, Rag::AssignmentSpend::CALL_CAP_BUMPS[174]
     assert_equal 180, Rag::AssignmentSpend::CALL_CAP_BUMPS[175]
-    assert_nil Rag::AssignmentSpend::CALL_CAP_BUMPS[180]
+    assert_equal 185, Rag::AssignmentSpend::CALL_CAP_BUMPS[180]
+    assert_nil Rag::AssignmentSpend::CALL_CAP_BUMPS[185]
 
     8.times { |index| assert book.reserve!(ceiling_usd: "0.010000", model_id: "haiku", turn: index + 1) }
     assert_raises(Rag::AssignmentSpend::Stop) do
@@ -326,6 +327,58 @@ class Rag::AssignmentSpendTest < ActiveSupport::TestCase
     finished = book.snapshot
     assert_equal 180, finished["attempts"]
     assert_equal 175, finished["entries"].count { |row| row["id"].to_i <= 175 }
+    assert_equal "4.0", finished["cost_cap_usd"]
+    assert_equal "0.750000", finished["authorization"]["cost_usd"]
+  end
+
+  test "a quote experiment bumps 180 to 185 only while attempts are 180" do
+    seed_history(180)
+    data = JSON.parse(File.read(@path))
+    data["call_cap"] = 180
+    data["authorization"] = {
+      "id" => "f2f3-joint-after-134", "after_attempt" => 134,
+      "cost_usd" => "0.750000", "call_cap" => 180
+    }
+    data["executions"] = [ {
+      "id" => "vf5-t2-candidate-20261103", "after_attempt" => 175,
+      "cost_usd" => "0.070000", "calls" => 5, "at" => "2026-11-03T21:32:16Z"
+    } ]
+    File.write(@path, JSON.generate(data))
+    history = JSON.parse(File.read(@path))["entries"]
+    book = spend(call_cap: 185, cost_cap: "4")
+    missed = book.admit_execution!(
+      id: "vf5-t2-quote-late", cost_usd: "0.100000", calls: 5,
+      bump_call_cap_to: 185, bump_only_if_attempts: 181
+    )
+
+    assert_equal 180, missed["after_attempt"]
+    assert_equal 180, book.snapshot.dig("authorization", "call_cap")
+    assert_equal "0.750000", book.snapshot.dig("authorization", "cost_usd")
+
+    granted = book.admit_execution!(
+      id: "vf5-t2-quote-20261103", cost_usd: "0.100000", calls: 5,
+      bump_call_cap_to: 185, bump_only_if_attempts: 180
+    )
+    snap = book.snapshot
+
+    assert_equal 180, granted["after_attempt"]
+    assert_equal 5, granted["calls"]
+    assert_equal "0.100000", granted["cost_usd"]
+    assert_equal 185, snap.dig("authorization", "call_cap")
+    assert_equal "0.750000", snap.dig("authorization", "cost_usd")
+    assert_equal 134, snap.dig("authorization", "after_attempt")
+    assert_equal "f2f3-joint-after-134", snap.dig("authorization", "id")
+    assert_equal "4.0", snap["cost_cap_usd"]
+    assert_equal history, snap["entries"]
+    assert_equal 5, snap["executions"].find { |row| row["id"] == "vf5-t2-candidate-20261103" }["calls"]
+
+    5.times { |index| assert book.reserve!(ceiling_usd: "0.020000", model_id: "haiku", turn: index + 1) }
+    assert_raises(Rag::AssignmentSpend::Stop) do
+      book.reserve!(ceiling_usd: "0.020000", model_id: "haiku", turn: 6)
+    end
+    finished = book.snapshot
+    assert_equal 185, finished["attempts"]
+    assert_equal 180, finished["entries"].count { |row| row["id"].to_i <= 180 }
     assert_equal "4.0", finished["cost_cap_usd"]
     assert_equal "0.750000", finished["authorization"]["cost_usd"]
   end

@@ -5,11 +5,20 @@
 # Without that variable this refuses before a model call. It does not edit
 # .env, the PDF, or the corpus. The assignment file is the same 48-call and
 # US$4 ceiling as the generator benchmark. This process does not reset it.
+#
+# VF5_SCRIPT=apertura_lenta selects the two-turn slow-opening script. Any
+# other value keeps the accepted three-turn script. The script does not
+# choose the answer contract: a new episode uses the product default.
 
 TURNS = [
   "Prueba simulada. Estoy con un operador Fermator VF5+: en funcionamiento normal la puerta empieza a cerrar y vuelve a abrirse sola. El LED de fotocélula está encendido, no observo una obstrucción mecánica y no he revisado la sensibilidad de reapertura. SW4 está en OFF, modo esclavo. No hice mediciones ni reparaciones. Según el manual, ¿cómo me orientas y qué falta comprobar?",
   "Corrijo solo un dato de la simulación: el LED está apagado, no encendido. SW4 sigue en OFF y lo demás se mantiene. ¿Qué cambia en tu orientación?",
   "Resume el caso con los datos vigentes, distingue lo que dice el manual de lo que yo reporté y señala qué falta confirmar. No se ha realizado ninguna reparación."
+].freeze
+
+VF5_APERTURA_TURNS = [
+  "Estoy con un Fermator VF5+. Después de un corte de alimentación, al volver la corriente la puerta abrió muy despacio. ¿Por dónde empiezo?",
+  "Fue solo la primera apertura. Después volvió a abrir y cerrar como antes."
 ].freeze
 
 class Vf5CorrectedSequenceHost
@@ -66,8 +75,9 @@ def vf5_corrected_sequence_main
 
   run_id = ENV["RAG_VALIDATION_CAPTURE_RUN"]
   host = Vf5CorrectedSequenceHost.new(account, user)
+  turns = vf5_sequence_turns
   rows = []
-  TURNS.each_with_index do |question, index|
+  turns.each_with_index do |question, index|
     row = vf5_sequence_turn(host, session, user, question, index + 1, run_id)
     rows << row
     break unless row["status"] == "returned"
@@ -83,7 +93,7 @@ def vf5_corrected_sequence_main
   FileUtils.mkdir_p(directory)
   File.write(directory.join("summary.json"), JSON.generate(summary))
   puts JSON.generate(summary)
-  rows.size == 3 && rows.all? { |row| row["status"] == "returned" } ? 0 : 2
+  rows.size == turns.size && rows.all? { |row| row["status"] == "returned" } ? 0 : 2
 rescue Rag::AssignmentSpend::Stop, Rag::LocalPassLedger::Stop => error
   vf5_sequence_refuse(error.message)
 end
@@ -126,6 +136,10 @@ def vf5_sequence_preflight(spend)
     "attempts" => snap["attempts"]
   )
   ceiling <= remaining
+end
+
+def vf5_sequence_turns
+  ENV["VF5_SCRIPT"] == "apertura_lenta" ? VF5_APERTURA_TURNS : TURNS
 end
 
 def vf5_sequence_turn(host, session, user, question, number, run_id)

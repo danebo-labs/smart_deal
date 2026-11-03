@@ -95,10 +95,16 @@ class Rag::CompoundPartialAnswerTest < ActiveSupport::TestCase
 
   private
 
+  # The designated-part assertions use the legacy binding. The turns do not
+  # carry part replies, so the session starts on an episode without qc.
   def started
     session = ConversationSession.create!(
       identifier: "web:partial-#{SecureRandom.hex(3)}", channel: "web", expires_at: 1.hour.from_now,
-      user: @user, account: @account, active_episode: {}, conversation_history: []
+      user: @user, account: @account,
+      active_episode: Rag::ActiveEpisode.open(
+        correlation_id: "partial-legacy", now: Time.current, contract: nil
+      ).to_h,
+      conversation_history: []
     )
     turn(session, "El compresor se detiene solo.", "report", [ "El compresor se detiene solo." ])
     session

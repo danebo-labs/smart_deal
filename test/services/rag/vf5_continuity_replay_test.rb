@@ -206,13 +206,16 @@ class Rag::Vf5ContinuityReplayTest < ActiveSupport::TestCase
     session = nil
     document = nil
     document = fermator_document
+    # The morning, midday, and 15:00 captures were stored without qc.
     @replay_session = session = ConversationSession.create!(
       identifier: "web:vf5-continuity-#{sample}-#{SecureRandom.hex(3)}",
       channel: "web",
       expires_at: 1.hour.from_now,
       user: @user,
       account: @account,
-      active_episode: {},
+      active_episode: Rag::ActiveEpisode.open(
+        correlation_id: "vf5-continuity-#{sample}", now: Time.current, contract: nil
+      ).to_h,
       conversation_history: [],
       document_focus: [ {
         "kb_document_id" => document.id,

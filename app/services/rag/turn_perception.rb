@@ -87,6 +87,15 @@ module Rag
 
         part_replies.empty? ? "empty" : "present"
       end
+
+      # Data#with returned a copy. This Struct stays mutable so a reply list
+      # can be attached, and callers still receive a separate perception.
+      def with(**changes)
+        unknown = changes.keys.map(&:to_sym) - members
+        raise ArgumentError, "unknown keywords: #{unknown.join(', ')}" if unknown.any?
+
+        self.class.new(**to_h.merge(changes))
+      end
     end
 
     def self.build(raw, turn:, episode:, catalog:, viewer_account:)

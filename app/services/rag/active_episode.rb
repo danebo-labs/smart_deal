@@ -85,7 +85,7 @@ module Rag
       episode
     end
 
-    def self.open(correlation_id:, now:, contract: nil)
+    def self.open(correlation_id:, now:, contract: AnswerContract::VERSION)
       episode = new
       episode.episode_id = "ep_#{SecureRandom.hex(8)}"
       episode.status = "active"

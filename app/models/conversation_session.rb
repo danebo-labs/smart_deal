@@ -166,7 +166,7 @@ class ConversationSession < ApplicationRecord
   # Flag off: the same single UPDATE as add_to_history_and_refresh, and nil.
   # Flag on: history and active_episode in one UPDATE. The caller does not
   # read the Result while the episode flag is the only one enabled.
-  def record_user_turn!(content, user_id:, correlation_id:, selection_turn: false, now: Time.current, locale: :es, interpreter_client: nil, interpreter_sleeper: nil, answer_contract: nil)
+  def record_user_turn!(content, user_id:, correlation_id:, selection_turn: false, now: Time.current, locale: :es, interpreter_client: nil, interpreter_sleeper: nil, answer_contract: Rag::AnswerContract::VERSION)
     self.interpreter_input_chars = nil
     unless episode_recording?
       add_to_history_and_refresh("user", content, user_id: user_id, correlation_id: correlation_id)
@@ -925,7 +925,7 @@ class ConversationSession < ApplicationRecord
     Rag::HaikuQueryAnalysisFlag.owner? && !selection_turn
   end
 
-  def record_owner_turn!(content, user_id:, correlation_id:, now:, locale:, interpreter_client:, interpreter_sleeper: nil, answer_contract: nil)
+  def record_owner_turn!(content, user_id:, correlation_id:, now:, locale:, interpreter_client:, interpreter_sleeper: nil, answer_contract: Rag::AnswerContract::VERSION)
     Rag::ValidationCapture.with_turn(correlation_id) do
       apply_recorded_owner_turn!(
         content,
@@ -940,7 +940,7 @@ class ConversationSession < ApplicationRecord
     end
   end
 
-  def apply_recorded_owner_turn!(content, user_id:, correlation_id:, now:, locale:, interpreter_client:, interpreter_sleeper: nil, answer_contract: nil)
+  def apply_recorded_owner_turn!(content, user_id:, correlation_id:, now:, locale:, interpreter_client:, interpreter_sleeper: nil, answer_contract: Rag::AnswerContract::VERSION)
     focus_before = :unset
     self.turn_causal = nil
     original_text = content.to_s
@@ -1015,7 +1015,7 @@ class ConversationSession < ApplicationRecord
     record_document_focus(focus_before)
   end
 
-  def apply_owner_perception!(turn, interpreted, correlation_id, user_id, now, locale, focus, photo_context, opened_episode: nil, answer_contract: nil)
+  def apply_owner_perception!(turn, interpreted, correlation_id, user_id, now, locale, focus, photo_context, opened_episode: nil, answer_contract: Rag::AnswerContract::VERSION)
     perception = interpreted.perception
     if interpreted.status == "service_failure"
       self.turn_active_photo_context = nil
@@ -1286,8 +1286,9 @@ class ConversationSession < ApplicationRecord
     parsed.nil? || parsed.blank? || %w[expired invalid_state].include?(parsed.reason)
   end
 
-  # Version of one new episode. The default is the legacy reading.
-  # An episode that already exists does not pass through here.
+  # Version of one new episode. The product passes the current contract.
+  # nil keeps this new episode on the legacy reading. An episode that already
+  # exists does not pass through here, and publishing does not change it.
   def open_owner_episode(correlation_id, now, answer_contract)
     Rag::ActiveEpisode.open(correlation_id: correlation_id, now: now, contract: answer_contract)
   end

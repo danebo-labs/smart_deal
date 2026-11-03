@@ -923,8 +923,10 @@ class Rag::CompanionF3DisambiguationTest < ActiveSupport::TestCase
     statements.statements.find { |item| item.step? && item.text.include?("probablemente") }
   end
 
+  # F3 fixtures record the legacy binding. A product-default episode does not
+  # invent that association when the turn has no part reply.
   def episode_for(goal, observations)
-    episode = Rag::ActiveEpisode.open(correlation_id: "query:f3", now: Time.current)
+    episode = Rag::ActiveEpisode.open(correlation_id: "query:f3", now: Time.current, contract: nil)
     episode.assign_goal!(goal, correlation_id: "query:f3")
     observations.each { |text| episode.append_observation!(text, correlation_id: "query:f3") }
     episode

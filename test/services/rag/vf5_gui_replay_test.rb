@@ -210,7 +210,11 @@ class Rag::Vf5GuiReplayTest < ActiveSupport::TestCase
           previous: episode, perception: perception, focus_count: 1,
           focus_document_ids: [ document.id ], focus_uris: [ FOCUS_URI ], locale: :es, turn: raw["user"]
         )
-        episode = Rag::ActiveEpisode.open(correlation_id: raw["correlation_id"], now: now) if episode.blank?
+        # The capture has no qc and no part replies. Replaying it on the
+        # product default would skip the legacy binding this fixture records.
+        episode = Rag::ActiveEpisode.open(
+          correlation_id: raw["correlation_id"], now: now, contract: nil
+        ) if episode.blank?
         Rag::WorkContextReducer.apply!(
           episode: episode, perception: perception, decision: decision,
           turn: raw["user"], correlation_id: raw["correlation_id"], now: now

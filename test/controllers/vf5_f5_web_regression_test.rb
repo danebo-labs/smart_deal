@@ -56,9 +56,13 @@ class Vf5F5WebRegressionTest < ActionDispatch::IntegrationTest
       user_id: @user.id,
       account_id: @account.id
     )
+    # ep_71e5c284b0315a41 and ep_6dba74e041c77794 have no qc. The HTTP path
+    # continues that stored reading. A blank episode would open the current contract.
     @session.update!(
       conversation_history: [],
-      active_episode: {},
+      active_episode: Rag::ActiveEpisode.open(
+        correlation_id: "vf5-f5-legacy-capture", now: Time.current, contract: nil
+      ).to_h,
       document_focus: [],
       active_entities: {},
       current_procedure: {},

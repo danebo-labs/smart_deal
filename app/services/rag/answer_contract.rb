@@ -101,8 +101,10 @@ module Rag
     end
 
     # The only writer of qc. ActiveEpisode.open calls this on a new episode,
-    # before that episode is interpreted. Only VERSION selects the new
-    # contract. Any other argument leaves the legacy reading.
+    # before that episode is interpreted. The product default is VERSION.
+    # nil and any other value leave the legacy reading, for an episode opened
+    # that way on purpose. Publishing a question does not call this. A stored
+    # episode without qc stays on the legacy reading.
     def select!(episode, requested)
       episode.qc = requested == VERSION ? VERSION : nil
       episode

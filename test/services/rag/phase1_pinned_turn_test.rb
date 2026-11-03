@@ -496,12 +496,20 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
     assert_equal Rag::ValidationCapture.sanitize(client.received), memory["request"]
     assert_includes memory["message_text"], "work_context"
     assert_includes memory["system"], "You classify one technician turn"
-    assert_nil memory["episode_id"]
     assert_equal "phase1:#{result.session_id}", memory["correlation_root"]
     assert_equal "phase1:#{result.session_id}", memory["correlation_id"]
     assert result.capture.none? { |event| %w[retrieve generate_text retrieval_results retrieve_and_generate].include?(event["kind"]) }
     assert_equal result.capture.pluck("sequence"), (1..result.capture.size).to_a
     later = result.capture.find { |event| event["kind"] == "phase1_turn" }
+    contract = result.capture.find { |event| event["kind"] == "answer_contract" }
+    assert_equal "contract", contract["result"]
+    assert_equal 1, contract["qc"]
+    assert_operator contract["sequence"], :<, memory["sequence"]
+    assert_equal contract["episode_id"], memory["episode_id"]
+    # This stub is meta on a technical turn, so the interpretation is rejected
+    # and the unchanged shell is not stored. The request still saw that shell.
+    assert_nil later["episode_id"]
+    assert_nil ConversationSession.find(result.session_id).live_episode_id
     assert_operator memory["sequence"], :<, later["sequence"]
     assert_equal result.session_id, later["session_id"]
     assert_exported(result, MESSAGE)

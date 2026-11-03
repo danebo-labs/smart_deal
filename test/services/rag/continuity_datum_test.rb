@@ -214,6 +214,8 @@ class Rag::ContinuityDatumTest < ActiveSupport::TestCase
     ENV["FIELD_COMPANION_EPISODE_ENABLED"] = previous_episode
   end
 
+  # These turns have no part reply. The assertions are the legacy binding.
+  # A blank session would open the current contract and leave that binding off.
   def open_session
     ConversationSession.create!(
       identifier: "web:datum-#{SecureRandom.hex(3)}",
@@ -221,7 +223,9 @@ class Rag::ContinuityDatumTest < ActiveSupport::TestCase
       expires_at: 1.hour.from_now,
       user: @user,
       account: @account,
-      active_episode: {},
+      active_episode: Rag::ActiveEpisode.open(
+        correlation_id: "datum-legacy", now: Time.current, contract: nil
+      ).to_h,
       conversation_history: []
     )
   end

@@ -56,10 +56,12 @@ class RagAnswerPreservationTest < ActionDispatch::IntegrationTest
     assert_includes stored["content"], "Registro del caso."
   end
 
-  test "a 746 character message records the original and sent lengths without changing the cut" do
+  test "a 746 character message reaches the interpreter whole and the history preview stays cut" do
     tail = " no está activada"
     question = ("x" * (746 - tail.length)) + tail
     assert_equal 746, question.length
+    assert_operator question.length, :>, ConversationSession::MAX_MSG_LENGTH
+    assert_operator question.length, :<, ConversationSession::USER_TEXT_MAX_CHARS
     sent = []
 
     isolate_env("FIELD_COMPANION_EPISODE_ENABLED", "true") do
@@ -73,13 +75,15 @@ class RagAnswerPreservationTest < ActionDispatch::IntegrationTest
               end
               assert_response :success
               payload = interaction_payload(output)
-              assert_equal 746, payload["interpreter_original_chars"]
-              assert_equal 600, payload["interpreter_sent_chars"]
-              assert_equal question.length, payload["interpreter_original_chars"]
-              assert_equal sent.fetch(0).length, payload["interpreter_sent_chars"]
-              assert_equal Rag::TurnText.truncate(question), sent.fetch(0)
-              assert_equal 600, sent.fetch(0).length
-              assert_not_includes sent.fetch(0), tail.strip
+              assert_nil payload["interpreter_original_chars"]
+              assert_nil payload["interpreter_sent_chars"]
+              assert_equal question, sent.fetch(0)
+              assert_includes sent.fetch(0), tail.strip
+              preview = ConversationSession.find_by!(user: @user, channel: "web").conversation_history.reverse.find { |row| row["role"] == "user" }
+              assert_equal Rag::TurnText.truncate(question), preview["content"]
+              assert_equal 600, preview["content"].length
+              assert_not_includes preview["content"], tail.strip
+              assert_equal question, preview["full_content"]
               payload.each_value do |value|
                 next unless value.is_a?(String)
 

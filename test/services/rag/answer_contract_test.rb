@@ -789,10 +789,10 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
     end
   end
 
-  test "opening without a selector records the legacy reading before the interpreter" do
+  test "the application opens the current contract before the interpreter and publishing keeps it" do
     with_flags do
       session = ConversationSession.create!(
-        identifier: "web:legacy-#{SecureRandom.hex(3)}",
+        identifier: "web:default-#{SecureRandom.hex(3)}",
         channel: "web",
         expires_at: 1.hour.from_now,
         user: @user,
@@ -804,7 +804,7 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
         session.record_user_turn!(
           "El conjunto no responde.",
           user_id: @user.id,
-          correlation_id: "query:legacy-open-#{SecureRandom.hex(2)}",
+          correlation_id: "query:default-open-#{SecureRandom.hex(2)}",
           interpreter_client: tool_client("report", [ "El conjunto no responde." ])
         )
       end
@@ -812,17 +812,25 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
       request = events.find { |event| event["kind"] == "interpreter_request" }
       stored = session.reload.active_episode
 
-      assert_equal "legacy", selected["result"]
-      assert_nil selected["qc"]
+      assert_equal "contract", selected["result"]
+      assert_equal 1, selected["qc"]
       assert_equal "prepare", selected["stage"]
       assert_operator selected["sequence"], :<, request["sequence"]
-      assert_not stored.key?("qc")
+      assert_equal 1, stored["qc"]
       assert_equal selected["episode_id"], stored["episode_id"]
+
+      published = publish(session, MAIN)
+      reloaded = reload_episode(session)
+
+      assert_equal 1, published.qc
+      assert_equal 1, reloaded.qc
+      assert_equal stored["episode_id"], reloaded.episode_id
+      assert_equal MAIN, reloaded.pending_question["question"]
     end
   end
 
   test "legacy answers keep their labels and an unmarked episode has no contract" do
-    episode = Rag::ActiveEpisode.open(correlation_id: "synthetic", now: Time.current)
+    episode = Rag::ActiveEpisode.open(correlation_id: "synthetic", now: Time.current, contract: nil)
     target = target("Piloto.")
     episode.append_observation!(
       "El técnico no lo distinguió.",
@@ -847,9 +855,7 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
     assert_includes block, "«no sé»"
     assert_not stored.key?("qc")
     assert_not stored.key?("replies")
-    selected = Rag::ActiveEpisode.open(
-      correlation_id: "synthetic", now: Time.current, contract: Rag::AnswerContract::VERSION
-    )
+    selected = Rag::ActiveEpisode.open(correlation_id: "synthetic", now: Time.current)
     assert_equal 1, selected.to_h["qc"]
   end
 
@@ -874,10 +880,10 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
   end
 
   def boot_legacy(text = "El conjunto no responde.", observation = text)
-    start_session(text, observation)
+    start_session(text, observation, answer_contract: nil)
   end
 
-  def start_session(text, observation, answer_contract: nil)
+  def start_session(text, observation, answer_contract: :omit)
     session = ConversationSession.create!(
       identifier: "web:contract-#{SecureRandom.hex(3)}",
       channel: "web",
@@ -892,7 +898,7 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
       correlation_id: "query:boot-#{SecureRandom.hex(2)}",
       interpreter_client: tool_client("report", [ observation ])
     }
-    options[:answer_contract] = answer_contract if answer_contract
+    options[:answer_contract] = answer_contract unless answer_contract == :omit
     session.record_user_turn!(text, **options)
     session
   end

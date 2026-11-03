@@ -29,6 +29,9 @@ module Rag
     # calls on top of the 134 already recorded. Cumulative 150. The dollar
     # cap stays US$4 and includes unknown exposure.
     ASSIGNMENT_CALL_CAP = 150
+    # 150 is the standing cap. A file that recorded a bump to 152, 164, 166,
+    # 174, or 175 is read back. A larger number is not a grant.
+    ASSIGNMENT_CALL_CAPS = [ ASSIGNMENT_CALL_CAP, 152, 164, 166, 174, 175 ].freeze
     ASSIGNMENT_COST_CAP_USD = "4"
     LOCAL_HOSTS = [ "", "localhost", "127.0.0.1", "::1" ].freeze
     MUTEX = Mutex.new
@@ -321,15 +324,13 @@ module Rag
         )
       end
 
-      # 150 is the standing cap. A file that recorded a bump to 152, 164, or 166
-      # is read back. A larger number is not a grant.
       def assignment_call_cap
         path = ENV[ASSIGNMENT_PATH_ENV].to_s
         return ASSIGNMENT_CALL_CAP if path.empty? || !File.exist?(path)
 
         data = JSON.parse(File.read(path))
         authorized = data.is_a?(Hash) ? data.dig("authorization", "call_cap").to_i : 0
-        return authorized if [ ASSIGNMENT_CALL_CAP, 152, 164, 166 ].include?(authorized)
+        return authorized if ASSIGNMENT_CALL_CAPS.include?(authorized)
 
         ASSIGNMENT_CALL_CAP
       rescue JSON::ParserError, SystemCallError

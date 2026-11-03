@@ -155,6 +155,128 @@ class Rag::AssignmentSpendTest < ActiveSupport::TestCase
     assert_equal "1.400000", book.snapshot["committed_usd"]
   end
 
+  test "an apertura continuation bumps 166 to 174 and keeps the dollar cap and history" do
+    seed_history(166)
+    data = JSON.parse(File.read(@path))
+    data["call_cap"] = 166
+    data["authorization"] = {
+      "id" => "f2f3-joint-after-134", "after_attempt" => 134,
+      "cost_usd" => "0.750000", "call_cap" => 166
+    }
+    data["executions"] = [ {
+      "id" => "f3-scope-reply-20261023", "after_attempt" => 164,
+      "cost_usd" => "0.100000", "calls" => 2, "at" => "2026-10-24T00:10:46Z"
+    } ]
+    File.write(@path, JSON.generate(data))
+    book = spend(call_cap: 174, cost_cap: "4")
+    assert_raises(Rag::AssignmentSpend::Stop) do
+      book.reserve!(ceiling_usd: "0.010000", model_id: "haiku", turn: 1)
+    end
+    assert_equal 166, book.snapshot["attempts"]
+    history = book.snapshot["entries"]
+
+    later = book.admit_execution!(
+      id: "vf5-apertura-lenta-20261103", cost_usd: "0.440000", calls: 8,
+      bump_call_cap_to: 174, bump_only_if_attempts: 166
+    )
+    snap = book.snapshot
+
+    assert_equal 166, later["after_attempt"]
+    assert_equal 8, later["calls"]
+    assert_equal "0.440000", later["cost_usd"]
+    assert_equal 174, snap["authorization"]["call_cap"]
+    assert_equal "0.750000", snap["authorization"]["cost_usd"]
+    assert_equal 134, snap["authorization"]["after_attempt"]
+    assert_equal "f2f3-joint-after-134", snap["authorization"]["id"]
+    assert_equal "4.0", snap["cost_cap_usd"]
+    assert_equal history, snap["entries"]
+    assert_equal 2, snap["executions"].find { |row| row["id"] == "f3-scope-reply-20261023" }["calls"]
+    assert_equal 175, Rag::AssignmentSpend::CALL_CAP_BUMPS[174]
+    assert_nil Rag::AssignmentSpend::CALL_CAP_BUMPS[175]
+
+    8.times { |index| assert book.reserve!(ceiling_usd: "0.010000", model_id: "haiku", turn: index + 1) }
+    assert_raises(Rag::AssignmentSpend::Stop) do
+      book.reserve!(ceiling_usd: "0.010000", model_id: "haiku", turn: 9)
+    end
+    finished = book.snapshot
+    assert_equal 174, finished["attempts"]
+    assert_equal 166, finished["entries"].count { |row| row["id"].to_i <= 166 }
+    assert_equal "4.0", finished["cost_cap_usd"]
+    assert_equal "0.750000", finished["authorization"]["cost_usd"]
+  end
+
+  test "a cap above 174 is not recorded when the ledger has left 166" do
+    seed_history(167)
+    data = JSON.parse(File.read(@path))
+    data["authorization"] = {
+      "id" => "f2f3-joint-after-134", "after_attempt" => 134,
+      "cost_usd" => "0.750000", "call_cap" => 166
+    }
+    File.write(@path, JSON.generate(data))
+    book = spend(call_cap: 174, cost_cap: "4")
+    book.admit_execution!(
+      id: "late", cost_usd: "0.100000", calls: 8,
+      bump_call_cap_to: 175, bump_only_if_attempts: 166
+    )
+
+    assert_equal 166, book.snapshot["authorization"]["call_cap"]
+    assert_equal "0.750000", book.snapshot["authorization"]["cost_usd"]
+    assert_equal "4.0", book.snapshot["cost_cap_usd"]
+    assert_equal 167, book.snapshot["entries"].size
+  end
+
+  test "an interpreter evaluation bumps 174 to 175 only while attempts are 170" do
+    seed_history(170)
+    data = JSON.parse(File.read(@path))
+    data["call_cap"] = 174
+    data["authorization"] = {
+      "id" => "f2f3-joint-after-134", "after_attempt" => 134,
+      "cost_usd" => "0.750000", "call_cap" => 174
+    }
+    data["executions"] = [ {
+      "id" => "vf5-apertura-lenta-20261103", "after_attempt" => 166,
+      "cost_usd" => "0.440000", "calls" => 8, "at" => "2026-11-03T20:14:14Z"
+    } ]
+    File.write(@path, JSON.generate(data))
+    history = JSON.parse(File.read(@path))["entries"]
+    book = spend(call_cap: 175, cost_cap: "4")
+    missed = book.admit_execution!(
+      id: "vf5-t2-interpreter-late", cost_usd: "0.060000", calls: 5,
+      bump_call_cap_to: 175, bump_only_if_attempts: 171
+    )
+
+    assert_equal 170, missed["after_attempt"]
+    assert_equal 174, book.snapshot.dig("authorization", "call_cap")
+    assert_equal "0.750000", book.snapshot.dig("authorization", "cost_usd")
+
+    granted = book.admit_execution!(
+      id: "vf5-t2-interpreter-20261103", cost_usd: "0.060000", calls: 5,
+      bump_call_cap_to: 175, bump_only_if_attempts: 170
+    )
+    snap = book.snapshot
+
+    assert_equal 170, granted["after_attempt"]
+    assert_equal 5, granted["calls"]
+    assert_equal "0.060000", granted["cost_usd"]
+    assert_equal 175, snap.dig("authorization", "call_cap")
+    assert_equal "0.750000", snap.dig("authorization", "cost_usd")
+    assert_equal 134, snap.dig("authorization", "after_attempt")
+    assert_equal "f2f3-joint-after-134", snap.dig("authorization", "id")
+    assert_equal "4.0", snap["cost_cap_usd"]
+    assert_equal history, snap["entries"]
+    assert_equal 8, snap["executions"].find { |row| row["id"] == "vf5-apertura-lenta-20261103" }["calls"]
+
+    5.times { |index| assert book.reserve!(ceiling_usd: "0.010000", model_id: "haiku", turn: index + 1) }
+    assert_raises(Rag::AssignmentSpend::Stop) do
+      book.reserve!(ceiling_usd: "0.010000", model_id: "haiku", turn: 6)
+    end
+    finished = book.snapshot
+    assert_equal 175, finished["attempts"]
+    assert_equal 170, finished["entries"].count { |row| row["id"].to_i <= 170 }
+    assert_equal "4.0", finished["cost_cap_usd"]
+    assert_equal "0.750000", finished["authorization"]["cost_usd"]
+  end
+
   test "an unpriced error keeps the ceiling" do
     book = spend
     id = book.reserve!(ceiling_usd: "0.125000", model_id: "sonnet", turn: 1)

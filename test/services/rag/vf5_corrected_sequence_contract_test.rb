@@ -46,6 +46,62 @@ class Vf5CorrectedSequenceContractTest < ActiveSupport::TestCase
     assert_equal TURNS, vf5_sequence_turns
     assert_not_includes turn, "answer_contract"
     assert_not_includes runner, "VF5_ANSWER_CONTRACT"
+    assert_not_includes runner, "call_cap: 48"
+    assert_not_includes runner, "48 - snap"
+  end
+
+  test "apertura lenta records eight calls to 174 only while the ledger is at 166" do
+    dir = Dir.mktmpdir("vf5-cap")
+    path = File.join(dir, "spend.json")
+    keys = %w[RAG_LOCAL_PASS_GUARD RAG_LOCAL_PASS_CALL_CAP RAG_LOCAL_PASS_COST_CAP_USD AWS_MAX_ATTEMPTS]
+    previous = keys.index_with { |key| ENV[key] }
+    keys.each { |key| ENV.delete(key) }
+    write_spend(path, attempts: 166, call_cap: 166)
+    ENV["VF5_SCRIPT"] = "apertura_lenta"
+    spend = vf5_sequence_spend(path)
+
+    assert_equal 0, vf5_sequence_remaining_calls(spend)
+    assert_not vf5_arm_sequence_ledger!(spend)
+    assert_nil ENV["RAG_LOCAL_PASS_GUARD"]
+
+    vf5_sequence_admit_apertura!(spend)
+    granted = spend.snapshot
+    unit = Rag::LocalPassLedger.price(BedrockClient::QUERY_MODEL_ID, 40_000, 3_000)
+
+    assert_equal 174, granted.dig("authorization", "call_cap")
+    assert_equal "0.750000", granted.dig("authorization", "cost_usd")
+    assert_equal "4.0", granted["cost_cap_usd"]
+    assert_equal 8, vf5_sequence_remaining_calls(spend)
+    assert_equal "kept", granted["entries"].first["marker"]
+    assert_equal 2, granted["entries"].size
+    execution = granted["executions"].find { |row| row["id"] == "vf5-apertura-lenta-20261103" }
+    assert_equal 8, execution["calls"]
+    assert_equal 166, execution["after_attempt"]
+    assert_equal format("%.6f", unit * 8), execution["cost_usd"]
+    assert_equal 2, granted["executions"].find { |row| row["id"] == "f3-scope-reply-20261023" }["calls"]
+
+    ENV["AWS_MAX_ATTEMPTS"] = "1"
+    assert vf5_arm_sequence_ledger!(spend)
+    assert_equal "8", ENV["RAG_LOCAL_PASS_CALL_CAP"]
+    assert_not vf5_sequence_local_databases?
+
+    ENV.delete("VF5_SCRIPT")
+    write_spend(path, attempts: 166, call_cap: 166)
+    untouched = vf5_sequence_spend(path)
+    vf5_sequence_admit_apertura!(untouched)
+    assert_equal 166, untouched.snapshot.dig("authorization", "call_cap")
+
+    ENV["VF5_SCRIPT"] = "apertura_lenta"
+    write_spend(path, attempts: 167, call_cap: 166)
+    late = vf5_sequence_spend(path)
+    vf5_sequence_admit_apertura!(late)
+    assert_equal 166, late.snapshot.dig("authorization", "call_cap")
+    assert_equal 2, late.snapshot["entries"].size
+  ensure
+    keys&.each { |key| previous[key].nil? ? ENV.delete(key) : ENV[key] = previous[key] }
+    Rag::LocalPassLedger.reset!
+    Rag::LocalPassLedger.reset_local_process!
+    FileUtils.remove_entry(dir) if dir && File.directory?(dir)
   end
 
   test "this turn's answer report is not the previous turn and not the written row by itself" do
@@ -157,6 +213,36 @@ class Vf5CorrectedSequenceContractTest < ActiveSupport::TestCase
       Struct.new(:output, :usage).new(output, usage)
     end
     client
+  end
+
+  def write_spend(path, attempts:, call_cap:)
+    File.write(path, JSON.generate(
+      "call_cap" => call_cap,
+      "cost_cap_usd" => "4.000000",
+      "attempts" => attempts,
+      "blocked" => 0,
+      "priced" => attempts,
+      "seq" => attempts,
+      "committed" => "1.565982",
+      "unknown" => "0.102140",
+      "open" => {},
+      "entries" => [
+        { "id" => 1, "status" => "settled", "marker" => "kept", "actual_usd" => "0.010000" },
+        { "id" => attempts, "status" => "settled", "actual_usd" => "0.007000" }
+      ],
+      "authorization" => {
+        "id" => "f2f3-joint-after-134",
+        "after_attempt" => 134,
+        "cost_usd" => "0.750000",
+        "call_cap" => call_cap
+      },
+      "executions" => [ {
+        "id" => "f3-scope-reply-20261023",
+        "after_attempt" => 164,
+        "cost_usd" => "0.100000",
+        "calls" => 2
+      } ]
+    ))
   end
 
   def restore_env(key, value)

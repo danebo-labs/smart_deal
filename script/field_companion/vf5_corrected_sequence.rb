@@ -3,11 +3,14 @@
 # Three-message VF5 sequence on the loaded product path: owner turn,
 # pinned retrieve, and Haiku generation. VF5_CORRECTED_SEQUENCE=1 sends it.
 # Without that variable this refuses before a model call. It does not edit
-# .env, the PDF, or the corpus. The assignment file is the same 48-call and
-# US$4 ceiling as the generator benchmark. This process does not reset it.
+# .env, the PDF, or the corpus. The call ceiling is the authorization
+# recorded in the assignment file. The dollar ceiling stays US$4. This
+# process does not reset the file.
 #
-# VF5_SCRIPT=apertura_lenta selects the two-turn slow-opening script. Any
-# other value keeps the accepted three-turn script. The script does not
+# VF5_SCRIPT=apertura_lenta selects the two-turn slow-opening script and,
+# only while the file is still at 166 calls, records the next cap step to
+# 174 with eight calls. Any other script value keeps the accepted
+# three-turn script and does not record that step. The script does not
 # choose the answer contract: a new episode uses the product default.
 
 TURNS = [
@@ -49,12 +52,14 @@ def vf5_corrected_sequence_main
     Rails.root.join("tmp/field_companion/vf5_generator_benchmark/assignment_spend.json").to_s
   return vf5_sequence_refuse("spend_file_missing") unless File.file?(spend_path)
   return vf5_sequence_refuse("not_local") unless Rails.env.local?
+  return vf5_sequence_refuse("database") unless vf5_sequence_local_databases?
   return vf5_sequence_refuse("shared_session") if SharedSession::ENABLED
   return vf5_sequence_refuse("generation_model") unless BedrockClient::QUERY_MODEL_ID.include?("claude-haiku-4-5")
   return vf5_sequence_refuse("knowledge_base_bucket") unless KbDocument::KB_BUCKET == "multimodal-source-destination"
 
   vf5_sequence_env!(spend_path)
-  spend = Rag::AssignmentSpend.new(path: spend_path, call_cap: 48, cost_cap_usd: "4")
+  spend = vf5_sequence_spend(spend_path)
+  vf5_sequence_admit_apertura!(spend)
   return vf5_sequence_refuse("assignment_spend") unless vf5_arm_sequence_ledger!(spend)
   return vf5_sequence_refuse("preflight") unless vf5_sequence_preflight(spend)
 
@@ -67,6 +72,7 @@ def vf5_corrected_sequence_main
 
   document = KbDocument.find(122)
   return vf5_sequence_refuse("document") unless document.document_uid == "126cda62-64ad-4469-8674-a29f12e38d48"
+  return vf5_sequence_refuse("session") unless vf5_sequence_confirm_session!(session, account)
 
   TrackBedrockQueryJob.singleton_class.prepend(Vf5InlineQueryTracking)
   FieldCompanionCleanStart.call(account_slug: account.slug, user_email: user.email, apply: true, io: $stdout)
@@ -111,11 +117,47 @@ def vf5_sequence_env!(spend_path)
   ENV["RAG_VALIDATION_CAPTURE_RUN"] = "vf5-corrected-#{Time.now.utc.strftime('%Y%m%dT%H%M%SZ')}"
 end
 
-def vf5_arm_sequence_ledger!(spend)
+def vf5_sequence_spend(path)
+  Rag::AssignmentSpend.new(
+    path: path,
+    call_cap: Rag::LocalPassLedger::ASSIGNMENT_CALL_CAPS.max,
+    cost_cap_usd: "4"
+  )
+end
+
+# Eight calls, and only the recorded step 166 -> 174. A later process that
+# finds the file already past 166 does not record another grant.
+def vf5_sequence_admit_apertura!(spend)
+  return unless ENV["VF5_SCRIPT"] == "apertura_lenta"
+
   snap = spend.snapshot
-  remaining_calls = 48 - snap["attempts"].to_i
+  authorized = snap.dig("authorization", "call_cap").to_i
+  return unless snap["attempts"].to_i == 166 && authorized == 166
+  return unless Rag::AssignmentSpend::CALL_CAP_BUMPS[authorized] == 174
+
+  unit = Rag::LocalPassLedger.price(BedrockClient::QUERY_MODEL_ID, 40_000, 3_000)
+  spend.admit_execution!(
+    id: "vf5-apertura-lenta-20261103",
+    cost_usd: unit * 8,
+    calls: 8,
+    bump_call_cap_to: 174,
+    bump_only_if_attempts: 166
+  )
+end
+
+def vf5_sequence_remaining_calls(spend)
+  snap = spend.snapshot
+  authorized = snap.dig("authorization", "call_cap").to_i
+  return nil unless Rag::LocalPassLedger::ASSIGNMENT_CALL_CAPS.include?(authorized)
+
+  authorized - snap["attempts"].to_i
+end
+
+def vf5_arm_sequence_ledger!(spend)
+  remaining_calls = vf5_sequence_remaining_calls(spend)
+  snap = spend.snapshot
   remaining = BigDecimal("4") - BigDecimal(snap["committed_usd"]) - BigDecimal(snap["held_usd"])
-  return false if remaining_calls < 6 || remaining <= 0
+  return false if remaining_calls.nil? || remaining_calls < 6 || remaining <= 0
 
   ENV["RAG_LOCAL_PASS_GUARD"] = "1"
   ENV["RAG_LOCAL_PASS_CALL_CAP"] = remaining_calls.to_s
@@ -123,6 +165,45 @@ def vf5_arm_sequence_ledger!(spend)
   Rag::LocalPassLedger.reset!
   Rag::LocalPassLedger.reset_local_process!
   Rag::LocalPassLedger.armed?
+end
+
+def vf5_sequence_local_databases?
+  rows = ActiveRecord::Base.configurations.configs_for(env_name: Rails.env)
+  databases = rows.map { |config|
+    {
+      "name" => config.name.to_s,
+      "adapter" => config.adapter.to_s,
+      "host" => config.host.to_s,
+      "database" => config.database.to_s
+    }
+  }
+  puts JSON.generate("status" => "local_destination", "env" => Rails.env, "databases" => databases)
+  return false unless Rails.env.development?
+
+  expected = %w[
+    smart_deal_development
+    smart_deal_development_cache
+    smart_deal_development_queue
+    smart_deal_development_cable
+  ]
+  names = databases.pluck("database").sort
+  hosts = databases.map { |row| row["host"].presence || "localhost" }
+  names == expected.sort && hosts.all? { |host| %w[localhost 127.0.0.1 ::1].include?(host) }
+end
+
+def vf5_sequence_confirm_session!(session, account)
+  puts JSON.generate(
+    "status" => "session",
+    "id" => session.id,
+    "account" => account.slug,
+    "channel" => session.channel,
+    "identifier" => session.identifier,
+    "database" => ConversationSession.connection_db_config.database.to_s
+  )
+  session.id == 198 &&
+    account.slug == "index-account-1" &&
+    session.channel == "web" &&
+    ConversationSession.connection_db_config.database.to_s == "smart_deal_development"
 end
 
 def vf5_sequence_preflight(spend)

@@ -98,6 +98,26 @@ module Rag
       parts.all? { |part| settled_part?(part["id"]) }
     end
 
+    # Published wording of parts closed as complete or unknown. Partial and
+    # contradictory stay out. Legacy episodes are not this contract.
+    def settled_part_texts
+      episode = @episode_record
+      return [] unless episode && AnswerContract.active?(episode)
+
+      question = episode.pending_question
+      return [] unless question.is_a?(Hash)
+
+      Array(question["parts"]).filter_map { |part|
+        next unless part.is_a?(Hash)
+
+        text = part["text"].to_s
+        next if text.blank?
+        next unless AnswerContract.settled?(AnswerContract.part_state(episode, part["id"]))
+
+        text
+      }
+    end
+
     private
 
     def prompt_line(fact)

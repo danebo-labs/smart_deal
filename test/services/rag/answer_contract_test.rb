@@ -4,7 +4,8 @@ require "test_helper"
 
 # Synthetic contract objects. These turns are not captured model output.
 # A stored reply is a reference into history. Ruby checks the reference.
-# It does not decide that two new questions mean the same thing.
+# The same normalized wording of a closed part is that publication again.
+# A different wording is not decided to be the same question.
 class Rag::AnswerContractTest < ActiveSupport::TestCase
   include ActiveJob::TestHelper
 
@@ -161,6 +162,139 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
       assert_equal "r1", correction["id"]
       assert_equal "unknown", correction["state"]
       assert_includes correction["text"], "No sé si la válvula 4 está abierta."
+    end
+  end
+
+  test "an unknown part repeated without references is part_settled" do
+    with_flags do
+      session = boot_session
+      episode = publish(session, MAIN, shown: CLARIFICATION)
+      answer(session, "No sé si la válvula 4 está abierta.", [
+        reply_for(episode, part_id(episode, "main"), "unknown")
+      ])
+      stored = reload_episode(session)
+      facts = Rag::CompanionCaseFacts.build(stored, session: session)
+      checked = check_again(session, MAIN)
+
+      assert_equal [ MAIN ], facts.settled_part_texts
+      assert_nil Rag::AnswerContract.part_state(stored, part_id(stored, "clarification"))
+      assert stored.observations.none? { |item| item.dig("answers", "r") == "unknown" }
+      assert stored.observations.none? { |item| item.dig("answers", "q").present? }
+      assert_nil checked.question
+      assert_equal "part_settled", checked.rejections.find { |row| row["part"] == "question" }["reason"]
+      assert_equal MAIN, checked.rejections.find { |row| row["part"] == "question" }["value"]
+
+      # Case, accents, and spacing fold through the existing normalizer.
+      folded = "¿LA  valvula 4 esta ABIERTA?"
+      folded_check = check_again(session, folded)
+      assert_nil folded_check.question
+      assert_equal "part_settled", folded_check.rejections.find { |row| row["part"] == "question" }["reason"]
+    end
+  end
+
+  test "a complete part repeated without references is part_settled" do
+    with_flags do
+      session = boot_session
+      episode = publish(session, MAIN, shown: CLARIFICATION)
+      answer(session, "La válvula 4 está abierta.", [
+        reply_for(episode, part_id(episode, "main"), "complete")
+      ])
+      stored = reload_episode(session)
+      checked = check_again(session, MAIN)
+
+      assert_equal "complete", Rag::AnswerContract.part_state(stored, part_id(stored, "main"))
+      assert_nil Rag::AnswerContract.part_state(stored, part_id(stored, "clarification"))
+      assert stored.observations.none? { |item| item.dig("answers", "q").present? }
+      assert_nil checked.question
+      assert_equal "part_settled", checked.rejections.find { |row| row["part"] == "question" }["reason"]
+    end
+  end
+
+  test "an open clarification stays accepted after another part is settled" do
+    with_flags do
+      session = boot_session
+      episode = publish(session, MAIN, shown: CLARIFICATION)
+      answer(session, "No sé si la válvula 4 está abierta.", [
+        reply_for(episode, part_id(episode, "main"), "unknown")
+      ])
+      stored = reload_episode(session)
+      facts = Rag::CompanionCaseFacts.build(stored, session: session)
+      checked = check_again(session, CLARIFICATION)
+
+      assert_equal [ MAIN ], facts.settled_part_texts
+      assert_nil Rag::AnswerContract.part_state(stored, part_id(stored, "clarification"))
+      assert_equal CLARIFICATION, checked.question
+      assert checked.rejections.none? { |row| row["reason"] == "part_settled" }
+    end
+  end
+
+  test "normalized equality does not reject a paraphrase of a settled part" do
+    with_flags do
+      session = boot_session
+      episode = publish(session, MAIN, shown: CLARIFICATION)
+      answer(session, "No sé si la válvula 4 está abierta.", [
+        reply_for(episode, part_id(episode, "main"), "unknown")
+      ])
+      # Limitation: this guard is normalized equality. It does not decide that
+      # a paraphrase is the same publication, so it does not reject this one.
+      paraphrase = "¿Sigue abierta la válvula 4 en este momento?"
+      facts = Rag::CompanionCaseFacts.build(reload_episode(session), session: session)
+      checked = check_again(session, paraphrase)
+
+      assert_includes facts.settled_part_texts, MAIN
+      assert_equal paraphrase, checked.question
+      assert checked.rejections.none? { |row| row["reason"] == "part_settled" }
+    end
+  end
+
+  test "a valid reference to a settled part still rejects that part" do
+    with_flags do
+      session = boot_session
+      episode = publish(session, MAIN, shown: CLARIFICATION)
+      answer(session, "No sé si la válvula 4 está abierta.", [
+        reply_for(episode, part_id(episode, "main"), "unknown")
+      ])
+      stored = reload_episode(session)
+      paraphrase = "¿Sigue abierta la válvula 4 en este momento?"
+      assert_not_equal Rag::CompanionPlanCheck.normal(paraphrase), Rag::CompanionPlanCheck.normal(MAIN)
+      checked = check_again(session, paraphrase, part_ref: part_id(stored, "main"))
+      rejection = checked.rejections.find { |row| row["part"] == "question" }
+
+      assert_nil checked.question
+      assert_equal "part_settled", rejection["reason"]
+      assert_equal paraphrase, rejection["value"]
+      assert_equal "unknown", Rag::AnswerContract.part_state(stored, part_id(stored, "main"))
+    end
+  end
+
+  test "closed wording stays part_settled with any reference" do
+    with_flags do
+      session = boot_session
+      episode = publish(session, MAIN, shown: CLARIFICATION)
+      answer(session, "No sé si la válvula 4 está abierta.", [
+        reply_for(episode, part_id(episode, "main"), "unknown")
+      ])
+      stored = reload_episode(session)
+
+      assert_equal "q1", stored.pending_question["id"]
+      assert_equal "unknown", Rag::AnswerContract.part_state(stored, part_id(stored, "main"))
+      assert_nil Rag::AnswerContract.part_state(stored, part_id(stored, "clarification"))
+      assert_not_includes stored.pending_question["parts"].pluck("id"), "p9"
+
+      [
+        check_again(session, MAIN),
+        check_again(session, MAIN, part_ref: part_id(stored, "clarification")),
+        check_again(session, MAIN, part_ref: "principal"),
+        check_again(session, MAIN, part_ref: " "),
+        check_again(session, MAIN, part_ref: "null"),
+        check_again(session, MAIN, part_ref: "p9"),
+        check_again(session, MAIN, question_ref: "q1")
+      ].each do |checked|
+        assert_nil checked.question
+        rejection = checked.rejections.find { |row| row["part"] == "question" }
+        assert_equal "part_settled", rejection["reason"]
+        assert_equal MAIN, rejection["value"]
+      end
     end
   end
 
@@ -848,6 +982,24 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
       },
       identity_applicability: "compatible"
     }
+  end
+
+  # The clarification's own words have to be in the source. Otherwise the
+  # existing lexical gate rejects that open part before this guard is visible.
+  def check_again(session, question, part_ref: nil, question_ref: nil)
+    stored = reload_episode(session)
+    source = chunk
+    wording = CLARIFICATION.delete_prefix("¿").delete_suffix("?")
+    source = source.merge(content: "#{source[:content]}#{wording}.\n")
+    facts = Rag::CompanionCaseFacts.build(stored, session: session)
+    prepared = Rag::CompanionPlan.prepare(
+      raw_question: question, chunks: [ source ], episode: stored, session: session,
+      correlation_id: "query:again-#{SecureRandom.hex(2)}"
+    )
+    plan = { "links" => [], "steps" => [], "question" => question, "question_about" => [] }
+    plan["part_ref"] = part_ref if part_ref
+    plan["question_ref"] = question_ref if question_ref
+    Rag::CompanionPlanCheck.call(plan, facts: facts, statements: prepared.statements, turns: [])
   end
 
   def plan_result(question)

@@ -409,7 +409,13 @@ module Rag
       }
     end
 
+    # Closed wording rejects on its own. A reference does not bypass it.
+    # When the wording differs, a reference to a closed part still rejects.
     def settled_reference?
+      settled_wording? || settled_by_reference?
+    end
+
+    def settled_by_reference?
       return false unless @facts.respond_to?(:settled_part?)
 
       part_id = @plan["part_ref"].to_s
@@ -418,6 +424,17 @@ module Rag
       return false unless question_id.match?(/\Aq\d+\z/)
 
       @facts.respond_to?(:settled_question?) && @facts.settled_question?(question_id)
+    end
+
+    # Same normalized publication of a part closed as complete or unknown.
+    # A paraphrase is a different wording and is not this match.
+    def settled_wording?
+      return false unless @facts.respond_to?(:settled_part_texts)
+
+      proposed = self.class.normal(@plan["question"])
+      return false if proposed.blank?
+
+      Array(@facts.settled_part_texts).any? { |text| self.class.normal(text) == proposed }
     end
 
     def derivable?(reason)

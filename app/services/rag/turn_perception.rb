@@ -153,7 +153,7 @@ module Rag
               required: %w[question_id part_id state],
               properties: {
                 question_id: { type: "string" },
-                part_id: { type: "string" },
+                part_id: { type: %w[string null] },
                 state: { type: "string", enum: AnswerContract::STATES },
                 start: { type: %w[integer null] },
                 end: { type: %w[integer null] },
@@ -277,7 +277,9 @@ module Rag
 
       item = item.deep_stringify_keys
       return nil if (item.keys - PART_REPLY_KEYS).any?
-      return nil unless item["question_id"].is_a?(String) && item["part_id"].is_a?(String)
+      return nil unless item["question_id"].is_a?(String)
+      return nil unless item.key?("part_id")
+      return nil unless item["part_id"].nil? || item["part_id"].is_a?(String)
       return nil unless AnswerContract::STATES.include?(item["state"].to_s)
       return nil unless item["start"].nil? || item["start"].is_a?(Integer)
       return nil unless item["end"].nil? || item["end"].is_a?(Integer)

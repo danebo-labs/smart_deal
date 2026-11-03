@@ -71,15 +71,55 @@ module Rag
 
     def prompt_block
       lines = @episode_record ? AnswerContract.context_lines(@episode_record, @session) : []
-      return "" if @facts.empty? && lines.empty?
+      declared = declared_lines
+      return "" if @facts.empty? && lines.empty? && declared.empty?
 
       body = []
       if @facts.any?
         body << "Caso (estado actual, dicho por el técnico; no es documentación):"
         @facts.each { |fact| body << prompt_line(fact) }
       end
+      body.concat(declared)
       body.concat(lines)
       body.join("\n")
+    end
+
+    # Parts the technician declared unknown outside a published question.
+    # The planner sees the id, the state, and the literal slice. It does not
+    # receive a guess that another question is that slice.
+    def declared_lines
+      episode = @episode_record
+      return [] unless episode && AnswerContract.active?(episode)
+
+      question = episode.pending_question
+      return [] unless question.is_a?(Hash)
+
+      Array(question["parts"]).filter_map { |part|
+        next unless part.is_a?(Hash) && part["role"] == "declared"
+
+        state = AnswerContract.part_state(episode, part["id"]) || "sin estado"
+        "Parte declarada #{part['id']} de #{question['id']}, estado #{state}: «#{part['text']}»."
+      }
+    end
+
+    def declared_unknown_parts
+      episode = @episode_record
+      return [] unless episode && AnswerContract.active?(episode)
+
+      question = episode.pending_question
+      return [] unless question.is_a?(Hash)
+
+      Array(question["parts"]).select { |part|
+        part.is_a?(Hash) && part["role"] == "declared" &&
+          AnswerContract.part_state(episode, part["id"]) == "unknown"
+      }
+    end
+
+    def current_part?(part_id)
+      question = @episode_record&.pending_question
+      return false unless question.is_a?(Hash)
+
+      Array(question["parts"]).any? { |part| part.is_a?(Hash) && part["id"].to_s == part_id.to_s }
     end
 
     def settled_part?(part_id)
@@ -118,9 +158,9 @@ module Rag
       }
     end
 
-    # Wording of a part closed as unknown, and the reply reconstructed from
-    # the history. A missing source leaves the reply blank. It does not
-    # invent the technician's sentence.
+    # The part closed as unknown, the reply reconstructed from the history,
+    # and the documented targets of that part. The reply is the source of the
+    # answer. It is not a list of other data the technician left unknown.
     def unknown_declarations
       episode = @episode_record
       return [] unless episode && AnswerContract.active?(episode)

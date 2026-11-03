@@ -230,25 +230,229 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
     end
   end
 
-  test "an unknown reply rejects a question that adds a designator from that reply" do
+  test "a measurement in the same turn is not the unknown datum" do
+    turn = "No sé si la válvula 4 está abierta. En el borne 12 medí 24 V."
+    voltage = "¿Qué tensión hay en el borne 12?"
+    with_flags do
+      [ nil, "No sé si la válvula 4 está abierta." ].each do |clause|
+        session = boot_session
+        episode = publish(session, MAIN)
+        answer(session, turn, [
+          reply_for(episode, part_id(episode, "main"), "unknown", clause && turn, clause)
+        ])
+        stored = reload_episode(session)
+        checked, text = review_scope(session, voltage, scope_chunk, "Tensión del borne 12.")
+
+        assert_equal "unknown", Rag::AnswerContract.part_state(stored, part_id(stored, "main"))
+        assert_equal [ "Primera apertura." ], stored.replies.last["t"].pluck("item")
+        assert_equal clause || turn, Rag::AnswerContract.reconstruct(stored.replies.last, session)
+        assert_equal voltage, checked.question
+        assert checked.rejections.none? { |row| row["reason"] == "declared_unknown" }
+        assert checked.limits.none? { |row| row["item"] == "Tensión del borne 12." }
+        assert_not_includes text, "Indicaste que no puedes distinguirlo; la indicación de «Tensión del borne 12.»"
+      end
+    end
+  end
+
+  test "an unknown contact does not make the voltage of one terminal unknown" do
+    contact = "¿Hay un contacto cerrado entre #21 y #23?"
+    told = "No sé si hay un contacto cerrado entre #21 y #23."
+    turn = "#{told} En la entrada #23 medí 24 V."
+    voltage = "¿Qué tensión hay en la entrada #23?"
+    with_flags do
+      [ nil, told ].each do |clause|
+        session = boot_session
+        episode = publish(session, contact)
+        answer(session, turn, [
+          reply_for(episode, part_id(episode, "main"), "unknown", clause && turn, clause)
+        ])
+        stored = reload_episode(session)
+        checked, text = review_scope(session, voltage, contact_chunk, "Tensión de la entrada 23.")
+
+        assert_equal "unknown", Rag::AnswerContract.part_state(stored, part_id(stored, "main"))
+        assert_equal contact, stored.pending_question["parts"].find { |part| part["role"] == "main" }["text"]
+        assert_equal clause || turn, Rag::AnswerContract.reconstruct(stored.replies.last, session)
+        assert_equal voltage, checked.question
+        assert checked.rejections.none? { |row| row["reason"] == "declared_unknown" }
+        assert checked.limits.none? { |row| row["item"] == "Tensión de la entrada 23." }
+        assert_not_includes text, "Indicaste que no puedes distinguirlo; la indicación de «Tensión de la entrada 23.»"
+      end
+    end
+  end
+
+  test "a declared clause keeps its slice and does not become an open question" do
+    turn = "No sé si la válvula 4 está abierta. No sé qué tensión hay en el borne 12."
+    extra = "No sé qué tensión hay en el borne 12."
+    other = "El borne 12 quedó sin medir."
     with_flags do
       session = boot_session
       episode = publish(session, MAIN, shown: CLARIFICATION)
-      answer(session, "No sé si la válvula 4 está abierta ni si el contacto #9 está cerrado.", [
-        reply_for(episode, part_id(episode, "main"), "unknown")
-      ])
+      answer(session, turn, [
+        reply_for(episode, part_id(episode, "main"), "unknown"),
+        declared_reply(episode, turn, extra),
+        declared_reply(episode, turn, extra)
+      ], observations: [ turn ])
       stored = reload_episode(session)
-      added = check_again(session, "¿El contacto #9 está cerrado?")
-      paraphrase = check_again(session, "¿Sigue abierta la válvula 4 en este momento?")
+      reloaded = reload_episode(session)
+      declared = stored.pending_question["parts"].select { |part| part["role"] == "declared" }
+      reply = stored.replies.find { |row| row["p"] == declared.first["id"] }
+      payload = pending_payload(stored, session)
+      block = Rag::CompanionCaseFacts.build(stored, session: session).prompt_block
+      prior = {
+        "type" => "documented_context", "question" => MAIN, "id" => "q8",
+        "targets" => [ target("Primera apertura.") ],
+        "parts" => [ { "id" => "p8", "role" => "main", "text" => MAIN } ]
+      }
 
-      assert_equal "unknown", Rag::AnswerContract.part_state(stored, part_id(stored, "main"))
-      assert_equal [ "Primera apertura." ], stored.replies.last["t"].pluck("item")
+      assert_equal [ extra ], declared.pluck("text")
+      assert_equal extra, reloaded.pending_question["parts"].find { |part| part["role"] == "declared" }["text"]
+      assert_equal extra, Rag::AnswerContract.reconstruct(reply, session)
+      assert_nil reply["t"]
+      assert_equal "unknown", Rag::AnswerContract.part_state(reloaded, declared.first["id"])
+      assert_equal "overlap", session.last_answer_report["refused"].first["reason"]
       assert_equal CLARIFICATION, stored.pending_question["question"]
-      assert_nil added.question
-      assert_equal "declared_unknown", added.rejections.find { |row| row["part"] == "question" }["reason"]
-      assert_equal "¿Sigue abierta la válvula 4 en este momento?", paraphrase.question
-      assert paraphrase.rejections.none? { |row| row["reason"] == "declared_unknown" }
-      assert paraphrase.rejections.none? { |row| row["reason"] == "part_settled" }
+      assert_nil stored.pending_question["shown"]
+      assert_not_includes payload.dig("questions", 0, "parts").pluck("id"), declared.first["id"]
+      assert payload["corrections"].any? { |row| row["part_id"] == declared.first["id"] && row["state"] == "unknown" }
+      assert_includes block, "Parte declarada #{declared.first['id']} de #{stored.pending_question['id']}, estado unknown: «#{extra}»."
+      assert_equal turn, stored.observations.last["text"]
+      assert stored.observations.all? { |item| item["answers"].nil? }
+      assert_equal [ { "id" => "p8", "role" => "main", "text" => MAIN } ], Rag::PendingQuestion.coerce(prior)["parts"]
+
+      later = "#{turn} #{other}"
+      answer(session, later, [ declared_reply(reload_episode(session), later, other) ])
+      ranged = "x"
+      answer(session, ranged, [ {
+        "question_id" => stored.pending_question["id"], "part_id" => nil, "state" => "unknown",
+        "start" => 0, "end" => 0
+      } ])
+      assert_equal "invalid_span", session.last_answer_report["refused"].first["reason"]
+      answer(session, ranged, [ {
+        "question_id" => stored.pending_question["id"], "part_id" => nil, "state" => "complete",
+        "start" => 0, "end" => 1
+      } ])
+      assert_equal "invalid_state", session.last_answer_report["refused"].first["reason"]
+      two = reload_episode(session)
+      second = two.pending_question["parts"].select { |part| part["role"] == "declared" }
+      assert_equal [ extra, other ], second.pluck("text")
+
+      answer(session, later, [ declared_reply(two, later, "sin medir") ])
+      assert_equal "declared_limit", session.last_answer_report["refused"].first["reason"]
+      assert_equal 2, reload_episode(session).pending_question["parts"].count { |part| part["role"] == "declared" }
+
+      current = reload_episode(session)
+      target = current.pending_question["parts"].find { |part| part["text"] == extra }
+      kept = current.replies.find { |row| row["p"] == target["id"] }
+      answer(session, later, [ reply_for(current, target["id"], "complete") ])
+      assert_equal "settled", session.last_answer_report["refused"].first["reason"]
+      answer(session, later, [
+        reply_for(current, target["id"], "complete", later, other, supersedes: [ kept["id"] ])
+      ])
+      corrected = reload_episode(session)
+      assert_equal extra, corrected.pending_question["parts"].find { |part| part["id"] == target["id"] }["text"]
+      assert_equal "complete", Rag::AnswerContract.part_state(corrected, target["id"])
+      assert_equal other, Rag::AnswerContract.reconstruct(
+        corrected.replies.reverse.find { |row| row["p"] == target["id"] }, session
+      )
+      assert_nil corrected.replies.reverse.find { |row| row["p"] == target["id"] }["t"]
+    end
+  end
+
+  test "a declared clause that does not fit is refused without keeping the part" do
+    with_flags do
+      session = boot_session
+      episode = publish(session, MAIN)
+      12.times do |index|
+        episode.append_observation!(
+          format("Falla %02d ", index) + ("m#{index}" * 40),
+          correlation_id: "pad-d-#{index}"
+        )
+      end
+      session.update!(active_episode: episode.to_h)
+      clause = "No sé el borne 12. " * 120
+      turn = clause
+      before = reload_episode(session)
+      answer(session, turn, [ declared_reply(before, turn, clause.strip) ])
+      stored = reload_episode(session)
+
+      assert_equal "budget", session.last_answer_report["refused"].first["reason"]
+      assert_empty session.last_answer_report["stored"]
+      assert_equal before.pending_question["parts"], stored.pending_question["parts"]
+      assert_equal before.id_seq, stored.id_seq
+      assert_empty stored.replies
+    end
+  end
+
+  test "declared references are explicit and links do not identify the datum" do
+    told = "No sé si hay un contacto cerrado entre #21 y #23."
+    measured = "En la entrada #23 medí 24 V."
+    turn = "#{told} #{measured}"
+    voltage = "¿Qué tensión hay en la entrada #23?"
+    contact = "¿Hay un contacto cerrado entre #21 y #23?"
+    with_flags do
+      session = boot_session
+      episode = publish(session, contact, shown: CLARIFICATION)
+      answer(session, turn, [
+        reply_for(episode, part_id(episode, "main"), "unknown"),
+        declared_reply(episode, turn, told)
+      ], observations: [ measured ])
+      stored = reload_episode(session)
+      declared = stored.pending_question["parts"].find { |part| part["role"] == "declared" }
+      open_part = part_id(stored, "clarification")
+      note = "Nota de medición aparte."
+      content = "#{note}\n#{contact_chunk}"
+      prepared = Rag::CompanionPlan.prepare(
+        raw_question: voltage, chunks: [ chunk.merge(content: content) ], episode: stored, session: session,
+        correlation_id: "query:links-#{SecureRandom.hex(2)}"
+      )
+      linked = prepared.statements.statements.find { |row| row.kind == "text" && row.item.nil? }
+      voltage_item = prepared.statements.statements.find { |row| row.kind == "item" && row.text == "Tensión de la entrada 23." }
+      links = [
+        { "fact" => "O1", "statement" => linked.id, "reading" => "" },
+        { "fact" => "O999", "statement" => linked.id, "reading" => "" }
+      ]
+      missing = review_scope(session, voltage, content, "Tensión de la entrada 23.", links: links).first
+      named = review_scope(session, voltage, content, "Tensión de la entrada 23.", part_ref: declared["id"], links: links).first
+      other = review_scope(session, voltage, content, "Tensión de la entrada 23.", part_ref: "ninguna", links: links).first
+      invalid = review_scope(session, voltage, content, "Tensión de la entrada 23.", part_ref: "p999").first
+      word = review_scope(session, voltage, content, "Tensión de la entrada 23.", part_ref: "otra").first
+      open_ref = review_scope(session, voltage, content, "Tensión de la entrada 23.", part_ref: open_part).first
+      blank = review_scope(session, "", content, "Tensión de la entrada 23.").first
+      same_words = review_scope(session, told, content, "Tensión de la entrada 23.", part_ref: "ninguna").first
+      legacy = boot_legacy
+      publish(legacy, contact)
+      answer(legacy, turn, [ {
+        "question_id" => "q1", "part_id" => nil, "state" => "unknown",
+        "start" => 0, "end" => told.length
+      } ])
+
+      assert_equal told, declared["text"]
+      assert_nil stored.replies.find { |row| row["p"] == declared["id"] }["t"]
+      assert_equal measured, stored.observations.last["text"]
+      assert stored.observations.all? { |item| item["answers"].nil? }
+      assert_equal "part_ref_missing", missing.rejections.find { |row| row["part"] == "question" }["reason"]
+      assert_nil missing.question
+      assert_equal 1, missing.links.size
+      assert_equal "unknown_fact", missing.rejections.find { |row| row["part"] == "link" }["reason"]
+      assert missing.limits.none? { |row| row["item"] == "Tensión de la entrada 23." }
+      assert_equal "part_settled", named.rejections.find { |row| row["part"] == "question" }["reason"]
+      assert_nil named.question
+      assert named.limits.none? { |row| row["item"] == "Tensión de la entrada 23." }
+      assert_equal 1, named.links.size
+      assert_equal voltage, other.question
+      assert other.rejections.none? { |row| row["reason"] == "part_ref_missing" }
+      assert_equal 1, other.links.size
+      assert_equal "part_ref_missing", invalid.rejections.find { |row| row["part"] == "question" }["reason"]
+      assert_equal "part_ref_missing", word.rejections.find { |row| row["part"] == "question" }["reason"]
+      assert_equal voltage, open_ref.question
+      assert open_ref.rejections.none? { |row| row["reason"] == "part_ref_missing" }
+      assert blank.rejections.none? { |row| row["reason"] == "part_ref_missing" }
+      assert_equal "part_settled", same_words.rejections.find { |row| row["part"] == "question" }["reason"]
+      assert_equal "not_contract", legacy.last_answer_report["refused"].first["reason"]
+      legacy_question = reload_episode(legacy).pending_question
+      assert legacy_question.nil? || Array(legacy_question["parts"]).none? { |part| part["role"] == "declared" }
+      assert linked
+      assert voltage_item
     end
   end
 
@@ -945,10 +1149,10 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
     reload_episode(session)
   end
 
-  def answer(session, text, replies = :omit)
+  def answer(session, text, replies = :omit, observations: [])
     session.record_user_turn!(
       text, user_id: @user.id, correlation_id: "query:ans-#{SecureRandom.hex(2)}",
-      interpreter_client: tool_client("report", [], part_replies: replies)
+      interpreter_client: tool_client("report", observations, part_replies: replies)
     )
   end
 
@@ -1016,6 +1220,57 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
 
   # The clarification's own words have to be in the source. Otherwise the
   # existing lexical gate rejects that open part before this guard is visible.
+  def scope_chunk
+    <<~TEXT
+      • Primera apertura.
+      – Comprobar si la válvula 4 está abierta.
+      • Tensión del borne 12.
+      La tensión en el borne 12 se mide en voltios.
+    TEXT
+  end
+
+  def contact_chunk
+    <<~TEXT
+      • Contacto de re-apertura.
+      Para activar la señal hay que cerrar el contacto entre 21 y 23.
+      • Tensión de la entrada 23.
+      La tensión de la entrada 23 se mide en voltios.
+    TEXT
+  end
+
+  def declared_reply(episode, text, clause, state: "unknown")
+    row = {
+      "question_id" => episode.pending_question["id"],
+      "part_id" => nil,
+      "state" => state
+    }
+    if clause
+      start, finish = span_for(text, clause)
+      row["start"] = start
+      row["end"] = finish
+    end
+    row
+  end
+
+  def review_scope(session, question, content, item, part_ref: :omit, links: [])
+    stored = reload_episode(session)
+    source = chunk.merge(content: content)
+    prepared = Rag::CompanionPlan.prepare(
+      raw_question: question, chunks: [ source ], episode: stored, session: session,
+      correlation_id: "query:scope-#{SecureRandom.hex(2)}"
+    )
+    about = prepared.statements.statements.find { |row| row.kind == "item" && row.text == item }
+    flunk("missing item #{item}") unless about
+
+    plan = { "links" => links, "steps" => [], "question" => question, "question_about" => [ about.id ] }
+    plan["part_ref"] = part_ref unless part_ref == :omit
+    checked = Rag::CompanionPlanCheck.call(
+      plan, facts: prepared.facts, statements: prepared.statements, turns: []
+    )
+    text = Rag::CompanionPlanRender.call(checked, facts: prepared.facts, statements: prepared.statements)
+    [ checked, text ]
+  end
+
   def check_again(session, question, part_ref: nil, question_ref: nil)
     stored = reload_episode(session)
     source = chunk

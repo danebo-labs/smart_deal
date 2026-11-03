@@ -119,9 +119,18 @@ module Rag
 
         id = part["id"].to_s
         role = part["role"].to_s
+        next unless id.match?(/\Ap\d+\z/) && AnswerContract::ROLES.include?(role)
+
+        if role == "declared"
+          text = part["text"].to_s
+          next if text.blank? || kept.count { |item| item["role"] == "declared" } >= AnswerContract::DECLARED_LIMIT
+
+          kept << { "id" => id, "role" => role, "text" => text }
+          next
+        end
+
         text = part["text"].to_s.squish.first(240)
-        next unless id.match?(/\Ap\d+\z/) && AnswerContract::ROLES.include?(role) && text.present?
-        next if kept.any? { |item| item["role"] == role }
+        next if text.blank? || kept.any? { |item| item["role"] == role }
 
         kept << { "id" => id, "role" => role, "text" => text }
       end

@@ -257,6 +257,10 @@ module Rag
         reject("question", text, reason)
         return [ nil, [] ]
       end
+      if (missing = declared_reference_reason(text))
+        reject("question", text, missing)
+        return [ nil, [] ]
+      end
       reason = "repeats_heading" if reason.nil? && text.present? && heading_repeat?(text)
       if text.present? && declared_unknown_question?(text)
         reject("question", text, "declared_unknown")
@@ -677,32 +681,39 @@ module Rag
       @limits << { "item" => item, "source" => statement.source }
     end
 
-    # The technician already said this question cannot be identified. Do not
-    # ask it again and do not replace it with a choice between two citations.
-    # A contract reply does not copy that mark onto the observation. A later
-    # question is the same limit when it names a designator from the reply
-    # that the settled wording did not already contain. A paraphrase whose
-    # designators are only those of the settled wording stays a different
-    # publication: equality, not this check, decides that one.
+    # A declared part is an unknown the technician added. While one is current,
+    # a proposed question names a part of this question or says ninguna.
+    # ninguna leaves the other filters, including settled wording, to decide.
+    # A missing or unknown reference drops only the question. It does not add
+    # a limit and it does not read a link as the identity of the datum.
+    def declared_reference_reason(text)
+      return nil if text.blank?
+      return nil unless @facts.respond_to?(:declared_unknown_parts)
+      return nil if @facts.declared_unknown_parts.empty?
+
+      ref = @plan["part_ref"].to_s
+      return nil if ref == "ninguna"
+      return nil if @facts.respond_to?(:current_part?) && @facts.current_part?(ref)
+
+      "part_ref_missing"
+    end
+
+    # A stored unknown belongs to the question that was answered, not to every
+    # number in the turn that carried the reply. On a legacy observation that
+    # question is answers["q"]. On the contract it is the part: the same
+    # wording is part_settled, and a part_ref names that part explicitly.
+    # Shared designators in the reply do not make another question that datum.
     def declared_unknown_question?(text)
       normal = self.class.normal(text)
       return false if normal.blank?
 
       asked = designators(text)
-      return true if @facts.facts.any? { |fact|
+      @facts.facts.any? { |fact|
         answers = fact.answers
         next false unless answers.is_a?(Hash) && answers["r"].to_s == "unknown"
         next true if self.class.normal(answers["q"].to_s) == normal
 
         asked.any? && asked.intersect?(designators("#{answers["q"]} #{fact.text}"))
-      }
-      return false if asked.empty? || !@facts.respond_to?(:unknown_declarations)
-
-      @facts.unknown_declarations.any? { |row|
-        told = designators(row[:reply])
-        published = designators(row[:question])
-        shared = asked & told
-        shared.any? && (shared - published).any?
       }
     end
 

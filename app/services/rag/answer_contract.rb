@@ -11,7 +11,8 @@ module Rag
   module AnswerContract
     VERSION = 1
     STATES = %w[complete partial unknown contradictory].freeze
-    ROLES = %w[main clarification].freeze
+    ROLES = %w[main clarification declared].freeze
+    DECLARED_LIMIT = 2
     SETTLED = %w[complete unknown].freeze
     ID_LIMIT = 10_000
 
@@ -241,9 +242,11 @@ module Rag
       return "unknown_question" unless question.is_a?(Hash)
 
       qid = raw["question_id"].to_s
-      pid = raw["part_id"].to_s
       state = raw["state"].to_s
       return "unknown_question" unless qid == question["id"].to_s && qid.match?(/\Aq\d+\z/)
+      return store_declared!(episode, admitted, correlation_id, raw, question) if raw["part_id"].nil?
+
+      pid = raw["part_id"].to_s
       return "invalid_state" unless STATES.include?(state)
 
       part = Array(question["parts"]).find { |item| item.is_a?(Hash) && item["id"] == pid }
@@ -277,6 +280,76 @@ module Rag
       episode.id_seq = seq
       episode.replies = Array(episode.replies) + [ reply ]
       nil
+    end
+
+    # A clause the technician added, not an answer to a published part. The
+    # part text is that slice. It carries no documentary target. Two is the
+    # maximum kept on the current question. A span that meets another
+    # declared span is refused. The byte budget is the episode budget.
+    def store_declared!(episode, admitted, correlation_id, raw, question)
+      return "invalid_state" unless raw["state"].to_s == "unknown"
+
+      span = span_for(admitted, raw)
+      return "invalid_span" unless span && span[:ranged]
+
+      parts = Array(question["parts"]).select { |item| item.is_a?(Hash) }
+      declared = parts.select { |part| part["role"] == "declared" }
+      return "declared_limit" if declared.size >= DECLARED_LIMIT
+
+      fragment = admitted[span[:a]...span[:b]]
+      return "overlap" if declared.any? { |part|
+        range = current_span(episode, part["id"])
+        range && spans_overlap?(span[:a], span[:b], range[0], range[1])
+      }
+
+      referenced = supersedes_ids(raw)
+      previous_seq = (episode.id_seq || { "q" => 0, "p" => 0, "r" => 0 }).dup
+      previous_parts = parts.map(&:dup)
+      part_id = allocate_id!(episode, "p", "p")
+      return restore_declared(episode, question, previous_seq, previous_parts, "id_limit") if part_id.blank?
+
+      question["parts"] = parts + [ { "id" => part_id, "role" => "declared", "text" => fragment } ]
+      episode.pending_question = question
+      blocked = reply_block(episode, part_id, "unknown", referenced)
+      return restore_declared(episode, question, previous_seq, previous_parts, blocked) if blocked
+
+      seq = episode.id_seq.dup
+      seq["r"] = seq["r"].to_i + 1
+      reply = {
+        "id" => "r#{seq['r']}",
+        "q" => question["id"].to_s,
+        "p" => part_id,
+        "state" => "unknown",
+        "cid" => correlation_id.to_s,
+        "a" => span[:a],
+        "b" => span[:b]
+      }
+      reply["of"] = referenced if referenced.is_a?(Array) && referenced.any?
+      unless fits?(episode, reply, seq)
+        return restore_declared(episode, question, previous_seq, previous_parts, "budget")
+      end
+
+      episode.id_seq = seq
+      episode.replies = Array(episode.replies) + [ reply ]
+      nil
+    end
+
+    def current_span(episode, part_id)
+      reply = current_replies(episode, part_id).reverse.find { |row|
+        row["a"].is_a?(Integer) && row["b"].is_a?(Integer)
+      }
+      reply && [ reply["a"], reply["b"] ]
+    end
+
+    def spans_overlap?(left, left_end, right, right_end)
+      left < right_end && right < left_end
+    end
+
+    def restore_declared(episode, question, seq, parts, reason)
+      episode.id_seq = seq
+      question["parts"] = parts
+      episode.pending_question = question
+      reason
     end
 
     def span_for(admitted, raw)
@@ -365,7 +438,8 @@ module Rag
 
       " Texto almacenado truncado en el historial, no es el mensaje íntegro."
     end
-    private_class_method :store_one!, :span_for, :supersedes_ids, :reply_block, :refusal,
+    private_class_method :store_one!, :store_declared!, :current_span, :spans_overlap?,
+      :restore_declared, :span_for, :supersedes_ids, :reply_block, :refusal,
       :conflict_lines, :state_of, :reply_targets, :fits?, :cut_note, :allocate_id!
   end
 end

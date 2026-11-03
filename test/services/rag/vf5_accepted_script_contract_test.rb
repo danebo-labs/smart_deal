@@ -4,10 +4,11 @@ require "test_helper"
 require "json"
 require_relative "../../support/companion_plan_response"
 
-# The five-message VF5 script accepted on ep_63de315872dfed14, walked on a
-# new episode. The interpreter tool, the plan tool, and the chunk bodies are
-# the capture in test/fixtures/vf5_gui_replay. T5 names the part ids this
-# run published. Nothing calls Bedrock. The legacy replays stay separate.
+# The five phrases of the accepted VF5 script, walked on a new episode.
+# ep_63de315872dfed14, image 4a6deb9, is a later web check of those phrases.
+# The tool bodies and chunks here are the earlier capture in
+# test/fixtures/vf5_gui_replay, not that GUI packet. T5 names the part ids
+# this run published. Nothing calls Bedrock. The legacy replays stay separate.
 class Rag::Vf5AcceptedScriptContractTest < ActiveSupport::TestCase
   include ActiveJob::TestHelper
 
@@ -118,11 +119,19 @@ class Rag::Vf5AcceptedScriptContractTest < ActiveSupport::TestCase
 
         main = after_follow.pending_question["parts"].find { |part| part["role"] == "main" }
         question_id = after_follow.pending_question["id"]
-        reply = [ {
-          "question_id" => question_id,
-          "part_id" => main["id"],
-          "state" => "unknown"
-        } ]
+        # The captured interpreter tool has no part_replies. These two rows are
+        # the simulated contract output for this test: the published part, and
+        # the contact clause as its own declared slice.
+        clause = "si hay un contacto cerrado entre #21 y #23"
+        user = turns.fetch("t5")["user"]
+        start = user.index(clause)
+        reply = [
+          { "question_id" => question_id, "part_id" => main["id"], "state" => "unknown" },
+          {
+            "question_id" => question_id, "part_id" => nil, "state" => "unknown",
+            "start" => start, "end" => start + clause.length
+          }
+        ]
         answered = Rag::ValidationCapture.capture { ask(session, turns.fetch("t5"), part_replies: reply) }
         sent = JSON.parse(interpreter_turn(answered))
         listed = sent.dig("work_context", "pending", "questions").to_a.flat_map { |row| Array(row["parts"]) }
@@ -136,11 +145,20 @@ class Rag::Vf5AcceptedScriptContractTest < ActiveSupport::TestCase
         assert_equal episode_id, stored.episode_id
         assert_equal 1, stored.qc
         assert_equal 1, reloaded.qc
+        declared = stored.pending_question["parts"].find { |part| part["role"] == "declared" }
+        main_reply = stored.replies.find { |row| row["p"] == main["id"] }
+        declared_reply = stored.replies.find { |row| row["p"] == declared["id"] }
         assert_equal "unknown", Rag::AnswerContract.part_state(stored, main["id"])
-        assert_equal question_id, stored.replies.last["q"]
-        assert_equal main["id"], stored.replies.last["p"]
-        assert_includes Rag::AnswerContract.reconstruct(stored.replies.last, session), "#21"
-        assert_includes Rag::AnswerContract.reconstruct(stored.replies.last, session), "#23"
+        assert_equal question_id, main_reply["q"]
+        assert_equal main["id"], main_reply["p"]
+        assert_includes Rag::AnswerContract.reconstruct(main_reply, session), "#21"
+        assert_includes Rag::AnswerContract.reconstruct(main_reply, session), "#23"
+        assert_equal clause, declared["text"]
+        assert_equal clause, Rag::AnswerContract.reconstruct(declared_reply, session)
+        assert_nil declared_reply["t"]
+        assert Rag::AnswerContract.payload_questions(stored).first["parts"].none? { |part| part["id"] == declared["id"] }
+        assert Rag::AnswerContract.correction_refs(stored, session).any? { |row| row["part_id"] == declared["id"] }
+        assert_includes Rag::CompanionCaseFacts.build(stored, session: session).prompt_block, "Parte declarada #{declared['id']}"
         assert stored.observations.none? { |item| item.dig("answers", "r") == "unknown" }
         assert stored.observations.none? { |item| item.dig("answers", "q").present? }
         assert_match(/LED está encendido/i, limited.pending_question["question"])
@@ -149,8 +167,19 @@ class Rag::Vf5AcceptedScriptContractTest < ActiveSupport::TestCase
         assert_match(/Fotoc[eé]lula/, stored.pending_question["question"])
         assert_match(/Estado/, stored.pending_question["question"])
         assert_nil stored.pending_question["shown"]
-        assert_equal "declared_unknown", final.composed.check.rejections.find { |row| row["part"] == "question" }["reason"]
+        # The captured plan has no part_ref. Missing it suppresses the question.
+        # That is not a finding that the contact question is the declared clause.
+        assert_nil turns.fetch("t5").dig("tool_input", "part_ref")
+        assert_equal "part_ref_missing", final.composed.check.rejections.find { |row| row["part"] == "question" }["reason"]
         assert_nil final.composed.check.question
+        named = check_plan(session, turns.fetch("t5"), part_ref: declared["id"])
+        unnamed = check_plan(session, turns.fetch("t5"), part_ref: "ninguna")
+        assert_equal "part_settled", named.rejections.find { |row| row["part"] == "question" }["reason"]
+        assert_nil named.question
+        # "ninguna" is not in the captured tool. This rule does not block it,
+        # and it does not decide whether the contact is another datum.
+        assert_equal contact, unnamed.question
+        assert unnamed.rejections.none? { |row| row["reason"] == "part_ref_missing" }
         assert_match(/\AIndicaste que no puedes distinguirlo/, final.text)
         assert_includes final.text, "potenciómetro"
         assert_includes final.text, "ya informaste"
@@ -218,6 +247,20 @@ class Rag::Vf5AcceptedScriptContractTest < ActiveSupport::TestCase
       expected_episode_id: session.live_episode_id
     )
     Struct.new(:text, :composed, :publication).new(composed.text, composed, publication)
+  end
+
+  def check_plan(session, raw, part_ref:)
+    episode = reload_episode(session)
+    chunks = raw["chunks"].map { |chunk|
+      { content: chunk["content"], metadata: chunk["metadata"], identity_applicability: "compatible" }
+    }
+    prepared = Rag::CompanionPlan.prepare(
+      raw_question: raw["user"], chunks: chunks, episode: episode, session: session,
+      correlation_id: "#{raw['correlation_id']}:synthetic-ref"
+    )
+    plan = raw["tool_input"].deep_dup
+    plan["part_ref"] = part_ref
+    Rag::CompanionPlanCheck.call(plan, facts: prepared.facts, statements: prepared.statements, turns: [])
   end
 
   def compose(raw, episode, session)

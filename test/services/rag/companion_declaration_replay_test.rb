@@ -62,6 +62,24 @@ class Rag::CompanionDeclarationReplayTest < ActiveSupport::TestCase
     assert_equal question, checked.question
   end
 
+  test "a question about the motor type the technician did not state stays" do
+    episode = apply_captured_turn
+    question = "¿El motor instalado es PM o asíncrono?"
+    checked = Rag::CompanionPlanCheck.call(
+      { "question" => question },
+      facts: facts_for(episode),
+      statements: motor_statements,
+      turns: [ TURN ]
+    )
+
+    assert episode.excerpts.any? { |row| row["text"] == DECLARATION }
+    assert_nil question_reason(checked)
+    assert_equal question, checked.question
+    rendered = Rag::CompanionPlanRender.call(checked, facts: facts_for(episode), statements: motor_statements)
+    assert_includes rendered, question
+    assert_not_includes rendered, "conexiones"
+  end
+
   private
 
   def apply_captured_turn
@@ -106,6 +124,20 @@ class Rag::CompanionDeclarationReplayTest < ActiveSupport::TestCase
   def statements
     @statements ||= Rag::CompanionStatements.parse([
       { content: "5.8 Pulsador de autoajuste (51)\n#{CONDITION}", metadata: { "page_number" => "8" } }
+    ])
+  end
+
+  def motor_statements
+    @motor_statements ||= Rag::CompanionStatements.parse([
+      {
+        content: [
+          "5.8 Pulsador de autoajuste (51)",
+          "Con un motor PM instalado el autoajuste ha de hacerse con la puerta de cabina acoplada y con la puerta de rellano.",
+          "Con un motor asíncrono instalado el autoajuste ha de hacerse con la puerta de cabina acoplada pero sin la puerta de rellano.",
+          CONDITION
+        ].join("\n"),
+        metadata: { "page_number" => "8" }
+      }
     ])
   end
 

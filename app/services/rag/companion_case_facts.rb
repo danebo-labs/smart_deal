@@ -73,13 +73,15 @@ module Rag
       lines = @episode_record ? AnswerContract.context_lines(@episode_record, @session) : []
       opened = open_question_lines
       declared = declared_lines
-      return "" if @facts.empty? && lines.empty? && opened.empty? && declared.empty?
+      unindexed = excerpt_lines
+      return "" if @facts.empty? && lines.empty? && opened.empty? && declared.empty? && unindexed.empty?
 
       body = []
       if @facts.any?
         body << "Caso (estado actual, dicho por el técnico; no es documentación):"
         @facts.each { |fact| body << prompt_line(fact) }
       end
+      body.concat(unindexed)
       body.concat(opened)
       body.concat(declared)
       body.concat(lines)
@@ -88,6 +90,10 @@ module Rag
 
     # Technician sentences kept outside the indexed facts. The checker may use
     # them as reported chronology. They are not observations and not facts.
+    def excerpt_lines
+      excerpt_texts.map { |text| "Dicho por el técnico, sin indexar: «#{text}»." }
+    end
+
     def excerpt_texts
       episode = @episode_record
       return [] if episode.nil? || episode.blank?

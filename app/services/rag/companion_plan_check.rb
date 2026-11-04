@@ -1113,7 +1113,9 @@ module Rag
       return "repeats_fact:#{repeated.id}" if repeated
 
       sources = self.class.normal(@statements.statements.map { |item| [ item.text, item.item ].compact.join(" ") }.join(" "))
-      case_text = self.class.normal((@facts.facts.map(&:text) + @turns).join(" "))
+      # Excerpts travel with the turns for these words. They do not license
+      # an exclusion, a prescription, or an operation.
+      case_text = self.class.normal((@facts.facts.map(&:text) + chronology_parts).join(" "))
       return "exclusion" if normal.match?(EXCLUSION)
       return "prescription" if normal.match?(PRESCRIPTION)
 

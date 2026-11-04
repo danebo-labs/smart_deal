@@ -128,7 +128,10 @@ class Rag::CompanionF3SequenceTest < ActiveSupport::TestCase
     assert_includes prepared.user, text.lines.first
     assert_not_includes prepared.user, "NOTA_EXTRACCION"
     assert_includes prepared.facts.prompt_block, "encendido"
-    assert_not_includes prepared.facts.prompt_block, "apagado"
+    indexed = prepared.facts.facts.map(&:text).join("\n")
+    assert_not_includes indexed, "apagado"
+    assert_includes prepared.facts.prompt_block,
+      "Dicho por el técnico, sin indexar: «Corrijo solo el estado del LED: el LED de fotocélula está encendido, no apagado»."
 
     clarified = episode.fork
     clarified.append_observation!("Se vuelve a abrir justo cuando el patín está cerrando", correlation_id: "query:t5")

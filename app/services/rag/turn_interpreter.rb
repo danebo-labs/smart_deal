@@ -144,10 +144,19 @@ module Rag
         "facts" => @episode.facts.presence,
         "identifiers" => @episode.identifiers.pluck("value").presence,
         "observations" => @episode.observations.pluck("text").presence,
+        "unindexed" => unindexed_texts,
         "rejected" => @episode.rejected.presence,
         "pending" => pending_payload,
         "active_photo_context" => @active_photo_context&.to_prompt
       }.compact
+    end
+
+    def unindexed_texts
+      texts = Array(@episode.excerpts).filter_map { |row|
+        text = row.is_a?(Hash) ? row["text"].to_s.strip : row.to_s.strip
+        text.first(ActiveEpisode::MAX_OBSERVATION_CHARS).presence
+      }.last(3)
+      texts.presence
     end
 
     def pending_payload

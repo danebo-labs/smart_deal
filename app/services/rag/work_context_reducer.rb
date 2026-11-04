@@ -6,6 +6,9 @@ module Rag
   class WorkContextReducer
     GENERIC_LED_STATE = /\A(?:el\s+)?led\s+est[aá]\s+(encendido|apagado)\z/i
     QUALIFIED_LED = /\A(?:el\s+)?led\s+(.+?)\s+est[aá]\s+(encendido|apagado)\z/i
+    EXCERPT_MOVES = %w[report follow_up answer_pending correct].freeze
+    MAX_TURN_EXCERPTS = 3
+    SENTENCE_BREAK = /(?<=[.!?])\s+/
 
     # A failed interpretation did not classify the turn. Keep the literal
     # report so the next turn still has this job. Do not write manufacturer,
@@ -404,6 +407,7 @@ module Rag
 
       if @decision&.decision == "clarify_first"
         record_part_replies
+        retain_turn_excerpts
         @episode.touch!(@now)
         return @episode if @perception.move == "new_work"
         return @episode if @perception.move == "unclear" && documented_pending?
@@ -424,6 +428,7 @@ module Rag
       write_observations unless @decision&.decision == "clarify_first"
       assign_goal_if_needed
       record_part_replies
+      retain_turn_excerpts
       clear_pending_unless_meta
       @episode.touch!(@now)
       @episode
@@ -1010,6 +1015,97 @@ module Rag
       return if open_documented_pending?
 
       @episode.clear_pending!
+    end
+
+    # Sentences this turn did not put into an observation, an assertion, a
+    # check, or a located quote. Kept as the technician said them.
+    def retain_turn_excerpts
+      return unless EXCERPT_MOVES.include?(@perception.move.to_s)
+
+      accepted = accepted_turn_texts
+      rows = []
+      sentence_spans(@turn).each do |text, start_at, finish|
+        break if rows.size >= MAX_TURN_EXCERPTS
+        next if sentence_covered?(text, accepted)
+
+        rows << {
+          "text" => text,
+          "cid" => @correlation_id.to_s,
+          "a" => start_at,
+          "b" => finish,
+          "source" => "turn_excerpt"
+        }
+      end
+      @episode.append_excerpts!(rows)
+    end
+
+    def sentence_spans(turn)
+      cursor = 0
+      turn.split(SENTENCE_BREAK).filter_map do |piece|
+        index = turn.index(piece, cursor) || cursor
+        cursor = index + piece.length
+        text = piece.sub(/[.!?]+\z/, "").strip
+        next if text.blank?
+
+        lead = piece.index(text) || 0
+        start_at = index + lead
+        [ text, start_at, start_at + text.length ]
+      end
+    end
+
+    def accepted_turn_texts
+      texts = Array(@perception.observations).map(&:to_s)
+      Array(@perception.identities).each do |item|
+        next unless item.respond_to?(:act) && item.act.to_s == "assert"
+
+        texts << item.span.to_s
+      end
+      Array(@perception.checks).each do |check|
+        item = check.is_a?(Hash) ? check.stringify_keys : {}
+        texts << item["subject"].to_s
+        texts << item["result"].to_s
+      end
+      Array(@perception.part_replies).each do |reply|
+        next unless reply.is_a?(Hash)
+
+        found = TurnPerception.locate(reply["quote"], @turn)
+        texts << found["fragment"].to_s if found["status"] == "located"
+      end
+      texts.map(&:squish).compact_blank.uniq
+    end
+
+    def sentence_covered?(sentence, accepted)
+      needle = CompanionPlanCheck.normal(sentence)
+      return false if needle.blank?
+
+      tokens = coverage_tokens(sentence)
+      accepted.any? do |text|
+        holder = CompanionPlanCheck.normal(text)
+        next false if holder.blank?
+        next true if holder.include?(needle)
+
+        ordered_coverage?(tokens, coverage_tokens(text))
+      end
+    end
+
+    # Connectors drop out. A negation stays, in the place the technician put it.
+    def coverage_tokens(text)
+      CompanionPlanCheck.words(text).reject { |word|
+        CompanionPlanCheck::CONNECTORS.include?(word) && !word.match?(CompanionPlanCheck::NEGATION)
+      }
+    end
+
+    def ordered_coverage?(needed, haystack)
+      return false if needed.empty?
+
+      index = 0
+      needed.each do |token|
+        found = haystack[index..]&.index(token)
+        return false if found.nil?
+
+        index += found + 1
+      end
+      true
     end
 
     def record_part_replies

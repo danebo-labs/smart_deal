@@ -440,6 +440,11 @@ module Rag
       payload["id_seq"] = seq
       payload["replies"] = Array(episode.replies) + [ reply ]
       payload.compact!
+      return true if JSON.generate(payload).bytesize <= ActiveEpisode::MAX_BYTES
+
+      # An unindexed sentence does not crowd out a reply. The save drops
+      # excerpts before it drops a check or an observation.
+      payload.delete("excerpts")
       JSON.generate(payload).bytesize <= ActiveEpisode::MAX_BYTES
     end
 

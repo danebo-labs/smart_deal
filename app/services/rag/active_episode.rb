@@ -23,13 +23,14 @@ module Rag
     MAX_CHECKS = 6
     MAX_CHECK_CHARS = 120
     CHECK_STATUSES = %w[done not_done].freeze
+    MAX_EXCERPTS = 8
     MAX_REJECTED = 4
     REJECTED_SLOTS = %w[manufacturer model controller fault_code identifier].freeze
     MAX_BYTES = 4096
 
     attr_accessor :episode_id, :status, :opened_at, :updated_at, :opened_by,
                   :goal, :facts, :identifiers, :pending_fact, :pending_question, :active_photo, :conflicts,
-                  :observations, :checks, :rejected, :qc, :id_seq, :replies, :answer_report
+                  :observations, :checks, :rejected, :excerpts, :qc, :id_seq, :replies, :answer_report
     attr_reader :reason
 
     def initialize
@@ -39,6 +40,7 @@ module Rag
       @observations = []
       @checks = []
       @rejected = []
+      @excerpts = []
       @replies = []
       @id_seq = { "q" => 0, "p" => 0, "r" => 0 }
       @qc = nil
@@ -79,6 +81,7 @@ module Rag
       episode.observations = sanitize_observations(data["observations"])
       episode.checks = sanitize_checks(data["checks"])
       episode.rejected = sanitize_rejected(data["rejected"])
+      episode.excerpts = sanitize_excerpts(data["excerpts"])
       episode.qc = data["qc"].to_i == AnswerContract::VERSION ? AnswerContract::VERSION : nil
       episode.id_seq = sanitize_id_seq(data["id_seq"])
       episode.replies = episode.qc == AnswerContract::VERSION ? sanitize_replies(data["replies"]) : []
@@ -119,6 +122,7 @@ module Rag
       copy.observations = observations.deep_dup
       copy.checks = checks.deep_dup
       copy.rejected = rejected.deep_dup
+      copy.excerpts = excerpts.deep_dup
       copy.qc = qc
       copy.id_seq = id_seq.deep_dup
       copy.replies = replies.deep_dup
@@ -245,6 +249,12 @@ module Rag
       self.observations = []
     end
 
+    # A sentence this turn did not index. It is not an observation and not a
+    # fact. The oldest rows leave first.
+    def append_excerpts!(rows)
+      self.excerpts = self.class.send(:sanitize_excerpts, Array(excerpts) + Array(rows))
+    end
+
     def append_rejected!(slot, value)
       key = slot.to_s
       literal = value.to_s.squish.first(MAX_VALUE_CHARS)
@@ -300,6 +310,7 @@ module Rag
         "conflicts" => conflicts,
         "observations" => observations.presence,
         "checks" => checks.presence,
+        "excerpts" => excerpts.presence,
         "rejected" => rejected.presence,
         "qc" => (qc == AnswerContract::VERSION ? AnswerContract::VERSION : nil),
         "id_seq" => (qc == AnswerContract::VERSION ? id_seq : nil),
@@ -424,6 +435,30 @@ module Rag
       photo.presence
     end
     private_class_method :sanitize_photo
+
+    def self.sanitize_excerpts(raw)
+      return [] unless raw.is_a?(Array)
+
+      raw.filter_map { |item|
+        next unless item.is_a?(Hash)
+
+        text = item["text"].to_s.strip
+        start = item["a"]
+        finish = item["b"]
+        next if text.blank?
+        next unless start.is_a?(Integer) && finish.is_a?(Integer) && start >= 0 && finish >= start
+        next unless item["source"].to_s == "turn_excerpt"
+
+        {
+          "text" => text,
+          "cid" => item["cid"].to_s,
+          "a" => start,
+          "b" => finish,
+          "source" => "turn_excerpt"
+        }
+      }.last(MAX_EXCERPTS)
+    end
+    private_class_method :sanitize_excerpts
 
     def self.sanitize_observations(raw)
       return [] unless raw.is_a?(Array)
@@ -598,6 +633,13 @@ module Rag
 
     def shrink_to_budget!(payload)
       return if json_bytes(payload) <= MAX_BYTES
+
+      stored_excerpts = payload["excerpts"]
+      if stored_excerpts.is_a?(Array)
+        stored_excerpts.shift while stored_excerpts.any? && json_bytes(payload) > MAX_BYTES
+        payload.delete("excerpts") if stored_excerpts.empty?
+        return if json_bytes(payload) <= MAX_BYTES
+      end
 
       payload["conflicts"] = []
       return if json_bytes(payload) <= MAX_BYTES

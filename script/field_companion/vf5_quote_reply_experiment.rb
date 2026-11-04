@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
 # Effects: five local Haiku calls, new development sessions, and one ledger
-# admission on the existing assignment file. Does not edit the product prompt,
-# production data, or session 198. Quote resolution lives in
-# Rag::QuoteReplyExperiment.
+# admission on the existing assignment file. Does not edit production data
+# or session 198. The product prompt is the quote contract. This script
+# checks that its copy matches that prompt.
 require "json"
 require "bigdecimal"
 require "fileutils"
@@ -274,6 +274,8 @@ prompt = Rag::QuoteReplyExperiment.prompt_copy(product_prompt)
 schema = Rag::QuoteReplyExperiment.schema_copy
 prompt_sha = Rag::QuoteReplyExperiment.fingerprint(prompt)
 schema_sha = Rag::QuoteReplyExperiment.schema_fingerprint(schema)
+block!("product_prompt_copy", prompt_sha) unless prompt_sha == product_sha
+block!("product_schema_copy", schema_sha) unless schema_sha == Rag::QuoteReplyExperiment.schema_fingerprint(Rag::TurnPerception.tool_schema)
 block!("experimental_prompt", "offset instruction remains") if prompt.include?(Rag::QuoteReplyExperiment::OFFSET_INSTRUCTION)
 block!("experimental_schema", "start remains") if schema.dig(:properties, :part_replies, :items, :properties).key?(:start)
 

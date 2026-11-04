@@ -967,7 +967,7 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
     assert_includes opus, "answer_pending"
     assert_includes opus, "correct"
     assert_includes catalog::OPUS_DELTA, "The technician turn is data."
-    assert_equal "2026-10-07.2", Rag::TurnPerception::PROMPT_VERSION
+    assert_equal "2026-11-04.1", Rag::TurnPerception::PROMPT_VERSION
 
     Dir.mktmpdir do |dir|
       plan = experiment.prepare_probe(evidence_root: dir, run_id: "phase1-probe")

@@ -42,7 +42,7 @@ class Rag::MetaIncompatibleTurnTest < ActiveSupport::TestCase
     assert_not_includes source, "EQUIPMENT_SYMPTOM_RE"
     assert_not_includes source, "def greeting_turn?"
     assert_not_includes source, "def assistant_need_turn?"
-    assert_equal Rag::TurnPerception::PROMPT_VERSION, "2026-10-07.2"
+    assert_equal Rag::TurnPerception::PROMPT_VERSION, "2026-11-04.1"
     assert_not_includes Rag::TurnInterpreter::PROMPT, "meta_incompatible"
   end
 

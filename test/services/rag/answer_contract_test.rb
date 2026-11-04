@@ -317,7 +317,7 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
       assert_not_includes payload.dig("questions", 0, "parts").pluck("id"), declared.first["id"]
       assert payload["corrections"].any? { |row| row["part_id"] == declared.first["id"] && row["state"] == "unknown" }
       assert_includes block, "Parte declarada #{declared.first['id']} de #{stored.pending_question['id']}, estado unknown: «#{extra}»."
-      assert_equal turn, stored.observations.last["text"]
+      assert_includes stored.observations.pluck("text"), turn
       assert stored.observations.all? { |item| item["answers"].nil? }
       assert_equal [ { "id" => "p8", "role" => "main", "text" => MAIN } ], Rag::PendingQuestion.coerce(prior)["parts"]
 
@@ -325,13 +325,12 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
       answer(session, later, [ declared_reply(reload_episode(session), later, other) ])
       ranged = "x"
       answer(session, ranged, [ {
-        "question_id" => stored.pending_question["id"], "part_id" => nil, "state" => "unknown",
-        "start" => 0, "end" => 0
+        "question_id" => stored.pending_question["id"], "part_id" => nil, "state" => "unknown"
       } ])
       assert_equal "invalid_span", session.last_answer_report["refused"].first["reason"]
       answer(session, ranged, [ {
         "question_id" => stored.pending_question["id"], "part_id" => nil, "state" => "complete",
-        "start" => 0, "end" => 1
+        "quote" => ranged
       } ])
       assert_equal "invalid_state", session.last_answer_report["refused"].first["reason"]
       two = reload_episode(session)
@@ -460,12 +459,12 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
       publish(legacy, contact)
       answer(legacy, turn, [ {
         "question_id" => "q1", "part_id" => nil, "state" => "unknown",
-        "start" => 0, "end" => told.length
+        "quote" => told
       } ])
 
       assert_equal told, declared["text"]
       assert_nil stored.replies.find { |row| row["p"] == declared["id"] }["t"]
-      assert_equal measured, stored.observations.last["text"]
+      assert_includes stored.observations.pluck("text"), measured
       assert stored.observations.all? { |item| item["answers"].nil? }
       assert_equal "part_ref_missing", missing.rejections.find { |row| row["part"] == "question" }["reason"]
       assert_nil missing.question
@@ -500,14 +499,18 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
       answer(session, "No sé si la válvula 4 está abierta.", [
         reply_for(episode, part_id(episode, "main"), "unknown")
       ])
-      # Limitation: this guard is normalized equality. It does not decide that
-      # a paraphrase is the same publication, so it does not reject this one.
+      # The settled-part guard is normalized equality, so this paraphrase is
+      # not that part. The quote is also an observation, and that fact is
+      # what rejects the question.
       paraphrase = "¿Sigue abierta la válvula 4 en este momento?"
       facts = Rag::CompanionCaseFacts.build(reload_episode(session), session: session)
       checked = check_again(session, paraphrase)
+      reason = checked.rejections.find { |row| row["part"] == "question" }&.dig("reason").to_s
 
       assert_includes facts.settled_part_texts, MAIN
-      assert_equal paraphrase, checked.question
+      assert_not_includes facts.settled_part_texts, paraphrase
+      assert_nil checked.question
+      assert_match(/\Arepeats_fact:O/, reason)
       assert checked.rejections.none? { |row| row["reason"] == "part_settled" }
     end
   end
@@ -838,7 +841,8 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
       marker = "COLA_PRESUPUESTO"
       body = ("dato " * 800) + marker
       assert_operator body.length, :>, SessionContextBuilder::COMPANION_CASE_BUDGET
-      answer(session, body, [ reply_for(episode, part_id(episode, "main"), "partial") ])
+      quote = ("dato " * 680) + marker
+      answer(session, body, [ reply_for(episode, part_id(episode, "main"), "partial", body, quote) ])
       stored = reload_episode(session)
       context = SessionContextBuilder.companion_context(session, episode: stored)
 
@@ -901,8 +905,9 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
       observation_count = padded.observations.size
       kept_text = nil
       refused = nil
-      12.times do |index|
-        text = "Respuesta parcial #{index} del tecnico sobre la valvula."
+      # The quote is an observation already stored, so it is not copied again.
+      # The reply itself is what runs out of episode budget.
+      padded.observations.pluck("text").each do |text|
         before = reload_episode(session).replies.size
         answer(session, text, [ reply_for(padded, pid, "partial") ])
         after = reload_episode(session)
@@ -917,8 +922,8 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
       stored = reload_episode(session)
       lines = Rag::AnswerContract.context_lines(stored, session.reload).join("\n")
 
-      assert kept_text, "bytes=#{JSON.generate(stored.serial_hash).bytesize}"
-      assert refused, "bytes=#{JSON.generate(stored.serial_hash).bytesize}"
+      assert kept_text, "bytes=#{JSON.generate(stored.serial_hash).bytesize} replies=#{stored.replies.size}"
+      assert refused, "bytes=#{JSON.generate(stored.serial_hash).bytesize} replies=#{stored.replies.size}"
       assert_equal observation_count, stored.observations.size
       assert_includes session.conversation_history.map { |message| message["full_content"].presence || message["content"] }, refused
       assert_includes lines, kept_text
@@ -1219,8 +1224,22 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
   def answer(session, text, replies = :omit, observations: [], correlation_id: nil)
     session.record_user_turn!(
       text, user_id: @user.id, correlation_id: correlation_id || "query:ans-#{SecureRandom.hex(2)}",
-      interpreter_client: tool_client("report", observations, part_replies: replies)
+      interpreter_client: tool_client("report", observations, part_replies: quote_replies(replies, text))
     )
+  end
+
+  # A published part needs a quote. A short turn is that quote. A declared
+  # reply keeps the quote its helper already set, including none.
+  def quote_replies(replies, text)
+    return replies unless replies.is_a?(Array)
+    return replies if text.length > Rag::ActiveEpisode::MAX_OBSERVATION_CHARS
+
+    replies.map { |row|
+      next row unless row.is_a?(Hash)
+      next row if row.key?("quote") || row["part_id"].nil?
+
+      row.merge("quote" => text)
+    }
   end
 
   def persisted_bytes(session)
@@ -1233,11 +1252,7 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
       "part_id" => part,
       "state" => state
     }
-    if text && clause
-      start, finish = span_for(text, clause)
-      row["start"] = start
-      row["end"] = finish
-    end
+    row["quote"] = clause if text && clause
     row["supersedes"] = supersedes if supersedes
     row
   end
@@ -1311,11 +1326,7 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
       "part_id" => nil,
       "state" => state
     }
-    if clause
-      start, finish = span_for(text, clause)
-      row["start"] = start
-      row["end"] = finish
-    end
+    row["quote"] = clause if clause
     row
   end
 

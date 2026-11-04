@@ -253,7 +253,8 @@ module Rag
       return "unknown_part" unless part
 
       span = span_for(admitted, raw)
-      return "invalid_span" if span.nil?
+      return span if span.is_a?(String)
+      return "invalid_span" unless span.is_a?(Hash) && span[:ranged]
 
       referenced = supersedes_ids(raw)
       blocked = reply_block(episode, pid, state, referenced)
@@ -291,7 +292,8 @@ module Rag
       return "invalid_state" unless raw["state"].to_s == "unknown"
 
       span = span_for(admitted, raw)
-      return "invalid_span" unless span && span[:ranged]
+      return span if span.is_a?(String)
+      return "invalid_span" unless span.is_a?(Hash) && span[:ranged]
 
       parts = Array(question["parts"]).select { |item| item.is_a?(Hash) }
       declared = parts.select { |part| part["role"] == "declared" }
@@ -355,15 +357,21 @@ module Rag
       reason
     end
 
+    # A quote is located in the admitted turn. One exact match becomes the
+    # stored offsets. Several matches, a missing match, and a missing quote
+    # are refusals. They do not invalidate the perception.
     def span_for(admitted, raw)
-      start = raw.key?("start") ? raw["start"] : nil
-      finish = raw.key?("end") ? raw["end"] : nil
-      return { ranged: false } if start.nil? && finish.nil?
-      return nil unless start.is_a?(Integer) && finish.is_a?(Integer)
-      return nil if start < 0 || finish < start || finish > admitted.length
-      return nil if admitted[start...finish].blank?
+      return "invalid_span" unless raw.is_a?(Hash) && raw.key?("quote") && raw["quote"].is_a?(String)
 
-      { ranged: true, a: start, b: finish }
+      found = TurnPerception.locate(raw["quote"], admitted)
+      case found["status"]
+      when "located"
+        { ranged: true, a: found["start"], b: found["end"] }
+      when "quote_ambiguous"
+        "quote_ambiguous"
+      else
+        "quote_not_literal"
+      end
     end
 
     def supersedes_ids(raw)

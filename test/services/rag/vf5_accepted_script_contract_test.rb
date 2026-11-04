@@ -124,14 +124,16 @@ class Rag::Vf5AcceptedScriptContractTest < ActiveSupport::TestCase
         # the contact clause as its own declared slice.
         clause = "si hay un contacto cerrado entre #21 y #23"
         user = turns.fetch("t5")["user"]
-        start = user.index(clause)
+        told = "No sé cómo identificar si está activada la entrada #21 ni cómo saber si hay un contacto cerrado entre #21 y #23"
         reply = [
-          { "question_id" => question_id, "part_id" => main["id"], "state" => "unknown" },
+          { "question_id" => question_id, "part_id" => main["id"], "state" => "unknown", "quote" => told },
           {
             "question_id" => question_id, "part_id" => nil, "state" => "unknown",
-            "start" => start, "end" => start + clause.length
+            "quote" => clause
           }
         ]
+        assert_includes user, told
+        assert_includes user, clause
         answered = Rag::ValidationCapture.capture { ask(session, turns.fetch("t5"), part_replies: reply) }
         sent = JSON.parse(interpreter_turn(answered))
         listed = sent.dig("work_context", "pending", "questions").to_a.flat_map { |row| Array(row["parts"]) }

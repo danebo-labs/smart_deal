@@ -1,0 +1,256 @@
+{
+  "calls": [
+    {
+      "id": "t2",
+      "turn": "Fue solo la primera apertura. Después volvió a abrir y cerrar como antes.",
+      "raw": {
+        "move": "follow_up",
+        "assertions": [],
+        "observations": [
+          "Después volvió a abrir y cerrar como antes"
+        ],
+        "checks": [],
+        "part_replies": [
+          {
+            "question_id": "q1",
+            "part_id": "p1",
+            "state": "partial",
+            "quote": "Después volvió a abrir y cerrar como antes"
+          }
+        ],
+        "pending_resolution": null,
+        "clarification_target": null
+      },
+      "resolutions": [
+        {
+          "status": "located",
+          "start": 30,
+          "end": 72,
+          "fragment": "Después volvió a abrir y cerrar como antes",
+          "quote": "Después volvió a abrir y cerrar como antes",
+          "index": 0,
+          "state": "partial",
+          "question_id": "q1",
+          "part_id": "p1"
+        }
+      ],
+      "observation_notes": [
+        {
+          "quote": "Después volvió a abrir y cerrar como antes",
+          "result": "duplicate"
+        }
+      ],
+      "adapted_part_replies": [
+        {
+          "question_id": "q1",
+          "part_id": "p1",
+          "state": "partial",
+          "start": 30,
+          "end": 72
+        }
+      ],
+      "adapted_observations": [
+        "Después volvió a abrir y cerrar como antes"
+      ]
+    },
+    {
+      "id": "led",
+      "turn": "El LED STATUS está apagado.",
+      "raw": {
+        "move": "answer_pending",
+        "assertions": [
+          {
+            "span": "El LED STATUS está apagado",
+            "act": "assert"
+          }
+        ],
+        "observations": [
+          "El LED STATUS está apagado"
+        ],
+        "checks": [],
+        "part_replies": [
+          {
+            "question_id": "q1",
+            "part_id": "p1",
+            "state": "complete",
+            "quote": "El LED STATUS está apagado"
+          }
+        ],
+        "pending_resolution": "value",
+        "clarification_target": null
+      },
+      "resolutions": [
+        {
+          "status": "located",
+          "start": 0,
+          "end": 26,
+          "fragment": "El LED STATUS está apagado",
+          "quote": "El LED STATUS está apagado",
+          "index": 0,
+          "state": "complete",
+          "question_id": "q1",
+          "part_id": "p1"
+        }
+      ],
+      "observation_notes": [
+        {
+          "quote": "El LED STATUS está apagado",
+          "result": "duplicate"
+        }
+      ],
+      "adapted_part_replies": [
+        {
+          "question_id": "q1",
+          "part_id": "p1",
+          "state": "complete",
+          "start": 0,
+          "end": 26
+        }
+      ],
+      "adapted_observations": [
+        "El LED STATUS está apagado"
+      ]
+    },
+    {
+      "id": "mixed",
+      "turn": "El LED STATUS está apagado. Fue solo la primera apertura.",
+      "raw": {
+        "move": "answer_pending",
+        "assertions": [
+          {
+            "span": "El LED STATUS está apagado",
+            "act": "assert"
+          }
+        ],
+        "observations": [
+          "Fue solo la primera apertura"
+        ],
+        "checks": [],
+        "part_replies": [
+          {
+            "question_id": "q1",
+            "part_id": "p1",
+            "state": "partial",
+            "quote": "El LED STATUS está apagado"
+          }
+        ],
+        "pending_resolution": "value",
+        "clarification_target": null
+      },
+      "resolutions": [
+        {
+          "status": "located",
+          "start": 0,
+          "end": 26,
+          "fragment": "El LED STATUS está apagado",
+          "quote": "El LED STATUS está apagado",
+          "index": 0,
+          "state": "partial",
+          "question_id": "q1",
+          "part_id": "p1"
+        }
+      ],
+      "observation_notes": [
+        {
+          "quote": "El LED STATUS está apagado",
+          "result": "added"
+        }
+      ],
+      "adapted_part_replies": [
+        {
+          "question_id": "q1",
+          "part_id": "p1",
+          "state": "partial",
+          "start": 0,
+          "end": 26
+        }
+      ],
+      "adapted_observations": [
+        "Fue solo la primera apertura",
+        "El LED STATUS está apagado"
+      ]
+    },
+    {
+      "id": "ac",
+      "turn": "Esto pasa solo cuando hace mucho calor afuera. De noche enfría bien.",
+      "raw": {
+        "move": "follow_up",
+        "assertions": [],
+        "observations": [
+          "Esto pasa solo cuando hace mucho calor afuera",
+          "De noche enfría bien"
+        ],
+        "pending_resolution": null,
+        "clarification_target": null,
+        "part_replies": [],
+        "checks": []
+      },
+      "resolutions": [],
+      "observation_notes": [],
+      "adapted_part_replies": [],
+      "adapted_observations": [
+        "Esto pasa solo cuando hace mucho calor afuera",
+        "De noche enfría bien"
+      ]
+    },
+    {
+      "id": "code",
+      "turn": "Muestra E4. Solo aparece después de las dos de la tarde.",
+      "raw": {
+        "move": "answer_pending",
+        "assertions": [
+          {
+            "span": "E4",
+            "act": "assert",
+            "slot_hint": "fault_code"
+          }
+        ],
+        "observations": [
+          "Solo aparece después de las dos de la tarde"
+        ],
+        "part_replies": [
+          {
+            "question_id": "q1",
+            "part_id": "p1",
+            "state": "partial",
+            "quote": "Muestra E4"
+          }
+        ],
+        "pending_resolution": "value",
+        "clarification_target": null
+      },
+      "resolutions": [
+        {
+          "status": "located",
+          "start": 0,
+          "end": 10,
+          "fragment": "Muestra E4",
+          "quote": "Muestra E4",
+          "index": 0,
+          "state": "partial",
+          "question_id": "q1",
+          "part_id": "p1"
+        }
+      ],
+      "observation_notes": [
+        {
+          "quote": "Muestra E4",
+          "result": "added"
+        }
+      ],
+      "adapted_part_replies": [
+        {
+          "question_id": "q1",
+          "part_id": "p1",
+          "state": "partial",
+          "start": 0,
+          "end": 10
+        }
+      ],
+      "adapted_observations": [
+        "Solo aparece después de las dos de la tarde",
+        "Muestra E4"
+      ]
+    }
+  ]
+}

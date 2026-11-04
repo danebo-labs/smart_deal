@@ -9,51 +9,36 @@ class Rag::QuoteReplyExperimentTest < ActiveSupport::TestCase
   LED = "El LED STATUS está apagado."
   CODE = "Muestra E4. Solo aparece después de las dos de la tarde."
 
-  test "the experimental prompt replaces only the offset instruction" do
+  test "the product prompt is the quote copy" do
     product = Rag::TurnInterpreter::PROMPT
     copy = Rag::QuoteReplyExperiment.prompt_copy(product)
-    left = product.split(/\n\n/)
-    right = copy.split(/\n\n/)
 
+    assert_equal product, copy
     assert_equal Rag::QuoteReplyExperiment::PRODUCT_PROMPT_SHA256, Digest::SHA256.hexdigest(product)
-    assert_equal left.size, right.size
-    changed = left.zip(right).select { |before, after| before != after }
-    assert_equal 1, changed.size
-    assert_includes changed.first.first, Rag::QuoteReplyExperiment::OFFSET_INSTRUCTION
-    assert_includes copy, Rag::QuoteReplyExperiment::QUOTE_RULE
-    assert_includes copy, "and that same literal quote"
-    assert_not_includes copy, Rag::QuoteReplyExperiment::OFFSET_INSTRUCTION
-    assert_not_includes copy, Rag::QuoteReplyExperiment::DECLARED_OFFSET
-    assert_includes product, Rag::QuoteReplyExperiment::OFFSET_INSTRUCTION
+    assert_includes product, Rag::QuoteReplyExperiment::QUOTE_RULE
+    assert_includes product, "and that same literal quote"
+    assert_not_includes product, Rag::QuoteReplyExperiment::OFFSET_INSTRUCTION
+    assert_not_includes product, Rag::QuoteReplyExperiment::DECLARED_OFFSET
   end
 
-  test "the experimental schema requires quote and keeps the other contract" do
+  test "the product schema requires quote and matches the copy" do
     product = Rag::TurnPerception.tool_schema
     copy = Rag::QuoteReplyExperiment.schema_copy(product)
-    item = copy.dig(:properties, :part_replies, :items)
-    product_item = product.dig(:properties, :part_replies, :items)
+    item = product.dig(:properties, :part_replies, :items)
 
+    assert_equal product, copy
     assert_equal %w[question_id part_id state quote], item[:required]
     assert_not item[:properties].key?(:start)
     assert_not item[:properties].key?(:end)
-    assert_equal({ type: "string" }, item[:properties][:quote])
+    assert_equal "string", item.dig(:properties, :quote, :type)
+    assert_equal Rag::ActiveEpisode::MAX_OBSERVATION_CHARS, item.dig(:properties, :quote, :maxLength)
+    assert_equal 180, item.dig(:properties, :quote, :maxLength)
     assert_equal Rag::AnswerContract::STATES, item.dig(:properties, :state, :enum)
-    assert_equal 4, copy.dig(:properties, :part_replies, :maxItems)
-    assert_equal product.dig(:properties, :observations, :maxItems), copy.dig(:properties, :observations, :maxItems)
-    assert product_item[:properties].key?(:start)
-    assert product_item[:properties].key?(:end)
-
-    stripped_product = product.deep_dup
-    stripped_copy = copy.deep_dup
-    stripped_product.dig(:properties, :part_replies, :items).delete(:required)
-    stripped_copy.dig(:properties, :part_replies, :items).delete(:required)
-    stripped_product.dig(:properties, :part_replies, :items, :properties).delete(:start)
-    stripped_product.dig(:properties, :part_replies, :items, :properties).delete(:end)
-    stripped_copy.dig(:properties, :part_replies, :items, :properties).delete(:quote)
-    assert_equal stripped_product, stripped_copy
+    assert_equal 4, product.dig(:properties, :part_replies, :maxItems)
+    assert item[:properties].key?(:supersedes)
   end
 
-  test "prepare params sends the quote schema and leaves the product schema" do
+  test "prepare params sends the product quote schema" do
     message = JSON.generate("turn" => LED)
     params = Rag::QuoteReplyExperiment.prepare_params(message)
     schema = params.dig(:tool_config, :tools, 0, :tool_spec, :input_schema, :json)
@@ -62,11 +47,10 @@ class Rag::QuoteReplyExperimentTest < ActiveSupport::TestCase
     assert_equal 0, params.dig(:inference_config, :temperature)
     assert_equal 512, params.dig(:inference_config, :max_tokens)
     assert_equal Rag::TurnInterpreter::MODEL_ID, params[:model_id]
-    assert_not schema.dig(:properties, :part_replies, :items, :properties).key?(:start)
-    assert schema.dig(:properties, :part_replies, :items, :properties).key?(:quote)
+    assert_equal Rag::TurnPerception.tool_schema, schema
     assert_includes params.dig(:system, 0, :text), Rag::QuoteReplyExperiment::QUOTE_RULE
-    assert Rag::TurnPerception.tool_schema.dig(:properties, :part_replies, :items, :properties).key?(:start)
-    assert_not_includes Rag::TurnInterpreter::PROMPT, Rag::QuoteReplyExperiment::QUOTE_RULE
+    assert_equal Rag::QuoteReplyExperiment.fingerprint(Rag::TurnInterpreter::PROMPT),
+                 Rag::QuoteReplyExperiment.fingerprint(params.dig(:system, 0, :text))
   end
 
   test "one exact quote becomes ruby offsets and keeps the original fragment" do

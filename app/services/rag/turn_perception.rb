@@ -22,8 +22,8 @@ module Rag
       \b(?:creo|me\s+parece|puede\s+ser|podria(?:\s+ser)?|quizas|tal\s+vez|
       no\s+se\s+si|no\s+estoy\s+seguro)\b
     /ix
-    PROMPT_VERSION = "2026-10-07.2"
-    SCHEMA_VERSION = "turn_perception.3"
+    PROMPT_VERSION = "2026-11-04.1"
+    SCHEMA_VERSION = "turn_perception.4"
     # Markers already used to separate a lone evidence offer from a mixed turn.
     # They are not the definition of a technical question.
     TECHNICAL_MARKER = /\b(?:resum|observacion|falla|codigo|puerta|sintoma)\b/
@@ -150,13 +150,12 @@ module Rag
             items: {
               type: "object",
               additionalProperties: false,
-              required: %w[question_id part_id state],
+              required: %w[question_id part_id state quote],
               properties: {
                 question_id: { type: "string" },
                 part_id: { type: %w[string null] },
                 state: { type: "string", enum: AnswerContract::STATES },
-                start: { type: %w[integer null] },
-                end: { type: %w[integer null] },
+                quote: { type: "string", maxLength: ActiveEpisode::MAX_OBSERVATION_CHARS },
                 supersedes: { type: %w[array null] }
               }
             }
@@ -229,7 +228,7 @@ module Rag
 
     # A JSON null is not a list of checks. It is safe as an empty list only
     # when that is the sole structural defect. Any other defect stays.
-    PART_REPLY_KEYS = %w[question_id part_id state start end supersedes].freeze
+    PART_REPLY_KEYS = %w[question_id part_id state quote supersedes].freeze
     MAX_PART_REPLIES = 4
 
     def self.prepare_tool(raw)
@@ -281,8 +280,7 @@ module Rag
       return nil unless item.key?("part_id")
       return nil unless item["part_id"].nil? || item["part_id"].is_a?(String)
       return nil unless AnswerContract::STATES.include?(item["state"].to_s)
-      return nil unless item["start"].nil? || item["start"].is_a?(Integer)
-      return nil unless item["end"].nil? || item["end"].is_a?(Integer)
+      return nil if item.key?("quote") && !item["quote"].is_a?(String)
 
       supersedes = item["supersedes"]
       if supersedes.is_a?(String)
@@ -347,6 +345,8 @@ module Rag
       assertions = literal_assertions(data["assertions"])
       observations = literal_observations(data["observations"])
       checks = literal_checks(data["checks"])
+      replies = prepared.is_a?(Hash) ? Array(prepared["part_replies"]) : []
+      observations = absorb_quote_observations(observations, replies)
       @correction = ObservationCorrection.resolve(
         turn: @turn, observations: observations, assertions: assertions
       )
@@ -366,7 +366,6 @@ module Rag
       resolution = nil unless move == "answer_pending"
       identities = apply_structured_slots(move, resolution, identities)
 
-      replies = prepared.is_a?(Hash) ? Array(prepared["part_replies"]) : []
       result = Result.new(
         valid: true,
         move: move,
@@ -387,6 +386,180 @@ module Rag
       )
       record_perception(result)
       result
+    end
+
+    # A located quote that already passes the observation filters is copied
+    # into this turn. A refusal to locate it does not invalidate the perception.
+    def absorb_quote_observations(observations, replies)
+      fragments = Array(replies).filter_map { |reply|
+        next unless reply.is_a?(Hash)
+
+        found = self.class.locate(reply["quote"], @turn)
+        found["fragment"] if found["status"] == "located"
+      }
+      stored = Array(@episode&.observations).filter_map { |item|
+        item.is_a?(Hash) ? item["text"].to_s.presence : item.to_s.presence
+      }
+      merged, notes = self.class.incorporate(observations, fragments, @turn, stored)
+      notes.each { |note| note_rule("quote_observation", note["quote"], note["result"]) }
+      merged
+    end
+
+    # Exact substring of the admitted turn. Several matches and a missing
+    # match stay unresolved. A normalized difference is not an offset.
+    def self.locate(quote, admitted)
+      text = admitted.to_s
+      unless quote.is_a?(String)
+        return { "status" => "quote_not_literal", "difference" => "not_a_string", "quote" => nil }
+      end
+      if quote.empty?
+        return { "status" => "quote_not_literal", "difference" => "blank", "quote" => quote }
+      end
+
+      starts = quote_indexes(text, quote)
+      if starts.one?
+        start = starts.first
+        finish = start + quote.length
+        {
+          "status" => "located",
+          "start" => start,
+          "end" => finish,
+          "fragment" => text[start...finish],
+          "quote" => quote
+        }
+      elsif starts.many?
+        { "status" => "quote_ambiguous", "count" => starts.size, "quote" => quote }
+      else
+        {
+          "status" => "quote_not_literal",
+          "difference" => quote_difference(quote, text),
+          "quote" => quote
+        }
+      end
+    end
+
+    # The harness shape: located quotes become offsets and eligible fragments
+    # join observations. The stored reply keeps those offsets, not the quote.
+    def self.adapt(raw, turn, stored_observations: [])
+      data = stringify_quote(raw)
+      admitted = AnswerContract.admitted_text(turn)
+      resolutions = []
+      fragments = []
+      if data.key?("part_replies")
+        kept = []
+        Array(data["part_replies"]).each_with_index do |reply, index|
+          reply = stringify_quote(reply)
+          reply = {} unless reply.is_a?(Hash)
+          found = locate(reply["quote"], admitted)
+          resolutions << found.merge(
+            "index" => index,
+            "state" => reply["state"],
+            "question_id" => reply["question_id"],
+            "part_id" => reply["part_id"]
+          )
+          next unless found["status"] == "located"
+
+          fragments << found["fragment"]
+          kept << offset_reply(reply, found)
+        end
+        data["part_replies"] = kept
+      end
+      observations, notes = incorporate(data["observations"], fragments, admitted, stored_observations)
+      if data.key?("observations") || notes.any? { |note| note["result"] == "added" }
+        data["observations"] = observations
+      end
+      {
+        "adapted" => data,
+        "resolutions" => resolutions,
+        "observation_notes" => notes,
+        "admitted" => admitted
+      }
+    end
+
+    def self.incorporate(observations, fragments, turn, stored)
+      current = Array(observations).map { |item| item.to_s }
+      notes = []
+      Array(fragments).each do |fragment|
+        reason = quote_observation_block(fragment, turn, current, stored)
+        if reason
+          notes << { "quote" => fragment, "result" => reason }
+        else
+          current << fragment
+          notes << { "quote" => fragment, "result" => "added" }
+        end
+      end
+      [ current, notes ]
+    end
+
+    def self.quote_indexes(text, quote)
+      found = []
+      from = 0
+      while (index = text.index(quote, from))
+        found << index
+        from = index + 1
+      end
+      found
+    end
+
+    def self.quote_difference(quote, text)
+      return "unicode_normalization" if text.unicode_normalize(:nfc).include?(quote.unicode_normalize(:nfc))
+      return "case" if text.downcase.include?(quote.downcase)
+      return "whitespace" if quote_collapsed(text).include?(quote_collapsed(quote))
+
+      "absent"
+    end
+
+    def self.quote_collapsed(text)
+      text.to_s.gsub(/[[:space:]]+/, " ")
+    end
+
+    def self.offset_reply(reply, found)
+      adapted = {
+        "question_id" => reply["question_id"],
+        "part_id" => reply["part_id"],
+        "state" => reply["state"],
+        "start" => found["start"],
+        "end" => found["end"]
+      }
+      adapted["supersedes"] = reply["supersedes"] if reply.key?("supersedes")
+      adapted
+    end
+
+    def self.quote_observation_block(quote, turn, current, stored)
+      return "over_length" if quote.length > ActiveEpisode::MAX_OBSERVATION_CHARS
+      return "not_symptom" unless quote_symptom?(quote)
+      return "not_literal" unless quote_literal?(quote, turn)
+
+      labels = (current + Array(stored)).map { |text| ObservationText.normalize(text) }
+      return "duplicate" if ObservationText.redundant?(quote, labels)
+      return "cap_reached" if current.size >= ActiveEpisode::MAX_OBSERVATIONS
+
+      nil
+    end
+
+    def self.quote_symptom?(quote)
+      quote_checker(quote).send(:symptom_observation?, quote)
+    end
+
+    def self.quote_literal?(quote, turn)
+      quote_checker(turn).send(:literal_span?, quote)
+    end
+
+    def self.quote_checker(turn)
+      perception = allocate
+      perception.instance_variable_set(:@turn, turn)
+      perception
+    end
+
+    def self.stringify_quote(value)
+      case value
+      when Hash
+        value.each_with_object({}) { |(key, item), out| out[key.to_s] = stringify_quote(item) }
+      when Array
+        value.map { |item| stringify_quote(item) }
+      else
+        value
+      end
     end
 
     def part_replies_given_in?(raw)

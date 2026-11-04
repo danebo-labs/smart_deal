@@ -1,11 +1,11 @@
 # frozen_string_literal: true
 
 module Rag
-  # One-off quote experiment. It copies the current interpreter prompt and
-  # schema, resolves a literal quote against the admitted turn, and prepares
-  # offsets the current flow can store. It does not change that flow.
+  # Harness for the quote contract that now lives on the product prompt.
+  # prepare_params, fingerprint, and case_reading stay here. Location and
+  # observation copy are TurnPerception.
   class QuoteReplyExperiment
-    PRODUCT_PROMPT_SHA256 = "a5de394a7d87687763b0cd4bd03313ed687a29637698e45e34e05b3aed015b3e"
+    PRODUCT_PROMPT_SHA256 = "669df150364315bc9a3ef272d4bad8e8703b3a5ad91bb13b8ce2e56a00949905"
     OFFSET_INSTRUCTION = "start is the first character and end is the index after the last character of that slice of the turn you were given; omit both to cite that whole turn for that one part. Do not send a paraphrase."
     DECLARED_OFFSET = "both start and end on that exact slice"
     DECLARED_QUOTE = "that same literal quote"
@@ -25,11 +25,11 @@ module Rag
     class << self
       def prompt_copy(source = TurnInterpreter::PROMPT)
         prompt = source.to_s.dup
-        raise ArgumentError, "offset instruction missing" unless prompt.scan(OFFSET_INSTRUCTION).size == 1
-        raise ArgumentError, "declared offsets missing" unless prompt.scan(DECLARED_OFFSET).size == 1
+        raise ArgumentError, "quote rule missing" unless prompt.scan(QUOTE_RULE).size == 1
+        raise ArgumentError, "declared quote missing" unless prompt.scan(DECLARED_QUOTE).size == 1
+        raise ArgumentError, "offset instruction remains" if prompt.include?(OFFSET_INSTRUCTION)
+        raise ArgumentError, "declared offsets remain" if prompt.include?(DECLARED_OFFSET)
 
-        prompt.sub!(OFFSET_INSTRUCTION, QUOTE_RULE)
-        prompt.sub!(DECLARED_OFFSET, DECLARED_QUOTE)
         prompt
       end
 
@@ -40,11 +40,11 @@ module Rag
 
         props = item[:properties]
         raise ArgumentError, "part_replies properties missing" unless props.is_a?(Hash)
+        raise ArgumentError, "start remains" if props.key?(:start) || props.key?(:end)
+        raise ArgumentError, "quote missing" unless props[:quote].is_a?(Hash)
+        raise ArgumentError, "quote length" unless props.dig(:quote, :maxLength) == ActiveEpisode::MAX_OBSERVATION_CHARS
+        raise ArgumentError, "quote required" unless item[:required] == %w[question_id part_id state quote]
 
-        props.delete(:start)
-        props.delete(:end)
-        props[:quote] = { type: "string" }
-        item[:required] = %w[question_id part_id state quote]
         copy
       end
 
@@ -77,74 +77,7 @@ module Rag
         Digest::SHA256.hexdigest(JSON.generate(schema))
       end
 
-      # Exact substring search on the admitted turn. A normalized match is
-      # recorded as a difference and is not an offset.
-      def locate(quote, admitted)
-        text = admitted.to_s
-        unless quote.is_a?(String)
-          return { "status" => "quote_not_literal", "difference" => "not_a_string", "quote" => nil }
-        end
-        if quote.empty?
-          return { "status" => "quote_not_literal", "difference" => "blank", "quote" => quote }
-        end
-
-        starts = occurrence_indexes(text, quote)
-        if starts.one?
-          start = starts.first
-          finish = start + quote.length
-          {
-            "status" => "located",
-            "start" => start,
-            "end" => finish,
-            "fragment" => text[start...finish],
-            "quote" => quote
-          }
-        elsif starts.many?
-          { "status" => "quote_ambiguous", "count" => starts.size, "quote" => quote }
-        else
-          {
-            "status" => "quote_not_literal",
-            "difference" => literal_difference(quote, text),
-            "quote" => quote
-          }
-        end
-      end
-
-      def adapt(raw, turn, stored_observations: [])
-        data = stringify(raw)
-        admitted = AnswerContract.admitted_text(turn)
-        resolutions = []
-        fragments = []
-        if data.key?("part_replies")
-          kept = []
-          Array(data["part_replies"]).each_with_index do |reply, index|
-            reply = stringify(reply)
-            reply = {} unless reply.is_a?(Hash)
-            found = locate(reply["quote"], admitted)
-            resolutions << found.merge(
-              "index" => index,
-              "state" => reply["state"],
-              "question_id" => reply["question_id"],
-              "part_id" => reply["part_id"]
-            )
-            next unless found["status"] == "located"
-
-            fragments << found["fragment"]
-            kept << offset_reply(reply, found)
-          end
-          data["part_replies"] = kept
-        end
-        observations, notes = incorporate(data["observations"], fragments, admitted, stored_observations)
-        if data.key?("observations") || notes.any? { |note| note["result"] == "added" }
-          data["observations"] = observations
-        end
-        {
-          "adapted" => data,
-          "resolutions" => resolutions,
-          "observation_notes" => notes,
-          "admitted" => admitted
-        }
-      end
+      delegate :locate, :adapt, to: TurnPerception
 
       # Coverage of each sentence by a conserved phrase. A shorter fragment,
       # or the sentence sitting inside a longer stored string, is not the
@@ -182,81 +115,6 @@ module Rag
       end
 
       private
-
-      def occurrence_indexes(text, quote)
-        found = []
-        from = 0
-        while (index = text.index(quote, from))
-          found << index
-          from = index + 1
-        end
-        found
-      end
-
-      def literal_difference(quote, text)
-        return "unicode_normalization" if text.unicode_normalize(:nfc).include?(quote.unicode_normalize(:nfc))
-        return "case" if text.downcase.include?(quote.downcase)
-        return "whitespace" if collapsed(text).include?(collapsed(quote))
-
-        "absent"
-      end
-
-      def collapsed(text)
-        text.to_s.gsub(/[[:space:]]+/, " ")
-      end
-
-      def offset_reply(reply, found)
-        adapted = {
-          "question_id" => reply["question_id"],
-          "part_id" => reply["part_id"],
-          "state" => reply["state"],
-          "start" => found["start"],
-          "end" => found["end"]
-        }
-        adapted["supersedes"] = reply["supersedes"] if reply.key?("supersedes")
-        adapted
-      end
-
-      def incorporate(observations, fragments, turn, stored)
-        current = Array(observations).map { |item| item.to_s }
-        notes = []
-        Array(fragments).each do |fragment|
-          reason = observation_block(fragment, turn, current, stored)
-          if reason
-            notes << { "quote" => fragment, "result" => reason }
-          else
-            current << fragment
-            notes << { "quote" => fragment, "result" => "added" }
-          end
-        end
-        [ current, notes ]
-      end
-
-      def observation_block(quote, turn, current, stored)
-        return "over_length" if quote.length > ActiveEpisode::MAX_OBSERVATION_CHARS
-        return "not_symptom" unless symptom?(quote)
-        return "not_literal" unless existing_literal?(quote, turn)
-
-        labels = (current + Array(stored)).map { |text| ObservationText.normalize(text) }
-        return "duplicate" if ObservationText.redundant?(quote, labels)
-        return "cap_reached" if current.size >= ActiveEpisode::MAX_OBSERVATIONS
-
-        nil
-      end
-
-      def symptom?(quote)
-        gate.send(:symptom_observation?, quote)
-      end
-
-      def existing_literal?(quote, turn)
-        perception = TurnPerception.allocate
-        perception.instance_variable_set(:@turn, turn)
-        perception.send(:literal_span?, quote)
-      end
-
-      def gate
-        TurnPerception.allocate
-      end
 
       def sentences(turn)
         turn.to_s.split(/(?<=[.!?])[[:space:]]+/).map(&:strip).reject(&:empty?)
@@ -370,17 +228,6 @@ module Rag
 
         code = facts["fault_code"]
         code.is_a?(Hash) ? code["value"].to_s : nil
-      end
-
-      def stringify(value)
-        case value
-        when Hash
-          value.each_with_object({}) { |(key, item), out| out[key.to_s] = stringify(item) }
-        when Array
-          value.map { |item| stringify(item) }
-        else
-          value
-        end
       end
     end
   end

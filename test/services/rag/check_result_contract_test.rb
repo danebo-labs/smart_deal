@@ -28,7 +28,7 @@ class Rag::CheckResultContractTest < ActiveSupport::TestCase
   FAILED_DOCUMENTED_CONTEXT_PARAGRAPH = "When pending.clarification_target is documented_context, the turn may answer that question, " \
     "add other facts of the case, or both. Record each fact the technician states as its own observation, whether or not it answers."
   PREVIOUS_OBSERVATION_SENTENCE = "An observation is one contiguous symptom phrase copied from the turn, or empty."
-  PROMPT_SHA256 = "a5de394a7d87687763b0cd4bd03313ed687a29637698e45e34e05b3aed015b3e"
+  PROMPT_SHA256 = "669df150364315bc9a3ef272d4bad8e8703b3a5ad91bb13b8ce2e56a00949905"
 
   setup do
     @now = Time.zone.parse("2026-10-21 18:00:00 UTC")

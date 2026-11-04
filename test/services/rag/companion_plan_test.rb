@@ -97,8 +97,10 @@ class Rag::CompanionPlanTest < ActiveSupport::TestCase
 
     assert_equal 1, check(links: [ good ]).links.size
     rejected = check(links: [ invented ])
-    assert_empty rejected.links
-    assert_match(/\Aungrounded:/, rejected.rejections.first["reason"])
+    assert_equal [ "O1" ], rejected.links.pluck(:fact)
+    assert_nil rejected.links.first[:reading]
+    assert_match(/\Adegraded:ungrounded:/, rejected.rejections.first["reason"])
+    assert_not_includes render(rejected), "placa base"
   end
 
   test "a negation, a dropped alternative, and an exclusion are not accepted from the model" do

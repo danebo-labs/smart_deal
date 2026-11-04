@@ -86,6 +86,17 @@ module Rag
       body.join("\n")
     end
 
+    # Technician sentences kept outside the indexed facts. The checker may use
+    # them as reported chronology. They are not observations and not facts.
+    def excerpt_texts
+      episode = @episode_record
+      return [] if episode.nil? || episode.blank?
+
+      raw = episode.respond_to?(:excerpts) ? episode.excerpts : nil
+      raw = episode.to_h["excerpts"] if raw.nil? && episode.respond_to?(:to_h)
+      Array(raw).filter_map { |row| row.is_a?(Hash) ? row["text"].to_s.presence : row.to_s.presence }
+    end
+
     # Open parts of the documentary question, in the wording Danebo already
     # published. Declared and settled parts stay on their own lines.
     def open_question_lines

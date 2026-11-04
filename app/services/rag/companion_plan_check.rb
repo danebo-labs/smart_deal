@@ -2,8 +2,12 @@
 
 module Rag
   # Deterministic check of one companion plan. A link joins a case fact to a
-  # source statement; its reading may only use words of that statement, of
-  # the case, and connectives. A step must be a step statement. The question
+  # source statement. A reading that adds an instruction, a negation, a
+  # condition, or a component the statement does not carry is dropped. A
+  # reading that only adds ungrounded words is not published: the link stays
+  # and the statement literal is what the render shows. Reported chronology
+  # can ground a sequence. It does not ground an exclusion, a prescription,
+  # or an operation. A step must be a step statement. The question
   # must use words of the sources or the case and must not ask what the case
   # already says. A check or perception verb, and a short word before a
   # grounded word, are conversational. A -mente word next to such a verb is
@@ -40,7 +44,21 @@ module Rag
     NEGATION = /\b(?:no|ni|nunca|sin|tampoco|ningun[oa]?)\b/
     EXCLUSION = /\b(?:descart\w*|exclu\w*|elimin\w*|no es (?:la|el) (?:causa|problema)|quedan? fuera|no influye|no afecta|ya no|no hace falta|innecesari\w*|no tiene que ver)\b/
     ORDER = /\b(?:primer[oa]?|lo primero|antes de|despues|luego|siguiente paso|por ultimo|finalmente|mas probable|probablemente|probable|principal\w*|prioridad|priorit\w*|urgente|empez\w*|comenz\w*)\b/
-    PRESCRIPTION = /\b(?:hay que|tenes que|tienes que|debes|deberias|deberia|conviene|recomiendo|te recomiendo|asegurate)\b/
+    PRESCRIPTION = /\b(?:hay que|tenes que|tienes que|debe|deben|debes|deberias|deberia|conviene|recomiendo|te recomiendo|asegurate)\b/
+    # A condition the question or the reading adds. "despues del" is the same
+    # connector as "despues de". A leading "si" without "entonces" is the
+    # question's own frame; "si … entonces" is the condition.
+    CONDITION_PHRASES = [
+      [ "para que", /\bpara que\b/ ],
+      [ "hasta que", /\bhasta que\b/ ],
+      [ "antes de", /\bantes del?\b/ ],
+      [ "despues de", /\bdespues del?\b/ ],
+      [ "mientras", /\bmientras\b/ ],
+      [ "porque", /\bporque\b/ ],
+      [ "cuando", /\bcuando\b/ ]
+    ].freeze
+    READING_SI = /\bsi\b/
+    QUESTION_SI = /\bsi\b.*\bentonces\b|\bentonces\b.*\bsi\b/
     OPERATION = /\b(?:ajust|gir|rot|aument|reduc|sub|baj|calibr|regul|cambi|reemplaz|sustitu|puente|desconect|conect|med|mid|puls|presion|apret|limpi|muev|mov|forz|reinici|reset)(?:ar|er|ir|aste|iste|a|e|i|as|es|alo|elo|arlo|erlo|irlo|ando|iendo|ala|ela)\b/
     STATUS = /\b(?:comprob|verific|revis|confirm|cheque|prob|realiz)(?:ad[oa]s?|aste|aron|amos|o|e)\b|\bya (?:lo )?(?:hiciste|hizo|hice)\b/
     CHECK_OBJECT = /\A(?:comprobar|verificar|revisar|controlar|observar|mirar|asegurar)\b(?:\s+que)?(?:\s+no\s+hay)?\s+/i
@@ -60,7 +78,7 @@ module Rag
 
     Result = Data.define(
       :links, :steps, :question, :rejections, :associations, :confirmed_items,
-      :question_targets, :limits, :omissions, :question_scope, :question_role
+      :question_targets, :limits, :omissions,       :question_scope, :question_role, :question_fidelity
     ) do
       def usable?
         links.any? || steps.any? || limits.any? ||
@@ -79,7 +97,8 @@ module Rag
           "limits" => limits,
           "omissions" => omissions,
           "question_scope" => question_scope,
-          "question_role" => question_role
+          "question_role" => question_role,
+          "question_fidelity" => question_fidelity
         }
       end
     end
@@ -120,11 +139,13 @@ module Rag
       @omissions = []
       @confirmed = {}
       links = check_links
+      @kept_links = links
       apply_corrections!
       collapse_associations!
       candidates = candidate_steps
       @targets = valid_targets
       steps = select_steps(candidates)
+      @kept_steps = steps
       question, targets = resolve_question(steps)
       note_missing_targets
       Result.new(
@@ -133,7 +154,8 @@ module Rag
         question_targets: question.present? ? targets : [],
         limits: @limits, omissions: @omissions,
         question_scope: question.present? ? @question_scope : nil,
-        question_role: question.present? ? @question_role : nil
+        question_role: question.present? ? @question_role : nil,
+        question_fidelity: question.present? ? @question_fidelity : nil
       )
     end
 
@@ -162,19 +184,26 @@ module Rag
           reason = "operation_mismatch" if %i[none related].include?(relation)
         end
         case_relation = reason.nil? ? remember_case(fact, statement) : nil
-        reason ||= reading_reason(reading, fact, statement) if reading.present?
+        verdict = reading.present? ? reading_reason(reading, fact, statement) : nil
+        if verdict&.first == :reject
+          reason = verdict.last
+        end
         reason ||= "case_incompatible" if case_relation&.relation == :incompatible
         reason ||= "case_unresolved" if case_relation&.relation == :unresolved && statement.step?
         if reason.nil? && (led = led_context_reason(fact, statement))
           reason = led
           @led_report = fact.text
         end
-        if reason.nil? && reading.present? && !observation_led_indicator?(fact, statement) &&
-            (extra = unbacked_component_reason(reading, statement))
-          reason = extra
-        end
         if reason
-          reject("link", link, reason)
+          # A reading that is also ungrounded keeps the lexical reason. A later
+          # semantic veto still drops the link; it does not publish the literal.
+          recorded = verdict&.first == :degrade ? verdict.last : reason
+          reject("link", link, recorded)
+          next
+        end
+        if verdict&.first == :degrade
+          kept << { fact: fact.id, statement: statement.id, reading: nil }
+          reject("reading", link, "degraded:#{verdict.last}")
           next
         end
         kept_link = { fact: fact.id, statement: statement.id, reading: reading.presence }
@@ -1036,23 +1065,34 @@ module Rag
       }.uniq { |statement| self.class.stem(self.class.words(statement.text).first.to_s) }.first(2)
     end
 
+    # :reject drops the link. :degrade keeps it and publishes the statement
+    # literal, never this reading. Chronology can carry a reported sequence.
+    # It does not carry an exclusion, a prescription, or an operation.
     def reading_reason(reading, fact, statement)
-      return "too_long" if reading.length > MAX_READING_CHARS
-      return "question_in_reading" if reading.include?("?")
+      return [ :reject, "too_long" ] if reading.length > MAX_READING_CHARS
+      return [ :reject, "question_in_reading" ] if reading.include?("?")
 
       normal = self.class.normal(reading)
-      source = self.class.normal([ statement.text, statement.item, statement.section ].compact.join(" "))
-      case_text = self.class.normal(@facts.facts.map { |item| [ item.text, item.result ].compact.join(" ") }.join(" "))
-      lexical = forbidden(normal, source)
-      return lexical if lexical
-      return "operation" if normal.match?(OPERATION) && !(statement.step? && operation_in?(normal, source))
-      return "status_claim" if status_claim?(normal)
+      source = statement_normal(statement)
+      chronology = chronology_normal
+      lexical = forbidden(normal, source, chronology)
+      return [ :reject, lexical ] if lexical
+      if normal.match?(OPERATION) && !(statement.step? && operation_in?(normal, source))
+        return [ :reject, "operation" ]
+      end
+      return [ :reject, "status_claim" ] if status_claim?(normal)
+      return [ :reject, "negation_not_grounded" ] unless negations_grounded?(normal, [ source, *case_texts ])
+      return [ :reject, "dropped_alternative" ] if dropped_alternative?(normal, source)
+      return [ :reject, "condition_not_grounded" ] if condition_not_grounded?(normal, source, chronology, reading: true)
+      if reading.present? && !observation_led_indicator?(fact, statement) &&
+          (extra = unbacked_component_reason(reading, statement))
+        return [ :reject, extra ]
+      end
 
-      allowed = stems(source) | stems(case_text)
+      case_text = self.class.normal(@facts.facts.map { |item| [ item.text, item.result ].compact.join(" ") }.join(" "))
+      allowed = stems(source) | stems(case_text) | stems(chronology)
       missing = ungrounded(normal, allowed)
-      return "ungrounded:#{missing.first(3).join(',')}" if missing.any?
-      return "negation_not_grounded" unless negations_grounded?(normal, [ source, *case_texts ])
-      return "dropped_alternative" if dropped_alternative?(normal, source)
+      return [ :degrade, "ungrounded:#{missing.first(3).join(',')}" ] if missing.any?
 
       nil
     end
@@ -1084,13 +1124,103 @@ module Rag
       applicable = stems(self.class.normal(applicable_manner_text(steps))) | stems(case_text)
       cited = text.scan(/\[(\d+)\]/).flatten.to_set
       missing, manner = question_gaps(normal.split, allowed, cited, applicable)
-      return "ungrounded:#{missing.first(3).join(',')}" if missing.any?
+      return ungrounded_reason(missing) if missing.any? && !common_residue?(missing, text)
       return "modality:#{manner.first(3).join(',')}" if manner.any?
 
       extra = unbacked_question_reason(text)
       return extra if extra
+      # A quoted report is the technician's sentence, already stored. The
+      # condition and the negation are what this question itself adds.
+      asked = self.class.normal(text.to_s.gsub(/«[^»]*»/, " "))
+      ground = question_condition_source(sources)
+      return "negation_not_grounded" unless negations_grounded?(asked, [ ground ])
+      return "condition_not_grounded" if condition_not_grounded?(asked, ground, "", reading: false)
+      if missing.any?
+        return ungrounded_reason(missing) unless common_residue?(missing, text)
+
+        remember_question_fidelity(missing)
+      end
 
       nil
+    end
+
+    def ungrounded_reason(missing)
+      "ungrounded:#{missing.first(3).join(',')}"
+    end
+
+    # Ordinary leftover words, with a conserved statement whose literal this
+    # answer still publishes. A digit, an acronym, a unit, or a symbol stays
+    # ungrounded and the derived question can still replace it.
+    def common_residue?(missing, text)
+      return false if missing.empty? || missing.any? { |word| hard_residue?(word, text) }
+      return false if unbacked_question_reason(text)
+
+      conserved_about_ids.any?
+    end
+
+    def hard_residue?(word, text)
+      return true if word.match?(/\d/)
+
+      token = original_token(word, text)
+      return true if token.to_s.match?(/[A-ZÁÉÍÓÚÜÑ]{2,}/)
+      return true if token.to_s.match?(/[#%°Ω]/)
+      return true if unit_token?(token, text)
+
+      false
+    end
+
+    def original_token(word, text)
+      text.to_s.scan(/\S+/).find { |token| self.class.words(token).include?(word) }
+    end
+
+    def unit_token?(token, text)
+      return false unless token.to_s.match?(/\A[VAva]\z/)
+      return true if token.match?(/\A[VA]\z/)
+
+      text.to_s.scan(/\S+/).each_cons(2).any? { |left, right|
+        (left == token || right == token) && (left.match?(/\d/) || right.match?(/\d/))
+      }
+    end
+
+    # Every id the model cited has to survive as a target and stay in this
+    # answer. A rejected heading, a step used as an item, or a dropped link
+    # does not license the leftover words.
+    def conserved_about_ids
+      cited = Array(@plan["question_about"]).map(&:to_s).compact_blank.uniq
+      return [] if cited.empty?
+      return [] if cited.any? { |id| about_rejected?(id) }
+
+      ids = Array(@targets).map(&:to_s)
+      return [] if ids.empty? || ids.sort != cited.sort
+
+      kept = Array(@kept_links).map { |link| link[:statement].to_s } + Array(@kept_steps).map(&:to_s)
+      return [] unless ids.all? { |id| kept.include?(id) }
+
+      ids
+    end
+
+    def about_rejected?(id)
+      @rejections.any? { |row| row["part"] == "question_about" && row["value"].to_s == id }
+    end
+
+    def remember_question_fidelity(missing)
+      @question_fidelity = {
+        "residue" => missing,
+        "about" => conserved_about_ids,
+        "declared_by" => "model"
+      }
+    end
+
+    # The cited statements when the plan names them. Otherwise the loaded
+    # documentation, which is what an unscoped question is already using.
+    # Turns and excerpts travel with either one.
+    def question_condition_source(sources)
+      cited = Array(@plan["question_about"]).filter_map { |id|
+        statement = @statements.find(id)
+        self.class.normal([ statement.text, statement.item ].compact.join(" ")) if statement
+      }
+      base = cited.any? ? cited.join(" ") : sources.to_s
+      "#{base} #{chronology_normal}"
     end
 
     # "¿Ves agua?" or "¿es lo que ves?" asks again for something the
@@ -1185,14 +1315,68 @@ module Rag
       @case_texts ||= @facts.facts.map { |item| self.class.normal([ item.text, item.result ].compact.join(" ")) }
     end
 
-    def forbidden(normal, source)
+    def forbidden(normal, source, chronology = "")
       { "exclusion" => EXCLUSION, "order" => ORDER, "prescription" => PRESCRIPTION }.each do |name, pattern|
         normal.scan(pattern).each do |hit|
           phrase = hit.is_a?(Array) ? hit.compact.first : hit
-          return name unless source.include?(phrase.to_s)
+          phrase = phrase.to_s
+          grounded = source.include?(phrase)
+          grounded ||= name == "order" && chronology.include?(phrase)
+          return name unless grounded
         end
       end
       nil
+    end
+
+    # Readings: si, cuando, porque, para que, and hasta que have to be in the
+    # statement. antes de, después de, and mientras may also be in the turns.
+    # Questions may take any of them from the cited statement or the turns.
+    def condition_not_grounded?(normal, source, chronology, reading:)
+      phrases = condition_phrases(normal, reading: reading)
+      return false if phrases.empty?
+
+      corpus = if reading
+        chronological = phrases & %w[antes\ de despues\ de mientras]
+        source_only = phrases - chronological
+        source_only.any? { |phrase| !phrase_in?(source, phrase) } ||
+          chronological.any? { |phrase| !phrase_in?("#{source} #{chronology}", phrase) }
+      else
+        phrases.any? { |phrase| !phrase_in?(source, phrase) }
+      end
+    end
+
+    def condition_phrases(normal, reading:)
+      found = CONDITION_PHRASES.filter_map { |name, pattern| name if normal.match?(pattern) }
+      if reading
+        found << "si" if normal.match?(READING_SI)
+      elsif normal.match?(QUESTION_SI)
+        found << "si"
+      end
+      found
+    end
+
+    def phrase_in?(corpus, phrase)
+      return false if phrase.blank?
+
+      text = corpus.to_s
+      return true if text.match?(/\b#{Regexp.escape(phrase)}\b/)
+      return true if phrase.end_with?(" de") && text.match?(/\b#{Regexp.escape(phrase)}l\b/)
+
+      false
+    end
+
+    def statement_normal(statement)
+      self.class.normal([ statement.text, statement.item, statement.section ].compact.join(" "))
+    end
+
+    def chronology_parts
+      parts = @turns.map(&:to_s)
+      parts.concat(@facts.excerpt_texts) if @facts.respond_to?(:excerpt_texts)
+      parts
+    end
+
+    def chronology_normal
+      @chronology_normal ||= self.class.normal(chronology_parts.join("\n"))
     end
 
     def operation_in?(normal, source)

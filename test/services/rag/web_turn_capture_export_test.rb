@@ -213,7 +213,8 @@ class Rag::WebTurnCaptureExportTest < ActiveSupport::TestCase
       limits: [],
       omissions: [],
       question_scope: nil,
-      question_role: nil
+      question_role: nil,
+      question_fidelity: nil
     )
   end
 

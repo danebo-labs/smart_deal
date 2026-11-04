@@ -9,8 +9,11 @@ module Rag
   # can ground a sequence. It does not ground an exclusion, a prescription,
   # or an operation. A step must be a step statement. The question
   # must use words of the sources or the case and must not ask what the case
-  # already says. A check or perception verb, and a short word before a
-  # grounded word, are conversational. A -mente word next to such a verb is
+  # already says. A negated sentence kept as an excerpt is that declaration.
+  # A question may not ask one of its clauses again, and it may not replace
+  # the act «conectado» or «desconectado» with the noun «conexión». A check
+  # or perception verb, and a short word before a grounded word, are
+  # conversational. A -mente word next to such a verb is
   # a method: the original question stays rejected, and one unambiguous
   # report can still be clarified from the documentary check. That
   # clarification asks what the technician looked at. It keeps the report,
@@ -42,6 +45,9 @@ module Rag
     ].to_set.freeze
     PERCEPTION = %w[veo ves vi vemos noto notas observo].to_set.freeze
     NEGATION = /\b(?:no|ni|nunca|sin|tampoco|ningun[oa]?)\b/
+    # "conectado" stems to conec. "desconectado" and "desconexión" stem to
+    # desco. The noun "conexión" stems to conex and is not the same act.
+    CONNECT_ACT_STEMS = %w[conec desco].to_set.freeze
     EXCLUSION = /\b(?:descart\w*|exclu\w*|elimin\w*|no es (?:la|el) (?:causa|problema)|quedan? fuera|no influye|no afecta|ya no|no hace falta|innecesari\w*|no tiene que ver)\b/
     ORDER = /\b(?:primer[oa]?|lo primero|antes de|despues|luego|siguiente paso|por ultimo|finalmente|mas probable|probablemente|probable|principal\w*|prioridad|priorit\w*|urgente|empez\w*|comenz\w*)\b/
     PRESCRIPTION = /\b(?:hay que|tenes que|tienes que|debe|deben|debes|deberias|deberia|conviene|recomiendo|te recomiendo|asegurate)\b/
@@ -1112,6 +1118,12 @@ module Rag
       return "operation" if repeated == :different_act
       return "repeats_fact:#{repeated.id}" if repeated
 
+      asked = salient_stems(normal, question: true)
+      return "repeats_declaration" if declaration_repeat?(asked)
+
+      widened = widened_declaration(asked)
+      return widened if widened
+
       sources = self.class.normal(@statements.statements.map { |item| [ item.text, item.item ].compact.join(" ") }.join(" "))
       # Excerpts travel with the turns for these words. They do not license
       # an exclusion, a prescription, or an operation.
@@ -1535,12 +1547,83 @@ module Rag
       subject.any? && subject.subset?(parsed.component)
     end
 
+    # What the question asks has to fit inside a fact. A fact mentioned inside
+    # a question about something else is not a repeat. A check the technician
+    # says is not done already answers whether that same check was performed.
+    def repeated_fact(normal)
+      open = open_check_question(normal)
+      return open if open
+
+      asked = content_stems(normal.split) - self.class.question_stems
+      return nil if asked.empty?
+
+      @facts.facts.find { |fact| question_covered_by_fact?(fact, asked) }
+    end
+
     # The question only restates a fact already in the case. An extra word in
     # the fact ("justo") does not keep the question: what it asks is covered.
     def question_covered_by_fact?(fact, asked)
       return false unless %w[observation done_check identity].include?(fact.kind)
 
       fact_core(fact).any? && asked.subset?(fact_core(fact))
+    end
+
+    # A negated sentence from this turn or from an unindexed excerpt. Each
+    # clause after "no" or "ni" is one declaration. Two salient stems are
+    # required, so a lone noun does not close every later question about it.
+    def declaration_repeat?(asked)
+      negated_declaration_clauses.any? { |clause| clause.size >= 2 && clause.subset?(asked) }
+    end
+
+    # "conectado" and "desconectado" do not share a stem with the noun
+    # "conexión". The declaration keeps the act and the object it named.
+    # Asking about "conexión" or "conexiones" widens that act.
+    def widened_declaration(asked)
+      return nil unless asked.include?("conex")
+      return nil if negated_declaration_clauses.any? { |clause| clause.include?("conex") }
+
+      covered = negated_declaration_clauses.any? { |clause|
+        clause.intersect?(CONNECT_ACT_STEMS) && (clause - CONNECT_ACT_STEMS).any?
+      }
+      return nil unless covered
+
+      "widened_declaration:conex"
+    end
+
+    def negated_declaration_clauses
+      @negated_declaration_clauses ||= declaration_sentences.flat_map { |sentence|
+        negated_clauses(sentence)
+      }.uniq
+    end
+
+    def declaration_sentences
+      texts = @turns.map(&:to_s)
+      texts.concat(@facts.excerpt_texts) if @facts.respond_to?(:excerpt_texts)
+      texts.flat_map { |text| text.to_s.split(/[.!?]+/) }
+           .map { |piece| self.class.normal(piece) }
+           .uniq
+           .compact_blank
+    end
+
+    def negated_clauses(sentence)
+      return [] unless sentence.match?(NEGATION)
+
+      parts = sentence.split(/\b(?:no|ni|nunca|sin|tampoco)\b/).map(&:strip).compact_blank
+      parts = parts.drop(1) unless sentence.match?(/\A(?:no|ni|nunca|sin|tampoco)\b/)
+      parts.filter_map { |part|
+        stems = salient_stems(part)
+        stems if stems.size >= 2
+      }
+    end
+
+    def salient_stems(text, question: false)
+      self.class.words(text).filter_map { |word|
+        next if word.length < 5
+        next if CONNECTORS.include?(word)
+        next if question && QUESTION_WORDS.include?(word)
+
+        self.class.stem(word)
+      }.to_set
     end
 
     def fact_core(fact)

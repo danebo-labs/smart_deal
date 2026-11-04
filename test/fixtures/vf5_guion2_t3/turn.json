@@ -1,0 +1,17 @@
+{
+  "run_id": "vf5-guion2-20261104T152432Z",
+  "request_id": "dde1be35-7059-4e9e-90b1-1653cc9862b7",
+  "session_id": 267,
+  "turn": "No he cambiado la configuración ni conectado o desconectado la fotocélula. Con lo que te conté, ¿hace falta repetir el autoajuste?",
+  "interpreter": {
+    "move": "follow_up",
+    "assertions": [],
+    "observations": [],
+    "checks": [],
+    "pending_resolution": null,
+    "clarification_target": null,
+    "part_replies": []
+  },
+  "planner_question": "¿Cambió algo en la configuración, conexiones o fotocélula desde el corte de alimentación?",
+  "manual_condition": "Solo es necesario realizar otra vez el autoajuste para la configuración de los parámetros por defecto o cuando se realicen cambios como la conexión o desconexión de la fotocélula Fermator."
+}

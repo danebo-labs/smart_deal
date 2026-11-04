@@ -50,6 +50,10 @@ module Rag
           "description" => "Si una regla documental aplica a lo ya dicho. statement vacío y conditions vacío si este turno no pregunta eso.",
           "properties" => {
             "statement" => { "type" => "string", "description" => "Id de la regla, o vacío." },
+            "action" => {
+              "type" => "string",
+              "description" => "Fragmento literal de la regla que nombra la acción, o vacío."
+            },
             "conditions" => {
               "type" => "array",
               "maxItems" => CompanionPlanCheck::MAX_APPLICABILITY,

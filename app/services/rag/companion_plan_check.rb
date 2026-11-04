@@ -21,10 +21,12 @@ module Rag
   # An invalid part is dropped with its reason; the rest stays.
   # applicability quotes a documentary rule and the technician. The model
   # proposes whether each literal condition is discarded, partial, or still
-  # open. This check verifies the id, that both quotes are literal, and the
-  # shape. It does not decide coverage from stems, terminals, links, or
-  # extra words. A missing, cut, or unbacked condition keeps the whole rule
-  # and only a conditional conclusion.
+  # open. A discard stays only when the validated quote contains that
+  # fragment; any other discard is lowered to partial. The action, when
+  # present, must be a literal fragment of the same statement or it is
+  # dropped. This check does not decide coverage from stems, terminals,
+  # links, or extra words. A missing, cut, or unbacked condition keeps the
+  # whole rule and only a conditional conclusion.
   # This is lexical. It does not prove that a reading is semantically right.
   class CompanionPlanCheck
     MAX_LINKS = 4
@@ -136,6 +138,12 @@ module Rag
 
     def self.normal(text)
       words(text).join(" ")
+    end
+
+    # The same literal threshold that closes a rule: the quote contains the
+    # fragment. It is not a stem and it is not a reading of the example.
+    def self.fragment_covered?(said, fragment)
+      said.to_s.include?(fragment.to_s)
     end
 
     def self.question_stems
@@ -1686,9 +1694,10 @@ module Rag
       end
       unless listed.is_a?(Array)
         reject("applicability", statement_id, "structure")
-        return applicability_result(statement, [], verified: false)
+        return applicability_result(statement, [], verified: false, action: accepted_action(statement, raw))
       end
 
+      action = accepted_action(statement, raw)
       accepted = []
       ranges = []
       listed.each do |item|
@@ -1700,7 +1709,11 @@ module Rag
       end
       accepted.sort_by! { |row| row["_at"] }
       accepted.each { |row| row.delete("_at") }
-      applicability_result(statement, accepted, verified: applicability_verified?(statement, accepted, ranges))
+      applicability_result(
+        statement, accepted,
+        verified: applicability_verified?(statement, accepted, ranges),
+        action: action
+      )
     end
 
     def accepted_condition(statement, item, ranges)
@@ -1728,10 +1741,13 @@ module Rag
       said = technician_quote(status, row["said"], match[:slice])
       return nil if said == :reject
 
+      fragment = match[:slice].squish
+      status = "parcial" if status == "descartada" && !self.class.fragment_covered?(said, fragment)
+
       {
         range: match[:range],
         condition: {
-          "text" => match[:slice].squish,
+          "text" => fragment,
           "status" => status,
           "said" => said,
           "_at" => match[:range].begin
@@ -1758,24 +1774,41 @@ module Rag
     def applicability_verified?(statement, accepted, ranges)
       return false if accepted.empty?
       return false if accepted.any? { |row| row["status"] != "descartada" }
-      return false unless accepted.all? { |row| row["said"].to_s.include?(row["text"]) }
+      return false unless accepted.all? { |row| self.class.fragment_covered?(row["said"], row["text"]) }
       return false if applicability_rejected?
 
       rule_covered?(statement.text, ranges)
     end
 
+    # A bad action is recorded and dropped. It does not void a covered rule:
+    # the action only names what the render may quote.
     def applicability_rejected?
-      @rejections.any? { |row| row["part"] == "applicability" }
+      @rejections.any? { |row| row["part"] == "applicability" && row["reason"] != "action:not_literal" }
     end
 
-    def applicability_result(statement, conditions, verified:)
-      {
+    def accepted_action(statement, raw)
+      return nil unless raw.key?("action")
+
+      action = raw["action"].to_s.squish
+      return nil if action.blank?
+
+      match = literal_match(statement.text, action)
+      return match[:slice].squish if match
+
+      reject("applicability", action, "action:not_literal")
+      nil
+    end
+
+    def applicability_result(statement, conditions, verified:, action: nil)
+      result = {
         "statement" => statement.id,
         "source" => statement.source,
         "page" => page_label(statement.page),
         "conclusion" => verified ? "discarded" : "conditional",
         "conditions" => conditions
       }
+      result["action"] = action if action.present?
+      result
     end
 
     def page_label(page)

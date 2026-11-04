@@ -11,6 +11,8 @@ module Rag
   class CompanionPlanRender
     APPLICABLE_SHARE = 0.6
     GENERIC_STEMS = %w[puert compr verif revis senal model opera estad].to_set.freeze
+    CAMBIOS_EXAMPLE = /\bcambios como\s+(.+)\z/i
+    CLASS_EXAMPLE = /(\p{L}+) como\s+(.+)\z/
     SYMPTOM_STOPWORDS = %w[el la los las un una unos unas lo de del se a al en y e o u que con por].to_set.freeze
     CHECK_STEP = /\A(?:comprob|verific|revis|asegur|control|observ|mir)/i
     NOTE_MARKER = /\[CONFLICTO_DOCUMENTAL\s+(?<id>[^:\]]+):\s*(?<body>.*)\]\z/m
@@ -153,23 +155,69 @@ module Rag
       when "descartada"
         "#{body}: lo que dijiste, «#{said}», descarta esta condición."
       when "parcial"
-        "#{body}: lo que dijiste, «#{said}», cubre solo una parte; otros cambios de ese tipo no constan."
+        "#{body}: lo que dijiste, «#{said}», #{partial_note(condition)}."
       else
         "#{body}: esto no consta en lo que dijiste."
       end
     end
 
-    def applicability_conclusion(row)
-      statuses = Array(row["conditions"]).pluck("status")
-      if row["conclusion"] == "discarded"
-        "Con lo que dijiste, no se cumple ninguna condición de esta regla."
-      elsif statuses.include?("parcial")
-        "Si tampoco hubo otros cambios de ese tipo, según la regla citada no corresponde lo que esa regla condiciona."
-      elsif statuses.include?("descartada")
-        "Si tampoco se dio lo que queda abierto, según la regla citada no corresponde lo que esa regla condiciona."
+    # The gap is named from the cited fragment. "cambios como …" is one
+    # example of that class. Another class word stays that word.
+    def partial_note(condition)
+      text = bare(condition["text"])
+      if (example = text[CAMBIOS_EXAMPLE, 1])
+        "cubre «#{bare(example)}»; otros cambios de ese tipo siguen sin confirmarse"
+      elsif (match = text.match(CLASS_EXAMPLE))
+        "cubre «#{bare(match[2])}»; el resto de «#{match[1]}» sigue sin confirmarse"
+      elsif CompanionPlanCheck.fragment_covered?(condition["said"], condition["text"])
+        "cubre «#{text}»; lo demás de esta regla sigue sin confirmarse"
       else
-        "Queda abierto lo que esta regla condiciona: no consta en lo que dijiste."
+        "no contiene «#{text}»; esa parte sigue sin confirmarse"
       end
+    end
+
+    def applicability_conclusion(row)
+      return "Con lo que dijiste, no se cumple ninguna condición de esta regla." if row["conclusion"] == "discarded"
+
+      conditions = Array(row["conditions"])
+      action = bare(row["action"]).presence
+      named = action ? "«#{action}»" : nil
+      id = row["statement"]
+      if conditions.any? { |condition| cambios_partial?(condition) }
+        target = named || "lo que esa regla condiciona"
+        line = "Si tampoco hubo otros cambios de ese tipo, según #{id} no corresponde #{target}."
+        extra = pending_quotes(conditions.reject { |condition| cambios_partial?(condition) })
+        extra.any? ? "#{line} Sigue sin confirmarse #{join_quotes(extra)}." : line
+      else
+        pending = pending_quotes(conditions)
+        if pending.any? && named
+          "Según #{id}, sigue sin confirmarse #{join_quotes(pending)}. Con lo dicho no corresponde #{named}."
+        elsif pending.any?
+          "Sigue sin confirmarse #{join_quotes(pending)}."
+        else
+          "Queda abierto lo que esta regla condiciona: no consta en lo que dijiste."
+        end
+      end
+    end
+
+    def cambios_partial?(condition)
+      condition["status"] == "parcial" && condition["text"].to_s.match?(CAMBIOS_EXAMPLE)
+    end
+
+    def pending_quotes(conditions)
+      Array(conditions).filter_map { |condition|
+        next if condition["status"] == "descartada"
+
+        text = bare(condition["text"])
+        "«#{text}»" if text.present?
+      }
+    end
+
+    def join_quotes(quotes)
+      return "" if quotes.empty?
+      return quotes.first if quotes.one?
+
+      "#{quotes[0..-2].join(", ")} y #{quotes.last}"
     end
 
     def applicability_statement?(statement)

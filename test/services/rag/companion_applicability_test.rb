@@ -12,7 +12,11 @@ class Rag::CompanionApplicabilityTest < ActiveSupport::TestCase
   CONDITION = FIXTURE.fetch("manual_condition")
   REPEATED = FIXTURE.fetch("planner_question")
   GLOBAL = "no se cumple ninguna condición de esta regla"
-  CONDITIONAL = "Si tampoco hubo otros cambios de ese tipo, según la regla citada no corresponde lo que esa regla condiciona."
+  ACTION = "realizar otra vez el autoajuste"
+  OPEN_CONCLUSION = "Si tampoco hubo otros cambios de ese tipo, según S1.9 no corresponde lo que esa regla condiciona."
+  ACTION_CONCLUSION = "Si tampoco hubo otros cambios de ese tipo, según S1.9 no corresponde «#{ACTION}»."
+  PARTIAL_LINE = "«o cuando se realicen cambios como la conexión o desconexión de la fotocélula Fermator» [1]: lo que dijiste, «No he cambiado la configuración ni conectado o desconectado la fotocélula», cubre «la conexión o desconexión de la fotocélula Fermator»; otros cambios de ese tipo siguen sin confirmarse."
+  LIVE = Rails.root.join("tmp/field_companion/vf5_companion_integration/t3_applicability_live.json")
   SECTION = <<~TEXT
     5.8 Pulsador de autoajuste (51)
     El pulsador de Autoajuste se utiliza para instalar la puerta.
@@ -46,7 +50,11 @@ class Rag::CompanionApplicabilityTest < ActiveSupport::TestCase
     assert_includes text, "No he cambiado la configuración"
     assert_includes text, "ni conectado o desconectado la fotocélula"
     assert_includes text, "cambios como"
-    assert_includes text, CONDITIONAL
+    assert_equal %w[parcial parcial parcial], checked.applicability["conditions"].pluck("status")
+    assert_includes text, "esa parte sigue sin confirmarse"
+    assert_not_includes text, "descarta esta condición"
+    assert_not_includes text, "lo que queda abierto"
+    assert_not_includes text, "otros cambios"
     assert_not_includes text, GLOBAL
     assert_not_includes text, "no hace falta"
     assert_not_includes text, "conexiones"
@@ -74,6 +82,9 @@ class Rag::CompanionApplicabilityTest < ActiveSupport::TestCase
       assert_not_includes text, GLOBAL
     end
     assert_equal [ "configuración" ], truncated.applicability["conditions"].pluck("text").grep("configuración")
+    assert_equal "descartada", truncated.applicability["conditions"].find { |row| row["text"] == "configuración" }["status"]
+    assert_equal "parcial", truncated.applicability["conditions"].find { |row| row["text"].include?("fotocélula") }["status"]
+    assert_equal "parcial", omitted.applicability["conditions"].sole["status"]
   end
 
   test "an invalid technician quote leaves the conclusion open" do
@@ -111,12 +122,22 @@ class Rag::CompanionApplicabilityTest < ActiveSupport::TestCase
     )
     text = render(checked, episode, statements)
 
+    sensor = checked.applicability["conditions"].find { |row| row["text"].include?("sensor de humo") }
+    firmware = checked.applicability["conditions"].find { |row| row["text"].include?("firmware") }
+
     assert_equal "S1.2", checked.applicability["statement"]
     assert_equal OTHER_RULE, statements.find("S1.2").text
     assert_equal "conditional", checked.applicability["conclusion"]
+    assert_equal "parcial", sensor["status"]
+    assert_equal "abierta", firmware["status"]
     assert_includes text, OTHER_RULE.delete_suffix(".")
     assert_includes text, "No reemplacé el sensor de humo"
     assert_includes text, "intervenciones como"
+    assert_includes text, "no contiene «el reemplazo del sensor de humo»; esa parte sigue sin confirmarse"
+    assert_includes text, "Sigue sin confirmarse «un cambio de firmware» y «el reemplazo del sensor de humo»."
+    assert_not_includes text, "otros cambios"
+    assert_not_includes text, "descarta esta condición"
+    assert_not_includes text, "lo que queda abierto"
     assert_not_includes text, GLOBAL
     assert_not_includes checked.steps, "S1.2"
   end
@@ -208,10 +229,114 @@ class Rag::CompanionApplicabilityTest < ActiveSupport::TestCase
     text = render(checked, episode, statements)
 
     assert_equal "discarded", checked.applicability["conclusion"]
+    assert_equal "descartada", checked.applicability["conditions"].sole["status"]
     assert_includes text, rule.delete_suffix(".")
+    assert_includes text, "descarta esta condición"
     assert_includes text, GLOBAL
     assert checked.usable?
-    assert_not_includes text, CONDITIONAL
+    assert_not_includes text, "otros cambios"
+    assert_not_includes text, "lo que queda abierto"
+    assert_not_includes text, OPEN_CONCLUSION
+  end
+
+  test "a covered fragment stays discarded and the open fragment is named from the rule" do
+    rule = "Cerrar si hay humo o si hay calor."
+    turn = "No hay humo."
+    episode = apply_turn(turn)
+    statements = Rag::CompanionStatements.parse([
+      { content: rule, metadata: { "page_number" => "3" } }
+    ])
+    checked = Rag::CompanionPlanCheck.call(
+      {
+        "applicability" => {
+          "statement" => "S1.1",
+          "conditions" => [
+            condition("hay humo", "descartada", "No hay humo"),
+            condition("hay calor", "abierta", "")
+          ]
+        }
+      },
+      facts: facts_for(episode), statements: statements, turns: [ turn ]
+    )
+    text = render(checked, episode, statements)
+
+    assert_equal "descartada", checked.applicability["conditions"].find { |row| row["text"] == "hay humo" }["status"]
+    assert_equal "abierta", checked.applicability["conditions"].find { |row| row["text"] == "hay calor" }["status"]
+    assert_equal "conditional", checked.applicability["conclusion"]
+    assert_includes text, "«hay humo» [1]: lo que dijiste, «No hay humo», descarta esta condición."
+    assert_includes text, "Sigue sin confirmarse «hay calor»."
+    assert_not_includes text, "lo que queda abierto"
+    assert_not_includes text, "otros cambios"
+    assert_not_includes text, GLOBAL
+  end
+
+  test "the captured T3 plan lowers the photocell condition and does not publish the repeated question" do
+    plan = live_plan
+    raw = plan.fetch("applicability")
+    episode = apply_captured_turn
+    checked = check(plan, episode, TURN)
+    text = render(checked, episode)
+    asked = live_plan
+    asked["question"] = REPEATED
+    asked["question_about"] = [ "S1.9" ]
+    questioned = check(asked, episode, TURN)
+
+    assert_nil raw["action"]
+    assert_equal "", raw["conditions"][0]["said"]
+    assert_equal "descartada", raw["conditions"][1]["status"]
+    assert_equal "citation", checked.rejections.find { |row| row["part"] == "applicability" && row["reason"] == "citation" }["reason"]
+    assert_equal 1, checked.applicability["conditions"].size
+    assert_equal "parcial", checked.applicability["conditions"].sole["status"]
+    assert_includes checked.applicability["conditions"].sole["text"], "cambios como la conexión o desconexión de la fotocélula"
+    assert_equal "conditional", checked.applicability["conclusion"]
+    assert_equal "S1.9", checked.applicability["statement"]
+    assert_equal "8", checked.applicability["page"]
+    assert_nil checked.applicability["action"]
+    assert_equal captured_text(OPEN_CONCLUSION), text
+    assert_equal "repeats_declaration", question_reason(questioned)
+    assert_nil questioned.question
+    assert_not_includes render(questioned, episode), REPEATED
+    assert_not_includes text, "descarta esta condición"
+    assert_not_includes text, "lo que queda abierto"
+    assert_not_includes text, "no hace falta"
+  end
+
+  test "a synthetic action on the captured plan names the autoajuste and an invalid action is dropped" do
+    episode = apply_captured_turn
+    valid = live_plan
+    valid["applicability"]["action"] = "  #{ACTION}  "
+    checked = check(valid, episode, TURN)
+    text = render(checked, episode)
+    invalid = live_plan
+    invalid["applicability"]["action"] = "repetir el autoajuste"
+    rejected = check(invalid, episode, TURN)
+    rejected_text = render(rejected, episode)
+
+    assert_equal ACTION, checked.applicability["action"]
+    assert_equal "parcial", checked.applicability["conditions"].sole["status"]
+    assert_equal "conditional", checked.applicability["conclusion"]
+    assert_equal "S1.9", checked.applicability["statement"]
+    assert_equal "8", checked.applicability["page"]
+    assert_equal captured_text(ACTION_CONCLUSION), text
+    assert_includes text, "autoajuste"
+    assert_includes text, "otros cambios de ese tipo siguen sin confirmarse"
+    assert_includes text, "la conexión o desconexión de la fotocélula"
+    assert_equal "action:not_literal", rejected.rejections.find { |row| row["reason"] == "action:not_literal" }["reason"]
+    assert_equal "repetir el autoajuste", rejected.rejections.find { |row| row["reason"] == "action:not_literal" }["value"]
+    assert_nil rejected.applicability["action"]
+    assert_equal "parcial", rejected.applicability["conditions"].sole["status"]
+    assert_equal "conditional", rejected.applicability["conclusion"]
+    assert_equal captured_text(OPEN_CONCLUSION), rejected_text
+    assert_not_includes rejected_text, "repetir el autoajuste"
+    assert_not_includes rejected_text, "descarta esta condición"
+
+    blank = live_plan
+    blank["applicability"]["action"] = "   "
+    blank_checked = check(blank, episode, TURN)
+
+    assert_nil blank_checked.applicability["action"]
+    assert_nil blank_checked.rejections.find { |row| row["reason"] == "action:not_literal" }
+    assert_equal captured_text(OPEN_CONCLUSION), render(blank_checked, episode)
   end
 
   test "the prompt asks for applicability and an old plan without it still loads" do
@@ -220,8 +345,12 @@ class Rag::CompanionApplicabilityTest < ActiveSupport::TestCase
 
     assert_includes prompt, "Las frases «Dicho por el técnico» también son el caso."
     assert_includes prompt, "applicability:"
+    assert_includes prompt, "action es un fragmento literal de esa afirmación que nombra la acción, o queda vacío."
     assert_includes schema["required"], "applicability"
-    assert_equal %w[descartada parcial abierta], schema.dig("properties", "applicability", "properties", "conditions", "items", "properties", "status", "enum")
+    applicability = schema.dig("properties", "applicability")
+    assert_equal %w[statement conditions], applicability["required"]
+    assert_equal "Fragmento literal de la regla que nombra la acción, o vacío.", applicability.dig("properties", "action", "description")
+    assert_equal %w[descartada parcial abierta], applicability.dig("properties", "conditions", "items", "properties", "status", "enum")
 
     episode = apply_captured_turn
     checked = check({ "question" => REPEATED, "steps" => [ "S1.9" ] }, episode, TURN)
@@ -232,6 +361,18 @@ class Rag::CompanionApplicabilityTest < ActiveSupport::TestCase
   end
 
   private
+
+  def live_plan
+    JSON.parse(LIVE.read).fetch("tool_input")
+  end
+
+  def captured_text(conclusion)
+    [
+      "Sobre lo que preguntas, la documentación dice «#{CONDITION.delete_suffix(".")}» [1], página 8.",
+      PARTIAL_LINE,
+      conclusion
+    ].join("\n")
+  end
 
   def t3_plan
     plan_with([

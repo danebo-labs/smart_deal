@@ -30,8 +30,8 @@ module Rag
     # cap stays US$4 and includes unknown exposure.
     ASSIGNMENT_CALL_CAP = 150
     # 150 is the standing cap. A file that recorded a bump to 152, 164, 166,
-    # 174, 175, 180, or 185 is read back. A larger number is not a grant.
-    ASSIGNMENT_CALL_CAPS = [ ASSIGNMENT_CALL_CAP, 152, 164, 166, 174, 175, 180, 185 ].freeze
+    # 174, 175, 180, 185, or 194 is read back. A larger number is not a grant.
+    ASSIGNMENT_CALL_CAPS = [ ASSIGNMENT_CALL_CAP, 152, 164, 166, 174, 175, 180, 185, 194 ].freeze
     ASSIGNMENT_COST_CAP_USD = "4"
     LOCAL_HOSTS = [ "", "localhost", "127.0.0.1", "::1" ].freeze
     MUTEX = Mutex.new

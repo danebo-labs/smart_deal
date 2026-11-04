@@ -26,7 +26,7 @@ class Rag::LocalPassLedgerTest < ActiveSupport::TestCase
     Thread.current[:rag_validation_capture] = nil
   end
 
-  test "a recorded call cap of 152, 164, 166, 174, 175, 180, or 185 is read and a higher one is not" do
+  test "a recorded call cap of 152, 164, 166, 174, 175, 180, 185, or 194 is read and a higher one is not" do
     path = File.join(Dir.mktmpdir("ledger-cap"), "spend.json")
     File.write(path, JSON.generate("authorization" => { "call_cap" => 152 }))
     ENV["RAG_ASSIGNMENT_SPEND_PATH"] = path
@@ -50,7 +50,13 @@ class Rag::LocalPassLedgerTest < ActiveSupport::TestCase
     File.write(path, JSON.generate("authorization" => { "call_cap" => 185 }))
     assert_equal 185, Rag::LocalPassLedger.send(:assignment_call_cap)
 
+    File.write(path, JSON.generate("authorization" => { "call_cap" => 194 }))
+    assert_equal 194, Rag::LocalPassLedger.send(:assignment_call_cap)
+
     File.write(path, JSON.generate("authorization" => { "call_cap" => 181 }))
+    assert_equal Rag::LocalPassLedger::ASSIGNMENT_CALL_CAP, Rag::LocalPassLedger.send(:assignment_call_cap)
+
+    File.write(path, JSON.generate("authorization" => { "call_cap" => 193 }))
     assert_equal Rag::LocalPassLedger::ASSIGNMENT_CALL_CAP, Rag::LocalPassLedger.send(:assignment_call_cap)
 
     File.write(path, JSON.generate("authorization" => { "call_cap" => 176 }))

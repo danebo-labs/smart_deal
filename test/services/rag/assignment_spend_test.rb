@@ -194,7 +194,8 @@ class Rag::AssignmentSpendTest < ActiveSupport::TestCase
     assert_equal 175, Rag::AssignmentSpend::CALL_CAP_BUMPS[174]
     assert_equal 180, Rag::AssignmentSpend::CALL_CAP_BUMPS[175]
     assert_equal 185, Rag::AssignmentSpend::CALL_CAP_BUMPS[180]
-    assert_nil Rag::AssignmentSpend::CALL_CAP_BUMPS[185]
+    assert_equal 194, Rag::AssignmentSpend::CALL_CAP_BUMPS[185]
+    assert_nil Rag::AssignmentSpend::CALL_CAP_BUMPS[194]
 
     8.times { |index| assert book.reserve!(ceiling_usd: "0.010000", model_id: "haiku", turn: index + 1) }
     assert_raises(Rag::AssignmentSpend::Stop) do
@@ -381,6 +382,68 @@ class Rag::AssignmentSpendTest < ActiveSupport::TestCase
     assert_equal 180, finished["entries"].count { |row| row["id"].to_i <= 180 }
     assert_equal "4.0", finished["cost_cap_usd"]
     assert_equal "0.750000", finished["authorization"]["cost_usd"]
+  end
+
+  test "unregistered calls bump 185 to 194 only while attempts are 185" do
+    seed_history(185)
+    data = JSON.parse(File.read(@path))
+    data["call_cap"] = 185
+    data["authorization"] = {
+      "id" => "f2f3-joint-after-134", "after_attempt" => 134,
+      "cost_usd" => "0.750000", "call_cap" => 185
+    }
+    data["executions"] = [ {
+      "id" => "vf5-t2-quote-20261103", "after_attempt" => 180,
+      "cost_usd" => "0.100000", "calls" => 5, "at" => "2026-11-03T22:52:53Z"
+    } ]
+    File.write(@path, JSON.generate(data))
+    history = JSON.parse(File.read(@path))["entries"]
+    book = spend(call_cap: 194, cost_cap: "4")
+    missed = book.admit_execution!(
+      id: "vf5-unregistered-late", cost_usd: "0.051200", calls: 7,
+      bump_call_cap_to: 194, bump_only_if_attempts: 186
+    )
+
+    assert_equal 185, missed["after_attempt"]
+    assert_equal 185, book.snapshot.dig("authorization", "call_cap")
+    assert_equal "0.750000", book.snapshot.dig("authorization", "cost_usd")
+
+    granted = book.admit_execution!(
+      id: "vf5-unregistered-20261104", cost_usd: "0.051200", calls: 7,
+      bump_call_cap_to: 194, bump_only_if_attempts: 185
+    )
+    snap = book.snapshot
+
+    assert_equal 185, granted["after_attempt"]
+    assert_equal 7, granted["calls"]
+    assert_equal "0.051200", granted["cost_usd"]
+    assert_equal 194, snap.dig("authorization", "call_cap")
+    assert_equal "0.750000", snap.dig("authorization", "cost_usd")
+    assert_equal 134, snap.dig("authorization", "after_attempt")
+    assert_equal "f2f3-joint-after-134", snap.dig("authorization", "id")
+    assert_equal "4.0", snap["cost_cap_usd"]
+    assert_equal history, snap["entries"]
+    assert_equal 5, snap["executions"].find { |row| row["id"] == "vf5-t2-quote-20261103" }["calls"]
+
+    7.times { |index| assert book.reserve!(ceiling_usd: "0.007000", model_id: "haiku", turn: index + 1) }
+    assert_raises(Rag::AssignmentSpend::Stop) do
+      book.reserve!(ceiling_usd: "0.007000", model_id: "haiku", turn: 8)
+    end
+    replay = book.admit_execution!(
+      id: "vf5-t3-applicability-20261104", cost_usd: "0.056254", calls: 2
+    )
+    assert_equal 192, replay["after_attempt"]
+    assert_equal 2, replay["calls"]
+    2.times { |index| assert book.reserve!(ceiling_usd: "0.028127", model_id: "haiku", turn: index + 1) }
+    assert_raises(Rag::AssignmentSpend::Stop) do
+      book.reserve!(ceiling_usd: "0.028127", model_id: "haiku", turn: 3)
+    end
+    finished = book.snapshot
+    assert_equal 194, finished["attempts"]
+    assert_equal 185, finished["entries"].count { |row| row["id"].to_i <= 185 }
+    assert_equal "4.0", finished["cost_cap_usd"]
+    assert_equal "0.750000", finished["authorization"]["cost_usd"]
+    assert_nil Rag::AssignmentSpend::CALL_CAP_BUMPS[194]
   end
 
   test "an unpriced error keeps the ceiling" do

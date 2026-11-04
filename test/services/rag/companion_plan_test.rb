@@ -620,6 +620,52 @@ class Rag::CompanionPlanTest < ActiveSupport::TestCase
     )
   end
 
+  test "statement chunks over the cap drop the lowest score and the capture lists both sides" do
+    kept_body = "MANTENIDO #{'a' * 12_000}"
+    dropped_body = "OMITIDO #{'b' * 5_000}"
+    chunks = [
+      plan_chunk(kept_body, id: "chunk_alto", page: "8", score: 0.9),
+      plan_chunk(dropped_body, id: "chunk_bajo", page: "2", score: 0.1)
+    ]
+    prepared = nil
+    events = Rag::ValidationCapture.capture {
+      prepared = prepared_plan_with(chunks)
+    }
+    source = events.find { |event| event["kind"] == "companion_sources" }
+
+    assert_includes prepared.user, "MANTENIDO"
+    assert_not_includes prepared.user, "OMITIDO"
+    assert_equal [ "chunk_alto" ], source["kept"].pluck("chunk_id")
+    assert_equal [ "chunk_bajo" ], source["omitted"].pluck("chunk_id")
+    assert_equal "8", source["kept"].first["page"]
+    assert_equal 0.1, source["omitted"].first["score"]
+    assert_equal dropped_body.length, source["omitted"].first["chars"]
+  end
+
+  test "chunks without a score stay in the statement block" do
+    body = "SIN_SCORE #{'c' * 13_000}"
+    prepared = prepared_plan_with([ plan_chunk(body, id: "chunk_sin", page: "1", score: nil) ])
+
+    assert_includes prepared.user, "SIN_SCORE"
+    assert_equal [ plan_chunk(body, id: "chunk_sin", page: "1", score: nil)[:chunk_sha256] ], prepared.chunks.pluck(:chunk_sha256)
+  end
+
+  def plan_chunk(content, id:, page:, score:)
+    {
+      content: content,
+      score: score,
+      chunk_sha256: id,
+      metadata: { "chunk_id" => id, "page_number" => page, "canonical_name" => "manual.pdf" }
+    }
+  end
+
+  def prepared_plan_with(chunks)
+    Rag::CompanionPlan.prepare(
+      raw_question: "¿qué sigue?", chunks: chunks, episode: episode, session: session,
+      correlation_id: "query:cap"
+    )
+  end
+
   def prepared_plan
     Rag::CompanionPlan.prepare(
       raw_question: "¿qué sigue?", chunks: [ chunk(MANUAL) ], episode: episode, session: session,

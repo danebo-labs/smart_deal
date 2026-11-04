@@ -11,6 +11,12 @@ class Rag::Phase3PinnedTurnTest < ActiveSupport::TestCase
   RESERVED_PHRASE = "terminal de control"
 
   setup do
+    # These budgets are defined inside the pinned-turn files, not in a file
+    # named after the constant. A worker that has not loaded those files yet
+    # cannot resolve them through Zeitwerk.
+    Rag::Phase1PinnedTurn
+    Rag::Phase2PinnedTurn
+    Rag::Phase3PinnedTurn
     @authorization = ENV["PHASE3_PINNED_TURN_AUTHORIZED"]
     @episode = ENV["FIELD_COMPANION_EPISODE_ENABLED"]
     @turn = ENV["FIELD_COMPANION_TURN_ENABLED"]

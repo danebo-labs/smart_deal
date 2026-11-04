@@ -10,6 +10,11 @@ module Rag
   class CompanionPlan
     TOOL_NAME = "companion_plan"
     MAX_TOKENS = 1200
+    # Whole chunks, lowest numeric score first. A chunk is not cut in the middle.
+    # 12_000 drops a page from the current three-chunk VF5 window: t5 of the
+    # 2026-10-29 regression is 14_672 characters before a definition is added,
+    # and the captured plan cites that later source. 16_000 keeps the window.
+    STATEMENTS_MAX_CHARS = 16_000
     SYSTEM_PROMPT_PATH = Rails.root.join("app/prompts/bedrock/companion_plan.txt")
     STATEMENT_KINDS = %w[heading item step text warning conflict].freeze
 
@@ -54,8 +59,9 @@ module Rag
 
     class << self
       def prepare(raw_question:, chunks:, episode:, session:, correlation_id: nil)
+        kept = limit_statement_chunks(chunks)
         facts = CompanionCaseFacts.build(episode, session: session)
-        statements = CompanionStatements.parse(chunks)
+        statements = CompanionStatements.parse(kept)
         turns_block = SessionContextBuilder.companion_technician_turns(
           session, current_message: raw_question, current_correlation_id: correlation_id
         )
@@ -64,7 +70,7 @@ module Rag
           facts.prompt_block,
           turns_block,
           SessionContextBuilder.companion_prior_answer(session),
-          statements_block(statements, chunks)
+          statements_block(statements, kept)
         ].compact_blank.join("\n\n")
         system = SYSTEM_PROMPT_PATH.read
         Prepared.new(
@@ -74,8 +80,57 @@ module Rag
           facts: facts,
           statements: statements,
           turns: technician_turns(session, raw_question),
-          chunks: Array(chunks)
+          chunks: kept
         )
+      end
+
+      # Drops whole chunks, lowest numeric score first, until the statement text
+      # fits. Chunks without a score stay: there is no order to drop them.
+      # The capture lists what stayed and what was omitted.
+      def limit_statement_chunks(chunks)
+        kept = Array(chunks).dup
+        omitted = []
+        # Without a score there is no lowest chunk to drop. A replay that
+        # does not carry scores keeps every chunk.
+        while scored?(kept) && kept.sum { |chunk| chunk_chars(chunk) } > STATEMENTS_MAX_CHARS && kept.any?
+          index = kept.each_with_index.min_by { |chunk, position| [ chunk_score(chunk), -position ] }.last
+          omitted << kept.delete_at(index)
+        end
+        record_companion_sources(kept, omitted)
+        kept
+      end
+
+      def record_companion_sources(kept, omitted)
+        return unless ValidationCapture.active?
+
+        ValidationCapture.record(
+          "companion_sources",
+          "kept" => kept.map { |chunk| source_row(chunk) },
+          "omitted" => omitted.map { |chunk| source_row(chunk) }
+        )
+      end
+
+      def source_row(chunk)
+        metadata = (chunk[:metadata] || chunk["metadata"]).to_h.stringify_keys
+        {
+          "chunk_id" => metadata["chunk_id"].presence || chunk[:chunk_sha256].presence || chunk["chunk_sha256"].presence,
+          "page" => metadata["page_number"].presence,
+          "score" => chunk.key?(:score) ? chunk[:score] : chunk["score"],
+          "chars" => chunk_chars(chunk)
+        }
+      end
+
+      def chunk_chars(chunk)
+        (chunk[:content] || chunk["content"]).to_s.length
+      end
+
+      def scored?(chunks)
+        chunks.any? { |chunk| chunk_score(chunk).finite? }
+      end
+
+      def chunk_score(chunk)
+        score = chunk.key?(:score) ? chunk[:score] : chunk["score"]
+        score.is_a?(Numeric) ? score : -Float::INFINITY
       end
 
       def compose(response, prepared)

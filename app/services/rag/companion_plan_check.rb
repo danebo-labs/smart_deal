@@ -184,7 +184,7 @@ module Rag
           reason = "operation_mismatch" if %i[none related].include?(relation)
         end
         case_relation = reason.nil? ? remember_case(fact, statement) : nil
-        verdict = reading.present? ? reading_reason(reading, fact, statement) : nil
+        verdict = reading.present? && statement ? reading_reason(reading, fact, statement) : nil
         if verdict&.first == :reject
           reason = verdict.last
         end

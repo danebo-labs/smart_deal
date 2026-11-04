@@ -355,6 +355,26 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_equal 1, calls
   end
 
+  test "a companion turn with a document pin uses the companion candidate count" do
+    question = "La puerta abrió despacio en la primera maniobra."
+    with_companion_candidates(8) do
+      episode = Rag::ActiveEpisode.open(correlation_id: "query:pin", now: Time.current)
+      service = FakeRagService.new([ synthetic_chunk("La puerta abre despacio.", rank: 1) ])
+      route = selection_route(question, rag_service: service, episode: episode)
+      route.pinned_retrieval
+      plain_service = FakeRagService.new([ synthetic_chunk("La puerta abre despacio.", rank: 1) ])
+      selection_route(question, rag_service: plain_service).pinned_retrieval
+      pages = 4.times.map { |index| synthetic_chunk("Pagina #{index} de la maniobra.", rank: index + 1) }
+      focused = route.send(:select_generation_chunks, pages)
+      unfocused = selection_route(question).send(:select_generation_chunks, pages)
+
+      assert_equal 8, service.calls.first[:number_of_results]
+      assert_equal RagRetrievalProfile::PINNED_DOCUMENT_RESULTS, plain_service.calls.first[:number_of_results]
+      assert_equal 4, focused.size
+      assert_equal 3, unfocused.size
+    end
+  end
+
   test "an empty retrieved set is a terminal abstention without generation" do
     rag_service = FakeRagService.new([])
     generator = FakeGenerator.new("must not run")
@@ -2891,6 +2911,30 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     Rails.logger.stop_broadcasting_to(logger) if logger
   end
 
+  def with_companion_candidates(count)
+    previous_turn = ENV.fetch("RAG_COMPANION_TURN", nil)
+    previous_role = ENV.fetch("RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE", nil)
+    previous = RagRetrievalProfile::COMPANION_PINNED_CANDIDATES
+    ENV["RAG_COMPANION_TURN"] = "1"
+    ENV.delete("RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE")
+    RagRetrievalProfile.send(:remove_const, :COMPANION_PINNED_CANDIDATES)
+    RagRetrievalProfile.const_set(:COMPANION_PINNED_CANDIDATES, count)
+    yield
+  ensure
+    if previous_turn.nil?
+      ENV.delete("RAG_COMPANION_TURN")
+    else
+      ENV["RAG_COMPANION_TURN"] = previous_turn
+    end
+    if previous_role.nil?
+      ENV.delete("RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE")
+    else
+      ENV["RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE"] = previous_role
+    end
+    RagRetrievalProfile.send(:remove_const, :COMPANION_PINNED_CANDIDATES)
+    RagRetrievalProfile.const_set(:COMPANION_PINNED_CANDIDATES, previous)
+  end
+
   def build_route(question: "¿Qué indica el LED ABC12?", entity_s3_uris: [ @source_uri ],
                   entity_sources: [ "document" ], output_channel: :web, rag_service: nil,
                   generator: nil, expander: nil, episode: nil, raw_question: nil,
@@ -2920,6 +2964,22 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
       .except(:retrieval_ms, :expansion_ms, :local_ms, :generation_ms)
 
     result.except(:retrieval_trace, :correlation_id, :retrieve_ms, :generation_ms).merge(structured_route: timings)
+  end
+
+  def selection_route(question, rag_service: nil, episode: nil)
+    Rag::StructuredEvidenceRoute.new(
+      question: question,
+      account: @account,
+      entity_s3_uris: [ @source_uri ],
+      entity_sources: [ "document" ],
+      force_entity_filter: true,
+      response_locale: :es,
+      rag_service: rag_service || FakeRagService.new([]),
+      generator: FakeGenerator.new(nil),
+      expander: FakeExpander.new(nil),
+      episode: episode,
+      raw_question: question
+    )
   end
 
   def route_for_selection(question)

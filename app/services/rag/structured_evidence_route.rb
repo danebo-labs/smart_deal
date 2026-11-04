@@ -807,7 +807,35 @@ module Rag
       legacy = !profile.safety_critical_query? &&
         !profile.exhaustive_query? &&
         (profile.structured_mapping_query? || exact_designator_lookup?)
-      legacy ? RagRetrievalProfile::STRUCTURED_MAPPING_RESULTS : profile.number_of_results
+      count = legacy ? RagRetrievalProfile::STRUCTURED_MAPPING_RESULTS : profile.number_of_results
+      return pinned_result_count if count == RagRetrievalProfile::PINNED_DOCUMENT_RESULTS
+
+      count
+    end
+
+    # The companion window replaces the pinned window only for a companion
+    # turn whose focus is a document. Other turns stay on the pinned count.
+    def pinned_result_count
+      companion_documentary_focus? ? RagRetrievalProfile::COMPANION_PINNED_CANDIDATES : RagRetrievalProfile::PINNED_DOCUMENT_RESULTS
+    end
+
+    def companion_documentary_focus?
+      return false unless companion_plan_enabled?
+      return false if ENV["RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE"] == "1"
+      return false unless Array(@entity_sources).include?("document")
+      return false if @entity_s3_uris.map(&:to_s).uniq.empty?
+      return false if @raw_question.blank?
+      return false if BedrockRagService.plan_request?(@raw_question, nil)
+
+      episode = @episode.is_a?(ActiveEpisode) ? @episode : ActiveEpisode.parse(@episode)
+      episode.present? && episode.status == "active"
+    end
+
+    def companion_plan_enabled?
+      value = ENV["RAG_COMPANION_TURN"]
+      return true if value.nil? || value.strip.empty?
+
+      value == "1" || value == "true"
     end
 
     def retrieval_profile
@@ -978,7 +1006,7 @@ module Rag
 
     def mapping_generation_chunks(chunks)
       preferred = Array(chunks).select { |chunk| explicit_row_covered?([ chunk ]) }
-      (preferred.presence || Array(chunks)).first(RagRetrievalProfile::PINNED_DOCUMENT_RESULTS)
+      (preferred.presence || Array(chunks)).first(pinned_result_count)
     end
 
     # One borne/terminal mapping. A covered chunk leads, and a row that only
@@ -986,7 +1014,7 @@ module Rag
     def single_borne_generation_chunks(chunks)
       list = Array(chunks)
       covered, rest = list.partition { |chunk| explicit_row_covered?([ chunk ]) }
-      (covered + rest).first(RagRetrievalProfile::PINNED_DOCUMENT_RESULTS)
+      (covered + rest).first(pinned_result_count)
     end
 
     def single_borne_mapping?(groups)
@@ -1123,7 +1151,7 @@ module Rag
     def multi_mapping_generation_chunks(chunks)
       selected = []
       requested_mapping_groups(rescue_base_text).each do |group|
-        break if selected.size >= RagRetrievalProfile::PINNED_DOCUMENT_RESULTS
+        break if selected.size >= pinned_result_count
         next if selected.any? { |chunk| mapping_group_covered?([ chunk ], group) }
 
         chunk = Array(chunks).find { |candidate| mapping_group_covered?([ candidate ], group) }
@@ -1185,7 +1213,7 @@ module Rag
       return mapping_generation_chunks(chunks) if covering.empty? && mapping_lookup?
 
       selected = cover_identifiers(chunks, covering)
-      return Array(chunks).first(RagRetrievalProfile::PINNED_DOCUMENT_RESULTS) if selected.empty?
+      return Array(chunks).first(pinned_result_count) if selected.empty?
 
       selected = add_named_board_coverage(selected, chunks, covering)
       apply_documentary_coverage!(selected, chunks, covering)

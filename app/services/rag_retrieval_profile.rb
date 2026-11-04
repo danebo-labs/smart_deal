@@ -39,6 +39,9 @@
 # not forced here.
 class RagRetrievalProfile
   PINNED_DOCUMENT_RESULTS = 3
+  # Companion turns with a document pin. 3 matches the pinned window until a
+  # retrieve probe says a larger candidate set still keeps the cited chunk.
+  COMPANION_PINNED_CANDIDATES = 3
   STRUCTURED_MAPPING_RESULTS = 12
   PHOTO_RESULTS = 10
   OPEN_RESULTS = 8

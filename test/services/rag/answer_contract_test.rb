@@ -1369,7 +1369,7 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
     Rag::CompanionPlanCheck::Result.new(
       links: [], steps: [], question: question, rejections: [], associations: [],
       confirmed_items: {}, question_targets: [], limits: [], omissions: [],
-      question_scope: nil, question_role: nil, question_fidelity: nil
+      question_scope: nil, question_role: nil, question_fidelity: nil, applicability: nil
     )
   end
 

@@ -45,13 +45,38 @@ module Rag
           "maxItems" => 2,
           "items" => { "type" => "string", "description" => "Id de un apartado o texto, p. ej. S1.3." }
         },
+        "applicability" => {
+          "type" => "object",
+          "description" => "Si una regla documental aplica a lo ya dicho. statement vacío y conditions vacío si este turno no pregunta eso.",
+          "properties" => {
+            "statement" => { "type" => "string", "description" => "Id de la regla, o vacío." },
+            "conditions" => {
+              "type" => "array",
+              "maxItems" => CompanionPlanCheck::MAX_APPLICABILITY,
+              "items" => {
+                "type" => "object",
+                "properties" => {
+                  "text" => { "type" => "string", "description" => "Fragmento literal de la regla." },
+                  "status" => {
+                    "type" => "string",
+                    "enum" => CompanionPlanCheck::APPLICABILITY_STATUSES,
+                    "description" => "descartada, parcial o abierta."
+                  },
+                  "said" => { "type" => "string", "description" => "Cita literal del técnico, o vacío." }
+                },
+                "required" => %w[text status]
+              }
+            }
+          },
+          "required" => %w[statement conditions]
+        },
         "question_ref" => { "type" => "string", "description" => "Id ya publicado de la pregunta, o vacío." },
         "part_ref" => {
           "type" => "string",
           "description" => "Id de una parte de la pregunta actual, la palabra ninguna, o vacío."
         }
       },
-      "required" => %w[links steps question question_about]
+      "required" => %w[links steps question question_about applicability]
     }.freeze
 
     Prepared = Data.define(:params, :system, :user, :facts, :statements, :turns, :chunks)

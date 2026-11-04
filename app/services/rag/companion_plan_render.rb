@@ -54,6 +54,7 @@ module Rag
     def call
       lines = []
       quoted = []
+      applicability_lines.each { |line| lines << line }
       limit_lines.each { |line| lines << line }
       @check.links.each do |link|
         statement = @statements.find(link[:statement])
@@ -129,6 +130,53 @@ module Rag
       }
     end
 
+    def applicability_lines
+      row = @check.respond_to?(:applicability) ? @check.applicability : nil
+      return [] unless row.is_a?(Hash) && row["statement"].present?
+
+      statement = @statements.find(row["statement"])
+      return [] unless statement
+
+      cited = quote(statement)
+      page = row["page"].to_s
+      cited += ", página #{page}" if page.present?
+      lines = [ "Sobre lo que preguntas, la documentación dice #{cited}." ]
+      Array(row["conditions"]).each { |condition| lines << condition_line(statement, condition) }
+      lines << applicability_conclusion(row)
+      lines
+    end
+
+    def condition_line(statement, condition)
+      body = "«#{bare(condition["text"])}» [#{statement.source}]"
+      said = bare(condition["said"])
+      case condition["status"]
+      when "descartada"
+        "#{body}: lo que dijiste, «#{said}», descarta esta condición."
+      when "parcial"
+        "#{body}: lo que dijiste, «#{said}», cubre solo una parte; otros cambios de ese tipo no constan."
+      else
+        "#{body}: esto no consta en lo que dijiste."
+      end
+    end
+
+    def applicability_conclusion(row)
+      statuses = Array(row["conditions"]).pluck("status")
+      if row["conclusion"] == "discarded"
+        "Con lo que dijiste, no se cumple ninguna condición de esta regla."
+      elsif statuses.include?("parcial")
+        "Si tampoco hubo otros cambios de ese tipo, según la regla citada no corresponde lo que esa regla condiciona."
+      elsif statuses.include?("descartada")
+        "Si tampoco se dio lo que queda abierto, según la regla citada no corresponde lo que esa regla condiciona."
+      else
+        "Queda abierto lo que esta regla condiciona: no consta en lo que dijiste."
+      end
+    end
+
+    def applicability_statement?(statement)
+      row = @check.respond_to?(:applicability) ? @check.applicability : nil
+      row.is_a?(Hash) && row["statement"].to_s == statement&.id
+    end
+
     def limit_lines
       rows = @check.respond_to?(:limits) ? Array(@check.limits) : []
       rows.filter_map { |row|
@@ -161,15 +209,17 @@ module Rag
       if @check.question.present?
         targets = question_statements
         scope = @check.respond_to?(:question_scope) ? @check.question_scope : nil
-        if scope.is_a?(Hash) && scope["aspect"] == "scope" && scope["report"].present? && targets.one?
-          lines << "Para orientar falta el alcance de «#{bare(scope["report"])}»: la documentación trata «#{bare(targets.first.text)}» [#{targets.first.source}]."
-        elsif targets.one? && @check.question.match?(/\A¿(?:Qué parte|Se está cerrando)\b/)
-          lines << "Para orientar falta distinguir la parte [#{targets.first.source}]."
-        elsif targets.one?
-          lines << "Para orientar falta un dato: la documentación trata «#{bare(targets.first.text)}» [#{targets.first.source}]."
-        elsif targets.size == 2
-          left, right = targets
-          lines << "Para orientar falta distinguir: la documentación trata por separado «#{bare(left.text)}» [#{left.source}] y «#{bare(right.text)}» [#{right.source}]."
+        unless targets.one? && applicability_statement?(targets.first)
+          if scope.is_a?(Hash) && scope["aspect"] == "scope" && scope["report"].present? && targets.one?
+            lines << "Para orientar falta el alcance de «#{bare(scope["report"])}»: la documentación trata «#{bare(targets.first.text)}» [#{targets.first.source}]."
+          elsif targets.one? && @check.question.match?(/\A¿(?:Qué parte|Se está cerrando)\b/)
+            lines << "Para orientar falta distinguir la parte [#{targets.first.source}]."
+          elsif targets.one?
+            lines << "Para orientar falta un dato: la documentación trata «#{bare(targets.first.text)}» [#{targets.first.source}]."
+          elsif targets.size == 2
+            left, right = targets
+            lines << "Para orientar falta distinguir: la documentación trata por separado «#{bare(left.text)}» [#{left.source}] y «#{bare(right.text)}» [#{right.source}]."
+          end
         end
         lines << @check.question
       end

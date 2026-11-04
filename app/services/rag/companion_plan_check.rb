@@ -19,10 +19,19 @@ module Rag
   # clarification asks what the technician looked at. It keeps the report,
   # including a negation, and it does not ask whether that thing is present.
   # An invalid part is dropped with its reason; the rest stays.
+  # applicability quotes a documentary rule and the technician. The model
+  # proposes whether each literal condition is discarded, partial, or still
+  # open. This check verifies the id, that both quotes are literal, and the
+  # shape. It does not decide coverage from stems, terminals, links, or
+  # extra words. A missing, cut, or unbacked condition keeps the whole rule
+  # and only a conditional conclusion.
   # This is lexical. It does not prove that a reading is semantically right.
   class CompanionPlanCheck
     MAX_LINKS = 4
     MAX_STEPS = 4
+    MAX_APPLICABILITY = 8
+    APPLICABILITY_STATUSES = %w[descartada parcial abierta].freeze
+    APPLICABILITY_KINDS = %w[text item warning].freeze
     MAX_READING_CHARS = 320
     MAX_QUESTION_CHARS = 240
     LINKABLE = %w[step item text warning].freeze
@@ -84,10 +93,11 @@ module Rag
 
     Result = Data.define(
       :links, :steps, :question, :rejections, :associations, :confirmed_items,
-      :question_targets, :limits, :omissions,       :question_scope, :question_role, :question_fidelity
+      :question_targets, :limits, :omissions, :question_scope, :question_role, :question_fidelity,
+      :applicability
     ) do
       def usable?
-        links.any? || steps.any? || limits.any? ||
+        links.any? || steps.any? || limits.any? || applicability.present? ||
           (question.present? && (question_targets.any? || question_role.to_s == "referent_clarification"))
       end
 
@@ -104,7 +114,8 @@ module Rag
           "omissions" => omissions,
           "question_scope" => question_scope,
           "question_role" => question_role,
-          "question_fidelity" => question_fidelity
+          "question_fidelity" => question_fidelity,
+          "applicability" => applicability
         }
       end
     end
@@ -154,6 +165,7 @@ module Rag
       @kept_steps = steps
       question, targets = resolve_question(steps)
       note_missing_targets
+      applicability = check_applicability
       Result.new(
         links: links, steps: steps, question: question, rejections: @rejections,
         associations: @associations, confirmed_items: @confirmed,
@@ -161,7 +173,8 @@ module Rag
         limits: @limits, omissions: @omissions,
         question_scope: question.present? ? @question_scope : nil,
         question_role: question.present? ? @question_role : nil,
-        question_fidelity: question.present? ? @question_fidelity : nil
+        question_fidelity: question.present? ? @question_fidelity : nil,
+        applicability: applicability
       )
     end
 
@@ -1641,6 +1654,173 @@ module Rag
 
     def content_stems(words)
       words.reject { |word| CONNECTORS.include?(word) }.map { |word| self.class.stem(word) }.to_set
+    end
+
+    # A missing or empty applicability is a plan without that answer. An old
+    # capture has no key. A valid rule can be published on its own. The
+    # conclusion is a full discard only when every accepted condition is
+    # discarded, each technician quote contains that condition's fragment,
+    # and those fragments cover every word of the rule.
+    def check_applicability
+      return nil unless @plan.key?("applicability") && !@plan["applicability"].nil?
+
+      raw = @plan["applicability"]
+      unless raw.is_a?(Hash)
+        reject("applicability", raw, "structure")
+        return nil
+      end
+
+      raw = raw.stringify_keys
+      statement_id = raw["statement"].to_s.strip
+      listed = raw["conditions"]
+      return nil if statement_id.blank? && (!listed.is_a?(Array) || listed.empty?)
+
+      statement = @statements.find(statement_id)
+      if statement.nil?
+        reject("applicability", statement_id, "unknown_statement")
+        return nil
+      end
+      unless APPLICABILITY_KINDS.include?(statement.kind)
+        reject("applicability", statement_id, "statement_kind:#{statement.kind}")
+        return nil
+      end
+      unless listed.is_a?(Array)
+        reject("applicability", statement_id, "structure")
+        return applicability_result(statement, [], verified: false)
+      end
+
+      accepted = []
+      ranges = []
+      listed.each do |item|
+        row = accepted_condition(statement, item, ranges)
+        next unless row
+
+        ranges << row[:range]
+        accepted << row[:condition]
+      end
+      accepted.sort_by! { |row| row["_at"] }
+      accepted.each { |row| row.delete("_at") }
+      applicability_result(statement, accepted, verified: applicability_verified?(statement, accepted, ranges))
+    end
+
+    def accepted_condition(statement, item, ranges)
+      row = item.is_a?(Hash) ? item.stringify_keys : {}
+      if ranges.size >= MAX_APPLICABILITY
+        reject("applicability", row["text"], "over_limit")
+        return nil
+      end
+
+      match = literal_match(statement.text, row["text"])
+      unless match
+        reject("applicability", row["text"], "not_literal")
+        return nil
+      end
+      status = row["status"].to_s
+      unless APPLICABILITY_STATUSES.include?(status)
+        reject("applicability", row["text"], "status")
+        return nil
+      end
+      if ranges.any? { |other| ranges_overlap?(other, match[:range]) }
+        reject("applicability", match[:slice], "overlap")
+        return nil
+      end
+
+      said = technician_quote(status, row["said"], match[:slice])
+      return nil if said == :reject
+
+      {
+        range: match[:range],
+        condition: {
+          "text" => match[:slice].squish,
+          "status" => status,
+          "said" => said,
+          "_at" => match[:range].begin
+        }
+      }
+    end
+
+    def technician_quote(status, said, fragment)
+      quote = said.to_s.squish
+      if status == "abierta"
+        return nil if quote.blank?
+
+        reject("applicability", fragment, "unexpected_quote")
+        return :reject
+      end
+
+      slice = literal_technician_slice(quote)
+      return slice if slice
+
+      reject("applicability", quote, "citation")
+      :reject
+    end
+
+    def applicability_verified?(statement, accepted, ranges)
+      return false if accepted.empty?
+      return false if accepted.any? { |row| row["status"] != "descartada" }
+      return false unless accepted.all? { |row| row["said"].to_s.include?(row["text"]) }
+      return false if applicability_rejected?
+
+      rule_covered?(statement.text, ranges)
+    end
+
+    def applicability_rejected?
+      @rejections.any? { |row| row["part"] == "applicability" }
+    end
+
+    def applicability_result(statement, conditions, verified:)
+      {
+        "statement" => statement.id,
+        "source" => statement.source,
+        "page" => page_label(statement.page),
+        "conclusion" => verified ? "discarded" : "conditional",
+        "conditions" => conditions
+      }
+    end
+
+    def page_label(page)
+      page.to_s.strip.sub(/\.0\z/, "").presence
+    end
+
+    def literal_match(haystack, needle)
+      wanted = needle.to_s.squish
+      return nil if wanted.blank?
+
+      source = haystack.to_s
+      exact = source.index(wanted)
+      if exact
+        return { slice: source[exact, wanted.length], range: exact...(exact + wanted.length) }
+      end
+
+      pattern = wanted.split(/\s+/).map { |part| Regexp.escape(part) }.join("[[:space:]]+")
+      match = source.match(/#{pattern}/)
+      return nil unless match
+
+      { slice: match[0], range: match.begin(0)...match.end(0) }
+    end
+
+    def literal_technician_slice(needle)
+      technician_texts.each do |text|
+        match = literal_match(text, needle)
+        return match[:slice].squish if match
+      end
+      nil
+    end
+
+    def technician_texts
+      texts = @turns.map(&:to_s)
+      texts.concat(@facts.excerpt_texts) if @facts.respond_to?(:excerpt_texts)
+      texts.compact_blank
+    end
+
+    def ranges_overlap?(left, right)
+      left.begin < right.end && right.begin < left.end
+    end
+
+    def rule_covered?(text, ranges)
+      mask = Array.new(text.to_s.length, false)
+      ranges.each { |range| range.each { |index| mask[index] = true } }
+      text.to_s.chars.each_with_index.all? { |char, index| mask[index] || char.match?(/[^\p{L}\p{N}]/) }
     end
 
     def reject(part, value, reason)

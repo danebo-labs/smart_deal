@@ -39,9 +39,11 @@
 # not forced here.
 class RagRetrievalProfile
   PINNED_DOCUMENT_RESULTS = 3
-  # Companion turns with a document pin. 3 matches the pinned window until a
-  # retrieve probe says a larger candidate set still keeps the cited chunk.
-  COMPANION_PINNED_CANDIDATES = 3
+  # Companion turns with a document pin. Sixteen hybrid candidates, then an
+  # independent Cohere order and the narrative budget, keep the cited section
+  # inside CompanionPlan::STATEMENTS_MAX_CHARS. This is not the exhaustive
+  # reranker and it does not read BEDROCK_RERANKER_ENABLED.
+  COMPANION_PINNED_CANDIDATES = 16
   STRUCTURED_MAPPING_RESULTS = 12
   PHOTO_RESULTS = 10
   OPEN_RESULTS = 8

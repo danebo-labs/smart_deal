@@ -84,9 +84,11 @@ module Rag
         )
       end
 
-      # Drops whole chunks, lowest numeric score first, until the statement text
-      # fits. Chunks without a score stay: there is no order to drop them.
-      # The capture lists what stayed and what was omitted.
+      # Drops whole chunks, lowest numeric score first, until the narrative
+      # fits. The count is the text left after a terminal FIELD_RECORD appendix
+      # is removed: that appendix is not part of the planner text. The original
+      # body stays on the chunk and remains the citation source. Chunks without
+      # a score stay when none of the set has a score. The capture lists both sides.
       def limit_statement_chunks(chunks)
         kept = Array(chunks).dup
         omitted = []
@@ -121,7 +123,9 @@ module Rag
       end
 
       def chunk_chars(chunk)
-        (chunk[:content] || chunk["content"]).to_s.length
+        DocumentIdentityScope.omit_terminal_evidence_records(
+          (chunk[:content] || chunk["content"]).to_s
+        ).length
       end
 
       def scored?(chunks)

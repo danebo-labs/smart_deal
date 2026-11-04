@@ -642,6 +642,46 @@ class Rag::CompanionPlanTest < ActiveSupport::TestCase
     assert_equal dropped_body.length, source["omitted"].first["chars"]
   end
 
+  test "the statement cap counts narrative and keeps the original body" do
+    narrative = "NARRATIVA_VISIBLE #{'a' * 80}"
+    body = "#{narrative}\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nDETAILS: #{'x' * 20_000}\nEND_FIELD_RECORD\n"
+    other = "OTRO_VISIBLE #{'b' * 40}"
+    prepared = prepared_plan_with([
+      plan_chunk(body, id: "chunk_registro", page: "8", score: 0.9),
+      plan_chunk(other, id: "chunk_otro", page: "2", score: 0.2)
+    ])
+    kept = prepared.chunks.find { |chunk| chunk[:chunk_sha256] == "chunk_registro" }
+
+    assert_operator body.length, :>, Rag::CompanionPlan::STATEMENTS_MAX_CHARS
+    assert_includes prepared.user, "NARRATIVA_VISIBLE"
+    assert_includes prepared.user, "OTRO_VISIBLE"
+    assert_not_includes prepared.user, "FIELD_RECORD"
+    assert_not_includes prepared.user, "DETAILS:"
+    assert_equal body, kept[:content]
+    assert_equal "8", kept[:metadata]["page_number"]
+  end
+
+  test "a chunk drops when its narrative does not fit and the capture counts that narrative" do
+    kept_body = "QUEDA #{'a' * 15_500}"
+    dropped_narrative = "CAE #{'b' * 1_000}"
+    dropped_body = "#{dropped_narrative}\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nDETAILS: corto\nEND_FIELD_RECORD\n"
+    prepared = nil
+    events = Rag::ValidationCapture.capture {
+      prepared = prepared_plan_with([
+        plan_chunk(kept_body, id: "chunk_alto", page: "8", score: 0.9),
+        plan_chunk(dropped_body, id: "chunk_bajo", page: "2", score: 0.1)
+      ])
+    }
+    omitted = events.find { |event| event["kind"] == "companion_sources" }["omitted"].first
+    narrative_chars = Rag::DocumentIdentityScope.omit_terminal_evidence_records(dropped_body).length
+
+    assert_includes prepared.user, "QUEDA"
+    assert_not_includes prepared.user, "CAE"
+    assert_equal "chunk_bajo", omitted["chunk_id"]
+    assert_equal narrative_chars, omitted["chars"]
+    assert_operator dropped_body.length, :>, omitted["chars"]
+  end
+
   test "chunks without a score stay in the statement block" do
     body = "SIN_SCORE #{'c' * 13_000}"
     prepared = prepared_plan_with([ plan_chunk(body, id: "chunk_sin", page: "1", score: nil) ])

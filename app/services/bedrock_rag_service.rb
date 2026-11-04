@@ -510,7 +510,18 @@ class BedrockRagService
     end
 
     profile = RagRetrievalProfile.new(entity_sources: entity_sources, question: question)
-    number_of_results = profile.number_of_results.clamp(1, ContractualLimits::QUERY[:max_top_k])
+    profile_count = profile.number_of_results.clamp(1, ContractualLimits::QUERY[:max_top_k])
+    companion_focus = companion_pinned_focus?(
+      entity_s3_uris: entity_s3_uris,
+      entity_sources: entity_sources,
+      episode: episode,
+      raw_question: raw_question
+    )
+    number_of_results = if companion_focus && profile_count == RagRetrievalProfile::PINNED_DOCUMENT_RESULTS
+      RagRetrievalProfile::COMPANION_PINNED_CANDIDATES.clamp(1, ContractualLimits::QUERY[:max_top_k])
+    else
+      profile_count
+    end
     retrieval = retrieve_chunks(
       question,
       entity_s3_uris: entity_s3_uris,
@@ -570,9 +581,16 @@ class BedrockRagService
       episode: episode,
       raw_question: raw_question
     )
+    evidence_chunks = companion_evidence_chunks(
+      applied.chunks,
+      focus: companion_focus && profile_count == RagRetrievalProfile::PINNED_DOCUMENT_RESULTS,
+      companion_turn: companion_turn,
+      profile_count: profile_count,
+      question: question
+    )
     @companion_plan_pending = nil
     @companion_plan_retained = nil
-    companion_chunks = companion_turn ? companion_assembled_chunks(applied.chunks, episode: episode) : nil
+    companion_chunks = companion_turn ? companion_assembled_chunks(evidence_chunks, episode: episode) : nil
     companion_plan = if companion_turn
       Rag::CompanionPlan.prepare(
         raw_question: raw_question, chunks: companion_chunks, episode: episode,
@@ -585,7 +603,7 @@ class BedrockRagService
       DocumentIdentityPrompt.new(system: companion_plan.system, user: companion_plan.user)
     else
       document_identity_generation_prompt(
-        question, applied.chunks,
+        question, evidence_chunks,
         labels: applied.labels,
         response_locale: response_locale,
         session_context: session_context,
@@ -658,7 +676,7 @@ class BedrockRagService
     result = finish_document_identity_generation(
       question: question,
       raw_answer: raw_answer,
-      chunks: companion_turn ? companion_chunks : applied.chunks,
+      chunks: companion_turn ? companion_plan.chunks : evidence_chunks,
       response_locale: response_locale,
       retrieval: retrieval,
       companion: companion,
@@ -1228,6 +1246,59 @@ class BedrockRagService
     return true if value.nil? || value.strip.empty?
 
     value == "1" || value == "true"
+  end
+
+  def companion_pinned_focus?(entity_s3_uris:, entity_sources:, episode:, raw_question:)
+    Rag::CompanionPinnedFocus.focus?(
+      entity_sources: entity_sources,
+      entity_s3_uris: entity_s3_uris,
+      raw_question: raw_question,
+      episode: episode,
+      plan_request: self.class.plan_request?(raw_question.to_s, nil)
+    )
+  end
+
+  # Cohere order only when this turn will use the companion plan. A widened
+  # retrieve that does not become a plan keeps the previous pinned window.
+  # The original bodies stay on the chunks; the narrative cap runs later.
+  def companion_evidence_chunks(chunks, focus:, companion_turn:, profile_count:, question:)
+    list = Array(chunks)
+    return list unless focus
+    return list.first(profile_count) unless companion_turn
+
+    companion_candidate_order(list, question: question)
+  end
+
+  def companion_candidate_order(chunks, question:)
+    ordered = Rag::CompanionCandidateOrder.call(
+      chunks,
+      question: question,
+      client: @client,
+      region: @region
+    )
+    note_companion_rerank("applied", chunks.size, ordered.size)
+    ordered
+  rescue StandardError => error
+    note_companion_rerank("error", chunks.size, 0, error)
+    raise
+  end
+
+  def note_companion_rerank(result, requested, returned, error = nil)
+    payload = {
+      "result" => result,
+      "operation" => "rerank",
+      "model_id" => Rag::CompanionCandidateOrder::MODEL_ID,
+      "requested" => requested,
+      "returned" => returned
+    }
+    if error
+      payload["error_class"] = error.class.name
+      payload["reason"] = error.message.to_s
+    end
+    Rails.logger.info("[COMPANION_RERANK] #{payload.to_json}")
+    return unless Rag::ValidationCapture.active?
+
+    Rag::ValidationCapture.record("companion_rerank", payload)
   end
 
   def companion_turn_applies?(applied:, chunks:, episode:, raw_question:)

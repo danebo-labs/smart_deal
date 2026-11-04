@@ -512,6 +512,16 @@ class Vf5F5WebRegressionTest < ActionDispatch::IntegrationTest
       response(name, input)
     end
 
+    # The fixture recorded hybrid order, not a Cohere result. The product
+    # still calls Rerank; this double keeps that captured order.
+    def rerank(payload)
+      sources = Array(payload[:sources] || payload["sources"])
+      rows = sources.each_index.map { |index|
+        Struct.new(:index, :relevance_score).new(index, sources.size - index)
+      }
+      Struct.new(:results, :next_token).new(rows, nil)
+    end
+
     def retrieve(params)
       config = params[:retrieval_configuration] || params["retrieval_configuration"] || {}
       vector = config[:vector_search_configuration] || config["vector_search_configuration"] || {}

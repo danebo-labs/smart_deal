@@ -355,7 +355,7 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
     assert_equal 1, calls
   end
 
-  test "a companion turn with a document pin uses the companion candidate count" do
+  test "a companion turn with a document pin retrieves the companion candidate count" do
     question = "La puerta abrió despacio en la primera maniobra."
     with_companion_candidates(8) do
       episode = Rag::ActiveEpisode.open(correlation_id: "query:pin", now: Time.current)
@@ -370,8 +370,8 @@ class Rag::StructuredEvidenceRouteTest < ActiveSupport::TestCase
 
       assert_equal 8, service.calls.first[:number_of_results]
       assert_equal RagRetrievalProfile::PINNED_DOCUMENT_RESULTS, plain_service.calls.first[:number_of_results]
-      assert_equal 4, focused.size
-      assert_equal 3, unfocused.size
+      assert_equal RagRetrievalProfile::PINNED_DOCUMENT_RESULTS, focused.size
+      assert_equal RagRetrievalProfile::PINNED_DOCUMENT_RESULTS, unfocused.size
     end
   end
 

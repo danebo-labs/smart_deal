@@ -808,34 +808,30 @@ module Rag
         !profile.exhaustive_query? &&
         (profile.structured_mapping_query? || exact_designator_lookup?)
       count = legacy ? RagRetrievalProfile::STRUCTURED_MAPPING_RESULTS : profile.number_of_results
-      return pinned_result_count if count == RagRetrievalProfile::PINNED_DOCUMENT_RESULTS
+      return companion_retrieve_count if count == RagRetrievalProfile::PINNED_DOCUMENT_RESULTS
 
       count
     end
 
-    # The companion window replaces the pinned window only for a companion
-    # turn whose focus is a document. Other turns stay on the pinned count.
-    def pinned_result_count
+    # Recall for a companion turn whose focus is a document. The generation
+    # windows below stay on the pinned count: this route does not order or
+    # budget those candidates. The companion plan does.
+    def companion_retrieve_count
       companion_documentary_focus? ? RagRetrievalProfile::COMPANION_PINNED_CANDIDATES : RagRetrievalProfile::PINNED_DOCUMENT_RESULTS
     end
 
-    def companion_documentary_focus?
-      return false unless companion_plan_enabled?
-      return false if ENV["RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE"] == "1"
-      return false unless Array(@entity_sources).include?("document")
-      return false if @entity_s3_uris.map(&:to_s).uniq.empty?
-      return false if @raw_question.blank?
-      return false if BedrockRagService.plan_request?(@raw_question, nil)
-
-      episode = @episode.is_a?(ActiveEpisode) ? @episode : ActiveEpisode.parse(@episode)
-      episode.present? && episode.status == "active"
+    def pinned_result_count
+      RagRetrievalProfile::PINNED_DOCUMENT_RESULTS
     end
 
-    def companion_plan_enabled?
-      value = ENV["RAG_COMPANION_TURN"]
-      return true if value.nil? || value.strip.empty?
-
-      value == "1" || value == "true"
+    def companion_documentary_focus?
+      CompanionPinnedFocus.focus?(
+        entity_sources: @entity_sources,
+        entity_s3_uris: @entity_s3_uris,
+        raw_question: @raw_question,
+        episode: @episode,
+        plan_request: BedrockRagService.plan_request?(@raw_question.to_s, nil)
+      )
     end
 
     def retrieval_profile

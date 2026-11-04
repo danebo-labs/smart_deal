@@ -48,6 +48,54 @@ class Vf5CorrectedSequenceContractTest < ActiveSupport::TestCase
     assert_not_includes runner, "VF5_ANSWER_CONTRACT"
     assert_not_includes runner, "call_cap: 48"
     assert_not_includes runner, "48 - snap"
+    assert_includes turn, "prompt_reply: result.history_answer"
+  end
+
+  test "a companion turn stores the history answer as the next prompt reply" do
+    session = ConversationSession.create!(
+      identifier: "web:vf5-prompt-reply-#{SecureRandom.hex(4)}",
+      channel: "web",
+      expires_at: 1.hour.from_now,
+      user: @user,
+      account: @account,
+      active_episode: {},
+      conversation_history: []
+    )
+    history = "La puerta abrió despacio tras el corte."
+    shown = "#{history} [1]"
+    host = Object.new
+    host.define_singleton_method(:execute) do |*_args, **_kwargs|
+      RagQueryConcern::RagResult.new(
+        success?: true,
+        answer: shown,
+        history_answer: history,
+        correlation_id: "query:vf5-reply-#{SecureRandom.hex(2)}",
+        pending_question: nil
+      )
+    end
+    original = Rag::TurnInterpreter.method(:call)
+    Rag::TurnInterpreter.define_singleton_method(:call) do |**_kwargs|
+      Rag::TurnInterpreter::Result.new(
+        perception: nil, fallback: true, status: "empty", latency_ms: 0,
+        input_tokens: 0, output_tokens: 0, model_id: nil,
+        error_class: nil, error_reason: nil, stage: "extract"
+      )
+    end
+
+    assert_no_enqueued_jobs only: TrackBedrockQueryJob do
+      row = vf5_sequence_turn(host, session, @user, T1, 1, "vf5-prompt-reply")
+      assert_equal "returned", row["status"]
+    end
+
+    session.reload
+    stored = session.conversation_history.reverse.find { |item| item["role"] == "assistant" }
+    prior = SessionContextBuilder.companion_prior_answer(session)
+
+    assert_equal history, stored["prompt_reply"]
+    assert_includes prior, history
+    assert_includes prior, "Conclusión previa de Danebo"
+  ensure
+    Rag::TurnInterpreter.define_singleton_method(:call) { |*args, **kwargs| original.call(*args, **kwargs) } if original
   end
 
   test "apertura lenta records eight calls to 174 only while the ledger is at 166" do

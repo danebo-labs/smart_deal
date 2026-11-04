@@ -260,7 +260,8 @@ def vf5_sequence_turn(host, session, user, question, number, run_id)
         correlation_id: result.correlation_id,
         pending_question: result.pending_question,
         expected_episode_id: session.live_episode_id,
-        focus_ids: session.focus_document_ids
+        focus_ids: session.focus_document_ids,
+        prompt_reply: result.history_answer
       )
     end
     episode = Rag::ActiveEpisode.parse(session.reload.active_episode)

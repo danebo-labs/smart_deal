@@ -1,5 +1,7 @@
 # Estado para reanudar — 30 de octubre de 2026
 
+La reanudación vigente está al final, en «Guion 2 integrado, 4 de noviembre de 2026». El veredicto de octubre sigue siendo el de esa fecha.
+
 Interpretación, continuidad y fidelidad documental. Este archivo es el punto de reanudación. No reabre F5, no declara `EPISODIO_VALIDADO` y no integra un verificador. No hubo deploy. Las llamadas de este experimento no se repiten.
 
 HEAD `5c7cf7073d3fc5abe0d4eff1d8c6e37d30c01ebb` («Documenta segundo guion VF5 con respaldo literal, expectativas y diagnóstico»). La candidata de interpretación está sin commit encima de ese HEAD. Los crudos del experimento siguen en `tmp/`.
@@ -182,3 +184,9 @@ Esos huecos son de fidelidad del checker. No se cierran con otra llamada a Haiku
 El segundo guion VF5, primera apertura lenta tras un corte, sigue sin ejecución GUI. T1–T3, la selección explícita del VF5 y el diagnóstico contra el PDF están en la sección «Segundo guion VF5» del plan de conversación. `chunk_p8_1.txt` del fixture local ya trae la frase de §5.8; eso no sustituye la recuperación en vivo ni la respuesta publicada. Si el recorrido GUI se hace, se compara el texto publicado con el PDF y con esta candidata. No se vuelven a llamar los tres verificadores para ese diagnóstico.
 
 Después de ese guion, la cola sigue igual: plano Elemont MH, fotos, cambio de tema y retorno.
+
+## Guion 2 integrado, 4 de noviembre de 2026
+
+El detalle está en [INFORME_GUION2_INTEGRADO_20261104T131731Z.md](INFORME_GUION2_INTEGRADO_20261104T131731Z.md). El código determinista está en `22aa8f7`. La sonda, cinco Retrieve y ningún modelo, deja `chunk_p8_1` en el puesto 15 de la composición original. El tope de 16_000 caracteres lo suelta, y el tope que lo conservaría en T2 es 50_890. No se sube la ventana, no se cambia el compositor y no se corren las fases vivas.
+
+El paso siguiente es una decisión de Lahiri: otra consulta, recuperación de la sección 5.8, o comprobar el reranker en la región. La verificación en la aplicación desplegada espera esa decisión.

@@ -54,6 +54,30 @@ class Rag::CompanionPlanTest < ActiveSupport::TestCase
     assert_empty statements.by_source(2)
   end
 
+  test "session 198 turn 2 shows the open documentary part before declared lines" do
+    path = Rails.root.join(
+      "tmp/field_companion/validation_captures/vf5-corrected-20261103T201414Z/" \
+      "d84e8a77-e272-44f1-ae84-1c9646468f06/capture.json"
+    )
+    capture = JSON.parse(path.read)
+    delta = capture["events"].find { |event| event["kind"] == "episode_delta" }
+    stored = delta["episode_after"]
+    part = stored.dig("pending_question", "parts").find { |item| item["id"] == "p1" }
+    line = "Pregunta abierta q1.p1 (publicada por Danebo): «#{part['text']}»."
+    at = Time.zone.parse(stored["updated_at"]) + 1.second
+    block = nil
+    travel_to(at) { block = Rag::CompanionCaseFacts.build(stored).prompt_block }
+    declared_at = block.index("Parte declarada")
+
+    assert_equal 198, delta["session_id"]
+    assert_equal "q1", stored.dig("pending_question", "id")
+    assert_includes block, line
+    assert declared_at.nil? || block.index(line) < declared_at
+    prompt = Rails.root.join("app/prompts/bedrock/companion_plan.txt").read
+    assert_includes prompt, "Una línea «Pregunta abierta» es lo último que Danebo preguntó."
+    assert_includes prompt, "si no la responden, puedes devolver su id sin cambiar su formulación."
+  end
+
   test "case facts keep an observation apart from a check and quote the technician" do
     facts = case_facts
 

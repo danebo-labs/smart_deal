@@ -71,17 +71,33 @@ module Rag
 
     def prompt_block
       lines = @episode_record ? AnswerContract.context_lines(@episode_record, @session) : []
+      opened = open_question_lines
       declared = declared_lines
-      return "" if @facts.empty? && lines.empty? && declared.empty?
+      return "" if @facts.empty? && lines.empty? && opened.empty? && declared.empty?
 
       body = []
       if @facts.any?
         body << "Caso (estado actual, dicho por el técnico; no es documentación):"
         @facts.each { |fact| body << prompt_line(fact) }
       end
+      body.concat(opened)
       body.concat(declared)
       body.concat(lines)
       body.join("\n")
+    end
+
+    # Open parts of the documentary question, in the wording Danebo already
+    # published. Declared and settled parts stay on their own lines.
+    def open_question_lines
+      episode = @episode_record
+      return [] unless episode && AnswerContract.active?(episode)
+
+      question = episode.pending_question
+      return [] unless question.is_a?(Hash) && question["id"].present?
+
+      AnswerContract.open_parts(episode).map { |part|
+        "Pregunta abierta #{question['id']}.#{part['id']} (publicada por Danebo): «#{part['text']}»."
+      }
     end
 
     # Parts the technician declared unknown outside a published question.

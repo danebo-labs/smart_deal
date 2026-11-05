@@ -335,6 +335,17 @@ module Rag
         lines.size > 1 ? lines.join("\n") : ""
       end
 
+      def source_heading(chunk, source)
+        metadata = (chunk[:metadata] || chunk["metadata"]).to_h.stringify_keys
+        name = metadata["canonical_name"].presence || metadata["original_filename"].presence || "documento sin nombre"
+        page = metadata["page_number"].presence
+        definition = metadata["definition_of"].presence
+        heading = "[#{source}] #{name}"
+        heading += ", página #{page}" if page
+        heading += ", definición añadida de #{definition}" if definition
+        heading
+      end
+
       private
 
       def params(system, user)
@@ -354,17 +365,6 @@ module Rag
             tool_choice: { tool: { name: TOOL_NAME } }
           }
         }
-      end
-
-      def source_heading(chunk, source)
-        metadata = (chunk[:metadata] || chunk["metadata"]).to_h.stringify_keys
-        name = metadata["canonical_name"].presence || metadata["original_filename"].presence || "documento sin nombre"
-        page = metadata["page_number"].presence
-        definition = metadata["definition_of"].presence
-        heading = "[#{source}] #{name}"
-        heading += ", página #{page}" if page
-        heading += ", definición añadida de #{definition}" if definition
-        heading
       end
 
       def statement_line(item)

@@ -195,7 +195,8 @@ class Rag::AssignmentSpendTest < ActiveSupport::TestCase
     assert_equal 180, Rag::AssignmentSpend::CALL_CAP_BUMPS[175]
     assert_equal 185, Rag::AssignmentSpend::CALL_CAP_BUMPS[180]
     assert_equal 194, Rag::AssignmentSpend::CALL_CAP_BUMPS[185]
-    assert_nil Rag::AssignmentSpend::CALL_CAP_BUMPS[194]
+    assert_equal 196, Rag::AssignmentSpend::CALL_CAP_BUMPS[194]
+    assert_equal 211, Rag::AssignmentSpend::CALL_CAP_BUMPS[196]
 
     8.times { |index| assert book.reserve!(ceiling_usd: "0.010000", model_id: "haiku", turn: index + 1) }
     assert_raises(Rag::AssignmentSpend::Stop) do
@@ -443,7 +444,137 @@ class Rag::AssignmentSpendTest < ActiveSupport::TestCase
     assert_equal 185, finished["entries"].count { |row| row["id"].to_i <= 185 }
     assert_equal "4.0", finished["cost_cap_usd"]
     assert_equal "0.750000", finished["authorization"]["cost_usd"]
-    assert_nil Rag::AssignmentSpend::CALL_CAP_BUMPS[194]
+    assert_equal 196, Rag::AssignmentSpend::CALL_CAP_BUMPS[194]
+    assert_equal 211, Rag::AssignmentSpend::CALL_CAP_BUMPS[196]
+  end
+
+  test "direct replay bump 194 to 196 keeps the unknown attempt and two ceilings" do
+    seed_history(194)
+    data = JSON.parse(File.read(@path))
+    data["call_cap"] = 194
+    data["authorization"] = {
+      "id" => "f2f3-joint-after-134", "after_attempt" => 134,
+      "cost_usd" => "0.750000", "call_cap" => 194
+    }
+    unknown = data["entries"].find { |row| row["id"] == 194 }
+    unknown["status"] = "unknown"
+    unknown["ceiling_usd"] = "0.028300"
+    unknown["reserved_usd"] = "0.028300"
+    unknown.delete("actual_usd")
+    File.write(@path, JSON.generate(data))
+    preserved = JSON.parse(File.read(@path))["entries"].find { |row| row["id"] == 194 }
+    book = spend(call_cap: 196, cost_cap: "4")
+    late = book.admit_execution!(
+      id: "vf5-t3-direct-late", cost_usd: "0.056600", calls: 2,
+      bump_call_cap_to: 196, bump_only_if_attempts: 195
+    )
+
+    assert_equal 194, late["after_attempt"]
+    assert_equal 194, book.snapshot.dig("authorization", "call_cap")
+
+    granted = book.admit_execution!(
+      id: "vf5-t3-direct-retry-20261104", cost_usd: "0.056600", calls: 2,
+      bump_call_cap_to: 196, bump_only_if_attempts: 194
+    )
+    snap = book.snapshot
+
+    assert_equal 194, granted["after_attempt"]
+    assert_equal 2, granted["calls"]
+    assert_equal "0.056600", granted["cost_usd"]
+    assert_equal 196, snap.dig("authorization", "call_cap")
+    assert_equal "0.750000", snap.dig("authorization", "cost_usd")
+    assert_equal "f2f3-joint-after-134", snap.dig("authorization", "id")
+    assert_equal preserved, snap["entries"].find { |row| row["id"] == 194 }
+
+    assert book.reserve!(ceiling_usd: "0.028300", model_id: "haiku", turn: 1)
+    assert_raises(Rag::AssignmentSpend::Stop) do
+      book.reserve!(ceiling_usd: "0.028301", model_id: "haiku", turn: 2)
+    end
+    assert book.reserve!(ceiling_usd: "0.028300", model_id: "haiku", turn: 2)
+    assert_raises(Rag::AssignmentSpend::Stop) do
+      book.reserve!(ceiling_usd: "0.028300", model_id: "haiku", turn: 3)
+    end
+    finished = book.snapshot
+    assert_equal 196, finished["attempts"]
+    assert_equal preserved, finished["entries"].find { |row| row["id"] == 194 }
+    assert_equal "unknown", finished["entries"].find { |row| row["id"] == 194 }["status"]
+  end
+
+  test "direct guion bump 196 to 211 grants sixteen calls and keeps the dollar authorization" do
+    File.write(@path, JSON.generate(
+      "attempts" => 195, "seq" => 195, "call_cap" => 196, "blocked" => 0, "priced" => 0,
+      "committed" => "0.000000", "unknown" => "0.000000", "open" => {}, "entries" => [], "executions" => [],
+      "cost_cap_usd" => "4.0",
+      "authorization" => {
+        "id" => "f2f3-joint-after-134", "after_attempt" => 134,
+        "cost_usd" => "0.750000", "call_cap" => 196
+      }
+    ))
+    book = spend(call_cap: 211, cost_cap: "4")
+    missed = book.admit_execution!(
+      id: "vf5-direct-guiones-late", cost_usd: "0.355275", calls: 16,
+      bump_call_cap_to: 211, bump_only_if_attempts: 196
+    )
+
+    assert_equal 195, missed["after_attempt"]
+    assert_equal 196, book.snapshot.dig("authorization", "call_cap")
+
+    granted = book.admit_execution!(
+      id: "vf5-direct-guiones-20261104", cost_usd: "0.355275", calls: 16,
+      bump_call_cap_to: 211, bump_only_if_attempts: 195
+    )
+    snap = book.snapshot
+
+    assert_equal 195, granted["after_attempt"]
+    assert_equal 16, granted["calls"]
+    assert_equal "0.355275", granted["cost_usd"]
+    assert_equal 211, snap.dig("authorization", "call_cap")
+    assert_equal "0.750000", snap.dig("authorization", "cost_usd")
+    assert_equal "f2f3-joint-after-134", snap.dig("authorization", "id")
+
+    16.times { |index| assert book.reserve!(ceiling_usd: "0.010000", model_id: "haiku", turn: index + 1) }
+    assert_raises(Rag::AssignmentSpend::Stop) do
+      book.reserve!(ceiling_usd: "0.010000", model_id: "haiku", turn: 17)
+    end
+    assert_equal 211, book.snapshot["attempts"]
+  end
+
+  test "sonnet comparison bump 211 to 213 grants three calls and keeps the dollar authorization" do
+    File.write(@path, JSON.generate(
+      "attempts" => 210, "seq" => 212, "call_cap" => 211, "blocked" => 0, "priced" => 0,
+      "committed" => "0.000000", "unknown" => "0.000000", "open" => {},
+      "entries" => [
+        { "id" => 211, "status" => "settled", "ceiling_usd" => "0.021732", "actual_usd" => "0.007199" },
+        { "id" => 212, "status" => "settled", "ceiling_usd" => "0.022565", "actual_usd" => "0.007408" }
+      ],
+      "executions" => [
+        { "id" => "vf5-direct-guiones-20261104", "after_attempt" => 195, "cost_usd" => "0.355275", "calls" => 16 }
+      ],
+      "cost_cap_usd" => "4.0",
+      "authorization" => {
+        "id" => "f2f3-joint-after-134", "after_attempt" => 134,
+        "cost_usd" => "0.750000", "call_cap" => 211
+      }
+    ))
+    book = spend(call_cap: 213, cost_cap: "4")
+    assert_equal 213, Rag::AssignmentSpend::CALL_CAP_BUMPS[211]
+
+    granted = book.admit_execution!(
+      id: "vf5-sonnet45-compare-20261104", cost_usd: "0.210819", calls: 5,
+      bump_call_cap_to: 213, bump_only_if_attempts: 210
+    )
+    snap = book.snapshot
+
+    assert_equal 210, granted["after_attempt"]
+    assert_equal 5, granted["calls"]
+    assert_equal 213, snap.dig("authorization", "call_cap")
+    assert_equal "0.750000", snap.dig("authorization", "cost_usd")
+    assert_equal "f2f3-joint-after-134", snap.dig("authorization", "id")
+    3.times { |index| assert book.reserve!(ceiling_usd: "0.010000", model_id: "global.anthropic.claude-sonnet-4-5-20250929-v1:0", turn: index + 1) }
+    assert_raises(Rag::AssignmentSpend::Stop) do
+      book.reserve!(ceiling_usd: "0.010000", model_id: "global.anthropic.claude-sonnet-4-5-20250929-v1:0", turn: 4)
+    end
+    assert_equal 213, book.snapshot["attempts"]
   end
 
   test "an unpriced error keeps the ceiling" do

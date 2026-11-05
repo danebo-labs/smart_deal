@@ -488,6 +488,11 @@ class BedrockRagService
                                      conv_session: nil)
     Thread.current[:document_identity_scope] = nil
     @evidence_applicability = nil
+    @companion_plan_pending = nil
+    @companion_plan_retained = nil
+    @companion_plan_stop_reason = nil
+    @companion_direct_stop_reason = nil
+    @companion_direct_turn = false
     identity = resolved_equipment_identity(episode, equipment_identity)
     return nil unless identity == :malformed || (identity.respond_to?(:known?) && identity.known?)
     if identity == :malformed || !Rag::DocumentIdentityScopeFlag.enabled?
@@ -588,17 +593,25 @@ class BedrockRagService
       profile_count: profile_count,
       question: question
     )
-    @companion_plan_pending = nil
-    @companion_plan_retained = nil
     companion_chunks = companion_turn ? companion_assembled_chunks(evidence_chunks, episode: episode) : nil
-    companion_plan = if companion_turn
+    direct_turn = companion_turn && companion_generation_direct?
+    @companion_direct_turn = direct_turn
+    companion_plan = if companion_turn && !direct_turn
       Rag::CompanionPlan.prepare(
+        raw_question: raw_question, chunks: companion_chunks, episode: episode,
+        session: conv_session, correlation_id: correlation_id
+      )
+    end
+    companion_direct = if direct_turn
+      Rag::CompanionDirectAnswer.prepare(
         raw_question: raw_question, chunks: companion_chunks, episode: episode,
         session: conv_session, correlation_id: correlation_id
       )
     end
     prompt = if companion
       guidance.to_s
+    elsif direct_turn
+      DocumentIdentityPrompt.new(system: companion_direct.system, user: companion_direct.user)
     elsif companion_turn
       DocumentIdentityPrompt.new(system: companion_plan.system, user: companion_plan.user)
     else
@@ -626,6 +639,8 @@ class BedrockRagService
       }
       if companion
         document_identity_generator.query(prompt, **generation_kwargs)
+      elsif direct_turn
+        companion_direct_answer(companion_direct, generation_kwargs[:tracking].merge(user_query: question))
       elsif companion_turn
         companion_plan_answer(companion_plan, generation_kwargs[:tracking].merge(user_query: question))
       else
@@ -676,13 +691,23 @@ class BedrockRagService
     result = finish_document_identity_generation(
       question: question,
       raw_answer: raw_answer,
-      chunks: companion_turn ? companion_plan.chunks : evidence_chunks,
+      chunks: if direct_turn
+               companion_direct.chunks
+              elsif companion_turn
+               companion_plan.chunks
+              else
+               evidence_chunks
+              end,
       response_locale: response_locale,
       retrieval: retrieval,
       companion: companion,
       safety_evidence: guidance&.safety_evidence,
       companion_turn: companion_turn,
-      stop_reason: companion_turn ? @companion_plan_stop_reason : nil,
+      stop_reason: if direct_turn
+                   @companion_direct_stop_reason
+                   elsif companion_turn
+                   @companion_plan_stop_reason
+                   end,
       technician_texts: companion_turn ? companion_technician_texts(conv_session, episode, raw_question) : nil,
       manufacturer: companion_turn ? companion_manufacturer(episode) : nil,
       raw_question: raw_question
@@ -1248,6 +1273,11 @@ class BedrockRagService
     value == "1" || value == "true"
   end
 
+  # The only read of RAG_COMPANION_GENERATION. Absent stays on the plan.
+  def companion_generation_direct?
+    ENV["RAG_COMPANION_GENERATION"].to_s.strip == "direct"
+  end
+
   def companion_pinned_focus?(entity_s3_uris:, entity_sources:, episode:, raw_question:)
     Rag::CompanionPinnedFocus.focus?(
       entity_sources: entity_sources,
@@ -1357,7 +1387,67 @@ class BedrockRagService
     composed.text
   end
 
+  # One Converse. A sleeping model is tried again, up to the shared transient
+  # limit. Each try is its own call. A cap refusal is not retried.
+  def companion_direct_answer(prepared, tracking)
+    response, latency_ms = companion_direct_converse(prepared.params)
+    usage = track_companion_direct_usage(response, latency_ms, tracking)
+    composed = Rag::CompanionDirectAnswer.compose(response)
+    @companion_direct_stop_reason = composed.stop_reason
+    record_companion_direct(composed, usage.merge("latency_ms" => latency_ms))
+    composed.text
+  end
+
+  def companion_direct_converse(params)
+    attempt = 0
+    limit = Rag::TransientBackoff.limit
+    begin
+      attempt += 1
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      response = document_identity_generator.converse(params)
+      latency_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
+      [ response, latency_ms ]
+    rescue StandardError => error
+      raise unless Rag::CompanionDirectAnswer.asleep?(error)
+      raise if attempt >= limit
+
+      pause = Rag::TransientBackoff.wait_seconds(attempt - 1)
+      Rails.logger.warn("[COMPANION_DIRECT] asleep attempt=#{attempt} retry_in=#{pause}s #{error.class}")
+      sleep(pause) if pause.positive?
+      retry
+    end
+  end
+
+  def track_companion_direct_usage(response, latency_ms, tracking)
+    track_companion_generation_usage(response, latency_ms, tracking, "companion_direct")
+  end
+
+  def record_companion_direct(composed, usage)
+    Rails.logger.info("[COMPANION_DIRECT] rejected=#{composed.rejected} stop=#{composed.stop_reason}")
+    return unless Rag::ValidationCapture.active?
+
+    Rag::ValidationCapture.record(
+      "companion_direct",
+      usage.merge(
+        "stop_reason" => composed.stop_reason,
+        "rejected" => composed.rejected,
+        "chars" => composed.text.to_s.length,
+        "text" => composed.text.to_s
+      )
+    )
+  end
+
   def track_companion_plan_usage(response, latency_ms, tracking)
+    usage = response.respond_to?(:usage) ? response.usage : nil
+    input_tokens = usage.respond_to?(:input_tokens) ? usage.input_tokens.to_i : 0
+    output_tokens = usage.respond_to?(:output_tokens) ? usage.output_tokens.to_i : 0
+    tokens = { "input_tokens" => input_tokens.positive? ? input_tokens : nil, "output_tokens" => input_tokens.positive? ? output_tokens : nil }
+    return tokens if input_tokens <= 0
+
+    track_companion_generation_usage(response, latency_ms, tracking, "companion_plan")
+  end
+
+  def track_companion_generation_usage(response, latency_ms, tracking, route)
     usage = response.respond_to?(:usage) ? response.usage : nil
     input_tokens = usage.respond_to?(:input_tokens) ? usage.input_tokens.to_i : 0
     output_tokens = usage.respond_to?(:output_tokens) ? usage.output_tokens.to_i : 0
@@ -1366,7 +1456,7 @@ class BedrockRagService
 
     TrackBedrockQueryJob.perform_later(
       source: "query",
-      route: "companion_plan",
+      route: route,
       model_id: BedrockClient::QUERY_MODEL_ID,
       token_source: "provider_usage",
       input_tokens: input_tokens,
@@ -1762,6 +1852,7 @@ class BedrockRagService
   end
 
   def companion_turn_pending(accepted, answer_text)
+    return nil if @companion_direct_turn
     return nil unless accepted
 
     Rag::PendingQuestion.presented(@companion_plan_pending, answer_text, retained: @companion_plan_retained)

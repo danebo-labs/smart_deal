@@ -8,9 +8,14 @@ module Rag
     Stop = Class.new(Exception)
     # One recorded step. 150 -> 152, then 152 -> 164, then 164 -> 166,
     # then 166 -> 174, then 174 -> 175, then 175 -> 180, then 180 -> 185,
-    # then 185 -> 194. The last step is the seven verified calls that never
-    # reached this file plus two T3 replay attempts. Anything else stays.
-    CALL_CAP_BUMPS = { 150 => 152, 152 => 164, 164 => 166, 166 => 174, 174 => 175, 175 => 180, 180 => 185, 185 => 194 }.freeze
+    # then 185 -> 194, then 194 -> 196, then 196 -> 211. The 194 step is the
+    # seven verified calls that never reached this file plus two T3 replay
+    # attempts. The 196 step is two more T3 calls at US$0.028300 each. The
+    # 211 step is the authorized direct guion: the one free call already on
+    # the file plus fifteen, sixteen in total, six for guion 2 and ten for
+    # guion 1. The 213 step is two more attempts for the Sonnet 4.5
+    # comparison, three calls in total and no retry. Anything else stays.
+    CALL_CAP_BUMPS = { 150 => 152, 152 => 164, 164 => 166, 166 => 174, 174 => 175, 175 => 180, 180 => 185, 185 => 194, 194 => 196, 196 => 211, 211 => 213 }.freeze
 
     def initialize(path:, call_cap:, cost_cap_usd:)
       @path = Pathname(path)

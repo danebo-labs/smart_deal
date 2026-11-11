@@ -1343,6 +1343,9 @@ class BedrockRagService
     companion_candidate_order(list, question: question)
   end
 
+  # Retrieve already succeeded. A denied or failed reorder keeps that
+  # order and the turn continues. Raising here became retrieval_error and
+  # the web answer "El servicio no está disponible para esta consulta."
   def companion_candidate_order(chunks, question:)
     api_called = chunks.size >= 2 && question.to_s.strip.present?
     ordered = Rag::CompanionCandidateOrder.call(
@@ -1354,11 +1357,11 @@ class BedrockRagService
     note_companion_rerank("applied", chunks.size, ordered.size, nil, ordered: ordered, api_called: api_called)
     ordered
   rescue StandardError => error
-    note_companion_rerank("error", chunks.size, 0, error)
-    raise
+    note_companion_rerank("error", chunks.size, 0, error, api_called: api_called, kept: "retrieve_order")
+    chunks
   end
 
-  def note_companion_rerank(result, requested, returned, error = nil, ordered: nil, api_called: nil)
+  def note_companion_rerank(result, requested, returned, error = nil, ordered: nil, api_called: nil, kept: nil)
     payload = {
       "result" => result,
       "operation" => "rerank",
@@ -1367,6 +1370,7 @@ class BedrockRagService
       "returned" => returned,
       "api_called" => api_called == true
     }
+    payload["kept"] = kept if kept
     if ordered
       payload["order"] = Array(ordered).each_with_index.map { |chunk, index|
         metadata = chunk[:metadata] || chunk["metadata"] || {}

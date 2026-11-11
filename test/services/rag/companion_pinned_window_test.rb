@@ -54,6 +54,33 @@ class Rag::CompanionPinnedWindowTest < ActiveSupport::TestCase
     restore_env("BEDROCK_RERANKER_ENABLED", flag)
   end
 
+  test "a denied companion rerank keeps the retrieved order and still answers" do
+    first = "PRIMERO_HIBRIDO Fermator"
+    second = "SEGUNDO_HIBRIDO Fermator"
+    prompts = []
+    denied = Aws::BedrockAgentRuntime::Errors::AccessDeniedException.new(
+      Seahorse::Client::RequestContext.new,
+      "not authorized to perform: bedrock:Rerank"
+    )
+
+    result = with_companion_scope do
+      ask(
+        [ window_chunk(first, score: 0.9, sha: "sha-primero"), window_chunk(second, score: 0.4, sha: "sha-segundo") ],
+        retrieved: [],
+        reranks: [],
+        prompts: prompts,
+        episode: known_episode,
+        rerank_error: denied
+      )
+    end
+
+    assert_equal "scoped", result[:equipment_identity_status]
+    assert_not_equal "service_unavailable", result[:generation_mode]
+    assert_not_equal I18n.t("rag.service_unavailable", locale: :es), result[:answer]
+    assert_includes prompts.first, first
+    assert_operator prompts.first.index(first), :<, prompts.first.index(second)
+  end
+
   test "a pinned plan question keeps the pinned retrieve count and does not rerank" do
     retrieved = []
     reranks = []
@@ -75,7 +102,7 @@ class Rag::CompanionPinnedWindowTest < ActiveSupport::TestCase
 
   private
 
-  def ask(chunks, retrieved:, reranks:, prompts:, episode:, raw_question: RAW)
+  def ask(chunks, retrieved:, reranks:, prompts:, episode:, raw_question: RAW, rerank_error: nil)
     service = service_for
     service.define_singleton_method(:retrieve_chunks) do |_query, **kwargs|
       retrieved << kwargs
@@ -84,6 +111,8 @@ class Rag::CompanionPinnedWindowTest < ActiveSupport::TestCase
     client = Object.new
     client.define_singleton_method(:rerank) do |payload|
       reranks << payload
+      raise rerank_error if rerank_error
+
       Response.new([ Row.new(1, 0.9), Row.new(0, 0.1), Row.new(2, 0.05) ], nil)
     end
     service.instance_variable_set(:@client, client)

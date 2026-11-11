@@ -6,7 +6,7 @@ class Rag::Haiku55CompanionNetworkTest < ActiveSupport::TestCase
   KEYS = %w[OPUS55_REQUIRE GUION2_DIRECT_REQUIRE].freeze
 
   setup do
-    @saved = KEYS.to_h { |key| [ key, ENV[key] ] }
+    @saved = KEYS.index_with { |key| ENV[key] }
     ENV["OPUS55_REQUIRE"] = "1"
     load Rails.root.join("script/field_companion/run_haiku55_companion.rb") unless defined?(Haiku55Companion)
   end

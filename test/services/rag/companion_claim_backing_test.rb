@@ -30,7 +30,7 @@ class Rag::CompanionClaimBackingTest < ActiveSupport::TestCase
     result = call(text, VF5_58)
 
     assert_equal "Mi lectura: la primera apertura lenta es esperable.\n\n¿Fue solo la primera?", result.text
-    assert_equal [ "unbacked_citation" ], result.removed.map { |item| item["reason"] }
+    assert_equal [ "unbacked_citation" ], result.removed.pluck("reason")
   end
 
   test "a one-character label does not back a direction" do
@@ -134,7 +134,7 @@ class Rag::CompanionClaimBackingTest < ActiveSupport::TestCase
     assert_includes result.text, "Estado de #21, que no puedes comprobar"
     assert_includes result.text, "**Comprobaste:** la fotocélula no está activada."
     assert_includes result.text, "Ajuste de #54, sin revisar."
-    assert_equal [ "returns_unverifiable" ], result.removed.map { |item| item["reason"] }
+    assert_equal [ "returns_unverifiable" ], result.removed.pluck("reason")
   end
 
   test "a component the technician cannot identify is not asked again in any equipment" do
@@ -143,7 +143,7 @@ class Rag::CompanionClaimBackingTest < ActiveSupport::TestCase
     result = call(text, ELEMONT, technician: [ turn ])
 
     assert_equal "Revisa si PasCom 24V llega al tablero.", result.text
-    assert_equal %w[returns_unverifiable returns_unverifiable], result.removed.map { |item| item["reason"] }
+    assert_equal %w[returns_unverifiable returns_unverifiable], result.removed.pluck("reason")
   end
 
   test "an inline summary label does not hide a returned action" do
@@ -158,7 +158,7 @@ class Rag::CompanionClaimBackingTest < ActiveSupport::TestCase
     assert_not_includes result.text, "ubicar la Chapa nivel 3"
     assert_includes result.text, "No puede identificar la Chapa nivel 3 en el equipo."
     assert_includes result.text, "**Comprobado:** nada en terreno todavía."
-    assert_equal [ "returns_unverifiable" ], result.removed.map { |item| item["reason"] }
+    assert_equal [ "returns_unverifiable" ], result.removed.pluck("reason")
   end
 
   test "doubt about a value is still a check the technician can make" do

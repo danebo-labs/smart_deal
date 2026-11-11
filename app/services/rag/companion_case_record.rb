@@ -341,7 +341,7 @@ module Rag
       end
 
       def history_copy(text, kept)
-        kept_numbers = kept.each_with_object({}) { |number, map| map[number] = true }
+        kept_numbers = kept.index_with(true)
         text.to_s.gsub(MARKER) { |marker| kept_numbers[Regexp.last_match(1).to_i] ? marker : "" }
       end
 

@@ -16,7 +16,7 @@ class Rag::CompanionEvidencePackCompareTest < ActiveSupport::TestCase
       assert_equal original, Pack.strip_annotations(packed), spec["id"]
       assert_equal JSON.generate(Pack.outside_evidence(pair["a"])), JSON.generate(Pack.outside_evidence(pair["b"])), spec["id"]
       assert_equal Pack::SYSTEM_SHA, pair["system_sha256"], spec["id"]
-      refute_includes original, "[CONTEXTO"
+      assert_not_includes original, "[CONTEXTO"
       assert_equal 48_000, pair["a"].dig("body", "max_tokens")
       assert_equal pair["a"].dig("body", "model"), pair["b"].dig("body", "model")
       assert_equal pair["a"].dig("body", "thinking"), pair["b"].dig("body", "thinking")
@@ -33,8 +33,8 @@ class Rag::CompanionEvidencePackCompareTest < ActiveSupport::TestCase
     assert_includes packed, "[CONTEXTO 4 | 5.5 Otras entradas (26, 21, 25, 23) | 21.- Re-apertura | 7]"
     assert_includes packed, "[CONTEXTO 4 | 5.5 Otras entradas (26, 21, 25, 23) | 23.- + 12 V. COM | 7]"
     assert_includes passage, "Se debe usar siempre contactos libres de tensión y normalmente abierto."
-    refute_includes packed, "[CONTEXTO 4 | 23.- + 12 V. COM |"
-    refute_includes packed, "[CONTEXTO 4 | 21.- Re-apertura |"
+    assert_not_includes packed, "[CONTEXTO 4 | 23.- + 12 V. COM |"
+    assert_not_includes packed, "[CONTEXTO 4 | 21.- Re-apertura |"
   end
 
   test "the TEST step keeps the reopen item and page 13" do
@@ -55,8 +55,8 @@ class Rag::CompanionEvidencePackCompareTest < ActiveSupport::TestCase
 
     assert_equal "[CONTEXTO 1 | 5.8 Pulsador de autoajuste (51) |  | 8.0]\n", lines[slow_index - 1]
     assert_equal "[CONTEXTO 9 | 8.2 Funcionamiento normal | La puerta solo cierra 35 cm. | 12.0]\n", lines[branch_index - 1]
-    refute_includes lines[slow_index - 1], "35 cm"
-    refute_includes lines[branch_index - 1], "5.8"
+    assert_not_includes lines[slow_index - 1], "35 cm"
+    assert_not_includes lines[branch_index - 1], "5.8"
   end
 
   test "the conflict and the extraction note stay literal" do
@@ -69,14 +69,14 @@ class Rag::CompanionEvidencePackCompareTest < ActiveSupport::TestCase
     assert_includes text_of(fourth["b"]), "[CONTEXTO"
     assert_includes text_of(fifth["b"]), note
     assert_includes note, "DATA_NOT_AVAILABLE"
-    refute_includes text_of(fifth["b"]).sub(note, ""), note
+    assert_not_includes text_of(fifth["b"]).sub(note, ""), note
   end
 
   test "an entry without a parent section is left unannotated" do
     message = sample_message("[1] Manual, página 3\n4.- Entrada\nTexto del apartado.\n")
     packed = Pack.pack_sources(message)
 
-    refute_includes packed, "[CONTEXTO"
+    assert_not_includes packed, "[CONTEXTO"
     assert_equal message, Pack.strip_annotations(packed)
   end
 
@@ -92,7 +92,7 @@ class Rag::CompanionEvidencePackCompareTest < ActiveSupport::TestCase
     message = sample_message("[1] Manual, página 4\n9.1 Sección padre\n 4.- Entrada hija\n• Apartado concreto.\n– Paso condicionado.\n")
     packed = Pack.pack_sources(message)
 
-    refute_includes packed, "[CONTEXTO"
+    assert_not_includes packed, "[CONTEXTO"
     assert_includes packed, "– Paso condicionado."
     assert_equal message, Pack.strip_annotations(packed)
   end
@@ -117,6 +117,7 @@ class Rag::CompanionEvidencePackCompareTest < ActiveSupport::TestCase
   end
 
   test "the frozen rubric fails the archived answers and accepts faithful paraphrases" do
+    require_historical_capture(Archive.join("guion1-high/turn-2/published.txt"))
     archived = {
       "g1-t2" => (Archive / "guion1-high/turn-2/published.txt").read,
       "g2-t1" => (Archive / "guion2-high/turn-1/published.txt").read,
@@ -154,6 +155,7 @@ class Rag::CompanionEvidencePackCompareTest < ActiveSupport::TestCase
   end
 
   test "the simulated maximum plan sends 28 single attempts at 48000 tokens" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     dir = Dir.mktmpdir
     posts = []
     transport = scripted_transport(posts)
@@ -165,9 +167,9 @@ class Rag::CompanionEvidencePackCompareTest < ActiveSupport::TestCase
     assert_equal 20, counts["isolated"]
     assert_equal 8, counts["harness"]
     assert_equal 28, posts.size
-    assert_equal [ 48_000 ], posts.map { |body| body["max_tokens"] }.uniq
+    assert_equal [ 48_000 ], posts.pluck("max_tokens").uniq
     assert posts.none? { |body| body.key?("temperature") }
-    assert_equal [ 1 ], reserved.map { |event| event["attempt"] }.uniq
+    assert_equal [ 1 ], reserved.pluck("attempt").uniq
     assert_equal 28, reserved.size
     diff = JSON.parse(File.read(Dir[File.join(dir, "ab/g1-t2/sample-1/b/request_diff.json")].first))
     assert_equal "identical", diff["outside_evidence"]

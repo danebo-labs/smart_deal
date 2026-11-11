@@ -19,22 +19,22 @@ class Rag::CompanionPlanEvidenceTest < ActiveSupport::TestCase
   end
 
   test "a label the sources do not print sends the question to the plan route" do
-    refute sufficient?("En el esquema, ¿dónde está el relé K9?", VF5)
-    refute sufficient?(ELEMONT_T1, VF5)
+    assert_not sufficient?("En el esquema, ¿dónde está el relé K9?", VF5)
+    assert_not sufficient?(ELEMONT_T1, VF5)
   end
 
   test "a question that depends on an absent image does not stay on the companion" do
-    refute sufficient?("En la foto del plano que te mandé, ¿qué borne es RE-OPEN?", VF5)
+    assert_not sufficient?("En la foto del plano que te mandé, ¿qué borne es RE-OPEN?", VF5)
   end
 
   test "a plan question without a printed label does not stay on the companion" do
-    refute sufficient?("¿Qué muestra el plano?", ELEMONT)
+    assert_not sufficient?("¿Qué muestra el plano?", ELEMONT)
   end
 
   test "reference-only sources do not count as evidence" do
     chunk = { content: VF5, metadata: { "reference_only" => true }, identity_applicability: "reference_only" }
 
-    refute Rag::CompanionPlanEvidence.sufficient?(question: "En el esquema, ¿dónde está RE-OPEN?", chunks: [ chunk ])
+    assert_not Rag::CompanionPlanEvidence.sufficient?(question: "En el esquema, ¿dónde está RE-OPEN?", chunks: [ chunk ])
   end
 end
 

@@ -46,6 +46,10 @@ module ActiveSupport
       ENV.delete("PILOT_AUDIT_CAPTURE_ACCOUNT_IDS")
     end
 
+    def require_historical_capture(path)
+      skip "Historical capture unavailable: #{path}" unless Rails.root.join(path).file?
+    end
+
     # Completed non-photo ledger with a chunk prefix. Promotion to
     # danebo_general requires this evidence. A row without it stays private.
     # A test stub of perform_later lives on the singleton class. Removing it

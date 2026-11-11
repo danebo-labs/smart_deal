@@ -59,6 +59,7 @@ class Rag::CompanionHaiku55CompareTest < ActiveSupport::TestCase
   end
 
   test "preflight accepts the canonical requests and does not call anthropic" do
+    require_historical_capture("tmp/field_companion/vf5_direct_prompt_compare/turn-1/request.json")
     calls = 0
     trace = TracePoint.new(:call) do |event|
       calls += 1 if event.defined_class == Net::HTTP && event.method_id == :new
@@ -206,6 +207,7 @@ class Rag::CompanionHaiku55CompareTest < ActiveSupport::TestCase
   end
 
   test "the saved haiku 4.5 answer still passes the same publication gate" do
+    require_historical_capture("tmp/field_companion/vf5_direct_prompt_compare/turn-1/raw.txt")
     raw = Rails.root.join("tmp/field_companion/vf5_direct_prompt_compare/turn-1/raw.txt").read
     published = Compare.new.publish_turn(1, raw, "end_turn")
 

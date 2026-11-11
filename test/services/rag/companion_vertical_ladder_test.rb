@@ -16,6 +16,7 @@ class Rag::CompanionVerticalLadderTest < ActiveSupport::TestCase
   end
 
   test "guion 2 chains the new answer and keeps the canonical sources" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     ladder = Rag::CompanionVerticalLadder.new(output_root: Dir.mktmpdir, budget: BigDecimal("1"))
     first = ladder.assemble("guion2", 1, [])
     canonical = JSON.parse(Rails.root.join("tmp/field_companion/vf5_direct_prompt_compare/turn-1/request.json").read)
@@ -36,6 +37,7 @@ class Rag::CompanionVerticalLadderTest < ActiveSupport::TestCase
   end
 
   test "guion 1 uses the accepted capture and does not call the network" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     ladder = Rag::CompanionVerticalLadder.new(output_root: Dir.mktmpdir, budget: BigDecimal("1"))
     built = ladder.assemble("guion1", 1, [])
     assert_equal Rag::CompanionVerticalLadder::GUION1_QUESTIONS[0], built["question"]
@@ -60,6 +62,7 @@ class Rag::CompanionVerticalLadderTest < ActiveSupport::TestCase
   end
 
   test "the band ceiling is a fresh reservation and refuses before any call" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     dir = Dir.mktmpdir
     calls = 0
     transport = Object.new
@@ -83,6 +86,7 @@ class Rag::CompanionVerticalLadderTest < ActiveSupport::TestCase
   end
 
   test "the saved max answers reproduce the two R2 rejections" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     ladder = Rag::CompanionVerticalLadder.new(output_root: Dir.mktmpdir, budget: BigDecimal("1"))
     guion2 = ladder.explain_r2(
       "guion2", 3,
@@ -101,6 +105,7 @@ class Rag::CompanionVerticalLadderTest < ActiveSupport::TestCase
   end
 
   test "high validation runs the two high scripts and does not continue into medium" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     dir = Dir.mktmpdir
     seen = []
     ladder = Rag::CompanionVerticalLadder.new(output_root: dir, budget: BigDecimal("1"), credential: "local")
@@ -116,6 +121,7 @@ class Rag::CompanionVerticalLadderTest < ActiveSupport::TestCase
   end
 
   test "the closure ceiling prices the base and one bounded variant before any call" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     calls = 0
     transport = Object.new
     transport.define_singleton_method(:post) { calls += 1 }
@@ -132,6 +138,7 @@ class Rag::CompanionVerticalLadderTest < ActiveSupport::TestCase
   end
 
   test "a simulated high run reserves and sends eight attempts and does not call medium" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     dir = Dir.mktmpdir
     runs = Dir.mktmpdir
     posts = []
@@ -177,6 +184,7 @@ class Rag::CompanionVerticalLadderTest < ActiveSupport::TestCase
   end
 
   test "archived turns separate the literal quote, the dropped condition, and the unnecessary question" do
+    require_historical_capture("/Users/lahirisan/smart_deal-vertical-artifacts/20261105/vf5_vertical_haiku55/guion2-high/turn-1/published.txt")
     archive = Pathname("/Users/lahirisan/smart_deal-vertical-artifacts/20261105/vf5_vertical_haiku55")
     ladder = Rag::CompanionVerticalLadder.new(output_root: Dir.mktmpdir, budget: BigDecimal("1"))
     old_t1 = (archive / "guion2-high/turn-1/published.txt").read
@@ -200,6 +208,7 @@ class Rag::CompanionVerticalLadderTest < ActiveSupport::TestCase
   end
 
   test "the guion 1 turn 2 capture is rejected because it tells the technician to consult the manufacturer" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     archive = Pathname("/Users/lahirisan/smart_deal-vertical-artifacts/20261105/vf5_vertical_haiku55/citation_prompt_20261105/guion1-high/turn-2")
     ladder = Rag::CompanionVerticalLadder.new(output_root: Dir.mktmpdir, budget: BigDecimal("1"))
     published = ladder.send(:publish_answer, ladder.assemble("guion1", 2, []), archive.join("raw.txt").read, "end_turn")
@@ -211,6 +220,7 @@ class Rag::CompanionVerticalLadderTest < ActiveSupport::TestCase
   end
 
   test "high validation reserves eight generations and keeps the prior ledgers apart" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     dir = Dir.mktmpdir
     calls = 0
     transport = Object.new
@@ -297,6 +307,7 @@ class Rag::CompanionVerticalLadderTest < ActiveSupport::TestCase
   end
 
   test "closure captures change publication only where the revised gate attaches the marker or the label" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     archive = Pathname("/Users/lahirisan/smart_deal-vertical-artifacts/20261105/vf5_vertical_haiku55/closure_base_0bf3610b")
     ladder = Rag::CompanionVerticalLadder.new(output_root: Dir.mktmpdir, budget: BigDecimal("1"))
     prior = []
@@ -330,6 +341,7 @@ class Rag::CompanionVerticalLadderTest < ActiveSupport::TestCase
   end
 
   test "the adjustment ceiling prices twenty four high generations before any call" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     dir = Dir.mktmpdir
     calls = 0
     transport = Object.new
@@ -351,6 +363,7 @@ class Rag::CompanionVerticalLadderTest < ActiveSupport::TestCase
   end
 
   test "a simulated adjustment reserves twenty four high attempts and does not call medium" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     dir = Dir.mktmpdir
     posts = []
     transport = Object.new
@@ -394,6 +407,7 @@ class Rag::CompanionVerticalLadderTest < ActiveSupport::TestCase
   end
 
   test "eight archived turn 5 answers keep the technician limit apart from the method limit" do
+    require_historical_capture("/Users/lahirisan/smart_deal-vertical-artifacts/20261105/vf5_vertical_haiku55/guion1-high/turn-5/published.txt")
     root = Pathname("/Users/lahirisan/smart_deal-vertical-artifacts/20261105/vf5_vertical_haiku55")
     ladder = Rag::CompanionVerticalLadder.new(output_root: Dir.mktmpdir, budget: BigDecimal("1"))
     texts = Rag::CompanionVerticalLadder::GUION1_QUESTIONS

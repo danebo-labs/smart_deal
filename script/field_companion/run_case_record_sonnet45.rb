@@ -126,7 +126,7 @@ module CaseRecordSonnet
     plan_ok = shape_ok && windows_ok && calls_ok && dollars_ok && global_ok && tail["count"] == 2
     decision = if !Guion2Direct.local_databases?
       "not_local_databases"
-    elsif !ConversationSession.column_names.include?("case_evidence")
+    elsif ConversationSession.column_names.exclude?("case_evidence")
       "case_evidence_column_missing"
     elsif SharedSession::ENABLED
       "shared_session"

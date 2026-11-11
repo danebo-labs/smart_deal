@@ -55,6 +55,7 @@ class Rag::CompanionPlanTest < ActiveSupport::TestCase
   end
 
   test "session 198 turn 2 shows the open documentary part before declared lines" do
+    require_historical_capture("tmp/field_companion/validation_captures/vf5-corrected-20261103T201414Z/d84e8a77-e272-44f1-ae84-1c9646468f06/capture.json")
     path = Rails.root.join(
       "tmp/field_companion/validation_captures/vf5-corrected-20261103T201414Z/" \
       "d84e8a77-e272-44f1-ae84-1c9646468f06/capture.json"

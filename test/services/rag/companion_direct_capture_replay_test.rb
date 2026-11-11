@@ -51,6 +51,7 @@ class Rag::CompanionDirectCaptureReplayTest < ActiveSupport::TestCase
   end
 
   test "session 269 requests match except the system text and the saved answers keep their rubric" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/capture.json")
     before = File.binread(@ledger.path)
     io = StringIO.new
     calls = []
@@ -108,6 +109,7 @@ class Rag::CompanionDirectCaptureReplayTest < ActiveSupport::TestCase
   end
 
   test "a sonnet override keeps the captured messages and changes the model id" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/capture.json")
     prepared = Rag::CompanionDirectCaptureReplay.effective_requests(
       "global.anthropic.claude-sonnet-4-5-20250929-v1:0", ledger_path: Pathname.new(@ledger.path)
     )

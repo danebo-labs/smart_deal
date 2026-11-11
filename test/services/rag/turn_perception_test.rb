@@ -887,7 +887,7 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_not_includes source, "TurnPerception"
     assert_not_includes concern, "TurnPerception"
     # config/deploy.yml is gitignored operator state. The tracked contract is the example.
-    refute_match(/^\s*HAIKU_QUERY_ANALYSIS_MODE:/, Rails.root.join("config/deploy.yml.example").read)
+    assert_no_match(/^\s*HAIKU_QUERY_ANALYSIS_MODE:/, Rails.root.join("config/deploy.yml.example").read)
   end
 
   test "a missing clarification target invalidates the perception" do

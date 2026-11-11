@@ -42,6 +42,7 @@ class Rag::CompanionPlanCheckFidelityTest < ActiveSupport::TestCase
   end
 
   test "session 198 does not publish the encendido question or the recuperar question" do
+    require_historical_capture("tmp/field_companion/validation_captures/vf5-corrected-20261103T201414Z/e32425aa-3e59-48e5-b833-4870607980c4/capture.json")
     first = replay_capture(corrected("e32425aa-3e59-48e5-b833-4870607980c4"))
     second = replay_capture(
       corrected("d84e8a77-e272-44f1-ae84-1c9646468f06"),
@@ -60,6 +61,7 @@ class Rag::CompanionPlanCheckFidelityTest < ActiveSupport::TestCase
   end
 
   test "gui turn 3 drops the documentacion dice link and turn 4 drops recorrido" do
+    require_historical_capture("tmp/vf5_citation_gui_20261029/2026-10-29_2026-10-29_danebo-legacy/validation_captures/web-danebo-legacy/ebacf496-163e-4c53-ac81-607b62d7e818/capture.json")
     third = replay_capture(gui("ebacf496-163e-4c53-ac81-607b62d7e818"))
     fourth = replay_capture(gui("e1a8155a-7e39-4450-a8ec-8075b79b263d"))
 
@@ -73,6 +75,7 @@ class Rag::CompanionPlanCheckFidelityTest < ActiveSupport::TestCase
   end
 
   test "lab r2 degrades the comportamiento lento reading and still publishes the statement literal" do
+    require_historical_capture("tmp/field_companion/validation_captures/lab-vf5-ev-control-r2-20261029T235220Z/ae1c94a5-e53a-4c91-9790-8cc5a16bf49c/capture.json")
     played = replay_capture(r2("ae1c94a5-e53a-4c91-9790-8cc5a16bf49c"))
     link = played.result.links.find { |item| item[:statement] == "S3.8" }
     rendered = Rag::CompanionPlanRender.call(played.result, facts: played.facts, statements: played.statements)

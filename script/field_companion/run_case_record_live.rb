@@ -104,7 +104,7 @@ module CaseRecordLive
     user = account && User.where(account_id: account.id).order(:id).first
     decision = if !Guion2Direct.send(:local_databases?)
       "not_local_databases"
-    elsif !ConversationSession.column_names.include?("case_evidence")
+    elsif ConversationSession.column_names.exclude?("case_evidence")
       "case_evidence_column_missing"
     elsif SharedSession::ENABLED
       "shared_session"

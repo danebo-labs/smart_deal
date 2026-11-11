@@ -54,6 +54,7 @@ class Rag::QuoteContractTest < ActiveSupport::TestCase
   end
 
   test "stored offset replies from session 198 and the gui turn still read the same slice" do
+    require_historical_capture("tmp/field_companion/validation_captures/vf5-corrected-20261103T201414Z/d84e8a77-e272-44f1-ae84-1c9646468f06/capture.json")
     capture = JSON.parse(Rails.root.join(
       "tmp/field_companion/validation_captures/vf5-corrected-20261103T201414Z/" \
       "d84e8a77-e272-44f1-ae84-1c9646468f06/capture.json"

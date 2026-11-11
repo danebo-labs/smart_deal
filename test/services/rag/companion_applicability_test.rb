@@ -271,6 +271,7 @@ class Rag::CompanionApplicabilityTest < ActiveSupport::TestCase
   end
 
   test "the captured T3 plan lowers the photocell condition and does not publish the repeated question" do
+    require_historical_capture("tmp/field_companion/vf5_companion_integration/t3_applicability_live.json")
     plan = live_plan
     raw = plan.fetch("applicability")
     episode = apply_captured_turn
@@ -302,6 +303,7 @@ class Rag::CompanionApplicabilityTest < ActiveSupport::TestCase
   end
 
   test "a synthetic action on the captured plan names the autoajuste and an invalid action is dropped" do
+    require_historical_capture("tmp/field_companion/vf5_companion_integration/t3_applicability_live.json")
     episode = apply_captured_turn
     valid = live_plan
     valid["applicability"]["action"] = "  #{ACTION}  "

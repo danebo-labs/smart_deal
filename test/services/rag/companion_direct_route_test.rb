@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require_relative "../../support/companion_journey_evidence"
 require "tmpdir"
 require_relative "../../support/local_chunk_directory"
 require_relative "../../support/local_knowledge_base"
@@ -8,6 +9,8 @@ require_relative "../../support/companion_direct_runtime"
 
 # Product entry: execute_rag_query, one stubbed Converse, the existing gate.
 class Rag::CompanionDirectRouteTest < ActiveSupport::TestCase
+  include CompanionJourneyEvidence
+
   include ActiveJob::TestHelper
   include CompanionDirectRuntime
 
@@ -190,8 +193,8 @@ class Rag::CompanionDirectRouteTest < ActiveSupport::TestCase
     end
     passage = captured_section_58
     message = captured_provider_rejection
-    question = pasada1_root.join("pasada1/guion2/turn-1/question.txt").read.strip
-    second = pasada1_root.join("pasada1/guion2/turn-2/question.txt").read.strip
+    question = journey_capture("guion2", 1).fetch("question")
+    second = journey_capture("guion2", 2).fetch("question")
     write_captured_passage(passage)
     @reply = lambda do |_params|
       raise Aws::BedrockRuntime::Errors::ValidationException.new(nil, message)
@@ -457,30 +460,6 @@ class Rag::CompanionDirectRouteTest < ActiveSupport::TestCase
     assert_equal :abstained, result.route_outcome, result.companion_publication.inspect
     assert_equal abstain, result.answer
     assert_includes rules(result), rule
-  end
-
-  def pasada1_root
-    Rails.root.join("tmp/field_companion/case_record")
-  end
-
-  def captured_provider_rejection
-    informe = pasada1_root.join("INFORME_PASADA1.md").read
-    message = informe[/anthropic\.claude-haiku-5-5 is not available for this account\./]
-    flunk "INFORME_PASADA1.md no conserva el rechazo del proveedor" if message.blank?
-
-    message
-  end
-
-  def captured_section_58
-    root = pasada1_root.join("pasada1/guion2/turn-1/bodies")
-    line = Dir.glob(root.join("*.txt").to_s).lazy.filter_map { |path|
-      File.read(path).lines.find { |row|
-        row.include?("se abrirán lentamente en la primera operación después de un fallo de alimentación")
-      }
-    }.first
-    flunk "la captura de G2 T1 no conserva el §5.8" if line.blank?
-
-    line.strip
   end
 
   def write_captured_passage(passage)

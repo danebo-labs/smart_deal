@@ -1,10 +1,13 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require_relative "../../support/companion_journey_evidence"
 
 # Retrieve returned nothing. The absence notice stays, and it is not the
 # generation-failure notice used when a retrieved passage was in hand.
 class Rag::ProviderRejectionTest < ActiveSupport::TestCase
+  include CompanionJourneyEvidence
+
   setup do
     @require = ENV["GUION2_DIRECT_REQUIRE"]
     ENV["GUION2_DIRECT_REQUIRE"] = "1"
@@ -92,30 +95,6 @@ class Rag::ProviderRejectionTest < ActiveSupport::TestCase
   end
 
   private
-
-  def pasada1_root
-    Rails.root.join("tmp/field_companion/case_record")
-  end
-
-  def captured_provider_rejection
-    informe = pasada1_root.join("INFORME_PASADA1.md").read
-    message = informe[/anthropic\.claude-haiku-5-5 is not available for this account\./]
-    flunk "INFORME_PASADA1.md no conserva el rechazo del proveedor" if message.blank?
-
-    message
-  end
-
-  def captured_section_58
-    root = pasada1_root.join("pasada1/guion2/turn-1/bodies")
-    line = Dir.glob(root.join("*.txt").to_s).lazy.filter_map { |path|
-      File.read(path).lines.find { |row|
-        row.include?("se abrirán lentamente en la primera operación después de un fallo de alimentación")
-      }
-    }.first
-    flunk "la captura de G2 T1 no conserva el §5.8" if line.blank?
-
-    line.strip
-  end
 
   def citation_text(result)
     Array(result[:retrieved_citations]).map { |item|

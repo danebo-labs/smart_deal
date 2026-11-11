@@ -36,12 +36,13 @@ class Rag::CompanionParaphraseFidelityTest < ActiveSupport::TestCase
     assert_equal 1, control.scan(CONTROL_PARAGRAPH).size
     assert_equal 1, control.scan(NUMBERING_NOW).size
     assert_equal 1, variant.scan(NUMBERING_THEN).size
-    refute_includes control, "Distingue paráfrasis atribuida"
-    refute_includes variant, "Fermator"
-    refute_includes variant, "VF5"
+    assert_not_includes control, "Distingue paráfrasis atribuida"
+    assert_not_includes variant, "Fermator"
+    assert_not_includes variant, "VF5"
   end
 
   test "archived guion 1 replays the five gates and the five published texts" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     prior = []
     (1..5).each do |number|
       raw = turn_file(number, "raw.txt").read
@@ -56,6 +57,7 @@ class Rag::CompanionParaphraseFidelityTest < ActiveSupport::TestCase
   end
 
   test "guion 1 mutations separate the gate from documentary fidelity" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     built = turns
     t1 = mutate_t1(built[1]["raw"])
     t2 = mutate_t2(built[2]["raw"])
@@ -72,12 +74,12 @@ class Rag::CompanionParaphraseFidelityTest < ActiveSupport::TestCase
     assert_includes g1["publishable"], FALSE_LED
     assert_includes led, LED_CHECK
     assert_includes led, "La puerta se abre pero no se cierra"
-    refute_includes led, FALSE_LED
+    assert_not_includes led, FALSE_LED
 
     assert_equal true, g2["accepted"], g2["reasons"].inspect
     assert_includes g2["publishable"], "¿El LED encendido es el de FOTOCÉLULA o el de OBSTRUCCIÓN?"
     assert_includes force, FORCE
-    refute_includes t2, "\"fuerza de cierre (sensibilidad a reaperturas)\""
+    assert_not_includes t2, "\"fuerza de cierre (sensibilidad a reaperturas)\""
     assert_includes t2, "fuerza de cierre (sensibilidad a reaperturas)"
 
     assert_equal true, g4["accepted"], g4["reasons"].inspect
@@ -90,6 +92,7 @@ class Rag::CompanionParaphraseFidelityTest < ActiveSupport::TestCase
   end
 
   test "vf5 controls keep an unsupported pass as a documentary negative" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     built = @ladder.assemble("guion1", 1, [])
     invented = publish(built, 'El manual fija "noventa y nueve voltios de calibración" [1].')
     dropped = publish(built, 'Haz la prueba: "desconectar la fotocélula y volver a pulsar el botón de TEST" [1].')
@@ -108,10 +111,10 @@ class Rag::CompanionParaphraseFidelityTest < ActiveSupport::TestCase
     assert_equal false, uncited["accepted"]
     assert uncited["reasons"].any? { |reason| reason["rule"] == "R3" }
     assert_equal true, irrelevant["accepted"], irrelevant["reasons"].inspect
-    refute_includes other, "400 mm/s"
+    assert_not_includes other, "400 mm/s"
     assert_equal true, paraphrase["accepted"], paraphrase["reasons"].inspect
     assert_includes procedure, "En caso que el problema persista"
-    refute_includes paraphrase["publishable"], "En caso que el problema persista"
+    assert_not_includes paraphrase["publishable"], "En caso que el problema persista"
   end
 
   test "the same contract holds for another manual and other citation numbers" do
@@ -135,17 +138,18 @@ class Rag::CompanionParaphraseFidelityTest < ActiveSupport::TestCase
     assert_equal false, uncited["accepted"]
     assert uncited["reasons"].any? { |reason| reason["rule"] == "R3" }
     assert_equal true, irrelevant["accepted"], irrelevant["reasons"].inspect
-    refute_includes filter, "4 bar"
+    assert_not_includes filter, "4 bar"
     assert_equal false, missing["accepted"]
     assert_includes missing["reasons"], { "rule" => "R1", "detail" => "missing:9" }
     assert_equal true, paraphrase["accepted"], paraphrase["reasons"].inspect
     assert_includes rule, "Si la presión supera 4 bar"
-    refute_includes paraphrase["publishable"], "4 bar"
+    assert_not_includes paraphrase["publishable"], "4 bar"
     assert_equal true, kept["accepted"], kept["reasons"].inspect
     assert_includes kept["publishable"], "Cuando la presión supera 4 bar"
   end
 
   test "guion 2 keeps its gate and its sources when only the system changes" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     control = @ladder.preview_request(@ladder.assemble("guion2", 1, []))
     variant = @ladder.preview_request(@ladder.assemble("guion2", 1, []), system: paraphrase_text)
     raw = Rails.root.join("test/fixtures/vf5_vertical_r2/guion2_t3_raw.txt").read
@@ -159,6 +163,7 @@ class Rag::CompanionParaphraseFidelityTest < ActiveSupport::TestCase
   end
 
   test "turn 5 keeps the automatic reading beside the section 5.5 description" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     published = turn_file(5, "published.txt").read
     texts = Rag::CompanionVerticalLadder::GUION1_QUESTIONS
     reading = @ladder.send(:t5_assessment, published, technician_texts: texts)
@@ -173,15 +178,16 @@ class Rag::CompanionParaphraseFidelityTest < ActiveSupport::TestCase
     assert_equal true, reading.dig("led", "useful")
     assert_includes judged, "t5:misses_unknown"
     assert_includes judged, "t5:drops_normally_open"
-    refute_includes judged, "t5:reasks_identification"
-    refute_includes judged, "t5:repeats_led"
+    assert_not_includes judged, "t5:reasks_identification"
+    assert_not_includes judged, "t5:repeats_led"
     assert_includes published, "se activa al conectar la entrada 21 con la 23, usando contactos libres de tensión"
-    refute_includes published, "normalmente abierto"
+    assert_not_includes published, "normalmente abierto"
     assert_includes section, "Para activar esta señal, se debe conectar la entrada re-apertura (21) con la entrada de +12V (23)."
     assert_includes section, "Se debe usar siempre contactos libres de tensión y normalmente abierto."
   end
 
   test "the historical route and the frozen runner change the query at different stages" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     prior = []
     (1..5).each do |number|
       capture = JSON.parse(CAPTURE_ROOT.join(Rag::CompanionVerticalLadder::GUION1_CAPTURES.fetch(number), "capture.json").read)
@@ -221,9 +227,9 @@ class Rag::CompanionParaphraseFidelityTest < ActiveSupport::TestCase
         assert_equal user["original"], query["composed"]
         assert_equal [ "current_turn:full", "identity:absent", "identifiers:absent", "observations:0", "photo:absent", "goal:absent", "truncated:false" ], query["components"]
       else
-        refute_equal user["original"], query["composed"]
+        assert_not_equal user["original"], query["composed"]
         assert query["composed"].start_with?("#{user["original"]} ")
-        refute_equal question_line, query["composed"]
+        assert_not_equal question_line, query["composed"]
       end
       prior << { question: question, published: turn_file(number, "published.txt").read }
     end
@@ -240,6 +246,7 @@ class Rag::CompanionParaphraseFidelityTest < ActiveSupport::TestCase
   end
 
   test "a simulated client reserves and sends exactly the five guion 1 turns" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     dir = Dir.mktmpdir
     posts = []
     transport = Object.new
@@ -280,11 +287,11 @@ class Rag::CompanionParaphraseFidelityTest < ActiveSupport::TestCase
     assert_equal [ "query_composition", "retrieve", "rerank" ], ceiling["stages_not_executed"]
     assert_equal 5, posts.size
     assert_equal [ "high" ], posts.map { |body| body.dig("output_config", "effort") }.uniq
-    assert_equal [ 48_000 ], posts.map { |body| body["max_tokens"] }.uniq
-    assert_equal [ { "type" => "adaptive", "display" => "summarized" } ], posts.map { |body| body["thinking"] }.uniq
+    assert_equal [ 48_000 ], posts.pluck("max_tokens").uniq
+    assert_equal [ { "type" => "adaptive", "display" => "summarized" } ], posts.pluck("thinking").uniq
     assert_equal [ Rag::CompanionVerticalLadder::PARAPHRASE_PROMPT_SHA ], posts.map { |body| Digest::SHA256.hexdigest(body.dig("system", 0, "text")) }.uniq
     assert_equal 5, reserved.size
-    assert_equal [ 1 ], reserved.map { |event| event["attempt"] }.uniq
+    assert_equal [ 1 ], reserved.pluck("attempt").uniq
     assert_equal 5, summary["calls"]
     assert_equal 5, summary["generations"]
     assert_equal 0, summary["medium_generations"]
@@ -292,6 +299,7 @@ class Rag::CompanionParaphraseFidelityTest < ActiveSupport::TestCase
   end
 
   test "the paraphrase command writes the ceiling and does not call without a credential" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     dir = Dir.mktmpdir
     calls = 0
     transport = Object.new
@@ -304,7 +312,7 @@ class Rag::CompanionParaphraseFidelityTest < ActiveSupport::TestCase
     assert_equal 0, calls
     assert_equal "credential_absent", JSON.parse(File.read(File.join(dir, "preflight.json")))["reason"]
     assert_equal "execute", JSON.parse(File.read(File.join(dir, "ceiling.json")))["decision"]
-    refute File.exist?(File.join(dir, "attempts.jsonl"))
+    assert_not File.exist?(File.join(dir, "attempts.jsonl"))
   end
 
   private

@@ -3,8 +3,11 @@
 require "test_helper"
 require "timeout"
 require_relative "../../support/companion_direct_capture_replay"
+require_relative "../../support/companion_journey_evidence"
 
 class Rag::CompanionCaseRecordTest < ActiveSupport::TestCase
+  include CompanionJourneyEvidence
+
   G2_PHRASE = "Fue solo la primera apertura"
   G2_QUESTIONS = [
     "Estoy con un Fermator VF5+. Después de un corte de alimentación, al volver la corriente la puerta abrió muy despacio. ¿Por dónde empiezo?",
@@ -255,7 +258,7 @@ class Rag::CompanionCaseRecordTest < ActiveSupport::TestCase
     assert_not_includes history, notice
   end
 
-  test "session 269 turn 3 keeps the technician sentence and the cited passage" do
+  test "G2 turn 3 keeps the technician sentence and the cited passage" do
     passage_text = g2_cited_passage
     digest_before = digest(passage_text)
     session = open_case
@@ -614,25 +617,11 @@ class Rag::CompanionCaseRecordTest < ActiveSupport::TestCase
   end
 
   def g2_cited_passage
-    path = [
-      Rails.root.join("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/bodies/b0018.txt"),
-      Pathname("/Users/lahirisan/smart_deal/tmp/field_companion/vf5_direct_guiones/guion2/turn-1/bodies/b0018.txt")
-    ].find(&:file?)
-    flunk "falta la captura de la sesión 269" unless path
-
-    match = path.read.match(/\[1\] [^\n]*\n(.*?)(?=\n\[\d+\] |\z)/m)
-    flunk "no se pudo leer la fuente 1 de la sesión 269" unless match
-
-    match[1].strip
+    journey_source("guion2", 1, "chunk_p8_1.txt").fetch("content")
   end
 
   def g1_turn3_source
-    root = Pathname("/Users/lahirisan/smart_deal/tmp/vf5_citation_gui_20261029/2026-10-29_2026-10-29_danebo-legacy/validation_captures/web-danebo-legacy/ebacf496-163e-4c53-ac81-607b62d7e818")
-    flunk "falta la captura G1 T3" unless root.join("capture.json").file?
-
-    capture = JSON.parse(root.join("capture.json").read)
-    row = capture["events"].find { |event| event["kind"] == "retrieval_results" && event["role"] == "retrieved" }.fetch("rows").first
-    [ root.join(row.dig("text", "path")).read, row["uri"], row["page"] ]
+    journey_source("guion1", 3, "chunk_p12_5.txt").values_at("content", "uri", "page")
   end
 
   def with_direct_env

@@ -30,13 +30,14 @@ class Rag::CompanionScopeContractTest < ActiveSupport::TestCase
     assert_equal paraphrase, scope.sub(NEW_PROCEDURE, OLD_PROCEDURE)
     assert_equal 1, paraphrase.scan(OLD_PROCEDURE).size
     assert_includes product, OLD_PROCEDURE
-    refute_includes scope, OLD_PROCEDURE
+    assert_not_includes scope, OLD_PROCEDURE
     assert_includes scope, PARAPHRASE_PARAGRAPH
-    refute_includes scope, "Pon [n] junto a la afirmación"
-    refute_match(/Fermator|VF5|PX-72|HC-14/, scope)
+    assert_not_includes scope, "Pon [n] junto a la afirmación"
+    assert_no_match(/Fermator|VF5|PX-72|HC-14/, scope)
   end
 
   test "guion 1 and guion 2 requests change only that system paragraph" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     [ CONTROL_ARCHIVE, VARIANT_ARCHIVE ].each do |archive|
       chain(archive).each { |built| assert_only_procedure_change(built) }
     end
@@ -49,11 +50,13 @@ class Rag::CompanionScopeContractTest < ActiveSupport::TestCase
   end
 
   test "control and variant replay with their own published histories" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     replay(CONTROL_ARCHIVE)
     replay(VARIANT_ARCHIVE)
   end
 
   test "archived variant turns keep mechanical acceptance apart from documentary fidelity" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     turns = variant_turns
     t1 = turns[1]
     t2 = turns[2]
@@ -91,6 +94,7 @@ class Rag::CompanionScopeContractTest < ActiveSupport::TestCase
   end
 
   test "reviewed edits are not archived model output and still publish mechanically" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     turns = variant_turns
     t1 = turns[1]["raw"].sub("obstrucción mecánica.", "obstrucción mecánica [1].").sub(
       FOREIGN_STEP,
@@ -105,12 +109,12 @@ class Rag::CompanionScopeContractTest < ActiveSupport::TestCase
     examples = { "provenance" => REVIEW_EXAMPLE, "t1" => t1, "t4" => t4 }
 
     assert_equal "offline_review_not_model_output", examples["provenance"]
-    refute_equal turns[1]["raw"], examples["t1"]
-    refute_equal turns[4]["raw"], examples["t4"]
+    assert_not_equal turns[1]["raw"], examples["t1"]
+    assert_not_equal turns[4]["raw"], examples["t4"]
     assert_includes turns[1]["raw"], "verifica que no esté bloqueada"
     assert_includes turns[4]["raw"], "entrada OPEN (#8)"
-    refute_includes t1, "verifica que no esté bloqueada"
-    refute_includes t4, "no esté activa continuamente"
+    assert_not_includes t1, "verifica que no esté bloqueada"
+    assert_not_includes t4, "no esté activa continuamente"
     assert_includes t1, "Si el problema persiste"
     assert_includes t4, "#54"
     assert_includes t4, "CLOSE"
@@ -131,15 +135,15 @@ class Rag::CompanionScopeContractTest < ActiveSupport::TestCase
     assert_equal true, gates["f9_paraphrase"]["accepted"], gates["f9_paraphrase"]["reasons"].inspect
     assert_includes pressure, fixture["reported_symptom"]
     assert_includes pressure, "Comprobar el filtro F9."
-    refute_includes texts["f9_paraphrase"], "V4"
+    assert_not_includes texts["f9_paraphrase"], "V4"
     assert_equal "documentary_positive", px72_f9(texts["f9_paraphrase"], pressure, fixture)
 
     assert_equal true, gates["v4_paraphrase"]["accepted"], gates["v4_paraphrase"]["reasons"].inspect
     assert_includes flow, fixture["other_symptom"]
     assert_includes flow, "revisar la válvula V4"
-    refute_includes flow, "CONFLICTO_DOCUMENTAL"
+    assert_not_includes flow, "CONFLICTO_DOCUMENTAL"
     assert_includes fixture["question"], "L7"
-    refute_includes fixture["question"], "no hay caudal"
+    assert_not_includes fixture["question"], "no hay caudal"
     assert_equal "documentary_negative_other_symptom", px72_other_symptom(texts["v4_paraphrase"], flow, fixture)
 
     assert_equal true, gates["v4_literal"]["accepted"], gates["v4_literal"]["reasons"].inspect
@@ -151,13 +155,13 @@ class Rag::CompanionScopeContractTest < ActiveSupport::TestCase
     assert_includes conflict, "START"
     assert_includes conflict, "STOP"
     assert_includes conflict, "CONFLICTO_DOCUMENTAL"
-    refute_includes texts["j6_paraphrase"], "STOP"
+    assert_not_includes texts["j6_paraphrase"], "STOP"
     assert_includes texts["j6_paraphrase"], "úsala para esta comprobación"
     assert_equal "documentary_negative_conflict_as_certainty", px72_conflict_certainty(texts["j6_paraphrase"], conflict)
 
     assert_equal true, gates["j6_literal"]["accepted"], gates["j6_literal"]["reasons"].inspect
     assert_includes texts["j6_literal"], "«Comprobar la entrada START (J6)»"
-    refute_includes texts["j6_literal"], "STOP"
+    assert_not_includes texts["j6_literal"], "STOP"
     assert_equal "documentary_negative_conflict_as_certainty_literal", px72_conflict_certainty(texts["j6_literal"], conflict)
 
     assert_equal true, gates["conflict_and_f9"]["accepted"], gates["conflict_and_f9"]["reasons"].inspect
@@ -165,6 +169,7 @@ class Rag::CompanionScopeContractTest < ActiveSupport::TestCase
   end
 
   test "earlier quote controls stay in force on vf5 and on px-72" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     vf5 = @ladder.assemble("guion1", 1, [])
     invented = publish(vf5, 'El manual fija "noventa y nueve voltios de calibración" [1].')
     dropped = publish(vf5, 'Haz la prueba: "desconectar la fotocélula y volver a pulsar el botón de TEST" [1].')
@@ -178,8 +183,8 @@ class Rag::CompanionScopeContractTest < ActiveSupport::TestCase
     assert_equal false, uncited["accepted"]
     assert uncited["reasons"].any? { |reason| reason["rule"] == "R3" }
     assert_equal true, irrelevant["accepted"], irrelevant["reasons"].inspect
-    refute_includes vf5["sources"][1]["content"], "400 mm/s"
-    assert_equal "documentary_negative_irrelevant_source", (irrelevant["accepted"] && !vf5["sources"][1]["content"].include?("400 mm/s") ? "documentary_negative_irrelevant_source" : "unexpected")
+    assert_not_includes vf5["sources"][1]["content"], "400 mm/s"
+    assert_equal "documentary_negative_irrelevant_source", (irrelevant["accepted"] && vf5["sources"][1]["content"].exclude?("400 mm/s") ? "documentary_negative_irrelevant_source" : "unexpected")
 
     fixture = JSON.parse(PX72.read)
     built = px72_case(fixture)
@@ -196,12 +201,13 @@ class Rag::CompanionScopeContractTest < ActiveSupport::TestCase
     assert_equal false, uncited["accepted"]
     assert uncited["reasons"].any? { |reason| reason["rule"] == "R3" }
     assert_equal true, irrelevant["accepted"], irrelevant["reasons"].inspect
-    refute_includes built["sources"][0]["content"], "400 horas"
+    assert_not_includes built["sources"][0]["content"], "400 horas"
     assert_includes texts["irrelevant"], "[1]"
     assert_equal "documentary_negative_irrelevant_source", (irrelevant["accepted"] && texts["irrelevant"].include?("400 horas") ? "documentary_negative_irrelevant_source" : "unexpected")
   end
 
   test "turn 5 records the proximity false positive and the pending limitation apart from the contract" do
+    require_historical_capture(VARIANT_ARCHIVE.join("turn-5/raw.txt"))
     text = VARIANT_ARCHIVE.join("turn-5/raw.txt").read
     questions = Rag::CompanionVerticalLadder::GUION1_QUESTIONS
     reading = @ladder.send(:t5_assessment, text, technician_texts: questions)
@@ -221,10 +227,11 @@ class Rag::CompanionScopeContractTest < ActiveSupport::TestCase
     assert_equal "pending", reading.dig("led", "status")
     assert_includes judged, "t5:misses_unknown"
     assert_includes judged, "t5:misreads_priority_inputs"
-    refute_includes judged, "t5:reasks_identification"
+    assert_not_includes judged, "t5:reasks_identification"
   end
 
   test "guion 2 preview and the scope ceiling describe the plan without calling a model" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     raw = Rails.root.join("test/fixtures/vf5_vertical_r2/guion2_t3_raw.txt").read
     published = publish(@ladder.assemble("guion2", 3, []), raw)
     ceiling = @ladder.scope_ceiling_document
@@ -248,12 +255,13 @@ class Rag::CompanionScopeContractTest < ActiveSupport::TestCase
     assert_equal "high", ceiling["effort"]
     assert_equal 48_000, ceiling["max_tokens"]
     assert_equal({ "type" => "adaptive", "display" => "summarized" }, ceiling["thinking"])
-    assert_equal [ "guion2", "guion2", "guion2", "guion1", "guion1", "guion1", "guion1", "guion1" ], ceiling["turns"].map { |turn| turn["script"] }
+    assert_equal [ "guion2", "guion2", "guion2", "guion1", "guion1", "guion1", "guion1", "guion1" ], ceiling["turns"].pluck("script")
     assert_equal Rag::CompanionDirectAnswer::SYSTEM_PROMPT, restored.dig("body", "system", 0, "text")
     assert_equal Rag::CompanionVerticalLadder::SCOPE_CEILING_USD, ceiling["ceiling_usd"]
   end
 
   test "a simulated client reserves and runs the same eight-generation plan" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     dir = Dir.mktmpdir
     posts = []
     transport = Object.new
@@ -287,13 +295,13 @@ class Rag::CompanionScopeContractTest < ActiveSupport::TestCase
     assert_equal "execute", ceiling["decision"]
     assert_equal 8, posts.size
     assert_equal 8, reserved.size
-    assert_equal [ 1, 2, 3, 1, 2, 3, 4, 5 ], reserved.map { |event| event["turn"] }
-    assert_equal [ 1 ], reserved.map { |event| event["attempt"] }.uniq
+    assert_equal [ 1, 2, 3, 1, 2, 3, 4, 5 ], reserved.pluck("turn")
+    assert_equal [ 1 ], reserved.pluck("attempt").uniq
     assert_equal [ 1, 3, 5, 1, 3, 5, 7, 9 ], posts.map { |body| body["messages"].size }
     assert_equal [ Rag::CompanionVerticalLadder::SCOPE_PROMPT_SHA ], posts.map { |body| Digest::SHA256.hexdigest(body.dig("system", 0, "text")) }.uniq
     assert_equal [ "high" ], posts.map { |body| body.dig("output_config", "effort") }.uniq
-    assert_equal [ 48_000 ], posts.map { |body| body["max_tokens"] }.uniq
-    assert_equal [ { "type" => "adaptive", "display" => "summarized" } ], posts.map { |body| body["thinking"] }.uniq
+    assert_equal [ 48_000 ], posts.pluck("max_tokens").uniq
+    assert_equal [ { "type" => "adaptive", "display" => "summarized" } ], posts.pluck("thinking").uniq
     assert posts.none? { |body| body.dig("system", 0, "text").include?("Pon [n] junto a la afirmación") }
     posts.each_with_index do |body, index|
       chars = body.dig("system", 0, "text").length + body["messages"].sum { |message| message.dig("content", 0, "text").length }
@@ -310,6 +318,7 @@ class Rag::CompanionScopeContractTest < ActiveSupport::TestCase
   end
 
   test "the scope command writes the pinned ceiling and does not call without a credential" do
+    require_historical_capture("tmp/field_companion/vf5_direct_guiones/guion2/turn-1/episode.json")
     dir = Dir.mktmpdir
     calls = 0
     transport = Object.new
@@ -324,7 +333,7 @@ class Rag::CompanionScopeContractTest < ActiveSupport::TestCase
     ceiling = JSON.parse(File.read(File.join(dir, "ceiling.json")))
     assert_equal "execute", ceiling["decision"]
     assert_equal Rag::CompanionVerticalLadder::SCOPE_CEILING_USD, ceiling["ceiling_usd"]
-    refute File.exist?(File.join(dir, "attempts.jsonl"))
+    assert_not File.exist?(File.join(dir, "attempts.jsonl"))
   end
 
   private
@@ -397,7 +406,7 @@ class Rag::CompanionScopeContractTest < ActiveSupport::TestCase
     assert_equal "high", candidate.dig("body", "output_config", "effort")
     assert_equal 48_000, candidate.dig("body", "max_tokens")
     assert_equal({ "type" => "adaptive", "display" => "summarized" }, candidate.dig("body", "thinking"))
-    refute candidate.dig("body").key?("temperature")
+    assert_not candidate.dig("body").key?("temperature")
   end
 
   def t1_documentary(text, built)

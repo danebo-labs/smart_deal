@@ -340,7 +340,7 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
     assert_equal "execution_not_approved", Rag::InterpreterAnthropicExperiment.approval_refusal(
       Rag::InterpreterAnthropicExperiment.approval.merge("live_calls_enabled" => true)
     )
-    assert_equal "global.anthropic.claude-haiku-4-5-20251001-v1:0", Rag::TurnInterpreter::MODEL_ID
+    assert_equal "claude-haiku-5-5", Rag::TurnInterpreter::MODEL_ID
 
     root = Rails.root
     interpreter = root.join("app/services/rag/turn_interpreter.rb").read
@@ -352,8 +352,8 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
     transport = root.join("app/services/rag/interpreter_anthropic_transport.rb").read
     script = root.join("script/field_companion/interpreter_haiku55_experiment.rb").read
 
-    assert_not_includes interpreter, "InterpreterAnthropic"
-    assert_not_includes interpreter, "claude-haiku-5-5"
+    assert_includes interpreter, "InterpreterAnthropicClient"
+    assert_not_includes interpreter, "BedrockClient.new"
     assert_includes provider, "bedrock"
     assert_not_includes bedrock, "InterpreterAnthropic"
     assert_not_includes bedrock, "claude-haiku-5-5"

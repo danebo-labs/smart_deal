@@ -109,6 +109,10 @@ class BedrockQuery < ApplicationRecord
     # Bedrock Inference Profiles (global. ~10% cheaper than us.)
     'global.anthropic.claude-opus-4-6-v1'              => { input: 0.005,  output: 0.025  },
     'global.anthropic.claude-haiku-4-5-20251001-v1:0'  => { input: 0.001,  output: 0.005  },
+    # Haiku 5.5 Global CRIS, short context. Same published rate as
+    # claude-haiku-5-5-direct: $0.10 / $0.50 per MTok below 100k.
+    # A missing key would reserve this profile at the Haiku 4.5 price.
+    'global.anthropic.claude-haiku-5-5'                => { input: 0.0001, output: 0.0005 },
     'us.anthropic.claude-haiku-4-5-20251001-v1:0'      => { input: 0.0011, output: 0.0055 },
     # Sonnet 4.5 on-demand. Global CRIS is $3 / $15 per 1M tokens.
     # https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-5.html

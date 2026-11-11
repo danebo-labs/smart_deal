@@ -1,0 +1,23 @@
+{
+  "manual": "Manual sintético de bomba PX-72, revisión B",
+  "question": "La bomba se detiene con presión alta; está encendido el indicador L7.",
+  "reported_symptom": "La bomba se detiene por presión alta.",
+  "other_symptom": "El motor gira y no hay caudal.",
+  "sources": [
+    "• La bomba se detiene por presión alta.\n– Comprobar el filtro F9.\n– Si la presión sigue alta, detener el ciclo de prueba.",
+    "• El motor gira y no hay caudal.\n– Si el indicador L7 está encendido, revisar la válvula V4.",
+    "• La bomba se detiene por presión alta.\n– Comprobar la entrada START (J6).\n[CONFLICTO_DOCUMENTAL X: este apartado llama START a J6; el esquema de p.2 rotula J6 STOP. No se establece precedencia: REQUIRES_FIELD_VERIFICATION.]"
+  ],
+  "texts": {
+    "f9_paraphrase": "Para la parada por presión alta, comprueba el filtro F9 [1].",
+    "v4_paraphrase": "Como L7 está encendido, revisa la válvula V4 [2].",
+    "v4_literal": "Si el indicador L7 está encendido, el manual pide «revisar la válvula V4» [2].",
+    "j6_paraphrase": "El manual identifica J6 como START; úsala para esta comprobación [3].",
+    "j6_literal": "El manual indica «Comprobar la entrada START (J6)» [3].",
+    "conflict_and_f9": "El apartado llama START a J6, pero su nota indica STOP en el esquema [3]. Esa discrepancia no está resuelta. Para la parada por presión alta, comprueba el filtro F9 [1].",
+    "invented_quote": "El manual fija «sello S3 a 9 bar» [1].",
+    "dropped_condition": "Haz la prueba: «detener el ciclo de prueba» [1].",
+    "uncited": "Según el manual, comprueba el filtro F9.",
+    "irrelevant": "La válvula V4 se revisa cada 400 horas [1]."
+  }
+}

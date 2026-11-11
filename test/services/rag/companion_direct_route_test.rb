@@ -54,9 +54,11 @@ class Rag::CompanionDirectRouteTest < ActiveSupport::TestCase
     }
     @host = CompanionDirectHost.new(@account, @user)
     install_companion_direct_runtime!
+    install_direct_anthropic!(self)
   end
 
   teardown do
+    Thread.current[:companion_direct_anthropic] = nil
     remove_companion_direct_runtime!
     Thread.current[:companion_direct_runtime] = nil
     Thread.current[:companion_direct_kb] = nil
@@ -79,16 +81,14 @@ class Rag::CompanionDirectRouteTest < ActiveSupport::TestCase
     assert_not_includes text, TOKEN
     assert_includes text, "[1] Bomba Hidra P2, página 3"
     assert_includes text, QUOTE
-    assert_nil request_hash(params)[:tool_config]
-    assert_equal BedrockClient::QUERY_MODEL_ID, request_hash(params)[:model_id]
-    assert_equal 0, config_value(params, :temperature)
-    assert_equal Rag::CompanionDirectAnswer::MAX_TOKENS, config_value(params, :max_tokens)
+    sent = request_hash(params)
+    assert_nil sent[:tools]
+    assert_nil sent[:output_config]
+    assert_nil sent[:temperature]
+    assert_equal "claude-haiku-5-5", sent[:model]
+    assert_equal Rag::CompanionDirectAnswer::GENERATION_MAX_TOKENS, sent[:max_tokens]
+    assert_equal({ type: "adaptive", display: "summarized" }, sent[:thinking])
     assert_equal %w[user], request_roles(params).uniq
-    recorded = @runtime.api_requests.select { |entry| entry[:operation_name] == :converse }
-    assert_equal 1, recorded.size
-    sdk_params = recorded.last[:params]
-    assert_nil request_hash(sdk_params)[:tool_config]
-    assert_equal request_text(params), request_text(sdk_params)
     job = enqueued_jobs.reverse.find { |item| item[:job] == TrackBedrockQueryJob || item["job_class"] == "TrackBedrockQueryJob" }
     assert job, enqueued_jobs.inspect
     args = job[:args] || job["arguments"]
@@ -101,12 +101,13 @@ class Rag::CompanionDirectRouteTest < ActiveSupport::TestCase
     direct do
       @reply = ->(_params) { text_reply(ALTERED) }
       altered = ask("Si el caudal baja, ¿qué reviso?")
-      assert_abstained altered, "R2"
+      # CompanionClaimBacking drops the unbacked sentence before the gate.
+      assert_abstained altered, "R5"
 
       @requests.clear
       @reply = ->(_params) { text_reply(MISSING) }
       missing = ask("Si el caudal baja, ¿qué reviso?")
-      assert_abstained missing, "R1"
+      assert_abstained missing, "R5"
 
       @requests.clear
       @reply = ->(_params) { text_reply(TECHNICAL) }
@@ -164,7 +165,7 @@ class Rag::CompanionDirectRouteTest < ActiveSupport::TestCase
       with_flags(limit: "2") { ask("Si el caudal baja, ¿qué reviso?") }
     end
     assert_equal 2, calls
-    assert_equal 2, @runtime.api_requests.size
+    assert_equal 2, @requests.size
     assert_includes result.answer, QUOTE
 
     calls = 0
@@ -176,6 +177,74 @@ class Rag::CompanionDirectRouteTest < ActiveSupport::TestCase
     refused = with_flags(limit: "2") { ask("Si el caudal baja, ¿qué reviso?") }
     assert_equal 1, calls
     assert_not_includes refused.answer.to_s, QUOTE
+    assert_nil refused.provider_rejection
+    assert_includes refused.answer.to_s, I18n.t("rag.generation_failed", locale: :es)
+    assert_not_includes refused.answer.to_s, I18n.t("rag.data_not_available", locale: :es)
+  end
+
+  test "a retrieved section stays in the trace when the provider rejects generation" do
+    previous_require = ENV["GUION2_DIRECT_REQUIRE"]
+    ENV["GUION2_DIRECT_REQUIRE"] = "1"
+    unless defined?(Guion2Direct) && Guion2Direct.respond_to?(:turn_status)
+      load Rails.root.join("script/field_companion/run_guion2.rb")
+    end
+    passage = captured_section_58
+    message = captured_provider_rejection
+    question = pasada1_root.join("pasada1/guion2/turn-1/question.txt").read.strip
+    second = pasada1_root.join("pasada1/guion2/turn-2/question.txt").read.strip
+    write_captured_passage(passage)
+    @reply = lambda do |_params|
+      raise Aws::BedrockRuntime::Errors::ValidationException.new(nil, message)
+    end
+
+    result = nil
+    events = Rag::ValidationCapture.capture do
+      result = with_flags(limit: "1") { ask(question) }
+    end
+
+    notice = I18n.t("rag.generation_failed", locale: :es)
+    absence = I18n.t("rag.data_not_available", locale: :es)
+    assert result.success?, result.error_message
+    assert_includes result.answer, notice
+    assert_not_includes result.answer, absence
+    assert_not_includes result.answer, I18n.t("rag.companion_contract_invalid", locale: :es)
+    assert_not_includes result.answer, "se abrirán lentamente"
+    assert_includes citation_text(result), passage
+    assert_equal "access_denied", result.provider_rejection
+    assert_equal message, result.provider_error_message
+    assert_equal :unavailable, result.route_outcome
+    exit_event = events.reverse.find { |event| event["kind"] == "route_exit" && event["exit"] == "identity_closed" }
+    assert exit_event, events.pluck("kind").inspect
+    assert_equal "access_denied", exit_event["provider_rejection"]
+    assert_equal message, exit_event["provider_error_message"]
+    assert_equal true, exit_event["evidence_retained"]
+    assert_includes Array(exit_event["evidence"]).pluck("content").join, passage
+    published = events.reverse.find { |event| event["kind"] == "published_answer" && event["provider_error_message"].present? }
+    assert_includes published["answer"], notice
+    assert_not_includes published["answer"], absence
+    assert_equal message, published["provider_error_message"]
+    assert_equal 1, @requests.size
+
+    ran = 1
+    if Guion2Direct.turn_status(result, nil, nil) == "returned"
+      ran += 1
+      ask(second)
+    end
+    assert_equal "provider_rejected", Guion2Direct.turn_status(result, nil, nil)
+    assert_equal 1, ran
+    assert_equal 1, @requests.size
+    runner = Rails.root.join("script/field_companion/run_guion2.rb").read
+    live = Rails.root.join("script/field_companion/run_case_record_live.rb").read
+    assert_includes runner, "turn_status(result, error, written)"
+    assert_includes runner, 'break if row["status"] != "returned"'
+    assert_includes live, "Guion2Direct.one_turn"
+    assert_includes live, 'break if row["status"] != "returned"'
+  ensure
+    if previous_require.nil?
+      ENV.delete("GUION2_DIRECT_REQUIRE")
+    else
+      ENV["GUION2_DIRECT_REQUIRE"] = previous_require
+    end
   end
 
   test "a poisoned plan question is not published on the direct turn" do
@@ -388,6 +457,59 @@ class Rag::CompanionDirectRouteTest < ActiveSupport::TestCase
     assert_equal :abstained, result.route_outcome, result.companion_publication.inspect
     assert_equal abstain, result.answer
     assert_includes rules(result), rule
+  end
+
+  def pasada1_root
+    Rails.root.join("tmp/field_companion/case_record")
+  end
+
+  def captured_provider_rejection
+    informe = pasada1_root.join("INFORME_PASADA1.md").read
+    message = informe[/anthropic\.claude-haiku-5-5 is not available for this account\./]
+    flunk "INFORME_PASADA1.md no conserva el rechazo del proveedor" if message.blank?
+
+    message
+  end
+
+  def captured_section_58
+    root = pasada1_root.join("pasada1/guion2/turn-1/bodies")
+    line = Dir.glob(root.join("*.txt").to_s).lazy.filter_map { |path|
+      File.read(path).lines.find { |row|
+        row.include?("se abrirán lentamente en la primera operación después de un fallo de alimentación")
+      }
+    }.first
+    flunk "la captura de G2 T1 no conserva el §5.8" if line.blank?
+
+    line.strip
+  end
+
+  def write_captured_passage(passage)
+    key = "bulk_chunks/#{@account.id}/doc-bomba/chunk_p3_1.txt"
+    @store.upload_text(key, <<~TEXT)
+      [DOCUMENT: bomba.pdf]
+      [PDF_PAGE: 8]
+      Bomba Hidra P2.
+      #{passage}
+    TEXT
+    @store.upload_text("#{key}.metadata.json", JSON.generate("metadataAttributes" => {
+      "account_id" => @account.id.to_s,
+      "document_id" => "doc-bomba",
+      "original_source_uri" => @uri,
+      "original_filename" => "bomba.pdf",
+      "canonical_name" => "Bomba Hidra P2",
+      "aliases" => [ "Hidra P2", "Bomba Hidra" ],
+      "ingestion_path" => "manual_batch_v1",
+      "manual_corpus" => "account",
+      "page_number" => 8
+    }))
+  end
+
+  def citation_text(result)
+    Array(result.retrieved_citations).map { |item|
+      next item.to_s unless item.respond_to?(:[])
+
+      item[:content] || item["content"]
+    }.join("\n")
   end
 
   def with_flags(generation: "direct", limit: nil)

@@ -108,33 +108,43 @@ class RagController < ApplicationController
       return
     end
 
-    if result[:doc_refs].present?
-      KbDocumentEnrichmentJob.perform_later(
-        doc_refs:       result[:doc_refs],
-        retrieved_meta: minimal_retrieved_for_enrichment(Array(result.retrieved_citations)),
-        account_id:     current_account.id
-      )
-    end
-
-    raw_citations   = citation_processor.transport_references(result.citations)
-    sources_visible = Rag::SourcesVisibility.enabled?
-    # Classify while [n] still resolves against this turn's citations. The
-    # segments travel even when the browser receives citations: [].
-    provenance_segments = provenance_segments_for(result, raw_citations)
-    marker_free_answer = citation_processor.strip_resolved_markers(result.answer, raw_citations)
-    answer_text = sources_visible ? result.answer : marker_free_answer
-
+    conflict = false
     if result.images_uploaded.blank?
       conv_session.stamp_user_retrieval_query!(correlation_id, result.effective_question || question)
-      conv_session.record_assistant_turn!(
-        result.answer.to_s,
+      written = persist_companion_result!(
+        conv_session, result,
         user_id: current_user.id,
-        correlation_id: result.correlation_id,
-        pending_question: result.pending_question,
         expected_episode_id: expected_episode_id,
-        focus_ids: conv_session.focus_document_ids,
-        prompt_reply: result.history_answer
+        focus_ids: conv_session.focus_document_ids
       )
+      conflict = Rag::CompanionCaseWrite.conflict?(written)
+    end
+
+    if conflict
+      raw_citations = []
+      sources_visible = false
+      provenance_segments = []
+      answer_text = Rag::CompanionCaseWrite.conflict_answer(result.response_locale)
+      marker_free_answer = answer_text
+    else
+      if result[:doc_refs].present?
+        KbDocumentEnrichmentJob.perform_later(
+          doc_refs:       result[:doc_refs],
+          retrieved_meta: minimal_retrieved_for_enrichment(Array(result.retrieved_citations)),
+          account_id:     current_account.id
+        )
+      end
+
+      raw_citations   = citation_processor.transport_references(result.citations)
+      sources_visible = Rag::SourcesVisibility.enabled?
+      # Classify while [n] still resolves against this turn's citations. The
+      # segments travel even when the browser receives citations: [].
+      provenance_segments = provenance_segments_for(result, raw_citations)
+      marker_free_answer = citation_processor.strip_resolved_markers(result.answer, raw_citations)
+      answer_text = sources_visible ? result.answer : marker_free_answer
+    end
+
+    if result.images_uploaded.blank?
       # The photo route's images_uploaded branch terminates asynchronously in
       # FieldPhotoAnalysisJob (which emits its own interaction_completed) — the
       # controller never observes that outcome, so it must not double-emit here.
@@ -142,26 +152,30 @@ class RagController < ApplicationController
         correlation_id:  correlation_id,
         conv_session:    conv_session,
         question_sha256: question_sha256,
-        outcome:         interaction_outcome(result),
+        outcome:         conflict ? "case_write_conflict" : interaction_outcome(result),
         route:           interaction_route(correlation_id),
         latency_ms:      elapsed_ms(started_at),
         phase_ms:        phase_ms(result, semantic_analysis_ms, state_ms, started_at),
         original_query:  question,
         effective_query: result.effective_question || question,
         answer:          answer_text,
-        citations:       result.retrieved_citations,
+        citations:       conflict ? [] : result.retrieved_citations,
         **generation_trace_kwargs(result)
       )
     end
 
-    resolution = build_resolution(
-      question: question,
-      answer: marker_free_answer,
-      result: result,
-      conv_session: conv_session,
-      entity_s3_uris: entity_s3_uris,
-      sources_visible: sources_visible
-    )
+    resolution = if conflict
+      Rag::ResolutionPresenter.not_applicable
+    else
+      build_resolution(
+        question: question,
+        answer: marker_free_answer,
+        result: result,
+        conv_session: conv_session,
+        entity_s3_uris: entity_s3_uris,
+        sources_visible: sources_visible
+      )
+    end
 
     json = {
       answer:         answer_text,
@@ -187,7 +201,7 @@ class RagController < ApplicationController
     # V8: the document overview path already names each document as a
     # "Documento: ..." heading inside the answer itself — showing the same
     # names again in "Documentos consultados" would duplicate attribution.
-    if raw_citations.empty? && result.generation_mode != "deterministic_document_overview"
+    if !conflict && raw_citations.empty? && result.generation_mode != "deterministic_document_overview"
       fallback_names = consulted_documents_fallback(result.doc_refs)
       json[:consulted_documents] = fallback_names if fallback_names.present?
     end
@@ -261,19 +275,18 @@ class RagController < ApplicationController
       return
     end
 
-    conv_session.record_assistant_turn!(
-      result.answer.to_s,
+    result.correlation_id = replay_id
+    written = persist_companion_result!(
+      conv_session, result,
       user_id: current_user.id,
-      correlation_id: replay_id,
-      pending_question: result.pending_question,
       expected_episode_id: conv_session.live_episode_id,
-      focus_ids: focus_ids,
-      prompt_reply: result.history_answer
+      focus_ids: focus_ids
     )
-    raw_citations = citation_processor.transport_references(result.citations)
-    sources_visible = Rag::SourcesVisibility.enabled?
-    marker_free_answer = citation_processor.strip_resolved_markers(result.answer, raw_citations)
-    answer_text = sources_visible ? result.answer : marker_free_answer
+    conflict = Rag::CompanionCaseWrite.conflict?(written)
+    raw_citations = conflict ? [] : citation_processor.transport_references(result.citations)
+    sources_visible = conflict ? false : Rag::SourcesVisibility.enabled?
+    marker_free_answer = conflict ? Rag::CompanionCaseWrite.conflict_answer(result.response_locale) : citation_processor.strip_resolved_markers(result.answer, raw_citations)
+    answer_text = conflict ? marker_free_answer : (sources_visible ? result.answer : marker_free_answer)
     json = {
       answer: answer_text,
       citations: sources_visible ? raw_citations : [],
@@ -289,13 +302,13 @@ class RagController < ApplicationController
       correlation_id: replay_id,
       conv_session: conv_session,
       question_sha256: Digest::SHA256.hexdigest(question),
-      outcome: interaction_outcome(result),
+      outcome: conflict ? "case_write_conflict" : interaction_outcome(result),
       route: "text",
       latency_ms: elapsed_ms(started_at),
       original_query: question,
       effective_query: result.effective_question || retrieval_question,
       answer: answer_text,
-      citations: result.retrieved_citations,
+      citations: conflict ? [] : result.retrieved_citations,
       **generation_trace_kwargs(result)
     )
     render json: json
@@ -400,6 +413,15 @@ class RagController < ApplicationController
   # fully-answered, fully-cited response can legitimately contain — routes
   # without a structural signal keep the old heuristic rather than block on a
   # broader rewrite.
+  def persist_companion_result!(conv_session, result, user_id:, expected_episode_id:, focus_ids:)
+    Rag::CompanionCaseWrite.persist!(
+      conv_session, result,
+      user_id: user_id,
+      expected_episode_id: expected_episode_id,
+      focus_ids: focus_ids
+    )
+  end
+
   def interaction_outcome(result)
     return result.route_outcome.to_s if result.route_outcome.present?
 

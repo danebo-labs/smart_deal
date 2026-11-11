@@ -4,9 +4,11 @@ module Rag
   # One Haiku call for a typed turn. It returns a perception. It does not
   # write the episode, the query, or Document Focus.
   class TurnInterpreter
-    MODEL_ID = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
+    MODEL_ID = "claude-haiku-5-5"
+    TRACKING_MODEL_ID = "claude-haiku-5-5-direct"
     TOOL_NAME = "turn_perception"
     MAX_TOKENS = 512
+    EFFORT = "high"
     # One initial converse plus retries from TransientBackoff. The SDK client
     # stays at one HTTP try. This class does not add a second retry loop.
     def self.transient_attempt_limit
@@ -110,7 +112,17 @@ module Rag
     private
 
     def converse_client
-      @client || BedrockClient.new
+      @client || InterpreterAnthropicClient.new
+    end
+
+    def self.max_output_tokens
+      raw = ENV["INTERPRETER_MAX_TOKENS"].to_s.strip
+      return MAX_TOKENS if raw.empty?
+
+      value = Integer(raw)
+      value.positive? ? value : MAX_TOKENS
+    rescue ArgumentError
+      MAX_TOKENS
     end
 
     def converse_params
@@ -120,7 +132,7 @@ module Rag
         messages: [
           { role: "user", content: [ { text: JSON.generate("turn" => @turn, "work_context" => work_context) } ] }
         ],
-        inference_config: { temperature: 0, max_tokens: MAX_TOKENS },
+        inference_config: { temperature: 0, max_tokens: self.class.max_output_tokens },
         tool_config: {
           tools: [
             {
@@ -218,6 +230,21 @@ module Rag
       record_interpreter_response(response)
       raw = extract_tool_input(response.output&.message&.content)
       record_interpreter_raw(raw)
+      stop_reason = response.respond_to?(:stop_reason) ? response.stop_reason.to_s : ""
+      if stop_reason == "max_tokens" || raw.nil?
+        return Result.new(
+          perception: nil,
+          fallback: true,
+          status: "service_failure",
+          latency_ms: latency_ms,
+          input_tokens: usage_token(usage, :input_tokens),
+          output_tokens: usage_token(usage, :output_tokens),
+          model_id: TRACKING_MODEL_ID,
+          error_class: nil,
+          error_reason: stop_reason == "max_tokens" ? "max_tokens" : "tool_use_missing",
+          stage: STAGE_EXTRACT
+        )
+      end
       stage = STAGE_PERCEPTION
       perception = TurnPerception.build(
         raw, turn: @turn, episode: @episode, catalog: @catalog, viewer_account: @viewer_account
@@ -229,7 +256,7 @@ module Rag
         latency_ms: latency_ms,
         input_tokens: usage_token(usage, :input_tokens),
         output_tokens: usage_token(usage, :output_tokens),
-        model_id: MODEL_ID,
+        model_id: TRACKING_MODEL_ID,
         error_class: nil,
         error_reason: nil,
         stage: nil
@@ -244,7 +271,7 @@ module Rag
         latency_ms: elapsed_since(started),
         input_tokens: usage_token(usage, :input_tokens),
         output_tokens: usage_token(usage, :output_tokens),
-        model_id: MODEL_ID,
+        model_id: TRACKING_MODEL_ID,
         error_class: error.class.name,
         error_reason: reason,
         stage: stage
@@ -346,11 +373,11 @@ module Rag
       name = error.class.name.to_s
       status = provider_http(error).first
       return "timeout" if error.is_a?(Timeout::Error) || name.include?("Timeout")
-      return "throttle" if name.include?("Throttl") || name.include?("TooManyRequests") || status == 429
-      return "access" if name.match?(/AccessDenied|Unauthorized|Forbidden|ExpiredToken|UnrecognizedClient/) || [ 401, 403 ].include?(status)
-      return "validation" if name.include?("Validation")
-      return "service" if name.include?("ServiceUnavailable") || name.include?("InternalServer") || [ 500, 502, 503, 504 ].include?(status)
-      return "transport" if name.include?("Networking")
+      return "throttle" if name.include?("Throttl") || name.include?("TooManyRequests") || name.include?("RateLimit") || status == 429
+      return "access" if name.match?(/AccessDenied|Unauthorized|Forbidden|ExpiredToken|UnrecognizedClient|AuthenticationError|PermissionDenied/) || [ 401, 403 ].include?(status)
+      return "validation" if name.include?("Validation") || name.include?("BadRequest")
+      return "service" if name.include?("ServiceUnavailable") || name.include?("InternalServer") || name.include?("Overloaded") || [ 500, 502, 503, 504, 529 ].include?(status)
+      return "transport" if name.include?("Networking") || name.include?("APIConnection") || name.include?("ConnectionError")
 
       "unclassified"
     end
@@ -400,6 +427,10 @@ module Rag
     end
 
     def provider_http(error)
+      if error.respond_to?(:status) && error.status.is_a?(Integer)
+        return [ error.status, nil ]
+      end
+
       context = error.context if error.respond_to?(:context)
       return [ nil, nil ] unless context.respond_to?(:http_response)
 
@@ -457,6 +488,11 @@ module Rag
       }
       payload["turn_transform"] = turn_transform if @turn_input.to_s != @turn.to_s
       payload["transport"] = configured_transport
+      outbound = interpreter_outbound(params)
+      payload["anthropic_body"] = outbound
+      payload["thinking"] = outbound.key?("thinking") ? "present" : "absent"
+      payload["temperature"] = outbound.key?("temperature") ? "present" : "absent"
+      payload["effort"] = outbound.dig("output_config", "effort")
       ValidationCapture.record("interpreter_request", payload)
     end
 
@@ -493,6 +529,12 @@ module Rag
         "original" => @turn_input.to_s,
         "sent" => @turn.to_s
       }
+    end
+
+    def interpreter_outbound(params)
+      InterpreterAnthropicClient.body_for(params)
+    rescue StandardError => error
+      { "untranslated" => error.class.name }
     end
 
     def interpreter_system_text(params)
@@ -618,7 +660,7 @@ module Rag
       TrackBedrockQueryJob.perform_later(
         source: "semantic_analysis",
         route: "semantic_analysis",
-        model_id: MODEL_ID,
+        model_id: TRACKING_MODEL_ID,
         token_source: "provider_usage",
         input_tokens: input_tokens,
         output_tokens: usage_token(usage, :output_tokens),

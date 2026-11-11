@@ -120,7 +120,15 @@ module Rag
       {
         "pid" => Process.pid,
         "interpreter_model_id" => TurnInterpreter::MODEL_ID,
+        "interpreter_effort" => TurnInterpreter::EFFORT,
+        "interpreter_max_tokens" => TurnInterpreter.max_output_tokens,
         "generation_model_id" => BedrockClient::QUERY_MODEL_ID,
+        "companion_generation" => ENV["RAG_COMPANION_GENERATION"].to_s,
+        "companion_direct_model_id" => companion_direct_model_id,
+        "companion_direct_max_tokens" => CompanionDirectAnswer.generation_max_tokens,
+        "companion_direct_thinking" => CompanionDirectAnswer.thinking_mode,
+        "companion_direct_effort" => CompanionDirectAnswer.effort,
+        "bedrock_inference" => ENV["BEDROCK_INFERENCE"].to_s,
         "haiku_mode" => HaikuQueryAnalysisFlag.mode,
         "knowledge_base_id" => ENV["BEDROCK_KNOWLEDGE_BASE_ID"].to_s,
         "knowledge_base_bucket" => ENV["KNOWLEDGE_BASE_S3_BUCKET"].to_s,
@@ -139,6 +147,12 @@ module Rag
         "validation_capture_accounts" => account_ids.join(","),
         "capture_scope" => LocalPassLedger.local_process? ? "local_process" : "account"
       }
+    end
+
+    def companion_direct_model_id
+      CompanionDirectAnswer.configured_model_id
+    rescue BedrockRagService::BedrockServiceError => error
+      error.message
     end
 
     def restrict!(directory)

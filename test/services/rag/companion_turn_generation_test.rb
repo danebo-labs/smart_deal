@@ -187,8 +187,26 @@ class Rag::CompanionTurnGenerationTest < ActiveSupport::TestCase
   end
 
   test "both controller publication points pass the presented history answer" do
-    source = Rails.root.join("app/controllers/rag_controller.rb").read
-    assert_equal 2, source.scan("prompt_reply: result.history_answer").size
+    episode = known_episode
+    session = session_for(episode)
+    controller = RagController.new
+    user_id = users(:one).id
+    %w[ask-publication stream-publication].each do |correlation_id|
+      presented = "Historia publicada por #{correlation_id}."
+      result = Struct.new(:answer, :history_answer, :correlation_id, :pending_question, :route_outcome, keyword_init: true).new(
+        answer: "visible",
+        history_answer: presented,
+        correlation_id: correlation_id,
+        pending_question: nil,
+        route_outcome: "answered"
+      )
+      controller.send(
+        :persist_companion_result!, session, result,
+        user_id: user_id, expected_episode_id: session.reload.live_episode_id, focus_ids: []
+      )
+      stored = session.reload.conversation_history.reverse.find { |row| row["correlation_id"] == correlation_id }
+      assert_equal presented, stored["prompt_reply"]
+    end
   end
 
   private

@@ -21,22 +21,25 @@ module Rag
     GENERATION_CALLS = 3
     MODEL_ID = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
     SONNET_45_GLOBAL = "global.anthropic.claude-sonnet-4-5-20250929-v1:0"
-    PROMPT_SHA = "0bf3610b29f5b839d5f27917bce5b728a47f0d8f0551755fa3f56744a6fc901f"
+    PROMPT_SHA = "2527363c8b3832d6773b83862caf1b9cc44d4864e2d52ec121f30b244288ca1d"
+    # The product prompt the archived variants were derived from.
+    CAPTURED_PROMPT_PATH = Rails.root.join("test/fixtures/vf5_vertical_r2/companion_direct_2527363c.txt")
+    HISTORICAL_PROMPT_SHA = "0bf3610b29f5b839d5f27917bce5b728a47f0d8f0551755fa3f56744a6fc901f"
     SONNET_OUTPUT = Rails.root.join("tmp/field_companion/vf5_direct_prompt_compare_sonnet")
 
     module_function
 
-    def preflight(io: $stdout)
-      report = build
+    def preflight(io: $stdout, ledger_path: LEDGER)
+      report = build(ledger_path: ledger_path)
       io.puts JSON.generate(report)
       report["ready"] ? 0 : 2
     end
 
-    def build
+    def build(ledger_path: LEDGER)
       prompt = system_prompt
       turns = (1..3).map { |number| load_turn(number) }
       missing = turns.flat_map { |turn| turn["missing"] }
-      ledger = read_ledger
+      ledger = read_ledger(ledger_path)
       prices = price_turns(turns, prompt)
       plan = call_plan(ledger, prices["ceiling_usd"])
       rubric = turns.map { |turn| review_turn(turn) }
@@ -67,9 +70,8 @@ module Rag
     end
 
     def system_prompt
-      text = Rails.root.join("app/prompts/bedrock/companion_direct.txt").read
-      loaded = CompanionDirectAnswer::SYSTEM_PROMPT
-      raise "stale companion direct prompt" unless loaded == text
+      text = CAPTURED_PROMPT_PATH.read
+      raise "captured prompt drifted" unless Digest::SHA256.hexdigest(text) == PROMPT_SHA
 
       text
     end
@@ -209,7 +211,7 @@ module Rag
       citation = Array(published["citations"]).first
       {
         "turn" => number,
-        "matches" => actual == expected && safety == raw && attribution.answer == raw,
+        "matches" => same_publication?(actual, expected) && safety == raw && attribution.answer == raw,
         "safety_unchanged" => safety == raw,
         "attribution_unchanged" => attribution.answer == raw,
         "publication" => actual,
@@ -220,6 +222,15 @@ module Rag
           "filename" => citation["filename"]
         }
       }
+    end
+
+    # Older captures store offsets within a fragment and omit uncited quotes.
+    # The current gate records offsets in the source body and tracks more quotes.
+    def same_publication?(actual, expected)
+      return false unless actual.except("quotes") == expected.except("quotes")
+
+      quotes = actual.fetch("quotes").map { |quote| quote.slice("text", "source") }
+      expected.fetch("quotes").all? { |quote| quotes.include?(quote.slice("text", "source")) }
     end
 
     def prompt_sources(text)
@@ -368,8 +379,8 @@ module Rag
       }
     end
 
-    def read_ledger
-      raw = LEDGER.file? ? LEDGER.binread : ""
+    def read_ledger(path = LEDGER)
+      raw = path.file? ? path.binread : ""
       state = raw.empty? ? {} : JSON.parse(raw)
       cap = state["call_cap"].to_i
       attempts = state["attempts"].to_i
@@ -485,9 +496,9 @@ module Rag
       payload["status"] == "executed" ? 0 : 2
     end
 
-    def effective_requests(model)
+    def effective_requests(model, ledger_path: LEDGER)
       prompt = system_prompt
-      ledger = read_ledger
+      ledger = read_ledger(ledger_path)
       requests = []
       mismatches = []
       (1..3).each do |number|

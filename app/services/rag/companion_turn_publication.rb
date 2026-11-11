@@ -76,6 +76,43 @@ module Rag
         reasons.empty? ? nil : reasons
       end
 
+      # CompanionClaimBacking applies the same quote semantics per sentence.
+      def verified_quote(quoted, sources, lead = "")
+        documentary_quote(quoted, sources, lead)
+      end
+
+      def technician_text?(quoted, texts)
+        technician_quote?(quoted, texts)
+      end
+
+      def technician_sentence?(fragment)
+        technician_framed?(fragment)
+      end
+
+      def source_attribution?(fragment, manufacturer)
+        attributes_source?(fragment, manufacturer.to_s.strip)
+      end
+
+      def question_sentence?(fragment)
+        question_only?(fragment)
+      end
+
+      def not_loaded_sentence?(fragment)
+        not_loaded_notice?(fragment)
+      end
+
+      def citable_source?(source)
+        citable?(source)
+      end
+
+      def claim_tokens(fragment)
+        tokens(fragment)
+      end
+
+      def content_of(source)
+        source_content(source)
+      end
+
       private
 
       def source_reasons(text, sources)
@@ -102,19 +139,34 @@ module Rag
 
       def quote_findings(text, sources, technician_texts, reasons)
         found = []
-        AnswerSafetyProcessor.fragments(text).each do |fragment|
-          numbers = fragment.scan(CITATION_PATTERN).flatten.map(&:to_i).uniq
-          next if numbers.empty?
+        companion_fragments(text).each do |fragment|
           next if not_loaded_notice?(fragment)
 
-          cited = numbers.filter_map { |number| sources[number - 1] }
+          numbers = fragment.scan(CITATION_PATTERN).flatten.map(&:to_i).uniq
+          pool = numbers.empty? ? sources : numbers.filter_map { |number| sources[number - 1] }
           fragment.to_enum(:scan, QUOTE_PATTERN).map { Regexp.last_match }.each do |quote_match|
             quoted = quote_match.captures.compact.first.to_s
             next if quoted.strip.empty?
+            if technician_framed?(fragment)
+              lead = fragment[0...quote_match.begin(0)].to_s
+              documentary = documentary_quote(quoted, pool, lead)
+              documentary_ok = documentary && !documentary[:condition_dropped]
+              unless technician_quote?(quoted, technician_texts) || documentary_ok
+                reasons << reason("R2", "technician_mismatch:#{quoted}")
+              end
+              if documentary_ok
+                found << {
+                  "text" => quoted,
+                  "source" => documentary[:source],
+                  "position" => documentary[:position]
+                }
+              end
+              next
+            end
             next if technician_quote?(quoted, technician_texts)
 
             lead = fragment[0...quote_match.begin(0)].to_s
-            match = documentary_quote(quoted, cited, lead)
+            match = documentary_quote(quoted, pool, lead)
             if match.nil?
               reasons << reason("R2", quoted)
             elsif match[:condition_dropped]
@@ -131,31 +183,29 @@ module Rag
         found
       end
 
-      # nil when no cited source holds the quote literally. condition_dropped
-      # when it does but a marker of the source fragment is not carried.
+      # nil when the manual text does not hold the quote. condition_dropped
+      # only when that manual text does, and a condition before the match is
+      # missing from the lead. Alias and source-header lines are not manual text.
       def documentary_quote(quoted, sources, lead = "")
         dropped = false
-        sources.each_with_index do |source, offset|
-          content = source_content(source)
-          next unless aligned?(content, quoted)
+        Array(sources).each_with_index do |source, offset|
+          content = manual_text(source_content(source))
+          matches = manual_matches(content, quoted)
+          next if matches.empty?
 
-          fragment = AnswerSafetyProcessor.fragments(content).find { |item| fragment_match(item, quoted) }
-          next unless fragment
-
-          found = fragment_match(fragment, quoted)
-          unless local_condition?(fragment, found, lead)
-            dropped = true
-            next
+          passed = matches.find { |found| local_condition?(content, found, lead) }
+          if passed
+            return { source: source_number(source, offset), position: passed.begin(0) }
           end
 
-          return { source: source_number(source, offset), position: found.begin(0) }
+          dropped = true
         end
         dropped ? { condition_dropped: true } : nil
       end
 
       def local_condition?(fragment, match, lead = "")
-        before = fragment[0...match.begin(0)].to_s
-        after = fragment[match.end(0)..].to_s
+        before = sentence_before(fragment, match.begin(0))
+        after = sentence_after(fragment, match.end(0))
         return false if starts_with_marker?(after)
         return true unless marker_in?(before)
 
@@ -176,11 +226,12 @@ module Rag
 
       def attribution_reasons(text, manufacturer)
         name = manufacturer.to_s.strip
-        AnswerSafetyProcessor.fragments(text).filter_map do |fragment|
+        companion_fragments(text).filter_map do |fragment|
           next if fragment.match?(CITATION_PATTERN)
           next if fragment.match?(ABSENCE_PATTERN)
           next if question_only?(fragment)
           next if not_loaded_notice?(fragment)
+          next if label_with_cited_list?(text, fragment)
           next unless attributes_source?(fragment, name)
 
           reason("R3", fragment)
@@ -252,7 +303,7 @@ module Rag
 
       def content_signals(text, sources)
         signals = []
-        AnswerSafetyProcessor.fragments(text).each do |fragment|
+        companion_fragments(text).each do |fragment|
           numbers = fragment.scan(CITATION_PATTERN).flatten.map(&:to_i)
           next if numbers.empty?
 
@@ -275,11 +326,177 @@ module Rag
         found.map(&:to_s).uniq
       end
 
+      # A period inside an open quotation does not end the fragment. Closing
+      # a quotation whose text ends in . ! or ? does, when whitespace or the
+      # end follows the closer. A [n] run then goes to one side only: it stays
+      # with the fragment just closed, unless the same line continues in
+      # lowercase, in which case the whole run introduces the next fragment.
+      def companion_fragments(text)
+        body = text.to_s
+        parts = []
+        current = +""
+        index = 0
+        quote = nil
+        while index < body.length
+          char = body[index]
+          if quote
+            current << char
+            index += 1
+            next unless closes_quote?(quote, char)
+
+            quote = nil
+            next unless sentence_quote?(current) && boundary_at?(body, index)
+
+            current, index = assign_marker_run(parts, current, body, index)
+            next
+          end
+          if (opened = opening_quote(char))
+            quote = opened
+            current << char
+            index += 1
+            next
+          end
+          if char.match?(/[\n!?]/)
+            parts << current
+            current = +""
+            index += 1
+            index += 1 while index < body.length && body[index].match?(/[\n!?]/)
+            next
+          end
+          if char == "." && boundary_period?(body, index)
+            current, index = assign_marker_run(parts, current, body, index + 1)
+            next
+          end
+          current << char
+          index += 1
+        end
+        parts << current
+        parts.map(&:strip).reject(&:empty?)
+      end
+
+      def opening_quote(char)
+        char if [ '"', "“", "«" ].include?(char)
+      end
+
+      def closes_quote?(quote, char)
+        (quote == '"' && char == '"') || (quote == "“" && char == "”") || (quote == "«" && char == "»")
+      end
+
+      def sentence_quote?(current)
+        previous = current[-2]
+        closer = current[-1]
+        !previous.nil? && previous.match?(/[.!?]/) && [ '"', "”", "»" ].include?(closer)
+      end
+
+      def boundary_at?(body, index)
+        nxt = body[index]
+        nxt.nil? || nxt.match?(/[[:space:]]/)
+      end
+
+      def boundary_period?(body, index)
+        boundary_at?(body, index + 1)
+      end
+
+      # The whole run moves together. Lowercase on the marker's own line
+      # sends it forward; a capital, a new line, or the end leaves it behind.
+      def assign_marker_run(parts, current, body, index)
+        run = marker_run(body, index)
+        if run.empty?
+          parts << current
+          return [ +"", index ]
+        end
+        if forward_marker?(body, index)
+          parts << current
+          [ run.dup, index + run.length ]
+        else
+          parts << "#{current}#{run}"
+          [ +"", index + run.length ]
+        end
+      end
+
+      def forward_marker?(body, index)
+        line = body[index..].to_s[/\A[^\n]*/].to_s
+        after = line.sub(/\A[[:space:]]*(?:\[\d+\][[:space:]]*)+/, "")
+        after.match?(/\A[[:lower:]]/)
+      end
+
+      def marker_run(body, index)
+        match = body[index..].to_s.match(/\A[[:space:]]*(?:\[\d+\][[:space:]]*)+/)
+        match ? match[0] : ""
+      end
+
+      def manual_text(content)
+        content.to_s.gsub(/\[(?:SEARCH_ALIASES|DOCUMENT|SOURCE_URI):.*?\]/m, " ")
+      end
+
+      def manual_matches(content, quoted)
+        pattern = quote_pattern(quoted)
+        return [] unless pattern
+
+        content.to_enum(:scan, pattern).map { Regexp.last_match }
+      end
+
+      def sentence_before(text, index)
+        head = text.to_s[0...index].to_s
+        cut = head.rindex(/[\n.!?]/)
+        cut ? head[(cut + 1)..] : head
+      end
+
+      def sentence_after(text, index)
+        text.to_s[index..].to_s.sub(/[\n.!?].*/m, "")
+      end
+
+      def technician_framed?(fragment)
+        fragment.to_s.match?(
+          /\b(?:el\s+t[eé]cnico\s+(?:dijo|indic[oó]|cont[oó])|(?:dijiste|contaste|indicaste)\s+(?:que\s+)?[«“"])/i
+        )
+      end
+
+      def label_with_cited_list?(text, fragment)
+        label = fragment.to_s.strip.gsub("**", "")
+        return false unless label.match?(/:\z/)
+
+        words = label.sub(/:\z/, "").split
+        return false if words.empty? || words.size > 6
+        return false if label.match?(CLAIM_VERBS)
+        return false if AnswerSafetyProcessor.requires_evidence?(label)
+
+        index = text.to_s.index(label)
+        return false if index.nil?
+
+        items = list_items(text.to_s[(index + label.length)..])
+        items.any? && items.all? { |item| item.match?(CITATION_PATTERN) }
+      end
+
+      def list_items(text)
+        items = []
+        current = nil
+        text.to_s.each_line do |line|
+          if line.match?(/^\s*(?:[-*•]|\d+[.)])\s+\S/)
+            items << current if current
+            current = line.dup
+          elsif current
+            current << line
+          end
+        end
+        items << current if current
+        items.map(&:strip).reject(&:empty?)
+      end
+
       def technician_quote?(quoted, texts)
         needle = normalized_body(quoted)
         return false if needle.blank?
 
-        Array(texts).any? { |text| normalized_body(text).include?(needle) }
+        needles = [ needle ]
+        if needle.match?(/\A[[:alpha:]]/)
+          flipped = needle.dup
+          flipped[0] = flipped[0].swapcase
+          needles << flipped if flipped != needle
+        end
+        Array(texts).any? do |text|
+          haystack = normalized_body(text)
+          needles.any? { |item| haystack.include?(item) }
+        end
       end
 
       def aligned?(source, quoted)
@@ -313,6 +530,11 @@ module Rag
       end
 
       def fragment_match(fragment, quoted)
+        pattern = quote_pattern(quoted)
+        pattern ? fragment.match(pattern) : nil
+      end
+
+      def quote_pattern(quoted)
         needle = quote_needle(quoted)
         words = needle.split
         return nil if words.empty?
@@ -324,7 +546,7 @@ module Rag
           first = word[0]
           "[#{Regexp.escape(first.upcase)}#{Regexp.escape(first.downcase)}]" + Regexp.escape(word[1..] || "")
         end
-        fragment.match(/#{parts.join('[[:space:]]+')}/)
+        /#{parts.join('[[:space:]]+')}/
       end
 
       def quote_needle(text)

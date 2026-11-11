@@ -1,0 +1,15 @@
+Necesito saber qué LED está encendido (Fotocélula, Obstrucción, Abierta, Cerrada, Estado u otro): no puedo identificarlo solo con su descripción.
+
+Si es Fotocélula, [1] dice que se enciende «cuando la fotocélula o la entrada de re-apertura está activada». Por sí solo no dice cuál de las dos. Su revisión de la fotocélula no dice si #21 está activada.
+Mi inferencia: en ese caso, #21 quedaría como candidata a revisar.
+
+#21: [2] pide «Comprobar si la señal de re-apertura (#21) está activada», pero no dice cómo. Esto no está en la documentación cargada en este turno.
+Además, [2] lo ubica bajo «La puerta se abre pero no se cierra», distinto de su síntoma.
+
+Entre 21 y 23: [4] dice: «Para activar esta señal, se debe conectar la entrada re-apertura (21) con la entrada de +12V (23).» Sobre el 23 dice: «Se debe usar siempre contactos libres de tensión y normalmente abierto.» [4]
+Según [4], la señal «se usa para instalar el interruptor de la puerta de cabina o una barrera externa». [4] no indica cómo verificar esa conexión.
+Mi lectura: una conexión cerrada entre 21 y 23 es lo que activa la señal. Mi inferencia: un contacto normalmente cerrado no coincidiría con «normalmente abierto» [4].
+
+En la placa, [3] lista «21 RE-OPEN» y «23 +12V COM» en «PRIORITY INPUTS» (lectura visual del dibujo).
+
+Precaución general mía (no viene de las fuentes): corte la alimentación antes de tocar bornes.

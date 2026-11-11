@@ -889,7 +889,7 @@ module Rag
         disagree(span, hint, "fault_code")
         return fact(span, "assert", "fault_code", span, "user", nil)
       end
-      return mention(span) if fault_shaped?(span)
+      return mention(span) if fault_shaped?(span) && !(hint == "designator" && item["act"] == "assert")
 
       disagree(span, hint, nil) if IDENTITY_HINTS.include?(hint)
       return mention(span) if item["act"] == "mention"
@@ -900,8 +900,18 @@ module Rag
     def negate_identity(item)
       Identity.new(
         span: item["span"], act: "negate", kind: "negate",
-        slot: matched_slot(item["span"]), value: item["span"], source: nil, manufacturer: nil
+        slot: matched_slot(item["span"]) || denied_identifier_slot(item["span"]),
+        value: item["span"], source: nil, manufacturer: nil
       )
+    end
+
+    # The denial omitted_identifier_negation recovers when the model leaves
+    # it out holds the same slot when the model sends it.
+    def denied_identifier_slot(span)
+      denied = explicit_current_identifier
+      return nil if denied.blank?
+
+      "identifier" if FollowupQueryRewriter.normalize_label(denied) == FollowupQueryRewriter.normalize_label(span)
     end
 
     def fact(span, act, slot, value, source, manufacturer)
@@ -1084,16 +1094,38 @@ module Rag
 
     def explicit_current_identifier
       values = Array(@episode.identifiers).filter_map { |item| item["value"].to_s.presence }
-      return nil if values.empty?
-
       turn_label = FollowupQueryRewriter.normalize_label(@turn)
       matched = values.select { |value| denied_identifier?(turn_label, value) }
+      return mentioned_denial if matched.empty?
       return nil unless matched.one?
 
       chosen = matched.first
       return nil if shadowed_identifier?(chosen, values)
 
       chosen
+    end
+
+    DENIED_SPAN = /(?<![[:alnum:]])no(?:\s+(?:es|era|de|del|la|el|al|un|una))*\s+([^,.;:!?¿¡]+?)(?=\s*(?:[,.;:!?]|\z))/i.freeze
+
+    # A label the technician wrote in an earlier turn of this episode, and
+    # denies by name in this one, is as current as a stored identifier.
+    def mentioned_denial
+      prior = prior_turn_label
+      return nil if prior.blank?
+
+      found = @turn.to_s.scan(DENIED_SPAN).flatten.map(&:strip).uniq.select { |span|
+        label = FollowupQueryRewriter.normalize_label(span)
+        label.present? && literal_span?(span) &&
+          prior.match?(/(?<![[:alnum:]])#{Regexp.escape(label)}(?![[:alnum:]])/)
+      }
+      found.one? ? found.first : nil
+    end
+
+    def prior_turn_label
+      texts = Array(@episode.excerpts).filter_map { |row| row.is_a?(Hash) ? row["text"] : nil }
+      texts << @episode.goal&.dig("text")
+      texts.concat(Array(@episode.observations).filter_map { |row| row.is_a?(Hash) ? row["text"] : row })
+      FollowupQueryRewriter.normalize_label(texts.compact.join(" \n "))
     end
 
     def denied_identifier?(turn_label, value)
@@ -1234,6 +1266,10 @@ module Rag
     end
 
     def adjust_move(move, resolution, identities, observations, ambiguities, target)
+      if move == "new_work" && !open_job?
+        note_rule("adjust_move", move, "new_work_without_open_job", { "to" => "report" })
+        move = "report"
+      end
       if move == "meta" && technical_recap?(@turn)
         note_rule("adjust_move", "meta", "technical_recap", { "to" => "follow_up" })
         move = "follow_up"
@@ -1425,6 +1461,14 @@ module Rag
 
       @episode.goal.present? || @episode.facts.any? || @episode.identifiers.any? ||
         @episode.observations.any? || @episode.active_photo.present?
+    end
+
+    # Checks and an open question are a job too, even before any fact.
+    def open_job?
+      return true if prior_context?
+      return false unless @episode.respond_to?(:checks) && @episode.present?
+
+      @episode.checks.any? || @episode.pending_question.present?
     end
 
     def apply_structured_slots(move, resolution, identities)

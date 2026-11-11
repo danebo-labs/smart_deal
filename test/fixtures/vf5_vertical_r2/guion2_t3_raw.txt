@@ -1,0 +1,7 @@
+Con lo que describes, no hace falta: la documentación no pide repetir el autoajuste. [1]
+
+Según el manual: «Solo es necesario realizar otra vez el autoajuste para la configuración de los parámetros por defecto o cuando se realicen cambios como la conexión o desconexión de la fotocélula Fermator.» [1]
+
+Tú dices que no cambiaste la configuración ni conectaste o desconectaste la fotocélula. El corte de alimentación no aparece en esa frase. [1]
+
+No mencionaste la «configuración de los parámetros por defecto» [1]. Si la hiciste, sí hace falta repetirlo [1]; dímelo y te doy los pasos.

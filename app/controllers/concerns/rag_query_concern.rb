@@ -39,6 +39,14 @@ module RagQueryConcern
                          :companion_turn,
                          :companion_reason,
                          :companion_publication,
+                         :case_evidence,
+                         :case_outcome,
+                         :expected_case_revision,
+                         :case_unresolved,
+                         :case_retrieval,
+                         :provider_rejection,
+                         :provider_error_class,
+                         :provider_error_message,
                          keyword_init: true)
 
   # Circled numerals for ① ② ③ lists in table conversion and WA legacy callers.
@@ -159,6 +167,7 @@ module RagQueryConcern
           "reasons" => lost
         )
       end
+      replace_case_with_abstain!(result) if result[:case_outcome].to_s == "published"
       return CompanionPublication.new(
         presented: Rag::CompanionTurnPublication.abstain_message(locale),
         history: "",
@@ -167,13 +176,46 @@ module RagQueryConcern
       )
     end
 
+    reconcile_case_publication!(result, text) if result[:case_outcome].to_s == "published"
     attached = field_case_attachment(text, result, conv_session, companion_turn: true)
+    history = result[:case_outcome].present? ? result[:case_history].to_s : attached.history
     CompanionPublication.new(
       presented: attached.presented,
-      history: attached.history,
+      history: history,
       route_outcome: route_outcome,
       companion_reason: companion_reason
     )
+  end
+
+  def replace_case_with_abstain!(result)
+    recorded = Rag::CompanionCaseRecord.record(
+      state: result[:case_evidence_before],
+      episode_id: result[:case_episode_id],
+      chunks: [],
+      published_text: "",
+      correlation_id: result[:case_correlation_id],
+      outcome: "abstained"
+    )
+    result[:case_outcome] = "abstained"
+    result[:case_evidence] = recorded.state
+    result[:case_history] = nil
+    result[:case_unresolved] = []
+  end
+
+  def reconcile_case_publication!(result, text)
+    return if text == result[:answer].to_s
+
+    recorded = Rag::CompanionCaseRecord.record(
+      state: result[:case_evidence_before],
+      episode_id: result[:case_episode_id],
+      chunks: result[:case_source_chunks],
+      published_text: text,
+      correlation_id: result[:case_correlation_id],
+      outcome: "published"
+    )
+    result[:case_evidence] = recorded.state
+    result[:case_history] = recorded.history_text
+    result[:case_unresolved] = recorded.unresolved
   end
 
   def companion_published_pending(pending, attached, conv_session = nil)
@@ -459,7 +501,15 @@ module RagQueryConcern
       generation_context: result[:generation_context],
       generation_prompt_chars: result[:generation_prompt_chars],
       context_truncated: result[:context_truncated],
-      history_answer: attached.history
+      history_answer: attached.history,
+      case_evidence: result[:case_evidence],
+      case_outcome: result[:case_outcome],
+      expected_case_revision: result[:expected_case_revision],
+      case_unresolved: result[:case_unresolved],
+      case_retrieval: result[:case_retrieval],
+      provider_rejection: result[:provider_rejection],
+      provider_error_class: result[:provider_error_class],
+      provider_error_message: result[:provider_error_message]
     )
   rescue ImageCompressionService::CompressionError => e
     log_rag_error("Image compression", e)

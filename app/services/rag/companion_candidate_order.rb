@@ -23,6 +23,7 @@ module Rag
     def call
       return @chunks if @chunks.size < 2 || @question.strip.empty?
 
+      Rag::InferencePolicy.check!(operation: "companion_candidate_order.rerank", model_id: MODEL_ID)
       response = @client.rerank(payload)
       rows = Array(response.respond_to?(:results) ? response.results : nil)
       raise Error, "companion rerank returned no results" if rows.empty?

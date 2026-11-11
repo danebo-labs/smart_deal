@@ -303,6 +303,14 @@ class BedrockRagService
       ))
         return scoped
       end
+      if Rag::InferencePolicy.blocked?
+        return identity_closed_result(
+          status: :unavailable,
+          reason: :provider_blocked,
+          question: question,
+          response_locale: response_locale
+        )
+      end
       @evidence_applicability = Rag::DocumentIdentityScope::IDENTITY_UNKNOWN_REFERENCE
       @open_retrieval_outcome_reason = "identity_unknown"
 
@@ -493,6 +501,13 @@ class BedrockRagService
     @companion_plan_stop_reason = nil
     @companion_direct_stop_reason = nil
     @companion_direct_turn = false
+    @companion_case_before = nil
+    @companion_case_revision = nil
+    @companion_case_episode_id = nil
+    @companion_case_correlation_id = nil
+    @companion_case_retrieve_question = nil
+    @companion_case_retrieval_trace = nil
+    @companion_blocked_skip = nil
     identity = resolved_equipment_identity(episode, equipment_identity)
     return nil unless identity == :malformed || (identity.respond_to?(:known?) && identity.known?)
     if identity == :malformed || !Rag::DocumentIdentityScopeFlag.enabled?
@@ -527,8 +542,15 @@ class BedrockRagService
     else
       profile_count
     end
-    retrieval = retrieve_chunks(
+    retrieve_question = direct_case_retrieve_question(
       question,
+      raw_question: raw_question,
+      conv_session: conv_session,
+      correlation_id: correlation_id,
+      companion_focus: companion_focus
+    )
+    retrieval = retrieve_chunks(
+      retrieve_question,
       entity_s3_uris: entity_s3_uris,
       entity_sources: entity_sources,
       force_entity_filter: force_entity_filter,
@@ -591,7 +613,7 @@ class BedrockRagService
       focus: companion_focus && profile_count == RagRetrievalProfile::PINNED_DOCUMENT_RESULTS,
       companion_turn: companion_turn,
       profile_count: profile_count,
-      question: question
+      question: @companion_case_retrieve_question || question
     )
     companion_chunks = companion_turn ? companion_assembled_chunks(evidence_chunks, episode: episode) : nil
     direct_turn = companion_turn && companion_generation_direct?
@@ -625,6 +647,19 @@ class BedrockRagService
       )
     end
     generation_truncated = context_truncated == true || (companion && guidance.context_truncated?)
+    if @companion_blocked_skip
+      return attach_generation_trace!(
+        identity_closed_result(
+          status: :unavailable,
+          reason: @companion_blocked_skip,
+          question: question,
+          response_locale: response_locale,
+          retrieval: retrieval,
+          model_invoked: false
+        ),
+        question, raw_turn: raw_question, sent_question: question, truncated: generation_truncated
+      )
+    end
     raw_answer = begin
       Rag::ValidationCapture.attempt_unless_set(1)
       generation_kwargs = {
@@ -640,6 +675,7 @@ class BedrockRagService
       if companion
         document_identity_generator.query(prompt, **generation_kwargs)
       elsif direct_turn
+        snapshot_direct_case!(conv_session, episode, correlation_id)
         companion_direct_answer(companion_direct, generation_kwargs[:tracking].merge(user_query: question))
       elsif companion_turn
         companion_plan_answer(companion_plan, generation_kwargs[:tracking].merge(user_query: question))
@@ -654,7 +690,9 @@ class BedrockRagService
           question: question,
           response_locale: response_locale,
           retrieval: retrieval,
-          model_invoked: true
+          model_invoked: true,
+          error: e,
+          evidence: evidence_chunks
         ),
         prompt, raw_turn: raw_question, sent_question: question, truncated: generation_truncated
       )
@@ -668,7 +706,9 @@ class BedrockRagService
           question: question,
           response_locale: response_locale,
           retrieval: retrieval,
-          model_invoked: true
+          model_invoked: true,
+          error: e,
+          evidence: evidence_chunks
         ),
         prompt, raw_turn: raw_question, sent_question: question, truncated: generation_truncated
       )
@@ -682,7 +722,8 @@ class BedrockRagService
           question: question,
           response_locale: response_locale,
           retrieval: retrieval,
-          model_invoked: true
+          model_invoked: true,
+          evidence: evidence_chunks
         ),
         prompt, raw_turn: raw_question, sent_question: question, truncated: generation_truncated
       )
@@ -710,7 +751,10 @@ class BedrockRagService
                    end,
       technician_texts: companion_turn ? companion_technician_texts(conv_session, episode, raw_question) : nil,
       manufacturer: companion_turn ? companion_manufacturer(episode) : nil,
-      raw_question: raw_question
+      raw_question: raw_question,
+      conv_session: conv_session,
+      correlation_id: correlation_id,
+      episode: episode
     )
     if companion && result[:answer].blank?
       return attach_generation_trace!(
@@ -720,7 +764,8 @@ class BedrockRagService
           question: question,
           response_locale: response_locale,
           retrieval: retrieval,
-          model_invoked: true
+          model_invoked: true,
+          evidence: evidence_chunks
         ),
         prompt, raw_turn: raw_question, sent_question: question, truncated: generation_truncated
       )
@@ -1300,27 +1345,40 @@ class BedrockRagService
   end
 
   def companion_candidate_order(chunks, question:)
+    api_called = chunks.size >= 2 && question.to_s.strip.present?
     ordered = Rag::CompanionCandidateOrder.call(
       chunks,
       question: question,
       client: @client,
       region: @region
     )
-    note_companion_rerank("applied", chunks.size, ordered.size)
+    note_companion_rerank("applied", chunks.size, ordered.size, nil, ordered: ordered, api_called: api_called)
     ordered
   rescue StandardError => error
     note_companion_rerank("error", chunks.size, 0, error)
     raise
   end
 
-  def note_companion_rerank(result, requested, returned, error = nil)
+  def note_companion_rerank(result, requested, returned, error = nil, ordered: nil, api_called: nil)
     payload = {
       "result" => result,
       "operation" => "rerank",
       "model_id" => Rag::CompanionCandidateOrder::MODEL_ID,
       "requested" => requested,
-      "returned" => returned
+      "returned" => returned,
+      "api_called" => api_called == true
     }
+    if ordered
+      payload["order"] = Array(ordered).each_with_index.map { |chunk, index|
+        metadata = chunk[:metadata] || chunk["metadata"] || {}
+        {
+          "rank" => index + 1,
+          "location_uri" => (chunk[:location_uri] || chunk["location_uri"]).to_s,
+          "page" => metadata["page_number"] || metadata[:page_number],
+          "sha256" => (chunk[:chunk_sha256] || chunk["chunk_sha256"]).to_s
+        }
+      }
+    end
     if error
       payload["error_class"] = error.class.name
       payload["reason"] = error.message.to_s
@@ -1336,16 +1394,20 @@ class BedrockRagService
 
     reason = companion_turn_skip_reason(applied: applied, chunks: chunks, episode: episode, raw_question: raw_question)
     note_companion_turn(reason || "applied")
+    @companion_blocked_skip = reason if reason && Rag::InferencePolicy.blocked?
     reason.nil?
   end
 
   def companion_turn_skip_reason(applied:, chunks:, episode:, raw_question:)
     return :system_role if document_identity_system_role?
     return :identity unless applied.status == :scoped
-    return :plan if self.class.plan_request?(raw_question.to_s, nil)
 
     parsed = episode.is_a?(Rag::ActiveEpisode) ? episode : Rag::ActiveEpisode.parse(episode)
-    return :episode if parsed.nil? || parsed.blank? || parsed.status != "active"
+    active = !(parsed.nil? || parsed.blank? || parsed.status != "active")
+    if self.class.plan_request?(raw_question.to_s, nil)
+      return :plan unless active && Rag::CompanionPlanEvidence.sufficient?(question: raw_question, chunks: chunks)
+    end
+    return :episode unless active
     return :raw_question if raw_question.blank?
     return :field_records if companion_field_records?(chunks)
 
@@ -1394,32 +1456,127 @@ class BedrockRagService
     usage = track_companion_direct_usage(response, latency_ms, tracking)
     composed = Rag::CompanionDirectAnswer.compose(response)
     @companion_direct_stop_reason = composed.stop_reason
-    record_companion_direct(composed, usage.merge("latency_ms" => latency_ms))
+    blocks = {}
+    if response.respond_to?(:block_types)
+      blocks = { "block_types" => response.block_types, "thinking" => response.thinking_text }
+    end
+    record_companion_direct(composed, usage.merge("latency_ms" => latency_ms).merge(blocks))
     composed.text
   end
 
-  def companion_direct_converse(params)
+  def direct_case_retrieve_question(question, raw_question:, conv_session:, correlation_id:, companion_focus:)
+    return question unless companion_focus && companion_generation_direct? && conv_session
+
+    retrieval = Rag::CompanionCaseRecord.retrieval_text(
+      conv_session,
+      raw_question.presence || question,
+      correlation_id: correlation_id
+    )
+    effective = retrieval.text.presence || question.to_s
+    @companion_case_retrieve_question = effective
+    record_case_retrieval(retrieval, effective)
+    effective
+  end
+
+  def record_case_retrieval(retrieval, effective)
+    trace = Rag::CompanionCaseRecord.retrieval_trace(retrieval).merge("retrieve_question" => effective.to_s)
+    @companion_case_retrieval_trace = trace
+    Rails.logger.info(
+      "[CASE_RECORD_RETRIEVAL] included=#{retrieval.included.size} omitted=#{retrieval.omitted.size} truncated=#{retrieval.current_truncated}"
+    )
+    return unless Rag::ValidationCapture.active?
+
+    Rag::ValidationCapture.record("case_record_retrieval", trace)
+  end
+
+  def snapshot_direct_case!(conv_session, episode, correlation_id)
+    raw = conv_session.respond_to?(:case_evidence) ? conv_session.case_evidence : {}
+    @companion_case_before = raw.is_a?(Hash) ? raw.deep_dup : {}
+    @companion_case_revision = Rag::CompanionCaseRecord.column_revision(@companion_case_before)
+    @companion_case_episode_id = Rag::CompanionCaseRecord.episode_id_of(episode).to_s
+    @companion_case_correlation_id = correlation_id
+  end
+
+  def attach_direct_case!(result, chunks, correlation_id)
+    return result unless @companion_direct_turn
+
+    published = result[:route_outcome].to_s == "abstained" ? "" : result[:answer].to_s
+    outcome = result[:route_outcome].to_s == "abstained" ? "abstained" : "published"
+    recorded = Rag::CompanionCaseRecord.record(
+      state: @companion_case_before,
+      episode_id: @companion_case_episode_id,
+      chunks: chunks,
+      published_text: published,
+      correlation_id: correlation_id || @companion_case_correlation_id,
+      outcome: outcome
+    )
+    result[:case_outcome] = outcome
+    result[:case_evidence] = recorded.state
+    result[:case_history] = recorded.history_text
+    result[:case_unresolved] = recorded.unresolved
+    result[:expected_case_revision] = @companion_case_revision.to_i
+    result[:case_episode_id] = @companion_case_episode_id
+    result[:case_evidence_before] = @companion_case_before
+    result[:case_correlation_id] = correlation_id || @companion_case_correlation_id
+    result[:case_source_chunks] = chunks
+    result[:case_retrieval] = @companion_case_retrieval_trace
+    result
+  end
+
+  def anthropic_companion_converse(params)
+    payload = Rag::CompanionDirectAnswer.anthropic_payload(params)
+    model_id = Rag::CompanionDirectAnswer.tracking_model_id
+    record_anthropic_request(payload)
     attempt = 0
     limit = Rag::TransientBackoff.limit
     begin
       attempt += 1
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      response = document_identity_generator.converse(params)
+      response = Rag::LocalPassLedger.protect!(
+        operation: "converse_message",
+        model_id: model_id,
+        input_tokens: Rag::LocalPassLedger.text_chars(payload),
+        output_tokens: payload[:max_tokens].to_i
+      ) { Rag::CompanionDirectAnswer.anthropic_client.messages.create(**payload) }
       latency_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
-      [ response, latency_ms ]
+      Rag::LocalPassLedger.settle_usage!(response, model_id: model_id)
+      [ Rag::CompanionDirectAnswer.wrap_anthropic(response), latency_ms ]
     rescue StandardError => error
       raise unless Rag::CompanionDirectAnswer.asleep?(error)
       raise if attempt >= limit
 
       pause = Rag::TransientBackoff.wait_seconds(attempt - 1)
-      Rails.logger.warn("[COMPANION_DIRECT] asleep attempt=#{attempt} retry_in=#{pause}s #{error.class}")
+      Rails.logger.warn("[COMPANION_DIRECT] asleep attempt=#{attempt} provider=anthropic retry_in=#{pause}s #{error.class}")
       sleep(pause) if pause.positive?
       retry
     end
   end
 
+  # The payload carries no credential; the client adds it when sending.
+  def record_anthropic_request(payload)
+    return unless Rag::ValidationCapture.active?
+
+    Rag::ValidationCapture.record(
+      "converse",
+      payload.deep_stringify_keys.merge(
+        "stage" => "converse",
+        "result" => "prepared",
+        "operation" => "converse_message",
+        "provider" => "anthropic",
+        "model_id" => payload[:model].to_s
+      )
+    )
+  end
+
+  def companion_direct_converse(params)
+    anthropic_companion_converse(params)
+  end
+
   def track_companion_direct_usage(response, latency_ms, tracking)
-    track_companion_generation_usage(response, latency_ms, tracking, "companion_direct")
+    track_companion_generation_usage(
+      response, latency_ms, tracking, "companion_direct",
+      model_id: Rag::CompanionDirectAnswer.tracking_model_id
+    )
   end
 
   def record_companion_direct(composed, usage)
@@ -1447,7 +1604,7 @@ class BedrockRagService
     track_companion_generation_usage(response, latency_ms, tracking, "companion_plan")
   end
 
-  def track_companion_generation_usage(response, latency_ms, tracking, route)
+  def track_companion_generation_usage(response, latency_ms, tracking, route, model_id: BedrockClient::QUERY_MODEL_ID)
     usage = response.respond_to?(:usage) ? response.usage : nil
     input_tokens = usage.respond_to?(:input_tokens) ? usage.input_tokens.to_i : 0
     output_tokens = usage.respond_to?(:output_tokens) ? usage.output_tokens.to_i : 0
@@ -1457,7 +1614,7 @@ class BedrockRagService
     TrackBedrockQueryJob.perform_later(
       source: "query",
       route: route,
-      model_id: BedrockClient::QUERY_MODEL_ID,
+      model_id: model_id,
       token_source: "provider_usage",
       input_tokens: input_tokens,
       output_tokens: output_tokens,
@@ -1546,7 +1703,13 @@ class BedrockRagService
     end
     if conv_session.respond_to?(:conversation_history)
       Array(conv_session.conversation_history).each do |message|
-        texts << message["content"] if message.is_a?(Hash) && message["role"] == "user"
+        next unless message.is_a?(Hash) && message["role"] == "user"
+
+        texts << if @companion_direct_turn
+          Rag::CompanionCaseRecord.technician_text(message)
+        else
+          message["content"]
+        end
       end
     end
     texts.compact
@@ -1662,31 +1825,64 @@ class BedrockRagService
     Rag::EquipmentIdentity.from_episode(episode)
   end
 
-  def identity_closed_result(status:, reason:, question:, response_locale:, retrieval: nil, model_invoked: false)
-    Rag::ValidationCapture.record(
-      "route_exit",
+  def identity_closed_result(status:, reason:, question:, response_locale:, retrieval: nil, model_invoked: false, error: nil, evidence: nil)
+    retained = retained_generation_evidence(evidence)
+    keep = generation_failure_reason?(reason) && retained.any?
+    access = provider_access_denied?(error)
+    message = provider_failure_message(error)
+    exit_event = {
       "stage" => "route",
       "result" => "identity_closed",
       "exit" => "identity_closed",
       "condition" => reason&.to_s.presence || "unavailable",
-      "status" => status.to_s
-    )
+      "status" => status.to_s,
+      "evidence_retained" => keep,
+      "evidence_count" => retained.size
+    }
+    if error
+      exit_event["provider_error_class"] = error.class.name
+      exit_event["provider_error_message"] = message
+    end
+    exit_event["provider_rejection"] = "access_denied" if access
+    if keep
+      exit_event["evidence"] = retained.map { |row|
+        metadata = row[:metadata] || {}
+        {
+          "sha256" => row[:chunk_sha256],
+          "location_uri" => row[:location_uri],
+          "page" => metadata["page_number"] || metadata[:page_number],
+          "content" => row[:content]
+        }
+      }
+    end
+    Rag::ValidationCapture.record("route_exit", exit_event)
     seal_identity_outcome(status: status, reason: reason, fallback: false)
     locale = effective_response_locale(question, response_locale: response_locale)
-    answer = Rag::AnswerSafetyProcessor.new(locale: locale).call("DATA_NOT_AVAILABLE", evidence: [])
+    unavailable = service_unavailable_reason?(reason)
+    answer = if unavailable
+      I18n.t("rag.service_unavailable", locale: locale)
+    elsif keep
+      I18n.t("rag.generation_failed", locale: locale)
+    else
+      Rag::AnswerSafetyProcessor.new(locale: locale).call("DATA_NOT_AVAILABLE", evidence: [])
+    end
     {
       answer: answer,
       citations: [],
-      retrieved_citations: [],
+      retrieved_citations: keep ? retained : [],
       doc_refs: nil,
       session_id: nil,
       retrieval_trace: retrieval.is_a?(Hash) ? retrieval[:retrieval_trace] : {},
-      generation_mode: "document_identity_scope",
+      generation_mode: unavailable ? "service_unavailable" : "document_identity_scope",
       model_invoked: model_invoked,
-      route_outcome: :abstained,
+      route_outcome: unavailable || keep ? :unavailable : :abstained,
       equipment_identity_status: status.to_s,
       equipment_identity_reason: reason&.to_s,
-      document_identity: Thread.current[:document_identity_scope]
+      document_identity: Thread.current[:document_identity_scope],
+      provider_rejection: ("access_denied" if access),
+      provider_error_class: error&.class&.name,
+      provider_error_message: message,
+      evidence_retained: keep
     }
   end
 
@@ -1716,7 +1912,13 @@ class BedrockRagService
     result
   end
 
+  def service_unavailable_reason?(reason)
+    %i[retrieval_timeout retrieval_error provider_blocked plan field_records episode identity system_role raw_question].include?(reason&.to_sym)
+  end
+
   def identity_failure_reason(error, stage:)
+    return :provider_blocked if error.is_a?(Rag::InferencePolicy::BedrockInferenceBlocked)
+
     timeout = error.is_a?(Timeout::Error) || error.is_a?(Net::ReadTimeout) || error.is_a?(Net::OpenTimeout)
     if stage == :generation
       timeout ? :generation_timeout : :generation_error
@@ -1725,10 +1927,51 @@ class BedrockRagService
     end
   end
 
+  def generation_failure_reason?(reason)
+    %i[generation_error generation_timeout generation_blank].include?(reason&.to_sym)
+  end
+
+  # The captured Bedrock refusal names the model and says it is not available
+  # for this account. A generic ValidationException is a different failure.
+  def provider_access_denied?(error)
+    return false if error.nil?
+
+    error.class.name.split("::").last.to_s.start_with?("AccessDenied") ||
+      error.message.to_s.match?(/not available for this account/i)
+  end
+
+  def provider_failure_message(error)
+    return nil if error.nil?
+
+    text = Rag::ValidationCapture.scrub_text(error.message.to_s).gsub(/\s+/, " ").strip
+    text[0, 500]
+  end
+
+  def retained_generation_evidence(chunks)
+    Array(chunks).filter_map do |chunk|
+      next unless chunk.is_a?(Hash)
+
+      content = chunk[:content] || chunk["content"]
+      next if content.blank?
+
+      metadata = chunk[:metadata] || chunk["metadata"] || {}
+      metadata = metadata.to_h if metadata.respond_to?(:to_h) && !metadata.is_a?(Hash)
+      metadata = metadata.stringify_keys if metadata.respond_to?(:stringify_keys)
+      sha = (chunk[:chunk_sha256] || chunk["chunk_sha256"]).to_s
+      sha = Digest::SHA256.hexdigest(content.to_s) if sha.empty?
+      {
+        content: content.to_s,
+        location_uri: (chunk[:location_uri] || chunk["location_uri"]).to_s,
+        metadata: metadata,
+        chunk_sha256: sha
+      }
+    end
+  end
+
   def finish_document_identity_generation(question:, raw_answer:, chunks:, response_locale:, retrieval:,
                                            companion: false, safety_evidence: nil, companion_turn: false,
                                            stop_reason: nil, technician_texts: nil, manufacturer: nil,
-                                           raw_question: nil)
+                                           raw_question: nil, conv_session: nil, correlation_id: nil, episode: nil)
     if companion_turn
       return finish_companion_turn_generation(
         question: raw_question.presence || question,
@@ -1738,7 +1981,8 @@ class BedrockRagService
         retrieval: retrieval,
         stop_reason: stop_reason,
         technician_texts: technician_texts,
-        manufacturer: manufacturer
+        manufacturer: manufacturer,
+        correlation_id: correlation_id
       )
     end
 
@@ -1802,9 +2046,17 @@ class BedrockRagService
   end
 
   def finish_companion_turn_generation(question:, raw_answer:, chunks:, response_locale:, retrieval:,
-                                       stop_reason:, technician_texts:, manufacturer:)
+                                       stop_reason:, technician_texts:, manufacturer:, correlation_id: nil)
     locale = effective_response_locale(question, response_locale: response_locale)
     extracted = extract_doc_refs(raw_answer.to_s)[:clean_answer]
+    sources = companion_publication_sources(chunks)
+    if @companion_direct_turn
+      backing = Rag::CompanionClaimBacking.call(
+        text: extracted, sources: sources, technician_texts: technician_texts, manufacturer: manufacturer
+      )
+      record_companion_claim_backing(backing)
+      extracted = backing.text
+    end
     citations = document_identity_citation_records(chunks)
     safety = Rag::AnswerSafetyProcessor.new(locale: locale).call(
       extracted,
@@ -1817,7 +2069,7 @@ class BedrockRagService
     publication = Rag::CompanionTurnPublication.call(
       text: extracted,
       guarded_text: guarded,
-      sources: companion_publication_sources(chunks),
+      sources: sources,
       stop_reason: stop_reason,
       technician_texts: technician_texts,
       manufacturer: manufacturer,
@@ -1848,6 +2100,7 @@ class BedrockRagService
       pending_question: companion_turn_pending(accepted, answer_text)
     }
     capture_cited_sources(result[:citations])
+    attach_direct_case!(result, chunks, correlation_id)
     result
   end
 
@@ -1856,6 +2109,12 @@ class BedrockRagService
     return nil unless accepted
 
     Rag::PendingQuestion.presented(@companion_plan_pending, answer_text, retained: @companion_plan_retained)
+  end
+
+  def record_companion_claim_backing(backing)
+    return unless Rag::ValidationCapture.active?
+
+    Rag::ValidationCapture.record("companion_claim_backing", backing.to_h.merge("text" => backing.text))
   end
 
   def record_companion_publication(publication, stop_reason)
@@ -2377,6 +2636,7 @@ class BedrockRagService
   # One physical retrieve_and_generate. The local ledger, when armed, counts
   # this call and refuses it before the SDK. Aurora retries call it again.
   def local_retrieve_and_generate(params)
+    Rag::InferencePolicy.check!(operation: "retrieve_and_generate", model_id: @model_ref)
     Rag::LocalPassLedger.single_attempt!(@client)
     result = Rag::LocalPassLedger.protect!(
       operation: "retrieve_and_generate",
@@ -2460,6 +2720,7 @@ class BedrockRagService
       ) do
         transport_attempt += 1
         limit.before_physical! if limit&.armed?
+        Rag::InferencePolicy.check!(operation: "agent_runtime.retrieve")
         @client.retrieve(params)
       end
     rescue StandardError => error
@@ -3873,8 +4134,11 @@ class BedrockRagService
       "truncated" => truncated == true,
       "prompt_chars" => prompt.to_s.length,
       "documentary_context" => Rag::ValidationCapture.documentary_context(prompt),
-      "error_class" => nil
+      "error_class" => result[:provider_error_class]
     }
+    payload["provider_rejection"] = result[:provider_rejection] if result[:provider_rejection]
+    payload["provider_error_message"] = result[:provider_error_message] if result[:provider_error_message]
+    payload["evidence_retained"] = result[:evidence_retained] unless result[:evidence_retained].nil?
     payload["citations"] = citations unless citations.nil?
     Rag::ValidationCapture.record("published_answer", payload)
   end

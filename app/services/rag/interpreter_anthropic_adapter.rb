@@ -109,8 +109,8 @@ module Rag
       end
     end
 
-    def self.translate(params, model_id:)
-      new.translate(params, model_id: model_id)
+    def self.translate(params, model_id:, output_cap: TurnInterpreter::MAX_TOKENS)
+      new.translate(params, model_id: model_id, output_cap: output_cap)
     end
 
     def self.normalize(native)
@@ -164,12 +164,12 @@ module Rag
       compact.include?("apikey") || compact == "authorization"
     end
 
-    def translate(params, model_id:)
+    def translate(params, model_id:, output_cap: TurnInterpreter::MAX_TOKENS)
       accepted = accept_model!(model_id)
       inference = hash_at(params, :inference_config)
       max_tokens = inference[:max_tokens] || inference["max_tokens"]
       raise Error, "max_tokens_missing" unless max_tokens.is_a?(Integer)
-      raise Error, "max_tokens_above_interpreter" if max_tokens > TurnInterpreter::MAX_TOKENS
+      raise Error, "max_tokens_above_interpreter" if max_tokens > output_cap
 
       temperature = inference.key?(:temperature) ? inference[:temperature] : inference["temperature"]
       adjustments = []

@@ -1494,6 +1494,100 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     episode
   end
 
+  def excerpt_episode(identifier, text)
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    episode.assign_goal!("La puerta no responde", correlation_id: "seed")
+    episode.append_identifier!(identifier, correlation_id: "seed", source: "user")
+    episode.append_excerpts!([ { "text" => text, "cid" => "seed", "a" => 0, "b" => text.length, "source" => "turn_excerpt" } ])
+    episode
+  end
+
+  test "a component named in an earlier turn and denied by name is replaced and retrieved" do
+    cases = [
+      [ "Elemont MH", "En el plano, ¿el trazo de Chapa nivel 2 se une a PasCom 24V donde lo cruza",
+        "Me equivoqué: la referencia que estoy revisando es Chapa nivel 3, no Chapa nivel 2. ¿Cómo aparece ese recorrido?",
+        "Chapa nivel 3", "Chapa nivel 2" ],
+      [ "VF5+", "Todavía no he revisado el ajuste de #54 ni he hecho mediciones",
+        "Me equivoqué: no es #54, es #52. ¿Qué hace ese ajuste?", "#52", "#54" ]
+    ]
+    cases.each do |identifier, earlier, turn, current, denied|
+      episode = excerpt_episode(identifier, earlier)
+      result = nil
+      events = Rag::ValidationCapture.capture {
+        result = perceive(correct_payload([ assert_span(current, "designator") ]), turn, episode: episode)
+      }
+      decision = settle(episode, result, turn)
+      query = Rag::QueryComposer.call(state: episode, turn: turn, perception: result, decision: decision)
+      applied = events.find { |row| row["kind"] == "perception_applied" }
+
+      assert_equal "correct", result.move, turn
+      assert_nil result.clarification_target
+      assert decision.performs_retrieval?, turn
+      assert_includes episode.identifiers.pluck("value"), current
+      assert_includes query, current
+      assert_not_includes query, denied
+      assert applied["adjustments"].any? { |row| row["reason"] == "explicit_identifier_negation" }
+    end
+  end
+
+  test "an earlier component the model negates itself is replaced like the recovered denial" do
+    cases = [
+      [ "Elemont MH", "En el plano, ¿el trazo de Chapa nivel 2 se une a PasCom 24V donde lo cruza",
+        "Me equivoqué: la referencia que estoy revisando es Chapa nivel 3, no Chapa nivel 2. ¿Cómo aparece ese recorrido?",
+        "Chapa nivel 3", "Chapa nivel 2" ],
+      [ "VF5+", "Todavía no he revisado el ajuste de #54 ni he hecho mediciones",
+        "Me equivoqué: no es #54, es #52. ¿Qué hace ese ajuste?", "#52", "#54" ],
+      [ "Tablero TX-200", "En el esquema, ¿el contactor KM1 alimenta la bobina del freno",
+        "Perdón, es el contactor KM2, no KM1. ¿Qué alimenta?", "KM2", "KM1" ]
+    ]
+    cases.each do |identifier, earlier, turn, current, denied|
+      episode = excerpt_episode(identifier, earlier)
+      sent = [ assert_span(current, "designator"), { "span" => denied, "act" => "negate", "slot_hint" => "designator" } ]
+      result = nil
+      events = Rag::ValidationCapture.capture {
+        result = perceive(correct_payload(sent), turn, episode: episode)
+      }
+      decision = settle(episode, result, turn)
+      query = Rag::QueryComposer.call(state: episode, turn: turn, perception: result, decision: decision)
+      applied = events.find { |row| row["kind"] == "perception_applied" }
+
+      assert_equal "correct", result.move, turn
+      assert_nil result.clarification_target
+      assert_equal "identifier", result.identities.find { |item| item.act == "negate" }.slot
+      assert decision.performs_retrieval?, turn
+      assert_includes episode.identifiers.pluck("value"), current
+      assert_includes query, current
+      assert_not_includes query, denied
+      assert applied["adjustments"].none? { |row| row["reason"] == "correct_without_slot_negation" }
+    end
+  end
+
+  test "a negate the model sends for a label the episode never had still asks" do
+    episode = excerpt_episode("Elemont MH", "En el plano, ¿el trazo de Chapa nivel 2 se une a PasCom 24V donde lo cruza")
+    turn = "Me equivoqué: es Chapa nivel 3, no Chapa nivel 5."
+    sent = [ assert_span("Chapa nivel 3", "designator"), { "span" => "Chapa nivel 5", "act" => "negate", "slot_hint" => "designator" } ]
+    result = perceive(correct_payload(sent), turn, episode: episode)
+
+    assert_equal "unclear", result.move
+    assert_equal "correction_target", result.clarification_target
+  end
+
+  test "a correction that does not name a replaced component from the episode still asks" do
+    earlier = "En el plano, ¿el trazo de Chapa nivel 2 se une a PasCom 24V donde lo cruza"
+    [
+      [ "Me equivoqué con la referencia de antes.", [] ],
+      [ "Me equivoqué: es Chapa nivel 3, no Chapa nivel 5.", [ assert_span("Chapa nivel 3", "designator") ] ]
+    ].each do |turn, assertions|
+      episode = excerpt_episode("Elemont MH", earlier)
+      result = perceive(correct_payload(assertions), turn, episode: episode)
+      decision = settle(episode, result, turn)
+
+      assert_equal "unclear", result.move, turn
+      assert_equal "correction_target", result.clarification_target
+      assert_not decision.performs_retrieval?
+    end
+  end
+
   def correct_payload(assertions)
     { "move" => "correct", "assertions" => assertions, "observations" => [], "pending_resolution" => nil, "clarification_target" => nil }
   end
@@ -1584,6 +1678,33 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
       correlation_id: "seed", at: Time.current.iso8601
     )
     episode
+  end
+
+  test "new work without an open job is a report and a real change stays new work" do
+    opening = perceive(
+      { "move" => "new_work", "assertions" => [], "observations" => [ "la puerta no cierra" ], "pending_resolution" => nil, "clarification_target" => nil },
+      "la puerta no cierra"
+    )
+    assert_equal "report", opening.move
+
+    episode = Rag::ActiveEpisode.open(correlation_id: "open-job", now: Time.current)
+    episode.write_fact!(
+      "manufacturer", status: "known", value: "Fermator", source: "user",
+      correlation_id: "open-job", at: Time.current.iso8601
+    )
+    kept = perceive(
+      { "move" => "follow_up", "assertions" => [], "observations" => [], "pending_resolution" => nil, "clarification_target" => nil },
+      "¿Qué reviso?",
+      episode: episode
+    )
+    changed = perceive(
+      { "move" => "new_work", "assertions" => [], "observations" => [ "el variador no arranca" ], "pending_resolution" => nil, "clarification_target" => nil },
+      "el variador no arranca",
+      episode: episode
+    )
+
+    assert_equal "follow_up", kept.move
+    assert_equal "new_work", changed.move
   end
 
   def settle(episode, result, turn)

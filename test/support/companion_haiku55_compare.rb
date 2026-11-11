@@ -557,10 +557,14 @@ module Rag
       end
     end
 
+    def retries_allowed
+      RETRIES
+    end
+
     def call_with_retries(number, body, input_tokens, api_key, turn_dir)
       attempts = []
       current = body
-      retries_left = RETRIES
+        retries_left = retries_allowed
       blocked = false
       result = nil
       kind = nil
@@ -817,8 +821,11 @@ module Rag
       messages = message_list(canonical)
       system = system_text(canonical)
       mismatches = []
-      mismatches << "turn-#{number}:system_sha" unless Digest::SHA256.hexdigest(system) == CompanionDirectCaptureReplay::PROMPT_SHA
-      mismatches << "turn-#{number}:system_prompt" unless system == CompanionDirectAnswer::SYSTEM_PROMPT
+      mismatches << "turn-#{number}:system_sha" unless Digest::SHA256.hexdigest(system) == CompanionDirectCaptureReplay::HISTORICAL_PROMPT_SHA
+      captured = File.read(CompanionDirectCaptureReplay::CAPTURED_PROMPT_PATH)
+      mismatches << "captured:system_sha" unless Digest::SHA256.hexdigest(captured) == CompanionDirectCaptureReplay::PROMPT_SHA
+      live = File.read(CompanionDirectAnswer::SYSTEM_PROMPT_PATH)
+      mismatches << "live:system_loaded" unless live == CompanionDirectAnswer::SYSTEM_PROMPT
       mismatches << "turn-#{number}:roles" unless messages.pluck("role") == resolved.pluck("role")
       mismatches << "turn-#{number}:texts" unless messages.each_with_index.all? { |message, index|
         message["text"] == resolved[index].to_h["text"]

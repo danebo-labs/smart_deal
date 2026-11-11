@@ -9,10 +9,10 @@ class Rag::TurnInterpreterFailureTest < ActiveSupport::TestCase
 
   test "preparing the client is not a transport failure" do
     error = Timeout::Error.new(SECRET)
-    original = BedrockClient.method(:new)
+    original = Rag::InterpreterAnthropicClient.method(:new)
     result = nil
     events = []
-    BedrockClient.define_singleton_method(:new) { |*| raise error }
+    Rag::InterpreterAnthropicClient.define_singleton_method(:new) { |*| raise error }
     assert_no_enqueued_jobs only: TrackBedrockQueryJob do
       events = Rag::ValidationCapture.capture do
         result = interpret("la puerta no cierra", client: nil)
@@ -26,7 +26,7 @@ class Rag::TurnInterpreterFailureTest < ActiveSupport::TestCase
     assert_equal 0, result.output_tokens
     assert_secret_free(result, events)
   ensure
-    BedrockClient.define_singleton_method(:new) { |*args, **kwargs, &block| original.call(*args, **kwargs, &block) } if original
+    Rag::InterpreterAnthropicClient.define_singleton_method(:new) { |*args, **kwargs, &block| original.call(*args, **kwargs, &block) } if original
   end
 
   test "a converse timeout retries and ends as a service failure" do

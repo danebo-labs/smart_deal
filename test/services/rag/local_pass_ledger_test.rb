@@ -10,6 +10,7 @@ class Rag::LocalPassLedgerTest < ActiveSupport::TestCase
     AWS_MAX_ATTEMPTS
     RAG_VALIDATION_CAPTURE_RUN
     RAG_ASSIGNMENT_SPEND_PATH
+    RAG_LOCAL_PASS_ALLOWED_CALLS
   ].freeze
 
   setup do
@@ -26,7 +27,7 @@ class Rag::LocalPassLedgerTest < ActiveSupport::TestCase
     Thread.current[:rag_validation_capture] = nil
   end
 
-  test "a recorded call cap of 152, 164, 166, 174, 175, 180, 185, 194, 196, 211, or 213 is read and a higher one is not" do
+  test "a recorded call cap through 245 is read and a higher one is not" do
     path = File.join(Dir.mktmpdir("ledger-cap"), "spend.json")
     File.write(path, JSON.generate("authorization" => { "call_cap" => 152 }))
     ENV["RAG_ASSIGNMENT_SPEND_PATH"] = path
@@ -61,6 +62,12 @@ class Rag::LocalPassLedgerTest < ActiveSupport::TestCase
 
     File.write(path, JSON.generate("authorization" => { "call_cap" => 213 }))
     assert_equal 213, Rag::LocalPassLedger.send(:assignment_call_cap)
+
+    File.write(path, JSON.generate("authorization" => { "call_cap" => 229 }))
+    assert_equal 229, Rag::LocalPassLedger.send(:assignment_call_cap)
+
+    File.write(path, JSON.generate("authorization" => { "call_cap" => 245 }))
+    assert_equal 245, Rag::LocalPassLedger.send(:assignment_call_cap)
 
     File.write(path, JSON.generate("authorization" => { "call_cap" => 181 }))
     assert_equal Rag::LocalPassLedger::ASSIGNMENT_CALL_CAP, Rag::LocalPassLedger.send(:assignment_call_cap)
@@ -102,6 +109,26 @@ class Rag::LocalPassLedgerTest < ActiveSupport::TestCase
     assert_equal 0, calls
     assert_equal 0, Rag::LocalPassLedger.snapshot["attempts"]
     assert_equal 1, Rag::LocalPassLedger.snapshot["blocked"]
+  end
+
+  test "a call outside the allowed operation and model pairs stops before it is counted or sent" do
+    arm!(call_cap: 5, cost_cap: "1")
+    ENV["RAG_LOCAL_PASS_ALLOWED_CALLS"] = "converse@#{model_id},converse_message@claude-haiku-5-5"
+    sent = []
+
+    Rag::LocalPassLedger.protect!(operation: "converse", model_id: model_id, input_tokens: 10, output_tokens: 10) { sent << :interpreter }
+    Rag::LocalPassLedger.protect!(operation: "converse_message", model_id: "claude-haiku-5-5-direct", input_tokens: 10, output_tokens: 10) { sent << :companion }
+    other_generator = assert_raises(Rag::LocalPassLedger::Stop) do
+      Rag::LocalPassLedger.protect!(operation: "generate_text", model_id: model_id, input_tokens: 10, output_tokens: 10) { sent << :plan }
+    end
+    other_route = assert_raises(Rag::LocalPassLedger::Stop) do
+      Rag::LocalPassLedger.protect!(operation: "converse_message", model_id: model_id, input_tokens: 10, output_tokens: 10) { sent << :bedrock }
+    end
+
+    assert_equal %i[interpreter companion], sent
+    assert_match(/\Anot_allowed:generate_text/, other_generator.message)
+    assert_match(/\Anot_allowed:converse_message/, other_route.message)
+    assert_equal 2, Rag::LocalPassLedger.snapshot["attempts"]
   end
 
   test "provider usage replaces the ceiling and another thread does not settle it" do

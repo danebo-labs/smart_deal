@@ -22,6 +22,7 @@ module Rag
     CALL_CAP_ENV = "RAG_LOCAL_PASS_CALL_CAP"
     COST_CAP_ENV = "RAG_LOCAL_PASS_COST_CAP_USD"
     ATTEMPTS_ENV = "AWS_MAX_ATTEMPTS"
+    ALLOWED_CALLS_ENV = "RAG_LOCAL_PASS_ALLOWED_CALLS"
     TICKETS = :rag_local_pass_tickets
     ASSIGNMENT_PATH_ENV = "RAG_ASSIGNMENT_SPEND_PATH"
     ASSIGNMENT_IDS = :rag_assignment_spend_ids
@@ -30,9 +31,12 @@ module Rag
     # cap stays US$4 and includes unknown exposure.
     ASSIGNMENT_CALL_CAP = 150
     # 150 is the standing cap. A file that recorded a bump to 152, 164, 166,
-    # 174, 175, 180, 185, 194, 196, 211, or 213 is read back. A larger number is not a grant.
-    ASSIGNMENT_CALL_CAPS = [ ASSIGNMENT_CALL_CAP, 152, 164, 166, 174, 175, 180, 185, 194, 196, 211, 213 ].freeze
-    ASSIGNMENT_COST_CAP_USD = "4"
+    # 174, 175, 180, 185, 194, 196, 211, 213, 229, 245, 295, 311, 320, 328, or 1000 is read back.
+    # A larger number is not a grant.
+    ASSIGNMENT_CALL_CAPS = [ ASSIGNMENT_CALL_CAP, 152, 164, 166, 174, 175, 180, 185, 194, 196, 211, 213, 229, 245, 295, 311, 320, 328, 1000 ].freeze
+    # US$4 until attempt 326. Lahiri, 2026-11-10: US$2.29 of new spend on top
+    # of the 2.734677 committed plus unknown at that point.
+    ASSIGNMENT_COST_CAP_USD = "5.024677"
     LOCAL_HOSTS = [ "", "localhost", "127.0.0.1", "::1" ].freeze
     MUTEX = Mutex.new
 
@@ -48,6 +52,21 @@ module Rag
       # The guard flag alone. Absent or malformed caps still count as requested.
       def guard_requested?
         ENV[GUARD_ENV] == "1"
+      end
+
+      # "operation@model_prefix" pairs, comma separated. Unset allows every
+      # call. A call outside the list stops before it is reserved or sent.
+      def allowed_calls
+        ENV[ALLOWED_CALLS_ENV].to_s.split(",").map(&:strip).reject(&:empty?).map { |pair| pair.split("@", 2) }
+      end
+
+      def refuse_unlisted_call!(operation, model_id)
+        allowed = allowed_calls
+        return if allowed.empty?
+        return if allowed.any? { |name, prefix| name == operation.to_s && model_id.to_s.start_with?(prefix.to_s) }
+
+        note(operation, "not_allowed", BigDecimal("0"))
+        raise Stop, "not_allowed:#{operation}:#{model_id}"
       end
 
       def missing_requirements
@@ -133,6 +152,8 @@ module Rag
       def protect!(operation:, model_id:, input_tokens:, output_tokens:)
         refuse_unarmed_guard!(operation)
         return yield unless armed?
+
+        refuse_unlisted_call!(operation, model_id)
 
         ceiling = price(model_id, input_tokens, output_tokens)
         file_id = reserve_assignment!(operation, model_id, ceiling)

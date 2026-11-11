@@ -27,6 +27,7 @@ class BedrockClient
 
   def generate_text(prompt, model_id: DEFAULT_MODEL_ID, max_tokens: 2000, temperature: 0.7, tracking: nil, system: nil)
     model_id ||= DEFAULT_MODEL_ID
+    Rag::InferencePolicy.check!(operation: "invoke_model", model_id: model_id)
     @last_stop_reason = nil
 
     body = {
@@ -84,6 +85,8 @@ class BedrockClient
 
     text
   rescue StandardError => e
+    raise if e.is_a?(Rag::InferencePolicy::BedrockInferenceBlocked)
+
     record_generation_error(
       e, prompt, capture_fields,
       system: system, model_id: model_id, max_tokens: max_tokens, temperature: temperature
@@ -137,6 +140,7 @@ class BedrockClient
   # 4 web check, when that process armed it, stops the call before the SDK.
   # Disarmed, this is the SDK call and its errors propagate unchanged.
   def converse(*args, **kwargs, &block)
+    Rag::InferencePolicy.check!(operation: "converse", model_id: Rag::LocalPassLedger.model_id_from(args, kwargs))
     budget = phase4_web_budget
     if budget&.armed?
       budget.checkpoint!("interpreter")
@@ -168,6 +172,7 @@ class BedrockClient
   # Tool use on the primary runtime client. #converse stays the 8-second
   # shadow client used by perception. generate_text cannot send a tool schema.
   def converse_message(params)
+    Rag::InferencePolicy.check!(operation: "converse_message", model_id: Rag::LocalPassLedger.model_id_from(params))
     record_converse_prepared(params)
     budget = armed_validation_budget
     if budget&.armed?
@@ -196,6 +201,8 @@ class BedrockClient
     Rag::ValidationCapture.record_model_boundary("converse_message", "blocked")
     raise
   rescue StandardError => error
+    raise if error.is_a?(Rag::InferencePolicy::BedrockInferenceBlocked)
+
     budget = armed_validation_budget
     raise unless budget&.armed?
 

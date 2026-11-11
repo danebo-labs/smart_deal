@@ -445,14 +445,19 @@ class Vf5F5WebRegressionTest < ActionDispatch::IntegrationTest
 
   def with_captured_externals(directory = nil, names = nil)
     cassette = Cassette.new(self, directory, names)
+    original_interpreter = Rag::InterpreterAnthropicClient.method(:new)
     original_converse = BedrockClient.instance_method(:converse)
     original_message = BedrockClient.instance_method(:converse_message)
     original_client = Aws::BedrockAgentRuntime::Client.method(:new)
+    Rag::InterpreterAnthropicClient.define_singleton_method(:new) { |*, **| cassette }
     BedrockClient.define_method(:converse) { |*args, **kwargs| cassette.converse(args.first || kwargs) }
     BedrockClient.define_method(:converse_message) { |*args, **kwargs| cassette.converse(args.first || kwargs) }
     Aws::BedrockAgentRuntime::Client.define_singleton_method(:new) { |*, **| cassette.agent }
     yield cassette
   ensure
+    if original_interpreter
+      Rag::InterpreterAnthropicClient.define_singleton_method(:new) { |*args, **kwargs| original_interpreter.call(*args, **kwargs) }
+    end
     BedrockClient.define_method(:converse, original_converse) if original_converse
     BedrockClient.define_method(:converse_message, original_message) if original_message
     if original_client

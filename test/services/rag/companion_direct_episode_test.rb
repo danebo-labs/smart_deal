@@ -47,9 +47,11 @@ class Rag::CompanionDirectEpisodeTest < ActiveSupport::TestCase
     }
     @host = CompanionDirectHost.new(@account, @user)
     install_companion_direct_runtime!
+    install_direct_anthropic!(self)
   end
 
   teardown do
+    Thread.current[:companion_direct_anthropic] = nil
     remove_companion_direct_runtime!
     Thread.current[:companion_direct_runtime] = nil
     Thread.current[:companion_direct_kb] = nil

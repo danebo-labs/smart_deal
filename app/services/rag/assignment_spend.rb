@@ -14,8 +14,32 @@ module Rag
     # 211 step is the authorized direct guion: the one free call already on
     # the file plus fifteen, sixteen in total, six for guion 2 and ten for
     # guion 1. The 213 step is two more attempts for the Sonnet 4.5
-    # comparison, three calls in total and no retry. Anything else stays.
-    CALL_CAP_BUMPS = { 150 => 152, 152 => 164, 164 => 166, 166 => 174, 174 => 175, 175 => 180, 180 => 185, 185 => 194, 194 => 196, 196 => 211, 211 => 213 }.freeze
+    # comparison, three calls in total and no retry. The 229 step is the
+    # case-record pass: sixteen calls, eight turns, interpreter and
+    # generation, no retry. The 245 step is the Sonnet 4.5 case-record
+    # pass: sixteen new ledger calls and no retry. The 295 step is the
+    # Haiku 5.5 direct pass: G2, G1, and the reserved Elemont script, with
+    # one corrective repetition, fifty ledger calls. The 311 step is the
+    # second Haiku 5.5 grant: G1 and Elemont, eighteen calls. The 320 step is
+    # the third: Elemont and one network rerun, sixteen calls. The 328 step
+    # is the fourth: one Elemont T1–T4 run, eight calls. The 1000 step is
+    # the live HTTP validation of Haiku 5.5 (Lahiri, 2026-11-10): US$2.29 of
+    # new spend, priced at the documented Haiku 5.5 rate, so the dollar
+    # successor at 326 is the real limit. Anything else stays.
+    CALL_CAP_BUMPS = { 150 => 152, 152 => 164, 164 => 166, 166 => 174, 174 => 175, 175 => 180, 180 => 185, 185 => 194, 194 => 196, 196 => 211, 211 => 213, 213 => 229, 229 => 245, 245 => 295, 295 => 311, 311 => 320, 320 => 328, 328 => 1000 }.freeze
+    # A later dollar grant. It does not rewrite authorization.cost_usd.
+    # It applies only to entry ids above its attempt, and only when the
+    # admitted execution matches this cost and this call count. 229 is the
+    # Sonnet 4.5 pass: US$1.17. The window counts eighteen entries because
+    # two rows were already stored above attempt 229; the sixteen new calls
+    # are the rest. 326 is the Haiku 5.5 HTTP validation: US$2.29 new plus
+    # US$0.006091 already stored in entries 327 and 328, 674 new calls plus
+    # those two. Successors chain: each one closes the window before it.
+    # A different cost or call count is not this grant.
+    DOLLAR_SUCCESSORS = {
+      229 => { "cost_usd" => "1.170000", "calls" => 18 }.freeze,
+      326 => { "cost_usd" => "2.296091", "calls" => 676 }.freeze
+    }.freeze
 
     def initialize(path:, call_cap:, cost_cap_usd:)
       @path = Pathname(path)
@@ -268,7 +292,23 @@ module Rag
       room = auth["call_cap"].to_i - after
       return true if scoped_attempts(state, after) + 1 > room
 
-      scoped_exposure(state, after) + ceiling > decimal(auth["cost_usd"])
+      active = dollar_successors(state).select { |row| state["seq"].to_i + 1 > row["after_attempt"].to_i }
+      windows = [ [ after, auth["cost_usd"] ] ] + active.map { |row| [ row["after_attempt"].to_i, row["cost_usd"] ] }
+      windows.each_cons(2) do |(from, budget), (to, _next_budget)|
+        return true if scoped_exposure_between(state, from, to) > decimal(budget)
+      end
+
+      from, budget = windows.last
+      scoped_exposure(state, from) + ceiling > decimal(budget)
+    end
+
+    def dollar_successors(state)
+      Array(state["executions"]).select { |row|
+        next false unless row.is_a?(Hash)
+
+        spec = DOLLAR_SUCCESSORS[row["after_attempt"].to_i]
+        spec && row["calls"].to_i == spec["calls"].to_i && decimal(row["cost_usd"]) == decimal(spec["cost_usd"])
+      }.sort_by { |row| row["after_attempt"].to_i }
     end
 
     def executions_exceeded?(state, ceiling)

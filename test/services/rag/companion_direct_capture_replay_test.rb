@@ -2,20 +2,35 @@
 
 require "test_helper"
 require "stringio"
+require "tempfile"
 
 class Rag::CompanionDirectCaptureReplayTest < ActiveSupport::TestCase
   NOTICE = "Esto no está en la documentación cargada en este turno."
 
+  DIRECT_ENV = %w[
+    RAG_COMPANION_GENERATION COMPANION_DIRECT_PROVIDER COMPANION_DIRECT_MODEL_ID
+    COMPANION_DIRECT_MAX_TOKENS COMPANION_DIRECT_EFFORT COMPANION_DIRECT_THINKING
+  ].freeze
+
   setup do
-    @generation = ENV["RAG_COMPANION_GENERATION"]
-    ENV.delete("RAG_COMPANION_GENERATION")
+    @direct_env = DIRECT_ENV.index_with { |key| ENV[key] }
+    DIRECT_ENV.each { |key| ENV.delete(key) }
     @require = ENV["GUION2_PROMPT_COMPARE_REQUIRE"]
     ENV["GUION2_PROMPT_COMPARE_REQUIRE"] = "1"
     load Rails.root.join("script/field_companion/replay_direct_prompt_compare.rb")
+    @ledger = Tempfile.new("direct-capture-ledger")
+    @ledger.write(JSON.generate(
+      "call_cap" => 4,
+      "attempts" => 0,
+      "authorization" => { "after_attempt" => 0, "cost_usd" => "1.0" },
+      "entries" => []
+    ))
+    @ledger.flush
   end
 
   teardown do
-    @generation.nil? ? ENV.delete("RAG_COMPANION_GENERATION") : ENV["RAG_COMPANION_GENERATION"] = @generation
+    @ledger&.close!
+    @direct_env.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
     @require.nil? ? ENV.delete("GUION2_PROMPT_COMPARE_REQUIRE") : ENV["GUION2_PROMPT_COMPARE_REQUIRE"] = @require
   end
 
@@ -23,12 +38,12 @@ class Rag::CompanionDirectCaptureReplayTest < ActiveSupport::TestCase
     text = Rails.root.join("app/prompts/bedrock/companion_direct.txt").read
 
     assert_equal 1, text.scan(NOTICE).size
-    assert_includes text, "Pon [n] junto a la afirmación que esa fuente respalda."
-    assert_includes text, "Mantén separadas las hipótesis propias y las condiciones o recomendaciones documentadas."
-    assert_includes text, "Da los pasos de un procedimiento solo si consta que se cumple su condición documentada. Si falta confirmarla, explica la condición y omite los pasos."
+    assert_includes text, "Lo que atribuyes a una fuente va como cita literal entre «»"
+    assert_includes text, "Antes de publicar se elimina toda oración con [n] que no tenga una cita literal de esa fuente."
+    assert_includes text, "Da los pasos de un procedimiento solo si consta que se cumple su condición documentada. Si falta confirmarla, cita la condición y omite los pasos."
     assert_includes text, "limítala a lo que el técnico negó"
-    assert_includes text, "Distingue los hechos observados de las inferencias."
-    assert_includes text, "No afirmes un estado del equipo que la evidencia de este turno no establece."
+    assert_includes text, "Distingue lo observado por el técnico, lo que dice la fuente y tu inferencia."
+    assert_includes text, "no digas que el caso está resuelto ni que el equipo está bien."
     %w[VF5 Fermator fotocélula fotocelula autoajuste S1.9].each do |token|
       assert_not_includes text.downcase, token.downcase
     end
@@ -36,7 +51,7 @@ class Rag::CompanionDirectCaptureReplayTest < ActiveSupport::TestCase
   end
 
   test "session 269 requests match except the system text and the saved answers keep their rubric" do
-    before = File.binread(Rag::CompanionDirectCaptureReplay::LEDGER)
+    before = File.binread(@ledger.path)
     io = StringIO.new
     calls = []
     trace = TracePoint.new(:call) do |event|
@@ -45,7 +60,7 @@ class Rag::CompanionDirectCaptureReplayTest < ActiveSupport::TestCase
 
       calls << [ event.defined_class.to_s, event.method_id ]
     end
-    code = trace.enable { Rag::CompanionDirectCaptureReplay.preflight(io: io) }
+    code = trace.enable { Rag::CompanionDirectCaptureReplay.preflight(io: io, ledger_path: Pathname.new(@ledger.path)) }
     report = JSON.parse(io.string)
 
     assert_equal 0, code, io.string
@@ -67,6 +82,10 @@ class Rag::CompanionDirectCaptureReplayTest < ActiveSupport::TestCase
       assert_equal Rag::CompanionDirectCaptureReplay::SESSION_SYSTEM_SHA, turn["system_sha256"]
     end
     assert report["publication"].all? { |row| row["matches"] }, report["publication"].to_json
+    quotes = report.fetch("publication").map { |row| row.fetch("publication").fetch("quotes").sole }
+    assert_equal [ 1, 1, 1 ], quotes.pluck("source")
+    assert_includes quotes[1].fetch("text"), quotes[0].fetch("text")
+    assert_includes quotes[1].fetch("text"), quotes[2].fetch("text")
     assert_equal [ false, true, false ], report["rubric"].pluck("pass")
     assert_equal true, report.dig("rubric", 0, "documented_slow_opening")
     assert_equal true, report.dig("rubric", 0, "prescribes_autoajuste")
@@ -77,7 +96,7 @@ class Rag::CompanionDirectCaptureReplayTest < ActiveSupport::TestCase
     assert_equal false, report.dig("rubric", 2, "conclusion_respaldada")
     assert_equal "captured_tokens_plus_system_character_delta", report.dig("price", "method")
     assert_equal "three generation calls plus one retry of the dearest call, output capped at 700", report.dig("price", "ceiling_includes")
-    assert_equal before, File.binread(Rag::CompanionDirectCaptureReplay::LEDGER)
+    assert_equal before, File.binread(@ledger.path)
     assert_equal Digest::SHA256.hexdigest(before), report.dig("ledger", "sha256")
     remaining = report.dig("ledger", "remaining_calls")
     assert_equal remaining >= 4 ? 1 : 0, report.dig("call_plan", "retry_budget")
@@ -90,7 +109,7 @@ class Rag::CompanionDirectCaptureReplayTest < ActiveSupport::TestCase
 
   test "a sonnet override keeps the captured messages and changes the model id" do
     prepared = Rag::CompanionDirectCaptureReplay.effective_requests(
-      "global.anthropic.claude-sonnet-4-5-20250929-v1:0"
+      "global.anthropic.claude-sonnet-4-5-20250929-v1:0", ledger_path: Pathname.new(@ledger.path)
     )
 
     assert_empty prepared["mismatches"]

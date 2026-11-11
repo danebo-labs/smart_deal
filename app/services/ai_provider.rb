@@ -13,6 +13,7 @@ class AiProvider
   end
 
   def query(prompt, **)
+    Rag::InferencePolicy.check!(operation: "ai_provider.query", model_id: @client.class::QUERY_MODEL_ID)
     @client.query(prompt, **)
   rescue StandardError => e
     Rails.logger.error("AiProvider error with #{@provider}: #{e.message}")
@@ -25,6 +26,7 @@ class AiProvider
 
   # Structured tool call. #query is text generation and cannot carry a tool schema.
   def converse(params)
+    Rag::InferencePolicy.check!(operation: "ai_provider.converse", model_id: params[:model_id] || params["model_id"])
     @client.converse_message(params)
   rescue StandardError => e
     Rails.logger.error("AiProvider converse error with #{@provider}: #{e.message}")

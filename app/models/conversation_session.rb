@@ -18,6 +18,16 @@ class ConversationSession < ApplicationRecord
   EPISODE_WINDOW = 4.hours
   EPISODE_MAX_USER_MESSAGES = 3
   CaseBoundary = Data.define(:attributes, :case_boundary_reason, :pin_release_reason)
+  # Returned only when the caller passed expected_case_revision.
+  # status "stale_episode": the episode changed before this answer was saved.
+  # status "case_conflict": the episode matches and the case revision does not.
+  # status "not_recording": the case file was requested and this session does
+  # not record episodes, so the answer is not stored either.
+  # The row is unchanged. The caller does not call a model again.
+  CaseWriteConflict = Data.define(
+    :status, :expected_episode_id, :current_episode_id,
+    :expected_revision, :current_revision, :correlation_id
+  )
   PhotoTurnContext = Data.define(
     :status, :session_context, :entity_s3_uris, :equipment_identity, :retrieval_question
   )
@@ -215,7 +225,17 @@ class ConversationSession < ApplicationRecord
   end
 
   # History stays truncated. pending_fact is calculated from the full reply.
-  def record_assistant_turn!(content, user_id:, correlation_id:, pending_question: nil, expected_episode_id: nil, writer: "assistant", focus_ids: nil, prompt_reply: nil)
+  def record_assistant_turn!(content, user_id:, correlation_id:, pending_question: nil, expected_episode_id: nil, writer: "assistant", focus_ids: nil, prompt_reply: nil, case_evidence: nil, outcome: nil, expected_case_revision: nil)
+    if !episode_recording? && case_write_requested?(expected_case_revision)
+      return case_write_conflict(
+        status: "not_recording",
+        expected_episode_id: expected_episode_id,
+        current_episode_id: live_episode_id,
+        expected_revision: expected_case_revision,
+        current_revision: case_column_revision,
+        correlation_id: correlation_id
+      )
+    end
     unless episode_recording?
       add_to_history(
         "assistant", content, user_id: user_id, correlation_id: correlation_id,
@@ -233,6 +253,7 @@ class ConversationSession < ApplicationRecord
     result = nil
     dropped = false
     stale_event = nil
+    conflict_result = nil
     self.turn_causal = nil
     with_lock do
       current_id = live_episode_id
@@ -242,6 +263,32 @@ class ConversationSession < ApplicationRecord
           writer: writer,
           expected_episode_id: expected,
           current_episode_id: current_id,
+          correlation_id: correlation_id
+        )
+        capture_assistant_write!(
+          correlation_id: correlation_id, presented: content, stored: nil,
+          before_state: nil, after_state: nil, dropped: true
+        )
+        dropped = true
+        if case_write_requested?(expected_case_revision)
+          conflict_result = case_write_conflict(
+            status: "stale_episode",
+            expected_episode_id: expected,
+            current_episode_id: current_id,
+            expected_revision: expected_case_revision,
+            current_revision: case_column_revision,
+            correlation_id: correlation_id
+          )
+        end
+        next
+      end
+      if case_write_requested?(expected_case_revision) && expected_case_revision.to_i != case_column_revision
+        conflict_result = case_write_conflict(
+          status: "case_conflict",
+          expected_episode_id: expected,
+          current_episode_id: current_id,
+          expected_revision: expected_case_revision,
+          current_revision: case_column_revision,
           correlation_id: correlation_id
         )
         capture_assistant_write!(
@@ -278,7 +325,7 @@ class ConversationSession < ApplicationRecord
       history = conversation_history.last(MAX_HISTORY - 1)
       history << history_message(
         "assistant", content, user_id: user_id, correlation_id: correlation_id,
-        focus_ids: focus_ids, prompt_reply: prompt_reply
+        focus_ids: focus_ids, prompt_reply: prompt_reply, outcome: outcome
       )
       capture_assistant_write!(
         correlation_id: correlation_id, presented: content, stored: history.last,
@@ -286,15 +333,18 @@ class ConversationSession < ApplicationRecord
       )
       attrs = { conversation_history: history }
       attrs[:active_episode] = result.state if result.decision == :assistant
+      attrs[:case_evidence] = case_evidence if case_evidence.is_a?(Hash)
       update!(attrs)
     end
     emit_stale_case_write(stale_event)
+    emit_case_write_conflict(conflict_result)
     if writer == "photo_assistant"
       return :stale if dropped
 
       log_field_companion_turn(result, content, correlation_id: correlation_id, user_id: user_id) if result&.decision == :assistant
       return :applied
     end
+    return conflict_result if conflict_result
     return nil if dropped
 
     log_field_companion_turn(result, content, correlation_id: correlation_id, user_id: user_id) if result.decision == :assistant
@@ -1527,6 +1577,41 @@ class ConversationSession < ApplicationRecord
     )
   end
 
+  def case_write_requested?(expected_case_revision)
+    !expected_case_revision.nil?
+  end
+
+  def case_column_revision
+    Rag::CompanionCaseRecord.column_revision(case_evidence)
+  end
+
+  def case_write_conflict(status:, expected_episode_id:, current_episode_id:, expected_revision:, current_revision:, correlation_id:)
+    CaseWriteConflict.new(
+      status: status,
+      expected_episode_id: expected_episode_id,
+      current_episode_id: current_episode_id,
+      expected_revision: expected_revision,
+      current_revision: current_revision,
+      correlation_id: correlation_id
+    )
+  end
+
+  def emit_case_write_conflict(conflict)
+    return if conflict.nil? || conflict.status != "case_conflict"
+
+    PilotUsageLog.log(
+      "case_write_conflict",
+      account_id: account_id,
+      conversation_session_id: id,
+      outcome: conflict.status,
+      writer: "assistant",
+      expected_episode_id: conflict.expected_episode_id,
+      current_episode_id: conflict.current_episode_id,
+      dropped: true,
+      correlation_id: conflict.correlation_id
+    )
+  end
+
   def emit_identity_promotion(payload, user_id: nil)
     return if payload.blank?
 
@@ -1780,12 +1865,13 @@ class ConversationSession < ApplicationRecord
     nil
   end
 
-  def history_message(role, content, user_id:, correlation_id:, focus_ids: nil, prompt_reply: nil)
+  def history_message(role, content, user_id:, correlation_id:, focus_ids: nil, prompt_reply: nil, outcome: nil)
     message = {
       "role" => role,
       "content" => Rag::TurnText.truncate(content),
       "ts" => Time.current.iso8601
     }
+    message["outcome"] = outcome.to_s if outcome.present?
     message["user_id"] = user_id if user_id.present?
     message["correlation_id"] = correlation_id if correlation_id.present?
     message["focus_ids"] = Array(focus_ids).map(&:to_i).uniq.sort unless focus_ids.nil?

@@ -215,6 +215,15 @@ module Guion2Direct
     payload["status"] == "executed" ? 0 : 2
   end
 
+  def turn_status(result, error, written)
+    return "failed" if error
+    return written.status if Rag::CompanionCaseWrite.conflict?(written)
+    return "provider_rejected" if result.respond_to?(:provider_rejection) && result.provider_rejection.to_s == "access_denied"
+    return "returned" if result.respond_to?(:success?) && result.success?
+
+    "failed"
+  end
+
   def one_turn(session, user, question, number, directory)
     correlation_id = "query:#{SecureRandom.uuid}"
     turn_dir = directory.join(format("turn-%d", number))
@@ -223,6 +232,7 @@ module Guion2Direct
     events = []
     result = nil
     error = nil
+    written = nil
     Rag::ValidationCapture.capture do |bucket|
       Rag::ValidationCapture.bind(run_id: "vf5-direct-#{directory.basename}", session_id: session.id, correlation_root: correlation_id)
       events = bucket
@@ -241,14 +251,11 @@ module Guion2Direct
         output_channel: :web
       )
       if result.respond_to?(:success?) && result.success?
-        session.record_assistant_turn!(
-          result.answer.to_s,
+        written = Rag::CompanionCaseWrite.persist!(
+          session, result,
           user_id: user.id,
-          correlation_id: result.correlation_id,
-          pending_question: result.pending_question,
           expected_episode_id: session.live_episode_id,
-          focus_ids: session.focus_document_ids,
-          prompt_reply: result.history_answer
+          focus_ids: session.focus_document_ids
         )
       end
     rescue StandardError, Rag::LocalPassLedger::Stop, Rag::AssignmentSpend::Stop => raised
@@ -260,20 +267,26 @@ module Guion2Direct
     File.write(turn_dir.join("episode.json"), JSON.generate(
       "episode_id" => session.live_episode_id,
       "active_episode" => session.active_episode,
-      "focus_document_ids" => session.focus_document_ids
+      "focus_document_ids" => session.focus_document_ids,
+      "case_evidence" => session.case_evidence
     ))
-    published = result.respond_to?(:answer) ? result.answer.to_s : ""
+    model_answer = result.respond_to?(:answer) ? result.answer.to_s : ""
+    conflict = Rag::CompanionCaseWrite.conflict?(written)
+    published = conflict ? Rag::CompanionCaseWrite.conflict_answer(:es) : model_answer
     File.write(turn_dir.join("published.txt"), published)
     raw = events.reverse.find { |event| event["kind"] == "companion_direct" && event["text"].present? }
     File.write(turn_dir.join("raw.txt"), raw ? raw["text"].to_s : "")
     File.write(turn_dir.join("ledger.json"), JSON.generate(read_ledger))
     {
       "turn" => number,
-      "status" => error.nil? && result.respond_to?(:success?) && result.success? ? "returned" : "failed",
-      "error_class" => error&.class&.name,
-      "error_message" => error&.message.to_s,
+      "status" => turn_status(result, error, written),
+      "error_class" => error&.class&.name || (result.respond_to?(:provider_error_class) ? result.provider_error_class : nil),
+      "error_message" => error&.message.to_s.presence || (result.respond_to?(:provider_error_message) ? result.provider_error_message.to_s : ""),
+      "provider_rejection" => result.respond_to?(:provider_rejection) ? result.provider_rejection : nil,
       "route_outcome" => result.respond_to?(:route_outcome) ? result.route_outcome.to_s : nil,
       "companion_turn" => result.respond_to?(:companion_turn) ? result.companion_turn : nil,
+      "case_write" => conflict ? written.status : (written ? "applied" : "skipped"),
+      "model_answer" => model_answer,
       "answer" => published,
       "evidence" => turn_dir.to_s
     }

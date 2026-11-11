@@ -151,6 +151,7 @@ class Rag::ActiveEpisodeTest < ActiveSupport::TestCase
     episode.append_identifier!("cea15+", correlation_id: "query:3")
 
     assert_equal %w[Cea15 CEA15+], episode.identifiers.pluck("value")
+    assert_equal %w[Cea15 CEA15+], Rag::ActiveEpisode.parse(episode.to_h, now: NOW).identifiers.pluck("value")
   end
 
   test "X-11 a foreign version or a string is an empty episode and does not raise" do

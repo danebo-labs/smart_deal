@@ -405,7 +405,7 @@ module Rag
         value = item["value"].to_s.squish.first(MAX_IDENTIFIER_CHARS)
         next if value.blank?
 
-        label = FollowupQueryRewriter.normalize_label(value)
+        label = DocumentIdentityCatalog.designator_label(value)
         next if seen[label]
 
         seen[label] = true

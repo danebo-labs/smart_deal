@@ -186,8 +186,8 @@ module Rag
       literal = value.to_s.squish.first(MAX_IDENTIFIER_CHARS)
       return if literal.blank?
 
-      label = FollowupQueryRewriter.normalize_label(literal)
-      return if identifiers.any? { |item| FollowupQueryRewriter.normalize_label(item["value"]) == label }
+      label = DocumentIdentityCatalog.designator_label(literal)
+      return if identifiers.any? { |item| DocumentIdentityCatalog.designator_label(item["value"]) == label }
 
       identifiers << { "value" => literal, "source" => source, "correlation_id" => correlation_id.to_s }
       identifiers.shift while identifiers.size > MAX_IDENTIFIERS

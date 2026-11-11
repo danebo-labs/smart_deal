@@ -144,6 +144,15 @@ class Rag::ActiveEpisodeTest < ActiveSupport::TestCase
     assert_operator JSON.generate(payload).bytesize, :<=, Rag::ActiveEpisode::MAX_BYTES
   end
 
+  test "a designator with a plus is another identifier than the one without it" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "query:1", now: NOW)
+    episode.append_identifier!("Cea15", correlation_id: "query:1")
+    episode.append_identifier!("CEA15+", correlation_id: "query:2")
+    episode.append_identifier!("cea15+", correlation_id: "query:3")
+
+    assert_equal %w[Cea15 CEA15+], episode.identifiers.pluck("value")
+  end
+
   test "X-11 a foreign version or a string is an empty episode and does not raise" do
     [ '{"v": 9}', "a string", { "v" => 9 }, 12 ].each do |raw|
       episode = nil

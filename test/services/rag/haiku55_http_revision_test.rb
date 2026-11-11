@@ -86,6 +86,16 @@ class Rag::Haiku55HttpRevisionTest < ActiveSupport::TestCase
     end
   end
 
+  test "only the planned card stands in for the generator" do
+    accept = Haiku55Http.script("monarch_replace").dig("accept", 1)
+    card = ->(uid, action) { { "cards" => [ { "document_uid" => uid, "action" => action } ] } }
+
+    assert Haiku55Http.planned_card?(card.call(@monarch.document_uid, "replace"), accept)
+    assert_not Haiku55Http.planned_card?(card.call(@monarch.document_uid, "add"), accept)
+    assert_not Haiku55Http.planned_card?(card.call(@cea.document_uid, "replace"), accept)
+    assert_not Haiku55Http.planned_card?(card.call(@monarch.document_uid, "replace"), nil)
+  end
+
   test "the revision reservation counts the replay as a turn" do
     turn = { "interpreter" => BigDecimal("0.01"), "generation" => BigDecimal("0.02") }
 

@@ -271,12 +271,16 @@ module Haiku55Http
           break
         end
         row = one_turn(directory, run_id, client, user, focus.first, name, number, question, questions, focus: focus)
+        accept = script(name).dig("accept", number)
+        if row["block_reason"] == "generator_not_sent" && planned_card?(row["manual_suggestion"], accept)
+          row["block_reason"] = nil
+          row["abstained_with_card"] = true
+        end
         rows << row
-        io.puts JSON.generate(row.slice("script", "turn", "status", "block_reason", "rubric", "wall_ms"))
+        io.puts JSON.generate(row.slice("script", "turn", "status", "block_reason", "abstained_with_card", "rubric", "wall_ms"))
         break if row["block_reason"]
 
         card = row.delete("manual_suggestion")
-        accept = script(name).dig("accept", number)
         if accept
           rows << accept_card!(directory, run_id, client, user, name, number, card, accept, questions)
           io.puts JSON.generate(rows.last.slice("script", "label", "status", "block_reason", "focus", "scope", "wall_ms"))
@@ -298,7 +302,7 @@ module Haiku55Http
       "script" => name, "status" => status, "user_id" => user.id, "session_id" => session&.id,
       "episodes" => episodes, "single_episode" => episodes.size == 1,
       "rubric_ok" => status == "executed" && rows.all? { |row| row["rubric"].empty? && row.fetch("scope", {}).fetch("ok", true) },
-      "turns" => rows.map { |row| row.slice("turn", "label", "status", "block_reason", "rubric", "wall_ms", "route_outcome", "focus", "scope", "replayed") },
+      "turns" => rows.map { |row| row.slice("turn", "label", "status", "block_reason", "abstained_with_card", "rubric", "wall_ms", "route_outcome", "focus", "scope", "replayed") },
       "ledger_before" => before, "ledger_after" => ledger_view
     }
     File.write(directory.join("summary.json"), JSON.pretty_generate(payload))
@@ -384,6 +388,16 @@ module Haiku55Http
   def filter_uris(retrieve)
     Haiku55Trace.strings(retrieve&.dig("retrieval_configuration", "vector_search_configuration", "filter"))
       .select { |value| value.start_with?("s3://") }.uniq.sort
+  end
+
+  # A pinned manual of other equipment abstains without the generator; the
+  # card that changes the focus is that turn's answer.
+  def planned_card?(suggestion, accept)
+    return false unless accept
+
+    Array(suggestion && suggestion["cards"]).any? do |item|
+      accept["document_uids"].include?(item["document_uid"]) && (item["action"] || "add") == accept["action"]
+    end
   end
 
   # The browser's card click: POST /pinned_documents with the card's action,

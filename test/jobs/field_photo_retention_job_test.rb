@@ -51,7 +51,7 @@ class FieldPhotoRetentionJobTest < ActiveSupport::TestCase
     def delete_prefix(prefix)
       unless @linked
         @linked = true
-        @linker.call
+        @linker.call(prefix)
       end
       super
     end
@@ -204,24 +204,28 @@ class FieldPhotoRetentionJobTest < ActiveSupport::TestCase
 
   test "the evidence foreign key aborts a purge the exclusion query missed" do
     account = make_account
-    first   = expired_photo(account, "5")
-    second  = expired_photo(account, "6")
-    report  = report_for(account)
+    photos = [ expired_photo(account, "5"), expired_photo(account, "6") ]
+    report = report_for(account)
 
-    # Other expired rows change which photo the job reaches first. This example
-    # only needs the two photos it created, in insert order.
-    FieldPhoto.where.not(id: [ first.id, second.id ]).update_all(created_at: Time.current) # rubocop:disable Rails/SkipsModelValidations
-    linker = LinkingS3.new do
+    # Keep unrelated fixtures out of the batch. Its iteration order is not
+    # guaranteed: add the finding to the remaining photo after the first purge.
+    FieldPhoto.where.not(id: photos.map(&:id)).update_all(created_at: Time.current) # rubocop:disable Rails/SkipsModelValidations
+    linked = nil
+    linker = LinkingS3.new do |deleted_prefix|
+      linked = photos.find { |photo| prefix_of(photo) != deleted_prefix }
       InspectionFinding.create!(
-        certification_report: report, body: "Hallazgo dictado durante la purga.", field_photo: second
+        certification_report: report, body: "Hallazgo dictado durante la purga.", field_photo: linked
       )
     end
     summary = nil
     assert_nothing_raised { with_fake_s3(linker) { summary = FieldPhotoRetentionJob.perform_now } }
 
-    assert_not FieldPhoto.exists?(first.id)
-    assert FieldPhoto.exists?(second.id), "the FK must abort the delete instead of losing the bytes"
-    assert_equal [ prefix_of(first) ], linker.prefixes
+    assert linked, "the first purge must trigger the concurrent finding"
+    purged = (photos - [ linked ]).sole
+    assert_not FieldPhoto.exists?(purged.id)
+    assert FieldPhoto.exists?(linked.id), "the FK must abort the delete instead of losing the bytes"
+    assert InspectionFinding.exists?(field_photo_id: linked.id, certification_report_id: report.id)
+    assert_equal [ prefix_of(purged) ], linker.prefixes
     assert_equal({ purged: 1, kept: 0, aborted: 1 }, summary)
   end
 end

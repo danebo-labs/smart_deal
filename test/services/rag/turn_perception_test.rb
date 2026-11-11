@@ -143,6 +143,27 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_equal "model", result.catalog_disagreements.first["hint"]
   end
 
+  # Live Haiku 5.5 tool input for "No puedo ver el rótulo." (cea1 and cea2).
+  test "a null root key and a note on a schema key are dropped and the pending answer stays" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "query:1", now: Time.current)
+    episode.pending_question = { "type" => "controller" }
+    episode.pending_fact = { "subject" => "controller", "correlation_id" => "query:1" }
+    raw = answer("unknown", []).merge(
+      "observations" => [ "No puedo ver el rótulo." ], "pending_resolution_note" => "unknown",
+      "checks" => [], "part_replies" => [], "pending" => nil
+    )
+
+    result = perceive(raw, "No puedo ver el rótulo.", episode: episode)
+    assert result.valid
+    assert_equal "answer_pending", result.move
+    assert_equal "unknown", result.pending_resolution
+    assert_equal({ "valid" => true, "reason" => nil }, Rag::InterpreterPayloadContract.evaluate(raw, sent_turn: "No puedo ver el rótulo.").except("normalized"))
+
+    [ { "pending" => { "type" => "controller" } }, { "route" => "ready" }, { "pending_resolution_note" => [ "unknown" ] } ].each do |extra|
+      assert_not perceive(raw.merge(extra), "No puedo ver el rótulo.", episode: episode).valid, extra.inspect
+    end
+  end
+
   test "a controller correction types the uncatalogued replacement from the negated slot" do
     episode = Rag::ActiveEpisode.open(correlation_id: "query:1", now: Time.current)
     episode.write_fact!("controller", status: "known", value: "NICE3000", source: "catalog", correlation_id: "query:1", at: Time.current.iso8601)

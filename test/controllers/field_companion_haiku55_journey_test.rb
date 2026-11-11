@@ -231,6 +231,11 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     check_cea_followup("No puedo ver el rótulo.", "unknown", "unknown_confirmed")
   end
 
+  test "revision CEA records the unseen label when the interpreter adds a note and a null key outside the schema" do
+    check_cea_followup("No puedo ver el rótulo.", "unknown", "unknown_confirmed",
+      extra: { "pending_resolution_note" => "unknown", "pending" => nil })
+  end
+
   test "revision CEA explicit reference, empty, insufficient, failed and foreign results never open the pin or use the Bedrock generator" do
     ENV["RAG_TRANSIENT_ATTEMPT_LIMIT"] = "1"
     document = revision_pin(:cea)
@@ -514,7 +519,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     })
   end
 
-  def check_cea_followup(reply, resolution, status)
+  def check_cea_followup(reply, resolution, status, extra: {})
     document = revision_pin(:cea)
     name = "cea-#{status}"
     body, first = revision_ask(name, 1, cea_turn(CEA_QUESTION, document), document)
@@ -523,7 +528,9 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     assert_match(/rótulo/i, body.fetch("answer"))
     assert_equal "controller", reloaded_session.active_episode.dig("pending_question", "type")
     episode = reloaded_session.live_episode_id
-    second, cassette = revision_ask(name, 2, cea_turn(reply, document, move: "answer_pending", resolution: resolution), document)
+    turn = cea_turn(reply, document, move: "answer_pending", resolution: resolution)
+    turn.tool_input.merge!(extra)
+    second, cassette = revision_ask(name, 2, turn, document)
     assert_revision_scope(cassette, document)
     assert_equal episode, reloaded_session.live_episode_id
     assert_equal status, reloaded_session.active_episode.dig("facts", "controller", "status")

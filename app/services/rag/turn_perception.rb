@@ -231,11 +231,23 @@ module Rag
     PART_REPLY_KEYS = %w[question_id part_id state quote supersedes].freeze
     MAX_PART_REPLIES = 4
 
+    # An extra root key stays a structural defect, except a null one and a
+    # scalar note on a schema key ("pending_resolution_note"): neither carries
+    # anything the contract reads.
     def self.prepare_tool(raw)
       return [ raw, [] ] unless raw.is_a?(Hash)
 
       data = raw.deep_stringify_keys
       notes = []
+      known = ROOT_KEYS + %w[checks part_replies]
+      inert = (data.keys - known).select do |key|
+        value = data[key]
+        value.nil? || (!value.is_a?(Hash) && !value.is_a?(Array) && known.any? { |root| key.start_with?("#{root}_") })
+      end
+      if inert.any?
+        data = data.except(*inert)
+        notes.concat(inert.map { |key| { "rule" => "drop_extra_key", "datum" => key, "reason" => "not_in_schema" } })
+      end
       if data.key?("part_replies")
         cleaned, reply_notes = clean_part_replies(data["part_replies"])
         data = data.merge("part_replies" => cleaned)

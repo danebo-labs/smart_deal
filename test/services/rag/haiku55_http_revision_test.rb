@@ -65,6 +65,14 @@ class Rag::Haiku55HttpRevisionTest < ActiveSupport::TestCase
     assert_not Haiku55Http.scope_view(leaked, body, [ @cea ])["ok"]
   end
 
+  test "a replay must not reinterpret the turn" do
+    ok = [ { status: 200 }, { "status" => "success", "answer" => "Respuesta." } ]
+
+    assert_equal "interpreter_not_sent", Haiku55Http.block_reason("jesus", *ok, [], [ @cea ])
+    assert_equal "generator_not_sent", Haiku55Http.block_reason("jesus", *ok, [], [ @cea ], replay: true)
+    assert_equal "replay_reinterpreted", Haiku55Http.block_reason("jesus", *ok, [ { "kind" => "interpreter_request" } ], [ @cea ], replay: true)
+  end
+
   test "the revision reservation counts the replay as a turn" do
     turn = { "interpreter" => BigDecimal("0.01"), "generation" => BigDecimal("0.02") }
 

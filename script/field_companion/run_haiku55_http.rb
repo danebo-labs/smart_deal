@@ -350,7 +350,7 @@ module Haiku55Http
       .map { |event| event.except("run_id", "account_id", "user_id") }
     File.write(turn_dir.join("trace.json"), JSON.pretty_generate(trace))
     rubric = Haiku55JourneyRubric.reasons(name, number, answer, questions)
-    reason = block_reason(name, response, body, events, focus)
+    reason = block_reason(name, response, body, events, focus, replay: payload.key?(:replay_correlation_id))
     scope = scope_view(events, body, focus)
     File.write(turn_dir.join("scope.json"), JSON.pretty_generate(scope))
     {
@@ -570,7 +570,8 @@ module Haiku55Http
 
   # A hard stop: the turn did not reach a Haiku 5.5 answer through the
   # planned route. A rubric miss is recorded and the script continues.
-  def block_reason(name, response, body, events, focus)
+  # A replay reuses the stored retrieval string and must not reinterpret the turn.
+  def block_reason(name, response, body, events, focus, replay: false)
     return "http_#{response[:status]}" unless response[:status] == 200
     return "status_#{body['status']}" unless body["status"] == "success"
 
@@ -581,10 +582,15 @@ module Haiku55Http
 
     interpreter = events.reverse.find { |event| event["kind"] == "interpreter_request" }
     sent = interpreter && interpreter["anthropic_body"]
-    return "interpreter_not_sent" unless sent.is_a?(Hash)
-    return "interpreter_shape" unless sent["model"] == MODEL_ID && sent.dig("output_config", "effort") == Rag::TurnInterpreter::EFFORT &&
+    if replay
+      return "replay_reinterpreted" if interpreter
+    elsif !sent.is_a?(Hash)
+      return "interpreter_not_sent"
+    elsif !(sent["model"] == MODEL_ID && sent.dig("output_config", "effort") == Rag::TurnInterpreter::EFFORT &&
       sent["max_tokens"].to_i == Rag::TurnInterpreter.max_output_tokens && sent.dig("tool_choice", "name") == "turn_perception" &&
-      !sent.key?("temperature") && !sent.key?("thinking")
+      !sent.key?("temperature") && !sent.key?("thinking"))
+      return "interpreter_shape"
+    end
 
     request = events.reverse.find { |event| event["kind"] == "converse" && event["provider"] == "anthropic" }
     return "generator_not_sent" unless request

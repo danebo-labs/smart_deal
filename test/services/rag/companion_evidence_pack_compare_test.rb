@@ -8,6 +8,7 @@ class Rag::CompanionEvidencePackCompareTest < ActiveSupport::TestCase
   Archive = Pack::ARCHIVE
 
   test "stripping B restores A and the request is unchanged outside the evidence" do
+    require_historical_capture(Archive.join("guion_scope_b1b55d3e/guion1-high/turn-2/request.json"))
     Pack::CASES.each do |spec|
       pair = Pack.build_pair(Pack.case_request(spec))
       original = text_of(pair["a"])
@@ -27,6 +28,7 @@ class Rag::CompanionEvidencePackCompareTest < ActiveSupport::TestCase
   end
 
   test "section 5.5 keeps entries 21 and 23 on the normally open passage" do
+    require_historical_capture(Archive.join("guion_scope_b1b55d3e/guion1-high/turn-5/request.json"))
     packed = text_of(Pack.build_pair(Pack.load_request("guion1", 5))["b"])
     passage = packed[/\[CONTEXTO 4 \| 5\.5 Otras entradas \(26, 21, 25, 23\) \| 23\.- \+ 12 V\. COM \| 7\]\n.*normalmente abierto\./m]
 
@@ -38,6 +40,7 @@ class Rag::CompanionEvidencePackCompareTest < ActiveSupport::TestCase
   end
 
   test "the TEST step keeps the reopen item and page 13" do
+    require_historical_capture(Archive.join("guion_scope_b1b55d3e/guion1-high/turn-2/request.json"))
     packed = text_of(Pack.build_pair(Pack.load_request("guion1", 2))["b"])
     step = "En caso que el problema persista, desconectar la fotocélula y volver a pulsar el botón de TEST."
 
@@ -46,6 +49,7 @@ class Rag::CompanionEvidencePackCompareTest < ActiveSupport::TestCase
   end
 
   test "section 5.8 stays apart from the 35 cm branch" do
+    require_historical_capture(Archive.join("guion_scope_b1b55d3e/guion2-high/turn-1/request.json"))
     packed = text_of(Pack.build_pair(Pack.load_request("guion2", 1))["b"])
     slow = "Las puertas se abrirán lentamente en la primera operación después de un fallo de alimentación para verificar el paso libre."
     branch = "Este es el paso libre de un controlador que no ha sido ajustado."
@@ -60,6 +64,7 @@ class Rag::CompanionEvidencePackCompareTest < ActiveSupport::TestCase
   end
 
   test "the conflict and the extraction note stay literal" do
+    require_historical_capture(Archive.join("guion_scope_b1b55d3e/guion1-high/turn-4/request.json"))
     fourth = Pack.build_pair(Pack.load_request("guion1", 4))
     fifth = Pack.build_pair(Pack.load_request("guion1", 5))
     conflict = text_of(fourth["a"]).lines.find { |line| line.include?("[CONFLICTO_DOCUMENTAL C2:") }
@@ -98,6 +103,7 @@ class Rag::CompanionEvidencePackCompareTest < ActiveSupport::TestCase
   end
 
   test "the YS-K01 rows stay intact in both arms" do
+    require_historical_capture(Archive.join("guion_scope_b1b55d3e/guion2-high/turn-1/request.json"))
     pair = Pack.build_pair(Pack.case_request({ "id" => "ys-k01" }))
     original = text_of(pair["a"])
     packed = text_of(pair["b"])
@@ -179,6 +185,7 @@ class Rag::CompanionEvidencePackCompareTest < ActiveSupport::TestCase
   end
 
   test "a rejected call is not corrected or retried" do
+    require_historical_capture(Archive.join("guion_scope_b1b55d3e/guion1-high/turn-2/request.json"))
     dir = Dir.mktmpdir
     posts = []
     transport = Object.new
@@ -200,6 +207,7 @@ class Rag::CompanionEvidencePackCompareTest < ActiveSupport::TestCase
   end
 
   test "the anthropic balance dedupes the copied ledger and uses the one dollar pool" do
+    require_historical_capture(Archive.join("guion_scope_b1b55d3e/guion1-high/turn-2/request.json"))
     balance = Pack::Runner.new(output_root: Dir.mktmpdir, budget: BigDecimal("1")).anthropic_balance
 
     assert_operator balance["balance"], :<, Pack::AUTHORIZED_ANTHROPIC

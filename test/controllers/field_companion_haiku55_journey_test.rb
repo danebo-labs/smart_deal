@@ -187,6 +187,46 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       reloaded_session.active_episode.dig("facts", "controller").slice("value", "status", "source"))
   end
 
+  CEA_VALUES = %q(Una serie de seguridad es "1" si la tensión en el terminal correspondiente es 24 Vcc, o "0" si la tensión en el terminal correspondiente es 0 Vcc.)
+
+  # Shapes of the live Haiku 5.5 answers (0a5033c, cea1) that the full
+  # unconfirmed-identity guard withheld as "no evidence".
+  test "revision CEA with the plate pending publishes the documented values and drops the uncited configuration sentence" do
+    document = revision_pin(:cea)
+    revision_ask("cea-values", 1, cea_turn(CEA_QUESTION, document), document)
+    raw = %(Según la fuente, 24 Vcc es "1" y 0 Vcc es "0". «#{CEA_VALUES.delete_suffix('.')}» [2].\n\nMi lectura: en esa configuración, la serie SA queda en 0.)
+    body, cassette = revision_ask("cea-values", 2, cea_turn(CEA_SCRIPT[2], document, passage: CEA_VALUES, raw: raw, move: "follow_up"), document)
+    assert_revision_scope(cassette, document)
+    answer = body.fetch("answer")
+    assert_match(/24 Vcc.*0 Vcc/m, answer)
+    assert_no_match(/Mi lectura|no encontr/i, answer)
+    assert_includes answer, I18n.t("rag.controller_reference_boundary", locale: :es)
+    assert_equal [ 24 ], body.fetch("citations").pluck("page")
+  end
+
+  test "revision CEA with the plate confirmed as the pinned manual keeps the documented configuration" do
+    document = revision_pin(:cea)
+    revision_ask("cea-confirmed", 1, cea_turn(CEA_QUESTION, document), document)
+    raw = "#{cea_reference}\n\nEn esa configuración, SA queda en 1 cuando el patín retráctil terminó su mando."
+    turn = cea_turn("Leo CEA15+ en el rótulo de la placa.", document, raw: raw, move: "answer_pending", resolution: "value")
+    body, cassette = revision_ask("cea-confirmed", 2, turn, document)
+    assert_revision_scope(cassette, document)
+    assert_includes body.fetch("answer"), "En esa configuración, SA queda en 1"
+    assert_equal [ 24 ], body.fetch("citations").pluck("page")
+  end
+
+  test "revision CEA with the plate pending and an identity assertion publishes the withheld reference, not a missing-evidence claim" do
+    document = revision_pin(:cea)
+    raw = "Tu equipo es un CEA15+. En el manual CEA15+: «#{CEA_PASSAGE.delete_suffix('.')}» [1]."
+    body, cassette = revision_ask("cea-withheld", 1, cea_turn(CEA_QUESTION, document, raw: raw), document)
+    assert_revision_scope(cassette, document)
+    answer = body.fetch("answer")
+    assert answer.start_with?(I18n.t("rag.unconfirmed_reference_withheld", locale: :es, references: "|").split("|").first.strip), answer
+    assert_no_match(/no encontr|Tu equipo es/i, answer)
+    assert_empty body.fetch("citations")
+    assert_equal [ document.id ], reloaded_session.focus_document_ids
+  end
+
   test "revision CEA keeps the pin when the technician cannot see the label" do
     check_cea_followup("No puedo ver el rótulo.", "unknown", "unknown_confirmed")
   end

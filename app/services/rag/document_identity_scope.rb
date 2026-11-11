@@ -302,6 +302,59 @@ module Rag
       applicability_hit(answer, raw, chunks, question)&.fetch(:basis)
     end
 
+    ReferenceFilter = Struct.new(:text, :removed, :identity, keyword_init: true)
+    REFERENCE_QUOTE = /«[^»]+»|"[^"]+"|“[^”]+”/
+    REFERENCE_SOURCE_WORD = /\b(?:fuente|fuentes|source|sources)\b/
+    EMPTY_LIST_ITEM = /\A\s*(?:[-*•]|\d+[.)])?\s*(?:\*\*[^*]*\*\*:?)?\s*\z/
+
+    # A reference answer from the selected manual is published with its
+    # boundary line, so a sentence that cites a retrieved passage and quotes
+    # or attributes it is documentary. Uncited operation or value sentences,
+    # and instructions aimed at the technician, are removed. An identity
+    # assertion still withholds the whole answer.
+    def self.unconfirmed_reference_filter(answer, chunks, question)
+      text = answer.to_s
+      patterns = identity_phrase_patterns(chunks)
+      units = applicability_units(text)
+      if units.any? { |unit| identity_unit?(applicability_normalize(unit.text), patterns) }
+        return ReferenceFilter.new(text: text, removed: [], identity: true)
+      end
+
+      removed = units.select { |unit| reference_unit_removed?(unit, units, patterns, chunks, question) }.map(&:text).uniq
+      return ReferenceFilter.new(text: text, removed: [], identity: false) if removed.empty?
+
+      lines = text.split("\n").filter_map do |line|
+        kept = removed.reduce(line) { |current, sentence| current.sub(sentence, "") }
+        next line if kept == line
+
+        kept = kept.rstrip.sub(/\A(\s*(?:[-*•]|\d+[.)])\s)\s+/, '\1')
+        kept unless kept.match?(EMPTY_LIST_ITEM)
+      end
+      ReferenceFilter.new(text: lines.join("\n").gsub(/\n{3,}/, "\n\n").strip, removed: removed, identity: false)
+    end
+
+    def self.reference_unit_removed?(unit, units, patterns, chunks, question)
+      normalized = applicability_normalize(unit.text)
+      return true if directed_measurement?(normalized, unit.text) || control_actuation?(normalized, unit.text)
+      return false if documentary_reference?(unit, chunks.size, patterns)
+      return false if qualified_reference?(unit, units, patterns, chunks.size)
+      return false if observational_question?(unit)
+
+      (operation_unit?(normalized, question, unit.text) && !negated_frame?(unit)) ||
+        foreign_value_unit?(unit.text, chunks, question)
+    end
+    private_class_method :reference_unit_removed?
+
+    def self.documentary_reference?(unit, chunk_count, patterns)
+      cited = unit.text.scan(/\[(\d+)\]/).any? { |number,| number.to_i.between?(1, chunk_count) }
+      return false unless cited
+
+      normalized = applicability_normalize(unit.text)
+      unit.text.match?(REFERENCE_QUOTE) || normalized.match?(REFERENCE_SOURCE_WORD) ||
+        attribution_text?(unit.text, patterns, 0)
+    end
+    private_class_method :documentary_reference?
+
     def self.unconfirmed_identity_assertion?(answer, chunks)
       return false if answer.blank?
 

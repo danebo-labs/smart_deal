@@ -1220,7 +1220,7 @@ class BedrockRagService
     active = episode.is_a?(Rag::ActiveEpisode) ? episode : Rag::ActiveEpisode.parse(episode)
     controller = active&.fact("controller")
     resolved = controller&.dig("status")
-    chunks, mismatched = direct_reference_chunks(chunks, scope_uris, controller)
+    chunks, mismatched, confirmed = direct_reference_chunks(chunks, scope_uris, controller)
     plate = { reported: controller["value"], documented: mismatched } if chunks.empty? && mismatched.any?
     pending = if active&.episode_id.present? && !incompatible &&
         (resolved.nil? || (resolved == "known" && controller["source"] == "catalog")) &&
@@ -1256,12 +1256,14 @@ class BedrockRagService
         question: question, raw_answer: raw, chunks: prepared.chunks,
         response_locale: response_locale, retrieval: retrieval, stop_reason: @companion_direct_stop_reason,
         technician_texts: companion_technician_texts(conv_session, episode, raw_question), manufacturer: nil,
-        correlation_id: correlation_id, reference_pending: pending, reference_mode: true
+        correlation_id: correlation_id, reference_pending: pending, reference_mode: true,
+        reference_confirmed: confirmed
       )
       return result if result[:route_outcome] == :answered
     end
 
-    reference_fallback(locale, retrieval, pending, scope_uris, incompatible, model_invoked: !result.nil?, plate: plate)
+    withheld = result[:answer] if result&.dig(:applicability_violation)
+    reference_fallback(locale, retrieval, pending, scope_uris, incompatible, model_invoked: !result.nil?, plate: plate, withheld: withheld)
   rescue Timeout::Error, Net::ReadTimeout, Net::OpenTimeout, BedrockServiceError, Anthropic::Errors::APIError => error
     Rag::ValidationCapture.record("direct_reference", "condition" => "generation_failed", "error_class" => error.class.name)
     reference_fallback(locale, retrieval, pending, scope_uris, incompatible, model_invoked: true)
@@ -1284,8 +1286,9 @@ class BedrockRagService
     end
   end
 
-  # Returns the chunks for this focus and, separately, the designators of the
-  # component manuals dropped because the reported plate names another one.
+  # Returns the chunks for this focus, the designators of the component
+  # manuals dropped because the reported plate names another one, and whether
+  # a kept manual names the reported plate.
   def direct_reference_chunks(chunks, scope_uris, controller)
     scope = Array(scope_uris).filter_map { |uri| KbDocument.canonical_source(uri) }.to_set
     declared = if controller&.dig("status") == "known" && %w[user photo].include?(controller["source"])
@@ -1293,6 +1296,7 @@ class BedrockRagService
     end
     entries = Rag::DocumentIdentityCatalog.current.entries.index_by { |entry| KbDocument.canonical_source(entry.s3_key) } if declared.present?
     mismatched = []
+    matched = false
     kept = Array(chunks).select do |chunk|
       metadata = chunk[:metadata].to_h.stringify_keys
       source = KbDocument.canonical_source(metadata["original_source_uri"].presence || chunk[:location_uri])
@@ -1302,16 +1306,21 @@ class BedrockRagService
       next true unless entry&.role == "component" && entry.designators.present?
 
       values = entry.designators.map { |item| item.is_a?(Hash) ? item["value"] : item }
-      next true if values.any? { |value| Rag::DocumentIdentityCatalog.designator_label(value) == declared }
+      if values.any? { |value| Rag::DocumentIdentityCatalog.designator_label(value) == declared }
+        matched = true
+        next true
+      end
 
       mismatched.concat(values)
       false
     end
-    [ kept, mismatched.uniq ]
+    [ kept, mismatched.uniq, matched ]
   end
 
-  def reference_fallback(locale, retrieval, pending, scope_uris, incompatible, model_invoked:, plate: nil)
-    answer = if plate
+  def reference_fallback(locale, retrieval, pending, scope_uris, incompatible, model_invoked:, plate: nil, withheld: nil)
+    answer = if withheld
+      withheld
+    elsif plate
       I18n.t("rag.controller_plate_mismatch", locale: locale, reported: plate[:reported], documented: plate[:documented].to_sentence)
     else
       I18n.t(Array(scope_uris).any? ? "rag.focus_evidence_insufficient" : "rag.open_evidence_insufficient", locale: locale)
@@ -1321,7 +1330,7 @@ class BedrockRagService
       pending_question: pending, citations: [], retrieved_citations: [], doc_refs: [],
       retrieval_trace: retrieval[:retrieval_trace], model_invoked: model_invoked,
       generation_mode: "direct_reference", route_outcome: :abstained,
-      evidence_gap: incompatible ? "incompatible" : plate ? "plate_mismatch" : "insufficient"
+      evidence_gap: incompatible ? "incompatible" : plate ? "plate_mismatch" : withheld ? "withheld" : "insufficient"
     }
   end
 
@@ -2178,7 +2187,8 @@ class BedrockRagService
 
   def finish_companion_turn_generation(question:, raw_answer:, chunks:, response_locale:, retrieval:,
                                        stop_reason:, technician_texts:, manufacturer:, correlation_id: nil,
-                                       reference_pending: nil, reference_mode: false, episode: nil)
+                                       reference_pending: nil, reference_mode: false, reference_confirmed: false,
+                                       episode: nil)
     locale = effective_response_locale(question, response_locale: response_locale)
     extracted = extract_doc_refs(raw_answer.to_s)[:clean_answer]
     sources = companion_publication_sources(chunks)
@@ -2253,7 +2263,10 @@ class BedrockRagService
       pending_question: companion_turn_pending(accepted, answer_text)
     }
     if reference_mode && accepted
-      withhold_unconfirmed_identity!(result, raw_answer: raw_answer, chunks: chunks, question: question, response_locale: response_locale)
+      unless reference_confirmed
+        filter_unconfirmed_reference!(result, citations: citations, passages: passages, chunks: chunks,
+          question: question, locale: locale)
+      end
       if result[:applicability_violation] || result[:citations].empty?
         result[:route_outcome] = :abstained
       else
@@ -2321,6 +2334,23 @@ class BedrockRagService
     result[:publication_rejected_fields] = publication.rejected_fields
     result[:publication_fallback_reason] = publication.fallback_reason
     result
+  end
+
+  def filter_unconfirmed_reference!(result, citations:, passages:, chunks:, question:, locale:)
+    filtered = Rag::DocumentIdentityScope.unconfirmed_reference_filter(result[:answer], chunks, question)
+    kind = :identity_assertion if filtered.identity
+    if filtered.removed.any?
+      Rag::ValidationCapture.record("companion_reference_filter", "removed" => filtered.removed, "text" => filtered.text)
+      result[:answer] = filtered.text
+      result[:citations] = @citation_processor.build_numbered_references(citations, filtered.text, question: question, passages: passages)
+      kind = :procedure_application if result[:citations].empty?
+    end
+    return if kind.nil?
+
+    result[:answer] = Rag::DocumentIdentityScope.unconfirmed_reference_withheld(chunks, locale: locale)
+    result[:citations] = []
+    result[:applicability_violation] = kind
+    Rag::DocumentIdentityScope.log_applicability_violation(kind)
   end
 
   def withhold_unconfirmed_identity!(result, raw_answer:, chunks:, question:, response_locale:, check_raw: true)

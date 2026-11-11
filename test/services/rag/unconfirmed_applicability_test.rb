@@ -338,6 +338,44 @@ class Rag::UnconfirmedApplicabilityTest < ActiveSupport::TestCase
     assert_nil classify("No revises el voltaje en los terminales con un multímetro.")
   end
 
+  CEA_SERIES = {
+    content: 'Una serie de seguridad es "1" si la tensión en el terminal correspondiente es 24 Vcc. ' \
+      "Si no existen contactos que cierran por la acción de patín retráctil, el terminal SA se conecta al terminal SPC.",
+    metadata: { "canonical_name" => "manual-cea15p", "page_number" => 24 }
+  }.freeze
+
+  test "a reference filter keeps cited documentary sentences that the full guard withholds" do
+    answer = "Según la fuente, 24 Vcc es \"1\": «Una serie de seguridad es \"1\" si la tensión en el terminal correspondiente es 24 Vcc» [1].\n\n" \
+      "Sin contactos de patín: «el terminal SA se conecta al terminal SPC» [1]."
+    question = "Si mido un terminal de la serie de seguridad, ¿qué tensión es un 1?"
+
+    assert_equal :procedure_application, classify(answer, chunks: [ CEA_SERIES ], question: question)
+    filtered = Rag::DocumentIdentityScope.unconfirmed_reference_filter(answer, [ CEA_SERIES ], question)
+    assert_equal answer, filtered.text
+    assert_empty filtered.removed
+    assert_not filtered.identity
+  end
+
+  test "a reference filter removes uncited operation sentences and the list item they leave empty" do
+    answer = "Sin contactos de patín: «el terminal SA se conecta al terminal SPC» [1].\n\n" \
+      "**Resumen**\n- **Respaldo:** SA a SPC [1].\n- **Falta:** revisar la configuración instalada en el equipo.\n\n" \
+      "Mi lectura: en esa configuración, SA queda en 1."
+    filtered = Rag::DocumentIdentityScope.unconfirmed_reference_filter(answer, [ CEA_SERIES ], "¿Cómo se conecta SA?")
+
+    assert_equal [ "**Falta:** revisar la configuración instalada en el equipo.", "Mi lectura: en esa configuración, SA queda en 1." ], filtered.removed
+    assert_equal "Sin contactos de patín: «el terminal SA se conecta al terminal SPC» [1].\n\n**Resumen**\n- **Respaldo:** SA a SPC [1].", filtered.text
+  end
+
+  test "a reference filter removes a cited instruction to the technician and withholds an identity assertion" do
+    measure = "Revisa el voltaje en los terminales con un multímetro: «24 Vcc» [1]."
+    filtered = Rag::DocumentIdentityScope.unconfirmed_reference_filter(measure, [ CEA_SERIES ], "que hago")
+    assert_equal [ measure ], filtered.removed
+    assert_equal "", filtered.text
+
+    identity = Rag::DocumentIdentityScope.unconfirmed_reference_filter("Tu equipo es un uP-900, según la fuente [1].", [ @up ], "que hago")
+    assert identity.identity
+  end
+
   private
 
   def assert_family(expected, row, chunks: [ @up ])

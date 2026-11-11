@@ -93,6 +93,8 @@ module Haiku55JourneyRubric
     reasons << "cea:label_not_asked" if number == 1 && !asked
     reasons << "cea:label_reasked" if number > 1 && asked
     reasons << "cea:service_unavailable" if answer.match?(/servicio no est[aá] disponible/i)
+    reasons << "cea:no_evidence" if answer.start_with?(I18n.t("rag.focus_evidence_insufficient", locale: :es))
+    reasons << "cea:withheld" if answer.start_with?(I18n.t("rag.unconfirmed_reference_withheld", locale: :es, references: "|").split("|").first.strip)
     reasons
   end
 

@@ -55,6 +55,16 @@ class Rag::Haiku55HttpRevisionTest < ActiveSupport::TestCase
     assert_equal "no_click", check["reason"]
   end
 
+  test "only the Retrieves before the generator request scope the answer" do
+    cea = uris([ @cea ])
+    body = { "citations" => [ { "metadata" => { "original_source_uri" => cea.first } } ] }
+    discovery = [ retrieve(cea), retrieve(cea), { "kind" => "converse" }, retrieve([]) ]
+    leaked = [ retrieve(cea), retrieve([]), { "kind" => "converse" } ]
+
+    assert Haiku55Http.scope_view(discovery, body, [ @cea ])["ok"]
+    assert_not Haiku55Http.scope_view(leaked, body, [ @cea ])["ok"]
+  end
+
   test "the revision reservation counts the replay as a turn" do
     turn = { "interpreter" => BigDecimal("0.01"), "generation" => BigDecimal("0.02") }
 
@@ -87,6 +97,13 @@ class Rag::Haiku55HttpRevisionTest < ActiveSupport::TestCase
 
   def replay(label, question, episode, before:, filter:, cited:)
     { "label" => label, "request" => { "controller" => "rag", "action" => "ask", "replay_correlation_id" => "corr-1" },
-      "question" => question, "episode_id" => episode, "focus_before" => before, "focus_after" => before, "filter" => filter, "cited" => cited }
+      "question" => question, "episode_id" => episode, "focus_before" => before, "focus_after" => before,
+      "filter" => filter, "filters" => [ filter ], "cited" => cited }
+  end
+
+  def retrieve(uris)
+    { "kind" => "retrieve", "knowledge_base_id" => Haiku55Http::KB_ID, "retrieval_configuration" => {
+      "vector_search_configuration" => { "filter" => { "or_all" => uris.map { |uri| { "equals" => { "key" => "original_source_uri", "value" => uri } } } } }
+    } }
   end
 end

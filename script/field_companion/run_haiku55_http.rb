@@ -365,15 +365,25 @@ module Haiku55Http
 
   # Retrieve filter and published citations against the focus of this turn.
   def scope_view(events, body, focus)
-    retrieve = events.reverse.find { |event| event["kind"] == "retrieve" }
-    filter = Haiku55Trace.strings(retrieve&.dig("retrieval_configuration", "vector_search_configuration", "filter"))
-      .select { |value| value.start_with?("s3://") }.uniq.sort
+    filters = generation_retrieves(events).map { |retrieve| filter_uris(retrieve) }
     expected = focus.map { |item| item.display_s3_uri(KbDocument::KB_BUCKET) }.sort
     cited = Array(body["citations"]).filter_map { |citation| citation.dig("metadata", "original_source_uri") }.uniq.sort
     {
-      "expected" => expected, "filter" => filter, "cited" => cited,
-      "ok" => filter == expected && (cited - expected).empty?
+      "expected" => expected, "filter" => filters.flatten.uniq.sort, "cited" => cited,
+      "ok" => filters.any? && filters.all?(expected) && (cited - expected).empty?
     }
+  end
+
+  # DocumentDiscovery retrieves after an abstention to suggest manuals; only
+  # the Retrieves before the generator request fed this answer.
+  def generation_retrieves(events)
+    generator = events.rindex { |event| event["kind"] == "converse" } || events.size
+    events.first(generator).select { |event| event["kind"] == "retrieve" }
+  end
+
+  def filter_uris(retrieve)
+    Haiku55Trace.strings(retrieve&.dig("retrieval_configuration", "vector_search_configuration", "filter"))
+      .select { |value| value.start_with?("s3://") }.uniq.sort
   end
 
   # The browser's card click: POST /pinned_documents with the card's action,
@@ -501,7 +511,7 @@ module Haiku55Http
       published = events.reverse.find { |event| event["kind"] == "published_answer" }
       File.write(target.join("published.txt"), published["answer"].to_s) if published
       focus = events.find { |event| event["kind"] == "document_focus" }
-      retrieve = events.reverse.find { |event| event["kind"] == "retrieve" }
+      filters = generation_retrieves(events).map { |retrieve| filter_uris(retrieve) }
       citations = Array(published&.dig("citations"))
       {
         "label" => label,
@@ -510,8 +520,8 @@ module Haiku55Http
         "episode_id" => events.filter_map { |event| event["episode_id"] }.last,
         "focus_before" => Array(focus&.dig("before")).pluck("kb_document_id"),
         "focus_after" => Array(focus&.dig("after")).pluck("kb_document_id"),
-        "filter" => Haiku55Trace.strings(retrieve&.dig("retrieval_configuration", "vector_search_configuration", "filter"))
-          .select { |value| value.start_with?("s3://") }.uniq.sort,
+        "filter" => filters.flatten.uniq.sort,
+        "filters" => filters,
         "route_outcome" => published&.dig("route_outcome"),
         "cited" => citations.filter_map { |citation| citation.dig("metadata", "original_source_uri") }.uniq.sort,
         "pages" => citations.map { |citation| "#{citation['filename']} p. #{citation['page']}" }
@@ -544,7 +554,7 @@ module Haiku55Http
           same_question: replay["question"].present? && replay["question"] == prior&.dig("question"),
           same_episode: replay["episode_id"].present? && [ prior&.dig("episode_id"), pin.dig("request", "episode_id") ].all?(replay["episode_id"]),
           cited: replay["cited"])
-        reasons << "replay:filter_outside_focus" unless replay["filter"] == expected
+        reasons << "replay:filter_outside_focus" unless replay["filters"].any? && replay["filters"].all?(expected)
         reasons << "replay:cited_outside_focus" unless (replay["cited"] - expected).empty?
       else
         reasons << "replay:missing"
@@ -587,11 +597,13 @@ module Haiku55Http
     direct = events.reverse.find { |event| event["kind"] == "companion_direct" }
     return "generator_stop_#{direct && direct['stop_reason']}" unless direct && direct["stop_reason"] == "end_turn"
 
-    retrieve = events.reverse.find { |event| event["kind"] == "retrieve" }
-    return "retrieve_missing" unless retrieve
-    config = retrieve.dig("retrieval_configuration", "vector_search_configuration") || {}
-    return "retrieve_target" unless retrieve["knowledge_base_id"].to_s == KB_ID &&
-      focus.all? { |item| Haiku55Trace.strings(config["filter"]).include?(item.display_s3_uri(KbDocument::KB_BUCKET)) }
+    retrieves = generation_retrieves(events)
+    return "retrieve_missing" if retrieves.empty?
+    uris = focus.map { |item| item.display_s3_uri(KbDocument::KB_BUCKET) }
+    return "retrieve_target" unless retrieves.all? { |retrieve|
+      retrieve["knowledge_base_id"].to_s == KB_ID && (uris - filter_uris(retrieve)).empty?
+    }
+    config = retrieves.first.dig("retrieval_configuration", "vector_search_configuration") || {}
 
     expected = profile(name)
     return nil unless expected

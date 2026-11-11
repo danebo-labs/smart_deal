@@ -24,10 +24,11 @@ module Rag
       # alone is longer than FollowupQueryRewriter::MAX_COMPOSED_CHARS, Retrieve
       # receives its leading characters, current_truncated is true, and every
       # other turn is omitted. The stored message is not cut here.
-      def retrieval_text(session, raw_question, now: Time.current, correlation_id: nil)
+      def retrieval_text(session, raw_question, now: Time.current, correlation_id: nil, episode: nil)
         ordered = ordered_turns(session, raw_question, now, correlation_id)
         return Retrieval.new(text: "", included: [], omitted: [], current_truncated: false) if ordered.empty?
 
+        ordered = omit_rejected_context(ordered, episode)
         compose_retrieval(ordered)
       end
 
@@ -43,8 +44,10 @@ module Rag
       # Ledger passages keep the number of their first citation. Fresh chunks
       # that are not already in the ledger take the following numbers. A retired
       # number stays a gap so it cannot name a different passage.
-      def sources(session, episode_id, fresh_chunks)
-        align(episode_state(read_state(session), episode_id), Array(fresh_chunks))
+      def sources(session, episode_id, fresh_chunks, scope_uris: nil, viewer_account: nil)
+        state = episode_state(read_state(session), episode_id)
+        fresh = Array(fresh_chunks)
+        align(state, fresh, scope_uris: scope_uris, viewer_account: viewer_account)
       end
 
       def marker_numbers(session, episode_id)
@@ -135,6 +138,30 @@ module Rag
       end
 
       private
+
+      # The technician's literal message stays in history. Only the search
+      # drops clauses with a rejected referent, keeping unrelated observations.
+      def omit_rejected_context(turns, episode)
+        parsed = episode.is_a?(ActiveEpisode) ? episode : ActiveEpisode.parse(episode)
+        current, *history = turns
+        referent = CompanionSequence.referent_context(current["text"], parsed)
+        rejected = Array(parsed&.rejected).filter_map { |row| row["value"].presence }
+        if rejected.empty?
+          return turns if referent.blank?
+
+          return [ current.merge("text" => [ current["text"], referent ].join(SEPARATOR)), *history ]
+        end
+
+        terms = rejected.map { |value| Regexp.escape(value) }.join("|")
+        pattern = /(?<![[:alnum:]])(?:#{terms})(?![[:alnum:]+])/i
+        scrub_negation = ->(text) { text.gsub(/[,;]?\s+no\s+(?:#{terms})(?![[:alnum:]+])/i, "") }
+        current_text = scrub_negation.call(current["text"])
+        current_text = [ current_text, referent ].compact.join(SEPARATOR)
+        [ current.merge("text" => current_text), *history.filter_map { |row|
+          text = scrub_negation.call(row["text"]).split(/(?<=[.!?])\s+/).reject { |part| part.match?(pattern) }.join(" ")
+          row.merge("text" => text) if text.present?
+        } ]
+      end
 
       def compose_retrieval(ordered)
         limit = FollowupQueryRewriter::MAX_COMPOSED_CHARS
@@ -257,20 +284,21 @@ module Rag
         left_id.present? && left_id == right_id
       end
 
-      def align(state, fresh_chunks)
+      def align(state, fresh_chunks, scope_uris:, viewer_account:)
         sources = state["sources"]
         retired = state["retired"]
         max_number = [ sources.map { |row| row["n"].to_i }.max.to_i, retired.max.to_i ].max
         slots = Array.new(max_number)
-        sources.each do |row|
+        history_chunks = scoped_ledger(sources, fresh_chunks, scope_uris, viewer_account)
+        sources.zip(history_chunks).each do |row, chunk|
           number = row["n"].to_i
-          slots[number - 1] = ledger_chunk(row) if number.positive?
+          slots[number - 1] = chunk || gap_chunk(number) if number.positive?
         end
         retired.each do |number|
           slots[number - 1] ||= gap_chunk(number) if number.positive?
         end
         slots.map!.with_index { |slot, index| slot || gap_chunk(index + 1) } if max_number.positive?
-        known = sources.map { |row| [ row["location_uri"].to_s, row["sha256"].to_s ] }
+        known = history_chunks.compact.map { |chunk| [ uri_of(chunk), digest(text_of(chunk)) ] }
         next_number = max_number
         fresh_chunks.each do |chunk|
           next if gap?(chunk)
@@ -285,11 +313,36 @@ module Rag
         slots
       end
 
-      def ledger_chunk(row)
-        metadata = {}
+      def scoped_ledger(rows, fresh, scope_uris, viewer_account)
+        fresh_index = fresh.index_by { |chunk| [ uri_of(chunk), digest(text_of(chunk)) ] }
+        if scope_uris.nil?
+          return rows.map do |row|
+            fresh_match = fresh_index[[ row["location_uri"], row["sha256"] ]]
+            fresh_match = nil if DocumentIdentityScope.reference_only_chunk?(fresh_match)
+            ledger_chunk(row, fresh_match)
+          end
+        end
+
+        allowed = Array(scope_uris).filter_map { |uri| KbDocument.canonical_source(uri) }.to_set
+        candidates = rows.map do |row|
+          fresh_match = fresh_index[[ row["location_uri"], row["sha256"] ]]
+          chunk = ledger_chunk(row, fresh_match)
+          next if DocumentIdentityScope.reference_only_chunk?(chunk)
+          uri = KbDocument.canonical_source(chunk.dig(:metadata, "original_source_uri"))
+          next if uri.nil? || (allowed.any? && !allowed.include?(uri))
+
+          chunk
+        end
+        authorized = KnowledgeScopePolicy.partition_evidence(candidates.compact, viewer_account: viewer_account)
+          .select(&:authorized?).map(&:chunk).to_set
+        candidates.map { |chunk| chunk if authorized.include?(chunk) }
+      end
+
+      def ledger_chunk(row, fresh = nil)
+        metadata = row.fetch("metadata", {}).merge(source_metadata(fresh))
         metadata["page_number"] = row["page"] unless row["page"].nil?
         filename = File.basename(row["location_uri"].to_s)
-        metadata["original_filename"] = filename if filename.present? && filename != "." && filename != "/"
+        metadata["original_filename"] ||= filename if filename.present? && filename != "." && filename != "/"
         {
           content: row["text"].to_s,
           location_uri: row["location_uri"].to_s,
@@ -297,6 +350,7 @@ module Rag
           chunk_sha256: row["sha256"].to_s,
           case_number: row["n"].to_i,
           case_origin: "ledger",
+          identity_applicability: value(fresh, :identity_applicability),
           case_provenance: row["provenance"].to_s
         }
       end
@@ -325,6 +379,7 @@ module Rag
           "n" => number,
           "location_uri" => uri_of(chunk),
           "page" => page_of(chunk),
+          "metadata" => source_metadata(chunk),
           "sha256" => digest(text),
           "text" => text,
           "first_cid" => correlation_id.to_s,
@@ -399,11 +454,19 @@ module Rag
           "n" => number,
           "location_uri" => item["location_uri"].to_s,
           "page" => item.key?("page") ? item["page"] : nil,
+          "metadata" => source_metadata(item),
           "sha256" => item["sha256"].to_s,
           "text" => item["text"].to_s,
           "first_cid" => item["first_cid"].to_s,
           "provenance" => item["provenance"].to_s
         }
+      end
+
+      def source_metadata(chunk)
+        value(chunk, :metadata).to_h.stringify_keys
+          .slice("original_source_uri", "original_filename", "canonical_name", "title", "section_identity")
+          .transform_values { |value| value.to_s.first(512) }
+          .compact_blank
       end
 
       def page_of(chunk)

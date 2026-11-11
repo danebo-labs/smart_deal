@@ -2036,6 +2036,34 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert events.none? { |event| event["event"] == "document_identity_scope" }
   end
 
+  test "blocked inference still searches when the equipment is not confirmed" do
+    previous = ENV["BEDROCK_INFERENCE"]
+    ENV["BEDROCK_INFERENCE"] = "blocked"
+    evidence = chunk("elemont", "El plano muestra la chapa de la puerta nivel 1.", canonical_name: "Elemont Montacargas Hidraulico Modelo MH", page: 5)
+    service = BedrockRagService.new(account: accounts(:legacy), knowledge_base_id: "test-kb")
+    retrieve_calls = []
+    service.define_singleton_method(:retrieve_chunks) do |*, **kwargs|
+      retrieve_calls << kwargs
+      { chunks: [ evidence ], retrieval_trace: {} }
+    end
+    service.define_singleton_method(:document_identity_generator) do
+      Object.new.tap { |generator| generator.define_singleton_method(:query) { |*| flunk "old generator" } }
+    end
+    service.define_singleton_method(:companion_direct_answer) { |_prepared, _tracking| "«El plano muestra la chapa de la puerta nivel 1» [1]." }
+    result = service.query(
+      "Hola, tengo una falla eléctrica en un elevador hidráulico Elemont, con imanes y tarjeta Cea15",
+      equipment_identity: nil,
+      output_channel: :web
+    )
+
+    assert_equal 1, retrieve_calls.size
+    assert_equal "identity_unknown_reference", retrieve_calls.first[:route_taken]
+    assert_not_equal I18n.t("rag.service_unavailable", locale: :es), result[:answer]
+    assert_includes result[:answer], "puerta nivel 1"
+  ensure
+    previous.nil? ? ENV.delete("BEDROCK_INFERENCE") : ENV["BEDROCK_INFERENCE"] = previous
+  end
+
   test "document identity scope telemetry failure stays inside the recorder" do
     identity = orona_identity
     original = Rag::DocumentIdentityScope.method(:needles)

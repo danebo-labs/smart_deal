@@ -74,7 +74,7 @@ class Bedrock::CitationProcessor
   # @param answer_text [String]
   # @param question [String, nil] when present, used to derive matched_excerpt
   # @return [Array<Hash>]
-  def build_numbered_references(citations, answer_text, question: nil)
+  def build_numbered_references(citations, answer_text, question: nil, passages: nil)
     citation_numbers = answer_text.to_s.scan(/\[(\d+)\]/).flatten.map(&:to_i).uniq.sort
     seen_fragments = {}
     rewrites = {}
@@ -83,7 +83,7 @@ class Bedrock::CitationProcessor
       citation = citations[num - 1]
       next unless citation
 
-      reference = numbered_reference(citation, num, question: question)
+      reference = numbered_reference(citation, num, question: question, passages: passages)
       key = duplicate_key(citation)
       earlier = key && seen_fragments[key]
       if earlier
@@ -126,7 +126,7 @@ class Bedrock::CitationProcessor
 
   private
 
-  def numbered_reference(citation, num, question:)
+  def numbered_reference(citation, num, question:, passages:)
     location = citation[:location]
     metadata = citation[:metadata] || {}
     filename = extract_filename(location)
@@ -135,17 +135,31 @@ class Bedrock::CitationProcessor
     base_title = metadata['canonical_name'].presence || metadata[:canonical_name].presence ||
                  metadata['title'].presence || metadata[:title].presence || filename
     page = extract_page_number(metadata, content: citation[:content], location: location)
+    verified = nil
+    if passages
+      original = metadata["original_source_uri"].to_s
+      if base_title.to_s.match?(/\Achunk_/) && original.present?
+        base_title = File.basename(original, File.extname(original))
+      end
+      base_title = I18n.t("rag.source_document") if base_title.to_s.match?(/\Achunk_/)
+      metadata = metadata.stringify_keys.merge("canonical_name" => base_title)
+      verified = Array(passages[num]).filter_map { |item|
+        text = item.to_s.squish
+        text unless text.match?(/FIELD_RECORD|DATA_NOT_AVAILABLE|\[(?:DOCUMENT|SOURCE_URI|SEARCH_ALIASES):/i)
+      }.uniq
+    end
     title = page ? "#{base_title} — p. #{page}" : base_title
 
     {
       number: num,
       title: title,
-      filename: filename,
+      filename: passages ? base_title : filename,
       page: page,
-      tooltip_excerpt: citation[:content].to_s.presence&.truncate(TOOLTIP_EXCERPT_MAX_CHARS),
+      tooltip_excerpt: passages ? verified.join(" … ").presence&.truncate(TOOLTIP_EXCERPT_MAX_CHARS) :
+        citation[:content].to_s.presence&.truncate(TOOLTIP_EXCERPT_MAX_CHARS),
       location: location,
       metadata: metadata,
-      matched_excerpt: matched_excerpt(citation[:content], question)
+      matched_excerpt: passages ? verified.join(" … ").presence&.truncate(VERIFIED_EXCERPT_MAX_CHARS) : matched_excerpt(citation[:content], question)
     }
   end
 
@@ -199,6 +213,7 @@ class Bedrock::CitationProcessor
     Digest::SHA256.hexdigest(text)
   end
 
+  VERIFIED_EXCERPT_MAX_CHARS = 360
   TOOLTIP_EXCERPT_MAX_CHARS = 150
 
   # Chunks are written as `header + body` (BatchResultsParserService#identity_header):

@@ -144,7 +144,8 @@ module Rag
     # A literal quote does not carry an identifier or value written next to it.
     def foreign_tokens?(sentence, pool)
       residue = sentence.gsub(QUOTE_PATTERN, " ").gsub(BOLD_PATTERN, " ").gsub(CITATION_PATTERN, " ")
-      bodies = pool.map { |source| CompanionTurnPublication.content_of(source) } + @technician_texts.map(&:to_s)
+      bodies = pool.flat_map { |source| [ CompanionTurnPublication.content_of(source), source["document"].to_s ] } +
+        @technician_texts.map(&:to_s)
       labels = residue.scan(CompanionPlanEvidence::LABEL_TOKEN).select { |token| token.length >= CompanionPlanEvidence::MIN_LABEL_CHARS }
       (CompanionTurnPublication.claim_tokens(residue) + labels).uniq.any? do |token|
         bodies.none? { |body| body.include?(token) }

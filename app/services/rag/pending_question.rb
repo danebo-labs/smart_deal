@@ -29,6 +29,8 @@ module Rag
       return documented_context(raw) if type == "documented_context"
 
       question = { "type" => type }
+      text = raw["question"].to_s.squish.first(240)
+      question["question"] = text if type == "controller" && text.present?
       carry = sanitize_carry(raw["carry"])
       question["carry"] = carry if carry.any?
       return question unless type == "choice"

@@ -875,6 +875,11 @@ class ConversationSession < ApplicationRecord
   # The candidacy comes from the episode and the catalog, not from the client.
   # pin_kb_document_if_episode_owner! stays the ingestion path.
   def confirm_equipment_manual!(kb_doc, expected_episode_id:, document_uid:, viewer_account:, replace: false)
+    confirm_manual_focus!(kb_doc, expected_episode_id: expected_episode_id, document_uid: document_uid,
+                          viewer_account: viewer_account, replace: replace, equipment: true)
+  end
+
+  def confirm_manual_focus!(kb_doc, expected_episode_id:, document_uid:, viewer_account:, replace: false, equipment: false)
     return false if viewer_account.nil?
 
     with_lock do
@@ -885,8 +890,8 @@ class ConversationSession < ApplicationRecord
 
       expected = expected_episode_id.to_s.presence
       current = live_episode_id
-      next false if expected.blank? || expected != current
-      next false unless Rag::DocumentDiscovery.equipment_candidate?(
+      next false if expected != current || (equipment && expected.blank?)
+      next false if equipment && !Rag::DocumentDiscovery.equipment_candidate?(
         session: self, document: row, viewer_account: viewer_account
       )
 

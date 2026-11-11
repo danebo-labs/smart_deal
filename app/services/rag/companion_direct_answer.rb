@@ -96,14 +96,17 @@ module Rag
     end
 
     class << self
-      def prepare(raw_question:, chunks:, episode:, session:, correlation_id: nil)
+      def prepare(raw_question:, chunks:, episode:, session:, correlation_id: nil,
+                  reference_context: nil, scope_uris: nil, viewer_account: nil)
         kept = CompanionPlan.limit_statement_chunks(chunks)
         episode_id = CompanionCaseRecord.episode_id_of(episode)
-        merged = CompanionCaseRecord.sources(session, episode_id, kept)
-        turns = history_turns(session, correlation_id, episode)
+        merged = CompanionCaseRecord.sources(session, episode_id, kept, scope_uris: scope_uris, viewer_account: viewer_account)
+        allowed = scope_uris.nil? ? nil : merged.each_index.filter_map { |index| index + 1 unless CompanionCaseRecord.gap?(merged[index]) }
+        turns = history_turns(session, correlation_id, episode, allowed_numbers: allowed)
         history, omitted = fit_history(turns)
         technician_turn = turns.count { |turn| turn[:role] == "user" } + 1
-        current = current_text(raw_question, merged, technician_turn)
+        referent = CompanionSequence.referent_context(raw_question, episode)
+        current = current_text(raw_question, merged, technician_turn, context: [ reference_context, referent ].compact.join("\n"))
         messages = converse_messages(history, current)
         system = SYSTEM_PROMPT
         Prepared.new(
@@ -292,9 +295,10 @@ module Rag
         fields
       end
 
-      def current_text(raw_question, chunks, technician_turn = 1)
+      def current_text(raw_question, chunks, technician_turn = 1, context: nil)
         [
           "Mensaje de este turno:\n#{raw_question.to_s.strip}",
+          context,
           referral_note(technician_turn),
           sources_block(chunks)
         ].compact_blank.join("\n\n")
@@ -327,10 +331,11 @@ module Rag
         (chunk[:content] || chunk["content"]).to_s
       end
 
-      def history_turns(session, correlation_id, episode)
+      def history_turns(session, correlation_id, episode, allowed_numbers: nil)
         return [] unless session.respond_to?(:conversation_history)
 
         kept_numbers = CompanionCaseRecord.marker_numbers(session, CompanionCaseRecord.episode_id_of(episode))
+        kept_numbers &= allowed_numbers unless allowed_numbers.nil?
         cutoff = history_cutoff(session, episode)
         Array(session.conversation_history).filter_map do |message|
           next unless message.is_a?(Hash)
@@ -340,6 +345,10 @@ module Rag
           next if correlation_id.present? && message["correlation_id"].to_s == correlation_id.to_s
           next if cutoff && !inside_cutoff?(message, cutoff)
 
+          if role == "assistant" && allowed_numbers
+            cited = (message["prompt_reply"] || message["content"]).to_s.scan(CompanionCaseRecord::MARKER).flatten.map(&:to_i)
+            next if (cited - allowed_numbers).any?
+          end
           text = history_text(message, kept_numbers)
           next if text.blank?
 

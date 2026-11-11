@@ -85,6 +85,11 @@ class PinnedDocumentsController < ApplicationController
         viewer_account: current_account,
         replace: replace_focus?
       )
+    elsif card_confirmation? && (create_params[:episode_id].present? || replace_focus?)
+      session.confirm_manual_focus!(
+        kb_doc, expected_episode_id: create_params[:episode_id], document_uid: create_params[:document_uid],
+        viewer_account: current_account, replace: replace_focus?
+      )
     elsif replace_focus?
       session.replace_document_focus!(kb_doc)
     else

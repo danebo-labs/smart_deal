@@ -303,14 +303,6 @@ class BedrockRagService
       ))
         return scoped
       end
-      if Rag::InferencePolicy.blocked?
-        return identity_closed_result(
-          status: :unavailable,
-          reason: :provider_blocked,
-          question: question,
-          response_locale: response_locale
-        )
-      end
       @evidence_applicability = Rag::DocumentIdentityScope::IDENTITY_UNKNOWN_REFERENCE
       @open_retrieval_outcome_reason = "identity_unknown"
 
@@ -341,7 +333,8 @@ class BedrockRagService
         context_truncated: context_truncated,
         start_time: start_time,
         filtered_uris: filtered_uris,
-        apply_filter: apply_filter
+        apply_filter: apply_filter,
+        episode: episode, conv_session: conv_session
       )
     rescue Aws::BedrockAgentRuntime::Errors::ServiceError => e
       Rails.logger.error("Bedrock RAG error: #{e.message}")
@@ -547,7 +540,7 @@ class BedrockRagService
       raw_question: raw_question,
       conv_session: conv_session,
       correlation_id: correlation_id,
-      companion_focus: companion_focus
+      companion_focus: companion_focus, episode: episode
     )
     retrieval = retrieve_chunks(
       retrieve_question,
@@ -593,6 +586,15 @@ class BedrockRagService
       )
     end
     companion = applied.status == :no_compatible
+    if companion && Rag::InferencePolicy.blocked?
+      return direct_reference_result(
+        question: question, raw_question: raw_question.presence || question, chunks: [], retrieval: retrieval,
+        response_locale: response_locale, episode: episode, conv_session: conv_session,
+        scope_uris: entity_s3_uris, correlation_id: correlation_id,
+        attribution: { account_id: account_id, user_id: user_id, conversation_session_id: conversation_session_id },
+        incompatible: true
+      )
+    end
     guidance = if companion
       Rag::CompanionGuidanceContext.build(
         question: question,
@@ -627,7 +629,8 @@ class BedrockRagService
     companion_direct = if direct_turn
       Rag::CompanionDirectAnswer.prepare(
         raw_question: raw_question, chunks: companion_chunks, episode: episode,
-        session: conv_session, correlation_id: correlation_id
+        session: conv_session, correlation_id: correlation_id,
+        scope_uris: entity_s3_uris, viewer_account: @account
       )
     end
     prompt = if companion
@@ -831,7 +834,7 @@ class BedrockRagService
                                         output_channel:, entity_sources:, force_entity_filter:,
                                         custom_config:, attribution:, correlation_id:,
                                         include_diagnostics:, raw_question:, context_truncated:,
-                                        start_time:, filtered_uris:, apply_filter:)
+                                        start_time:, filtered_uris:, apply_filter:, episode:, conv_session:)
     @last_citation_attribution = nil
     @unknown_identity_publication = nil
     query_correlation_id = correlation_id.presence || "query:#{SecureRandom.uuid}"
@@ -852,7 +855,8 @@ class BedrockRagService
       )
     end
 
-    retry_open = apply_filter && !force_entity_filter
+    direct = Rag::InferencePolicy.blocked?
+    retry_open = !direct && apply_filter && !force_entity_filter
     retrieval = nil
     marked = []
     prompt = nil
@@ -904,6 +908,13 @@ class BedrockRagService
 
       chunks = Array(retrieval[:chunks])
       enforce_phase2_retrieved_body!(chunks, correlation_id: query_correlation_id)
+      if direct
+        return direct_reference_result(
+          question: question, raw_question: raw_turn, chunks: chunks, retrieval: retrieval,
+          response_locale: response_locale, episode: episode, conv_session: conv_session,
+          scope_uris: attempt_uris, correlation_id: query_correlation_id, attribution: attribution
+        )
+      end
       if chunks.empty?
         focus_empty = true if apply_filter && index.zero?
         if retry_open && index.zero?
@@ -1200,6 +1211,93 @@ class BedrockRagService
     )
   end
 
+  # Provider policy applies to generation, never to the authorized Retrieve.
+  # Reference text uses the same numbered pack as publication, while field
+  # applicability stays separate from the document's own facts.
+  def direct_reference_result(question:, raw_question:, chunks:, retrieval:, response_locale:, episode:,
+                              conv_session:, scope_uris:, correlation_id:, attribution:, incompatible: false)
+    locale = effective_response_locale(question, response_locale: response_locale)
+    active = episode.is_a?(Rag::ActiveEpisode) ? episode : Rag::ActiveEpisode.parse(episode)
+    controller = active&.fact("controller")
+    resolved = controller&.dig("status")
+    chunks = direct_reference_chunks(chunks, scope_uris, controller)
+    pending = if active&.episode_id.present? && !incompatible &&
+        (resolved.nil? || (resolved == "known" && controller["source"] == "catalog")) &&
+        active.pending_question&.dig("type") != "controller"
+      { "type" => "controller", "question" => I18n.t("rag.controller_label_question", locale: locale) }
+    end
+    Rag::ValidationCapture.record(
+      "direct_reference",
+      "correlation_id" => correlation_id,
+      "controller_status" => resolved, "controller_source" => controller&.dig("source"),
+      "focus_uris" => Array(scope_uris), "evidence_count" => chunks.size,
+      "condition" => incompatible ? "incompatible" : chunks.empty? ? "empty" : "reference"
+    )
+    result = nil
+    if chunks.any?
+      @companion_direct_turn = true
+      snapshot_direct_case!(conv_session, episode, correlation_id)
+      declaration = if resolved == "known" && %w[user photo].include?(controller["source"])
+        "Rótulo reportado por el técnico: #{controller['value']}."
+      elsif resolved == "unknown_confirmed"
+        "El técnico indicó que no puede confirmar el rótulo."
+      end
+      context = [
+        declaration,
+        "Describe solo lo que documenta la fuente para la función consultada. Un documento seleccionado no identifica la instalación. No indiques una maniobra, medición ni conexión, ni preguntes de nuevo por el rótulo."
+      ].compact.join(" ")
+      prepared = Rag::CompanionDirectAnswer.prepare(
+        raw_question: raw_question, chunks: chunks, episode: episode, session: conv_session,
+        correlation_id: correlation_id, reference_context: context, scope_uris: scope_uris, viewer_account: @account
+      )
+      raw = companion_direct_answer(prepared, attribution.merge(correlation_id: correlation_id, user_query: raw_question))
+      result = finish_companion_turn_generation(
+        question: question, raw_answer: raw, chunks: prepared.chunks,
+        response_locale: response_locale, retrieval: retrieval, stop_reason: @companion_direct_stop_reason,
+        technician_texts: companion_technician_texts(conv_session, episode, raw_question), manufacturer: nil,
+        correlation_id: correlation_id, reference_pending: pending, reference_mode: true
+      )
+      return result if result[:route_outcome] == :answered
+    end
+
+    reference_fallback(locale, retrieval, pending, scope_uris, incompatible, model_invoked: !result.nil?)
+  rescue Timeout::Error, Net::ReadTimeout, Net::OpenTimeout, BedrockServiceError => error
+    Rag::ValidationCapture.record("direct_reference", "condition" => "generation_failed", "error_class" => error.class.name)
+    reference_fallback(locale, retrieval, pending, scope_uris, incompatible, model_invoked: true)
+  end
+
+  def direct_reference_chunks(chunks, scope_uris, controller)
+    scope = Array(scope_uris).filter_map { |uri| KbDocument.canonical_source(uri) }.to_set
+    declared = if controller&.dig("status") == "known" && %w[user photo].include?(controller["source"])
+      Rag::DocumentIdentityCatalog.designator_label(controller["value"])
+    end
+    entries = Rag::DocumentIdentityCatalog.current.entries.index_by { |entry| KbDocument.canonical_source(entry.s3_key) } if declared.present?
+    Array(chunks).select do |chunk|
+      metadata = chunk[:metadata].to_h.stringify_keys
+      source = KbDocument.canonical_source(metadata["original_source_uri"].presence || chunk[:location_uri])
+      next false if scope.any? && !scope.include?(source)
+
+      entry = entries&.[](source)
+      next true unless entry&.role == "component" && entry.designators.present?
+
+      entry.designators.any? do |item|
+        value = item.is_a?(Hash) ? item["value"] : item
+        Rag::DocumentIdentityCatalog.designator_label(value) == declared
+      end
+    end
+  end
+
+  def reference_fallback(locale, retrieval, pending, scope_uris, incompatible, model_invoked:)
+    answer = I18n.t(Array(scope_uris).any? ? "rag.focus_evidence_insufficient" : "rag.open_evidence_insufficient", locale: locale)
+    {
+      answer: [ answer, pending&.dig("question") ].compact.join("\n\n"),
+      pending_question: pending, citations: [], retrieved_citations: [], doc_refs: [],
+      retrieval_trace: retrieval[:retrieval_trace], model_invoked: model_invoked,
+      generation_mode: "direct_reference", route_outcome: :abstained,
+      evidence_gap: incompatible ? "incompatible" : "insufficient"
+    }
+  end
+
   def generate_empty_guidance(prompt, attribution, correlation_id)
     document_identity_generator.query(
       prompt,
@@ -1467,13 +1565,13 @@ class BedrockRagService
     composed.text
   end
 
-  def direct_case_retrieve_question(question, raw_question:, conv_session:, correlation_id:, companion_focus:)
+  def direct_case_retrieve_question(question, raw_question:, conv_session:, correlation_id:, companion_focus:, episode: nil)
     return question unless companion_focus && companion_generation_direct? && conv_session
 
     retrieval = Rag::CompanionCaseRecord.retrieval_text(
       conv_session,
       raw_question.presence || question,
-      correlation_id: correlation_id
+      correlation_id: correlation_id, episode: episode
     )
     effective = retrieval.text.presence || question.to_s
     @companion_case_retrieve_question = effective
@@ -1686,6 +1784,7 @@ class BedrockRagService
       {
         "index" => index + 1,
         "content" => chunk[:content].to_s,
+        "document" => chunk[:metadata].to_h.stringify_keys["canonical_name"],
         "applicability" => applicability,
         "reference_only" => Rag::DocumentIdentityScope.reference_only_chunk?(chunk)
       }
@@ -1705,8 +1804,10 @@ class BedrockRagService
       Array(parsed.identifiers).each { |item| texts << item["value"] }
     end
     if conv_session.respond_to?(:conversation_history)
+      cutoff = conv_session.episode_history_cutoff if @companion_direct_turn && conv_session.respond_to?(:episode_history_cutoff)
       Array(conv_session.conversation_history).each do |message|
         next unless message.is_a?(Hash) && message["role"] == "user"
+        next if cutoff && (!message["ts"] || SessionContextBuilder.companion_message_ts(message["ts"]).to_i < cutoff.to_i)
 
         texts << if @companion_direct_turn
           Rag::CompanionCaseRecord.technician_text(message)
@@ -1985,7 +2086,7 @@ class BedrockRagService
         stop_reason: stop_reason,
         technician_texts: technician_texts,
         manufacturer: manufacturer,
-        correlation_id: correlation_id
+        correlation_id: correlation_id, episode: episode
       )
     end
 
@@ -2049,11 +2150,25 @@ class BedrockRagService
   end
 
   def finish_companion_turn_generation(question:, raw_answer:, chunks:, response_locale:, retrieval:,
-                                       stop_reason:, technician_texts:, manufacturer:, correlation_id: nil)
+                                       stop_reason:, technician_texts:, manufacturer:, correlation_id: nil,
+                                       reference_pending: nil, reference_mode: false, episode: nil)
     locale = effective_response_locale(question, response_locale: response_locale)
     extracted = extract_doc_refs(raw_answer.to_s)[:clean_answer]
     sources = companion_publication_sources(chunks)
+    sequence = nil
     if @companion_direct_turn
+      unless reference_mode
+        sequence = Rag::CompanionSequence.resolve(question: question, episode: episode, sources: sources)
+        if sequence
+          extracted = sequence.answer
+          Rag::ValidationCapture.record("companion_sequence", "number" => sequence.number, "passage" => sequence.excerpt)
+        end
+        applicability = Rag::CompanionApplicability.check(text: extracted, sources: sources, technician_texts: technician_texts)
+        extracted = applicability.text
+        if applicability.removed.any?
+          Rag::ValidationCapture.record("companion_applicability", "removed" => applicability.removed, "text" => extracted)
+        end
+      end
       backing = Rag::CompanionClaimBacking.call(
         text: extracted, sources: sources, technician_texts: technician_texts, manufacturer: manufacturer
       )
@@ -2085,9 +2200,17 @@ class BedrockRagService
     record_companion_publication(publication, stop_reason)
     accepted = publication.accepted?
     answer_text = accepted ? guarded : Rag::CompanionTurnPublication.abstain_message(locale)
+    passages = if @companion_direct_turn
+      if sequence
+        { sequence.number => [ sequence.excerpt ] }
+      else
+        publication.quotes.group_by { |row| row["source"] }.transform_values { |rows| rows.pluck("text").uniq }
+      end
+    end
     result = {
       answer: answer_text,
-      citations: @citation_processor.build_numbered_references(citations, answer_text, question: question),
+      correlation_id: correlation_id,
+      citations: @citation_processor.build_numbered_references(citations, answer_text, question: question, passages: passages),
       retrieved_citations: citations.compact,
       doc_refs: build_doc_refs(chunks.reject { |chunk| Rag::DocumentIdentityScope.reference_only_chunk?(chunk) }),
       session_id: nil,
@@ -2102,6 +2225,18 @@ class BedrockRagService
       document_identity: Thread.current[:document_identity_scope],
       pending_question: companion_turn_pending(accepted, answer_text)
     }
+    if reference_mode && accepted
+      withhold_unconfirmed_identity!(result, raw_answer: raw_answer, chunks: chunks, question: question, response_locale: response_locale)
+      if result[:applicability_violation] || result[:citations].empty?
+        result[:route_outcome] = :abstained
+      else
+        result[:answer] = [
+          result[:answer], I18n.t("rag.controller_reference_boundary", locale: locale),
+          reference_pending&.dig("question")
+        ].compact.join("\n\n")
+        result[:pending_question] = reference_pending
+      end
+    end
     capture_cited_sources(result[:citations])
     attach_direct_case!(result, chunks, correlation_id)
     result

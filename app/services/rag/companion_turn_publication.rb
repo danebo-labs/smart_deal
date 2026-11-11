@@ -64,6 +64,10 @@ module Rag
         Result.new(accepted: reasons.empty?, reasons: reasons, signals: signals, quotes: quotes)
       end
 
+      def claim_fragments(text)
+        companion_fragments(text)
+      end
+
       def abstain_message(locale)
         I18n.t("rag.companion_contract_invalid", locale: locale)
       end
@@ -592,7 +596,10 @@ module Rag
       end
 
       def quote_needle(text)
-        normalized_body(text).gsub(/\A[[:punct:]]+/, "").gsub(/[[:punct:]]+\z/, "").strip
+        # Keep punctuation inside a literal quote. In particular, a dash
+        # inside a sentence is not a list marker in the source.
+        text.to_s.unicode_normalize(:nfc).squish
+          .gsub(/\A[[:punct:]]+/, "").gsub(/[[:punct:]]+\z/, "").strip
       end
 
       def normalized_body(text)

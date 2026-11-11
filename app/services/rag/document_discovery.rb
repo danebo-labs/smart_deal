@@ -109,7 +109,13 @@ module Rag
     end
 
     def focused_cards(focus_ids)
-      pool = contradiction? ? designator_cards + brand_cards : designator_cards
+      pool = if complementary_component?
+        offer(component_matches, Rag::ManualCandidateRanker::EXACT_DESIGNATOR_LABEL, I18n.t("rag.manual_discovery_component"))
+      elsif contradiction?
+        designator_cards + brand_cards
+      else
+        designator_cards
+      end
       pool.reject { |card| focus_ids.include?(card.kb_document_id.to_i) }
     end
 
@@ -265,13 +271,34 @@ module Rag
     end
 
     def contradiction?
-      return false if focused_ids.empty?
+      return false if focused_ids.empty? || complementary_component?
 
       brand = mentioned_manufacturer
       return false if brand.blank? || @session.nil?
 
       suggestion = Struct.new(:manufacturer, :model_tokens).new(brand, [])
       Rag::FocusNotice.pin_conflict(session: @session, suggestion: suggestion).present?
+    end
+
+    def component_matches
+      designator_matches(designator_words(@question)).select { |entry| entry_value(entry, :role).to_s == "component" }
+    end
+
+    def complementary_component?
+      return false if component_matches.empty? || !@session.respond_to?(:active_episode)
+
+      episode = ActiveEpisode.parse(@session.active_episode)
+      declarations = [ @question, episode&.fact("manufacturer")&.dig("value"),
+                       *Array(episode&.identifiers).pluck("value") ].compact.map { |item| normalize(item) }
+      sources = focus_uris.map { |uri| KbDocument.canonical_source(uri) }
+      @entries.any? do |entry|
+        next false unless equipment_entry?(entry) && sources.include?(KbDocument.canonical_source(entry_value(entry, :s3_key)))
+
+        Array(entry_value(entry, :brands)).any? do |brand|
+          label = normalize(brand)
+          label.present? && declarations.any? { |text| text.match?(/\b#{Regexp.escape(label)}\b/) }
+        end
+      end
     end
 
     def mentioned_manufacturer

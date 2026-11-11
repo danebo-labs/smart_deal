@@ -449,7 +449,7 @@ class RagController < ApplicationController
       doc_refs: result&.doc_refs,
       abstained: result.present? && interaction_outcome(result) == "abstained",
       discovery_query: understanding&.retrieval_query.presence || result&.effective_question.presence || question,
-      allow_outside: understanding.nil? || understanding.outside_discovery,
+      allow_outside: result&.generation_mode != "direct_reference" && (understanding.nil? || understanding.outside_discovery),
       retriever: lambda { |text, top_k|
         BedrockRagService.new(account: current_account).retrieve_chunks(
           text,

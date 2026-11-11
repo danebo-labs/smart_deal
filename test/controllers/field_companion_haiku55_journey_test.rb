@@ -136,7 +136,285 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     assert_includes Haiku55JourneyRubric.reasons("guion1", 5, silent, questions), "t5:limit_not_acknowledged"
   end
 
+  REVISION_FIXTURES = "test/fixtures/files/field_companion/companion_revision"
+  REVISION_DOCS = {
+    cea: [ "9a4fa817-b9e8-4a9e-ae83-526c0731e603", "manual-cea15p.pdf", "manual-cea15p" ],
+    fallas: [ "85590ab2-d2b2-49b2-a36d-0c8c50f9bd76", "Monarch nice 3000 fallas-1.pdf", "Monarch nice 3000 fallas-1" ],
+    monarch: [ "6e578b57-0f5e-42f0-91d6-4dd908e0eba2", "Manual_monarch_Español_3000+.pdf", "Manual_monarch_Español_3000+" ]
+  }.freeze
+  CEA_QUESTION = "La puerta de piso no traba. Hay patín retráctil. ¿Qué tiene que cumplirse para que la seguridad automática SA quede en 1?"
+  # Manual DD549-R05, PDF p. 24. Production exited before Retrieve, so
+  # the SDK row and the generation here are synthetic, not captured traffic.
+  CEA_PASSAGE = %q("Seguridad Automática" o SA debe ser "1" sólo si los mandos de patín retráctil ordenados por el controlador - después que las puertas están cerradas - se ejecutaron completamente.)
+
+  test "revision CEA pin retrieves and saves a nameplate question, then uses the reported label" do
+    check_cea_followup("Leo CEA15+ en el rótulo de la placa.", "value", "known")
+  end
+
+  test "revision CEA keeps the pin when the technician cannot see the label" do
+    check_cea_followup("No puedo ver el rótulo.", "unknown", "unknown_confirmed")
+  end
+
+  test "revision CEA explicit reference, empty and insufficient results never open the pin or use the Bedrock generator" do
+    document = revision_pin(:cea)
+    [
+      [ "¿Qué dice el manual sobre la Seguridad Automática SA y el patín retráctil?", CEA_PASSAGE, cea_reference ],
+      [ CEA_QUESTION, nil, "" ],
+      [ CEA_QUESTION, "Fin de Puerta Abierta. El uso de FPA es opcional.", "Esto no está en la documentación cargada en este turno." ]
+    ].each_with_index do |(question, passage, raw), index|
+      body, cassette = revision_ask("cea-evidence", index + 1, cea_turn(question, document, passage: passage, raw: raw), document)
+      assert_equal 1, cassette.filters.size
+      assert_revision_scope(cassette, document)
+      assert_equal [ document.id ], reloaded_session.focus_document_ids
+      refute_match(/servicio no está disponible/i, body.fetch("answer"))
+      if index.zero?
+        assert_equal [ 24 ], body.fetch("citations").pluck("page")
+      else
+        assert_empty body.fetch("citations")
+        assert_match(/no (encontr|está)|evidencia/i, body.fetch("answer"))
+      end
+    end
+  end
+
+  %w[elemont_first elemont_second].each do |name|
+    test "revision #{name} resolves the same level and shows the two neighboring rows" do
+      document = revision_pin(:elemont)
+      responses = revision_turns(name).map.with_index { |turn, index| revision_ask(name, index + 1, turn, document) }
+      body, cassette = responses.last
+      assert_match(/nivel 3.*nivel 4.*nivel 2/m, body.fetch("answer"))
+      assert_includes reloaded_session.active_episode.fetch("identifiers").pluck("value"), "Chapa nivel 3"
+      assert_match(/nivel 3/i, cassette.queries.sole)
+      refute_match(/Chapa nivel 2/i, cassette.queries.sole)
+      source = body.fetch("citations").sole
+      assert_match(/Elemont/i, source.fetch("title"))
+      assert_equal 5, source.fetch("page")
+      assert_match(/nivel 4.*nivel 3.*nivel 2/m, source.fetch("matched_excerpt"))
+      refute_match(/FIELD_RECORD|DATA_NOT_AVAILABLE/, source.fetch("matched_excerpt"))
+    end
+  end
+
+  test "revision Jesús keeps the equipment drawing and offers the named controller as an addition" do
+    plan = revision_pin(:elemont)
+    manual = revision_document(:cea)
+    question = "Hola, tengo una falla eléctrica en un elevador hidráulico Elemont, con imanes y tarjeta Cea15"
+    entry = cea_turn(question, plan, passage: "Los componentes se conectan en serie entre los nodos Seg In y Seg Out.",
+      raw: "En el plano, «Los componentes se conectan en serie entre los nodos Seg In y Seg Out» [1].")
+    entry.tool_input["assertions"] = [
+      { "span" => "elevador hidráulico Elemont", "act" => "assert", "slot_hint" => "designator" },
+      { "span" => "tarjeta Cea15", "act" => "assert", "slot_hint" => "controller" }
+    ]
+    entry.tool_input["observations"] = [ "falla eléctrica" ]
+    first, first_cassette = revision_ask("jesus", 1, entry, plan)
+    assert_revision_scope(first_cassette, plan)
+    assert_match(/rótulo/i, first.fetch("answer"))
+    assert_nil first["manual_suggestion"]&.fetch("cards", [])&.find { |card| card["kb_document_id"] == manual.id }
+    episode = reloaded_session.live_episode_id
+
+    confirmed = cea_turn("Leo CEA15+ en el rótulo de la placa.", plan, passage: "Los componentes se conectan en serie entre los nodos Seg In y Seg Out.",
+      raw: "En el plano, «Los componentes se conectan en serie entre los nodos Seg In y Seg Out» [1].", move: "answer_pending", resolution: "value")
+    second, second_cassette = revision_ask("jesus", 2, confirmed, plan)
+    assert_revision_scope(second_cassette, plan)
+    card = revision_card(second, manual)
+    assert_equal "add", card.fetch("action")
+    assert_match(/controlador/, card.fetch("text"))
+    cid = second.fetch("manual_suggestion").fetch("correlation_id")
+    assert_equal [ plan.id ], reloaded_session.focus_document_ids
+    accept_revision_card(manual, "add", episode, cid)
+    assert_equal [ plan.id, manual.id ].sort, reloaded_session.focus_document_ids.sort
+    replay, cassette = revision_ask("jesus", 3, confirmed, plan, replay: cid)
+    assert_equal true, replay.fetch("replayed")
+    assert_revision_scope(cassette, plan, manual)
+    assert_equal episode, reloaded_session.live_episode_id
+    assert_equal 2, reloaded_session.conversation_history.count { |row| row["role"] == "user" }
+  end
+
+  test "revision G2 exposes the passage supporting the answer instead of field records" do
+    document = revision_pin(:guion2)
+    body, = revision_turns("g2").map.with_index { |turn, i| revision_ask("g2", i + 1, turn, document) }.last
+    source = body.fetch("citations").find { |citation| citation["page"] == 8 }
+    assert source
+    assert_match(/VF5/, source.fetch("title"))
+    refute_match(/chunk_/, source.fetch("title"))
+    assert_match(/necesario realizar otra vez el autoajuste/i, source.fetch("matched_excerpt"))
+    refute_match(/FIELD_RECORD|DATA_NOT_AVAILABLE/, source.fetch("matched_excerpt"))
+  end
+
+  test "revision G1 keeps the LED and persistence unconfirmed and respects the technician limit" do
+    document = revision_pin(:guion1)
+    replies = revision_turns("g1").map.with_index { |turn, i| revision_ask("g1", i + 1, turn, document).first.fetch("answer") }
+    refute_match(/es la hipótesis que queda|lo que queda por revisar/i, replies[2])
+    refute_match(/LED de FOTOCÉLULA \(o re-apertura\) está encendido/i, replies[3])
+    refute_match(/posición de (?:SW4|DIP 4)|condición (?:aún )?no se cumple/i, replies[3..4].join)
+    assert_match(/no (?:necesitas|puede)/i, replies.last)
+    assert_match(/#54/, replies.last)
+  end
+
+  test "revision Monarch add replays the same message and does not turn sizing into a diagnostic threshold" do
+    fallas = revision_pin(:fallas)
+    extra = revision_document(:monarch)
+    turns = revision_turns("monarch_add")
+    initial, = revision_ask("monarch_add", 1, turns.first, fallas)
+    episode = reloaded_session.live_episode_id
+    cid = reloaded_session.conversation_history.find { |row| row["role"] == "user" }.fetch("correlation_id")
+    assert_equal [ fallas.id ], reloaded_session.focus_document_ids
+    card = revision_card(initial, extra)
+    assert_equal "add", card.fetch("action")
+    accept_revision_card(extra, card.fetch("action"), episode, cid)
+    assert_equal [ fallas.id, extra.id ].sort, reloaded_session.focus_document_ids.sort
+    replay, replay_cassette = revision_ask("monarch_add", 2, turns[1], fallas, replay: cid)
+    assert_equal true, replay.fetch("replayed")
+    assert_includes replay_cassette.queries.sole, turns.first.question
+    assert_equal 1, reloaded_session.conversation_history.count { |row| row["role"] == "user" }
+    body, cassette = revision_ask("monarch_add", 3, turns[2], fallas)
+    assert_revision_scope(cassette, fallas, extra)
+    assert_equal episode, reloaded_session.live_episode_id
+    assert_match(/filtro/i, body.fetch("answer"))
+    refute_match(/temperatura ambiente es menos probable|dentro del rango de operación/i, body.fetch("answer"))
+    source = body.fetch("citations").find { |citation| citation["page"] == 2 && citation["title"].include?("fallas") }
+    assert source, body.fetch("citations").inspect
+    assert_match(/grietas|vibración/i, source.fetch("matched_excerpt"))
+    refute_match(/vida útil|FIELD_RECORD|DATA_NOT_AVAILABLE/i, source.fetch("matched_excerpt"))
+  end
+
+  test "revision Monarch with only the faults manual keeps the blocked filter as evidence" do
+    fallas = revision_pin(:fallas)
+    episode = nil
+    body, cassette = revision_turns("monarch_single").map.with_index do |turn, index|
+      response = revision_ask("monarch_single", index + 1, turn, fallas)
+      episode ||= reloaded_session.live_episode_id
+      assert_equal episode, reloaded_session.live_episode_id
+      response
+    end.last
+    assert_revision_scope(cassette, fallas)
+    assert_match(/filtro de aire est[aá] bloqueado/i, body.fetch("answer"))
+    refute_match(/temperatura ambiente es menos probable|dentro del rango de operación/i, body.fetch("answer"))
+    assert body.fetch("citations").any? { |source| source["page"] == 8 && source["matched_excerpt"].match?(/filtro/) }
+  end
+
+  test "revision component focus replacement rejects a stale click and excludes the replaced ledger sources" do
+    fallas = revision_pin(:fallas)
+    extra = revision_document(:monarch)
+    turns = revision_turns("monarch_add")
+    initial, = revision_ask("monarch_replace", 1, turns.first, fallas)
+    episode = reloaded_session.live_episode_id
+    cid = reloaded_session.conversation_history.find { |row| row["role"] == "user" }.fetch("correlation_id")
+    accept_revision_card(extra, "replace", "stale_episode", cid, status: :unprocessable_entity)
+    assert_equal [ fallas.id ], reloaded_session.focus_document_ids
+    accept_revision_card(extra, "replace", episode, cid)
+    assert_equal [ extra.id ], reloaded_session.focus_document_ids
+    _, cassette = revision_ask("monarch_replace", 2, turns[1], extra, replay: cid)
+    assert_equal episode, reloaded_session.live_episode_id
+    generator = cassette.sent.find { |payload| !payload[:tool_choice] }
+    assert generator
+    refute_includes generator.fetch(:messages).last.to_json, "El filtro de aire está bloqueado"
+    assert_revision_scope(cassette, extra)
+  end
+
   private
+
+  def revision_turns(name)
+    data = JSON.parse(Rails.root.join(REVISION_FIXTURES, "#{name}.json").read)
+    data.fetch("turns").map { |turn|
+      turn["rows"].each { |row| row["content"] = data.fetch("passages").fetch(row.fetch("body_sha256")) }
+      TurnCapture.new(turn)
+    }
+  end
+
+  def revision_document(name)
+    uid, file, title = REVISION_DOCS[name]
+    if uid
+      key = "bulk_uploads/1/2026-08-31/#{file}"
+    else
+      spec = SCRIPTS.fetch(name.to_s)
+      uid, key, title = spec.values_at("uid", "key", "name")
+    end
+    KbDocument.create!(account: @account, document_uid: uid, s3_key: key, display_name: title, aliases: [])
+  end
+
+  def revision_pin(name)
+    document = revision_document(name)
+    post pinned_documents_path, params: { kb_document_id: document.id }, as: :json
+    assert_response :no_content
+    document
+  end
+
+  def revision_ask(name, number, turn, document, replay: nil)
+    cassette = JourneyCassette.new([ turn ], viewer_id: @account.id, focus_uri: document.canonical_uri)
+    with_doubles(cassette) do
+      forbid_bedrock = TracePoint.new(:call) do |call|
+        methods = { BedrockClient => %i[generate_text converse converse_message], AiProvider => %i[query converse] }
+        flunk "Unexpected Bedrock generator entry #{call.defined_class}##{call.method_id}" if methods[call.defined_class]&.include?(call.method_id)
+      end
+      events = Rag::ValidationCapture.capture do
+        params = replay ? { replay_correlation_id: replay } : { question: turn.question }
+        forbid_bedrock.enable { post rag_ask_path, params: params, as: :json }
+      end
+      body = response.parsed_body
+      write_trace("revision-#{name}", number, body, events, cassette, index: 0)
+      assert_response :success, body.inspect
+      assert_equal "success", body.fetch("status")
+      [ body, cassette ]
+    end
+  end
+
+  def assert_revision_scope(cassette, *documents)
+    uris = cassette.filters.sole.to_json.scan(/s3:[^"]+/).uniq
+    assert_equal documents.map(&:canonical_uri).sort, uris.sort
+  end
+
+  def revision_card(body, document)
+    card = body.values.grep(Hash).flat_map { |section| Array(section["cards"]) }
+      .find { |row| row["kb_document_id"] == document.id }
+    assert card, body.inspect
+    card
+  end
+
+  def accept_revision_card(document, mode, episode, cid, status: :ok)
+    post pinned_documents_path, params: {
+      kb_document_id: document.id, document_uid: document.document_uid,
+      focus_mode: mode, episode_id: episode, correlation_id: cid
+    }, as: :json
+    assert_response status
+  end
+
+  def cea_reference
+    "En el manual CEA15+: «#{CEA_PASSAGE.delete_suffix(".")}» [1]."
+  end
+
+  def cea_turn(question, document, passage: CEA_PASSAGE, raw: cea_reference, move: "report", resolution: nil)
+    assertions = resolution == "value" ? [ { "span" => "CEA15+", "act" => "assert", "slot_hint" => "controller" } ] : []
+    TurnCapture.new({
+      "question" => question, "retrieve_query" => question,
+      "tool_input" => {
+        "move" => move, "assertions" => assertions, "observations" => [],
+        "pending_resolution" => resolution, "clarification_target" => nil
+      },
+      "generator_text" => raw,
+      "rows" => passage ? [ {
+        "content" => passage, "uri" => document.canonical_uri,
+        "original_source_uri" => document.canonical_uri, "document" => "CEA15+", "page" => 24, "score" => 0.9
+      } ] : []
+    })
+  end
+
+  def check_cea_followup(reply, resolution, status)
+    document = revision_pin(:cea)
+    name = "cea-#{status}"
+    body, first = revision_ask(name, 1, cea_turn(CEA_QUESTION, document), document)
+    assert_revision_scope(first, document)
+    assert_match(/patín retráctil/i, body.fetch("answer"))
+    assert_match(/rótulo/i, body.fetch("answer"))
+    assert_equal "controller", reloaded_session.active_episode.dig("pending_question", "type")
+    episode = reloaded_session.live_episode_id
+    second, cassette = revision_ask(name, 2, cea_turn(reply, document, move: "answer_pending", resolution: resolution), document)
+    assert_revision_scope(cassette, document)
+    assert_equal episode, reloaded_session.live_episode_id
+    assert_equal status, reloaded_session.active_episode.dig("facts", "controller", "status")
+    assert_nil reloaded_session.active_episode["pending_question"]
+    refute_match(/¿[^?]*rótulo/i, second.fetch("answer"))
+    generator = cassette.sent.find { |payload| !payload[:tool_choice] }
+    assert_match(/#{status == "known" ? "CEA15\\+" : "no (?:puede|puedo|se pudo)"}|#{status}/i, generator.to_json)
+  end
 
   def play(name, tool_inputs: {})
     spec = SCRIPTS.fetch(name)
@@ -171,10 +449,17 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
         assert_equal document.id, reloaded_session.document_focus_entries.sole["kb_document_id"]
         query = cassette.queries[index]
         assert query.to_s.strip.present?, "turn #{index + 1} did not reach Retrieve"
-        assert_equal turn.retrieve_query, query, "#{name} turn #{index + 1}: Retrieve query diverged from the capture"
-        if turn.generator_messages_sha256
-          assert_equal turn.generator_messages_sha256, cassette.generator_messages_sha256(index),
-            "#{name} turn #{index + 1}: generator history or evidence diverged from the capture"
+        if name == "elemont" && index.positive?
+          assert_match(/nivel 3/i, query)
+          refute_match(/Chapa nivel 2/i, query)
+        else
+          assert_equal turn.retrieve_query, query, "#{name} turn #{index + 1}: Retrieve query diverged from the capture"
+        end
+        # After the first turn the pack can now keep canonical names in its
+        # ledger and omit retired sources. Check the actual source, filter,
+        # publication and state rather than freezing the old header bytes.
+        if turn.generator_messages_sha256 && index.zero?
+          assert_equal turn.generator_messages_sha256, cassette.generator_messages_sha256(index)
         end
         assert cassette.filters[index].to_json.include?(focus_uri), cassette.filters[index].to_json
         assert_behavior(name, index + 1, answer, turns.map(&:question))
@@ -273,14 +558,17 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     }.to_json
   end
 
-  def write_trace(name, number, body, events, cassette)
+  def write_trace(name, number, body, events, cassette, index: number - 1)
     directory = Rails.root.join("tmp/field_companion/haiku55_offline", name, format("turn-%d", number))
     FileUtils.mkdir_p(directory)
     File.write(directory.join("published.txt"), body["answer"].to_s)
     File.write(directory.join("trace.json"), JSON.generate(
       "answer" => body["answer"],
-      "query" => cassette.queries[number - 1],
-      "filter" => cassette.filters[number - 1],
+      "query" => cassette.queries[index],
+      "filter" => cassette.filters[index],
+      "http" => body,
+      "episode" => reloaded_session.active_episode,
+      "focus" => reloaded_session.document_focus_entries,
       "events" => events
     ))
   end
@@ -355,7 +643,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       @filters << (vector[:filter] || vector["filter"])
       rows = turn.rows.map { |row| Retrieved.new(row, @viewer_id, @focus_uri) }
       @returned << rows
-      Struct.new(:retrieval_results).new(rows)
+      Aws::BedrockAgentRuntime::Types::RetrieveResponse.new(retrieval_results: rows)
     end
 
     # Scores follow the captured Cohere order, matched by body digest.
@@ -410,14 +698,16 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
   class Retrieved
     def initialize(row, viewer_id, focus_uri)
       @text = row["content"].to_s
-      @content = Struct.new(:text).new(@text)
+      @content = Aws::BedrockAgentRuntime::Types::RetrievalResultContent.new(text: @text)
       @score = row["score"]
       @uri = row["uri"]
       @page = row["page"]
-      @location = Struct.new(:s3_location).new(Struct.new(:uri).new(@uri))
+      @location = Aws::BedrockAgentRuntime::Types::RetrievalResultLocation.new(
+        type: "S3", s3_location: Aws::BedrockAgentRuntime::Types::RetrievalResultS3Location.new(uri: @uri)
+      )
       @metadata = {
         "account_id" => viewer_id.to_s,
-        "original_source_uri" => focus_uri,
+        "original_source_uri" => row["original_source_uri"] || focus_uri,
         "x-amz-bedrock-kb-source-uri" => @uri,
         "page_number" => @page,
         "canonical_name" => row["document"],

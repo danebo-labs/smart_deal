@@ -155,7 +155,7 @@
     "55e4c0570dd99422e4a5609879d56bdc0c8e797e3d0b4c22b19bd80756b7ea28",
     "d22651170f18b02669e7849a2b096caebb5d5c5094495d685b11b771803e1e1b"
   ],
-  "generator_messages_sha256": "a88c9eecac6ed0f190a042b00c04d7b4a56cc18b8344a8d4e52c01e4b64bd23e",
+  "generator_messages_sha256": "d8af313495e756943172af754f22a358d8f96ec53ddb6bb4d72cd7c3e4f3b53e",
   "generator_text": "Lo que describes es el comportamiento que la documentación indica para la primera maniobra tras un corte: «Las puertas se abrirán lentamente en la primera operación después de un fallo de alimentación» [1].\n\nPor ese solo hecho, no hace falta repetir el autoajuste. La fuente dice: «Solo es necesario realizar otra vez el autoajuste para la configuración de los parámetros por defecto o cuando se realicen cambios como la conexión o desconexión de la fotocélula Fermator» [1].\n\n¿Después de esa primera apertura lenta, la puerta cierra y abre con normalidad?",
   "stop_reason": "end_turn"
 }

@@ -321,6 +321,9 @@ module Rag
           next if CompanionCaseRecord.gap?(chunk)
 
           number = CompanionCaseRecord.number_of(chunk, index)
+          # A heading right under the previous passage was read as that
+          # passage's citation.
+          lines << "" if lines.size > 1
           lines << CompanionPlan.source_heading(chunk, number)
           lines << DocumentIdentityScope.omit_terminal_evidence_records(chunk_body(chunk)).strip
         end

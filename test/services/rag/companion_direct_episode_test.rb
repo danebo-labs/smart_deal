@@ -207,6 +207,19 @@ class Rag::CompanionDirectEpisodeTest < ActiveSupport::TestCase
     assert_includes sent, "[procedencia: foto]"
   end
 
+  # live cand1 CEA-T3: a p. 22 quote was cited with the [n] of the heading
+  # printed right under it.
+  test "a blank line separates each passage from the next source heading" do
+    chunks = [ [ "Una serie es 1 si la tensión es 24 Vcc.", 22 ], [ "Tabla de relés 77 a 99.", 75 ] ].map do |content, page|
+      { content: content, metadata: { "canonical_name" => "manual-cea15p", "page_number" => page } }
+    end
+
+    prepared = Rag::CompanionDirectAnswer.prepare(raw_question: "¿Qué tensión es un 1?", chunks: chunks, episode: nil, session: nil)
+    text = prepared.messages.last[:content][0][:text]
+
+    assert_includes text, "Fuentes de este turno:\n[1] manual-cea15p, página 22\nUna serie es 1 si la tensión es 24 Vcc.\n\n[2] manual-cea15p, página 75\n"
+  end
+
   test "a direct answer leaves the stored pending and the plan still sees it" do
     session = web_session
     question = "¿Sigue el caudal bajo?"

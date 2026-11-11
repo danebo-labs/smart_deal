@@ -167,7 +167,7 @@
     "d22651170f18b02669e7849a2b096caebb5d5c5094495d685b11b771803e1e1b",
     "16553d34bcc796c97ce5e24e6ec07bcc557802b2248102e24fab93788ef30e11"
   ],
-  "generator_messages_sha256": "fd60089133eb216bedbdc183c89a41d9a863ec23a06ef9cef9b69c6ebd592a22",
+  "generator_messages_sha256": "69aa33023d4499da2c581e79b0a639a4e59cf66d91dedfe76785b7484412c959",
   "generator_text": "Lo primero según la fuente es revisar el potenciómetro de fuerza de re-apertura, #54: «Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54).» [2]\n\nTu revisión visual de la obstrucción no basta para descartarla. La fuente pide «Comprobar que no hay una obstrucción mecánica en la puerta» [2], y la fotocélula también debe verificarse, porque el LED apagado no la descarta por sí solo.\n\nEl dibujo no rotula el sentido de giro de #54. «El significado de la flecha curva y el efecto de cada sentido de giro no están rotulados» [1], así que hay que verificarlo en campo antes de girar el potenciómetro.\n\nSi después de revisar #54, la obstrucción y la fotocélula el problema sigue, avísame con el resultado.",
   "stop_reason": "end_turn"
 }

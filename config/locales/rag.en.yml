@@ -51,6 +51,7 @@ en:
     source_document: "Document"
     controller_label_question: "What exact model is printed on the controller nameplate, including the “+” if present?"
     controller_reference_boundary: "This is a reference from the manual; it does not establish the installed board or configuration."
+    controller_plate_mismatch: "The selected document covers %{documented} and the plate you report reads %{reported}. I am not using it as an instruction for this equipment. If you have the %{reported} manual, select it to consult it."
     focus_evidence_insufficient: "I did not find enough evidence in the selected documents to answer this point."
     open_evidence_insufficient: "I did not find enough documentary evidence to answer this point."
     unknown_identity_opening: "The retrieved material is not confirmed for this equipment."

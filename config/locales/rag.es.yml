@@ -51,6 +51,7 @@ es:
     source_document: "Documento"
     controller_label_question: "¿Qué modelo exacto dice el rótulo de la placa del controlador, incluido el «+» si aparece?"
     controller_reference_boundary: "La referencia describe el manual; por sí sola no confirma la placa ni la configuración instalada."
+    controller_plate_mismatch: "El documento seleccionado corresponde a %{documented} y la placa que reportas dice %{reported}. No lo uso como instrucción para este equipo. Si tienes el manual de %{reported}, selecciónalo para consultarlo."
     focus_evidence_insufficient: "No encontré evidencia suficiente en los documentos seleccionados para responder este punto."
     open_evidence_insufficient: "No encontré evidencia documental suficiente para responder este punto."
     unknown_identity_opening: "El material recuperado no está confirmado para este equipo."

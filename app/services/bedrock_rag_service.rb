@@ -700,7 +700,7 @@ class BedrockRagService
         prompt, raw_turn: raw_question, sent_question: question, truncated: generation_truncated
       )
     rescue StandardError => e
-      raise unless e.class.name.start_with?("Aws::", "Seahorse::")
+      raise unless e.class.name.start_with?("Aws::", "Seahorse::") || e.is_a?(Anthropic::Errors::APIError)
 
       return attach_generation_trace!(
         identity_closed_result(
@@ -1220,10 +1220,11 @@ class BedrockRagService
     active = episode.is_a?(Rag::ActiveEpisode) ? episode : Rag::ActiveEpisode.parse(episode)
     controller = active&.fact("controller")
     resolved = controller&.dig("status")
-    chunks = direct_reference_chunks(chunks, scope_uris, controller)
+    chunks, mismatched = direct_reference_chunks(chunks, scope_uris, controller)
+    plate = { reported: controller["value"], documented: mismatched } if chunks.empty? && mismatched.any?
     pending = if active&.episode_id.present? && !incompatible &&
         (resolved.nil? || (resolved == "known" && controller["source"] == "catalog")) &&
-        active.pending_question&.dig("type") != "controller"
+        active.pending_question&.dig("type") != "controller" && !controller_question_shown?(conv_session)
       { "type" => "controller", "question" => I18n.t("rag.controller_label_question", locale: locale) }
     end
     Rag::ValidationCapture.record(
@@ -1231,7 +1232,7 @@ class BedrockRagService
       "correlation_id" => correlation_id,
       "controller_status" => resolved, "controller_source" => controller&.dig("source"),
       "focus_uris" => Array(scope_uris), "evidence_count" => chunks.size,
-      "condition" => incompatible ? "incompatible" : chunks.empty? ? "empty" : "reference"
+      "condition" => incompatible ? "incompatible" : plate ? "plate_mismatch" : chunks.empty? ? "empty" : "reference"
     )
     result = nil
     if chunks.any?
@@ -1260,41 +1261,67 @@ class BedrockRagService
       return result if result[:route_outcome] == :answered
     end
 
-    reference_fallback(locale, retrieval, pending, scope_uris, incompatible, model_invoked: !result.nil?)
-  rescue Timeout::Error, Net::ReadTimeout, Net::OpenTimeout, BedrockServiceError => error
+    reference_fallback(locale, retrieval, pending, scope_uris, incompatible, model_invoked: !result.nil?, plate: plate)
+  rescue Timeout::Error, Net::ReadTimeout, Net::OpenTimeout, BedrockServiceError, Anthropic::Errors::APIError => error
     Rag::ValidationCapture.record("direct_reference", "condition" => "generation_failed", "error_class" => error.class.name)
     reference_fallback(locale, retrieval, pending, scope_uris, incompatible, model_invoked: true)
   end
 
+  # A user turn that does not answer the label clears the pending question.
+  # The episode still asks for the label once: the published question is the
+  # record that it was already shown.
+  def controller_question_shown?(conv_session)
+    return false unless conv_session.respond_to?(:conversation_history)
+
+    cutoff = conv_session.episode_history_cutoff if conv_session.respond_to?(:episode_history_cutoff)
+    asked = I18n.available_locales.map { |code| I18n.t("rag.controller_label_question", locale: code) }.uniq
+    Array(conv_session.conversation_history).any? do |message|
+      next false unless message.is_a?(Hash) && message["role"] == "assistant"
+      next false if cutoff && SessionContextBuilder.companion_message_ts(message["ts"]).to_i < cutoff.to_i
+
+      text = message["full_content"].presence || message["content"].to_s
+      asked.any? { |question| text.include?(question) }
+    end
+  end
+
+  # Returns the chunks for this focus and, separately, the designators of the
+  # component manuals dropped because the reported plate names another one.
   def direct_reference_chunks(chunks, scope_uris, controller)
     scope = Array(scope_uris).filter_map { |uri| KbDocument.canonical_source(uri) }.to_set
     declared = if controller&.dig("status") == "known" && %w[user photo].include?(controller["source"])
       Rag::DocumentIdentityCatalog.designator_label(controller["value"])
     end
     entries = Rag::DocumentIdentityCatalog.current.entries.index_by { |entry| KbDocument.canonical_source(entry.s3_key) } if declared.present?
-    Array(chunks).select do |chunk|
+    mismatched = []
+    kept = Array(chunks).select do |chunk|
       metadata = chunk[:metadata].to_h.stringify_keys
       source = KbDocument.canonical_source(metadata["original_source_uri"].presence || chunk[:location_uri])
-      next false if scope.any? && !scope.include?(source)
+      next false if scope.any? && scope.exclude?(source)
 
       entry = entries&.[](source)
       next true unless entry&.role == "component" && entry.designators.present?
 
-      entry.designators.any? do |item|
-        value = item.is_a?(Hash) ? item["value"] : item
-        Rag::DocumentIdentityCatalog.designator_label(value) == declared
-      end
+      values = entry.designators.map { |item| item.is_a?(Hash) ? item["value"] : item }
+      next true if values.any? { |value| Rag::DocumentIdentityCatalog.designator_label(value) == declared }
+
+      mismatched.concat(values)
+      false
     end
+    [ kept, mismatched.uniq ]
   end
 
-  def reference_fallback(locale, retrieval, pending, scope_uris, incompatible, model_invoked:)
-    answer = I18n.t(Array(scope_uris).any? ? "rag.focus_evidence_insufficient" : "rag.open_evidence_insufficient", locale: locale)
+  def reference_fallback(locale, retrieval, pending, scope_uris, incompatible, model_invoked:, plate: nil)
+    answer = if plate
+      I18n.t("rag.controller_plate_mismatch", locale: locale, reported: plate[:reported], documented: plate[:documented].to_sentence)
+    else
+      I18n.t(Array(scope_uris).any? ? "rag.focus_evidence_insufficient" : "rag.open_evidence_insufficient", locale: locale)
+    end
     {
       answer: [ answer, pending&.dig("question") ].compact.join("\n\n"),
       pending_question: pending, citations: [], retrieved_citations: [], doc_refs: [],
       retrieval_trace: retrieval[:retrieval_trace], model_invoked: model_invoked,
       generation_mode: "direct_reference", route_outcome: :abstained,
-      evidence_gap: incompatible ? "incompatible" : "insufficient"
+      evidence_gap: incompatible ? "incompatible" : plate ? "plate_mismatch" : "insufficient"
     }
   end
 

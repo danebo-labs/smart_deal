@@ -62,6 +62,7 @@ module Haiku55JourneyRubric
     reasons = case name
     when "guion2" then judge.send(:judge_guion2, number, answer)
     when "guion1" then judge.send(:judge_guion1, number, answer, technician_texts: questions.first(number))
+    when /\Acea/ then cea_reasons(number, answer)
     else []
     end
     slow = Rag::CompanionVerticalLadder::SLOW
@@ -82,6 +83,16 @@ module Haiku55JourneyRubric
       reasons << "t5:limit_not_acknowledged" unless limited
     end
     reasons.concat(elemont_reasons(number, answer)) if name == "elemont"
+    reasons
+  end
+
+  # CEA15+ with the plate still pending: the label is asked once, in T1.
+  def cea_reasons(number, answer)
+    asked = I18n.available_locales.any? { |code| answer.include?(I18n.t("rag.controller_label_question", locale: code)) }
+    reasons = []
+    reasons << "cea:label_not_asked" if number == 1 && !asked
+    reasons << "cea:label_reasked" if number > 1 && asked
+    reasons << "cea:service_unavailable" if answer.match?(/servicio no est[aá] disponible/i)
     reasons
   end
 

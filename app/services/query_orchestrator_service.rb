@@ -327,7 +327,11 @@ class QueryOrchestratorService
       end
     end
 
-    structured = Rag::StructuredEvidenceRoute.build(
+    # Both routes below generate only through the Bedrock generator. With that
+    # inference blocked the turn goes to BedrockRagService#query, which owns
+    # the authorized Retrieve and the direct transport, on one Retrieve.
+    bedrock_generation = !Rag::InferencePolicy.blocked?
+    structured = bedrock_generation && Rag::StructuredEvidenceRoute.build(
       question: @query,
       account: @account,
       entity_s3_uris: @entity_s3_uris,
@@ -344,7 +348,7 @@ class QueryOrchestratorService
       raw_question: @raw_question,
       session_context: @session_context
     )
-    outcome = structured&.execute
+    outcome = structured ? structured.execute : nil
     if outcome&.status == :answered || outcome&.status == :abstained
       Rails.logger.info("QueryOrchestrator: structured_evidence_route outcome=#{outcome.status}")
       note_route_exit("structured_evidence", outcome.status.to_s)
@@ -352,7 +356,7 @@ class QueryOrchestratorService
     end
 
     unless equipment_identity_required?
-      disambiguation = Rag::AmbiguousModelResponder.build(
+      disambiguation = bedrock_generation && Rag::AmbiguousModelResponder.build(
         question:            @query,
         account:             @account,
         entity_s3_uris:      @entity_s3_uris,

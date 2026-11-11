@@ -56,6 +56,23 @@ module Haiku55Http
       "replace" => { 5 => "Tengo multímetro y sé medir en los bornes #21 y #23. ¿Qué compruebo para orientar el caso?" }
     }
   }.freeze
+  # CEA15+ pinned, plate unknown. "cea" is the original seven-turn script; the
+  # two label variants continue T1 with the reply to the nameplate question.
+  CEA_DOCUMENT_UID = "9a4fa817-b9e8-4a9e-ae83-526c0731e603"
+  CEA_TURNS = [
+    "La puerta de piso no traba. Hay patín retráctil. ¿Qué tiene que cumplirse para que la seguridad automática SA quede en 1?",
+    "¿Qué son los terminales SM, SPC y SA en la serie de seguridad de puertas?",
+    "Si mido un terminal de la serie de seguridad, ¿qué tensión es un 1 y qué tensión es un 0?",
+    "No hay contactos que cierren por el patín retráctil. ¿Cómo se conecta SA?",
+    "La puerta de cabina es manual y la de piso es manual, con doble contacto y traba por patín. ¿Qué contactos van en SM y cuáles en SA?",
+    "La bobina del patín retráctil mete interferencia. ¿Qué hay que instalar en paralelo con esa bobina?",
+    "¿El contacto del operador de puerta automática entra en la serie SM?"
+  ].freeze
+  EXTRA_SCRIPTS = {
+    "cea" => { "document_uid" => CEA_DOCUMENT_UID, "turns" => CEA_TURNS },
+    "cea_label_known" => { "document_uid" => CEA_DOCUMENT_UID, "turns" => [ CEA_TURNS.first, "Leo CEA15+ en el rótulo de la placa." ] },
+    "cea_label_unseen" => { "document_uid" => CEA_DOCUMENT_UID, "turns" => [ CEA_TURNS.first, "No puedo ver el rótulo." ] }
+  }.freeze
   SERVER_ENV = {
     "RAILS_ENV" => "development",
     "WEB_CONCURRENCY" => "0",
@@ -337,6 +354,7 @@ module Haiku55Http
       Haiku55Trace.strings(config["filter"]).include?(document.display_s3_uri(KbDocument::KB_BUCKET))
 
     expected = profile(name)
+    return nil unless expected
     return "retrieve_profile_#{config['number_of_results']}" unless config["number_of_results"].to_i == expected["number_of_results"]
 
     rerank = events.reverse.find { |event| event["kind"] == "companion_rerank" }
@@ -466,6 +484,8 @@ module Haiku55Http
   end
 
   def script(name)
+    return EXTRA_SCRIPTS.fetch(name) if EXTRA_SCRIPTS.key?(name)
+
     variant = VARIANTS[name]
     return Haiku55Companion::SCRIPTS.fetch(name) unless variant
 
@@ -474,7 +494,11 @@ module Haiku55Http
     base.merge("turns" => turns)
   end
 
+  # No fixed profile for the unknown-identity scripts: the trace records the
+  # effective top_k and rerank instead of stopping on them.
   def profile(name)
+    return nil if EXTRA_SCRIPTS.key?(name)
+
     PROFILES[name] || PROFILES.fetch(VARIANTS.fetch(name)["base"])
   end
 

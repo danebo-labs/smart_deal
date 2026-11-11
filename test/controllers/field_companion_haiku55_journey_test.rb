@@ -48,7 +48,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       RAG_COMPANION_GENERATION BEDROCK_INFERENCE RAG_VALIDATION_CAPTURE_RUN
       RAG_VALIDATION_CAPTURE_ACCOUNT_IDS COMPANION_DIRECT_EFFORT COMPANION_DIRECT_THINKING
       COMPANION_DIRECT_MAX_TOKENS COMPANION_DIRECT_MODEL_ID COMPANION_DIRECT_PROVIDER
-      ANTHROPIC_API_KEY SHOW_RAG_SOURCES
+      ANTHROPIC_API_KEY SHOW_RAG_SOURCES RAG_TRANSIENT_ATTEMPT_LIMIT
     ].index_with { |key| ENV[key] }
     ENV["ANTHROPIC_API_KEY"] = "offline-replay"
     ENV["SHOW_RAG_SOURCES"] = "true"
@@ -170,29 +170,87 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     check_cea_followup("Leo CEA15+ en el rótulo de la placa.", "value", "known")
   end
 
+  test "revision CEA with another reported plate names the mismatch and does not teach the pinned manual" do
+    document = revision_pin(:cea)
+    revision_ask("cea-other", 1, cea_turn(CEA_QUESTION, document), document)
+    turn = cea_turn("Leo CEA20 en el rótulo de la placa.", document, move: "answer_pending", resolution: "value")
+    turn.tool_input["assertions"] = [ { "span" => "CEA20", "act" => "assert", "slot_hint" => "controller" } ]
+    [ turn, cea_turn(CEA_SCRIPT[1], document, move: "follow_up") ].each.with_index(2) do |entry, number|
+      body, cassette = revision_ask("cea-other", number, entry, document)
+      assert_revision_scope(cassette, document)
+      assert_equal 0, cassette.sent.count { |payload| !payload[:tool_choice] }
+      assert_equal I18n.t("rag.controller_plate_mismatch", locale: :es, reported: "CEA20", documented: "CEA15+"), body.fetch("answer")
+      assert_empty body.fetch("citations")
+      assert_equal [ document.id ], reloaded_session.focus_document_ids
+    end
+    assert_equal({ "value" => "CEA20", "status" => "known", "source" => "user" },
+      reloaded_session.active_episode.dig("facts", "controller").slice("value", "status", "source"))
+  end
+
   test "revision CEA keeps the pin when the technician cannot see the label" do
     check_cea_followup("No puedo ver el rótulo.", "unknown", "unknown_confirmed")
   end
 
-  test "revision CEA explicit reference, empty and insufficient results never open the pin or use the Bedrock generator" do
+  test "revision CEA explicit reference, empty, insufficient, failed and foreign results never open the pin or use the Bedrock generator" do
+    ENV["RAG_TRANSIENT_ATTEMPT_LIMIT"] = "1"
     document = revision_pin(:cea)
     [
       [ "¿Qué dice el manual sobre la Seguridad Automática SA y el patín retráctil?", CEA_PASSAGE, cea_reference ],
       [ CEA_QUESTION, nil, "" ],
-      [ CEA_QUESTION, "Fin de Puerta Abierta. El uso de FPA es opcional.", "Esto no está en la documentación cargada en este turno." ]
+      [ CEA_QUESTION, "Fin de Puerta Abierta. El uso de FPA es opcional.", "Esto no está en la documentación cargada en este turno." ],
+      [ CEA_QUESTION, CEA_PASSAGE, "" ],
+      [ CEA_QUESTION, CEA_PASSAGE, :timeout ],
+      [ CEA_QUESTION, :foreign, cea_reference ]
     ].each_with_index do |(question, passage, raw), index|
-      body, cassette = revision_ask("cea-evidence", index + 1, cea_turn(question, document, passage: passage, raw: raw), document)
+      turn = if passage == :foreign
+        cea_turn(question, document).tap do |entry|
+          foreign = "s3://#{KbDocument::KB_BUCKET}/bulk_uploads/1/2026-08-31/VF5.pdf"
+          entry.rows.each { |row| row.merge!("uri" => foreign, "original_source_uri" => foreign, "document" => "VF5") }
+        end
+      else
+        cea_turn(question, document, passage: passage, raw: raw)
+      end
+      body, cassette = revision_ask("cea-evidence", index + 1, turn, document)
       assert_equal 1, cassette.filters.size
       assert_revision_scope(cassette, document)
       assert_equal [ document.id ], reloaded_session.focus_document_ids
-      refute_match(/servicio no está disponible/i, body.fetch("answer"))
+      assert_no_match(/servicio no está disponible/i, body.fetch("answer"))
       if index.zero?
         assert_equal [ 24 ], body.fetch("citations").pluck("page")
       else
-        assert_empty body.fetch("citations")
-        assert_match(/no (encontr|está)|evidencia/i, body.fetch("answer"))
+        assert_empty body.fetch("citations"), "case #{index + 1}"
+        assert_match(/no (encontr|está)|evidencia/i, body.fetch("answer"), "case #{index + 1}")
       end
     end
+  end
+
+  CEA_SCRIPT = [
+    CEA_QUESTION,
+    "¿Qué son los terminales SM, SPC y SA en la serie de seguridad de puertas?",
+    "Si mido un terminal de la serie de seguridad, ¿qué tensión es un 1 y qué tensión es un 0?",
+    "No hay contactos que cierren por el patín retráctil. ¿Cómo se conecta SA?",
+    "La puerta de cabina es manual y la de piso es manual, con doble contacto y traba por patín. ¿Qué contactos van en SM y cuáles en SA?",
+    "La bobina del patín retráctil mete interferencia. ¿Qué hay que instalar en paralelo con esa bobina?",
+    "¿El contacto del operador de puerta automática entra en la serie SM?"
+  ].freeze
+
+  # Original CEA15+ script. The passage and generations are synthetic; the
+  # route, filter, episode, pending question and publication are the product.
+  test "revision CEA original script stays on the pin, asks the label once and never enters the Bedrock generator" do
+    document = revision_pin(:cea)
+    episode = nil
+    asked = CEA_SCRIPT.each_with_index.map do |question, index|
+      body, cassette = revision_ask("cea-script", index + 1, cea_turn(question, document, move: index.zero? ? "report" : "follow_up"), document)
+      assert_revision_scope(cassette, document)
+      assert_equal 1, cassette.sent.count { |payload| !payload[:tool_choice] }, "T#{index + 1}"
+      assert_equal [ 24 ], body.fetch("citations").pluck("page"), "T#{index + 1}"
+      assert_equal [ document.id ], reloaded_session.focus_document_ids
+      episode ||= reloaded_session.live_episode_id
+      assert_equal episode, reloaded_session.live_episode_id
+      assert_empty Haiku55JourneyRubric.reasons("cea", index + 1, body.fetch("answer"), CEA_SCRIPT)
+      body.fetch("answer").include?(I18n.t("rag.controller_label_question", locale: :es))
+    end
+    assert_equal [ true, false, false, false, false, false, false ], asked
   end
 
   %w[elemont_first elemont_second].each do |name|
@@ -203,12 +261,12 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       assert_match(/nivel 3.*nivel 4.*nivel 2/m, body.fetch("answer"))
       assert_includes reloaded_session.active_episode.fetch("identifiers").pluck("value"), "Chapa nivel 3"
       assert_match(/nivel 3/i, cassette.queries.sole)
-      refute_match(/Chapa nivel 2/i, cassette.queries.sole)
+      assert_no_match(/Chapa nivel 2/i, cassette.queries.sole)
       source = body.fetch("citations").sole
       assert_match(/Elemont/i, source.fetch("title"))
       assert_equal 5, source.fetch("page")
       assert_match(/nivel 4.*nivel 3.*nivel 2/m, source.fetch("matched_excerpt"))
-      refute_match(/FIELD_RECORD|DATA_NOT_AVAILABLE/, source.fetch("matched_excerpt"))
+      assert_no_match(/FIELD_RECORD|DATA_NOT_AVAILABLE/, source.fetch("matched_excerpt"))
     end
   end
 
@@ -253,17 +311,17 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     source = body.fetch("citations").find { |citation| citation["page"] == 8 }
     assert source
     assert_match(/VF5/, source.fetch("title"))
-    refute_match(/chunk_/, source.fetch("title"))
+    assert_no_match(/chunk_/, source.fetch("title"))
     assert_match(/necesario realizar otra vez el autoajuste/i, source.fetch("matched_excerpt"))
-    refute_match(/FIELD_RECORD|DATA_NOT_AVAILABLE/, source.fetch("matched_excerpt"))
+    assert_no_match(/FIELD_RECORD|DATA_NOT_AVAILABLE/, source.fetch("matched_excerpt"))
   end
 
   test "revision G1 keeps the LED and persistence unconfirmed and respects the technician limit" do
     document = revision_pin(:guion1)
     replies = revision_turns("g1").map.with_index { |turn, i| revision_ask("g1", i + 1, turn, document).first.fetch("answer") }
-    refute_match(/es la hipótesis que queda|lo que queda por revisar/i, replies[2])
-    refute_match(/LED de FOTOCÉLULA \(o re-apertura\) está encendido/i, replies[3])
-    refute_match(/posición de (?:SW4|DIP 4)|condición (?:aún )?no se cumple/i, replies[3..4].join)
+    assert_no_match(/es la hipótesis que queda|lo que queda por revisar/i, replies[2])
+    assert_no_match(/LED de FOTOCÉLULA \(o re-apertura\) está encendido/i, replies[3])
+    assert_no_match(/posición de (?:SW4|DIP 4)|condición (?:aún )?no se cumple/i, replies[3..4].join)
     assert_match(/no (?:necesitas|puede)/i, replies.last)
     assert_match(/#54/, replies.last)
   end
@@ -288,11 +346,11 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     assert_revision_scope(cassette, fallas, extra)
     assert_equal episode, reloaded_session.live_episode_id
     assert_match(/filtro/i, body.fetch("answer"))
-    refute_match(/temperatura ambiente es menos probable|dentro del rango de operación/i, body.fetch("answer"))
+    assert_no_match(/temperatura ambiente es menos probable|dentro del rango de operación/i, body.fetch("answer"))
     source = body.fetch("citations").find { |citation| citation["page"] == 2 && citation["title"].include?("fallas") }
     assert source, body.fetch("citations").inspect
     assert_match(/grietas|vibración/i, source.fetch("matched_excerpt"))
-    refute_match(/vida útil|FIELD_RECORD|DATA_NOT_AVAILABLE/i, source.fetch("matched_excerpt"))
+    assert_no_match(/vida útil|FIELD_RECORD|DATA_NOT_AVAILABLE/i, source.fetch("matched_excerpt"))
   end
 
   test "revision Monarch with only the faults manual keeps the blocked filter as evidence" do
@@ -306,7 +364,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     end.last
     assert_revision_scope(cassette, fallas)
     assert_match(/filtro de aire est[aá] bloqueado/i, body.fetch("answer"))
-    refute_match(/temperatura ambiente es menos probable|dentro del rango de operación/i, body.fetch("answer"))
+    assert_no_match(/temperatura ambiente es menos probable|dentro del rango de operación/i, body.fetch("answer"))
     assert body.fetch("citations").any? { |source| source["page"] == 8 && source["matched_excerpt"].match?(/filtro/) }
   end
 
@@ -325,7 +383,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     assert_equal episode, reloaded_session.live_episode_id
     generator = cassette.sent.find { |payload| !payload[:tool_choice] }
     assert generator
-    refute_includes generator.fetch(:messages).last.to_json, "El filtro de aire está bloqueado"
+    assert_not_includes generator.fetch(:messages).last.to_json, "El filtro de aire está bloqueado"
     assert_revision_scope(cassette, extra)
   end
 
@@ -362,7 +420,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     with_doubles(cassette) do
       forbid_bedrock = TracePoint.new(:call) do |call|
         methods = { BedrockClient => %i[generate_text converse converse_message], AiProvider => %i[query converse] }
-        flunk "Unexpected Bedrock generator entry #{call.defined_class}##{call.method_id}" if methods[call.defined_class]&.include?(call.method_id)
+        flunk "Unexpected Bedrock generator entry #{call.defined_class}##{call.method_id}\n#{caller.grep(%r{/app/}).first(8).join("\n")}" if methods[call.defined_class]&.include?(call.method_id)
       end
       events = Rag::ValidationCapture.capture do
         params = replay ? { replay_correlation_id: replay } : { question: turn.question }
@@ -430,7 +488,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     assert_equal episode, reloaded_session.live_episode_id
     assert_equal status, reloaded_session.active_episode.dig("facts", "controller", "status")
     assert_nil reloaded_session.active_episode["pending_question"]
-    refute_match(/¿[^?]*rótulo/i, second.fetch("answer"))
+    assert_no_match(/¿[^?]*rótulo/i, second.fetch("answer"))
     generator = cassette.sent.find { |payload| !payload[:tool_choice] }
     assert_match(/#{status == "known" ? "CEA15\\+" : "no (?:puede|puedo|se pudo)"}|#{status}/i, generator.to_json)
   end
@@ -470,7 +528,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
         assert query.to_s.strip.present?, "turn #{index + 1} did not reach Retrieve"
         if name == "elemont" && index.positive?
           assert_match(/nivel 3/i, query)
-          refute_match(/Chapa nivel 2/i, query)
+          assert_no_match(/Chapa nivel 2/i, query)
         else
           assert_equal turn.retrieve_query, query, "#{name} turn #{index + 1}: Retrieve query diverged from the capture"
         end
@@ -649,6 +707,8 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
         reply(turn.tool_input, "tool_use", tool: true)
       else
         @index += 1
+        raise Anthropic::Errors::APITimeoutError.new(url: URI("https://api.anthropic.com/v1/messages")) if turn.raw == :timeout
+
         reply(turn.raw, turn.stop_reason, tool: false)
       end
     end

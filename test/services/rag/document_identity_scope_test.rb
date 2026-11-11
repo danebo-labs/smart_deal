@@ -559,6 +559,38 @@ class Rag::DocumentIdentityScopeTest < ActiveSupport::TestCase
     assert_not_includes result.chunks.sole[:content], "cuerpo reservado del manual largo"
   end
 
+  test "a declared component designator applies under another equipment manufacturer" do
+    account = accounts(:legacy)
+    uid = SecureRandom.uuid
+    key = "bulk_uploads/1/manual-cea15p.pdf"
+    document = KbDocument.create!(account: account, s3_key: key, display_name: "manual-cea15p", document_uid: uid, aliases: [])
+    uri = document.canonical_uri
+    selected = chunk("cea-page", "Una serie de seguridad es 1 con 24 Vcc", canonical_name: "manual-cea15p", original_filename: "manual-cea15p.pdf", page: 22)
+    selected[:original_source_uri] = uri
+    selected[:metadata]["original_source_uri"] = uri
+    job = {
+      "v" => 1, "episode_id" => "ep-jesus", "updated_at" => Time.current.iso8601,
+      "facts" => { "manufacturer" => { "status" => "known", "source" => "user", "value" => "Elemont", "correlation_id" => "query:t1" } },
+      "identifiers" => [ { "value" => "CEA15+", "source" => "user", "correlation_id" => "query:t2" } ]
+    }
+    scoped = ->(role) {
+      catalog = Rag::DocumentIdentityCatalog.new({ "documents" => [ {
+        "account_id" => "1", "document_id" => uid, "s3_key" => key, "display_name" => "manual-cea15p", "role" => role,
+        "brands" => [ "Controles S.A." ], "designators" => [ "CEA15+" ], "confirmed" => true, "evidence_page" => 1, "evidence_text" => "CEA15+"
+      } ] })
+      Rag::DocumentIdentityCatalog.with_catalog(catalog) do
+        Rag::DocumentIdentityScope.apply([ selected ], job, focus_uris: [ uri ], viewer_account: account)
+      end
+    }
+
+    component = scoped.call("component")
+    equipment = scoped.call("equipment")
+
+    assert_equal :scoped, component.status
+    assert_includes component.chunks.sole[:content], "24 Vcc"
+    assert_equal :no_compatible, equipment.status
+  end
+
   test "a catalog designator without the plus does not match VF5+" do
     account = accounts(:legacy)
     uid = SecureRandom.uuid

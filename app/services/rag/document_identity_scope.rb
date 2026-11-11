@@ -1217,8 +1217,10 @@ module Rag
       entry = proven_catalog_entry(chunk, viewer_account, proven)
       return :reference_only unless entry
       return :reference_only if foreign_revision?(chunk, entry)
-      return :reference_only if catalog_brand_conflict?(entry, resolution)
       return :reference_only unless job_matches_catalog_designator?(resolution, entry)
+      # A component's maker is not the equipment manufacturer: a CEA15+ board
+      # by Controles S.A. sits in an Elemont lift.
+      return :reference_only if entry.role.to_s != "component" && catalog_brand_conflict?(entry, resolution)
 
       :compatible
     end

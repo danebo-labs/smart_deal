@@ -147,6 +147,25 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
   # the SDK row and the generation here are synthetic, not captured traffic.
   CEA_PASSAGE = %q("Seguridad Automática" o SA debe ser "1" sólo si los mandos de patín retráctil ordenados por el controlador - después que las puertas están cerradas - se ejecutaron completamente.)
 
+  test "the replay maps captured paths to the test bucket without merging document identities" do
+    focus = "s3://offline-kb/manuals/selected.pdf"
+    row = {
+      "uri" => "s3://multimodal-source-destination/chunks/other.txt",
+      "original_source_uri" => "s3://multimodal-source-destination/manuals/other.pdf",
+      "content" => "Captured passage."
+    }
+
+    result = Retrieved.new(row, @account.id, focus)
+
+    assert_equal "s3://offline-kb/chunks/other.txt", result.location.s3_location.uri
+    assert_equal "s3://offline-kb/manuals/other.pdf", result.metadata.fetch("original_source_uri")
+    assert_equal row.fetch("content"), result.content.text
+
+    foreign = "s3://another-bucket/manuals/other.pdf"
+    result = Retrieved.new(row.merge("original_source_uri" => foreign), @account.id, focus)
+    assert_equal foreign, result.metadata.fetch("original_source_uri")
+  end
+
   test "revision CEA pin retrieves and saves a nameplate question, then uses the reported label" do
     check_cea_followup("Leo CEA15+ en el rótulo de la placa.", "value", "known")
   end
@@ -696,25 +715,40 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
   end
 
   class Retrieved
+    CAPTURE_BUCKET_PREFIX = "s3://multimodal-source-destination/"
+
     def initialize(row, viewer_id, focus_uri)
       @text = row["content"].to_s
       @content = Aws::BedrockAgentRuntime::Types::RetrievalResultContent.new(text: @text)
       @score = row["score"]
-      @uri = row["uri"]
+      bucket, = KbDocument.canonical_source(focus_uri)
+      @uri = replay_uri(row["uri"], bucket)
+      source_uri = replay_uri(row["original_source_uri"], bucket) || focus_uri
       @page = row["page"]
       @location = Aws::BedrockAgentRuntime::Types::RetrievalResultLocation.new(
         type: "S3", s3_location: Aws::BedrockAgentRuntime::Types::RetrievalResultS3Location.new(uri: @uri)
       )
       @metadata = {
         "account_id" => viewer_id.to_s,
-        "original_source_uri" => row["original_source_uri"] || focus_uri,
+        "original_source_uri" => source_uri,
         "x-amz-bedrock-kb-source-uri" => @uri,
         "page_number" => @page,
         "canonical_name" => row["document"],
-        "original_filename" => File.basename(focus_uri.to_s)
+        "original_filename" => File.basename(source_uri)
       }
     end
 
     attr_reader :content, :score, :location, :metadata, :uri, :page, :text
+
+    private
+
+    # The rows came from production; local fixture documents use the KB bucket
+    # configured at boot. Rebase only that captured bucket, keeping the object
+    # keys (including other manuals) and the captured passage bytes unchanged.
+    def replay_uri(uri, bucket)
+      return uri unless uri&.start_with?(CAPTURE_BUCKET_PREFIX)
+
+      "s3://#{bucket}/#{uri.delete_prefix(CAPTURE_BUCKET_PREFIX)}"
+    end
   end
 end

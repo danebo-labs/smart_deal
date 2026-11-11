@@ -23,7 +23,7 @@ require "securerandom"
 require "open3"
 
 ENV["OPUS55_REQUIRE"] = "1"
-load Rails.root.join("script/field_companion/run_haiku55_companion.rb")
+load Rails.root.join("script/field_companion/run_haiku55_companion.rb") unless defined?(Haiku55Companion)
 require Rails.root.join("test/support/haiku55_journey_rubric").to_s
 
 module Haiku55Http
@@ -68,10 +68,33 @@ module Haiku55Http
     "La bobina del patín retráctil mete interferencia. ¿Qué hay que instalar en paralelo con esa bobina?",
     "¿El contacto del operador de puerta automática entra en la serie SM?"
   ].freeze
+  ELEMONT_DOCUMENT_UID = "dcc8e046-037d-48a6-8913-1992aed28507"
+  VF5_DOCUMENT_UID = "126cda62-64ad-4469-8674-a29f12e38d48"
+  FALLAS_DOCUMENT_UID = "85590ab2-d2b2-49b2-a36d-0c8c50f9bd76"
+  MONARCH_DOCUMENT_UID = "6e578b57-0f5e-42f0-91d6-4dd908e0eba2"
+  MONARCH_TURNS = [
+    "Estoy con un controlador Monarch NICE3000new. Después de varias maniobras apareció Err14. Todavía no he revisado el filtro ni el ventilador. ¿Qué me conviene comprobar primero?",
+    "Medí 26 °C en el ambiente junto al gabinete. Miré el filtro desde fuera y está cubierto de polvo, casi no se ve la malla. Todavía no lo he limpiado ni he revisado el ventilador. ¿Sigo por el filtro?"
+  ].freeze
+  # Revision journeys: after turn N, the card for one of the listed manuals
+  # is confirmed with its own action, and the same question is replayed.
   EXTRA_SCRIPTS = {
     "cea" => { "document_uid" => CEA_DOCUMENT_UID, "turns" => CEA_TURNS },
     "cea_label_known" => { "document_uid" => CEA_DOCUMENT_UID, "turns" => [ CEA_TURNS.first, "Leo CEA15+ en el rótulo de la placa." ] },
-    "cea_label_unseen" => { "document_uid" => CEA_DOCUMENT_UID, "turns" => [ CEA_TURNS.first, "No puedo ver el rótulo." ] }
+    "cea_label_unseen" => { "document_uid" => CEA_DOCUMENT_UID, "turns" => [ CEA_TURNS.first, "No puedo ver el rótulo." ] },
+    "jesus" => {
+      "document_uid" => ELEMONT_DOCUMENT_UID,
+      "turns" => [ "Hola, tengo una falla eléctrica en un elevador hidráulico Elemont, con imanes y tarjeta Cea15", "Leo CEA15+ en el rótulo de la placa." ],
+      "accept" => { 2 => { "document_uids" => [ CEA_DOCUMENT_UID ], "action" => "add" } }
+    },
+    "monarch_add" => {
+      "document_uid" => FALLAS_DOCUMENT_UID, "turns" => MONARCH_TURNS,
+      "accept" => { 1 => { "document_uids" => [ MONARCH_DOCUMENT_UID ], "action" => "add" } }
+    },
+    "monarch_replace" => {
+      "document_uid" => VF5_DOCUMENT_UID, "turns" => MONARCH_TURNS.first(1),
+      "accept" => { 1 => { "document_uids" => [ MONARCH_DOCUMENT_UID, FALLAS_DOCUMENT_UID ], "action" => "replace" } }
+    }
   }.freeze
   SERVER_ENV = {
     "RAILS_ENV" => "development",
@@ -110,6 +133,12 @@ module Haiku55Http
     return 2 unless admit!(io)
 
     File.write(directory.join("manifest.json"), JSON.pretty_generate(manifest))
+    if ENV["HTTP55_GUI"] == "1"
+      return refuse(io, "gui_takes_one_script") unless plan.size == 1
+
+      result = gui_session(io, directory, plan.first)
+      return result["status"] == "executed" && result["checks"].all? { |check| check["ok"] } ? 0 : 2
+    end
     results = []
     plan.each do |name|
       result = run_script(io, directory, name)
@@ -173,7 +202,7 @@ module Haiku55Http
 
   # One script, complete: two calls per turn plus one, priced at the ceiling.
   def reservation(name, turn)
-    turns = script(name)["turns"].size
+    turns = script(name)["turns"].size + script(name).fetch("accept", {}).size
     ceiling = (turn["interpreter"] + turn["generation"]) * turns
     { "turns" => turns, "calls" => turns * 2 + 1, "ceiling_usd" => money(ceiling + turn["interpreter"]) }
   end
@@ -234,47 +263,60 @@ module Haiku55Http
       raise "pin failed #{pin[:status]}" unless [ 200, 204 ].include?(pin[:status])
 
       questions = script(name)["turns"]
+      focus = [ document ]
       questions.each_with_index do |question, index|
         number = index + 1
         unless Haiku55Companion.network_ready?(io)
           rows << { "turn" => number, "status" => "network_unreachable" }
           break
         end
-        row = one_turn(directory, run_id, client, user, document, name, number, question, questions)
+        row = one_turn(directory, run_id, client, user, focus.first, name, number, question, questions, focus: focus)
         rows << row
         io.puts JSON.generate(row.slice("script", "turn", "status", "block_reason", "rubric", "wall_ms"))
         break if row["block_reason"]
 
         card = row.delete("manual_suggestion")
-        confirm_card!(client, directory, number, card, document) if card
+        accept = script(name).dig("accept", number)
+        if accept
+          rows << accept_card!(directory, run_id, client, user, name, number, card, accept, questions)
+          io.puts JSON.generate(rows.last.slice("script", "label", "status", "block_reason", "focus", "scope", "wall_ms"))
+          break if rows.last["block_reason"]
+
+          focus = KbDocument.where(id: rows.last["focus"]).to_a
+        elsif card
+          confirm_card!(client, directory, number, card, document)
+        end
       end
     ensure
       stop_server(server)
     end
     session = ConversationSession.find_by(identifier: user.id.to_s, channel: "web")
     episodes = rows.filter_map { |row| row["episode_id"] }.uniq
-    status = rows.size == script(name)["turns"].size && rows.all? { |row| row["block_reason"].nil? } ? "executed" : "stopped"
+    expected = script(name)["turns"].size + script(name).fetch("accept", {}).size
+    status = rows.size == expected && rows.all? { |row| row["block_reason"].nil? } ? "executed" : "stopped"
     payload = {
       "script" => name, "status" => status, "user_id" => user.id, "session_id" => session&.id,
       "episodes" => episodes, "single_episode" => episodes.size == 1,
-      "rubric_ok" => status == "executed" && rows.all? { |row| row["rubric"].empty? },
-      "turns" => rows.map { |row| row.slice("turn", "status", "block_reason", "rubric", "wall_ms", "route_outcome") },
+      "rubric_ok" => status == "executed" && rows.all? { |row| row["rubric"].empty? && row.fetch("scope", {}).fetch("ok", true) },
+      "turns" => rows.map { |row| row.slice("turn", "label", "status", "block_reason", "rubric", "wall_ms", "route_outcome", "focus", "scope", "replayed") },
       "ledger_before" => before, "ledger_after" => ledger_view
     }
     File.write(directory.join("summary.json"), JSON.pretty_generate(payload))
     payload
   end
 
-  def one_turn(directory, run_id, client, user, document, name, number, question, questions)
-    turn_dir = directory.join(format("turn-%d", number))
+  def one_turn(directory, run_id, client, user, document, name, number, question, questions,
+               payload: { question: question }, label: format("turn-%d", number), focus: [ document ])
+    turn_dir = directory.join(label)
     FileUtils.mkdir_p(turn_dir)
     File.write(turn_dir.join("question.txt"), question)
     session = ConversationSession.find_by(identifier: user.id.to_s, channel: "web")
     File.write(turn_dir.join("before.json"), JSON.pretty_generate(
-      "episode_id" => session&.live_episode_id, "case_evidence" => session&.case_evidence
+      "episode_id" => session&.live_episode_id, "case_evidence" => session&.case_evidence,
+      "focus_document_ids" => session&.focus_document_ids
     ))
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    response = client.post_json("/rag/ask", { question: question })
+    response = client.post_json("/rag/ask", payload)
     wall_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
     body = response[:json] || {}
     File.write(turn_dir.join("response.json"), JSON.pretty_generate(
@@ -308,19 +350,217 @@ module Haiku55Http
       .map { |event| event.except("run_id", "account_id", "user_id") }
     File.write(turn_dir.join("trace.json"), JSON.pretty_generate(trace))
     rubric = Haiku55JourneyRubric.reasons(name, number, answer, questions)
-    reason = block_reason(name, response, body, events, document)
+    reason = block_reason(name, response, body, events, focus)
+    scope = scope_view(events, body, focus)
+    File.write(turn_dir.join("scope.json"), JSON.pretty_generate(scope))
     {
-      "script" => name, "turn" => number, "status" => body["status"] || response[:status].to_s,
+      "script" => name, "turn" => number, "label" => label, "status" => body["status"] || response[:status].to_s,
       "block_reason" => reason, "rubric" => rubric, "wall_ms" => wall_ms,
       "route_outcome" => events.reverse.find { |event| event["kind"] == "published_answer" }&.dig("route_outcome"),
-      "episode_id" => session&.live_episode_id,
+      "episode_id" => session&.live_episode_id, "focus" => session&.focus_document_ids, "scope" => scope,
+      "replayed" => body["replayed"],
       "manual_suggestion" => body["manual_suggestion"]
     }
   end
 
+  # Retrieve filter and published citations against the focus of this turn.
+  def scope_view(events, body, focus)
+    retrieve = events.reverse.find { |event| event["kind"] == "retrieve" }
+    filter = Haiku55Trace.strings(retrieve&.dig("retrieval_configuration", "vector_search_configuration", "filter"))
+      .select { |value| value.start_with?("s3://") }.uniq.sort
+    expected = focus.map { |item| item.display_s3_uri(KbDocument::KB_BUCKET) }.sort
+    cited = Array(body["citations"]).filter_map { |citation| citation.dig("metadata", "original_source_uri") }.uniq.sort
+    {
+      "expected" => expected, "filter" => filter, "cited" => cited,
+      "ok" => filter == expected && (cited - expected).empty?
+    }
+  end
+
+  # The browser's card click: POST /pinned_documents with the card's action,
+  # episode and correlation, then the replay the controller asks for.
+  def accept_card!(directory, run_id, client, user, name, number, suggestion, accept, questions)
+    label = format("turn-%d-accept", number)
+    FileUtils.mkdir_p(directory.join(label))
+    File.write(directory.join(label, "manual_suggestion.json"), JSON.pretty_generate(suggestion))
+    card = Array(suggestion && suggestion["cards"]).find do |item|
+      accept["document_uids"].include?(item["document_uid"]) && (item["action"] || "add") == accept["action"]
+    end
+    blocked = { "script" => name, "turn" => number, "label" => label, "rubric" => [] }
+    return blocked.merge("block_reason" => "card_missing", "cards" => Array(suggestion && suggestion["cards"]).map { |item| item.slice("document_uid", "action") }) unless card
+
+    session = ConversationSession.find_by(identifier: user.id.to_s, channel: "web")
+    before = session.focus_document_ids
+    pin = client.post_json("/pinned_documents", {
+      kb_document_id: card["kb_document_id"], document_uid: card["document_uid"], focus_mode: card["action"] || "add",
+      episode_id: suggestion["episode_id"], correlation_id: suggestion["correlation_id"]
+    }.compact)
+    after = session.reload.focus_document_ids
+    File.write(directory.join(label, "card_confirm.json"), JSON.pretty_generate(
+      "status" => pin[:status], "body" => pin[:json], "request_id" => pin[:request_id],
+      "focus_before" => before, "focus_after" => after, "card" => card.slice("kb_document_id", "document_uid", "action")
+    ))
+    return blocked.merge("block_reason" => "pin_#{pin[:status]}") unless pin[:status] == 200
+    return blocked.merge("block_reason" => "no_replay", "focus" => after) unless pin.dig(:json, "replay") == true
+
+    focus = KbDocument.where(id: after).to_a
+    replay_label = format("turn-%d-replay", number)
+    row = one_turn(directory, run_id, client, user, focus.first, name, number, questions[number - 1], questions,
+      payload: { replay_correlation_id: suggestion["correlation_id"] }, label: replay_label, focus: focus)
+    row["block_reason"] ||= "not_replayed" unless row["replayed"] == true
+    events = Array((Haiku55Companion.read_json(directory.join(replay_label, "capture.json")) || {})["events"])
+    replayed = events.find { |event| event["kind"] == "user_message" }&.dig("original")
+    row["rubric"] += replay_reasons(accept["action"], before, after, card["kb_document_id"].to_i,
+      same_question: replayed == questions[number - 1], same_episode: row["episode_id"] == suggestion["episode_id"],
+      cited: row.dig("scope", "cited"))
+    row
+  end
+
+  def replay_reasons(action, before, after, accepted, same_question:, same_episode:, cited:)
+    expected = action == "replace" ? [ accepted ] : (before + [ accepted ]).uniq
+    reasons = []
+    reasons << "replay:focus_#{action}" unless after.sort == expected.sort
+    reasons << "replay:other_question" unless same_question
+    reasons << "replay:other_episode" unless same_episode
+    reasons << "replay:no_focus_evidence" if Array(cited).empty?
+    reasons
+  end
+
+  # ---- GUI -------------------------------------------------------------------
+
+  GUI_TIMEOUT_SECONDS = 45 * 60
+
+  # Real clicks in a browser against the same Puma, caps and capture. The
+  # runner prepares the user and the pin, waits for the stop file, and
+  # rebuilds each request from the server capture. The credentials file is
+  # 0600, deleted at teardown, and the password is rotated.
+  def gui_session(io, root, name)
+    directory = root.join("#{name}-gui")
+    FileUtils.rm_rf(directory)
+    FileUtils.mkdir_p(directory)
+    reserved = reservation(name, Haiku55Companion.per_turn_ceiling)
+    room = grant_room(read_ledger)
+    if BigDecimal(reserved["ceiling_usd"]) > room["usd"] || reserved["calls"] > room["calls"]
+      return { "script" => name, "status" => "refused", "reason" => "grant_does_not_cover_script", "checks" => [] }
+    end
+
+    before = ledger_view
+    document = document_for(name)
+    user = new_user(document.account, name)
+    run_id = "#{root.basename}-#{name}-gui"
+    FileUtils.rm_rf(Rails.root.join(Rag::WebRequestCapture::ROOT, run_id))
+    credentials = Pathname("/tmp/haiku55-gui-#{name}.json")
+    stop = directory.join("gui.stop")
+    timeline = []
+    server = start_server(directory, run_id, reserved, document.account)
+    begin
+      client = Client.new(PORT, request_host(document.account))
+      client.sign_in!(user.email, user_password(user))
+      pin = client.post_json("/pinned_documents", { kb_document_id: document.id })
+      raise "pin failed #{pin[:status]}" unless [ 200, 204 ].include?(pin[:status])
+
+      File.open(credentials, File::WRONLY | File::CREAT | File::TRUNC, 0o600) do |file|
+        file.write(JSON.generate("url" => "http://#{document.account.slug}.haiku55.localhost:#{PORT}/", "email" => user.email, "password" => user_password(user)))
+      end
+      io.puts JSON.generate("status" => "gui_ready", "credentials" => credentials.to_s, "stop_file" => stop.to_s, "turns" => script(name)["turns"])
+      io.flush
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + GUI_TIMEOUT_SECONDS
+      last = nil
+      until stop.exist? || Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+        session = ConversationSession.find_by(identifier: user.id.to_s, channel: "web")
+        state = { "focus" => session&.focus_document_ids, "episode_id" => session&.live_episode_id }
+        timeline << state.merge("at" => Time.now.utc.iso8601(3)) unless state == last
+        last = state
+        sleep 1
+      end
+    ensure
+      stop_server(server)
+      FileUtils.rm_f(credentials)
+      password = SecureRandom.hex(16)
+      user.update!(password: password, password_confirmation: password)
+    end
+    requests = gui_requests(run_id, directory)
+    payload = {
+      "script" => name, "status" => stop.exist? ? "executed" : "timed_out", "user_id" => user.id, "run_id" => run_id,
+      "head" => head, "requests" => requests, "timeline" => timeline, "checks" => gui_checks(name, requests),
+      "ledger_before" => before, "ledger_after" => ledger_view
+    }
+    File.write(directory.join("gui_trace.json"), JSON.pretty_generate(payload))
+    io.puts JSON.generate(payload.slice("script", "status", "checks", "ledger_after"))
+    payload
+  end
+
+  def gui_requests(run_id, directory)
+    base = Rails.root.join(Rag::WebRequestCapture::ROOT, run_id)
+    base.glob("*/capture.json").sort_by(&:mtime).each_with_index.map do |file, index|
+      events = Array((Haiku55Companion.read_json(file) || {})["events"])
+      meta = events.find { |event| event["kind"] == "web_request" } || {}
+      label = format("%02d-%s-%s", index + 1, meta["controller"].to_s.tr("/", "_"), meta["action"])
+      target = directory.join("gui", label)
+      FileUtils.mkdir_p(target)
+      FileUtils.cp_r("#{file.dirname}/.", target)
+      published = events.reverse.find { |event| event["kind"] == "published_answer" }
+      File.write(target.join("published.txt"), published["answer"].to_s) if published
+      focus = events.find { |event| event["kind"] == "document_focus" }
+      retrieve = events.reverse.find { |event| event["kind"] == "retrieve" }
+      citations = Array(published&.dig("citations"))
+      {
+        "label" => label,
+        "request" => meta.slice("controller", "action", "question", "replay_correlation_id", "correlation_id", "episode_id", "kb_document_id", "document_uid", "focus_mode"),
+        "question" => events.find { |event| event["kind"] == "user_message" }&.dig("original"),
+        "episode_id" => events.filter_map { |event| event["episode_id"] }.last,
+        "focus_before" => Array(focus&.dig("before")).pluck("kb_document_id"),
+        "focus_after" => Array(focus&.dig("after")).pluck("kb_document_id"),
+        "filter" => Haiku55Trace.strings(retrieve&.dig("retrieval_configuration", "vector_search_configuration", "filter"))
+          .select { |value| value.start_with?("s3://") }.uniq.sort,
+        "route_outcome" => published&.dig("route_outcome"),
+        "cited" => citations.filter_map { |citation| citation.dig("metadata", "original_source_uri") }.uniq.sort,
+        "pages" => citations.map { |citation| "#{citation['filename']} p. #{citation['page']}" }
+      }
+    end
+  end
+
+  # One check per planned card: the click sent the card's action, the focus
+  # changed as that action says, and the same question was replayed in the
+  # same episode with Retrieve and citations inside the resulting focus.
+  def gui_checks(name, requests)
+    script(name).fetch("accept", {}).map do |number, spec|
+      index = requests.index do |row|
+        row.dig("request", "controller") == "pinned_documents" && spec["document_uids"].include?(row.dig("request", "document_uid"))
+      end
+      next { "turn" => number, "action" => spec["action"], "ok" => false, "reason" => "no_click" } unless index
+
+      pin = requests[index]
+      prior = requests.first(index).reverse.find { |row| row.dig("request", "controller") == "rag" }
+      replay = requests.drop(index + 1).find do |row|
+        row.dig("request", "replay_correlation_id").present? && row.dig("request", "replay_correlation_id") == pin.dig("request", "correlation_id")
+      end
+      before = Array(prior&.dig("focus_after"))
+      after = Array(replay&.dig("focus_before"))
+      accepted = KbDocument.find_by(document_uid: pin.dig("request", "document_uid"))
+      expected = KbDocument.where(id: after).map { |item| item.display_s3_uri(KbDocument::KB_BUCKET) }.sort
+      reasons = pin.dig("request", "focus_mode") == spec["action"] ? [] : [ "click:mode_#{pin.dig('request', 'focus_mode')}" ]
+      if replay
+        reasons += replay_reasons(spec["action"], before, after, accepted.id,
+          same_question: replay["question"].present? && replay["question"] == prior&.dig("question"),
+          same_episode: replay["episode_id"].present? && [ prior&.dig("episode_id"), pin.dig("request", "episode_id") ].all?(replay["episode_id"]),
+          cited: replay["cited"])
+        reasons << "replay:filter_outside_focus" unless replay["filter"] == expected
+        reasons << "replay:cited_outside_focus" unless (replay["cited"] - expected).empty?
+      else
+        reasons << "replay:missing"
+      end
+      {
+        "turn" => number, "action" => spec["action"], "click" => pin["label"], "asked" => prior&.dig("label"), "replay" => replay&.dig("label"),
+        "focus_before" => before, "focus_after" => after, "accepted" => accepted&.id,
+        "episode_id" => replay&.dig("episode_id"), "filter" => replay&.dig("filter"), "cited" => replay&.dig("cited"),
+        "reasons" => reasons, "ok" => reasons.empty?
+      }
+    end
+  end
+
   # A hard stop: the turn did not reach a Haiku 5.5 answer through the
   # planned route. A rubric miss is recorded and the script continues.
-  def block_reason(name, response, body, events, document)
+  def block_reason(name, response, body, events, focus)
     return "http_#{response[:status]}" unless response[:status] == 200
     return "status_#{body['status']}" unless body["status"] == "success"
 
@@ -351,7 +591,7 @@ module Haiku55Http
     return "retrieve_missing" unless retrieve
     config = retrieve.dig("retrieval_configuration", "vector_search_configuration") || {}
     return "retrieve_target" unless retrieve["knowledge_base_id"].to_s == KB_ID &&
-      Haiku55Trace.strings(config["filter"]).include?(document.display_s3_uri(KbDocument::KB_BUCKET))
+      focus.all? { |item| Haiku55Trace.strings(config["filter"]).include?(item.display_s3_uri(KbDocument::KB_BUCKET)) }
 
     expected = profile(name)
     return nil unless expected

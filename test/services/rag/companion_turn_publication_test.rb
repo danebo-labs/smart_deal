@@ -49,6 +49,20 @@ class Rag::CompanionTurnPublicationTest < ActiveSupport::TestCase
     assert_not negated.accepted?, "a negation does not carry a condition"
   end
 
+  # CEA15+ manual p. 22, live final5 T3.
+  test "a quote that opens on its own condition carries it after an earlier clause" do
+    body = 'Una serie de seguridad es "1" si la tensión en el terminal correspondiente es 24 Vcc, o "0" si la tensión en el terminal correspondiente es 0 Vcc.'
+    second = "si la tensión en el terminal correspondiente es 0 Vcc"
+    opened = publish("- **Nivel 0:** «#{second}» [1]", [ source(body) ])
+    trimmed = publish("- **Nivel 0:** «#{second.delete_prefix('si ')}» [1]", [ source(body) ])
+    restricted = publish("El manual indica «si cierran las puertas» [1].", [ source("Solo si cierran las puertas, SA es 1.") ])
+
+    assert opened.accepted?, opened.reasons.inspect
+    assert_equal second, opened.quotes.sole["text"]
+    assert_equal [ "condition_dropped:#{second.delete_prefix('si ')}" ], trimmed.reasons.pluck("detail")
+    assert_equal [ "condition_dropped:si cierran las puertas" ], restricted.reasons.pluck("detail")
+  end
+
   test "a dropped negation is reported as dropped and a non literal quote as missing" do
     body = "Comprobar que la fotocélula no está activada."
     dropped = publish("La página dice «está activada» [1].", [ source(body) ])

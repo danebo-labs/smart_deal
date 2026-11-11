@@ -220,7 +220,15 @@ module Rag
         return false if starts_with_marker?(after)
         return true unless marker_in?(before)
 
-        carried?(families_in(before), lead)
+        carried?(families_in(before), "#{lead} #{opening_words(match[0])}")
+      end
+
+      # A quote that opens on its own marker («si la tensión…») carries that
+      # family; the marker of an earlier clause is not this quote's condition.
+      def opening_words(text)
+        words = text.to_s.split
+        pair = words.first(2).join(" ")
+        CONDITION_PHRASES.any? { |phrase| pair.casecmp?(phrase) } ? pair : words.first.to_s
       end
 
       def families_in(text)

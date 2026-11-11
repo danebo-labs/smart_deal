@@ -179,7 +179,8 @@ module Rag
         "correlation_id" => params[:correlation_id].presence,
         "episode_id" => params[:episode_id].presence,
         "document_uid" => params[:document_uid].presence,
-        "kb_document_id" => params[:kb_document_id].presence
+        "kb_document_id" => params[:kb_document_id].presence,
+        "focus_mode" => params[:focus_mode].presence
       }.compact
     end
   end

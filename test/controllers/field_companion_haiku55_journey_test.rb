@@ -278,6 +278,64 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     "La bobina del patín retráctil mete interferencia. ¿Qué hay que instalar en paralelo con esa bobina?",
     "¿El contacto del operador de puerta automática entra en la serie SM?"
   ].freeze
+  # Manual DD549-R05, PDF p. 19, chunk_p19_2 (capacitive coupling).
+  CEA_ARC_PASSAGE = "Se debe instalar un supresor de arco en cada componente del sistema capaz de producir interferencia capacitiva, " \
+    "incluyendo las bobinas de contactores, las bobinas de relés auxiliares, la bobina del patín retráctil electromagnético, la bobina del freno. " \
+    "El supresor de arco se debería conectar en paralelo con el elemento que genera la interferencia, esto es, el que almacena la energía."
+  CEA_ARC_ANSWER = "El manual indica que «el supresor de arco se debería conectar en paralelo con el elemento que genera la interferencia» [2]."
+
+  # live final5 CEA-T6: the composed query ranked p. 19 13th of 16.
+  test "the reference route orders sixteen candidates by the technician turn and keeps three" do
+    document = revision_pin(:cea)
+    pages = {
+      20 => "En paralelo con la bobina del patín retráctil se puede conectar un rectificador rueda libre con resistencia serie para disminuir el retardo en la caída.",
+      26 => "Los contactos de precierre de las puertas de piso se incluyen en SM.",
+      27 => "Los contactos de traba de las puertas de piso se incluyen en SA.",
+      19 => CEA_ARC_PASSAGE
+    }
+    rows = pages.map do |page, content|
+      { "content" => content, "uri" => document.canonical_uri, "original_source_uri" => document.canonical_uri,
+        "document" => "CEA15+", "page" => page, "score" => 0.5 }
+    end
+    order = [ CEA_ARC_PASSAGE, pages[20] ].map { |text| Digest::SHA256.hexdigest(text) }
+    turn = TurnCapture.new({
+      "question" => CEA_SCRIPT[5], "retrieve_query" => CEA_SCRIPT[5],
+      "tool_input" => { "move" => "report", "assertions" => [], "observations" => [], "pending_resolution" => nil, "clarification_target" => nil },
+      "generator_text" => CEA_ARC_ANSWER.sub("[2]", "[1]"), "rows" => rows, "rerank_sha256" => order
+    })
+
+    body, cassette = revision_ask("cea-rerank", 1, turn, document)
+    generator = cassette.sent.reject { |payload| payload[:tool_choice] }.sole
+    prompt = Array(generator[:messages]).last[:content].map { |block| block[:text].to_s }.join
+
+    assert_equal [ 16 ], cassette.sizes
+    assert_equal [ 19 ], body.fetch("citations").pluck("page")
+    assert_includes prompt, CEA_ARC_PASSAGE
+    assert_includes prompt, pages[20]
+    assert_includes prompt, pages[26]
+    assert_not_includes prompt, pages[27]
+  end
+
+  # final5 CEA-T6 and G1-T2, published text.
+  test "the rubric judges CEA T6 by the interference purpose and accepts an explicit LED correction" do
+    rectifier = "Según la fuente, en paralelo con la bobina del patín retráctil se puede conectar un rectificador «rueda libre» " \
+      "con resistencia serie, «para disminuir el retardo en la caída» [4].\n\n" \
+      "La fuente presenta ese componente para reducir el retardo en la caída, no como solución de interferencia."
+    suppressor = "Para la interferencia, el manual indica un supresor de arco en paralelo con la bobina del patín retráctil [2]. " \
+      "El rectificador «rueda libre» de la p. 20 es para disminuir el retardo en la caída."
+
+    assert_equal [ "cea:t6_no_arc_suppressor" ], Haiku55JourneyRubric.reasons("cea", 6, rectifier, CEA_SCRIPT)
+    assert_equal %w[cea:t6_no_arc_suppressor cea:t6_rectifier_as_interference_fix],
+      Haiku55JourneyRubric.reasons("cea", 6, "Instala un rectificador «rueda libre» en paralelo [4].", CEA_SCRIPT)
+    assert_empty Haiku55JourneyRubric.reasons("cea", 6, suppressor, CEA_SCRIPT)
+    assert_empty Haiku55JourneyRubric.reasons("cea", 5, rectifier, CEA_SCRIPT)
+
+    questions = load_turns(SCRIPTS.fetch("guion1")["capture"]).map(&:question)
+    corrected = "Corrijo mi mensaje anterior, que partía de un LED apagado. Con el LED encendido, la entrada está activa."
+    assert_empty Haiku55JourneyRubric.reasons("guion1", 2, corrected, questions)
+    assert_equal [ "t2:keeps_off" ],
+      Haiku55JourneyRubric.reasons("guion1", 2, "Corrijo el paso anterior. Con el LED apagado, revisa la entrada.", questions)
+  end
 
   # Original CEA15+ script. The passage and generations are synthetic; the
   # route, filter, episode, pending question and publication are the product.
@@ -285,10 +343,16 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     document = revision_pin(:cea)
     episode = nil
     asked = CEA_SCRIPT.each_with_index.map do |question, index|
-      body, cassette = revision_ask("cea-script", index + 1, cea_turn(question, document, move: index.zero? ? "report" : "follow_up"), document)
+      move = index.zero? ? "report" : "follow_up"
+      turn = if index == 5
+        cea_turn(question, document, passage: CEA_ARC_PASSAGE, raw: CEA_ARC_ANSWER, move: move, page: 19)
+      else
+        cea_turn(question, document, move: move)
+      end
+      body, cassette = revision_ask("cea-script", index + 1, turn, document)
       assert_revision_scope(cassette, document)
       assert_equal 1, cassette.sent.count { |payload| !payload[:tool_choice] }, "T#{index + 1}"
-      assert_equal [ 24 ], body.fetch("citations").pluck("page"), "T#{index + 1}"
+      assert_equal [ index == 5 ? 19 : 24 ], body.fetch("citations").pluck("page"), "T#{index + 1}"
       assert_equal [ document.id ], reloaded_session.focus_document_ids
       episode ||= reloaded_session.live_episode_id
       assert_equal episode, reloaded_session.live_episode_id
@@ -503,7 +567,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     "En el manual CEA15+: «#{CEA_PASSAGE.delete_suffix(".")}» [1]."
   end
 
-  def cea_turn(question, document, passage: CEA_PASSAGE, raw: cea_reference, move: "report", resolution: nil)
+  def cea_turn(question, document, passage: CEA_PASSAGE, raw: cea_reference, move: "report", resolution: nil, page: 24)
     assertions = resolution == "value" ? [ { "span" => "CEA15+", "act" => "assert", "slot_hint" => "controller" } ] : []
     TurnCapture.new({
       "question" => question, "retrieve_query" => question,
@@ -514,7 +578,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       "generator_text" => raw,
       "rows" => passage ? [ {
         "content" => passage, "uri" => document.canonical_uri,
-        "original_source_uri" => document.canonical_uri, "document" => "CEA15+", "page" => 24, "score" => 0.9
+        "original_source_uri" => document.canonical_uri, "document" => "CEA15+", "page" => page, "score" => 0.9
       } ] : []
     })
   end
@@ -615,7 +679,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     assert_equal({ type: "adaptive", display: "summarized" }, generator[:thinking])
     assert_nil generator[:output_config]
     assert_nil generator[:tools]
-    assert_equal "99862136fb664f55b182ff77b900e5268d304d3df982b582d17f992830cda4ae",
+    assert_equal "eb1f8dac7be301d27c469c3fd5b9b9428c179f3abc6546e8ea1baf314e2100cd",
       Digest::SHA256.hexdigest(generator[:system].to_s)
   end
 
@@ -738,10 +802,11 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       @sent = []
       @queries = []
       @filters = []
+      @sizes = []
       @returned = []
     end
 
-    attr_reader :sent, :queries, :filters, :returned
+    attr_reader :sent, :queries, :filters, :sizes, :returned
 
     def messages
       self
@@ -767,6 +832,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       query = params.dig(:retrieval_query, :text) || params.dig("retrieval_query", "text")
       @queries << query
       @filters << (vector[:filter] || vector["filter"])
+      @sizes << (vector[:number_of_results] || vector["number_of_results"])
       rows = turn.rows.map { |row| Retrieved.new(row, @viewer_id, @focus_uri) }
       @returned << rows
       Aws::BedrockAgentRuntime::Types::RetrieveResponse.new(retrieval_results: rows)

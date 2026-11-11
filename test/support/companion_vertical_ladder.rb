@@ -12,6 +12,8 @@ module Rag
     LEDGER_PATH = ROOT.join("attempts.jsonl")
     BAND_DIR = ROOT.join("band")
     BAND_LEDGER_PATH = BAND_DIR.join("attempts.jsonl")
+    # G1-T2: a sentence that corrects the LED may still name the old reading.
+    LED_CORRECTION = /correcci[oó]n|corrij|correg|ya no|dej[oó] de estar apagado|no est[aá] apagado|(?:mensaje|dato|lectura) anterior|en lugar de/i
     # Ceiling only. The call chains the real published text. Eight thousand
     # characters is the product history cap and overstates these answers.
     PUBLISHED_BOUND_CHARS = 8_000
@@ -1176,7 +1178,8 @@ module Rag
         reasons << "t1:several_questions" if text.scan("?").size > 1
         reasons
       when 2
-        text.match?(/\bapagado\b/i) && !text.match?(/correcci[oó]n|ya no|dejó de estar apagado|no est[aá] apagado/i) ? [ "t2:keeps_off" ] : []
+        kept = text.split(/(?<=[.!?])\s+|\n+/).any? { |sentence| sentence.match?(/\bapagado\b/i) && !sentence.match?(LED_CORRECTION) }
+        kept ? [ "t2:keeps_off" ] : []
       when 5
         reading = t5_assessment(text, technician_texts: technician_texts)
         reasons = []

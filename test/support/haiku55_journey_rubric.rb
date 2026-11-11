@@ -95,6 +95,20 @@ module Haiku55JourneyRubric
     reasons << "cea:service_unavailable" if answer.match?(/servicio no est[aá] disponible/i)
     reasons << "cea:no_evidence" if answer.start_with?(I18n.t("rag.focus_evidence_insufficient", locale: :es))
     reasons << "cea:withheld" if answer.start_with?(I18n.t("rag.unconfirmed_reference_withheld", locale: :es, references: "|").split("|").first.strip)
+    reasons.concat(cea_t6_reasons(answer)) if number == 6
+    reasons
+  end
+
+  # CEA-T6 asks what goes in parallel with the retractable-shoe coil that
+  # causes interference. Manual p. 19 (capacitive coupling): an arc
+  # suppressor in parallel with that coil. The p. 20 free-wheeling rectifier
+  # is for the drop delay, not for interference.
+  def cea_t6_reasons(answer)
+    reasons = []
+    reasons << "cea:t6_no_arc_suppressor" unless answer.match?(/supresor(?:es)? de arco/i)
+    if answer.match?(/rueda libre/i) && !answer.match?(/retardo/i)
+      reasons << "cea:t6_rectifier_as_interference_fix"
+    end
     reasons
   end
 

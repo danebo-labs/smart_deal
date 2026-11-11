@@ -888,12 +888,17 @@ class BedrockRagService
       end
 
       attempt_uris = index.zero? ? filtered_uris : []
+      vector = config.dig(:retrieval_configuration, :vector_search_configuration)
+      window = direct && attempt_uris.any? && vector.is_a?(Hash) ? vector[:number_of_results].to_i : 0
+      if window.positive?
+        vector = vector.merge(number_of_results: RagRetrievalProfile::COMPANION_PINNED_CANDIDATES.clamp(window, ContractualLimits::QUERY[:max_top_k]))
+      end
       retrieval = retrieve_chunks(
         question,
         entity_s3_uris: attempt_uris,
         entity_sources: entity_sources,
         force_entity_filter: force_entity_filter && index.zero? && attempt_uris.any?,
-        vector_search_configuration: config.dig(:retrieval_configuration, :vector_search_configuration),
+        vector_search_configuration: vector,
         account_id: attribution[:account_id],
         user_id: attribution[:user_id],
         conversation_session_id: attribution[:conversation_session_id],
@@ -908,6 +913,9 @@ class BedrockRagService
 
       chunks = Array(retrieval[:chunks])
       enforce_phase2_retrieved_body!(chunks, correlation_id: query_correlation_id)
+      # The composed query also carries earlier observations. The order reads
+      # the technician's turn; the generation window does not grow.
+      chunks = companion_candidate_order(chunks, question: raw_turn).first(window) if window.positive? && chunks.any?
       if direct
         return direct_reference_result(
           question: question, raw_question: raw_turn, chunks: chunks, retrieval: retrieval,

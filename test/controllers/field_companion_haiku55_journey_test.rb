@@ -283,6 +283,10 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     "incluyendo las bobinas de contactores, las bobinas de relés auxiliares, la bobina del patín retráctil electromagnético, la bobina del freno. " \
     "El supresor de arco se debería conectar en paralelo con el elemento que genera la interferencia, esto es, el que almacena la energía."
   CEA_ARC_ANSWER = "El manual indica que «el supresor de arco se debería conectar en paralelo con el elemento que genera la interferencia» [2]."
+  CEA_LEVEL_PASSAGE = "Una serie de seguridad es \"1\" si la tensión en el terminal correspondiente es 24 Vcc, " \
+    "o \"0\" si la tensión en el terminal correspondiente es 0 Vcc."
+  CEA_LEVEL_ANSWER = "Según la fuente, una serie es \"1\" «si la tensión en el terminal correspondiente es 24 Vcc» " \
+    "y es \"0\" «si la tensión en el terminal correspondiente es 0 Vcc» [2]."
 
   # live final5 CEA-T6: the composed query ranked p. 19 13th of 16.
   test "the reference route orders sixteen candidates by the technician turn and keeps three" do
@@ -329,6 +333,12 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       Haiku55JourneyRubric.reasons("cea", 6, "Instala un rectificador «rueda libre» en paralelo [4].", CEA_SCRIPT)
     assert_empty Haiku55JourneyRubric.reasons("cea", 6, suppressor, CEA_SCRIPT)
     assert_empty Haiku55JourneyRubric.reasons("cea", 5, rectifier, CEA_SCRIPT)
+    assert_equal [ "cea:t3_no_levels" ],
+      Haiku55JourneyRubric.reasons("cea", 3, "Cada serie es «la serie lógica (AND) de llaves de seguridad» [6].", CEA_SCRIPT)
+    assert_empty Haiku55JourneyRubric.reasons("cea", 3, "Según la fuente, 24 Vcc es un 1 y 0 Vcc es un 0 [1].", CEA_SCRIPT)
+    assert_equal [ "cea:t7_operator_in_sm" ],
+      Haiku55JourneyRubric.reasons("cea", 7, "Sí, según la fuente el contacto de precierre va en SM.", CEA_SCRIPT)
+    assert_empty Haiku55JourneyRubric.reasons("cea", 7, "No. La fuente dice que SM «NO incluye los contactos por acción de operador» [5].", CEA_SCRIPT)
 
     questions = load_turns(SCRIPTS.fetch("guion1")["capture"]).map(&:question)
     corrected = "Corrijo mi mensaje anterior, que partía de un LED apagado. Con el LED encendido, la entrada está activa."
@@ -344,15 +354,15 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     episode = nil
     asked = CEA_SCRIPT.each_with_index.map do |question, index|
       move = index.zero? ? "report" : "follow_up"
-      turn = if index == 5
-        cea_turn(question, document, passage: CEA_ARC_PASSAGE, raw: CEA_ARC_ANSWER, move: move, page: 19)
-      else
-        cea_turn(question, document, move: move)
+      turn = case index
+      when 2 then cea_turn(question, document, passage: CEA_LEVEL_PASSAGE, raw: CEA_LEVEL_ANSWER, move: move, page: 22)
+      when 5 then cea_turn(question, document, passage: CEA_ARC_PASSAGE, raw: CEA_ARC_ANSWER, move: move, page: 19)
+      else cea_turn(question, document, move: move)
       end
       body, cassette = revision_ask("cea-script", index + 1, turn, document)
       assert_revision_scope(cassette, document)
       assert_equal 1, cassette.sent.count { |payload| !payload[:tool_choice] }, "T#{index + 1}"
-      assert_equal [ index == 5 ? 19 : 24 ], body.fetch("citations").pluck("page"), "T#{index + 1}"
+      assert_equal [ { 2 => 22, 5 => 19 }.fetch(index, 24) ], body.fetch("citations").pluck("page"), "T#{index + 1}"
       assert_equal [ document.id ], reloaded_session.focus_document_ids
       episode ||= reloaded_session.live_episode_id
       assert_equal episode, reloaded_session.live_episode_id

@@ -46,6 +46,31 @@ class Rag::CompanionClaimBackingTest < ActiveSupport::TestCase
     assert_includes %w[unverified_quote unbacked_citation], result.removed.first["reason"]
   end
 
+  CEA_P22 = "Lógica de nivel de señal (Figura 3):\nUna serie de seguridad es \"1\" si la tensión en el terminal " \
+            "correspondiente es 24 Vcc, o \"0\" si la tensión en el terminal correspondiente es 0 Vcc."
+  CEA_P75 = "| 77 | CSUI | Mando direccional de SUbir, independiente de SA | Movimiento | Mando de subir, activo aunque SA=0 |"
+  CEA_T3 = "Según [2], \"si la tensión en el terminal correspondiente es 0 Vcc\" la serie vale 0, y con 24 Vcc vale 1."
+
+  test "moves the number of a literal quote to the one other source that holds it" do
+    result = call(CEA_T3, CEA_P22, CEA_P75)
+
+    assert_equal CEA_T3.sub("[2]", "[1]"), result.text
+    assert_empty result.removed
+    assert_equal [ [ 2, 1 ] ], result.reattributed.map { |row| [ row["from"], row["to"] ] }
+    assert result.to_h["changed"]
+  end
+
+  test "keeps the rejection when the quote is in several sources or drops its condition there" do
+    several = call(CEA_T3, CEA_P22, CEA_P75, CEA_P22)
+    dropped = call(CEA_T3.sub("\"si la", "\"la"), CEA_P22, CEA_P75)
+
+    [ several, dropped ].each do |result|
+      assert_empty result.text
+      assert_equal [ "unverified_quote" ], result.removed.pluck("reason")
+      assert_empty result.reattributed
+    end
+  end
+
   test "drops a citation to a missing source" do
     result = call("Mide continuidad entre #21 y #23 [31].", VF5_58)
 

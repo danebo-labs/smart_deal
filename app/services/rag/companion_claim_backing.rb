@@ -4,7 +4,9 @@ module Rag
   # Sentence-level filter for a companion-direct answer, before
   # CompanionTurnPublication. A sentence that cites [n] must carry a literal
   # quote of that source; otherwise only the sentence is dropped and the rest
-  # of the orientation survives. It never rewrites or adds text.
+  # of the orientation survives. It never adds text. The only rewrite is the
+  # [n] of a sentence whose quotes are literal in exactly one other source of
+  # the turn, and that sentence passes every check again under the new [n].
   class CompanionClaimBacking
     # A label such as «PasCom 24V» or «+» names a thing; it does not back
     # what the sentence says about it.
@@ -24,13 +26,13 @@ module Rag
     REPORTED_FORM = /(?:aste|asteis|aron|ieron|ado|ada|ados|adas|ido|ida|ed)\z/i.freeze
     STATED_LIMIT = /\bno\s+(?:puedes|puede|sabes|es\s+posible)\b|\bsin\s+poder\b|\bcannot\b|\bcan't\b/i.freeze
 
-    Result = Struct.new(:text, :removed, keyword_init: true) do
+    Result = Struct.new(:text, :removed, :reattributed, keyword_init: true) do
       def changed?
-        removed.any?
+        removed.any? || reattributed.to_a.any?
       end
 
       def to_h
-        { "removed" => removed, "changed" => changed? }
+        { "removed" => removed, "reattributed" => reattributed.to_a, "changed" => changed? }
       end
     end
 
@@ -44,13 +46,14 @@ module Rag
       @technician_texts = Array(technician_texts)
       @manufacturer = manufacturer
       @removed = []
+      @reattributed = []
     end
 
     def call
       lines = @text.split("\n", -1).filter_map { |line| filter_line(line) }
       lines = drop_orphan_labels(lines) if changed?
       body = lines.join("\n").gsub(/\n{3,}/, "\n\n").strip
-      Result.new(text: body, removed: @removed)
+      Result.new(text: body, removed: @removed, reattributed: @reattributed)
     end
 
     private
@@ -78,18 +81,45 @@ module Rag
       return line if line.strip.empty?
 
       prefix = line[LIST_PREFIX, 1].to_s
-      kept = sentences(line.delete_prefix(prefix)).select { |sentence| keep?(sentence) }
+      kept = sentences(line.delete_prefix(prefix)).filter_map { |sentence| kept_sentence(sentence) }
       return nil if kept.empty?
 
       "#{prefix}#{kept.join(' ')}"
     end
 
-    def keep?(sentence)
+    def kept_sentence(sentence)
       reason = drop_reason(sentence)
-      return true if reason.nil?
+      return sentence if reason.nil?
+
+      moved = reattributed(sentence) if reason == "unverified_quote"
+      return moved if moved
 
       @removed << { "sentence" => sentence, "reason" => reason }
-      false
+      nil
+    end
+
+    # Only a single [n], and only when one other citable source holds every
+    # quote with its condition; several or none keep the rejection.
+    def reattributed(sentence)
+      numbers = sentence.scan(CITATION_PATTERN).flatten.map(&:to_i).uniq
+      return nil unless numbers.one?
+
+      quotes = documentary_quotes(sentence, QUOTE_PATTERN)
+      return nil if quotes.empty?
+
+      holders = @sources.each_index.select do |index|
+        source = @sources[index]
+        index != numbers.first - 1 && CompanionTurnPublication.citable_source?(source) &&
+          quotes.all? { |quoted, lead| verified?(quoted, [ source ], lead) }
+      end
+      return nil unless holders.one?
+
+      target = holders.first + 1
+      moved = sentence.gsub("[#{numbers.first}]", "[#{target}]")
+      return nil unless drop_reason(moved).nil?
+
+      @reattributed << { "sentence" => sentence, "from" => numbers.first, "to" => target }
+      moved
     end
 
     def drop_reason(sentence)

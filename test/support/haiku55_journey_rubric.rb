@@ -95,8 +95,18 @@ module Haiku55JourneyRubric
     reasons << "cea:service_unavailable" if answer.match?(/servicio no est[aá] disponible/i)
     reasons << "cea:no_evidence" if answer.start_with?(I18n.t("rag.focus_evidence_insufficient", locale: :es))
     reasons << "cea:withheld" if answer.start_with?(I18n.t("rag.unconfirmed_reference_withheld", locale: :es, references: "|").split("|").first.strip)
+    reasons << "cea:t3_no_levels" if number == 3 && !cea_t3_levels?(answer)
     reasons.concat(cea_t6_reasons(answer)) if number == 6
+    # Manual p. 23: SM «NO incluye los contactos por acción de operador de
+    # puerta automática».
+    reasons << "cea:t7_operator_in_sm" if number == 7 && answer.match?(/\A[\s*_]*s[ií]\b/i)
     reasons
+  end
+
+  # CEA-T3 asks which voltage is a 1 and which a 0. Manual p. 22: 24 Vcc is
+  # "1" and 0 Vcc is "0".
+  def cea_t3_levels?(answer)
+    answer.match?(/24\s*Vcc/i) && answer.match?(/(?<![\d.,])0\s*Vcc/i)
   end
 
   # CEA-T6 asks what goes in parallel with the retractable-shoe coil that

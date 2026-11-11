@@ -915,7 +915,14 @@ class BedrockRagService
       enforce_phase2_retrieved_body!(chunks, correlation_id: query_correlation_id)
       # The composed query also carries earlier observations. The order reads
       # the technician's turn; the generation window does not grow.
-      chunks = companion_candidate_order(chunks, question: raw_turn).first(window) if window.positive? && chunks.any?
+      if window.positive?
+        chunks = with_turn_candidates(
+          chunks, raw_turn: raw_turn, question: question, entity_s3_uris: attempt_uris, entity_sources: entity_sources,
+          force_entity_filter: force_entity_filter && index.zero?, vector: vector, attribution: attribution,
+          correlation_id: query_correlation_id
+        )
+        chunks = companion_candidate_order(chunks, question: raw_turn).first(window) if chunks.any?
+      end
       if direct
         return direct_reference_result(
           question: question, raw_question: raw_turn, chunks: chunks, retrieval: retrieval,
@@ -1488,6 +1495,38 @@ class BedrockRagService
   # Retrieve already succeeded. A denied or failed reorder keeps that
   # order and the turn continues. Raising here became retrieval_error and
   # the web answer "El servicio no está disponible para esta consulta."
+  # Earlier observations in the composed query can push the passage the
+  # technician's turn asks about out of the window. One more Retrieve with
+  # that turn, same filter and size, joins the candidates before the rerank.
+  def with_turn_candidates(chunks, raw_turn:, question:, entity_s3_uris:, entity_sources:, force_entity_filter:,
+                           vector:, attribution:, correlation_id:)
+    return chunks if Rag::FollowupQueryRewriter.normalize_label(raw_turn) == Rag::FollowupQueryRewriter.normalize_label(question)
+
+    retrieval = retrieve_chunks(
+      raw_turn,
+      entity_s3_uris: entity_s3_uris,
+      entity_sources: entity_sources,
+      force_entity_filter: force_entity_filter && entity_s3_uris.any?,
+      vector_search_configuration: vector,
+      account_id: attribution[:account_id],
+      user_id: attribution[:user_id],
+      conversation_session_id: attribution[:conversation_session_id],
+      correlation_id: correlation_id,
+      route_taken: "identity_unknown_reference_turn"
+    )
+    return chunks if retrieval[:retrieval].to_s == DENY_RETRIEVAL
+
+    extra = Array(retrieval[:chunks])
+    enforce_phase2_retrieved_body!(extra, correlation_id: correlation_id)
+    seen = chunks.map { |chunk| chunk[:location_uri].presence || chunk[:chunk_sha256] }
+    added = extra.reject { |chunk| seen.include?(chunk[:location_uri].presence || chunk[:chunk_sha256]) }
+    Rag::ValidationCapture.record("companion_turn_retrieve", "result" => "ok", "returned" => extra.size, "added" => added.size)
+    chunks + added
+  rescue BedrockServiceError => error
+    Rag::ValidationCapture.record("companion_turn_retrieve", "result" => "error", "error_class" => error.class.name)
+    chunks
+  end
+
   def companion_candidate_order(chunks, question:)
     api_called = chunks.size >= 2 && question.to_s.strip.present?
     ordered = Rag::CompanionCandidateOrder.call(

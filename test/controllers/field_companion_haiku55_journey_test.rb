@@ -256,8 +256,8 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
         cea_turn(question, document, passage: passage, raw: raw)
       end
       body, cassette = revision_ask("cea-evidence", index + 1, turn, document)
-      assert_equal 1, cassette.filters.size
       assert_revision_scope(cassette, document)
+      assert_equal question, cassette.queries.last if cassette.filters.size == 2
       assert_equal [ document.id ], reloaded_session.focus_document_ids
       assert_no_match(/servicio no está disponible/i, body.fetch("answer"))
       if index.zero?
@@ -318,6 +318,50 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     assert_includes prompt, pages[20]
     assert_includes prompt, pages[26]
     assert_not_includes prompt, pages[27]
+  end
+
+  # live cand4 CEA-T6: the composed query did not return p. 19 in 16 or 20;
+  # the technician's turn alone ranked it 2nd.
+  test "the reference route adds the technician turn's candidates when the composed query misses them" do
+    document = revision_pin(:cea)
+    revision_ask("cea-turn-retrieve", 1, cea_turn(CEA_QUESTION, document), document)
+    pages = {
+      20 => "En paralelo con la bobina del patín retráctil se puede conectar un rectificador rueda libre con resistencia serie para disminuir el retardo en la caída.",
+      26 => "Los contactos de precierre de las puertas de piso se incluyen en SM.",
+      27 => "Los contactos de traba de las puertas de piso se incluyen en SA.",
+      19 => CEA_ARC_PASSAGE
+    }
+    rows = pages.map do |page, content|
+      row = { "content" => content, "uri" => "s3://#{KbDocument::KB_BUCKET}/bulk_chunks/1/cea/chunk_p#{page}_1.txt",
+              "original_source_uri" => document.canonical_uri, "document" => "CEA15+", "page" => page, "score" => 0.5 }
+      page == 19 ? row.merge("for_query" => CEA_SCRIPT[5]) : row
+    end
+    turn = TurnCapture.new({
+      "question" => CEA_SCRIPT[5], "retrieve_query" => CEA_SCRIPT[5],
+      "tool_input" => { "move" => "follow_up", "assertions" => [], "observations" => [ "La bobina del patín retráctil mete interferencia." ],
+                        "pending_resolution" => nil, "clarification_target" => nil },
+      "generator_text" => CEA_ARC_ANSWER, "rows" => rows,
+      "rerank_sha256" => [ CEA_ARC_PASSAGE, pages[20] ].map { |text| Digest::SHA256.hexdigest(text) }
+    })
+
+    body, cassette = revision_ask("cea-turn-retrieve", 2, turn, document)
+
+    assert_equal [ 16, 16 ], cassette.sizes
+    assert_not_equal CEA_SCRIPT[5], cassette.queries.first
+    assert_equal CEA_SCRIPT[5], cassette.queries.last
+    assert_equal [ 3, 4 ], cassette.returned.map(&:size)
+    assert_equal [ 19 ], body.fetch("citations").pluck("page")
+
+    failing = TurnCapture.new({
+      "question" => CEA_SCRIPT[6], "retrieve_query" => CEA_SCRIPT[6], "retrieve_failure" => CEA_SCRIPT[6],
+      "tool_input" => { "move" => "follow_up", "assertions" => [], "observations" => [], "pending_resolution" => nil, "clarification_target" => nil },
+      "generator_text" => cea_reference, "rows" => rows.first(1)
+    })
+    body, cassette = revision_ask("cea-turn-retrieve", 3, failing, document)
+
+    assert_equal [ 16, 16 ], cassette.sizes
+    assert_equal 1, cassette.sent.count { |payload| !payload[:tool_choice] }
+    assert_no_match(/servicio no está disponible/i, body.fetch("answer"))
   end
 
   # final5 CEA-T6 and G1-T2, published text.
@@ -553,9 +597,13 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # The reference route may add one Retrieve with the technician's turn; every
+  # Retrieve of the turn keeps the same filter.
   def assert_revision_scope(cassette, *documents)
-    uris = cassette.filters.sole.to_json.scan(/s3:[^"]+/).uniq
-    assert_equal documents.map(&:canonical_uri).sort, uris.sort
+    assert_includes [ 1, 2 ], cassette.filters.size
+    cassette.filters.each do |filter|
+      assert_equal documents.map(&:canonical_uri).sort, filter.to_json.scan(/s3:[^"]+/).uniq.sort
+    end
   end
 
   def revision_card(body, document)
@@ -796,10 +844,11 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       @retrieve_query = data.fetch("retrieve_query")
       @rerank_sha256 = Array(data["rerank_sha256"])
       @generator_messages_sha256 = data["generator_messages_sha256"]
+      @retrieve_failure = data["retrieve_failure"]
     end
 
     attr_reader :question, :rows, :raw, :stop_reason, :retrieve_query, :rerank_sha256,
-      :generator_messages_sha256
+      :generator_messages_sha256, :retrieve_failure
     attr_accessor :tool_input
   end
 
@@ -843,7 +892,10 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       @queries << query
       @filters << (vector[:filter] || vector["filter"])
       @sizes << (vector[:number_of_results] || vector["number_of_results"])
-      rows = turn.rows.map { |row| Retrieved.new(row, @viewer_id, @focus_uri) }
+      raise Aws::BedrockAgentRuntime::Errors::ValidationException.new(nil, "replayed failure") if turn.retrieve_failure == query
+
+      rows = turn.rows.select { |row| row["for_query"].nil? || row["for_query"] == query }
+        .map { |row| Retrieved.new(row, @viewer_id, @focus_uri) }
       @returned << rows
       Aws::BedrockAgentRuntime::Types::RetrieveResponse.new(retrieval_results: rows)
     end

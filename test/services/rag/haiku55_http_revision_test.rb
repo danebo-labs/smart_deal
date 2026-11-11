@@ -73,6 +73,19 @@ class Rag::Haiku55HttpRevisionTest < ActiveSupport::TestCase
     assert_equal "replay_reinterpreted", Haiku55Http.block_reason("jesus", *ok, [ { "kind" => "interpreter_request" } ], [ @cea ], replay: true)
   end
 
+  test "a replay's question is the generator's turn line" do
+    Dir.mktmpdir do |dir|
+      root = Pathname(dir)
+      root.join("bodies").mkpath
+      root.join("bodies/b0006.txt").write("Mensaje de este turno:\nLeo CEA15+ en el rótulo de la placa.\n\nFuentes de este turno:\n[1] manual")
+      events = [ { "kind" => "converse", "messages" => [ { "role" => "user", "content" => [ { "type" => "text", "text" => { "path" => "bodies/b0006.txt" } } ] } ] } ]
+
+      assert_equal "Leo CEA15+ en el rótulo de la placa.", Haiku55Http.answered_question(root, events)
+      assert_equal "Hola", Haiku55Http.answered_question(root, [ { "kind" => "user_message", "original" => "Hola" } ] + events)
+      assert_nil Haiku55Http.answered_question(root, [])
+    end
+  end
+
   test "the revision reservation counts the replay as a turn" do
     turn = { "interpreter" => BigDecimal("0.01"), "generation" => BigDecimal("0.02") }
 

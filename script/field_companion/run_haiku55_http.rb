@@ -418,11 +418,30 @@ module Haiku55Http
       payload: { replay_correlation_id: suggestion["correlation_id"] }, label: replay_label, focus: focus)
     row["block_reason"] ||= "not_replayed" unless row["replayed"] == true
     events = Array((Haiku55Companion.read_json(directory.join(replay_label, "capture.json")) || {})["events"])
-    replayed = events.find { |event| event["kind"] == "user_message" }&.dig("original")
+    replayed = answered_question(directory.join(replay_label), events)
     row["rubric"] += replay_reasons(accept["action"], before, after, card["kb_document_id"].to_i,
       same_question: replayed == questions[number - 1], same_episode: row["episode_id"] == suggestion["episode_id"],
       cited: row.dig("scope", "cited"))
     row
+  end
+
+  # A replay records no user_message; the generator's turn line is the
+  # stored question the controller re-ran.
+  def answered_question(turn_dir, events)
+    original = events.find { |event| event["kind"] == "user_message" }&.dig("original")
+    return original if original
+
+    converse = events.reverse.find { |event| event["kind"] == "converse" }
+    text = Array(Array(converse&.dig("messages")).last&.dig("content")).filter_map { |block| body_text(turn_dir, block["text"]) }.join("\n")
+    text[/\AMensaje de este turno:\n(.+)$/, 1]
+  end
+
+  def body_text(turn_dir, value)
+    return value if value.is_a?(String)
+
+    path = value.is_a?(Hash) ? value["path"].to_s : ""
+    file = turn_dir.join(path)
+    path.present? && file.file? ? File.read(file) : nil
   end
 
   def replay_reasons(action, before, after, accepted, same_question:, same_episode:, cited:)
@@ -516,7 +535,7 @@ module Haiku55Http
       {
         "label" => label,
         "request" => meta.slice("controller", "action", "question", "replay_correlation_id", "correlation_id", "episode_id", "kb_document_id", "document_uid", "focus_mode"),
-        "question" => events.find { |event| event["kind"] == "user_message" }&.dig("original"),
+        "question" => answered_question(target, events),
         "episode_id" => events.filter_map { |event| event["episode_id"] }.last,
         "focus_before" => Array(focus&.dig("before")).pluck("kb_document_id"),
         "focus_after" => Array(focus&.dig("after")).pluck("kb_document_id"),

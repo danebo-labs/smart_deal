@@ -312,7 +312,7 @@ module Haiku55Http
     File.write(turn_dir.join("question.txt"), question)
     session = ConversationSession.find_by(identifier: user.id.to_s, channel: "web")
     File.write(turn_dir.join("before.json"), JSON.pretty_generate(
-      "episode_id" => session&.live_episode_id, "case_evidence" => session&.case_evidence,
+      "episode_id" => stored_episode_id(session), "case_evidence" => session&.case_evidence,
       "focus_document_ids" => session&.focus_document_ids
     ))
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -332,7 +332,7 @@ module Haiku55Http
     reply = Array(session&.conversation_history).reverse.find { |message| message["role"] == "assistant" }
     delta = events.reverse.find { |event| event["kind"] == "episode_delta" }
     File.write(turn_dir.join("episode.json"), JSON.pretty_generate(
-      "episode_id" => session&.live_episode_id,
+      "episode_id" => stored_episode_id(session),
       "active_episode" => delta&.dig("episode_after"),
       "stored_active_episode" => session&.active_episode,
       "focus_document_ids" => session&.focus_document_ids,
@@ -357,7 +357,7 @@ module Haiku55Http
       "script" => name, "turn" => number, "label" => label, "status" => body["status"] || response[:status].to_s,
       "block_reason" => reason, "rubric" => rubric, "wall_ms" => wall_ms,
       "route_outcome" => events.reverse.find { |event| event["kind"] == "published_answer" }&.dig("route_outcome"),
-      "episode_id" => session&.live_episode_id, "focus" => session&.focus_document_ids, "scope" => scope,
+      "episode_id" => stored_episode_id(session), "focus" => session&.focus_document_ids, "scope" => scope,
       "replayed" => body["replayed"],
       "manual_suggestion" => body["manual_suggestion"]
     }
@@ -467,7 +467,7 @@ module Haiku55Http
       last = nil
       until stop.exist? || Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
         session = ConversationSession.find_by(identifier: user.id.to_s, channel: "web")
-        state = { "focus" => session&.focus_document_ids, "episode_id" => session&.live_episode_id }
+        state = { "focus" => session&.focus_document_ids, "episode_id" => stored_episode_id(session) }
         timeline << state.merge("at" => Time.now.utc.iso8601(3)) unless state == last
         last = state
         sleep 1
@@ -706,6 +706,13 @@ module Haiku55Http
   end
 
   # ---- helpers -------------------------------------------------------------
+
+  # The runner process does not carry the server's episode settings, so it
+  # reads the persisted id instead of parsing the live window.
+  def stored_episode_id(session)
+    episode = session&.active_episode
+    episode.is_a?(Hash) ? episode["episode_id"] : nil
+  end
 
   def new_user(account, name)
     email = "haiku55-http-#{name}-#{Time.now.utc.strftime('%Y%m%d%H%M%S')}-#{SecureRandom.hex(3)}@danebo.local"

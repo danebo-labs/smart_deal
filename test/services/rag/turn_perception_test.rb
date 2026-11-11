@@ -955,6 +955,31 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_not kept.technical_payload?
   end
 
+  # live cand2 CEA-T6: the interpreter opened a new job on the shoe coil.
+  test "another symptom on a component of the open job stays in that job" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "query:1", now: Time.current)
+    episode.assign_goal!("La puerta de piso no traba.", correlation_id: "query:1")
+    episode.append_observation!("No hay contactos que cierren por el patín retráctil", correlation_id: "query:4")
+    turn = "La bobina del patín retráctil mete interferencia. ¿Qué hay que instalar en paralelo con esa bobina?"
+    raw = ->(text) {
+      { "move" => "new_work", "assertions" => [], "observations" => [ text[/\A[^.]+\./] ],
+        "pending_resolution" => nil, "clarification_target" => nil }
+    }
+
+    result = nil
+    events = Rag::ValidationCapture.capture { result = perceive(raw.call(turn), turn, episode: episode) }
+    applied = events.find { |row| row["kind"] == "perception_applied" }
+    assert_equal "follow_up", result.move
+    assert applied["adjustments"].any? { |row| row["reason"] == "new_work_on_open_job_component" }
+
+    other = "En otro ascensor la bobina del patín retráctil mete interferencia."
+    assert_equal "new_work", perceive(raw.call(other), other, episode: episode).move
+    unrelated = "El variador no arranca. ¿Qué reviso?"
+    assert_equal "new_work", perceive(raw.call(unrelated), unrelated, episode: episode).move
+    episode.pending_question = { "type" => "work_relation" }
+    assert_equal "new_work", perceive(raw.call(turn), turn, episode: episode).move
+  end
+
   test "ruby does not reclassify a photo offer or a greeting" do
     source = Rails.root.join("app/services/rag/turn_perception.rb").read
     assert_not_includes source, "EQUIPMENT_SYMPTOM_RE"

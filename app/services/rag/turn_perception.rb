@@ -18,6 +18,11 @@ module Rag
     MAX_TOOL_BYTES = 4096
     MIN_OBSERVATION_CHARS = 13
     FAULT_RE = /\A[a-z]?\d{1,4}[a-z]?\z/
+    OTHER_EQUIPMENT = /
+      \b(?:otr[oa]s?|nuev[oa]s?|distint[oa]s?)\s+(?:ascensor(?:es)?|elevador(?:es)?|equipos?|edificios?|obras?)\b|
+      \b(?:another|other|new|different)\s+(?:elevators?|lifts?|equipment|buildings?|sites?)\b
+    /x.freeze
+    COMPONENT_STOPWORDS = %w[a al con de del el en es esa ese esta este hay la las lo los no o para por que se si su sus un una y and of the to].freeze
     IDENTITY_HEDGE = /
       \b(?:creo|me\s+parece|puede\s+ser|podria(?:\s+ser)?|quizas|tal\s+vez|
       no\s+se\s+si|no\s+estoy\s+seguro)\b
@@ -1304,6 +1309,9 @@ module Rag
       elsif move == "new_work" && !self.class.technical_payload?(identities, observations, ambiguities) && prior_context? && !work_relation_pending?
         note_rule("adjust_move", move, "new_work_without_technical_payload")
         move = "follow_up"
+      elsif move == "new_work" && open_job_component?(identities)
+        note_rule("adjust_move", move, "new_work_on_open_job_component", { "to" => "follow_up" })
+        move = "follow_up"
       end
       target = nil unless move == "unclear"
       [ move, resolution, identities, observations, ambiguities, target ]
@@ -1349,6 +1357,26 @@ module Rag
       observations.any? || ambiguities.any? || identities.any? { |item|
         item.kind == "fact" || (item.act == "assert" && item.kind == "identifier")
       }
+    end
+
+    # Another symptom on a component of the open job is still that job: the
+    # turn repeats a two-word component term from its goal or observations.
+    # new_work stays when the turn names other equipment, asserts another
+    # identity, or answers an open work_relation question.
+    def open_job_component?(identities)
+      return false unless prior_context? && !work_relation_pending?
+      return false if identities.any? { |item| item.act == "assert" && IDENTITY_HINTS.include?(item.slot) }
+
+      turn = FollowupQueryRewriter.normalize_label(@turn)
+      return false if turn.match?(OTHER_EQUIPMENT)
+
+      goal = @episode.goal.is_a?(Hash) ? @episode.goal["text"] : @episode.goal
+      job = [ goal, *Array(@episode.observations).map { |item| item.is_a?(Hash) ? item["text"] : item } ].compact
+      component_pairs(turn).intersect?(job.flat_map { |text| component_pairs(FollowupQueryRewriter.normalize_label(text)) })
+    end
+
+    def component_pairs(text)
+      text.split.reject { |word| word.length < 3 || COMPONENT_STOPWORDS.include?(word) }.each_cons(2).map { |pair| pair.join(" ") }
     end
 
     def work_relation_pending?

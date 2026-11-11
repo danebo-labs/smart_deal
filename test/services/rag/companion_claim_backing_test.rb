@@ -161,6 +161,26 @@ class Rag::CompanionClaimBackingTest < ActiveSupport::TestCase
     assert_equal [ "returns_unverifiable" ], result.removed.pluck("reason")
   end
 
+  test "a later no does not keep an uncited documentation summary" do
+    kept = call("El manual no da un valor.", VF5_54)
+    quote = "Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)"
+    text = <<~TEXT.strip
+      Lo siguiente es revisar el potenciómetro #54: «#{quote}» [1].
+
+      **Resumen para derivar:**
+      - **Respaldado por la documentación (fuente 3, pág. 12):** revisar #54, fotocélula no activada, obstrucción mecánica.
+    TEXT
+    result = call(text, quote)
+    published = Rag::CompanionTurnPublication.call(text: result.text, sources: sources(quote))
+
+    assert_equal "El manual no da un valor.", kept.text
+    assert_includes result.text, "«#{quote}» [1]."
+    assert_not_includes result.text, "Respaldado por la documentación"
+    assert_not_includes result.text, "Resumen para derivar"
+    assert_equal [ "uncited_attribution" ], result.removed.pluck("reason")
+    assert published.accepted?, published.reasons.inspect
+  end
+
   test "doubt about a value is still a check the technician can make" do
     result = call("Revisa el ajuste de #54.", VF5_54, technician: [ "No sé si #54 está bien ajustado." ])
 

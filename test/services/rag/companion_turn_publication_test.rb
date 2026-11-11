@@ -152,10 +152,17 @@ class Rag::CompanionTurnPublicationTest < ActiveSupport::TestCase
   test "a manual attribution without a citation is rejected and an absence claim is not" do
     attributed = publish("Según el manual, hay que ajustar el cierre.", [ source(PHOTOCELL) ])
     absence = publish("El manual no da un valor.", [ source(PHOTOCELL) ])
+    page = publish("La documentación de la pág. 12 no da el par.", [ source(PHOTOCELL) ])
+    summary = publish(
+      "- **Respaldado por la documentación (fuente 3, pág. 12):** revisar #54, fotocélula no activada, obstrucción mecánica.",
+      [ source(PHOTOCELL) ]
+    )
 
     assert_not attributed.accepted?
     assert_equal [ "R3" ], rules(attributed)
     assert absence.accepted?, absence.reasons.inspect
+    assert page.accepted?, page.reasons.inspect
+    assert_equal [ "R3" ], rules(summary)
   end
 
   test "a missing, reference-only, or foreign source citation is rejected" do

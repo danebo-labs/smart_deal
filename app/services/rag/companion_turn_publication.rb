@@ -93,6 +93,13 @@ module Rag
         attributes_source?(fragment, manufacturer.to_s.strip)
       end
 
+      # «El manual no da un valor» denies what that source says. A «no» in
+      # another clause («fotocélula no activada») does not.
+      def source_absence?(fragment)
+        clause = attribution_clause(fragment)
+        !clause.nil? && clause.match?(ABSENCE_PATTERN)
+      end
+
       def question_sentence?(fragment)
         question_only?(fragment)
       end
@@ -228,7 +235,7 @@ module Rag
         name = manufacturer.to_s.strip
         companion_fragments(text).filter_map do |fragment|
           next if fragment.match?(CITATION_PATTERN)
-          next if fragment.match?(ABSENCE_PATTERN)
+          next if source_absence?(fragment)
           next if question_only?(fragment)
           next if not_loaded_notice?(fragment)
           next if label_with_cited_list?(text, fragment)
@@ -394,7 +401,42 @@ module Rag
       end
 
       def boundary_period?(body, index)
-        boundary_at?(body, index + 1)
+        boundary_at?(body, index + 1) && !abbreviation_period?(body, index)
+      end
+
+      # «pág. 12» is one sentence. Splitting it left «documentación … pág»
+      # without the later «no», and R3 discarded the whole turn. A single
+      # letter is not an abbreviation: «unidad en N.» ends the sentence.
+      def abbreviation_period?(body, index)
+        word = body.to_s[0...index][/([[:alpha:]º]+)\z/, 1].to_s.downcase
+        word.length > 1 && CompanionClaimBacking::ABBREVIATIONS.include?(word)
+      end
+
+      def attribution_clause(fragment)
+        split_clauses(fragment).find { |clause| clause.match?(ATTRIBUTION_PATTERN) }
+      end
+
+      # A comma inside «(fuente 3, pág. 12)» stays in the attribution clause.
+      def split_clauses(fragment)
+        clauses = []
+        current = +""
+        depth = 0
+        fragment.to_s.each_char do |char|
+          if char == "("
+            depth += 1
+            current << char
+          elsif char == ")" && depth.positive?
+            depth -= 1
+            current << char
+          elsif depth.zero? && char.match?(/[,:;]/)
+            clauses << current
+            current = +""
+          else
+            current << char
+          end
+        end
+        clauses << current
+        clauses.map(&:strip).reject(&:empty?)
       end
 
       # The whole run moves together. Lowercase on the marker's own line

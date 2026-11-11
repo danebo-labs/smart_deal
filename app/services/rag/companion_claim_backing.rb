@@ -14,7 +14,6 @@ module Rag
     # Bold is also used for labels, so it only counts when it is literal.
     BOLD_PATTERN = /\*\*([^*]+)\*\*/.freeze
     LIST_PREFIX = /\A(\s*(?:[-*•]|\d+[.)])\s+)/.freeze
-    ABSENCE_PATTERN = CompanionTurnPublication::ABSENCE_PATTERN
     ABBREVIATIONS = %w[p pp pág págs fig sec núm nº n aprox máx mín ej etc approx max min].freeze
     OPENERS = { "«" => "»", "“" => "”", '"' => '"' }.freeze
     # «No sé cómo identificar #21», «no puedo medir», «can't check». Not
@@ -156,7 +155,7 @@ module Rag
       checks = documentary_quotes(sentence, QUOTE_PATTERN).map { |quoted, lead| verified?(quoted, @sources, lead) }
       return "unverified_quote" if checks.any?(false)
       return nil unless CompanionTurnPublication.source_attribution?(sentence, @manufacturer)
-      return nil if sentence.match?(ABSENCE_PATTERN)
+      return nil if CompanionTurnPublication.source_absence?(sentence)
       return nil if CompanionTurnPublication.question_sentence?(sentence)
       return nil if sentence.strip.end_with?(":")
 

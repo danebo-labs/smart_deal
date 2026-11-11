@@ -135,6 +135,7 @@ module Rag
       @version = ANTHROPIC_VERSION
       @max_tokens = MAX_TOKENS
       @effort = "max"
+      @system_text = historical_system
       write_json(ROOT.join("ceiling.json"), ceiling_document)
       key = @credential.nil? ? ENV["ANTHROPIC_API_KEY"].to_s : @credential.to_s
       if key.empty?
@@ -144,7 +145,7 @@ module Rag
         return 2
       end
 
-      prompt = File.read(CompanionDirectCaptureReplay::CAPTURED_PROMPT_PATH)
+      prompt = @system_text
       unless Digest::SHA256.hexdigest(prompt) == CompanionDirectCaptureReplay::PROMPT_SHA
         payload = { "status" => "refused", "reason" => "prompt_sha", "paid_run" => "not_executed" }
         @io.puts JSON.generate(payload)
@@ -278,6 +279,7 @@ module Rag
     # in the historical ledger and is not called again.
     def execute_band
       @run_pairs ||= BAND_PAIRS
+      @system_text = band_system
       directory = Pathname(@output)
       FileUtils.mkdir_p(directory)
       preview = band_ceiling_document
@@ -302,8 +304,7 @@ module Rag
         return 2
       end
 
-      prompt = CompanionDirectAnswer::SYSTEM_PROMPT
-      unless Digest::SHA256.hexdigest(prompt) == expected_prompt_sha
+      unless Digest::SHA256.hexdigest(@system_text) == expected_prompt_sha
         payload = { "status" => "refused", "reason" => "prompt_sha", "paid_run" => "not_executed", "expected_prompt_sha256" => expected_prompt_sha }
         write_json(directory.join("preflight.json"), payload)
         @io.puts JSON.generate(payload)
@@ -623,6 +624,8 @@ module Rag
     end
 
     def band_ceiling_document
+      previous_system = @system_text
+      @system_text ||= band_system
       historical = Ledger.new(LEDGER_PATH)
       prior_band_path = Pathname("/Users/lahirisan/smart_deal-vertical-artifacts/20261105/vf5_vertical_haiku55/band/attempts.jsonl")
       prior_band = prior_band_path.file? ? Ledger.new(prior_band_path) : nil
@@ -652,11 +655,13 @@ module Rag
         "retry_storm_ceiling_usd" => self.class.money(storm),
         "retry_storm_note" => "Tres intentos por generación, reservados a la vez. El runner liquida cada intento antes del siguiente y frena la llamada que cruzaría el presupuesto.",
         "decision" => ceiling <= @budget ? "execute" : "ceiling_above_authorization",
-        "prompt_sha256" => Digest::SHA256.hexdigest(CompanionDirectAnswer::SYSTEM_PROMPT),
+        "prompt_sha256" => Digest::SHA256.hexdigest(active_system),
         "historical_prompt_sha256" => CompanionDirectCaptureReplay::PROMPT_SHA,
         "historical_citation_prompt_sha256" => CITATION_PROMPT_SHA,
         "turns" => turns
       }
+    ensure
+      @system_text = previous_system
     end
 
     def run_pairs
@@ -664,7 +669,9 @@ module Rag
     end
 
     def closure_ceiling_document
+      previous_system = @system_text
       @run_pairs = HIGH_PAIRS
+      @system_text = band_system
       base = band_ceiling_rows
       base.each { |turn| turn["pass"] = "base" }
       variant = base.map do |turn|
@@ -692,7 +699,7 @@ module Rag
         "ceiling_usd" => self.class.money(ceiling),
         "base_ceiling_usd" => self.class.money(base_ceiling),
         "decision" => ceiling <= @budget ? "execute" : "ceiling_above_authorization",
-        "prompt_sha256" => Digest::SHA256.hexdigest(CompanionDirectAnswer::SYSTEM_PROMPT),
+        "prompt_sha256" => Digest::SHA256.hexdigest(active_system),
         "historical_prompt_sha256" => CompanionDirectCaptureReplay::PROMPT_SHA,
         "historical_citation_prompt_sha256" => CITATION_PROMPT_SHA,
         "historical_max_spent_usd" => band_ceiling_document["historical_max_spent_usd"],
@@ -702,6 +709,8 @@ module Rag
         "bedrock_ledger" => "not_used",
         "turns" => turns
       }
+    ensure
+      @system_text = previous_system
     end
     public :closure_ceiling_document
 
@@ -773,7 +782,7 @@ module Rag
         "thinking" => THINKING,
         "max_tokens" => MAX_TOKENS,
         "budget_usd" => self.class.money(BUDGET),
-        "prompt_sha256" => Digest::SHA256.hexdigest(CompanionDirectAnswer::SYSTEM_PROMPT),
+        "prompt_sha256" => Digest::SHA256.hexdigest(active_system),
         "historical_prompt_sha256" => CompanionDirectCaptureReplay::PROMPT_SHA,
         "historical_citation_prompt_sha256" => CITATION_PROMPT_SHA,
         "retrieval" => "simulated_frozen_corpus",
@@ -800,8 +809,16 @@ module Rag
       [ limit.to_i - 1, 0 ].max
     end
 
+    def historical_system
+      File.read(CompanionDirectCaptureReplay::CAPTURED_PROMPT_PATH)
+    end
+
+    def band_system
+      expected_prompt_sha == CompanionDirectCaptureReplay::PROMPT_SHA ? historical_system : CompanionDirectAnswer::SYSTEM_PROMPT
+    end
+
     def product_prompt_sha
-      Digest::SHA256.hexdigest(File.read(CompanionDirectCaptureReplay::CAPTURED_PROMPT_PATH))
+      Digest::SHA256.hexdigest(historical_system)
     end
 
     def variant_prompt_sha
@@ -814,7 +831,7 @@ module Rag
 
     def adjustment_arms
       variant = File.read(VARIANT_PROMPT_PATH)
-      product = CompanionDirectAnswer::SYSTEM_PROMPT
+      product = historical_system
       [
         { "arm" => "A", "pass" => 1, "dir" => "A", "system" => product, "pairs" => HIGH_PAIRS },
         { "arm" => "B", "pass" => 1, "dir" => "B1", "system" => variant, "pairs" => HIGH_PAIRS },

@@ -252,7 +252,7 @@ class Rag::CompanionDirectEpisodeTest < ActiveSupport::TestCase
 
       @requests.clear
       @reply = ->(params) { plan_reply(params) }
-      with_flags(generation: nil) do
+      with_flags(generation: "plan") do
         @host.ask("Si el caudal baja, ¿qué reviso?", **query_args(session, "Si el caudal baja, ¿qué reviso?", "query:p3"))
       end
     end

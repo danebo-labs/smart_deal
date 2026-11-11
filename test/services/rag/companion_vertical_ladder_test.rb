@@ -386,7 +386,7 @@ class Rag::CompanionVerticalLadderTest < ActiveSupport::TestCase
     assert_equal 24, summary["calls"]
     assert_equal 0, summary["medium_generations"]
     assert_equal BigDecimal(ceiling["ceiling_usd"]) <= BigDecimal("1"), true
-    assert_equal Rag::CompanionDirectCaptureReplay::PROMPT_SHA, Digest::SHA256.hexdigest(File.read(Rag::CompanionDirectAnswer::SYSTEM_PROMPT_PATH))
+    assert_equal Rag::CompanionDirectAnswer::SYSTEM_PROMPT, File.read(Rag::CompanionDirectAnswer::SYSTEM_PROMPT_PATH)
     control = JSON.parse(File.read(File.join(dir, "A/guion2-high/turn-1/request.json")))
     variant = JSON.parse(File.read(File.join(dir, "B1/guion2-high/turn-1/request.json")))
     assert_equal Rag::CompanionDirectCaptureReplay::PROMPT_SHA, Digest::SHA256.hexdigest(control.dig("body", "system", 0, "text"))

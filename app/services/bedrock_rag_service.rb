@@ -1318,9 +1318,8 @@ class BedrockRagService
     value == "1" || value == "true"
   end
 
-  # The only read of RAG_COMPANION_GENERATION. Absent stays on the plan.
   def companion_generation_direct?
-    ENV["RAG_COMPANION_GENERATION"].to_s.strip == "direct"
+    Rag::DirectInferenceBoot.direct_generation?
   end
 
   def companion_pinned_focus?(entity_s3_uris:, entity_sources:, episode:, raw_question:)

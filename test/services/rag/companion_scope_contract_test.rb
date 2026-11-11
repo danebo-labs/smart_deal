@@ -249,7 +249,7 @@ class Rag::CompanionScopeContractTest < ActiveSupport::TestCase
     assert_equal 48_000, ceiling["max_tokens"]
     assert_equal({ "type" => "adaptive", "display" => "summarized" }, ceiling["thinking"])
     assert_equal [ "guion2", "guion2", "guion2", "guion1", "guion1", "guion1", "guion1", "guion1" ], ceiling["turns"].map { |turn| turn["script"] }
-    assert_equal Rag::CompanionDirectCaptureReplay::PROMPT_SHA, Digest::SHA256.hexdigest(restored.dig("body", "system", 0, "text"))
+    assert_equal Rag::CompanionDirectAnswer::SYSTEM_PROMPT, restored.dig("body", "system", 0, "text")
     assert_equal Rag::CompanionVerticalLadder::SCOPE_CEILING_USD, ceiling["ceiling_usd"]
   end
 

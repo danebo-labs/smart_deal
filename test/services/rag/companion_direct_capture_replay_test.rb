@@ -47,7 +47,7 @@ class Rag::CompanionDirectCaptureReplayTest < ActiveSupport::TestCase
     %w[VF5 Fermator fotocélula fotocelula autoajuste S1.9].each do |token|
       assert_not_includes text.downcase, token.downcase
     end
-    assert_equal false, BedrockRagService.allocate.send(:companion_generation_direct?)
+    assert BedrockRagService.allocate.send(:companion_generation_direct?)
   end
 
   test "session 269 requests match except the system text and the saved answers keep their rubric" do

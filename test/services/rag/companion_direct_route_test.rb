@@ -144,7 +144,7 @@ class Rag::CompanionDirectRouteTest < ActiveSupport::TestCase
 
   test "without the flag the plan tool is still the request" do
     @reply = ->(params) { plan_reply(params) }
-    result = with_flags(generation: nil) { ask("Si el caudal baja, ¿qué reviso?") }
+    result = with_flags(generation: "plan") { ask("Si el caudal baja, ¿qué reviso?") }
     params = request_hash(@requests.last)
     tool = params.dig(:tool_config, :tools, 0, :tool_spec, :name)
     tool = params.dig(:tool_config, "tools", 0, "tool_spec", "name") if tool.nil?

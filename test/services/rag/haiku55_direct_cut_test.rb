@@ -172,7 +172,9 @@ class Rag::Haiku55DirectCutTest < ActiveSupport::TestCase
   end
 
   test "production boot requires the blocked direct cut" do
-    assert_raises(RuntimeError) { Rag::DirectInferenceBoot.check!({}) }
+    assert_nil Rag::DirectInferenceBoot.check!({})
+    assert_raises(RuntimeError) { Rag::DirectInferenceBoot.check!("BEDROCK_INFERENCE" => "enabled") }
+    assert_raises(RuntimeError) { Rag::DirectInferenceBoot.check!("RAG_COMPANION_GENERATION" => "plan") }
     assert_nil Rag::DirectInferenceBoot.check!("BEDROCK_INFERENCE" => "blocked", "RAG_COMPANION_GENERATION" => "direct")
     source = Rails.root.join("config/initializers/direct_inference_boot.rb").read
     assert_includes source, "Rails.env.production?"

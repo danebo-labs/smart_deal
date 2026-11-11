@@ -880,14 +880,14 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert cases.all? { |row| row["turn"].present? || row["turns"].present? }
   end
 
-  test "ask does not call TurnPerception yet" do
+  test "ask delegates perception and the deploy template uses the owner default" do
     source = Rails.root.join("app/controllers/rag_controller.rb").read
     concern = Rails.root.join("app/controllers/concerns/rag_query_concern.rb").read
 
     assert_not_includes source, "TurnPerception"
     assert_not_includes concern, "TurnPerception"
     # config/deploy.yml is gitignored operator state. The tracked contract is the example.
-    assert_includes Rails.root.join("config/deploy.yml.example").read, "HAIKU_QUERY_ANALYSIS_MODE: owner"
+    refute_match(/^\s*HAIKU_QUERY_ANALYSIS_MODE:/, Rails.root.join("config/deploy.yml.example").read)
   end
 
   test "a missing clarification target invalidates the perception" do

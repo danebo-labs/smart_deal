@@ -34,6 +34,13 @@ class Haiku55KpvsRubricTest < ActiveSupport::TestCase
     assert_not_includes reasons("kpvs", 1, kept), "kpvs:decrease_order"
   end
 
+  test "a statement that there is nothing to lower is not an order to lower" do
+    [ "KP-VS en 2,5 está por debajo del mínimo de 3,0, así que no hay una indicación documentada para bajarlo más.",
+      "KP-VS en 3,0 ya está en el mínimo de 3,0. Según esa fuente, no hay un valor más bajo para bajar." ].each do |answer|
+      assert_not_includes reasons("kpvs", 1, answer), "kpvs:decrease_order"
+    end
+  end
+
   test "the exact minimum must be recognised as the minimum" do
     answer = "KP-VS en 3,0 ya está en el mínimo de 3,0. Ingeniería revisa."
     assert_empty reasons("kpvs_exact", 1, answer)

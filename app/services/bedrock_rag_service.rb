@@ -1272,7 +1272,7 @@ class BedrockRagService
         response_locale: response_locale, retrieval: retrieval, stop_reason: @companion_direct_stop_reason,
         technician_texts: companion_technician_texts(conv_session, episode, raw_question), manufacturer: nil,
         correlation_id: correlation_id, reference_pending: pending, reference_mode: true,
-        reference_confirmed: confirmed
+        reference_confirmed: confirmed, episode: episode
       )
       return result if result[:route_outcome] == :answered
     end
@@ -1902,6 +1902,14 @@ class BedrockRagService
     texts.compact
   end
 
+  # The interpreter's structured observations, as stored in the episode.
+  def companion_episode_observations(episode)
+    parsed = episode.is_a?(Rag::ActiveEpisode) ? episode : Rag::ActiveEpisode.parse(episode)
+    return [] if parsed.nil? || parsed.blank?
+
+    Array(parsed.observations).pluck("text")
+  end
+
   def companion_manufacturer(episode)
     parsed = episode.is_a?(Rag::ActiveEpisode) ? episode : Rag::ActiveEpisode.parse(episode)
     return nil if parsed.nil? || parsed.blank?
@@ -2259,7 +2267,8 @@ class BedrockRagService
       record_companion_claim_backing(backing)
       extracted = backing.text
       floor = Rag::CompanionCitedFloor.call(
-        text: extracted, sources: sources, technician_texts: technician_texts
+        text: extracted, sources: sources, technician_texts: technician_texts,
+        observations: companion_episode_observations(episode)
       )
       record_companion_cited_floor(floor)
       extracted = floor.text

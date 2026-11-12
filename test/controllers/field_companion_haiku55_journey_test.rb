@@ -636,6 +636,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       assert_includes answer, referral
       assert floor, events.pluck("kind").inspect
       assert_equal [ "below_cited_minimum" ], floor.fetch("removed").pluck("reason")
+      assert_equal [ "message" ], floor.fetch("removed").pluck("reported_from")
       assert_no_match(/red[uú]celo|sigue bajando|baja KP|b[aá]jalo/i, answer)
     end
 

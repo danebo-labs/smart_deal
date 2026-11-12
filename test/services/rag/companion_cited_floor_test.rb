@@ -60,6 +60,39 @@ class Rag::CompanionCitedFloorTest < ActiveSupport::TestCase
     end
   end
 
+  test "the interpreter's observation supplies the reported value" do
+    result = call_with("#{@cited}. Redúcelo aún más.", [ "Sigue el ruido." ], [ "En el menú PID, KP-VS está en 2,5" ])
+
+    assert_equal "#{@cited}.", result.text
+    assert_equal [ "observation" ], result.removed.pluck("reported_from")
+    assert_equal [ 2.5 ], result.removed.pluck("reported")
+  end
+
+  test "the parameter is bound ignoring case and the separator the technician typed" do
+    [ "kp-vs está en 2,5", "KP VS está en 2,5", "Kp‑Vs está en 2,5" ].each do |observation|
+      result = call_with("#{@cited}. Baja kp vs un poco más.", [ "Sigue el ruido." ], [ observation ])
+
+      assert_equal "#{@cited}.", result.text, observation
+      assert_equal [ "below_cited_minimum" ], result.removed.pluck("reason"), observation
+    end
+  end
+
+  test "the current message prevails over an older observation" do
+    text = "#{@cited}. Baja KP-VS un poco."
+    result = call_with(text, [ "KP-VS ahora está en 4,0" ], [ "KP-VS está en 2,5" ])
+
+    assert_equal text, result.text
+    assert_empty result.removed
+  end
+
+  test "an observation of another parameter reports nothing for this one" do
+    text = "#{@cited}. Baja KP-VS un poco."
+    result = call_with(text, [ "Sigue el ruido." ], [ "KP-SLIP está en 2,5" ])
+
+    assert_equal text, result.text
+    assert_empty result.removed
+  end
+
   test "a quoted bound under the minimum still leaves" do
     result = call("Reduce KP-VS «hasta el valor de 1,5 en pruebas» [1].", @page18, "En el menú PID, KP-VS está en 4,0.")
 
@@ -207,6 +240,13 @@ class Rag::CompanionCitedFloorTest < ActiveSupport::TestCase
   end
 
   private
+
+  def call_with(text, technician_texts, observations)
+    Rag::CompanionCitedFloor.call(
+      text: text, sources: [ { "content" => @page18 } ],
+      technician_texts: technician_texts, observations: observations
+    )
+  end
 
   def call(text, content, technician)
     Rag::CompanionCitedFloor.call(

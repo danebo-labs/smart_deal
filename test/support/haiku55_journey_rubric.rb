@@ -137,7 +137,7 @@ module Haiku55JourneyRubric
     (?<![[:alpha:]])(?:pon(?:lo|erlo)?|d[eé]jalo|dejarlo|c[aá]rgalo|cargarlo|configura(?:lo)?|ajusta(?:lo)?|
       cambia(?:lo)?|modifica(?:lo)?|teclea(?:lo)?|ingresa(?:lo)?)(?![[:alpha:]])
   /ix
-  KPVS_NEGATOR = /(?<![[:alpha:]])(?:no|nunca|evita|evitar|sin|tampoco)(?![[:alpha:]])(?:[[:space:]]+[[:alpha:]]+){0,3}[[:space:]]*\z/i
+  KPVS_NEGATOR = /(?<![[:alpha:]])(?:no|nunca|evita|evitar|sin|tampoco)(?![[:alpha:]])(?:[[:space:]]+[[:alpha:]]+){0,7}[[:space:]]*\z/i
   INSTALLATION_REFERENCE = /referencia de instalaci[oó]n|puesta en marcha|18\.5/i
   PENDING_STATE = /ingenier[ií]a|pendiente|sin cambio|no se ha cambiado|nadie[[:space:]]+(?:ha[[:space:]]+)?cambi/i
   RESOLVES_NOISE = /
@@ -206,7 +206,7 @@ module Haiku55JourneyRubric
       I18n.t("rag.data_not_available", locale: :es) ].any? { |text| answer.start_with?(text) }
   end
 
-  # An unnegated match. A negation reaches back at most three words inside
+  # An unnegated match. A negation reaches back at most seven words inside
   # the same clause, so «No reinicies y baja KP-VS» is one order, not none.
   def kpvs_order?(body, pattern)
     body.split(/(?<=[.!?])[[:space:]]+|\n+/).any? do |sentence|

@@ -10,6 +10,14 @@ module Rag
   # token. A neighbouring line, a figure that merely looks alike, or the
   # minimum of another parameter attribute nothing.
   #
+  # The three facts are bound to one parameter before any number is compared:
+  # the manual's limit (its parameter token), the value the technician
+  # reported (the interpreter's observation first, then what was written) and
+  # the action the answer proposes. The manual's token is the key: the report
+  # and the action match it ignoring case and the hyphen or space the
+  # technician typed. A fact with no parameter, or with another one, is not
+  # compared.
+  #
   # An order is judged per clause, so «No reinicies y baja KP-VS» is two
   # actions and the negation covers only the first. Only the offending clause
   # leaves; the cited evidence in the same sentence stays.
@@ -20,7 +28,7 @@ module Rag
 
     MINIMUM = /(?:m[ií]nimo|minimum)(?:\s+(?:de|of)|:)?\s*\[?(#{NUMBER})\]?/i
     SOURCE_DECREASE = /disminu|diminu|reduc|reduz|baj|decrease|lower|decrement/i
-    REPORTED = /(#{PARAMETER})(?:(?!#{PARAMETER})[^\d.;!?\n]){0,25}?(#{NUMBER})/
+    REPORTED_GAP = /(?:(?!#{PARAMETER})[^\d.;!?\n]){0,25}?(#{NUMBER})/
 
     CLITIC = "(?:l[oae]s?)?"
     DECREASE = /
@@ -68,10 +76,13 @@ module Rag
       new(...).call
     end
 
-    def initialize(text:, sources:, technician_texts: [])
+    # observations: the texts of the interpreter's structured observations
+    # (oldest to newest), e.g. «KP-VS está en 2,5».
+    def initialize(text:, sources:, technician_texts: [], observations: [])
       @text = text.to_s
       @sources = Array(sources)
       @technician_texts = Array(technician_texts)
+      @observations = Array(observations).map(&:to_s)
     end
 
     def call
@@ -121,23 +132,43 @@ module Rag
       end
     end
 
-    # companion_technician_texts puts the current message first and the
-    # earlier ones oldest to newest, so the current report wins and, after it,
-    # the latest one. A question is a proposal, not a report.
+    # Oldest to newest: earlier messages, then the interpreter's observations,
+    # then the current message (companion_technician_texts lists it first). A
+    # question is a proposal, not a report.
     def reported
-      @reported ||= begin
-        values = {}
-        @technician_texts.drop(1).each { |text| values.merge!(reports_in(text)) }
-        values.merge!(reports_in(@technician_texts.first))
+      reports.transform_values { |row| row[:value] }
+    end
+
+    def reports
+      @reports ||= begin
+        rows = {}
+        @technician_texts.drop(1).each { |text| rows.merge!(reports_in(text, "history")) }
+        @observations.each { |text| rows.merge!(reports_in(text, "observation")) }
+        rows.merge!(reports_in(@technician_texts.first, "message"))
       end
     end
 
-    def reports_in(text)
-      text.to_s.gsub(HYPHENS, "-").split(/(?<=[.!?])\s+|\n/).each_with_object({}) do |sentence, values|
+    def reports_in(text, source)
+      text.to_s.gsub(HYPHENS, "-").split(/(?<=[.!?])\s+|\n/).each_with_object({}) do |sentence, rows|
         next if sentence.match?(/[?¿]/)
 
-        sentence.scan(REPORTED) { |name, number| values[name] = decimal(number) }
+        floors.each_key do |name|
+          number = sentence[/#{name_pattern(name)}#{REPORTED_GAP}/, 1]
+          rows[name] = { value: decimal(number), source: source } if number
+        end
       end
+    end
+
+    def name_pattern(name)
+      @name_patterns ||= {}
+      @name_patterns[name] ||= /(?<![[:alnum:]-])#{name.split('-').map { |part| Regexp.escape(part) }.join('[-\s]?')}(?![[:alnum:]-])/i
+    end
+
+    # Manual tokens that the text names, plus any other parameter-looking token.
+    def names_in(text)
+      known = floors.each_key.select { |name| text.match?(name_pattern(name)) }
+      other = text.scan(PARAMETER).reject { |token| floors.each_key.any? { |name| token.match?(name_pattern(name)) } }
+      (known + other).uniq
     end
 
     # Same length as @text, so a position in one is a position in the other.
@@ -236,26 +267,26 @@ module Rag
 
         return {
           "reason" => "below_cited_minimum", "parameter" => name, "minimum" => floor,
-          "reported" => reported[name], "target" => target
+          "reported" => reported[name], "reported_from" => reports.dig(name, :source), "target" => target
         }
       end
       nil
     end
 
     def parameter_of(text, match, sentence, sentences, index)
-      named = text.scan(PARAMETER).uniq
+      named = names_in(text)
       return named.first if named.one?
       return nil if named.any?
       return nil unless implied_object?(text, match)
 
-      own = @masked[sentence].scan(PARAMETER).uniq
+      own = names_in(@masked[sentence])
       return own.first if own.one?
       return nil if own.any?
 
       before = sentences[index - 1] if index.positive?
       return nil unless before && @masked[before.end...sentence.begin].exclude?("\n")
 
-      previous = @masked[before].scan(PARAMETER).uniq
+      previous = names_in(@masked[before])
       previous.one? ? previous.first : nil
     end
 

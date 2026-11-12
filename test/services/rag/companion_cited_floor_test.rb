@@ -45,6 +45,27 @@ class Rag::CompanionCitedFloorTest < ActiveSupport::TestCase
     assert_equal [ "below_cited_minimum" ], result.removed.pluck("reason")
   end
 
+  # Real Haiku output (kp8, kp10): the source's own bound is part of the sentence.
+  test "restating the cited instruction with its bound is not an order below the minimum" do
+    [
+      "El procedimiento documentado es bajar KP-VS hasta un mínimo de 3,0, según «hasta el mínimo de» [1].",
+      "La fuente indica «En caso de ruido audible muy elevado» disminuir el valor «hasta el mínimo de [3,0]» [1].",
+      "La fuente indica bajar KP-VS «hasta el mínimo de [3,0]» [1]."
+    ].each do |sentence|
+      text = "#{sentence} Su valor de 2,5 ya está por debajo de ese mínimo."
+      result = call(text, @page18, "En el menú PID, KP-VS está en 2,5.")
+
+      assert_equal text, result.text, sentence
+      assert_empty result.removed, sentence
+    end
+  end
+
+  test "a quoted bound under the minimum still leaves" do
+    result = call("Reduce KP-VS «hasta el valor de 1,5 en pruebas» [1].", @page18, "En el menú PID, KP-VS está en 4,0.")
+
+    assert_equal [ "below_cited_minimum" ], result.removed.pluck("reason")
+  end
+
   test "an explicit target under the minimum leaves even when the reported value is above it" do
     technician = "KP-VS está en 4,0"
     {

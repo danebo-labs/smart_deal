@@ -42,9 +42,10 @@ module Rag
     GENERIC_OBJECT = /\A\s*(?:el|este|ese|dicho)\s+(?:valor|par[aá]metro)(?!\s+de\s+(?:la|el|los|las)\b)/i
 
     BELOW = /(?:por\s+debajo\s+de|menos\s+de|below)\s+\[?(#{NUMBER})\]?/i
-    TARGET = /(?<![[:alnum:]])(?:a|hasta|to)\s+(?:el\s+)?(?:(?:m[ií]nimo|valor)\s+de\s+)?\[?(#{NUMBER})\]?/i
+    ARTICLE = "(?:el|un|su)"
+    TARGET = /(?<![[:alnum:]])(?:a|hasta|to)\s+(?:#{ARTICLE}\s+)?(?:(?:m[ií]nimo|valor)\s+de\s+)?\[?(#{NUMBER})\]?/i
     BY = /(?<![[:alnum:]])(?:en|by)\s+\[?(#{NUMBER})\]?/i
-    BOUNDED = /hasta\s+(?:el\s+)?m[ií]nimo|(?:sin|no)\s+(?:bajar|pasar|ir)\s+de/i
+    BOUNDED = /hasta\s+(?:#{ARTICLE}\s+)?m[ií]nimo|(?:sin|no)\s+(?:bajar|pasar|ir)\s+de/i
 
     SEPARATOR = /
       (?<!\d),|,(?!\d) | [;:] | \s[—–]\s | — |
@@ -215,8 +216,12 @@ module Rag
     end
 
     # nil, or the row that records why this clause is removed.
+    # The verb is searched outside the quotations, so a quoted «redúcelo» is
+    # not an order. The bound or target it is given is read with the quotation
+    # in place: «disminuir el valor «hasta el mínimo de [3,0]»» is bounded.
     def verdict(clause, sentence, sentences, index)
       text = @masked[clause.range]
+      written = @text[clause.range].gsub(HYPHENS, "-")
       text.to_enum(:scan, DECREASE).each do
         match = Regexp.last_match
         next if text[0...match.begin(0)].match?(NEGATOR)
@@ -225,8 +230,9 @@ module Rag
         floor = floors[name]
         next if floor.nil?
 
-        target = proposed(text[match.end(0)..], reported[name])
-        next unless below?(target, floor, reported[name], text[match.end(0)..])
+        rest = written[match.end(0)..]
+        target = proposed(rest, reported[name])
+        next unless below?(target, floor, reported[name], rest)
 
         return {
           "reason" => "below_cited_minimum", "parameter" => name, "minimum" => floor,

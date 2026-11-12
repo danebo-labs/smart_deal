@@ -253,6 +253,37 @@ class Rag::CompanionClaimBackingTest < ActiveSupport::TestCase
     assert_empty result.removed
   end
 
+  # Real Haiku output (kp2, kp7): the numeric limit is quoted on its own and the
+  # passage condition is quoted literally in the neighbouring sentence.
+  test "a quote keeps its condition when the answer quotes that condition beside it" do
+    after = "El ajuste llega hasta el mínimo documentado: «hasta el mínimo de [3,0]» [1]. " \
+            "La fuente lo asocia a «En caso de ruido audible muy elevado» [1]."
+    before = "La fuente lo asocia a «En caso de ruido audible muy elevado» [1]. " \
+             "En ese caso, la fuente indica bajar el parámetro «hasta el mínimo de [3,0]» [1]."
+
+    [ after, before ].each do |text|
+      result = call(text, KPVS_CHUNK, technician: [ "En el menú PID, KP-VS está en 2,5." ])
+
+      assert_equal text, result.text
+      assert_empty result.removed
+    end
+  end
+
+  test "a condition quoted beside the limit must be the condition of that passage" do
+    text = "El ajuste llega hasta «hasta el mínimo de [3,0]» [1]. Se aplica «Si la tensión es 24 Vcc» [1]."
+    result = call(text, KPVS_CHUNK, technician: [ "En el menú PID, KP-VS está en 2,5." ])
+
+    assert_includes result.removed.pluck("sentence"), "El ajuste llega hasta «hasta el mínimo de [3,0]» [1]."
+  end
+
+  test "a condition sentence that is itself removed does not carry the limit" do
+    text = "El manual dice «En caso de ruido audible muy elevado». El ajuste llega «hasta el mínimo de [3,0]» [1]."
+    result = call(text, KPVS_CHUNK, technician: [ "En el menú PID, KP-VS está en 2,5." ])
+
+    assert_equal [ "uncited_attribution", "unverified_quote" ], result.removed.pluck("reason")
+    assert_empty result.text
+  end
+
   test "a quote that leaves out the condition of the passage is still dropped" do
     text = "Con KP-VS en 3,0 ya estás en el mínimo que indica la fuente: " \
            "«disminuya el valor del parámetro \"KP-VS\", hasta el mínimo de [3,0]» [1]."

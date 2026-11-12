@@ -47,16 +47,35 @@ module Rag
       @manufacturer = manufacturer
       @removed = []
       @reattributed = []
+      @context = []
     end
 
     def call
-      lines = @text.split("\n", -1).filter_map { |line| filter_line(line) }
+      lines = filter_lines
+      lines = second_pass(lines) if @removed.any? { |item| item["reason"] == "unverified_quote" }
       lines = drop_orphan_labels(lines) if changed?
       body = lines.join("\n").gsub(/\n{3,}/, "\n\n").strip
       Result.new(text: body, removed: @removed, reattributed: @reattributed)
     end
 
     private
+
+    def filter_lines
+      @text.split("\n", -1).filter_map { |line| filter_line(line) }
+    end
+
+    # A limit quoted on its own keeps its passage condition when a kept
+    # sentence quotes that condition. Only quotes that survived the first pass
+    # can carry, so a removed sentence never vouches for another.
+    def second_pass(lines)
+      kept = lines.join("\n").scan(QUOTE_PATTERN).flatten.compact
+      return lines if kept.empty?
+
+      @removed = []
+      @reattributed = []
+      @context = kept
+      filter_lines
+    end
 
     def changed?
       @removed.any?
@@ -205,7 +224,7 @@ module Rag
     end
 
     def verified?(quoted, pool, lead)
-      match = CompanionTurnPublication.verified_quote(quoted, pool, lead)
+      match = CompanionTurnPublication.verified_quote(quoted, pool, lead, @context)
       !match.nil? && !match[:condition_dropped]
     end
 

@@ -20,6 +20,19 @@ class Rag::CompanionTurnPublicationTest < ActiveSupport::TestCase
     assert_equal [ "R2" ], rules(rejected)
   end
 
+  test "a limit quote is accepted when the answer quotes the condition of its passage" do
+    chunk = "- En caso de ruido audible muy elevado: disminuya el valor del parámetro **\"KP-VS\"**, hasta el mínimo de [3,0]."
+    both = "La fuente lo asocia a «En caso de ruido audible muy elevado» [1]. El ajuste llega «hasta el mínimo de [3,0]» [1]."
+    tail = "El ajuste llega «hasta el mínimo de [3,0]» [1]."
+
+    accepted = publish(both, [ source(chunk) ])
+    rejected = publish(tail, [ source(chunk) ])
+
+    assert accepted.accepted?, accepted.reasons.inspect
+    assert_not rejected.accepted?
+    assert_equal [ "R2" ], rules(rejected)
+  end
+
   test "a quote that drops the opening si is rejected" do
     result = publish("La página dice «#{LOST_IF}» [1].", [ source(OBSTRUCTION) ])
 

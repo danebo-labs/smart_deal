@@ -27,6 +27,7 @@ module Rag
     ABSENCE_PATTERN = /(?<![[:alnum:]])\b(?:no|ni)\b(?![[:alnum:]])/i.freeze
     LIST_PATTERN = /^\s*(?:[-*•]|\d+[.)])\s+/m.freeze
     BOLD_PATTERN = /\*\*[^*]+\*\*/.freeze
+    MIN_CONDITION_WORDS = 3
 
     Result = Struct.new(:accepted, :reasons, :signals, :quotes, keyword_init: true) do
       def accepted?
@@ -81,8 +82,8 @@ module Rag
       end
 
       # CompanionClaimBacking applies the same quote semantics per sentence.
-      def verified_quote(quoted, sources, lead = "")
-        documentary_quote(quoted, sources, lead)
+      def verified_quote(quoted, sources, lead = "", context = [])
+        documentary_quote(quoted, sources, lead, context)
       end
 
       def technician_text?(quoted, texts)
@@ -150,6 +151,7 @@ module Rag
 
       def quote_findings(text, sources, technician_texts, reasons)
         found = []
+        context = text.to_s.scan(QUOTE_PATTERN).flatten.compact
         companion_fragments(text).each do |fragment|
           next if not_loaded_notice?(fragment)
 
@@ -160,7 +162,7 @@ module Rag
             next if quoted.strip.empty?
             if technician_framed?(fragment)
               lead = fragment[0...quote_match.begin(0)].to_s
-              documentary = documentary_quote(quoted, pool, lead)
+              documentary = documentary_quote(quoted, pool, lead, context)
               documentary_ok = documentary && !documentary[:condition_dropped]
               unless technician_quote?(quoted, technician_texts) || documentary_ok
                 reasons << reason("R2", "technician_mismatch:#{quoted}")
@@ -177,7 +179,7 @@ module Rag
             next if technician_quote?(quoted, technician_texts)
 
             lead = fragment[0...quote_match.begin(0)].to_s
-            match = documentary_quote(quoted, pool, lead)
+            match = documentary_quote(quoted, pool, lead, context)
             if match.nil?
               reasons << reason("R2", quoted)
             elsif match[:condition_dropped]
@@ -197,14 +199,14 @@ module Rag
       # nil when the manual text does not hold the quote. condition_dropped
       # only when that manual text does, and a condition before the match is
       # missing from the lead. Alias and source-header lines are not manual text.
-      def documentary_quote(quoted, sources, lead = "")
+      def documentary_quote(quoted, sources, lead = "", context = [])
         dropped = false
         Array(sources).each_with_index do |source, offset|
           content = manual_text(source_content(source))
           matches = manual_matches(content, quoted)
           next if matches.empty?
 
-          passed = matches.find { |found| local_condition?(content, found, lead) }
+          passed = matches.find { |found| local_condition?(content, found, lead, context) }
           if passed
             return { source: source_number(source, offset), position: passed.begin(0) }
           end
@@ -214,13 +216,24 @@ module Rag
         dropped ? { condition_dropped: true } : nil
       end
 
-      def local_condition?(fragment, match, lead = "")
+      def local_condition?(fragment, match, lead = "", context = [])
         before = sentence_before(fragment, match.begin(0))
         after = sentence_after(fragment, match.end(0))
         return false if starts_with_marker?(after)
         return true unless marker_in?(before)
 
-        carried?(families_in(before), "#{lead} #{opening_words(match[0])}")
+        carried?(families_in(before), "#{lead} #{opening_words(match[0])} #{stated_conditions(before, context)}")
+      end
+
+      # The answer may quote the condition of the passage in a neighbouring
+      # sentence instead of in the sentence of the limit. Only a literal piece
+      # of the passage's own condition clause counts.
+      def stated_conditions(before, context)
+        clause = normalized_body(without_emphasis(before))
+        Array(context).filter_map { |quoted|
+          needle = normalized_body(quote_needle(quoted))
+          needle if needle.split.size >= MIN_CONDITION_WORDS && marker_in?(needle) && clause.include?(needle)
+        }.join(" ")
       end
 
       # A quote that opens on its own marker («si la tensión…») carries that

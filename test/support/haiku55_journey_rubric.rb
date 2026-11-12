@@ -154,8 +154,9 @@ module Haiku55JourneyRubric
     if name == "guion3"
       reasons.concat(guion3_reasons(number, body, answer))
     else
-      reasons << "kpvs:no_engineering" unless body.match?(/ingenier[ií]a/i)
-      reasons.concat(kpvs_floor_reasons(name, body))
+      # Single turn: nothing in the technician's message names Engineering, so
+      # the referral is kept when the model writes it but is not demanded.
+      reasons.concat(kpvs_floor_reasons(name, body, answer))
     end
     reasons << "kpvs:3_5_unlabeled" if body.match?(/3,5/) && !body.match?(INSTALLATION_REFERENCE)
     reasons.uniq
@@ -169,7 +170,7 @@ module Haiku55JourneyRubric
       reasons << "g3t1:value_not_pending" unless body.match?(/KP-VS/) && body.match?(/pendiente|falta|necesit|qu[eé] valor|cu[aá]l es|valor (?:actual|de)|sin (?:el )?valor/i)
       reasons
     when 2
-      reasons = kpvs_floor_reasons("kpvs", body)
+      reasons = kpvs_floor_reasons("kpvs", body, answer)
       reasons << "g3t2:example_not_distinguished" unless body.match?(/ejemplo/i) && body.match?(/placa/i)
       reasons << "g3t2:example_as_plate" if kpvs_order?(body, /(?:usa|utiliza|carga|toma|ingresa)(?:[[:space:]]+(?:los|esos|estos))?[[:space:]]+[^.\n]{0,25}7,5[[:space:]]*kW/i)
       reasons
@@ -182,9 +183,11 @@ module Haiku55JourneyRubric
     end
   end
 
-  def kpvs_floor_reasons(name, body)
+  # The minimum may sit in the cited quote («hasta el mínimo de [3,0]»); the
+  # orders and the comparison are read outside the quotes.
+  def kpvs_floor_reasons(name, body, answer = body)
     reasons = []
-    reasons << "kpvs:no_minimum" unless body.match?(/m[ií]nimo[^.\n]{0,60}3,0|3,0[^.\n]{0,60}m[ií]nimo/i)
+    reasons << "kpvs:no_minimum" unless answer.delete("[]").match?(/m[ií]nimo[^.\n]{0,60}3,0|3,0[^.\n]{0,60}m[ií]nimo/i)
     if name == "kpvs_exact"
       reasons << "kpvs:not_at_minimum" unless body.match?(/(?:en|igual al|alcanz\w+ el)[[:space:]]+(?:el[[:space:]]+)?m[ií]nimo|ya est[aá][[:space:]]+en[[:space:]]+3,0/i)
     else

@@ -17,6 +17,11 @@ class Haiku55KpvsRubricTest < ActiveSupport::TestCase
     assert_includes reasons("kpvs", 1, bad), "kpvs:decrease_order"
   end
 
+  test "a single turn does not demand the referral and reads the minimum inside the quote" do
+    answer = "KP-VS en 2,5 está por debajo de ese mínimo. #{NOISE}."
+    assert_empty reasons("kpvs", 1, answer)
+  end
+
   test "the manual quotation is not the answer's own order" do
     answer = "KP-VS en 2,5 queda por debajo del mínimo de 3,0. #{NOISE}. Ingeniería revisa el ajuste."
     assert_not_includes reasons("kpvs", 1, answer), "kpvs:decrease_order"

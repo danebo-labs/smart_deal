@@ -42,6 +42,8 @@ module Rag
         decrease | lower | reduce
       )(?![[:alnum:]])
     /ix
+    # Not a decrease, but still an order on the value: not a comparison.
+    SET_UP = /(?<![[:alnum:]])(?:sube|subir|s[uú]bel[oa]|aument(?:a|ar|e)(?:l[oa])?|increment(?:a|ar|e)(?:l[oa])?|pon(?:l[oa])?|poner(?:l[oa])?|deja(?:l[oa])?|dejar(?:l[oa])?|fija(?:l[oa])?)(?![[:alnum:]])/i
     NEGATOR = /
       (?<![[:alnum:]])(?:no|nunca|jam[aá]s|tampoco|ni|sin|evit\w+|not|never|don't|do\s+not)(?![[:alnum:]])
       (?:\s+[[:alpha:]'-]+){0,3}\s*\z

@@ -223,7 +223,13 @@ class Rag::CompanionClaimBackingTest < ActiveSupport::TestCase
     assert_empty kept.removed
 
     split = "El KP-VS reportado de 2,5 ya está por debajo del mínimo documentado de 3,0. «#{quote}» [1]."
-    dropped = call(split, source, technician: [ "KP-VS está en 2,5" ])
+    bound = call(split, source, technician: [ "KP-VS está en 2,5" ])
+
+    assert_equal split, bound.text
+    assert_empty bound.removed
+
+    unbound = "El KP-VS reportado de 2,5 ya está por debajo del mínimo documentado de 3,5. «#{quote}» [1]."
+    dropped = call(unbound, source, technician: [ "KP-VS está en 2,5" ])
 
     assert_equal [ "uncited_attribution" ], dropped.removed.pluck("reason")
     assert_includes dropped.text, "«#{quote}» [1]."
@@ -282,6 +288,41 @@ class Rag::CompanionClaimBackingTest < ActiveSupport::TestCase
 
     assert_equal [ "uncited_attribution", "unverified_quote" ], result.removed.pluck("reason")
     assert_empty result.text
+  end
+
+  # Real Haiku output (kp14, kp15): the reading goes in its own sentence, as the
+  # prompt asks, and says «documentado». Its two numbers are the technician's
+  # value and the limit that a kept sentence quotes with [1].
+  KPVS_QUOTED = "Según [1], con «En caso de ruido audible muy elevado» hay que disminuir KP-VS «hasta el mínimo de [3,0]»."
+  KPVS_TECHNICIAN = [ "En el menú PID, KP-VS está en 2,5." ].freeze
+
+  test "a comparison of the reported value with a limit quoted in the answer is not an uncited attribution" do
+    [ "Tu valor, 2,5, está por debajo de ese mínimo documentado.",
+      "Su KP-VS está en 2,5, por debajo de ese mínimo documentado de 3,0." ].each do |reading|
+      text = "#{KPVS_QUOTED}\n\n#{reading} Por eso no puedo darte otro valor."
+      result = call(text, KPVS_CHUNK, technician: KPVS_TECHNICIAN)
+
+      assert_equal text, result.text, reading
+      assert_empty result.removed, reading
+    end
+  end
+
+  test "a documented-limit sentence stays removed when its numbers are not bound to the answer" do
+    {
+      "foreign limit" => "Tu valor, 2,5, está por debajo del mínimo documentado de 3,5.",
+      "no reported value" => "El valor queda por debajo del mínimo documentado de 3,0.",
+      "an order" => "Tu valor, 2,5, está por debajo del mínimo documentado, bájalo a 3,0."
+    }.each do |label, reading|
+      result = call("#{KPVS_QUOTED}\n\n#{reading}", KPVS_CHUNK, technician: KPVS_TECHNICIAN)
+
+      assert_equal [ "uncited_attribution" ], result.removed.pluck("reason"), label
+    end
+  end
+
+  test "the same comparison is removed when no sentence of the answer quotes the limit" do
+    result = call("Tu valor, 2,5, está por debajo de ese mínimo documentado.", KPVS_CHUNK, technician: KPVS_TECHNICIAN)
+
+    assert_equal [ "uncited_attribution" ], result.removed.pluck("reason")
   end
 
   test "a quote that leaves out the condition of the passage is still dropped" do

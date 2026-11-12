@@ -16,8 +16,8 @@ module Rag
     # Bold is also used for labels, so it only counts when it is literal.
     BOLD_PATTERN = /\*\*([^*]+)\*\*/.freeze
     # Reported value against a limit that the answer itself quotes.
-    COMPARATOR = /por\s+debajo|debajo\s+de|inferior|menor|por\s+encima|superior|mayor|supera|excede|ya\s+(?:est[aá]|es)\s+(?:en\s+)?(?:el\s+)?(?:m[ií]nimo|l[ií]mite)/i.freeze
-    LIMIT_REFERENCE = /(?<![[:alnum:]])(?:ese|dicho|este|el)\s+(?:m[ií]nimo|l[ií]mite)/i.freeze
+    COMPARATOR = /por\s+debajo|debajo\s+de|inferior|menor|por\s+encima|superior|mayor|supera|excede|ya\s+(?:est[aá]s?|eres?|es)\s+(?:en\s+)?(?:el\s+)?(?:m[ií]nimo|l[ií]mite)/i.freeze
+    LIMIT_REFERENCE = /(?<![[:alnum:]])(?:ese|dicho|este|el|del)\s+(?:m[ií]nimo|l[ií]mite)/i.freeze
     LIMIT_WORD = /m[ií]nimo|l[ií]mite/i.freeze
     NUMBER = CompanionCitedFloor::NUMBER
     LIST_PREFIX = /\A(\s*(?:[-*•]|\d+[.)])\s+)/.freeze
@@ -222,9 +222,18 @@ module Rag
     # without [n] whose only numbers are the technician's and the limit a kept
     # sentence quotes with its own [n]. It restates nothing the manual did not
     # say, and it has no order. Anything else it attributes stays removed.
+    # An unnegated decrease or set verb. «no hay respaldo para bajarlo» is not one.
+    def order?(sentence)
+      [ CompanionCitedFloor::DECREASE, CompanionCitedFloor::SET_UP ].any? do |pattern|
+        sentence.to_enum(:scan, pattern).any? do
+          !sentence[0...Regexp.last_match.begin(0)].match?(CompanionCitedFloor::NEGATOR)
+        end
+      end
+    end
+
     def bound_comparison?(sentence)
       return false if @context.empty? || !sentence.match?(COMPARATOR)
-      return false if sentence.match?(CompanionCitedFloor::DECREASE) || sentence.match?(CompanionCitedFloor::SET_UP)
+      return false if order?(sentence)
 
       numbers = sentence.scan(NUMBER)
       reported = @technician_texts.flat_map { |text| text.to_s.scan(NUMBER) }

@@ -307,6 +307,18 @@ class Rag::CompanionClaimBackingTest < ActiveSupport::TestCase
     end
   end
 
+  test "a comparison keeps a negated order and the second person of the verb" do
+    [ "Con KP-VS en 2,5, el valor ya está por debajo del mínimo que documenta la fuente, así que no hay respaldo para bajarlo más.",
+      "Con KP-VS en 2,5 ya estás por debajo del mínimo que documenta la fuente." ].each do |reading|
+      text = "#{KPVS_QUOTED}\n\n#{reading}"
+      result = call(text, KPVS_CHUNK, technician: KPVS_TECHNICIAN)
+
+      assert_equal text, result.text, reading
+    end
+    exact = "Con KP-VS en 3,0 ya estás en el mínimo que documenta la fuente. #{KPVS_QUOTED}"
+    assert_equal exact, call(exact, KPVS_CHUNK, technician: [ "En el menú PID, KP-VS está en 3,0." ]).text
+  end
+
   test "a documented-limit sentence stays removed when its numbers are not bound to the answer" do
     {
       "foreign limit" => "Tu valor, 2,5, está por debajo del mínimo documentado de 3,5.",

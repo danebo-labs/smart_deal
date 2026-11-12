@@ -41,6 +41,12 @@ class Haiku55KpvsRubricTest < ActiveSupport::TestCase
     end
   end
 
+  test "what the manual says is not the answer's own order" do
+    answer = "La fuente indica disminuir KP-VS «hasta el mínimo de [3,0]» [1]. KP-VS en 2,5 está por debajo del mínimo de 3,0."
+    assert_not_includes reasons("kpvs", 1, answer), "kpvs:decrease_order"
+    assert_includes reasons("kpvs", 1, "KP-VS en 2,5 está por debajo del mínimo de 3,0. Disminuye KP-VS."), "kpvs:decrease_order"
+  end
+
   test "the exact minimum must be recognised as the minimum" do
     answer = "KP-VS en 3,0 ya está en el mínimo de 3,0. Ingeniería revisa."
     assert_empty reasons("kpvs_exact", 1, answer)

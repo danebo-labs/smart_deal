@@ -15,11 +15,6 @@ module Rag
     QUOTE_PATTERN = CompanionTurnPublication::QUOTE_PATTERN
     # Bold is also used for labels, so it only counts when it is literal.
     BOLD_PATTERN = /\*\*([^*]+)\*\*/.freeze
-    # Reported value against a limit that the answer itself quotes.
-    COMPARATOR = /por\s+debajo|debajo\s+de|inferior|menor|por\s+encima|superior|mayor|supera|excede|ya\s+(?:est[aá]s?|eres?|es)\s+(?:en\s+)?(?:el\s+)?(?:m[ií]nimo|l[ií]mite)/i.freeze
-    LIMIT_REFERENCE = /(?<![[:alnum:]])(?:ese|dicho|este|el|del)\s+(?:m[ií]nimo|l[ií]mite)/i.freeze
-    LIMIT_WORD = /m[ií]nimo|l[ií]mite/i.freeze
-    NUMBER = CompanionCitedFloor::NUMBER
     LIST_PREFIX = /\A(\s*(?:[-*•]|\d+[.)])\s+)/.freeze
     ABBREVIATIONS = %w[p pp pág págs fig sec núm nº n aprox máx mín ej etc approx max min].freeze
     OPENERS = { "«" => "»", "“" => "”", '"' => '"' }.freeze
@@ -218,32 +213,11 @@ module Rag
       "uncited_attribution"
     end
 
-    # «Tu valor, 2,5, está por debajo de ese mínimo documentado»: a sentence
-    # without [n] whose only numbers are the technician's and the limit a kept
-    # sentence quotes with its own [n]. It restates nothing the manual did not
-    # say, and it has no order. Anything else it attributes stays removed.
-    # An unnegated decrease or set verb. «no hay respaldo para bajarlo» is not one.
-    def order?(sentence)
-      [ CompanionCitedFloor::DECREASE, CompanionCitedFloor::SET_UP ].any? do |pattern|
-        sentence.to_enum(:scan, pattern).any? do
-          !sentence[0...Regexp.last_match.begin(0)].match?(CompanionCitedFloor::NEGATOR)
-        end
-      end
-    end
-
     def bound_comparison?(sentence)
-      return false if @context.empty? || !sentence.match?(COMPARATOR)
-      return false if order?(sentence)
-
-      numbers = sentence.scan(NUMBER)
-      reported = @technician_texts.flat_map { |text| text.to_s.scan(NUMBER) }
-      quoted = @context.flat_map { |text| text.scan(NUMBER) }
-      return false if numbers.empty? || numbers.none? { |number| reported.include?(number) }
-      return false unless numbers.all? { |number| reported.include?(number) || quoted.include?(number) }
-      return false unless numbers.any? { |number| quoted.include?(number) } ||
-        (sentence.match?(LIMIT_REFERENCE) && @context.any? { |text| text.match?(LIMIT_WORD) })
-
-      !foreign_tokens?(sentence, @sources.select { |source| CompanionTurnPublication.citable_source?(source) })
+      BoundComparison.call(
+        sentence: sentence, quotes: @context, technician_texts: @technician_texts,
+        sources: @sources.select { |source| CompanionTurnPublication.citable_source?(source) }
+      )
     end
 
     def documentary_quotes(sentence, pattern)

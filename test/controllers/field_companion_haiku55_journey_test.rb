@@ -550,7 +550,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     assert_revision_scope(cassette, extra)
   end
 
-  %w[control unsafe installation same_sentence negation exact_minimum explicit_target plain_emphasis].each do |scenario|
+  %w[control unsafe installation same_sentence negation exact_minimum explicit_target plain_emphasis haiku_exact].each do |scenario|
     test "Thyssen KP-VS #{scenario} keeps the cited floor and the engineering review" do
       play_thyssen_kpvs(scenario)
     end
@@ -621,7 +621,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     answer = body.fetch("answer")
     assert publication.fetch("accepted"), publication.inspect
     assert_not_includes Array(backing&.dig("removed")).pluck("reason"), "uncited_attribution"
-    assert_floor_sentence(answer, scenario) unless scenario == "unsafe"
+    assert_floor_sentence(answer, scenario) unless %w[unsafe haiku_exact].include?(scenario)
     assert_includes answer.delete("*"), noise.delete("*")
     referral = "La revisión del ajuste corresponde a Ingeniería."
     if reference_filter
@@ -632,7 +632,13 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       assert_includes answer, referral
       assert_nil floor
     end
-    unless %w[control unsafe installation plain_emphasis].include?(scenario)
+    if scenario == "haiku_exact"
+      # Real Haiku output (kp22): the comparison and the quote sit in two sentences.
+      assert_includes answer, "Con KP-VS en 3,0 ya está en el mínimo que indica el manual."
+      assert_includes answer, "hasta el mínimo de [3,0]» [1]."
+      assert_nil floor
+    end
+    unless %w[control unsafe installation plain_emphasis haiku_exact].include?(scenario)
       assert_includes answer, referral
       assert floor, events.pluck("kind").inspect
       assert_equal [ "below_cited_minimum" ], floor.fetch("removed").pluck("reason")

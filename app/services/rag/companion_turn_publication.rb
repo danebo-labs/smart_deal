@@ -56,7 +56,9 @@ module Rag
 
         reasons.concat(source_reasons(body, delivered))
         quotes.concat(quote_findings(body, delivered, technician_texts, reasons))
-        reasons.concat(attribution_reasons(body, manufacturer))
+        reasons.concat(attribution_reasons(body, manufacturer, comparison: {
+          quotes: quotes.pluck("text"), technician_texts: technician_texts, sources: delivered.select { |source| citable_source?(source) }
+        }))
         reasons << reason("R4", "max_tokens") if stop_reason.to_s == "max_tokens"
         reasons.concat(guard_reasons(published, quotes, locale))
         signals.concat(guard_signals(guards))
@@ -256,7 +258,7 @@ module Rag
         text.to_s.match?(/(?<![[:alnum:]])#{Regexp.escape(marker)}(?![[:alnum:]])/i)
       end
 
-      def attribution_reasons(text, manufacturer)
+      def attribution_reasons(text, manufacturer, comparison: nil)
         name = manufacturer.to_s.strip
         companion_fragments(text).filter_map do |fragment|
           next if fragment.match?(CITATION_PATTERN)
@@ -265,6 +267,7 @@ module Rag
           next if not_loaded_notice?(fragment)
           next if label_with_cited_list?(text, fragment)
           next unless attributes_source?(fragment, name)
+          next if comparison && BoundComparison.call(sentence: fragment, **comparison)
 
           reason("R3", fragment)
         end

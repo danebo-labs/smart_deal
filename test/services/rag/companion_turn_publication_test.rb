@@ -33,6 +33,24 @@ class Rag::CompanionTurnPublicationTest < ActiveSupport::TestCase
     assert_equal [ "R2" ], rules(rejected)
   end
 
+  # Real Haiku output (kp22): claim backing keeps the comparison; publication
+  # must not reject the whole answer for the word it was kept with.
+  test "a bound comparison beside the quoted limit is not an uncited attribution" do
+    chunk = "- En caso de ruido audible muy elevado: disminuya el valor del parámetro **\"KP-VS\"**, hasta el mínimo de [3,0]."
+    quote = "En caso de ruido audible muy elevado: disminuya el valor del parámetro \"KP-VS\", hasta el mínimo de [3,0]"
+    technician = [ "En el menú PID, KP-VS está en 3,0." ]
+
+    bound = publish("Con KP-VS en 3,0 ya está en el mínimo que indica el manual. La fuente dice: «#{quote}» [1].",
+      [ source(chunk) ], technician_texts: technician)
+    foreign = publish("Con KP-VS en 3,0 ya está por debajo del mínimo de 3,5 que indica el manual. La fuente dice: «#{quote}» [1].",
+      [ source(chunk) ], technician_texts: technician)
+    alone = publish("Con KP-VS en 3,0 ya está en el mínimo que indica el manual.", [ source(chunk) ], technician_texts: technician)
+
+    assert bound.accepted?, bound.reasons.inspect
+    assert_equal [ "R3" ], rules(foreign)
+    assert_includes rules(alone), "R3"
+  end
+
   test "a quote that drops the opening si is rejected" do
     result = publish("La página dice «#{LOST_IF}» [1].", [ source(OBSTRUCTION) ])
 

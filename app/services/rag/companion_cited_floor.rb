@@ -55,6 +55,13 @@ module Rag
     ARTICLE = "(?:el|un|su)"
     TARGET = /(?<![[:alnum:]])(?:a|hasta|to)\s+(?:#{ARTICLE}\s+)?(?:(?:m[ií]nimo|valor)\s+de\s+)?\[?(#{NUMBER})\]?/i
     BY = /(?<![[:alnum:]])(?:en|by)\s+\[?(#{NUMBER})\]?/i
+    # «La fuente solo documenta bajar KP-VS»: what the source says, not an order
+    # to the technician. It only spares a decrease with no target of its own.
+    SOURCE_STATEMENT = /
+      (?:fuente|manual|documentaci[oó]n|p[aá]gina|secci[oó]n|\[\d+\])[^.!?]*?
+        (?<![[:alpha:]])(?:indica|dice|documenta|establece|pide|describe|trae|prev[eé]|menciona|contempla)\s*(?:que\s*)?\z |
+      seg[uú]n\s+(?:la\s+fuente|el\s+manual|la\s+documentaci[oó]n|\[\d+\]),?\s*(?:(?:hay\s+que|se\s+debe|debe|corresponde)\s*)?\z
+    /ix
     BOUNDED = /hasta\s+(?:#{ARTICLE}\s+)?m[ií]nimo|(?:sin|no)\s+(?:bajar|pasar|ir)\s+de/i
 
     SEPARATOR = /
@@ -265,7 +272,7 @@ module Rag
 
         rest = written[match.end(0)..]
         target = proposed(rest, reported[name])
-        next unless below?(target, floor, reported[name], rest)
+        next unless below?(target, floor, reported[name], rest, text[0...match.begin(0)])
 
         return {
           "reason" => "below_cited_minimum", "parameter" => name, "minimum" => floor,
@@ -313,9 +320,9 @@ module Rag
       reported_value - decimal(delta)
     end
 
-    def below?(target, floor, reported_value, rest)
+    def below?(target, floor, reported_value, rest, lead = "")
       return target < floor unless target.nil?
-      return false if rest.match?(BOUNDED)
+      return false if rest.match?(BOUNDED) || lead.match?(SOURCE_STATEMENT)
 
       !reported_value.nil? && reported_value <= floor
     end

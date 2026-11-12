@@ -93,6 +93,20 @@ class Rag::CompanionCitedFloorTest < ActiveSupport::TestCase
     assert_empty result.removed
   end
 
+  # Real Haiku output (guion3 turn 3): the clause says what the source documents.
+  test "what the source documents is not an order, but an explicit target under the minimum still leaves" do
+    kept = "La fuente [1] solo documenta bajar KP-VS: «En caso de ruido audible muy elevado: disminuya el valor del parámetro» [1], hasta un mínimo de 3,0."
+    result = call(kept, @page18, "KP-VS está en 2,5")
+
+    assert_equal kept, result.text
+    assert_empty result.removed
+
+    [ "La fuente indica bajar KP-VS a 1,5.", "Según [1], hay que reducir KP-VS por debajo de 3,0." ].each do |sentence|
+      assert_equal [ "below_cited_minimum" ], call(sentence, @page18, "KP-VS está en 2,5").removed.pluck("reason"), sentence
+    end
+    assert_equal [ "below_cited_minimum" ], call("Y la fuente: baja KP-VS.", @page18, "KP-VS está en 2,5").removed.pluck("reason")
+  end
+
   test "a quoted bound under the minimum still leaves" do
     result = call("Reduce KP-VS «hasta el valor de 1,5 en pruebas» [1].", @page18, "En el menú PID, KP-VS está en 4,0.")
 

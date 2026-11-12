@@ -479,8 +479,14 @@ module Rag
         match ? match[0] : ""
       end
 
+      # The chunk keeps markdown emphasis («**"KP-VS"**»); the words a technician
+      # reads, and a literal quote copies, are the same without it.
       def manual_text(content)
-        content.to_s.gsub(/\[(?:SEARCH_ALIASES|DOCUMENT|SOURCE_URI):.*?\]/m, " ")
+        content.to_s.gsub(/\[(?:SEARCH_ALIASES|DOCUMENT|SOURCE_URI):.*?\]/m, " ").then { |text| without_emphasis(text) }
+      end
+
+      def without_emphasis(text)
+        text.to_s.gsub(/\*\*(?=\S)([^*\n]+?)(?<=\S)\*\*/, '\1')
       end
 
       def manual_matches(content, quoted)
@@ -606,7 +612,7 @@ module Rag
       def quote_needle(text)
         # Keep punctuation inside a literal quote. In particular, a dash
         # inside a sentence is not a list marker in the source.
-        text.to_s.unicode_normalize(:nfc).squish
+        without_emphasis(text).unicode_normalize(:nfc).squish
           .gsub(/\A[[:punct:]]+/, "").gsub(/[[:punct:]]+\z/, "").strip
       end
 

@@ -229,4 +229,35 @@ class Rag::CompanionClaimBackingTest < ActiveSupport::TestCase
     assert_includes dropped.text, "«#{quote}» [1]."
     assert_not_includes dropped.text, "documentado"
   end
+
+  # Real Haiku output (haiku55_http kp3/kp4): the model copies the words of the
+  # passage and drops the markdown emphasis the chunk keeps around «"KP-VS"».
+  KPVS_CHUNK = "19.13 Ajuste del ruido en el motor de tracción — parámetro \"KP-VS\" en \"MENU PID\"\n\n" \
+               "- En caso de ruido audible muy elevado: disminuya el valor del parámetro **\"KP-VS\"**, hasta el mínimo de [3,0]."
+
+  test "a quote that drops the markdown emphasis of the chunk still verifies" do
+    text = "Según [1], «En caso de ruido audible muy elevado: disminuya el valor del parámetro \"KP-VS\", hasta el mínimo de [3,0]».\n\n" \
+           "La fuente no documenta qué hacer con un valor por debajo de 3,0. Lo que reporta no permite concluir la causa del ruido."
+    result = call(text, KPVS_CHUNK, technician: [ "En el menú PID, KP-VS está en 2,5." ])
+
+    assert_equal text, result.text
+    assert_empty result.removed
+  end
+
+  test "a quote after an earlier clause that states the condition still verifies without the emphasis" do
+    text = "Según la fuente, si el ruido audible es muy elevado, debe disminuir KP-VS hasta el mínimo de 3,0: " \
+           "«disminuya el valor del parámetro \"KP-VS\", hasta el mínimo de [3,0]» [1]."
+    result = call(text, KPVS_CHUNK, technician: [ "En el menú PID, KP-VS está en 2,5." ])
+
+    assert_equal text, result.text
+    assert_empty result.removed
+  end
+
+  test "a quote that leaves out the condition of the passage is still dropped" do
+    text = "Con KP-VS en 3,0 ya estás en el mínimo que indica la fuente: " \
+           "«disminuya el valor del parámetro \"KP-VS\", hasta el mínimo de [3,0]» [1]."
+    result = call(text, KPVS_CHUNK, technician: [ "En el menú PID, KP-VS está en 3,0." ])
+
+    assert_equal [ "unverified_quote" ], result.removed.pluck("reason")
+  end
 end

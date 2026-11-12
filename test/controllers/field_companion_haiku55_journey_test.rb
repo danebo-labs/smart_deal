@@ -550,7 +550,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     assert_revision_scope(cassette, extra)
   end
 
-  %w[control unsafe installation same_sentence negation exact_minimum explicit_target].each do |scenario|
+  %w[control unsafe installation same_sentence negation exact_minimum explicit_target plain_emphasis].each do |scenario|
     test "Thyssen KP-VS #{scenario} keeps the cited floor and the engineering review" do
       play_thyssen_kpvs(scenario)
     end
@@ -622,12 +622,17 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     assert publication.fetch("accepted"), publication.inspect
     assert_not_includes Array(backing&.dig("removed")).pluck("reason"), "uncited_attribution"
     assert_floor_sentence(answer, scenario) unless scenario == "unsafe"
-    assert_includes answer, noise
+    assert_includes answer.delete("*"), noise.delete("*")
     referral = "La revisión del ajuste corresponde a Ingeniería."
     if reference_filter
       assert_not_includes reference_filter.fetch("removed"), referral
     end
-    unless %w[control unsafe installation].include?(scenario)
+    if scenario == "plain_emphasis"
+      assert_includes answer, "No lo reduzcas más."
+      assert_includes answer, referral
+      assert_nil floor
+    end
+    unless %w[control unsafe installation plain_emphasis].include?(scenario)
       assert_includes answer, referral
       assert floor, events.pluck("kind").inspect
       assert_equal [ "below_cited_minimum" ], floor.fetch("removed").pluck("reason")

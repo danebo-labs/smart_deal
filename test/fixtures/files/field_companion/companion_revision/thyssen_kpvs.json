@@ -1,0 +1,143 @@
+{
+  "provenance": "Indexed chunk bodies read from s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/ (48 text chunks, the whole prefix). Generator replies are synthetic. The production turn stored no chunk body and no raw model output.",
+  "document": {
+    "key": "bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf",
+    "uid": "02ae6128-077b-4c00-8029-f0cf80e0f6c4",
+    "name": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+    "indexed_document_id": "e32b956e25df4bc2dea0d200f5f25bb34750"
+  },
+  "indexed": [
+    {
+      "key": "bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p18_3.txt",
+      "page": 18,
+      "sha256": "9a2cad2e366f0641cc5150205c697d3d63484892b2c4cb9871c674bfd77a31f1",
+      "section": "19.13"
+    },
+    {
+      "key": "bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p15_3.txt",
+      "page": 15,
+      "sha256": "b64a4277a986cbdbaf7dd46564e967cf765f33e33af687bcaf58709d317d9ed2",
+      "section": "18.5"
+    },
+    {
+      "key": "bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p24_1.txt",
+      "page": 24,
+      "sha256": "63d3931904b9dcc0ce54a4750a6cacad5e001eb29322703c2c7b8a5a1832fc72",
+      "section": "23"
+    },
+    {
+      "key": "bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p11_1.txt",
+      "page": 11,
+      "sha256": "9e7186a8c53b924404176edd49a5cccbebdf719074378f74f0c757f74c50aa99",
+      "section": "11.11"
+    }
+  ],
+  "quotes": {
+    "noise": "En caso de ruido audible muy elevado: disminuya el valor del parámetro **\"KP-VS\"**, hasta el mínimo de [3,0]",
+    "installation": "Verificar no \"menu PID\" os valores dos parâmetros abaixo; em caso de diferença, alterar conforme abaixo: - \"KI-SLIP\" = [90,0] - \"KP-SLIP\" = [60,0] - \"ganho - inércia\" = [30,0] - \"KP-VS\" = [3,5]"
+  },
+  "production": {
+    "correlation_id": "query:0c871441-b654-44a1-802e-311516d2f878",
+    "account_id": 3,
+    "user_id": 7,
+    "session_id": 150,
+    "cited_pages": [
+      18,
+      24,
+      11
+    ],
+    "sha": "143255d7d11df93d9f9c0cd5b4f0b6433b6133ce"
+  },
+  "passages": {
+    "9a2cad2e366f0641cc5150205c697d3d63484892b2c4cb9871c674bfd77a31f1": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: KP-VS, MENU PID, ruido motor, ruído audível, motor de tração]\n\n19.13 Ajuste del ruido en el motor de tracción — parámetro \"KP-VS\" en \"MENU PID\"\n\n- En caso de ruido audible muy elevado: disminuya el valor del parámetro **\"KP-VS\"**, hasta el mínimo de [3,0].\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-466F3205004C5604\nSOURCE_SECTION_OR_PAGE: 19.13 Ajuste do ruido no motor de tração com o ajuste do parametro \"KP-VS\" no \"MENU PID\"\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: En caso de ruido audible muy elevado en el motor de tracción, disminuir el valor del parámetro 'KP-VS' en MENU PID hasta el mínimo de [3,0].\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Diminua o valor deste parâmetro, até o mínimo de [3,0]\nEND_FIELD_RECORD\n",
+    "63d3931904b9dcc0ce54a4750a6cacad5e001eb29322703c2c7b8a5a1832fc72": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: códigos de falha MCINV4, E0 E1 E2 fase IGBT, E3 fase entrada fusíveis, E4 CHINV contatora, E5 E6 sub sobre tensão IGBT, EA falha sinais BKF S0S P28, EC segurança poço cabina T2+, ED erro operação teclado]\n\nS10 — TROUBLESHOOTING\n\n23 Códigos de falhas da MCINV4\n\nTabela completa de códigos de erro da controladora MCINV4 (FrequenceDyne Universal), com falha detectada, localização e solução:\n\n| Código Erro | Falha Detectada | Onde acontece | Solução |\n|---|---|---|---|\n| E0 | Falha na fase EU | Na fase U7 | 1- testar unidade IGBT; 2- cabos do motor em curto |\n| E1 | Falha na fase EV | Na fase V7 | 1- testar unidade IGBT; 2- cabos do motor em curto |\n| E2 | Falha na fase EW | Na fase W7 | 1- testar unidade IGBT; 2- cabos do motor em curto |\n| E3 | Falha na fase IN | Nas fases de entrada | 1- testar as fases R, S, T; 2- ver fusíveis ultra-rápidos |\n| E4 | Falha de carga | Contatora \"CHINV\" não liga | 1- verificar circuito da CHINV |\n| E5 | Falha de sub-tensão | Tensão do link da unidade IGBT | 1- tensão de entrada (R, S, T) abaixo da tolerância permitida; 2- IGBT de frenagem sempre ligado = trocar unidade IGBT |\n| E6 | Falha de sobre tensão | Tensão no link da unidade IGBT | 1- Tensão de entrada (R, S, T) acima da tolerância permitida; 2- IGBT de frenagem sempre desligado – trocar unidade IGBT |\n| EA | Falha de sinais | Fiação das linhas START, RED, MAN, DIRU, 1VEL, 2VEL, 3VL, T100, P28, P26, S0S E BKF | 1. Revisar conexão destas linhas; 2. Quando falha de P28 - porta aberta - revisar linha dos trincos; 3. Quando falha de BKF - revisar circuito do freio; 4. Revisar circuito S0S |\n| EC | Falha na segurança de poço, cabina ou casa de máquina | Falta tensão na linha T2+ | 1. Revisar toda fiação e contatos entre as linhas A1+K e T2+ |\n| ED | Erro de operação | Desliga o rele Seg. em qualquer estado de movimento | 1. Teclado conectado durante ajuste de algum parâmetro ou dentro de qualquer MENU e com o elevador em movimento = desconectar teclado |\n| EE | Falha na segurança do QC | Falta tensão na linha A1+K | 1. Revisar toda fiação e componentes entre as linhas T2+ e A1+K (FC, TD1) |\n| EF | Falha de sub ou sobre velocidade | Elevador para por velocidade acima ou abaixo da nominal | ENCODER não esta fixado ou alinhado corretamente no eixo do motor |\n\nRevisor: João Carlos Sá — Aprovador: Claudia Bothona\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-77ACEAC4AD5062B2\nSOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4\nRECORD_TYPE: FAULT_CONDITION\nACTION: Código E0 — Falha na fase EU (fase U7): 1- testar unidade IGBT; 2- verificar cabos do motor em curto\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Falha na fase EU Na fase U7 1- testar unidade IGBT 2- cabos do motor em curto\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-359B262C52193B65\nSOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4\nRECORD_TYPE: FAULT_CONDITION\nACTION: Código E1 — Falha na fase EV (fase V7): 1- testar unidade IGBT; 2- verificar cabos do motor em curto\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Falha na fase EV Na fase V7 1- testar unidade IGBT 2- cabos do motor em curto\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-657480DD6569F34E\nSOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4\nRECORD_TYPE: FAULT_CONDITION\nACTION: Código E2 — Falha na fase EW (fase W7): 1- testar unidade IGBT; 2- verificar cabos do motor em curto\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Falha na fase EW Na fase W7 1- testar unidade IGBT 2- cabos do motor em curto\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-1AA1C14B3C82821E\nSOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4\nRECORD_TYPE: FAULT_CONDITION\nACTION: Código E3 — Falha na fase IN (fases de entrada): 1- testar as fases R, S, T; 2- ver fusíveis ultra-rápidos\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Falha na fase IN Nas fases de entrada 1- testar as fases R, S, T; 2- ver fusíveis ultra-rápidos\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-D32746CE0677304E\nSOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4\nRECORD_TYPE: FAULT_CONDITION\nACTION: Código E4 — Falha de carga (Contatora CHINV não liga): 1- verificar circuito da CHINV\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Falha de carga Contatora \"CHINV\" não liga 1- verificar circuito da CHINV\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-E3BEF1E2736FFA5D\nSOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4\nRECORD_TYPE: FAULT_CONDITION\nACTION: Código E5 — Falha de sub-tensão (link da unidade IGBT): 1- tensão de entrada (R, S, T) abaixo da tolerância permitida; 2- IGBT de frenagem sempre ligado = trocar unidade IGBT\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: tensão de entrada (R, S, T) abaixo da tolerância permitida 2- IGBT de frenagem sempre ligado = trocar unidade IGBT\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-0501DD70667BA397\nSOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4\nRECORD_TYPE: FAULT_CONDITION\nACTION: Código E6 — Falha de sobre tensão (link da unidade IGBT): 1- Tensão de entrada (R, S, T) acima da tolerância permitida; 2- IGBT de frenagem sempre desligado – trocar unidade IGBT\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Tensão de entrada (R, S ,T) acima da tolerância permitida 2- IGBT de frenagem sempre desligado – trocar unidade IGBT\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-7F612F4D36395E65\nSOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4\nRECORD_TYPE: FAULT_CONDITION\nACTION: Código EA — Falha de sinais: revisar conexão das linhas START, RED, MAN, DIRU, 1VEL, 2VEL, 3VL, T100, P28, P26, S0S e BKF. Se falha P28: revisar linha dos trincos (porta aberta). Se falha BKF: revisar circuito do freio. Revisar circuito S0S\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Fiação das linhas START ,RED ,MAN ,DIRU ,1VEL ,2VEL ,3VL ,T100, P28, P26, S0S E BKF\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-274F5A760C89D76C\nSOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4\nRECORD_TYPE: FAULT_CONDITION\nACTION: Código EC — Falha na segurança de poço, cabina ou casa de máquina (falta tensão na linha T2+): revisar toda fiação e contatos entre as linhas A1+K e T2+\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Falta tensão na linha T2+ 1. Revisar toda fiação e contatos entre as linhas A1+K e T2+\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-255A34710F7706D4\nSOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4\nRECORD_TYPE: FAULT_CONDITION\nACTION: Código ED — Erro de operação (desliga o relé Seg. em qualquer estado de movimento): desconectar teclado se conectado durante ajuste de parâmetro ou dentro de qualquer MENU com elevador em movimento\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Teclado conectado durante ajuste de algum parâmetro ou dentro de qualquer MENU e com o elevador em movimento = desconectar teclado\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-3ED8549DFCF58C43\nSOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4\nRECORD_TYPE: FAULT_CONDITION\nACTION: Código EE — Falha na segurança do QC (falta tensão na linha A1+K): revisar toda fiação e componentes entre as linhas T2+ e A1+K (FC, TD1)\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Falta tensão na linha A1+K 1. Revisar toda fiação e componentes entre as linhas T2+ e A1+K (FC, TD1)\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-E44FFFA99C164AA8\nSOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4\nRECORD_TYPE: FAULT_CONDITION\nACTION: Código EF — Falha de sub ou sobre velocidade (elevador para por velocidade acima ou abaixo da nominal): verificar se ENCODER está fixado e alinhado corretamente no eixo do motor\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: ENCODER não esta fixado ou alinhado corretamente no eixo do motor\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-F0E19FDBBF92C40B\nSOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4\nRECORD_TYPE: STOP_WORK_CONDITION\nACTION: Código ED — Desconectar teclado imediatamente se conectado durante ajuste de parâmetro ou dentro de qualquer MENU com elevador em movimento\nEXPECTED_RESULT: Desliga o rele Seg. em qualquer estado de movimento\nSTOP_WORK_TRIGGER: Teclado conectado durante ajuste de algum parâmetro ou dentro de qualquer MENU e com o elevador em movimento\nSTOP_WORK_REQUIRED_ACTION: desconectar teclado\nEVIDENCE: Desliga o rele Seg. em qualquer estado de movimento\nEND_FIELD_RECORD\n",
+    "9e7186a8c53b924404176edd49a5cccbebdf719074378f74f0c757f74c50aa99": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: Pontos de Emergência, RA-75 BOMB, RA-77 B4C, DAG dispositivo, B4A freno máquina tracción, señales emergencia FDN]\n\nS6 — ELECTRICAL: Pontos de Emergência (Sección 11.11)\n\nTabla de señales de emergencia del controlador Frequencedyne Universal con MCINV4:\n\n| Señal | Tensión | Función |\n|---|---|---|\n| RA-75 / BOMB. | 110 Vcc | Bombeiro, salvamento em caso de incêndio |\n| RA-77 / B4C | 110 Vcc | Informação de movimento para elevador com dispositivo D.A.G. e sistema de proteção do Freio da Máquina de tração (B4A) |\n\nNota: Estos puntos corresponden a señales de emergencia — BOMB. para bomberos/rescate en caso de incendio, y B4C vinculado al dispositivo D.A.G. y protección del freno de la máquina de tracción (B4A).\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-0C91E39F4C47B534\nSOURCE_SECTION_OR_PAGE: 11.11 Pontos de Emergência\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: RA-75 / BOMB. = 110 Vcc\nEXPECTED_RESULT: Bombeiro, salvamento em caso de incêndio\nEVIDENCE: RA-75/ BOMB. = 110 Vcc Bombeiro, salvamento em caso de incêndio\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-7BAC38CB6862B71F\nSOURCE_SECTION_OR_PAGE: 11.11 Pontos de Emergência\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: RA-77 / B4C = 110 Vcc\nEXPECTED_RESULT: Informação de movimento para elevador com dispositivo D.A.G. e sistema de proteção do Freio da Máquina de tração (B4A)\nEVIDENCE: RA-77/ B4C = 110 Vcc Informação de movimento para elevador com dispositivo D.A.G.\nEND_FIELD_RECORD\n",
+    "b64a4277a986cbdbaf7dd46564e967cf765f33e33af687bcaf58709d317d9ed2": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: menu ajuste, menu PID, menu Vel, menu E2PROM, teclado TLS, conector J1, RPM MANUT, KI-SLIP]\n\nS18 — COMMISSIONING\n\n18 Ajuste dos parâmetros do módulo MCINV4\n\nEste procedimento descreve o ajuste fino dos parâmetros do módulo MCINV4 durante a fase de comissionamento, com o sistema em modo manutenção.\n\n18.1 Desligar o QC.\n\n18.2 Conectar o teclado TLS na MCINV4 (conector J1).\n\n18.3 Ligar o quadro de comando ainda em estado de manutenção.\n\n18.4 No \"menu ajuste\" digitar os parâmetros de placa do motor da obra (como referência usaremos o motor Eberle 7,5 kW / 220V):\n- \"RPM de placa\" = ver RPM de placa do motor, exemplo = 1660 [RPM]\n- \"Corrente Nominal\" = ver corrente nominal de placa do motor, exemplo = 12 [A]\n- \"tensão trifásica\" = ver tensão do QC, exemplo = 220 [V]\n- \"sentido maquina\" = 1 [dir ---> 1]\n\nNota: Os valores acima são exemplos baseados no motor Eberle 7,5 kW/220V. Os valores reais dependem do motor instalado na obra — REQUIRES_FIELD_VERIFICATION.\n\n18.5 Verificar no \"menu PID\" os valores dos parâmetros abaixo; em caso de diferença, alterar conforme abaixo:\n- \"KI-SLIP\" = [90,0]\n- \"KP-SLIP\" = [60,0]\n- \"ganho - inércia\" = [30,0]\n- \"KP-VS\" = [3,5]\n\n18.6 No \"menu Vel\" ajustar o parâmetro:\n- \"RPM MANUT\" = ¼ do RPM de placa do motor de tração = 650 (arredondar para mais)\n- Salvar os dados no \"menu E2PROM\"\n\n18.7 Acionar o painel manutenção (sobe/desce) colocando o elevador em movimento e verificar na tela 2 o RPM real com RPM MANUT (tolerância de 1 RPM).\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-71C6E26D49B8D8A7\nSOURCE_SECTION_OR_PAGE: 18 Ajuste dos parâmetros do módulo MCINV4\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: Desligar o QC, conectar o teclado TLS na MCINV4 pelo conector J1, depois religar o QC em estado de manutenção\nEXPECTED_RESULT: QC ligado em modo manutenção com teclado TLS conectado ao conector J1 da MCINV4\nEVIDENCE: Conectar o teclado TLS na MCINV4 (conector J1)\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-993460D3A2B99488\nSOURCE_SECTION_OR_PAGE: 18 Ajuste dos parâmetros do módulo MCINV4\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: No 'menu ajuste' digitar os parâmetros de placa do motor da obra: 'RPM de placa' (ex. 1660 RPM), 'Corrente Nominal' (ex. 12 A), 'tensão trifásica' (ex. 220 V), 'sentido maquina' = 1 [dir ---> 1]\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nUNCERTAINTY: Valores reais dependem do motor instalado — REQUIRES_FIELD_VERIFICATION; os valores listados são exemplos do motor Eberle 7,5 kW/220V\nEVIDENCE: digitar os parâmetros de placa do motor da obra\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-D513DFA2CA88A5CC\nSOURCE_SECTION_OR_PAGE: 18 Ajuste dos parâmetros do módulo MCINV4\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: Verificar no 'menu PID' os parâmetros e, se divergentes, alterar para: KI-SLIP = 90,0; KP-SLIP = 60,0; ganho - inércia = 30,0; KP-VS = 3,5\nEXPECTED_RESULT: Parâmetros PID configurados conforme valores de referência\nDETAILS: scope=menu PID; criteria=KI-SLIP=90,0; KP-SLIP=60,0; ganho-inércia=30,0; KP-VS=3,5\nEVIDENCE: em caso de diferença, altere-os conforme abaixo: KI-SLIP=[90,0] KP-SLIP=[60,0] ganho-inércia=[30,0] KP-VS=[3,5]\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-DD78B8CFA851E873\nSOURCE_SECTION_OR_PAGE: 18 Ajuste dos parâmetros do módulo MCINV4\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: No 'menu Vel' ajustar 'RPM MANUT' = ¼ do RPM de placa do motor de tração (arredondar para mais; exemplo = 650); salvar os dados no 'menu E2PROM'\nEXPECTED_RESULT: RPM MANUT configurado e dados salvos na E2PROM\nEVIDENCE: RPM MANUT = ¼ do RPM de placa do motor de tração = 650 (arredondar para mais)\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-34219E044DF66954\nSOURCE_SECTION_OR_PAGE: 18 Ajuste dos parâmetros do módulo MCINV4\nRECORD_TYPE: FUNCTIONAL_TEST\nACTION: Acionar o painel manutenção (sobe/desce) para colocar o elevador em movimento e verificar na tela 2 o RPM real comparado ao RPM MANUT configurado\nEXPECTED_RESULT: RPM real coincide com RPM MANUT com tolerância de 1 RPM\nDETAILS: criteria=tolerância de 1 RPM entre RPM real e RPM MANUT; output=verificação em tela 2\nEVIDENCE: verifique na tela 2 o RPM real com RPM MANUT (tolerância de 1RPM)\nEND_FIELD_RECORD\n"
+  },
+  "turns": [
+    {
+      "question": "FDN Universal MCINV4. En viaje hay ruido fuerte en el motor de tracción. En el menú PID, KP-VS está en 2,5.",
+      "tool_input": {
+        "move": "report",
+        "assertions": [
+          {
+            "span": "FDN Universal",
+            "act": "assert",
+            "slot_hint": "manufacturer"
+          },
+          {
+            "span": "MCINV4",
+            "act": "assert",
+            "slot_hint": "designator"
+          }
+        ],
+        "observations": [
+          "ruido fuerte en el motor de tracción",
+          "KP-VS está en 2,5"
+        ],
+        "pending_resolution": null,
+        "clarification_target": null
+      },
+      "retrieve_query": "FDN Universal MCINV4. En viaje hay ruido fuerte en el motor de tracción. En el menú PID, KP-VS está en 2,5.",
+      "rows": [
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p18_3.txt",
+          "original_source_uri": "s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf",
+          "page": 18,
+          "score": 1.0,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "9a2cad2e366f0641cc5150205c697d3d63484892b2c4cb9871c674bfd77a31f1"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p24_1.txt",
+          "original_source_uri": "s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf",
+          "page": 24,
+          "score": 0.5,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "63d3931904b9dcc0ce54a4750a6cacad5e001eb29322703c2c7b8a5a1832fc72"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p11_1.txt",
+          "original_source_uri": "s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf",
+          "page": 11,
+          "score": 0.3333333333333333,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "9e7186a8c53b924404176edd49a5cccbebdf719074378f74f0c757f74c50aa99"
+        }
+      ],
+      "generator_text": "El KP-VS reportado de 2,5 ya está por debajo del mínimo de 3,0: «En caso de ruido audible muy elevado: disminuya el valor del parámetro **\"KP-VS\"**, hasta el mínimo de [3,0]» [1]. No lo reduzcas más.\n\nLa revisión del ajuste corresponde a Ingeniería."
+    }
+  ],
+  "contrasts": {
+    "unsafe_generator_text": "Para el ruido muy elevado, la sección de ajuste por ruido indica «En caso de ruido audible muy elevado: disminuya el valor del parámetro **\"KP-VS\"**, hasta el mínimo de [3,0]» [1].\n\nComo KP-VS está en 2,5, redúcelo aún más.",
+    "installation_generator_text": "El KP-VS reportado de 2,5 ya está por debajo del mínimo de 3,0: «En caso de ruido audible muy elevado: disminuya el valor del parámetro **\"KP-VS\"**, hasta el mínimo de [3,0]» [1]. No lo reduzcas más.\n\nLa revisión del ajuste corresponde a Ingeniería.\n\nComo referencia de instalación, «Verificar no \"menu PID\" os valores dos parâmetros abaixo; em caso de diferença, alterar conforme abaixo: - \"KI-SLIP\" = [90,0] - \"KP-SLIP\" = [60,0] - \"ganho - inércia\" = [30,0] - \"KP-VS\" = [3,5]» [3].",
+    "installation_row": {
+      "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p15_3.txt",
+      "original_source_uri": "s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf",
+      "page": 15,
+      "score": 0.3333333333333333,
+      "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+      "body_sha256": "b64a4277a986cbdbaf7dd46564e967cf765f33e33af687bcaf58709d317d9ed2"
+    }
+  },
+  "variants": {
+    "same_sentence": {
+      "generator_text": "El KP-VS reportado de 2,5 ya está por debajo del mínimo de 3,0: «En caso de ruido audible muy elevado: disminuya el valor del parámetro **\"KP-VS\"**, hasta el mínimo de [3,0]» [1], así que redúcelo aún más.\n\nLa revisión del ajuste corresponde a Ingeniería."
+    },
+    "negation": {
+      "generator_text": "El KP-VS reportado de 2,5 ya está por debajo del mínimo de 3,0: «En caso de ruido audible muy elevado: disminuya el valor del parámetro **\"KP-VS\"**, hasta el mínimo de [3,0]» [1]. No reinicies y baja KP‑VS.\n\nLa revisión del ajuste corresponde a Ingeniería."
+    },
+    "exact_minimum": {
+      "question": "FDN Universal MCINV4. En viaje hay ruido fuerte en el motor de tracción. En el menú PID, KP-VS está en 3,0.",
+      "observation": "KP-VS está en 3,0",
+      "retrieve_query": "FDN Universal MCINV4. En viaje hay ruido fuerte en el motor de tracción. En el menú PID, KP-VS está en 3,0.",
+      "generator_text": "El KP-VS reportado de 3,0 ya está en el mínimo: «En caso de ruido audible muy elevado: disminuya el valor del parámetro **\"KP-VS\"**, hasta el mínimo de [3,0]» [1]. Sigue bajando KP-VS un poco más.\n\nLa revisión del ajuste corresponde a Ingeniería."
+    },
+    "explicit_target": {
+      "question": "FDN Universal MCINV4. En viaje hay ruido fuerte en el motor de tracción. En el menú PID, KP-VS está en 4,0.",
+      "observation": "KP-VS está en 4,0",
+      "retrieve_query": "FDN Universal MCINV4. En viaje hay ruido fuerte en el motor de tracción. En el menú PID, KP-VS está en 4,0.",
+      "generator_text": "Para el ruido muy elevado, la sección de ajuste por ruido indica «En caso de ruido audible muy elevado: disminuya el valor del parámetro **\"KP-VS\"**, hasta el mínimo de [3,0]» [1].\n\nCon KP-VS en 4,0, bájalo a 1,5.\n\nLa revisión del ajuste corresponde a Ingeniería."
+    }
+  }
+}

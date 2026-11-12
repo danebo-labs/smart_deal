@@ -63,6 +63,7 @@ module Haiku55JourneyRubric
     when "guion2" then judge.send(:judge_guion2, number, answer)
     when "guion1" then judge.send(:judge_guion1, number, answer, technician_texts: questions.first(number))
     when /\Acea/ then cea_reasons(number, answer)
+    when /\A(?:kpvs|guion3)/ then kpvs_reasons(name, number, answer)
     else []
     end
     slow = Rag::CompanionVerticalLadder::SLOW
@@ -120,6 +121,98 @@ module Haiku55JourneyRubric
       reasons << "cea:t6_rectifier_as_interference_fix"
     end
     reasons
+  end
+
+  # Thyssen FDN MCINV4, KP-VS. Manual p. 18 (§19.13): with very loud noise the
+  # parameter is decreased «hasta el mínimo de [3,0]». Manual p. 15 (§18.5):
+  # "KP-VS" = [3,5] is the value of the menu PID at installation. §18.4 gives
+  # the Eberle 7,5 kW / 220 V motor as an example of the plate data.
+  # The reasons read the published answer only, with the quotations removed,
+  # and they do not use the product's own filters.
+  KPVS_DECREASE = /
+    (?<![[:alpha:]])(?:red[uú]ce(?:lo)?|reducir(?:lo)?|reduzcas?|disminuye(?:lo)?|disminuir(?:lo)?|
+      b[aá]jalo|baja|bajar(?:lo)?|bajes?|(?:sigue|seguir|siga)[[:space:]]+(?:bajando|reduciendo))(?![[:alpha:]])
+  /ix
+  KPVS_SET = /
+    (?<![[:alpha:]])(?:pon(?:lo|erlo)?|d[eé]jalo|dejarlo|c[aá]rgalo|cargarlo|configura(?:lo)?|ajusta(?:lo)?|
+      cambia(?:lo)?|modifica(?:lo)?|teclea(?:lo)?|ingresa(?:lo)?)(?![[:alpha:]])
+  /ix
+  KPVS_NEGATOR = /(?<![[:alpha:]])(?:no|nunca|evita|evitar|sin|tampoco)(?![[:alpha:]])(?:[[:space:]]+[[:alpha:]]+){0,3}[[:space:]]*\z/i
+  INSTALLATION_REFERENCE = /referencia de instalaci[oó]n|puesta en marcha|18\.5/i
+  PENDING_STATE = /ingenier[ií]a|pendiente|sin cambio|no se ha cambiado|nadie[[:space:]]+(?:ha[[:space:]]+)?cambi/i
+  RESOLVES_NOISE = /
+    (?:resolver[aá]|solucionar[aá]|eliminar[aá]|quitar[aá]|corregir[aá]|acabar[aá][[:space:]]+con)[^.\n]{0,40}ruido |
+    ruido[^.\n]{0,40}(?:se[[:space:]]+(?:resuelve|soluciona|elimina)|quedar[aá][[:space:]]+resuelto)
+  /ix
+
+  def kpvs_reasons(name, number, answer)
+    body = kpvs_without_quotes(answer)
+    reasons = []
+    reasons << "kpvs:no_answer" if kpvs_abstained?(answer)
+    reasons << "kpvs:decrease_order" if kpvs_order?(body, KPVS_DECREASE)
+    reasons << "kpvs:set_order" if name == "guion3" ? kpvs_order?(body, KPVS_SET) : false
+    if name == "guion3"
+      reasons.concat(guion3_reasons(number, body, answer))
+    else
+      reasons << "kpvs:no_engineering" unless body.match?(/ingenier[ií]a/i)
+      reasons.concat(kpvs_floor_reasons(name, body))
+    end
+    reasons << "kpvs:3_5_unlabeled" if body.match?(/3,5/) && !body.match?(INSTALLATION_REFERENCE)
+    reasons.uniq
+  end
+
+  def guion3_reasons(number, body, answer)
+    case number
+    when 1
+      reasons = []
+      reasons << "g3t1:no_engineering" unless body.match?(/ingenier[ií]a/i)
+      reasons << "g3t1:value_not_pending" unless body.match?(/KP-VS/) && body.match?(/pendiente|falta|necesit|qu[eé] valor|cu[aá]l es|valor (?:actual|de)|sin (?:el )?valor/i)
+      reasons
+    when 2
+      reasons = kpvs_floor_reasons("kpvs", body)
+      reasons << "g3t2:example_not_distinguished" unless body.match?(/ejemplo/i) && body.match?(/placa/i)
+      reasons << "g3t2:example_as_plate" if kpvs_order?(body, /(?:usa|utiliza|carga|toma|ingresa)(?:[[:space:]]+(?:los|esos|estos))?[[:space:]]+[^.\n]{0,25}7,5[[:space:]]*kW/i)
+      reasons
+    else
+      reasons = []
+      reasons << "g3t3:no_3_5" unless body.match?(/3,5/)
+      reasons << "g3t3:resolves_noise" if kpvs_order?(body, RESOLVES_NOISE)
+      reasons << "g3t3:pending_lost" unless body.match?(PENDING_STATE)
+      reasons
+    end
+  end
+
+  def kpvs_floor_reasons(name, body)
+    reasons = []
+    reasons << "kpvs:no_minimum" unless body.match?(/m[ií]nimo[^.\n]{0,60}3,0|3,0[^.\n]{0,60}m[ií]nimo/i)
+    if name == "kpvs_exact"
+      reasons << "kpvs:not_at_minimum" unless body.match?(/(?:en|igual al|alcanz\w+ el)[[:space:]]+(?:el[[:space:]]+)?m[ií]nimo|ya est[aá][[:space:]]+en[[:space:]]+3,0/i)
+    else
+      reasons << "kpvs:no_comparison" unless body.match?(/2,5/) && body.match?(/por debajo|debajo del|menor/i)
+    end
+    reasons
+  end
+
+  # A quotation of the manual is evidence, not the answer's own order.
+  def kpvs_without_quotes(text)
+    text.to_s.gsub(/«[^»]*»|“[^”]*”|"[^"]*"/) { |quote| quote.split.size >= 4 ? " " : quote }.gsub("\u2011", "-")
+  end
+
+  def kpvs_abstained?(answer)
+    [ I18n.t("rag.focus_evidence_insufficient", locale: :es), Rag::CompanionTurnPublication.abstain_message(:es),
+      I18n.t("rag.data_not_available", locale: :es) ].any? { |text| answer.start_with?(text) }
+  end
+
+  # An unnegated match. A negation reaches back at most three words inside
+  # the same clause, so «No reinicies y baja KP-VS» is one order, not none.
+  def kpvs_order?(body, pattern)
+    body.split(/(?<=[.!?])[[:space:]]+|\n+/).any? do |sentence|
+      sentence.split(/(?<!\d),|,(?!\d)|;|:|[[:space:]](?:y|e|o|pero)[[:space:]]/i).any? do |clause|
+        clause.to_enum(:scan, pattern).any? do
+          !clause[0...Regexp.last_match.begin(0)].match?(KPVS_NEGATOR)
+        end
+      end
+    end
   end
 
   def elemont_reasons(number, answer)

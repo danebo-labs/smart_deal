@@ -212,4 +212,21 @@ class Rag::CompanionClaimBackingTest < ActiveSupport::TestCase
     assert_equal "Revisa el ajuste de #54.", result.text
     assert_empty result.removed
   end
+
+  test "a KP-VS comparison stays when the quote is in the same sentence" do
+    quote = "En caso de ruido audible muy elevado: disminuya el valor del parámetro **\"KP-VS\"**, hasta el mínimo de [3,0]"
+    source = "- #{quote}."
+    together = "El KP-VS reportado de 2,5 ya está por debajo del mínimo de 3,0: «#{quote}» [1]."
+    kept = call(together, source, technician: [ "KP-VS está en 2,5" ])
+
+    assert_equal together, kept.text
+    assert_empty kept.removed
+
+    split = "El KP-VS reportado de 2,5 ya está por debajo del mínimo documentado de 3,0. «#{quote}» [1]."
+    dropped = call(split, source, technician: [ "KP-VS está en 2,5" ])
+
+    assert_equal [ "uncited_attribution" ], dropped.removed.pluck("reason")
+    assert_includes dropped.text, "«#{quote}» [1]."
+    assert_not_includes dropped.text, "documentado"
+  end
 end

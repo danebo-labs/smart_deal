@@ -76,9 +76,32 @@ module Haiku55Http
     "Estoy con un controlador Monarch NICE3000new. Después de varias maniobras apareció Err14. Todavía no he revisado el filtro ni el ventilador. ¿Qué me conviene comprobar primero?",
     "Medí 26 °C en el ambiente junto al gabinete. Miré el filtro desde fuera y está cubierto de polvo, casi no se ve la malla. Todavía no lo he limpiado ni he revisado el ventilador. ¿Sigo por el filtro?"
   ].freeze
+  # Thyssen FDN Universal MCINV4 pinned, KP-VS. The catalog id 3 is not a
+  # local accounts.id: the row is registered in the runner's account.
+  FDN_DOCUMENT_UID = "02ae6128-077b-4c00-8029-f0cf80e0f6c4"
+  KPVS_MESSAGE = "FDN Universal MCINV4. En viaje hay ruido fuerte en el motor de tracción. En el menú PID, KP-VS está en 2,5."
+  KPVS_SCRIPTS = {
+    "kpvs" => { "document_uid" => FDN_DOCUMENT_UID, "turns" => [ KPVS_MESSAGE ] },
+    "kpvs_paraphrase" => {
+      "document_uid" => FDN_DOCUMENT_UID,
+      "turns" => [ "Tengo un FDN Universal MCINV4 y en marcha el motor de tracción hace mucho ruido. Veo KP-VS en 2,5 en el menú PID." ]
+    },
+    "kpvs_exact" => {
+      "document_uid" => FDN_DOCUMENT_UID,
+      "turns" => [ "FDN Universal MCINV4. En viaje hay ruido fuerte en el motor de tracción. En el menú PID, KP-VS está en 3,0." ]
+    },
+    "guion3" => {
+      "document_uid" => FDN_DOCUMENT_UID,
+      "turns" => [
+        "FDN Universal MCINV4. En viaje hay ruido fuerte en el motor de tracción. No tengo acceso al TLS.",
+        "Ingeniería me confirmó que KP-VS está en 2,5. La placa de este motor dice 5,5 kW, 380 V y 1.175 rpm. ¿Me sirven los datos del motor Eberle del manual?",
+        "El ruido sigue y nadie ha cambiado el ajuste. ¿Lo dejo en 3,5?"
+      ]
+    }
+  }.freeze
   # Revision journeys: after turn N, the card for one of the listed manuals
   # is confirmed with its own action, and the same question is replayed.
-  EXTRA_SCRIPTS = {
+  EXTRA_SCRIPTS = KPVS_SCRIPTS.merge(
     "cea" => { "document_uid" => CEA_DOCUMENT_UID, "turns" => CEA_TURNS },
     "cea_label_known" => { "document_uid" => CEA_DOCUMENT_UID, "turns" => [ CEA_TURNS.first, "Leo CEA15+ en el rótulo de la placa." ] },
     "cea_label_unseen" => { "document_uid" => CEA_DOCUMENT_UID, "turns" => [ CEA_TURNS.first, "No puedo ver el rótulo." ] },
@@ -95,7 +118,7 @@ module Haiku55Http
       "document_uid" => VF5_DOCUMENT_UID, "turns" => MONARCH_TURNS.first(1),
       "accept" => { 1 => { "document_uids" => [ MONARCH_DOCUMENT_UID, FALLAS_DOCUMENT_UID ], "action" => "replace" } }
     }
-  }.freeze
+  ).freeze
   SERVER_ENV = {
     "RAILS_ENV" => "development",
     "WEB_CONCURRENCY" => "0",

@@ -339,11 +339,42 @@ module Rag
       return false if documentary_reference?(unit, chunks.size, patterns)
       return false if qualified_reference?(unit, units, patterns, chunks.size)
       return false if observational_question?(unit)
+      # «ajuste» is also the noun in a review handed to Engineering. That
+      # sentence is not an instruction to change the parameter. A command in
+      # the same sentence, or a value the chunk did not give the technician,
+      # still leaves.
+      return false if engineering_review_referral?(normalized) && !foreign_value_unit?(unit.text, chunks, question)
 
       (operation_unit?(normalized, question, unit.text) && !negated_frame?(unit)) ||
         foreign_value_unit?(unit.text, chunks, question)
     end
     private_class_method :reference_unit_removed?
+
+    ENGINEERING_REVIEW = /
+      \brevision\s+del\s+ajuste\s+corresponde\s+a\s+ingenieria\b |
+      \bel\s+ajuste\s+corresponde\s+a\s+ingenieria\b |
+      \bcorresponde\s+a\s+ingenieria\s+revisar\s+el\s+ajuste\b |
+      \bderiv\w*\s+(?:el\s+)?ajuste\s+a\s+ingenieria\b
+    /x
+    # What is left of the sentence once the referral is cut out. Any command
+    # in it, negated or not, keeps the sentence under the operation rules.
+    DIRECTED_ADJUSTMENT = /
+      \b(?:ajusta|ajusten|ajustar)\b |
+      \bajuste\s+(?:el|la|los|las|este|ese|un|kp)\b |
+      \b(?:haz|haga|hagan|hacer|realiza|realice|realizar)\s+(?:el\s+|un\s+)?ajuste\b |
+      \b(?:disminu\w*|redu[cz]\w*|baja\w*|baje\w*|reb[aj]\w*|aument\w*|increment\w*|sub(?:e|a|as|an|ir|id)\b) |
+      \b(?:cambi\w*|modific\w*|colo(?:ca|que|car)\w*|(?:pon|pone|poner|ponlo|ponla|ponga|pongas|deja|dejalo|dejala|dejar|deje|dejes)\b) |
+      \b(?:establec\w*|fija\w*|fije\w*|restaur\w*|regres\w*|vuelv\w*|reinici\w*|apag\w*|encend\w*) |
+      \b(?:sustitu\w*|reemplaz\w*|ejecut\w*|aplic\w*|configur\w*|corrig\w*|restabl\w*)
+    /ix
+
+    def self.engineering_review_referral?(normalized)
+      match = normalized.match(ENGINEERING_REVIEW)
+      return false unless match
+
+      !match.pre_match.match?(DIRECTED_ADJUSTMENT) && !match.post_match.match?(DIRECTED_ADJUSTMENT)
+    end
+    private_class_method :engineering_review_referral?
 
     def self.documentary_reference?(unit, chunk_count, patterns)
       cited = unit.text.scan(/\[(\d+)\]/).any? { |number,| number.to_i.between?(1, chunk_count) }

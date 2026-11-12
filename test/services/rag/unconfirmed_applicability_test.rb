@@ -376,6 +376,49 @@ class Rag::UnconfirmedApplicabilityTest < ActiveSupport::TestCase
     assert identity.identity
   end
 
+  test "a reference filter keeps an engineering review of the adjustment" do
+    question = "KP-VS está en 2,5"
+    kept = [
+      "La revisión del ajuste corresponde a Ingeniería.",
+      "El ajuste corresponde a Ingeniería.",
+      "Corresponde a Ingeniería revisar el ajuste.",
+      "Deriva el ajuste a Ingeniería."
+    ]
+    kept.each do |sentence|
+      filtered = Rag::DocumentIdentityScope.unconfirmed_reference_filter(sentence, [ @up ], question)
+      assert_equal sentence, filtered.text, sentence
+      assert_empty filtered.removed, sentence
+    end
+
+    [
+      "Ajusta KP-VS a 1,5.",
+      "Haz el ajuste y la revisión del ajuste corresponde a Ingeniería.",
+      "Cambia KP-VS y la revisión del ajuste corresponde a Ingeniería.",
+      "La revisión del ajuste corresponde a Ingeniería; sube KP-VS a 4,0.",
+      "La revisión del ajuste corresponde a Ingeniería, así que reinicia el variador.",
+      "Déjalo en 3,5 mientras la revisión del ajuste corresponde a Ingeniería."
+    ].each do |sentence|
+      filtered = Rag::DocumentIdentityScope.unconfirmed_reference_filter(sentence, [ @up ], question)
+      assert_equal [ sentence ], filtered.removed, sentence
+    end
+  end
+
+  test "a reference filter still removes a terminal the question did not name" do
+    question = "KP-VS está en 2,5"
+    mixed = "La revisión del ajuste corresponde a Ingeniería y el borne es XQ7."
+    filtered = Rag::DocumentIdentityScope.unconfirmed_reference_filter(mixed, [ @up ], question)
+    assert_equal [ mixed ], filtered.removed
+
+    foreign = "La borna de seguridad es XQ7."
+    only = Rag::DocumentIdentityScope.unconfirmed_reference_filter(foreign, [ @up ], question)
+    assert_equal [ foreign ], only.removed
+
+    p28 = { content: "Falha de P28 - porta aberta.", metadata: { "page_number" => 24 } }
+    line = "La línea P28 es la puerta."
+    wrong = Rag::DocumentIdentityScope.unconfirmed_reference_filter(line, [ p28 ], question)
+    assert_equal [ line ], wrong.removed
+  end
+
   private
 
   def assert_family(expected, row, chunks: [ @up ])

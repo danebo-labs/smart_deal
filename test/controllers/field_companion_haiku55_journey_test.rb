@@ -550,10 +550,127 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     assert_revision_scope(cassette, extra)
   end
 
+  %w[control unsafe installation same_sentence negation exact_minimum explicit_target].each do |scenario|
+    test "Thyssen KP-VS #{scenario} keeps the cited floor and the engineering review" do
+      play_thyssen_kpvs(scenario)
+    end
+  end
+
   private
 
-  def revision_turns(name)
+  def play_thyssen_kpvs(scenario)
+    name = "thyssen_kpvs"
     data = JSON.parse(Rails.root.join(REVISION_FIXTURES, "#{name}.json").read)
+    @account = accounts(:pilot)
+    host! "piloto.danebo.ai"
+    @user.update!(account: @account)
+    spec = data.fetch("document")
+    document = KbDocument.create!(account: @account, s3_key: spec.fetch("key"),
+      document_uid: spec.fetch("uid"), display_name: spec.fetch("name"), aliases: [])
+    post pinned_documents_path, params: { kb_document_id: document.id }, as: :json
+    assert_response :no_content
+
+    entry = data.fetch("turns").sole
+    contrasts = data.fetch("contrasts")
+    if data.fetch("variants").key?(scenario)
+      variant = data.dig("variants", scenario)
+      entry["generator_text"] = variant.fetch("generator_text")
+      %w[question retrieve_query].each { |key| entry[key] = variant[key] if variant[key] }
+      entry["tool_input"]["observations"][1] = variant["observation"] if variant["observation"]
+    elsif scenario != "control"
+      entry["generator_text"] = contrasts.fetch("#{scenario}_generator_text")
+    end
+    entry["rows"][2] = contrasts.fetch("installation_row") if scenario == "installation"
+    turn = revision_turns(name, data: data).sole
+    body, cassette = revision_ask("thyssen-kpvs-#{scenario}", 1, turn, document)
+    assert_revision_scope(cassette, document)
+    assert_equal [ 16 ], cassette.sizes
+    assert_equal [ turn.retrieve_query ], cassette.queries
+    assert_equal [ document.id ], reloaded_session.focus_document_ids
+
+    generator = cassette.sent.reject { |payload| payload[:tool_choice] }.sole
+    prompt = generator.fetch(:messages).last.fetch(:content).pluck(:text).join
+    noise = data.dig("quotes", "noise")
+    assert_includes prompt, "En caso de ruido audible muy elevado"
+    assert_includes prompt, "hasta el mínimo de [3,0]"
+    assert_includes prompt, noise
+    if scenario == "installation"
+      assert_includes prompt, "18.5 Verificar"
+      assert_includes prompt, "em caso de diferença"
+      assert_includes prompt, '"KP-VS" = [3,5]'
+    else
+      assert_no_match(/18\.5 Verificar|\[3,5\]/, prompt)
+    end
+
+    directory = Rails.root.join("tmp/field_companion/haiku55_offline/revision-thyssen-kpvs-#{scenario}/turn-1")
+    events = JSON.parse(directory.join("trace.json").read).fetch("events")
+    directory.join("layers.json").write(JSON.pretty_generate(
+      "production_correlation" => data.dig("production", "correlation_id"),
+      "indexed" => data.fetch("indexed"),
+      "retrieve_pages" => cassette.returned.sole.map(&:page),
+      "generator_request" => generator,
+      "generator_stub" => turn.raw,
+      "noise_quote" => noise,
+      "answer" => body.fetch("answer"),
+      "events" => events
+    ))
+    backing = events.find { |event| event["kind"] == "companion_claim_backing" }
+    publication = events.find { |event| event["kind"] == "companion_publication" }
+    reference_filter = events.find { |event| event["kind"] == "companion_reference_filter" }
+    floor = events.find { |event| event["kind"] == "companion_cited_floor" }
+    answer = body.fetch("answer")
+    assert publication.fetch("accepted"), publication.inspect
+    assert_not_includes Array(backing&.dig("removed")).pluck("reason"), "uncited_attribution"
+    assert_floor_sentence(answer, scenario) unless scenario == "unsafe"
+    assert_includes answer, noise
+    referral = "La revisión del ajuste corresponde a Ingeniería."
+    if reference_filter
+      assert_not_includes reference_filter.fetch("removed"), referral
+    end
+    unless %w[control unsafe installation].include?(scenario)
+      assert_includes answer, referral
+      assert floor, events.pluck("kind").inspect
+      assert_equal [ "below_cited_minimum" ], floor.fetch("removed").pluck("reason")
+      assert_no_match(/red[uú]celo|sigue bajando|baja KP|b[aá]jalo/i, answer)
+    end
+
+    case scenario
+    when "control"
+      assert_nil floor
+      assert_includes answer, "No lo reduzcas más."
+      assert_includes answer, referral
+      assert_no_match(/red[uú]celo a[uú]n m[aá]s/i, answer)
+    when "unsafe"
+      assert floor, events.pluck("kind").inspect
+      assert_equal [ "below_cited_minimum" ], floor.fetch("removed").pluck("reason")
+      assert_no_match(/red[uú]celo a[uú]n m[aá]s/i, answer)
+      assert_no_match(/Ingeniería/, answer)
+    when "installation"
+      assert_includes answer, referral
+      assert_match(/referencia de instalaci[oó]n/i, answer)
+      assert_includes answer, "em caso de diferença"
+      assert_includes answer, '"KP-VS" = [3,5]'
+      assert_includes answer, "[3]"
+      assert_not_includes Array(backing.fetch("removed")).pluck("reason"), "unbacked_citation"
+    end
+  end
+
+  def assert_floor_sentence(answer, scenario = nil)
+    reported = scenario == "exact_minimum" ? "3,0" : "2,5"
+    sentence = answer.split(/(?<=[.!?])\s+/).find { |part| part.include?(reported) && part.include?("[3,0]") }
+    if scenario == "explicit_target"
+      assert_match(/\[3,0\]/, answer)
+      assert_no_match(/1,5/, answer)
+      return
+    end
+    assert sentence, answer
+    assert_match(scenario == "exact_minimum" ? /ya est[aá] en el m[ií]nimo/ : /por debajo del mínimo de 3,0/, sentence)
+    assert_match(/En caso de ruido audible muy elevado/, sentence)
+    assert_match(/\[1\]/, sentence)
+  end
+
+  def revision_turns(name, data: nil)
+    data ||= JSON.parse(Rails.root.join(REVISION_FIXTURES, "#{name}.json").read)
     data.fetch("turns").map { |turn|
       turn["rows"].each { |row| row["content"] = data.fetch("passages").fetch(row.fetch("body_sha256")) }
       TurnCapture.new(turn)

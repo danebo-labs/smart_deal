@@ -2258,6 +2258,11 @@ class BedrockRagService
       )
       record_companion_claim_backing(backing)
       extracted = backing.text
+      floor = Rag::CompanionCitedFloor.call(
+        text: extracted, sources: sources, technician_texts: technician_texts
+      )
+      record_companion_cited_floor(floor)
+      extracted = floor.text
     end
     citations = document_identity_citation_records(chunks)
     safety = Rag::AnswerSafetyProcessor.new(locale: locale).call(
@@ -2340,6 +2345,16 @@ class BedrockRagService
     return unless Rag::ValidationCapture.active?
 
     Rag::ValidationCapture.record("companion_claim_backing", backing.to_h.merge("text" => backing.text))
+  end
+
+  def record_companion_cited_floor(floor)
+    return unless Rag::ValidationCapture.active?
+    return if floor.removed.empty?
+
+    Rag::ValidationCapture.record(
+      "companion_cited_floor",
+      "removed" => floor.removed, "text" => floor.text
+    )
   end
 
   def record_companion_publication(publication, stop_reason)

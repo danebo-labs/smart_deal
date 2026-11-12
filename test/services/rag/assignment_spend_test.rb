@@ -588,6 +588,52 @@ class Rag::AssignmentSpendTest < ActiveSupport::TestCase
     assert_equal "0.000000", snapshot["held_usd"]
   end
 
+  test "79723a5 validation bump 1000 to 1015 grants sixteen new calls above 999 inside the unchanged dollar cap" do
+    entries = (1..1001).map do |id|
+      # Two released rows, as in the real file: 1001 ids, 999 counted attempts.
+      { "id" => id, "status" => [ 500, 501 ].include?(id) ? "released" : "settled", "ceiling_usd" => "0.001000", "actual_usd" => "0.001000" }
+    end
+    File.write(@path, JSON.generate(
+      "attempts" => 999, "seq" => 1001, "call_cap" => 1000, "blocked" => 0, "priced" => 999,
+      "committed" => "1.001000", "unknown" => "0.000000", "open" => {},
+      "entries" => entries,
+      "executions" => [
+        { "id" => "haiku55-http-20261110", "after_attempt" => 326, "cost_usd" => "2.296091", "calls" => 676 }
+      ],
+      "cost_cap_usd" => "4.0",
+      "authorization" => { "id" => "f2f3-joint-after-134", "after_attempt" => 134, "cost_usd" => "0.750000", "call_cap" => 1000 }
+    ))
+    book = spend(call_cap: 1015, cost_cap: "5.024677")
+    assert_equal 1015, Rag::AssignmentSpend::CALL_CAP_BUMPS[1000]
+
+    granted = book.admit_execution!(
+      id: "haiku55-http-79723a5-20261112", cost_usd: "0.100000", calls: 18,
+      bump_call_cap_to: 1015, bump_only_if_attempts: 999
+    )
+
+    assert_equal 999, granted["after_attempt"]
+    assert_equal 1015, book.snapshot.dig("authorization", "call_cap")
+    assert_equal "0.750000", book.snapshot.dig("authorization", "cost_usd")
+    16.times { |index| assert book.reserve!(ceiling_usd: "0.001000", model_id: "haiku", turn: index + 1) }
+    assert_raises(Rag::AssignmentSpend::Stop) { book.reserve!(ceiling_usd: "0.001000", model_id: "haiku", turn: 17) }
+    assert_equal 1015, book.snapshot["attempts"]
+  end
+
+  test "79723a5 validation grant cannot be raised by repeating the id with more calls or dollars" do
+    File.write(@path, JSON.generate(
+      "attempts" => 999, "seq" => 999, "call_cap" => 1015, "blocked" => 0, "priced" => 0,
+      "committed" => "0.000000", "unknown" => "0.000000", "open" => {}, "entries" => [],
+      "executions" => [ { "id" => "haiku55-http-79723a5-20261112", "after_attempt" => 999, "cost_usd" => "0.100000", "calls" => 18 } ],
+      "cost_cap_usd" => "4.0",
+      "authorization" => { "id" => "f2f3-joint-after-134", "after_attempt" => 134, "cost_usd" => "0.750000", "call_cap" => 1015 }
+    ))
+    book = spend(call_cap: 1015, cost_cap: "5.024677")
+
+    assert_raises(Rag::AssignmentSpend::Stop) do
+      book.admit_execution!(id: "haiku55-http-79723a5-20261112", cost_usd: "0.100000", calls: 19)
+    end
+  end
+
   private
 
   def spend(call_cap: 2, cost_cap: "1")

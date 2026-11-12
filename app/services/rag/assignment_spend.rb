@@ -25,8 +25,10 @@ module Rag
     # is the fourth: one Elemont T1–T4 run, eight calls. The 1000 step is
     # the live HTTP validation of Haiku 5.5 (Lahiri, 2026-11-10): US$2.29 of
     # new spend, priced at the documented Haiku 5.5 rate, so the dollar
-    # successor at 326 is the real limit. Anything else stays.
-    CALL_CAP_BUMPS = { 150 => 152, 152 => 164, 164 => 166, 166 => 174, 174 => 175, 175 => 180, 180 => 185, 185 => 194, 194 => 196, 196 => 211, 211 => 213, 213 => 229, 229 => 245, 245 => 295, 295 => 311, 311 => 320, 320 => 328, 328 => 1000 }.freeze
+    # successor at 326 is the real limit. The 1015 step is the live
+    # validation of 79723a5 (Lahiri, 2026-11-12): sixteen new calls above
+    # attempt 999, no retry. The monetary cap does not move. Anything else stays.
+    CALL_CAP_BUMPS = { 150 => 152, 152 => 164, 164 => 166, 166 => 174, 174 => 175, 175 => 180, 180 => 185, 185 => 194, 194 => 196, 196 => 211, 211 => 213, 213 => 229, 229 => 245, 245 => 295, 295 => 311, 311 => 320, 320 => 328, 328 => 1000, 1000 => 1015 }.freeze
     # A later dollar grant. It does not rewrite authorization.cost_usd.
     # It applies only to entry ids above its attempt, and only when the
     # admitted execution matches this cost and this call count. 229 is the
@@ -38,7 +40,10 @@ module Rag
     # A different cost or call count is not this grant.
     DOLLAR_SUCCESSORS = {
       229 => { "cost_usd" => "1.170000", "calls" => 18 }.freeze,
-      326 => { "cost_usd" => "2.296091", "calls" => 676 }.freeze
+      326 => { "cost_usd" => "2.296091", "calls" => 676 }.freeze,
+      # 79723a5 live validation: US$0.10 inside the unchanged cap, sixteen new
+      # calls plus entries 1000 and 1001, already stored above attempt 999.
+      999 => { "cost_usd" => "0.100000", "calls" => 18 }.freeze
     }.freeze
 
     def initialize(path:, call_cap:, cost_cap_usd:)

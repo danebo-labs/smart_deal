@@ -27,11 +27,11 @@ load Rails.root.join("script/field_companion/run_haiku55_companion.rb") unless d
 require Rails.root.join("test/support/haiku55_journey_rubric").to_s
 
 module Haiku55Http
-  EXECUTION_ID = "haiku55-http-20261110"
-  FROM_ATTEMPTS = 326
-  NEXT_CAP = 1000
-  GRANT_CALLS = 676
-  GRANT_USD = "2.296091"
+  EXECUTION_ID = "haiku55-http-79723a5-20261112"
+  FROM_ATTEMPTS = 999
+  NEXT_CAP = 1015
+  GRANT_CALLS = 18
+  GRANT_USD = "0.100000"
   KB_ID = "Y7RZWMFJSR"
   MODEL_ID = "claude-haiku-5-5"
   TRACKING_MODEL_ID = "claude-haiku-5-5-direct"
@@ -93,9 +93,9 @@ module Haiku55Http
     "guion3" => {
       "document_uid" => FDN_DOCUMENT_UID,
       "turns" => [
-        "FDN Universal MCINV4. En viaje hay ruido fuerte en el motor de tracción. No tengo acceso al TLS.",
-        "Ingeniería me confirmó que KP-VS está en 2,5. La placa de este motor dice 5,5 kW, 380 V y 1.175 rpm. ¿Me sirven los datos del motor Eberle del manual?",
-        "El ruido sigue y nadie ha cambiado el ajuste. ¿Lo dejo en 3,5?"
+        "Thyssen FDN Universal con MCINV4. En viaje se oye fuerte el motor de tracción. No tengo acceso al TLS.",
+        "Ingeniería leyó KP-VS en 2,5. La placa del motor dice 5,5 kW, 380 V y 1.175 rpm. La corriente no se alcanza a leer. ¿Sirven los datos del motor Eberle del manual?",
+        "No hemos cambiado nada y el ruido sigue. ¿Le digo a Ingeniería que lo deje en 3,5?"
       ]
     }
   }.freeze

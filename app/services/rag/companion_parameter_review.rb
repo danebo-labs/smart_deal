@@ -11,7 +11,7 @@ module Rag
     READING = /\b(?:le[ií]|ley[oó]|leyeron|lectura|midi[oó]|med[ií]|marca|marcaba|muestra|mostraba|est[aá] en|qued[oó] en|indica|report[oó]|registra|reads?|measured)\b/i
     UNAVAILABLE = /\b(?:sin acceso (?:a|al)|no (?:tengo|tenemos|hay) acceso (?:a|al)|no (?:puedo|podemos) (?:leer|consultar|medir|comprobar)|can't (?:access|read|measure))\b/i
     COMMISSIONING = /commissioning|comisionamiento|comissionamento|puesta en marcha|instala[cç][iãa]o/i
-    PROPOSAL = /\b(?:deje|dejar|ponga|poner|fije|fijar|ajuste|ajustar|suba|subir|baje|bajar|set|change)\b/i
+    PROPOSAL = /\b(?:deje|dejar(?:lo|la)?|ponga|poner|fije|fijar|ajuste|ajustar|suba|subir|baje|bajar|set|change)\b/i
     SECTION = /\A\s*(\d+\.\d+(?:\.\d+)?)\s+/
     SUPPLEMENT = "<respuesta_complementaria>"
 

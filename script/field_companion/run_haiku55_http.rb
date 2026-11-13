@@ -822,7 +822,8 @@ module Haiku55Http
   # reads the persisted id instead of parsing the live window.
   def stored_episode_id(session)
     episode = session&.active_episode
-    Rag::ActiveEpisode.coerce(episode).try(:[], "episode_id") if episode
+    episode = JSON.parse(episode) if episode.is_a?(String)
+    episode["episode_id"] if episode.is_a?(Hash)
   end
 
   def new_user(account, name)

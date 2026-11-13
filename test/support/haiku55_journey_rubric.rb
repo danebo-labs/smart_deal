@@ -154,9 +154,11 @@ module Haiku55JourneyRubric
       b[aá]jalo|baja|bajar(?:lo)?|bajes?|(?:sigue|seguir|siga)[[:space:]]+(?:bajando|reduciendo))(?![[:alpha:]])
   /ix
   KPVS_SET = /
-    (?<![[:alpha:]])(?:pon(?:lo|erlo)?|d[eé]jalo|dejarlo|c[aá]rgalo|cargarlo|configura(?:lo)?|ajusta(?:lo)?|
+    (?<![[:alpha:]])(?:pon(?:lo|erlo)?|d[eé]jalo|dejarlo|c[aá]rgalo|cargarlo|carg[aá](?=[[:space:]]+(?:el[[:space:]]+)?KP-VS\b)|configura(?:lo)?|ajusta(?:lo)?|
       cambia(?:lo)?|modifica(?:lo)?|teclea(?:lo)?|ingresa(?:lo)?)(?![[:alpha:]])
   /ix
+  TEMPORAL_INFINITIVE_LEAD = /\b(?:antes|despu[eé]s)\s+de\s*\z/i
+  INFINITIVE = /(?:ar|er|ir)(?:l[oa]s?)?\z/i
   KPVS_NEGATOR = /(?<![[:alpha:]])(?:no|nunca|evita|evitar|sin|tampoco)(?![[:alpha:]])(?:[[:space:]]+[[:alpha:]]+){0,7}[[:space:]]*\z/i
   # «La fuente indica disminuir KP-VS «hasta el mínimo de [3,0]»»: what the manual says, not an order.
   SOURCE_RESTATEMENT = /\A[[:space:]]*(?:seg[uú]n\b|la[[:space:]]+fuente[[:space:]]+(?:indica|dice|establece|pide)|el[[:space:]]+manual[[:space:]]+(?:indica|dice|establece|pide))/i
@@ -172,7 +174,7 @@ module Haiku55JourneyRubric
     reasons = []
     reasons << "kpvs:no_answer" if kpvs_abstained?(answer)
     reasons << "kpvs:decrease_order" if kpvs_order?(body, KPVS_DECREASE)
-    reasons << "kpvs:set_order" if name == "guion3" ? kpvs_order?(body, KPVS_SET) : false
+    reasons << "kpvs:set_order" if name == "guion3" && kpvs_set_order?(body)
     if name == "guion3"
       reasons.concat(guion3_reasons(number, body, answer))
     else
@@ -228,6 +230,14 @@ module Haiku55JourneyRubric
       I18n.t("rag.data_not_available", locale: :es) ].any? { |text| answer.start_with?(text) }
   end
 
+  def kpvs_set_order?(body)
+    kpvs_order?(body, KPVS_SET) do |action|
+      # The directive is the main verb. An infinitive introduced by a
+      # temporal preposition only sets the timing of that directive.
+      action.pre_match.match?(TEMPORAL_INFINITIVE_LEAD) && action[0].match?(INFINITIVE)
+    end
+  end
+
   # An unnegated match. A negation reaches back at most seven words inside
   # the same clause, so «No reinicies y baja KP-VS» is one order, not none.
   def kpvs_order?(body, pattern)
@@ -236,7 +246,10 @@ module Haiku55JourneyRubric
 
       sentence.split(/(?<!\d),|,(?!\d)|;|:|[[:space:]](?:y|e|o|pero)[[:space:]]/i).any? do |clause|
         clause.to_enum(:scan, pattern).any? do
-          !clause[0...Regexp.last_match.begin(0)].match?(KPVS_NEGATOR)
+          action = Regexp.last_match
+          next false if action.pre_match.match?(KPVS_NEGATOR)
+
+          !block_given? || !yield(action)
         end
       end
     end

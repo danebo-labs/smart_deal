@@ -582,6 +582,10 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     message, = audit_photo_post("photo-failure", turn, document)
     assert_equal I18n.t("rag.photo_question_unavailable", locale: :es), message.fetch("answer")
     assert_match(/bornera/, message.fetch("visual_summary"))
+    trace_path = Rails.root.join("tmp/field_companion/haiku55_offline/revision-audit-photo-failure/turn-1/trace.json")
+    failure = JSON.parse(trace_path.read).fetch("events").find { |event| event["kind"] == "photo_answer_delivery" }
+    assert_equal "Anthropic::Errors::APITimeoutError", failure.fetch("error_class")
+    assert_equal "generation_error", failure.fetch("outcome_reason")
     assert_equal "failed", reloaded_session.conversation_history.last["outcome"]
     assert_equal "", reloaded_session.conversation_history.last["prompt_reply"]
     assert_equal [ document.id ], reloaded_session.focus_document_ids
@@ -814,6 +818,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     @account = accounts(:pilot)
     host! "piloto.danebo.ai"
     @user.update!(account: @account)
+    sign_in @user
     data = JSON.parse(Rails.root.join(REVISION_FIXTURES, "thyssen_kpvs.json").read)
     spec = data.fetch("document")
     doc = KbDocument.create!(account: @account, s3_key: spec.fetch("key"),
@@ -878,8 +883,9 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     store.define_singleton_method(:upload_binary) { |key, _data, _media| key }
     store.define_singleton_method(:list_keys) { |**| [] }
     S3DocumentsService.define_singleton_method(:new) { |**| store }
-    previous = ENV["PHOTO_QUESTION_RAG_ENABLED"]
+    previous = ENV.slice("PHOTO_QUESTION_RAG_ENABLED", "RAG_TRANSIENT_ATTEMPT_LIMIT")
     ENV["PHOTO_QUESTION_RAG_ENABLED"] = "true"
+    ENV["RAG_TRANSIENT_ATTEMPT_LIMIT"] = "1"
     message = nil
 
     with_doubles(cassette) do
@@ -914,7 +920,9 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     FieldPhotoAnalysisService.define_method(:call, original_vision)
     S3DocumentsService.define_singleton_method(:new) { |*a, **kw| original_s3.call(*a, **kw) }
     Rails.cache = cache
-    previous ? ENV["PHOTO_QUESTION_RAG_ENABLED"] = previous : ENV.delete("PHOTO_QUESTION_RAG_ENABLED")
+    %w[PHOTO_QUESTION_RAG_ENABLED RAG_TRANSIENT_ATTEMPT_LIMIT].each do |key|
+      previous[key] ? ENV[key] = previous[key] : ENV.delete(key)
+    end
   end
 
   def play_thyssen_kpvs(scenario)
@@ -923,6 +931,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     @account = accounts(:pilot)
     host! "piloto.danebo.ai"
     @user.update!(account: @account)
+    sign_in @user
     spec = data.fetch("document")
     document = KbDocument.create!(account: @account, s3_key: spec.fetch("key"),
       document_uid: spec.fetch("uid"), display_name: spec.fetch("name"), aliases: [])
@@ -1380,8 +1389,9 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       if payload[:tool_choice] || payload["tool_choice"]
         reply(turn.tool_input, "tool_use", tool: true)
       else
-        @index += 1
         raise Anthropic::Errors::APITimeoutError.new(url: URI("https://api.anthropic.com/v1/messages")) if turn.raw == :timeout
+
+        @index += 1
 
         answer = turn.raw
         if answer.is_a?(String) && answer.match?(/\[p\d+\]/)

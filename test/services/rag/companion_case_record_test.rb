@@ -447,7 +447,7 @@ class Rag::CompanionCaseRecordTest < ActiveSupport::TestCase
     assert_equal "truncated", composed.rejected
   end
 
-  test "the system change is only the case numbering paragraph" do
+  test "the product keeps the case numbering paragraph and the historical prompt checksum" do
     live = Rails.root.join("app/prompts/bedrock/companion_direct.txt").read
     text = File.read(Rag::CompanionDirectCaptureReplay::CAPTURED_PROMPT_PATH)
     product = Rails.root.join("app/services/rag/companion_case_record.rb").read

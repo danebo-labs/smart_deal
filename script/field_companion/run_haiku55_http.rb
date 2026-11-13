@@ -30,7 +30,12 @@ module Haiku55Http
   PHASE = ENV.fetch("HTTP55_PHASE", "acceptance")
   GRANTS = { "acceptance" => [24, 1054], "regression" => [104, 1158] }.freeze
   GRANT_CALLS, NEXT_CAP = GRANTS.fetch(PHASE)
-  EXECUTION_ID = "haiku55-http-guion3-20261112-#{PHASE}"
+  CEA_COMPLETION = PHASE == "regression" && ENV["HTTP55_CEA_COMPLETION"] == "1"
+  EXECUTION_ID = if CEA_COMPLETION
+    Rag::AssignmentSpend::CEA_COMPLETION_ID
+  else
+    "haiku55-http-guion3-20261112-#{PHASE}"
+  end
   ACCEPTANCE_PLAN = %w[kpvs guion3].freeze
   REGRESSION_PLAN = %w[guion2 guion1 elemont cea cea_label_known cea_label_unseen].freeze
   FROM_ATTEMPTS = 1030
@@ -196,6 +201,12 @@ module Haiku55Http
       "dirty_tree"
     elsif ENV["ANTHROPIC_API_KEY"].blank?
       "anthropic_api_key_missing"
+    elsif CEA_COMPLETION && (plan != ["cea"] || ENV["HTTP55_GUI"] == "1")
+      "outside_cea_completion_plan"
+    elsif CEA_COMPLETION && ledger["seq"] != Rag::AssignmentSpend::CEA_COMPLETION_SEQUENCE
+      "cea_completion_already_started"
+    elsif CEA_COMPLETION && ledger.fetch("executions").any? { |row| row["id"] == EXECUTION_ID }
+      "cea_completion_already_admitted"
     elsif !plan.all? { |name| (PHASE == "acceptance" ? ACCEPTANCE_PLAN : REGRESSION_PLAN).include?(name) }
       "outside_authorized_plan"
     elsif PHASE == "regression" && !acceptance_passed?
@@ -221,6 +232,8 @@ module Haiku55Http
       "plan_calls" => calls,
       "room_usd" => money(room["usd"]),
       "room_calls" => room["calls"],
+      "regression_window_usd" => CEA_COMPLETION ? "0.143121" : (GRANT_USD if PHASE == "regression"),
+      "cea_completion_admitted" => CEA_COMPLETION && ledger.fetch("executions").any? { |row| row["id"] == EXECUTION_ID },
       "assignment_cap_usd" => ledger["cost_cap_usd"],
       "attempts" => ledger["attempts"],
       "committed" => ledger["committed"],
@@ -247,8 +260,10 @@ module Haiku55Http
     exposure = rows.sum(BigDecimal("0")) { |entry| Haiku55Companion.exposure(entry) }
     assignment_room = BigDecimal(ledger["cost_cap_usd"]) - BigDecimal(ledger["committed"]) -
       BigDecimal(ledger["unknown"]) - ledger.fetch("open").values.sum(BigDecimal("0")) { |amount| BigDecimal(amount) }
-    { "usd" => [ BigDecimal(GRANT_USD) - exposure, assignment_room ].min,
-      "calls" => [ GRANT_CALLS - rows.size, NEXT_CAP - ledger["attempts"].to_i ].min,
+    cap_usd = CEA_COMPLETION ? Rag::AssignmentSpend::CEA_COMPLETION_USD : GRANT_USD
+    cap_calls = CEA_COMPLETION ? Rag::AssignmentSpend::CEA_COMPLETION_CALLS : GRANT_CALLS
+    { "usd" => [ BigDecimal(cap_usd) - exposure, assignment_room ].min,
+      "calls" => [ cap_calls - rows.size, NEXT_CAP - ledger["attempts"].to_i ].min,
       "exposure" => exposure, "entries" => rows.size }
   end
 
@@ -256,7 +271,11 @@ module Haiku55Http
     directory = ROOT.join(ENV["HTTP55_ACCEPTANCE"].to_s)
     summary = Haiku55Companion.read_json(directory.join("summary.json"))
     manifest = Haiku55Companion.read_json(directory.join("manifest.json"))
-    return false unless summary && manifest && summary["head"] == head
+    return false unless summary && manifest
+    accepted_head = summary["head"]
+    return false unless accepted_head == head || (CEA_COMPLETION &&
+      accepted_head == "3217057e7bebd75acae93ef2ff16d6c580e5e9f2" &&
+      system("git", "-C", Rails.root.to_s, "merge-base", "--is-ancestor", accepted_head, head))
     return false unless manifest.values_at("system_sha256", "interpreter_prompt_sha256") ==
       self.manifest.values_at("system_sha256", "interpreter_prompt_sha256")
 
@@ -264,6 +283,8 @@ module Haiku55Http
   end
 
   def admit!(io)
+    return assignment_spend.admit_cea_completion!.present? if CEA_COMPLETION
+
     ledger = read_ledger
     existing = ledger.fetch("executions").find { |row| row["id"] == EXECUTION_ID }
     expected_cap = PHASE == "acceptance" ? 1034 : 1054
@@ -354,7 +375,7 @@ module Haiku55Http
     episode_ids = rows.map { |row| row["episode_id"] }
     episodes = episode_ids.compact.uniq
     single_episode = episode_ids.none?(&:nil?) && episodes.one?
-    episode_ok = !ACCEPTANCE_PLAN.include?(name) || single_episode
+    episode_ok = !(ACCEPTANCE_PLAN.include?(name) || CEA_COMPLETION) || single_episode
     expected = script(name)["turns"].size + script(name).fetch("accept", {}).size
     status = rows.size == expected && rows.all? { |row| row["block_reason"].nil? } ? "executed" : "stopped"
     payload = {
@@ -414,6 +435,9 @@ module Haiku55Http
       .map { |event| event.except("run_id", "account_id", "user_id") }
     File.write(turn_dir.join("trace.json"), JSON.pretty_generate(trace))
     rubric = Haiku55JourneyRubric.reasons(name, number, answer, questions)
+    if CEA_COMPLETION
+      rubric += Haiku55JourneyRubric.cea_completion_reasons(number, answer, body.fetch("citations", []))
+    end
     reason = block_reason(name, response, body, events, focus, replay: payload.key?(:replay_correlation_id))
     scope = scope_view(events, body, focus)
     File.write(turn_dir.join("scope.json"), JSON.pretty_generate(scope))

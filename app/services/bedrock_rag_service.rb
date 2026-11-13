@@ -1269,7 +1269,7 @@ class BedrockRagService
       )
       raw = companion_direct_answer(prepared, attribution.merge(correlation_id: correlation_id, user_query: raw_question))
       result = finish_companion_turn_generation(
-        question: question, raw_answer: raw, chunks: prepared.chunks,
+        question: raw_question.presence || question, raw_answer: raw, chunks: prepared.chunks,
         response_locale: response_locale, retrieval: retrieval, stop_reason: @companion_direct_stop_reason,
         technician_texts: companion_technician_texts(conv_session, episode, raw_question), manufacturer: nil,
         correlation_id: correlation_id, reference_pending: pending, reference_mode: true,
@@ -2258,6 +2258,13 @@ class BedrockRagService
         "kind_of_review" => parameter_review.kind.to_s, "parameter" => parameter_review.limit.parameter,
         "reading" => parameter_review.reading, "limit" => parameter_review.limit.display,
         "condition" => parameter_review.limit.condition, "source" => parameter_review.limit.source)
+    end
+    if @companion_direct_turn && reference_mode && !parameter_review && stop_reason == "end_turn"
+      reference = Rag::CompanionSignalReference.resolve(question: question, sources: sources, technician_texts: technician_texts)
+      if reference
+        Rag::ValidationCapture.record("companion_signal_reference", "text" => reference)
+        extracted = reference
+      end
     end
     if @companion_direct_turn
       unless reference_mode

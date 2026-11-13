@@ -104,6 +104,26 @@ module Haiku55JourneyRubric
     reasons
   end
 
+  def cea_completion_reasons(number, answer, citations)
+    pages = Array(citations).map { |row| row["page"].to_i }
+    case number
+    when 2
+      definitions = [ /seguridad manual/i, /seguridad de puertas cerradas/i, /seguridad autom[aá]tica/i ]
+      pages.include?(22) && definitions.all? { |label| answer.match?(label) } ? [] : ["cea:t2_no_terminal_definitions"]
+    when 3
+      pages.include?(22) ? [] : ["cea:t3_missing_reference"]
+    when 5
+      reasons = []
+      reasons << "cea:t5_no_documented_assignment" unless pages.include?(25) &&
+        answer.match?(/precierre.*SM/i) && answer.match?(/traba.*SA/i)
+      reasons << "cea:t5_contact_not_pending" unless answer.match?(/confirmar el contacto de traba/i) &&
+        answer.match?(/¿[^?]*contacto de traba[^?]*pat[ií]n retr[aá]ctil[^?]*\?/i)
+      reasons
+    else
+      []
+    end
+  end
+
   # CEA-T3 asks which voltage is a 1 and which a 0. Manual p. 22: 24 Vcc is
   # "1" and 0 Vcc is "0".
   def cea_t3_levels?(answer)

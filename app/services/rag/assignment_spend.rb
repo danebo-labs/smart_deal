@@ -52,6 +52,13 @@ module Rag
       1014 => { "cost_usd" => "0.100000", "calls" => 22 }.freeze
     }.freeze
 
+    CEA_COMPLETION_ID = "haiku55-http-cea-completion-20261112"
+    CEA_COMPLETION_SEQUENCE = 1123
+    CEA_COMPLETION_CALLS = 15
+    # Carries the unused US$0.011939 of regression plus the US$0.043121
+    # authorized for one complete CEA execution.
+    CEA_COMPLETION_USD = "0.055060"
+
     def initialize(path:, call_cap:, cost_cap_usd:)
       @path = Pathname(path)
       @call_cap = Integer(call_cap)
@@ -112,6 +119,30 @@ module Rag
           "cost_usd" => format_money(cost_usd),
           "calls" => calls.to_i,
           "at" => Time.now.utc.iso8601
+        }
+        grants << row
+        write!(file, state)
+        row
+      end
+    end
+
+    def admit_cea_completion!
+      with_lock do |state, file|
+        grants = state.fetch("executions")
+        raise Stop, "cea_completion_already_started" unless state["seq"] == CEA_COMPLETION_SEQUENCE
+        raise Stop, "cea_completion_already_admitted" if grants.any? { |row| row["id"] == CEA_COMPLETION_ID }
+
+        previous = grants.last
+        unless previous&.fetch("id") == "haiku55-http-guion3-20261112-regression" &&
+            previous["calls"] == 104 && decimal(previous["cost_usd"]) == BigDecimal("0.100000") &&
+            scoped_attempts(state, previous["after_attempt"]) + CEA_COMPLETION_CALLS <= previous["calls"] &&
+            scoped_exposure(state, previous["after_attempt"]) + BigDecimal(CEA_COMPLETION_USD) <= BigDecimal("0.143121")
+          raise Stop, "cea_completion_grant_mismatch"
+        end
+
+        row = {
+          "id" => CEA_COMPLETION_ID, "after_attempt" => CEA_COMPLETION_SEQUENCE,
+          "cost_usd" => CEA_COMPLETION_USD, "calls" => CEA_COMPLETION_CALLS, "at" => Time.now.utc.iso8601
         }
         grants << row
         write!(file, state)
@@ -316,6 +347,11 @@ module Rag
     def dollar_successors(state)
       Array(state["executions"]).select { |row|
         next false unless row.is_a?(Hash)
+
+        if row["id"] == CEA_COMPLETION_ID
+          next row["after_attempt"] == CEA_COMPLETION_SEQUENCE &&
+            row["calls"] == CEA_COMPLETION_CALLS && decimal(row["cost_usd"]) == BigDecimal(CEA_COMPLETION_USD)
+        end
 
         spec = DOLLAR_SUCCESSORS[row["after_attempt"].to_i]
         if row["id"].to_s.start_with?("haiku55-http-guion3-20261112-")

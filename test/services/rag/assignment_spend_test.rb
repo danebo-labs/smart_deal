@@ -665,6 +665,31 @@ class Rag::AssignmentSpendTest < ActiveSupport::TestCase
     assert_equal 1034, book.snapshot["attempts"]
   end
 
+  test "CEA completion carries the remaining regression money and admits one bounded run" do
+    File.write(@path, JSON.generate(
+      "attempts" => 1121, "seq" => 1123, "cost_cap_usd" => "4.0", "committed" => "3.161351",
+      "authorization" => { "call_cap" => 1158, "after_attempt" => 134, "cost_usd" => "0.75" },
+      "executions" => [
+        { "id" => "haiku55-http-guion3-20261112-regression", "after_attempt" => 1041,
+          "cost_usd" => "0.100000", "calls" => 104 }
+      ],
+      "entries" => (1042..1123).map { |id|
+        { "id" => id, "status" => "settled", "actual_usd" => id == 1042 ? "0.088061" : "0" }
+      }
+    ))
+    book = spend(call_cap: 1158, cost_cap: "5.024677")
+    grant = book.admit_cea_completion!
+    assert_equal 15, grant["calls"]
+    assert_equal "0.055060", grant["cost_usd"]
+    assert_raises(Rag::AssignmentSpend::Stop) { book.admit_cea_completion! }
+
+    assert_raises(Rag::AssignmentSpend::Stop) { book.reserve!(ceiling_usd: "0.055061") }
+    14.times { book.reserve!(ceiling_usd: "0.001") }
+    book.reserve!(ceiling_usd: "0.041060")
+    assert_raises(Rag::AssignmentSpend::Stop) { book.reserve!(ceiling_usd: "0.000001") }
+    assert_equal "4.0", JSON.parse(File.read(@path)).fetch("cost_cap_usd")
+  end
+
   private
 
   def spend(call_cap: 2, cost_cap: "1")

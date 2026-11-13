@@ -416,6 +416,40 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     assert_equal [ true, false, false, false, false, false, false ], asked
   end
 
+  test "CEA captured T2 T3 and T5 publish documentary evidence through HTTP" do
+    document = revision_pin(:cea)
+    fixture = JSON.parse(Rails.root.join(REVISION_FIXTURES, "cea_reference_failures.json").read)
+    revision_ask("cea-captured-repair", 1, cea_turn(CEA_QUESTION, document), document)
+    episode = reloaded_session.live_episode_id
+
+    [2, 3, 5].each do |number|
+      captured = fixture.fetch(number.to_s)
+      question = captured.fetch("question")
+      rows = captured.fetch("rows").map do |row|
+        row.merge("uri" => "s3://#{KbDocument::KB_BUCKET}/bulk_chunks/1/cea/chunk_p#{row.fetch('page')}_1.txt",
+          "original_source_uri" => document.canonical_uri, "document" => "CEA15+", "score" => 0.9)
+      end
+      turn = TurnCapture.new("question" => question, "retrieve_query" => question,
+        "tool_input" => cea_turn(question, document, move: "follow_up").tool_input,
+        "rows" => rows, "generator_text" => captured.fetch("raw"))
+      body, cassette = revision_ask("cea-captured-repair", number, turn, document)
+      answer = body.fetch("answer")
+      assert_revision_scope(cassette, document)
+      assert_equal episode, reloaded_session.live_episode_id
+      assert_empty Haiku55JourneyRubric.reasons("cea", number, answer, CEA_SCRIPT)
+      assert_empty Haiku55JourneyRubric.cea_completion_reasons(number, answer, body.fetch("citations"))
+      assert_includes answer, "terminal SPC" if number == 2
+      assert_includes answer, "0 Vcc" if number == 3
+      next unless number == 5
+
+      assert_includes body.fetch("citations").pluck("page"), 25
+      assert_includes answer, "Los contactos de traba de las puertas de piso se incluyen en SA"
+      assert_match(/condicionada a confirmar el contacto de traba/i, answer)
+      assert_includes answer, "¿El contacto de traba de la puerta de piso cierra por acción del patín retráctil?"
+      refute_includes answer, "SA no iría a SPC"
+    end
+  end
+
   %w[elemont_first elemont_second].each do |name|
     test "revision #{name} resolves the same level and shows the two neighboring rows" do
       document = revision_pin(:elemont)

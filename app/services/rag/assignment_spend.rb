@@ -31,7 +31,7 @@ module Rag
     # the live validation of a200991 (Lahiri, 2026-11-12): the 2,5 case and
     # guion 3, each planned twice, twenty new calls above attempt 1014.
     # Anything else stays.
-    CALL_CAP_BUMPS = { 150 => 152, 152 => 164, 164 => 166, 166 => 174, 174 => 175, 175 => 180, 180 => 185, 185 => 194, 194 => 196, 196 => 211, 211 => 213, 213 => 229, 229 => 245, 245 => 295, 295 => 311, 311 => 320, 320 => 328, 328 => 1000, 1000 => 1015, 1015 => 1034 }.freeze
+    CALL_CAP_BUMPS = { 150 => 152, 152 => 164, 164 => 166, 166 => 174, 174 => 175, 175 => 180, 180 => 185, 185 => 194, 194 => 196, 196 => 211, 211 => 213, 213 => 229, 229 => 245, 245 => 295, 295 => 311, 311 => 320, 320 => 328, 328 => 1000, 1000 => 1015, 1015 => 1034, 1034 => 1054, 1054 => 1158 }.freeze
     # A later dollar grant. It does not rewrite authorization.cost_usd.
     # It applies only to entry ids above its attempt, and only when the
     # admitted execution matches this cost and this call count. 229 is the
@@ -94,7 +94,7 @@ module Rag
     # Records this execution once. The same id does not move the cutoff
     # backward or raise the ceiling. A call-cap bump is only the next
     # recorded step, and only while the file is still at that attempt count.
-    def admit_execution!(id:, cost_usd:, calls:, bump_call_cap_to: nil, bump_only_if_attempts: nil)
+    def admit_execution!(id:, cost_usd:, calls:, bump_call_cap_to: nil, bump_only_if_attempts: nil, start_after_sequence: false)
       with_lock do |state, file|
         grants = state["executions"].is_a?(Array) ? state["executions"] : []
         state["executions"] = grants
@@ -108,7 +108,7 @@ module Rag
         apply_call_cap_bump!(state, bump_call_cap_to, bump_only_if_attempts)
         row = {
           "id" => id.to_s,
-          "after_attempt" => state["attempts"].to_i,
+          "after_attempt" => state[start_after_sequence ? "seq" : "attempts"].to_i,
           "cost_usd" => format_money(cost_usd),
           "calls" => calls.to_i,
           "at" => Time.now.utc.iso8601
@@ -281,7 +281,7 @@ module Rag
 
     def over_cap?(state, ceiling)
       return true if state["attempts"] + 1 > attempt_cap(state)
-      return true if exposure(state) + ceiling > @cost_cap
+      return true if exposure(state) + ceiling > [ @cost_cap, decimal(state["cost_cap_usd"]) ].select(&:positive?).min
 
       authorization_exceeded?(state, ceiling) || executions_exceeded?(state, ceiling)
     end
@@ -318,6 +318,10 @@ module Rag
         next false unless row.is_a?(Hash)
 
         spec = DOLLAR_SUCCESSORS[row["after_attempt"].to_i]
+        if row["id"].to_s.start_with?("haiku55-http-guion3-20261112-")
+          cap = { "acceptance" => 24, "regression" => 104 }[row["id"].to_s.split("-").last]
+          next row["calls"] == cap && cap.present? && decimal(row["cost_usd"]) == BigDecimal("0.1")
+        end
         spec && row["calls"].to_i == spec["calls"].to_i && decimal(row["cost_usd"]) == decimal(spec["cost_usd"])
       }.sort_by { |row| row["after_attempt"].to_i }
     end

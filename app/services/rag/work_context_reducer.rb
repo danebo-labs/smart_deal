@@ -1012,6 +1012,10 @@ module Rag
     def clear_pending_unless_meta
       return if @decision&.decision == "meta"
       return if @perception.move == "meta"
+      if (parameter = CompanionParameterReview.pending_parameter(@episode))
+        @episode.clear_pending! if @perception.observations.any? { |text| CompanionParameterReview.readings(text, parameter).any? }
+        return
+      end
       return if open_documented_pending?
 
       @episode.clear_pending!

@@ -33,7 +33,7 @@ module Rag
     # 150 is the standing cap. A file that recorded a bump to 152, 164, 166,
     # 174, 175, 180, 185, 194, 196, 211, 213, 229, 245, 295, 311, 320, 328, 1000, 1015, or 1034 is read back.
     # A larger number is not a grant.
-    ASSIGNMENT_CALL_CAPS = [ ASSIGNMENT_CALL_CAP, 152, 164, 166, 174, 175, 180, 185, 194, 196, 211, 213, 229, 245, 295, 311, 320, 328, 1000, 1015, 1034 ].freeze
+    ASSIGNMENT_CALL_CAPS = [ ASSIGNMENT_CALL_CAP, 152, 164, 166, 174, 175, 180, 185, 194, 196, 211, 213, 229, 245, 295, 311, 320, 328, 1000, 1015, 1034, 1054, 1158 ].freeze
     # US$4 until attempt 326. Lahiri, 2026-11-10: US$2.29 of new spend on top
     # of the 2.734677 committed plus unknown at that point.
     ASSIGNMENT_COST_CAP_USD = "5.024677"

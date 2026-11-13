@@ -74,6 +74,9 @@ module Rag
       about = raw["about"].to_s.squish.first(ActiveEpisode::MAX_OBSERVATION_CHARS)
       question["about"] = about if about.present?
       question["aspect"] = "scope" if raw["aspect"].to_s == "scope" && about.present?
+      if raw["aspect"] == "parameter_reading" && targets.one? && CompanionParameterReview.parameter?(about)
+        question["aspect"] = "parameter_reading"
+      end
       shown = shown_question(raw["shown"])
       question["shown"] = shown if shown
       question
@@ -157,7 +160,7 @@ module Rag
     def documented_reply(question, raw)
       return nil unless question && question["type"] == "documented_context"
       # "¿Qué revisaste?" is not a yes/no choice. "Sí" does not confirm the section.
-      return nil if question["aspect"] == "scope"
+      return nil if %w[scope parameter_reading].include?(question["aspect"])
 
       label = FollowupQueryRewriter.normalize_label(raw)
       code = DOCUMENTED_REPLIES[label]

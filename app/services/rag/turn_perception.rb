@@ -1289,7 +1289,7 @@ module Rag
         note_rule("adjust_move", move, "new_work_without_open_job", { "to" => "report" })
         move = "report"
       end
-      if move == "meta" && technical_recap?(@turn)
+      if move == "meta" && (technical_recap?(@turn) || open_job_persistence?(identities))
         note_rule("adjust_move", "meta", "technical_recap", { "to" => "follow_up" })
         move = "follow_up"
       end
@@ -1316,6 +1316,13 @@ module Rag
         move = "follow_up"
       elsif move == "new_work" && open_job_persistence?(identities)
         note_rule("adjust_move", move, "new_work_on_open_job_persistence", { "to" => "follow_up" })
+        move = "follow_up"
+      end
+      if (reading = open_job_parameter_reading(identities))
+        observations = (observations + [ reading ]).uniq.last(ActiveEpisode::MAX_OBSERVATIONS)
+      end
+      if move == "new_work" && reading
+        note_rule("adjust_move", move, "new_work_answers_pending_parameter", { "to" => "follow_up" })
         move = "follow_up"
       end
       target = nil unless move == "unclear"
@@ -1390,6 +1397,17 @@ module Rag
 
       turn = FollowupQueryRewriter.normalize_label(@turn)
       !turn.match?(OTHER_EQUIPMENT) && turn.match?(PERSISTENCE)
+    end
+
+    def open_job_parameter_reading(identities)
+      return nil unless prior_context? && !work_relation_pending?
+      return nil if FollowupQueryRewriter.normalize_label(@turn).match?(OTHER_EQUIPMENT)
+      return nil if identities.any? { |item| item.act == "assert" && IDENTITY_HINTS.include?(item.slot) }
+
+      parameter = CompanionParameterReview.pending_parameter(@episode)
+      return nil if parameter.nil?
+
+      CompanionParameterReview.readings(@turn, parameter).last&.first
     end
 
     def component_pairs(text)

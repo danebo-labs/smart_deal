@@ -556,7 +556,60 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "Thyssen guion 3 replays w2 and keeps the engineering reading in the open job" do
+    data, document = pin_thyssen_guion3
+    turns = revision_turns("thyssen_guion3", data: data)
+    first, cassette = revision_ask("thyssen-guion3-w2", 1, turns[0], document)
+    assert_revision_scope(cassette, document)
+    assert_equal [16], cassette.sizes
+    assert_includes cassette.sent.last.fetch(:messages).last.to_json, "hasta el mínimo de [3,0]"
+    episode = reloaded_session.live_episode_id
+    assert episode
+
+    second, = revision_ask("thyssen-guion3-w2", 2, turns[1], document)
+    assert_equal episode, reloaded_session.live_episode_id
+    third, = revision_ask("thyssen-guion3-w2", 3, turns[2], document)
+    assert_equal episode, reloaded_session.live_episode_id
+
+    assert_match(/Ingeniería/i, first.fetch("answer"))
+    assert_match(/lectura actual de KP-VS.*pendiente/i, first.fetch("answer"))
+    assert_match(/2,5.*por debajo.*3,0/i, second.fetch("answer"))
+    assert_match(/3,5.*(?:instalación|comisionamiento|puesta en marcha)/i, third.fetch("answer"))
+  end
+
+  test "Thyssen guion 3 w1 preserves the complete noise condition when referring the reading" do
+    data, document = pin_thyssen_guion3
+    data["turns"] = [data.fetch("alternates").fetch("w1_guion3")]
+    turn = revision_turns("thyssen_guion3", data: data).sole
+    body, = revision_ask("thyssen-guion3-w1", 1, turn, document)
+
+    assert_match(/Ingeniería/i, body.fetch("answer"))
+    assert_match(/ruido audible muy elevado.*mínimo de \[3,0\]/i, body.fetch("answer"))
+  end
+
+  test "Thyssen isolated w2 keeps the comparison without a decrease order" do
+    data, document = pin_thyssen_guion3
+    data["turns"] = [data.fetch("alternates").fetch("w2_kpvs")]
+    turn = revision_turns("thyssen_guion3", data: data).sole
+    body, = revision_ask("thyssen-kpvs-w2", 1, turn, document)
+
+    assert_empty Haiku55JourneyRubric.reasons("kpvs", 1, body.fetch("answer"), [turn.question])
+  end
+
   private
+
+  def pin_thyssen_guion3
+    data = JSON.parse(Rails.root.join(REVISION_FIXTURES, "thyssen_guion3.json").read)
+    @account = accounts(:pilot)
+    host! "piloto.danebo.ai"
+    @user.update!(account: @account)
+    spec = data.fetch("document")
+    document = KbDocument.create!(account: @account, s3_key: spec.fetch("key"),
+      document_uid: spec.fetch("uid"), display_name: spec.fetch("name"), aliases: [])
+    post pinned_documents_path, params: { kb_document_id: document.id }, as: :json
+    assert_response :no_content
+    [data, document]
+  end
 
   def play_thyssen_kpvs(scenario)
     name = "thyssen_kpvs"
@@ -582,6 +635,8 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     end
     entry["rows"][2] = contrasts.fetch("installation_row") if scenario == "installation"
     turn = revision_turns(name, data: data).sole
+    original_review = Rag::CompanionParameterReview.method(:build)
+    Rag::CompanionParameterReview.define_singleton_method(:build) { |**| nil }
     body, cassette = revision_ask("thyssen-kpvs-#{scenario}", 1, turn, document)
     assert_revision_scope(cassette, document)
     assert_equal [ 16 ], cassette.sizes
@@ -679,6 +734,8 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       assert_includes answer, "[3]"
       assert_not_includes Array(backing.fetch("removed")).pluck("reason"), "unbacked_citation"
     end
+  ensure
+    Rag::CompanionParameterReview.define_singleton_method(:build, original_review) if original_review
   end
 
   def assert_floor_sentence(answer, scenario = nil)

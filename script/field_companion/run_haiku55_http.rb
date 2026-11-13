@@ -232,6 +232,8 @@ module Haiku55Http
       "unknown" => ledger["unknown"],
       "pins" => pins,
       "knowledge_base_id" => KB_ID,
+      "model_id" => MODEL_ID,
+      "kb_bucket" => KbDocument::KB_BUCKET,
       "system_sha256" => Digest::SHA256.hexdigest(Rag::CompanionDirectAnswer::SYSTEM_PROMPT),
       "interpreter_prompt_sha256" => Digest::SHA256.hexdigest(Rag::TurnInterpreter::PROMPT),
       "anthropic_key_present" => ENV["ANTHROPIC_API_KEY"].present?

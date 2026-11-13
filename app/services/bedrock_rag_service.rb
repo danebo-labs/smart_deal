@@ -2344,6 +2344,9 @@ class BedrockRagService
       if result[:applicability_violation] || result[:citations].empty?
         result[:route_outcome] = :abstained
       else
+        # The next observation can already be in the answer. Keep the
+        # identification boundary without adding a competing question.
+        reference_pending = nil if result[:answer].include?("?")
         result[:answer] = [
           result[:answer], I18n.t("rag.controller_reference_boundary", locale: locale),
           reference_pending&.dig("question")

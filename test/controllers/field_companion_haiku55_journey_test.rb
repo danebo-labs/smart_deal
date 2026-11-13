@@ -606,7 +606,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     diagram = captures.flat_map(&:rows).find { |row| row["content"].to_s.include?("Chapa nivel 3") && row["content"].include?("puente semicircular") }
     rows = [ audit_manual_row(document, AUDIT_ROOT.join("elemont_h4.txt").read, 5), diagram ]
     replies = [
-      "Mira el piloto H4 del tablero. El plano lo rotula «Luz piloto, falla seguridad» [p5]. ¿Está encendido H4?",
+      "¿Está encendido H4? El plano lo rotula «Luz piloto, falla seguridad» [p5].",
       "Con H4 encendida, revisa qué seguridad quedó indicada. El plano identifica H4 como «Luz piloto, falla seguridad» [p5]. El plano no establece la causa de la falta de respuesta a las llamadas.",
       "En el plano, «cruza PasCom 24V con un puente semicircular sin punto de unión y termina en el terminal rotulado Chapa nivel 2» [p#{diagram.fetch('page').to_i}].",
       "En el plano, «cruza PasCom 24V con un puente semicircular sin punto de unión y termina en el terminal rotulado Chapa nivel 3» [p#{diagram.fetch('page').to_i}]."
@@ -624,6 +624,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
         end)
       body, = revision_ask("audit-elemont", index + 1, turn, document)
       assert_includes body.fetch("answer"), [ "H4", "H4", "nivel 2", "nivel 3" ][index]
+      assert_equal 1, body.fetch("answer").count("?") if index.zero?
       session = reloaded_session
       episode ||= session.live_episode_id
       assert_equal episode, session.live_episode_id
@@ -666,6 +667,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       body, cassette = revision_ask("audit-cea", index + 1, turn, document)
       assert_revision_scope(cassette, document)
       assert_includes body.fetch("answer"), [ "contacto", "precierre", "pendiente", "S1" ][index]
+      assert_equal 1, body.fetch("answer").count("?") if index.zero?
       refute_includes body.fetch("answer"), raw.lines.first.strip if index == 1
       assert_includes audit_generator_prompt(cassette), "son manuales" if index == 1
       session = reloaded_session
@@ -688,7 +690,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     answers = [
       "Comprueba la sensibilidad de reapertura. Para la puerta que se reabre sola, el manual dice «Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)» [p12].",
       "Para ubicar el siguiente paso, dime cuál LED está encendido. ¿Es el de la fotocélula? El manual indica «Comprobar que la fotocélula no esté activada» [p12].",
-      "Con la fotocélula ya observada, queda por distinguir la entrada de reapertura. La fuente indica «#{signal}» [p#{input.fetch('page').to_i}/re-apertura]. ¿Puedes confirmar si la entrada #21 está activa?",
+      "Con la fotocélula ya observada, queda por distinguir la entrada de reapertura. La fuente indica «#{signal}» [p#{input.fetch('page').to_i}]. ¿Puedes confirmar si la entrada #21 está activa?",
       "Deja #21 y #23 pendientes para quien tenga acceso al operador. Con lo revisado, sigue abierta la causa de la reapertura. La comprobación del manual es «Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)» [p12]."
     ]
     id = nil
@@ -718,7 +720,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       "Lee el código del display para orientar la comprobación. En la sección de señales del operador, P28 es «#{P28_LINE}» [p9]. En el esquema se distingue PV-1. El equipo Thyssen FDN Universal con MCINV4 es el que reportaste. ¿Qué código aparece?",
       "Con EA, sigue por la línea de trincos: «#{EA_LINE}» [p24]. ¿Qué lecturas tienes de P28 y P27 con la orden de cierre?",
       "Prioriza la línea de trincos: «#{EA_LINE}» [p24]. P28 dio 0 Vcc y P27 dio 110 Vcc en terreno. La tabla de señales del operador documenta «RA-53 / P28 = +110 Vcc» [p9]. P26 queda pendiente para quien tenga acceso. ¿El trinco de piso queda enganchado?",
-      "La fila de EA orienta a los trincos: «#{EA_LINE}» [p24]. Esa fila no respalda cambiar un parámetro con TLS. Con EA persistente, conserva P28 en 0 Vcc y P27 en 110 Vcc como lecturas de terreno. P26 queda pendiente para quien tenga acceso."
+      "La fila de EA no respalda cambiar un parámetro con TLS. Orienta a los trincos: «#{EA_LINE}» [p24]. Con EA persistente, conserva P28 en 0 Vcc y P27 en 110 Vcc como lecturas de terreno. P26 queda pendiente para quien tenga acceso."
     ]
     if name == "photo-original"
       replies[1] = "## Señal P28\nla describe así: «#{P28_LINE}» [p9]. ¿Qué código aparece?"
@@ -763,7 +765,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     questions = AUDIT_JOURNEYS.fetch("engineering").dup
     questions[2] = AUDIT_JOURNEYS.fetch("engineering_variant").first if variant
     replies = [
-      "Pide la lectura actual de KP-VS en el menú PID para situar el ruido frente al ajuste documentado. La condición del manual es «#{NOISE_LINE}» [1]. ¿Qué valor indica KP-VS?",
+      "¿Qué valor indica KP-VS en el menú PID? La lectura permite ubicar el caso frente al límite de la rama «#{NOISE_LINE}» [1]. La causa del ruido sigue abierta.",
       "Deja pendiente la lectura actual de KP-VS en el menú PID y deriva la verificación a Ingeniería. La rama se aplica «#{NOISE_LINE}» [1].",
       "Con KP-VS en 2,5, que leyó Ingeniería, la lectura está por debajo del mínimo documentado. La condición y el límite son «#{NOISE_LINE}» [1]. La evaluación del ruido sigue pendiente.",
       "No le pidas a Ingeniería que cambie KP-VS a 3,5 por el ruido. Esa es una referencia de instalación: «#{audit_installation_quote}» [2]. Sigue pendiente la evaluación del ruido con la lectura de 2,5."
@@ -1398,16 +1400,11 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
         @index += 1
 
         answer = turn.raw
-        if answer.is_a?(String) && answer.match?(/\[p\d+/)
+        if answer.is_a?(String) && answer.match?(/\[p\d+\]/)
           prompt = payload.fetch(:messages).last.fetch(:content).pluck(:text).join
-          sources = prompt.split(/(?=^\[\d+\] [^\n]+, página )/)
-          answer = answer.gsub(/\[p(\d+)(?:\/([^\]]+))?\]/) do
-            page, keyword = Regexp.last_match.captures
-            matches = sources.select do |source|
-              source.match?(/\A\[\d+\] [^\n]+, página #{page}(?:\D|$)/) &&
-                (keyword.nil? || source.include?(keyword))
-            end
-            marker = matches.filter_map { |source| source[/\A\[(\d+)\]/, 1] }.last
+          answer = answer.gsub(/\[p(\d+)\]/) do
+            page = Regexp.last_match(1)
+            marker = prompt[/^\[(\d+)\] [^\n]+, página #{page}(?:\D|$)/, 1]
             "[#{marker || raise("pinned page #{page} missing from generator")}]"
           end
         end

@@ -151,9 +151,16 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
 
     assert_equal 1, dispensations.size
     assert_equal 1, reports.size
+    dispensed = (dispensations + omitted).join("\n")
+    recognized = (reports + omitted).join("\n")
+    # T5_LIMIT, technician_limitation, and method_limit do not read the
+    # dispensation as the technician's limit. The final reasons stay on
+    # the terminal clause.
+
     assert_empty Haiku55JourneyRubric.reasons("guion1", 5, published, questions)
-    assert_empty Haiku55JourneyRubric.reasons("guion1", 5, (reports + omitted).join("\n"), questions)
-    assert_empty Haiku55JourneyRubric.reasons("guion1", 5, (dispensations + omitted).join("\n"), questions)
+    assert_empty Haiku55JourneyRubric.reasons("guion1", 5, recognized, questions)
+    assert_equal [ "t5:limit_not_acknowledged" ],
+      Haiku55JourneyRubric.reasons("guion1", 5, dispensed, questions)
     assert_equal [ "t5:limit_not_acknowledged" ],
       Haiku55JourneyRubric.reasons("guion1", 5, omitted.join("\n"), questions)
     assert_equal [ "t5:limit_not_acknowledged" ],

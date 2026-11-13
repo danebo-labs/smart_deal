@@ -14,8 +14,11 @@ module Haiku55JourneyRubric
     |no[[:space:]]+te[[:space:]]+lo[[:space:]]+(?:pido|pedir[eé]|voy[[:space:]]+a[[:space:]]+pedir)
     |no[[:space:]]+puedo[[:space:]]+darte[[:space:]]+(?:ese[[:space:]]+paso|un[[:space:]]+m[eé]todo|otra[[:space:]]+forma)
   /ix
+  # "No necesitas identificar" only says the case can move on without the
+  # reading. It does not record that the technician cannot identify the
+  # terminal. puede/sabe, in either person, has to name #21 or #23.
   T5_TERMINAL_LIMIT = /
-    \bno[[:space:]]+(?:puede(?:s)?|sabe(?:s)?|necesita(?:s)?)[[:space:]]+
+    \bno[[:space:]]+(?:puede(?:s)?|sabe(?:s)?)[[:space:]]+
     (?:identificar|comprobar|verificar)[[:space:]]+[^.!?\n]*\b(?:21|23)\b
   /ix
   T5_REASKS_CONTACT = /

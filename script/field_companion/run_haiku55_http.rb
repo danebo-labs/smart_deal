@@ -27,10 +27,10 @@ load Rails.root.join("script/field_companion/run_haiku55_companion.rb") unless d
 require Rails.root.join("test/support/haiku55_journey_rubric").to_s
 
 module Haiku55Http
-  EXECUTION_ID = "haiku55-http-79723a5-20261112"
-  FROM_ATTEMPTS = 999
-  NEXT_CAP = 1015
-  GRANT_CALLS = 18
+  EXECUTION_ID = "haiku55-http-a200991-20261112"
+  FROM_ATTEMPTS = 1014
+  NEXT_CAP = 1034
+  GRANT_CALLS = 22
   GRANT_USD = "0.100000"
   KB_ID = "Y7RZWMFJSR"
   MODEL_ID = "claude-haiku-5-5"

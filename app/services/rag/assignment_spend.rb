@@ -27,8 +27,11 @@ module Rag
     # new spend, priced at the documented Haiku 5.5 rate, so the dollar
     # successor at 326 is the real limit. The 1015 step is the live
     # validation of 79723a5 (Lahiri, 2026-11-12): sixteen new calls above
-    # attempt 999, no retry. The monetary cap does not move. Anything else stays.
-    CALL_CAP_BUMPS = { 150 => 152, 152 => 164, 164 => 166, 166 => 174, 174 => 175, 175 => 180, 180 => 185, 185 => 194, 194 => 196, 196 => 211, 211 => 213, 213 => 229, 229 => 245, 245 => 295, 295 => 311, 311 => 320, 320 => 328, 328 => 1000, 1000 => 1015 }.freeze
+    # attempt 999, no retry. The monetary cap does not move. The 1034 step is
+    # the live validation of a200991 (Lahiri, 2026-11-12): the 2,5 case and
+    # guion 3, each planned twice, twenty new calls above attempt 1014.
+    # Anything else stays.
+    CALL_CAP_BUMPS = { 150 => 152, 152 => 164, 164 => 166, 166 => 174, 174 => 175, 175 => 180, 180 => 185, 185 => 194, 194 => 196, 196 => 211, 211 => 213, 213 => 229, 229 => 245, 245 => 295, 295 => 311, 311 => 320, 320 => 328, 328 => 1000, 1000 => 1015, 1015 => 1034 }.freeze
     # A later dollar grant. It does not rewrite authorization.cost_usd.
     # It applies only to entry ids above its attempt, and only when the
     # admitted execution matches this cost and this call count. 229 is the
@@ -43,7 +46,10 @@ module Rag
       326 => { "cost_usd" => "2.296091", "calls" => 676 }.freeze,
       # 79723a5 live validation: US$0.10 inside the unchanged cap, sixteen new
       # calls plus entries 1000 and 1001, already stored above attempt 999.
-      999 => { "cost_usd" => "0.100000", "calls" => 18 }.freeze
+      999 => { "cost_usd" => "0.100000", "calls" => 18 }.freeze,
+      # a200991 validation: US$0.10 inside the unchanged cap, twenty new calls
+      # plus entries 1015 and 1016, already stored above attempt 1014.
+      1014 => { "cost_usd" => "0.100000", "calls" => 22 }.freeze
     }.freeze
 
     def initialize(path:, call_cap:, cost_cap_usd:)

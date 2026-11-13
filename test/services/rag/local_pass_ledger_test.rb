@@ -69,7 +69,10 @@ class Rag::LocalPassLedgerTest < ActiveSupport::TestCase
     File.write(path, JSON.generate("authorization" => { "call_cap" => 1015 }))
     assert_equal 1015, Rag::LocalPassLedger.send(:assignment_call_cap)
 
-    File.write(path, JSON.generate("authorization" => { "call_cap" => 1016 }))
+    File.write(path, JSON.generate("authorization" => { "call_cap" => 1034 }))
+    assert_equal 1034, Rag::LocalPassLedger.send(:assignment_call_cap)
+
+    File.write(path, JSON.generate("authorization" => { "call_cap" => 1035 }))
     assert_equal Rag::LocalPassLedger::ASSIGNMENT_CALL_CAP, Rag::LocalPassLedger.send(:assignment_call_cap)
 
     File.write(path, JSON.generate("authorization" => { "call_cap" => 245 }))

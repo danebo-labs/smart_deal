@@ -147,6 +147,9 @@
       "observation": "KP-VS está en 3,0",
       "retrieve_query": "FDN Universal MCINV4. En viaje hay ruido fuerte en el motor de tracción. En el menú PID, KP-VS está en 3,0.",
       "generator_text": "Con KP-VS en 3,0 ya está en el mínimo que indica el manual. La fuente dice: «En caso de ruido audible muy elevado: disminuya el valor del parámetro \"KP-VS\", hasta el mínimo de [3,0]» [1].\n\nLo que reportas coincide con esa condición y ese valor. No hay en la documentación cargada un paso adicional de ajuste para este caso, y no puedo determinar la causa del ruido con lo que hay aquí."
+    },
+    "comparison_first": {
+      "generator_text": "Con KP-VS en 2,5, el valor ya está por debajo del mínimo documentado. La fuente indica disminuir el parámetro \"hasta el mínimo de [3,0]\" [1].\n\nLo reportado coincide con la condición \"En caso de ruido audible muy elevado\" [1]. Pero como el ajuste ya está bajo ese mínimo, la documentación no permite seguir bajándolo. No tengo criterio en las fuentes para valores menores a 3,0.\n\nLo que sí puedo decir: el ajuste de KP-VS que describe la fuente no se aplica tal como está hoy. Si quieres, puedo revisar qué otros códigos o señales documenta el manual para fallas en el motor de tracción."
     }
   }
 }

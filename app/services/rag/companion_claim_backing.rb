@@ -24,6 +24,7 @@ module Rag
     ACTION_LEAD = /\A[[:space:]*_]*(?:¿\s*)?(?:(?:puedes|podr[ií]as|necesito\s+que)\s+)?((?:confirm|comprob|comprueb|verific|revis|identific|ubic|localiz|med[ií]r|mid[ae]|chequ|inspeccion|check|verify|measure|inspect|identify|locate)[[:alpha:]]*)(?![[:alpha:]]*:)/i.freeze
     INLINE_LABEL = /\A\s*\*\*[^*]+:\*\*\s*/.freeze
     REPORTED_FORM = /(?:aste|asteis|aron|ieron|ado|ada|ados|adas|ido|ida|ed)\z/i.freeze
+    MAX_CARRY_PASSES = 3
     STATED_LIMIT = /\bno\s+(?:puedes|puede|sabes|es\s+posible)\b|\bsin\s+poder\b|\bcannot\b|\bcan't\b/i.freeze
 
     Result = Struct.new(:text, :removed, :reattributed, keyword_init: true) do
@@ -52,7 +53,7 @@ module Rag
 
     def call
       lines = filter_lines
-      lines = second_pass(lines) if @removed.any? { |item| %w[unverified_quote uncited_attribution].include?(item["reason"]) }
+      lines = carry_quotes(lines)
       lines = drop_orphan_labels(lines) if changed?
       body = lines.join("\n").gsub(/\n{3,}/, "\n\n").strip
       Result.new(text: body, removed: @removed, reattributed: @reattributed)
@@ -65,16 +66,24 @@ module Rag
     end
 
     # A limit quoted on its own keeps its passage condition when a kept
-    # sentence quotes that condition. Only quotes that survived the first pass
-    # can carry, so a removed sentence never vouches for another.
-    def second_pass(lines)
-      kept = lines.join("\n").scan(QUOTE_PATTERN).flatten.compact
-      return lines if kept.empty?
+    # sentence quotes that condition, and a comparison keeps the limit a kept
+    # sentence quotes. Only quotes that survived the previous pass can carry,
+    # so a removed sentence never vouches for another. A quote that survives
+    # only thanks to the context can in turn carry the comparison that names
+    # it, so the pass repeats while the kept quotes grow. Three passes at most.
+    def carry_quotes(lines)
+      MAX_CARRY_PASSES.times do
+        break unless @removed.any? { |item| %w[unverified_quote uncited_attribution].include?(item["reason"]) }
 
-      @removed = []
-      @reattributed = []
-      @context = kept
-      filter_lines
+        kept = lines.join("\n").scan(QUOTE_PATTERN).flatten.compact
+        break if kept.empty? || kept.sort == @context.sort
+
+        @removed = []
+        @reattributed = []
+        @context = kept
+        lines = filter_lines
+      end
+      lines
     end
 
     def changed?

@@ -307,6 +307,23 @@ class Rag::CompanionClaimBackingTest < ActiveSupport::TestCase
     end
   end
 
+  test "a comparison that comes first keeps the limit quote that only survives with the condition of a later sentence" do
+    comparison = "Con KP-VS en 2,5, el valor ya está por debajo del mínimo documentado."
+    limit = "La fuente indica disminuir el parámetro \"hasta el mínimo de [3,0]\" [1]."
+    condition = "Lo reportado coincide con la condición \"En caso de ruido audible muy elevado\" [1]."
+    text = "#{comparison} #{limit}\n\n#{condition}"
+    result = call(text, KPVS_CHUNK, technician: KPVS_TECHNICIAN)
+
+    assert_equal text, result.text
+    assert_empty result.removed
+
+    forged = text.sub("hasta el mínimo de [3,0]", "hasta el mínimo de [4,0]")
+    dropped = call(forged, KPVS_CHUNK, technician: KPVS_TECHNICIAN)
+
+    assert_includes dropped.removed.pluck("sentence"), comparison
+    assert_not_includes dropped.text, "documentado"
+  end
+
   test "a comparison keeps a negated order and the second person of the verb" do
     [ "Con KP-VS en 2,5, el valor ya está por debajo del mínimo que documenta la fuente, así que no hay respaldo para bajarlo más.",
       "Con KP-VS en 2,5 ya estás por debajo del mínimo que documenta la fuente." ].each do |reading|

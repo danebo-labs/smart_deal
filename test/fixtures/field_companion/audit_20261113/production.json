@@ -1,0 +1,371 @@
+{
+  "photo": {
+    "origin": "20261113T214817Z_e75fadfc_session_150.json",
+    "history": [
+      {
+        "role": "user",
+        "content": "Estoy con un Thyssen FDN Universal con MCINV4. Está detenido y la puerta no cierra. Te adjunto el esquema de la bornera . Que señal miro ?",
+        "correlation_id": "photo:01d78db6-28cf-40fa-8554-8ad30b1abf6a",
+        "ts": "2026-11-13T18:36:12-03:00"
+      },
+      {
+        "role": "assistant",
+        "content": "[FOTO] Componente: Esquema de bornera de conectores de comando | Fabricante: UNKNOWN | Modelo: UNKNOWN | Códigos: PLUGACAO DO O. DE COMANDO, PV-1, PV-2, PV-3, MQ-1, MQ6, MQ-2, MQ-5 | Condición: UNKNOWN",
+        "correlation_id": "photo:01d78db6-28cf-40fa-8554-8ad30b1abf6a",
+        "ts": "2026-11-13T18:36:26-03:00"
+      },
+      {
+        "role": "user",
+        "content": "El equipo es un Thyssen FDN Universal MCINV4",
+        "correlation_id": "query:39d8fad6-9237-4585-a560-b33249fdffb2",
+        "ts": "2026-11-13T18:38:28-03:00"
+      },
+      {
+        "role": "assistant",
+        "content": "la describe así: \"Ponto para ligar sinal do contato de engate do trinco, confirmando portas de pavimento fechada\" [3]. En la bornera, [1] la ubica en el terminal 53: \"ENTRADA DO SINAL DE PORTA DE PAV. (FECHADA)\" [1].\n\nSi la MCINV4 muestra el código EA, la fuente indica: \"Quando falha de P28 - porta aberta - revisar linha dos trincos\" [2]. Esto no confirma la causa.\n\n¿La controladora muestra algún código de falla?",
+        "prompt_reply": "la describe así: \"Ponto para ligar sinal do contato de engate do trinco, confirmando portas de pavimento fechada\" [3]. En la bornera,  la ubica en el terminal 53: \"ENTRADA DO SINAL DE PORTA DE PAV. (FECHADA)\" .\n\nSi la MCINV4 muestra el código EA, la fuente indica: \"Quando falha de P28 - porta aberta - revisar linha dos trincos\" . Esto no confirma la causa.\n\n¿La controladora muestra algún código de falla?",
+        "correlation_id": "query:39d8fad6-9237-4585-a560-b33249fdffb2",
+        "ts": "2026-11-13T18:38:35-03:00",
+        "outcome": "published"
+      },
+      {
+        "role": "user",
+        "content": "El display marca EA. Con la orden de cierre, P28 marca 0 VCc y P27 marca 110v . P26 no la pude medir",
+        "correlation_id": "query:57e0d08d-129f-4450-8552-3b14d0a5b976",
+        "ts": "2026-11-13T18:40:22-03:00"
+      },
+      {
+        "role": "assistant",
+        "content": "Según la fuente, el EA con P28 en 0 V corresponde a \"Quando falha de P28 - porta aberta - revisar linha dos trincos\" [6]. Esto no establece la causa.\n\nP28 es el punto para \"Ponto para ligar sinal do contato de engate do trinco\" [3], y su valor nominal es \"RA-53 / P28 = +110 Vcc\" [3]. El 0 V indica que esa señal no llega ahí.\n\nP27 en 110 V coincide con su valor nominal: \"RA-52 / P27 = +110 Vcc\" [3]. Esto no confirma que la puerta de cabina esté cerrada.\n\nP26 queda pendiente. Corresponde a quien pueda medirlo en sitio.\n\n¿Al dar la orden de cierre, el trinco de la puerta de piso que no cierra ...",
+        "full_content": "Según la fuente, el EA con P28 en 0 V corresponde a \"Quando falha de P28 - porta aberta - revisar linha dos trincos\" [6]. Esto no establece la causa.\n\nP28 es el punto para \"Ponto para ligar sinal do contato de engate do trinco\" [3], y su valor nominal es \"RA-53 / P28 = +110 Vcc\" [3]. El 0 V indica que esa señal no llega ahí.\n\nP27 en 110 V coincide con su valor nominal: \"RA-52 / P27 = +110 Vcc\" [3]. Esto no confirma que la puerta de cabina esté cerrada.\n\nP26 queda pendiente. Corresponde a quien pueda medirlo en sitio.\n\n¿Al dar la orden de cierre, el trinco de la puerta de piso que no cierra queda enganchado o abierto?",
+        "prompt_reply": "Según la fuente, el EA con P28 en 0 V corresponde a \"Quando falha de P28 - porta aberta - revisar linha dos trincos\" . Esto no establece la causa.\n\nP28 es el punto para \"Ponto para ligar sinal do contato de engate do trinco\" [3], y su valor nominal es \"RA-53 / P28 = +110 Vcc\" [3]. El 0 V indica que esa señal no llega ahí.\n\nP27 en 110 V coincide con su valor nominal: \"RA-52 / P27 = +110 Vcc\" [3]. Esto no confirma que la puerta de cabina esté cerrada.\n\nP26 queda pendiente. Corresponde a quien pueda medirlo en sitio.\n\n¿Al dar la orden de cierre, el trinco de la puerta de piso que no cierra queda enganchado o abierto?",
+        "correlation_id": "query:57e0d08d-129f-4450-8552-3b14d0a5b976",
+        "ts": "2026-11-13T18:40:35-03:00",
+        "outcome": "published"
+      },
+      {
+        "role": "user",
+        "content": "Sigue marcando EA . La puerta sigue cerrada.  No puedo medir P26 con el acceso que tengo . Tiene sentido entrar al TLS y cambiar algún parámetro ?",
+        "correlation_id": "query:52e5ef84-5848-40c2-ab92-0f9152aa784c",
+        "ts": "2026-11-13T18:44:26-03:00"
+      },
+      {
+        "role": "assistant",
+        "content": "No pude preparar una orientación fiable para este turno; el caso se conserva.",
+        "prompt_reply": "",
+        "correlation_id": "query:52e5ef84-5848-40c2-ab92-0f9152aa784c",
+        "ts": "2026-11-13T18:44:40-03:00",
+        "outcome": "abstained"
+      }
+    ],
+    "observation": {
+      "canonical_component": "Esquema de bornera de conectores de comando",
+      "manufacturer": "UNKNOWN",
+      "model": "UNKNOWN",
+      "condition": "UNKNOWN",
+      "target_visible": true,
+      "relevance_to_goal": "relevant",
+      "visible_text": [
+        "PLUGACAO DO O. DE COMANDO",
+        "PV-1",
+        "PV-2",
+        "PV-3",
+        "MQ-1",
+        "MQ6",
+        "MQ-2",
+        "MQ-5"
+      ]
+    },
+    "attachment": {
+      "sha256": "dc166ce30d248e2e6ceb698485ff5ba1211ba093ed45e2aa3e6e8e5d691609f3",
+      "content_type": "image/jpeg",
+      "byte_size": 68540
+    },
+    "events": [
+      {
+        "event": "turn_interpreter",
+        "correlation_id": "photo:01d78db6-28cf-40fa-8554-8ad30b1abf6a",
+        "interpreter_move": "report",
+        "episode_id": "ep_4a828457ed57f5f3"
+      },
+      {
+        "event": "turn_interpreter",
+        "correlation_id": "query:39d8fad6-9237-4585-a560-b33249fdffb2",
+        "interpreter_move": "report",
+        "episode_id": "ep_4a828457ed57f5f3"
+      },
+      {
+        "event": "document_identity_scope",
+        "correlation_id": "query:39d8fad6-9237-4585-a560-b33249fdffb2",
+        "episode_id": "ep_4a828457ed57f5f3",
+        "result": "scoped",
+        "contexts_delivered": 16
+      },
+      {
+        "event": "interaction_completed",
+        "correlation_id": "query:39d8fad6-9237-4585-a560-b33249fdffb2",
+        "generation_mode": "document_identity_scope",
+        "outcome": "answered",
+        "generation_context": [
+          "technician_current_turn:present",
+          "technician_facts_count:0",
+          "observations_count:0",
+          "photo_literal:absent",
+          "photo_interpretation:absent",
+          "compatible_docs_count:0",
+          "foreign_reference_docs_count:0",
+          "danebo_guidance:absent"
+        ],
+        "context_truncated": false
+      },
+      {
+        "event": "turn_interpreter",
+        "correlation_id": "query:57e0d08d-129f-4450-8552-3b14d0a5b976",
+        "episode_id": "ep_4a828457ed57f5f3"
+      },
+      {
+        "event": "document_identity_scope",
+        "correlation_id": "query:57e0d08d-129f-4450-8552-3b14d0a5b976",
+        "episode_id": "ep_4a828457ed57f5f3",
+        "result": "scoped",
+        "contexts_delivered": 16
+      },
+      {
+        "event": "interaction_completed",
+        "correlation_id": "query:57e0d08d-129f-4450-8552-3b14d0a5b976",
+        "generation_mode": "document_identity_scope",
+        "outcome": "answered",
+        "generation_context": [
+          "technician_current_turn:present",
+          "technician_facts_count:0",
+          "observations_count:0",
+          "photo_literal:absent",
+          "photo_interpretation:absent",
+          "compatible_docs_count:0",
+          "foreign_reference_docs_count:0",
+          "danebo_guidance:absent"
+        ],
+        "context_truncated": false
+      },
+      {
+        "event": "turn_interpreter",
+        "correlation_id": "query:52e5ef84-5848-40c2-ab92-0f9152aa784c",
+        "interpreter_move": "follow_up",
+        "episode_id": "ep_4a828457ed57f5f3"
+      },
+      {
+        "event": "document_identity_scope",
+        "correlation_id": "query:52e5ef84-5848-40c2-ab92-0f9152aa784c",
+        "episode_id": "ep_4a828457ed57f5f3",
+        "result": "scoped",
+        "contexts_delivered": 16
+      },
+      {
+        "event": "interaction_completed",
+        "correlation_id": "query:52e5ef84-5848-40c2-ab92-0f9152aa784c",
+        "generation_mode": "document_identity_scope",
+        "outcome": "abstained",
+        "generation_context": [
+          "technician_current_turn:absent",
+          "technician_facts_count:0",
+          "observations_count:0",
+          "photo_literal:absent",
+          "photo_interpretation:absent",
+          "compatible_docs_count:0",
+          "foreign_reference_docs_count:0",
+          "danebo_guidance:absent"
+        ],
+        "context_truncated": true
+      },
+      {
+        "event": "document_identity_scope",
+        "correlation_id": "photo:01d78db6-28cf-40fa-8554-8ad30b1abf6a",
+        "result": "scoped",
+        "contexts_delivered": 8
+      },
+      {
+        "event": "photo_question_answered",
+        "correlation_id": "photo:01d78db6-28cf-40fa-8554-8ad30b1abf6a",
+        "generation_mode": "service_unavailable",
+        "outcome": "answered"
+      },
+      {
+        "event": "interaction_completed",
+        "correlation_id": "photo:01d78db6-28cf-40fa-8554-8ad30b1abf6a",
+        "generation_mode": "service_unavailable",
+        "outcome": "failed"
+      }
+    ]
+  },
+  "kpvs": {
+    "origin": "20261113T212417Z_7856e84c_session_150.json",
+    "history": [
+      {
+        "role": "user",
+        "content": "Thyssen FDN Universal con MCINV4. En viaje se oye fuerte el motor de traccion . No tengo acceso al TLS",
+        "correlation_id": "query:78ac8ad5-f53f-45ed-83a1-72c0a4abe75d",
+        "ts": "2026-11-13T18:13:08-03:00"
+      },
+      {
+        "role": "assistant",
+        "content": "Sin acceso al TLS no puedo darle un ajuste aplicable. El único ajuste de ruido del motor de tracción que documenta el manual está en \"MENU PID\" y se hace con el teclado: «En caso de ruido audible muy elevado: disminuya el valor del parámetro \"KP-VS\"» [2].\n\nCon lo reportado, no hay criterio en la documentación para atribuir el ruido a ese parámetro, ni para descartarlo.\n\n¿Aparece algún código de falla, o la cabina se detiene durante el viaje?",
+        "prompt_reply": "Sin acceso al TLS no puedo darle un ajuste aplicable. El único ajuste de ruido del motor de tracción que documenta el manual está en \"MENU PID\" y se hace con el teclado: «En caso de ruido audible muy elevado: disminuya el valor del parámetro \"KP-VS\"» [2].\n\nCon lo reportado, no hay criterio en la documentación para atribuir el ruido a ese parámetro, ni para descartarlo.\n\n¿Aparece algún código de falla, o la cabina se detiene durante el viaje?",
+        "correlation_id": "query:78ac8ad5-f53f-45ed-83a1-72c0a4abe75d",
+        "ts": "2026-11-13T18:13:17-03:00",
+        "outcome": "published"
+      },
+      {
+        "role": "user",
+        "content": "Ingeniería leyó KP-VS en 2,5 . La placa de motor dice 5,5 KW, 380 V y 1175 rpm. La corriente no se alcanza a leer . Sirven los datos del motor Eberle del manual?",
+        "correlation_id": "query:b224fb61-b5af-4a40-ae78-aa89e0e98754",
+        "ts": "2026-11-13T18:20:13-03:00"
+      },
+      {
+        "role": "assistant",
+        "content": "No, los datos del Eberle del manual no sirven para este motor. La fuente dice «Os valores reais dependem do motor instalado na obra» [1].\n\nCon los datos de placa que reportó Ingeniería:\n- RPM de placa: 1175\n- Tensión trifásica: 380 V\n\nCon 2,5 hay diferencia, así que corresponde ajustarlo a 3,5.\n\nCorriente nominal: queda pendiente. La fuente no da un criterio para estimarla, así que debe confirmarla Ingeniería desde la placa o la ficha del motor.\n\nCon 1175 rpm, ¼ da 293,75, que se redondea a 294. Pero el ejemplo de 1660 rpm da 650, y ¼ de 1660 sería 415. Antes de grabar el valor, Ingeniería ...",
+        "full_content": "No, los datos del Eberle del manual no sirven para este motor. La fuente dice «Os valores reais dependem do motor instalado na obra» [1].\n\nCon los datos de placa que reportó Ingeniería:\n- RPM de placa: 1175\n- Tensión trifásica: 380 V\n\nCon 2,5 hay diferencia, así que corresponde ajustarlo a 3,5.\n\nCorriente nominal: queda pendiente. La fuente no da un criterio para estimarla, así que debe confirmarla Ingeniería desde la placa o la ficha del motor.\n\nCon 1175 rpm, ¼ da 293,75, que se redondea a 294. Pero el ejemplo de 1660 rpm da 650, y ¼ de 1660 sería 415. Antes de grabar el valor, Ingeniería debe confirmar cuál aplica.\n\nLa referencia describe el manual; por sí sola no confirma la placa ni la configuración instalada.\n\n¿Qué modelo exacto dice el rótulo de la placa del controlador, incluido el «+» si aparece?",
+        "prompt_reply": "No, los datos del Eberle del manual no sirven para este motor. La fuente dice «Os valores reais dependem do motor instalado na obra» [1].\n\nCon los datos de placa que reportó Ingeniería:\n- RPM de placa: 1175\n- Tensión trifásica: 380 V\n\nCon 2,5 hay diferencia, así que corresponde ajustarlo a 3,5.\n\nCorriente nominal: queda pendiente. La fuente no da un criterio para estimarla, así que debe confirmarla Ingeniería desde la placa o la ficha del motor.\n\nCon 1175 rpm, ¼ da 293,75, que se redondea a 294. Pero el ejemplo de 1660 rpm da 650, y ¼ de 1660 sería 415. Antes de grabar el valor, Ingeniería debe confirmar cuál aplica.\n\nLa referencia describe el manual; por sí sola no confirma la placa ni la configuración instalada.\n\n¿Qué modelo exacto dice el rótulo de la placa del controlador, incluido el «+» si aparece?",
+        "correlation_id": "query:b224fb61-b5af-4a40-ae78-aa89e0e98754",
+        "ts": "2026-11-13T18:20:26-03:00",
+        "outcome": "published"
+      },
+      {
+        "role": "user",
+        "content": "No he cambiado nada y el ruido sigue . Le digo a ingeniería que lo deje en 3,5?",
+        "correlation_id": "query:a628a6b7-3e2f-4e79-b6d8-cd8ea3bfc6d3",
+        "ts": "2026-11-13T18:22:31-03:00"
+      },
+      {
+        "role": "assistant",
+        "content": "¿Esto sigue siendo el mismo equipo o estás hablando de otro?",
+        "correlation_id": "query:a628a6b7-3e2f-4e79-b6d8-cd8ea3bfc6d3",
+        "ts": "2026-11-13T18:22:31-03:00"
+      },
+      {
+        "role": "user",
+        "content": "Si el mismo equipo",
+        "correlation_id": "query:933c4d12-b19a-4562-80ee-297065fc53be",
+        "ts": "2026-11-13T18:22:51-03:00"
+      },
+      {
+        "role": "assistant",
+        "content": "¿Qué equipo o qué falla estás revisando?",
+        "correlation_id": "query:933c4d12-b19a-4562-80ee-297065fc53be",
+        "ts": "2026-11-13T18:22:51-03:00"
+      },
+      {
+        "role": "user",
+        "content": "Thyssen FDN Universal con MCINV4",
+        "correlation_id": "query:0bbac291-e003-4350-8784-fac33145a1e3",
+        "ts": "2026-11-13T18:23:24-03:00"
+      },
+      {
+        "role": "assistant",
+        "content": "Confirmo que la documentación cargada corresponde al «Manual de Instalação do Quadro de Comando Frequencedyne Universal com MCINV4» [4].\n\nHay dos tablas de códigos, con prefijos distintos: «Tabela completa de códigos de erro da controladora MCINV4» [1] (E0 a EF) y «Códigos de Falha da MCINV4» [7] (F1 a F6). Sin el código o el síntoma, no puedo orientarte sobre una falla concreta.\n\n¿Qué código muestra el quadro o qué comportamiento observas en el elevador?",
+        "prompt_reply": "Confirmo que la documentación cargada corresponde al «Manual de Instalação do Quadro de Comando Frequencedyne Universal com MCINV4» [4].\n\nHay dos tablas de códigos, con prefijos distintos: «Tabela completa de códigos de erro da controladora MCINV4» [1] (E0 a EF) y «Códigos de Falha da MCINV4»  (F1 a F6). Sin el código o el síntoma, no puedo orientarte sobre una falla concreta.\n\n¿Qué código muestra el quadro o qué comportamiento observas en el elevador?",
+        "correlation_id": "query:0bbac291-e003-4350-8784-fac33145a1e3",
+        "ts": "2026-11-13T18:23:30-03:00",
+        "outcome": "published"
+      }
+    ],
+    "events": [
+      {
+        "event": "turn_interpreter",
+        "correlation_id": "query:78ac8ad5-f53f-45ed-83a1-72c0a4abe75d",
+        "interpreter_move": "report",
+        "episode_id": "ep_14ff0fbfc0510cfc"
+      },
+      {
+        "event": "document_identity_scope",
+        "correlation_id": "query:78ac8ad5-f53f-45ed-83a1-72c0a4abe75d",
+        "episode_id": "ep_14ff0fbfc0510cfc",
+        "result": "scoped",
+        "contexts_delivered": 16
+      },
+      {
+        "event": "interaction_completed",
+        "correlation_id": "query:78ac8ad5-f53f-45ed-83a1-72c0a4abe75d",
+        "generation_mode": "document_identity_scope",
+        "outcome": "answered",
+        "generation_context": [
+          "technician_current_turn:present",
+          "technician_facts_count:0",
+          "observations_count:0",
+          "photo_literal:absent",
+          "photo_interpretation:absent",
+          "compatible_docs_count:0",
+          "foreign_reference_docs_count:0",
+          "danebo_guidance:absent"
+        ],
+        "context_truncated": false
+      },
+      {
+        "event": "turn_interpreter",
+        "correlation_id": "query:b224fb61-b5af-4a40-ae78-aa89e0e98754",
+        "interpreter_move": "new_work",
+        "episode_id": "ep_1b1888ead90b014e"
+      },
+      {
+        "event": "interaction_completed",
+        "correlation_id": "query:b224fb61-b5af-4a40-ae78-aa89e0e98754",
+        "generation_mode": "document_identity_scope",
+        "outcome": "answered"
+      },
+      {
+        "event": "turn_interpreter",
+        "correlation_id": "query:a628a6b7-3e2f-4e79-b6d8-cd8ea3bfc6d3",
+        "interpreter_move": "unclear",
+        "clarification_target": "work_relation",
+        "episode_id": "ep_1b1888ead90b014e"
+      },
+      {
+        "event": "interaction_completed",
+        "correlation_id": "query:a628a6b7-3e2f-4e79-b6d8-cd8ea3bfc6d3",
+        "generation_mode": "clarify_first",
+        "outcome": "answered"
+      },
+      {
+        "event": "turn_interpreter",
+        "correlation_id": "query:933c4d12-b19a-4562-80ee-297065fc53be",
+        "interpreter_move": "new_work",
+        "episode_id": "ep_c9ea456b48ec3432"
+      },
+      {
+        "event": "interaction_completed",
+        "correlation_id": "query:933c4d12-b19a-4562-80ee-297065fc53be",
+        "generation_mode": "clarify_first",
+        "outcome": "answered"
+      },
+      {
+        "event": "turn_interpreter",
+        "correlation_id": "query:0bbac291-e003-4350-8784-fac33145a1e3",
+        "interpreter_move": "report",
+        "episode_id": "ep_c9ea456b48ec3432"
+      },
+      {
+        "event": "document_identity_scope",
+        "correlation_id": "query:0bbac291-e003-4350-8784-fac33145a1e3",
+        "episode_id": "ep_c9ea456b48ec3432",
+        "result": "scoped",
+        "contexts_delivered": 16
+      },
+      {
+        "event": "interaction_completed",
+        "correlation_id": "query:0bbac291-e003-4350-8784-fac33145a1e3",
+        "generation_mode": "document_identity_scope",
+        "outcome": "answered",
+        "generation_context": [
+          "technician_current_turn:present",
+          "technician_facts_count:0",
+          "observations_count:0",
+          "photo_literal:absent",
+          "photo_interpretation:absent",
+          "compatible_docs_count:0",
+          "foreign_reference_docs_count:0",
+          "danebo_guidance:absent"
+        ],
+        "context_truncated": false
+      }
+    ]
+  }
+}

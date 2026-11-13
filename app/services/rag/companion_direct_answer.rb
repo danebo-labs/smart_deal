@@ -97,7 +97,7 @@ module Rag
 
     class << self
       def prepare(raw_question:, chunks:, episode:, session:, correlation_id: nil,
-                  reference_context: nil, scope_uris: nil, viewer_account: nil)
+                  reference_context: nil, photo_evidence: nil, unresolved_question: nil, scope_uris: nil, viewer_account: nil)
         kept = CompanionPlan.limit_statement_chunks(chunks)
         episode_id = CompanionCaseRecord.episode_id_of(episode)
         merged = CompanionCaseRecord.sources(session, episode_id, kept, scope_uris: scope_uris, viewer_account: viewer_account)
@@ -106,7 +106,9 @@ module Rag
         history, omitted = fit_history(turns)
         technician_turn = turns.count { |turn| turn[:role] == "user" } + 1
         referent = CompanionSequence.referent_context(raw_question, episode)
-        current = current_text(raw_question, merged, technician_turn, context: [ reference_context, referent ].compact.join("\n"))
+        carry = "Pregunta del mismo caso que quedó sin responder: #{unresolved_question}" if unresolved_question.present?
+        context = [ carry, reference_context, referent, photo_evidence ].compact_blank.join("\n\n")
+        current = current_text(raw_question, merged, technician_turn, context: context)
         messages = converse_messages(history, current)
         system = SYSTEM_PROMPT
         Prepared.new(
@@ -309,7 +311,7 @@ module Rag
       def referral_note(technician_turn)
         return nil if technician_turn < REFERRAL_TURN
 
-        "Turno #{technician_turn} del técnico en este caso. Si la consulta sigue abierta, termina con un resumen " \
+        "Turno #{technician_turn} del técnico en este caso. Responde primero a la consulta actual. Si la consulta sigue abierta, termina con un resumen " \
           "para derivar: lo que contó el técnico, lo que ya comprobó, lo que respalda la fuente con [n] y lo que falta. " \
           "Lo que falta no incluye un componente, ajuste o modo cuya condición o ejemplo documentado depende de algo " \
           "que el técnico ya descartó. Sin pregunta nueva salvo que su respuesta cierre el caso."
@@ -344,7 +346,8 @@ module Rag
           next unless message.is_a?(Hash)
           role = message["role"].to_s
           next unless role == "user" || role == "assistant"
-          next if role == "assistant" && message["outcome"].to_s == "abstained"
+          next if role == "assistant" && %w[abstained failed].include?(message["outcome"].to_s)
+          next if role == "assistant" && message["content"].to_s.start_with?("[FOTO]")
           next if correlation_id.present? && message["correlation_id"].to_s == correlation_id.to_s
           next if cutoff && !inside_cutoff?(message, cutoff)
 

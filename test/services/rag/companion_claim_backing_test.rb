@@ -25,6 +25,14 @@ class Rag::CompanionClaimBackingTest < ActiveSupport::TestCase
     assert_empty result.removed
   end
 
+  test "keeps the marker that introduces the next cited sentence" do
+    quote = "Las puertas se abrirán lentamente en la primera operación"
+    result = call("Fue la primera. [1] la describe así: «#{quote}».", VF5_58)
+
+    assert_equal "Fue la primera. [1] la describe así: «#{quote}».", result.text
+    assert_empty result.removed
+  end
+
   test "drops a cited paraphrase that adds a condition and keeps the rest" do
     text = "Si sigue abriendo despacio, lo documentado es repetir el autoajuste [1]. Mi lectura: la primera apertura lenta es esperable.\n\n¿Fue solo la primera?"
     result = call(text, VF5_58)

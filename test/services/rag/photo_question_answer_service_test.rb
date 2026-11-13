@@ -564,14 +564,16 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
     QueryOrchestratorService.define_singleton_method(:new) { |question, **kwargs| original_new.call(question, **kwargs) } if original_new
   end
 
-  test "returns nil when the RAG call does not succeed" do
+  test "reports when the RAG call does not succeed" do
     BedrockRagService.define_method(:query) do |*|
       raise BedrockRagService::BedrockServiceError, "boom"
     end
 
     result = build_service(question: "Que es esto?").call
 
-    assert_nil result
+    assert result[:failed]
+    assert_equal "service_error", result[:equipment_identity_reason]
+    assert_equal "BedrockRagService::BedrockServiceError", result[:error_class]
   end
 
   test "H9 names a screen document when grounded synthesis is on and sheet titles are visible" do

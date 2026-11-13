@@ -51,6 +51,7 @@ module Rag
       @removed = []
       @reattributed = []
       @context = []
+      @list_intros = cited_list_intros(@text)
     end
 
     def call
@@ -236,10 +237,24 @@ module Rag
       return nil unless CompanionTurnPublication.source_attribution?(sentence, @manufacturer)
       return nil if CompanionTurnPublication.source_absence?(sentence)
       return nil if CompanionTurnPublication.question_sentence?(sentence)
+      return "uncited_attribution" if @list_intros.include?(sentence)
       return nil if sentence.strip.end_with?(":")
       return nil if bound_comparison?(sentence)
 
       "uncited_attribution"
+    end
+
+    # A redundant source introduction is discarded only when the following
+    # list already supplies backed excerpts. The list takes its own claims.
+    def cited_list_intros(text)
+      lines = text.lines.map(&:strip).reject(&:empty?)
+      lines.each_with_index.filter_map do |line, index|
+        next unless line.end_with?(":") && line.match?(/\bseg[uú]n (?:la fuente|el manual|el plano)\b/i)
+        next unless line.match?(/\b(?:es esta|siguiente|as[ií]):\z/i)
+
+        following = lines[index + 1, 2].to_a
+        line if following.any? { |item| item.match?(LIST_PREFIX) && item.match?(CITATION_PATTERN) }
+      end
     end
 
     def bound_comparison?(sentence)
@@ -292,13 +307,21 @@ module Rag
           next
         end
         run = line[index..].to_s[/\A(?:[[:space:]]*\[\d+\])+/].to_s
-        current << run
-        index += run.length
+        unless citation_leads_next_sentence?(line, index, run)
+          current << run
+          index += run.length
+        end
         parts << current.strip
         current = +""
       end
       parts << current.strip
       parts.reject(&:empty?)
+    end
+
+    # A source marker may be the subject of the next sentence. Do not
+    # attach it to the preceding sentence and then cut it during validation.
+    def citation_leads_next_sentence?(line, index, markers)
+      markers.present? && line[(index + markers.length)..].match?(/\A[ \t]+[[:lower:]][^.!?]*[«“"]/)
     end
 
     def boundary?(line, index)

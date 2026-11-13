@@ -1,0 +1,85 @@
+[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]
+[SEARCH_ALIASES: menu ajuste, menu PID, menu Vel, menu E2PROM, teclado TLS, conector J1, RPM MANUT, KI-SLIP]
+
+S18 — COMMISSIONING
+
+18 Ajuste dos parâmetros do módulo MCINV4
+
+Este procedimento descreve o ajuste fino dos parâmetros do módulo MCINV4 durante a fase de comissionamento, com o sistema em modo manutenção.
+
+18.1 Desligar o QC.
+
+18.2 Conectar o teclado TLS na MCINV4 (conector J1).
+
+18.3 Ligar o quadro de comando ainda em estado de manutenção.
+
+18.4 No "menu ajuste" digitar os parâmetros de placa do motor da obra (como referência usaremos o motor Eberle 7,5 kW / 220V):
+- "RPM de placa" = ver RPM de placa do motor, exemplo = 1660 [RPM]
+- "Corrente Nominal" = ver corrente nominal de placa do motor, exemplo = 12 [A]
+- "tensão trifásica" = ver tensão do QC, exemplo = 220 [V]
+- "sentido maquina" = 1 [dir ---> 1]
+
+Nota: Os valores acima são exemplos baseados no motor Eberle 7,5 kW/220V. Os valores reais dependem do motor instalado na obra — REQUIRES_FIELD_VERIFICATION.
+
+18.5 Verificar no "menu PID" os valores dos parâmetros abaixo; em caso de diferença, alterar conforme abaixo:
+- "KI-SLIP" = [90,0]
+- "KP-SLIP" = [60,0]
+- "ganho - inércia" = [30,0]
+- "KP-VS" = [3,5]
+
+18.6 No "menu Vel" ajustar o parâmetro:
+- "RPM MANUT" = ¼ do RPM de placa do motor de tração = 650 (arredondar para mais)
+- Salvar os dados no "menu E2PROM"
+
+18.7 Acionar o painel manutenção (sobe/desce) colocando o elevador em movimento e verificar na tela 2 o RPM real com RPM MANUT (tolerância de 1 RPM).
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-71C6E26D49B8D8A7
+SOURCE_SECTION_OR_PAGE: 18 Ajuste dos parâmetros do módulo MCINV4
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: Desligar o QC, conectar o teclado TLS na MCINV4 pelo conector J1, depois religar o QC em estado de manutenção
+EXPECTED_RESULT: QC ligado em modo manutenção com teclado TLS conectado ao conector J1 da MCINV4
+EVIDENCE: Conectar o teclado TLS na MCINV4 (conector J1)
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-993460D3A2B99488
+SOURCE_SECTION_OR_PAGE: 18 Ajuste dos parâmetros do módulo MCINV4
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: No 'menu ajuste' digitar os parâmetros de placa do motor da obra: 'RPM de placa' (ex. 1660 RPM), 'Corrente Nominal' (ex. 12 A), 'tensão trifásica' (ex. 220 V), 'sentido maquina' = 1 [dir ---> 1]
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+UNCERTAINTY: Valores reais dependem do motor instalado — REQUIRES_FIELD_VERIFICATION; os valores listados são exemplos do motor Eberle 7,5 kW/220V
+EVIDENCE: digitar os parâmetros de placa do motor da obra
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-D513DFA2CA88A5CC
+SOURCE_SECTION_OR_PAGE: 18 Ajuste dos parâmetros do módulo MCINV4
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: Verificar no 'menu PID' os parâmetros e, se divergentes, alterar para: KI-SLIP = 90,0; KP-SLIP = 60,0; ganho - inércia = 30,0; KP-VS = 3,5
+EXPECTED_RESULT: Parâmetros PID configurados conforme valores de referência
+DETAILS: scope=menu PID; criteria=KI-SLIP=90,0; KP-SLIP=60,0; ganho-inércia=30,0; KP-VS=3,5
+EVIDENCE: em caso de diferença, altere-os conforme abaixo: KI-SLIP=[90,0] KP-SLIP=[60,0] ganho-inércia=[30,0] KP-VS=[3,5]
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-DD78B8CFA851E873
+SOURCE_SECTION_OR_PAGE: 18 Ajuste dos parâmetros do módulo MCINV4
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: No 'menu Vel' ajustar 'RPM MANUT' = ¼ do RPM de placa do motor de tração (arredondar para mais; exemplo = 650); salvar os dados no 'menu E2PROM'
+EXPECTED_RESULT: RPM MANUT configurado e dados salvos na E2PROM
+EVIDENCE: RPM MANUT = ¼ do RPM de placa do motor de tração = 650 (arredondar para mais)
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-34219E044DF66954
+SOURCE_SECTION_OR_PAGE: 18 Ajuste dos parâmetros do módulo MCINV4
+RECORD_TYPE: FUNCTIONAL_TEST
+ACTION: Acionar o painel manutenção (sobe/desce) para colocar o elevador em movimento e verificar na tela 2 o RPM real comparado ao RPM MANUT configurado
+EXPECTED_RESULT: RPM real coincide com RPM MANUT com tolerância de 1 RPM
+DETAILS: criteria=tolerância de 1 RPM entre RPM real e RPM MANUT; output=verificação em tela 2
+EVIDENCE: verifique na tela 2 o RPM real com RPM MANUT (tolerância de 1RPM)
+END_FIELD_RECORD

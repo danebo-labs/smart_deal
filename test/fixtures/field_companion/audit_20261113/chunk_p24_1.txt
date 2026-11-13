@@ -1,0 +1,147 @@
+[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]
+[SEARCH_ALIASES: códigos de falha MCINV4, E0 E1 E2 fase IGBT, E3 fase entrada fusíveis, E4 CHINV contatora, E5 E6 sub sobre tensão IGBT, EA falha sinais BKF S0S P28, EC segurança poço cabina T2+, ED erro operação teclado]
+
+S10 — TROUBLESHOOTING
+
+23 Códigos de falhas da MCINV4
+
+Tabela completa de códigos de erro da controladora MCINV4 (FrequenceDyne Universal), com falha detectada, localização e solução:
+
+| Código Erro | Falha Detectada | Onde acontece | Solução |
+|---|---|---|---|
+| E0 | Falha na fase EU | Na fase U7 | 1- testar unidade IGBT; 2- cabos do motor em curto |
+| E1 | Falha na fase EV | Na fase V7 | 1- testar unidade IGBT; 2- cabos do motor em curto |
+| E2 | Falha na fase EW | Na fase W7 | 1- testar unidade IGBT; 2- cabos do motor em curto |
+| E3 | Falha na fase IN | Nas fases de entrada | 1- testar as fases R, S, T; 2- ver fusíveis ultra-rápidos |
+| E4 | Falha de carga | Contatora "CHINV" não liga | 1- verificar circuito da CHINV |
+| E5 | Falha de sub-tensão | Tensão do link da unidade IGBT | 1- tensão de entrada (R, S, T) abaixo da tolerância permitida; 2- IGBT de frenagem sempre ligado = trocar unidade IGBT |
+| E6 | Falha de sobre tensão | Tensão no link da unidade IGBT | 1- Tensão de entrada (R, S, T) acima da tolerância permitida; 2- IGBT de frenagem sempre desligado – trocar unidade IGBT |
+| EA | Falha de sinais | Fiação das linhas START, RED, MAN, DIRU, 1VEL, 2VEL, 3VL, T100, P28, P26, S0S E BKF | 1. Revisar conexão destas linhas; 2. Quando falha de P28 - porta aberta - revisar linha dos trincos; 3. Quando falha de BKF - revisar circuito do freio; 4. Revisar circuito S0S |
+| EC | Falha na segurança de poço, cabina ou casa de máquina | Falta tensão na linha T2+ | 1. Revisar toda fiação e contatos entre as linhas A1+K e T2+ |
+| ED | Erro de operação | Desliga o rele Seg. em qualquer estado de movimento | 1. Teclado conectado durante ajuste de algum parâmetro ou dentro de qualquer MENU e com o elevador em movimento = desconectar teclado |
+| EE | Falha na segurança do QC | Falta tensão na linha A1+K | 1. Revisar toda fiação e componentes entre as linhas T2+ e A1+K (FC, TD1) |
+| EF | Falha de sub ou sobre velocidade | Elevador para por velocidade acima ou abaixo da nominal | ENCODER não esta fixado ou alinhado corretamente no eixo do motor |
+
+Revisor: João Carlos Sá — Aprovador: Claudia Bothona
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-77ACEAC4AD5062B2
+SOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4
+RECORD_TYPE: FAULT_CONDITION
+ACTION: Código E0 — Falha na fase EU (fase U7): 1- testar unidade IGBT; 2- verificar cabos do motor em curto
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Falha na fase EU Na fase U7 1- testar unidade IGBT 2- cabos do motor em curto
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-359B262C52193B65
+SOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4
+RECORD_TYPE: FAULT_CONDITION
+ACTION: Código E1 — Falha na fase EV (fase V7): 1- testar unidade IGBT; 2- verificar cabos do motor em curto
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Falha na fase EV Na fase V7 1- testar unidade IGBT 2- cabos do motor em curto
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-657480DD6569F34E
+SOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4
+RECORD_TYPE: FAULT_CONDITION
+ACTION: Código E2 — Falha na fase EW (fase W7): 1- testar unidade IGBT; 2- verificar cabos do motor em curto
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Falha na fase EW Na fase W7 1- testar unidade IGBT 2- cabos do motor em curto
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-1AA1C14B3C82821E
+SOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4
+RECORD_TYPE: FAULT_CONDITION
+ACTION: Código E3 — Falha na fase IN (fases de entrada): 1- testar as fases R, S, T; 2- ver fusíveis ultra-rápidos
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Falha na fase IN Nas fases de entrada 1- testar as fases R, S, T; 2- ver fusíveis ultra-rápidos
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-D32746CE0677304E
+SOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4
+RECORD_TYPE: FAULT_CONDITION
+ACTION: Código E4 — Falha de carga (Contatora CHINV não liga): 1- verificar circuito da CHINV
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Falha de carga Contatora "CHINV" não liga 1- verificar circuito da CHINV
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-E3BEF1E2736FFA5D
+SOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4
+RECORD_TYPE: FAULT_CONDITION
+ACTION: Código E5 — Falha de sub-tensão (link da unidade IGBT): 1- tensão de entrada (R, S, T) abaixo da tolerância permitida; 2- IGBT de frenagem sempre ligado = trocar unidade IGBT
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: tensão de entrada (R, S, T) abaixo da tolerância permitida 2- IGBT de frenagem sempre ligado = trocar unidade IGBT
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-0501DD70667BA397
+SOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4
+RECORD_TYPE: FAULT_CONDITION
+ACTION: Código E6 — Falha de sobre tensão (link da unidade IGBT): 1- Tensão de entrada (R, S, T) acima da tolerância permitida; 2- IGBT de frenagem sempre desligado – trocar unidade IGBT
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Tensão de entrada (R, S ,T) acima da tolerância permitida 2- IGBT de frenagem sempre desligado – trocar unidade IGBT
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-7F612F4D36395E65
+SOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4
+RECORD_TYPE: FAULT_CONDITION
+ACTION: Código EA — Falha de sinais: revisar conexão das linhas START, RED, MAN, DIRU, 1VEL, 2VEL, 3VL, T100, P28, P26, S0S e BKF. Se falha P28: revisar linha dos trincos (porta aberta). Se falha BKF: revisar circuito do freio. Revisar circuito S0S
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Fiação das linhas START ,RED ,MAN ,DIRU ,1VEL ,2VEL ,3VL ,T100, P28, P26, S0S E BKF
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-274F5A760C89D76C
+SOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4
+RECORD_TYPE: FAULT_CONDITION
+ACTION: Código EC — Falha na segurança de poço, cabina ou casa de máquina (falta tensão na linha T2+): revisar toda fiação e contatos entre as linhas A1+K e T2+
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Falta tensão na linha T2+ 1. Revisar toda fiação e contatos entre as linhas A1+K e T2+
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-255A34710F7706D4
+SOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4
+RECORD_TYPE: FAULT_CONDITION
+ACTION: Código ED — Erro de operação (desliga o relé Seg. em qualquer estado de movimento): desconectar teclado se conectado durante ajuste de parâmetro ou dentro de qualquer MENU com elevador em movimento
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Teclado conectado durante ajuste de algum parâmetro ou dentro de qualquer MENU e com o elevador em movimento = desconectar teclado
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-3ED8549DFCF58C43
+SOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4
+RECORD_TYPE: FAULT_CONDITION
+ACTION: Código EE — Falha na segurança do QC (falta tensão na linha A1+K): revisar toda fiação e componentes entre as linhas T2+ e A1+K (FC, TD1)
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Falta tensão na linha A1+K 1. Revisar toda fiação e componentes entre as linhas T2+ e A1+K (FC, TD1)
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-E44FFFA99C164AA8
+SOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4
+RECORD_TYPE: FAULT_CONDITION
+ACTION: Código EF — Falha de sub ou sobre velocidade (elevador para por velocidade acima ou abaixo da nominal): verificar se ENCODER está fixado e alinhado corretamente no eixo do motor
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: ENCODER não esta fixado ou alinhado corretamente no eixo do motor
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-F0E19FDBBF92C40B
+SOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4
+RECORD_TYPE: STOP_WORK_CONDITION
+ACTION: Código ED — Desconectar teclado imediatamente se conectado durante ajuste de parâmetro ou dentro de qualquer MENU com elevador em movimento
+EXPECTED_RESULT: Desliga o rele Seg. em qualquer estado de movimento
+STOP_WORK_TRIGGER: Teclado conectado durante ajuste de algum parâmetro ou dentro de qualquer MENU e com o elevador em movimento
+STOP_WORK_REQUIRED_ACTION: desconectar teclado
+EVIDENCE: Desliga o rele Seg. em qualquer estado de movimento
+END_FIELD_RECORD

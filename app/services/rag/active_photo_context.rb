@@ -30,6 +30,14 @@ module Rag
       new(status: "loaded", field_photo_id: row.first, projection: projection)
     end
 
+    # Both builders emit a bounded, blank-line-delimited observation block.
+    # Keep it independent of the history budget on the generation path.
+    def self.generation_evidence(context)
+      context.to_s.split(/\n\n+/).find do |block|
+        block.start_with?("#{HEADER}\n", "## Photo Evidence (this turn)\n")
+      end
+    end
+
     def self.project(observation)
       payload = {
         "source" => "photo",

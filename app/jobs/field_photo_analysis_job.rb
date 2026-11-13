@@ -201,6 +201,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
       conversation_session_id: conversation_session_id,
       correlation_id: correlation_id,
       outcome: delivered.fetch(:outcome),
+      stage: delivered[:stage],
+      error_class: delivered[:error_class],
       latency_ms: elapsed_ms(started_at),
       original_query: technician_question(question),
       effective_query: delivered[:effective_query] || question,
@@ -276,6 +278,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
       conversation_session_id: conversation_session_id,
       correlation_id: correlation_id,
       outcome: delivered.fetch(:outcome),
+      stage: delivered[:stage],
+      error_class: delivered[:error_class],
       latency_ms: elapsed_ms(started_at),
       original_query: technician_question(question),
       effective_query: delivered[:effective_query] || question,
@@ -430,7 +434,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
                             session_context_snapshot: turn_context&.session_context,
                             entity_s3_uris_snapshot: turn_context&.entity_s3_uris,
                             retrieval_question: turn_context&.retrieval_question,
-                            equipment_identity: turn_context&.equipment_identity)
+                            equipment_identity: turn_context&.equipment_identity,
+                            session_snapshot: turn_context&.session_snapshot)
     end
     # nil when there is no question, or the flag flipped off between the check and the call
     if rag_answer.nil?
@@ -450,15 +455,29 @@ class FieldPhotoAnalysisJob < ApplicationJob
       }
     end
 
-    unless rag_answer[:failed]
-      session&.record_assistant_turn!(
-        rag_answer.fetch(:answer),
-        user_id: user_id,
-        correlation_id: correlation_id,
-        expected_episode_id: expected_episode_id,
-        writer: "photo_assistant"
-      )
+    written = session&.record_assistant_turn!(
+      rag_answer.fetch(:answer),
+      user_id: user_id,
+      correlation_id: correlation_id,
+      expected_episode_id: expected_episode_id,
+      pending_question: rag_answer[:pending_question],
+      focus_ids: rag_answer[:focus_ids],
+      prompt_reply: rag_answer[:failed] ? "" : rag_answer[:history_answer],
+      outcome: rag_answer[:failed] ? "failed" : (rag_answer[:case_outcome] || rag_answer[:route_outcome]),
+      case_evidence: rag_answer[:case_evidence],
+      expected_case_revision: rag_answer[:expected_case_revision],
+      writer: "photo_assistant"
+    )
+    if written == :stale || Rag::CompanionCaseWrite.conflict?(written)
+      answer = Rag::CompanionCaseWrite.conflict_answer(locale)
+      rag_answer = { answer: answer, failed: true, equipment_identity_reason: "stale_answer" }
     end
+    Rag::ValidationCapture.record(
+      "photo_answer_delivery", "answer" => rag_answer.fetch(:answer), "outcome" => photo_question_outcome(rag_answer),
+      "field_photo_id" => field_photo_id, "correlation_id" => correlation_id,
+      "generation_mode" => rag_answer[:generation_mode], "outcome_reason" => rag_answer[:equipment_identity_reason],
+      "error_class" => rag_answer[:error_class]
+    )
     KbSyncBroadcaster.photo_question_answered(
       answer: rag_answer.fetch(:answer), citations: rag_answer[:citations],
       provenance_segments: rag_answer[:provenance_segments],
@@ -468,7 +487,9 @@ class FieldPhotoAnalysisJob < ApplicationJob
       visual_summary: (display_value[:analysis] if rag_answer[:failed])
     )
     {
-      outcome: rag_answer[:failed] ? "failed" : photo_outcome(rag_answer[:answer]),
+      outcome: photo_question_outcome(rag_answer),
+      stage: ("photo_question_rag" if rag_answer[:failed]),
+      error_class: rag_answer[:error_class],
       answer: rag_answer[:answer],
       effective_query: rag_answer[:effective_query] || question,
       citations: rag_answer[:retrieved_citations],
@@ -485,7 +506,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
   # foto_mas_pregunta_rag "Aislamiento de fallo obligatorio".
   def answer_photo_question(question:, evidence_value:, session:, account_id:, user_id:, correlation_id:, locale:,
                              field_photo_id: nil, accepted_observation: nil, session_context_snapshot: nil,
-                             entity_s3_uris_snapshot: nil, retrieval_question: nil, equipment_identity: nil)
+                             entity_s3_uris_snapshot: nil, retrieval_question: nil, equipment_identity: nil, session_snapshot: nil)
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     account = session&.account || (account_id && Account.find_by(id: account_id))
 
@@ -503,7 +524,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
       entity_s3_uris_snapshot: entity_s3_uris_snapshot,
       retrieval_question: retrieval_question,
       equipment_identity: equipment_identity,
-      raw_question: @technician_text
+      raw_question: @technician_text,
+      session_snapshot: session_snapshot
     ).call
     return nil unless result
 
@@ -517,12 +539,16 @@ class FieldPhotoAnalysisJob < ApplicationJob
       route_taken: "photo_question_rag",
       question_sha256: Digest::SHA256.hexdigest(technician_question(question)),
       generation_mode: result[:generation_mode],
-      outcome: photo_outcome(result[:answer]),
+      outcome: photo_question_outcome(result),
+      stage: ("photo_question_rag" if result[:failed]),
+      outcome_reason: result[:equipment_identity_reason],
+      error_class: result[:error_class],
       latency_ms: elapsed_ms(started_at)
     )
     result
   rescue StandardError => e
-    Rails.logger.warn("FieldPhotoAnalysisJob photo-question RAG failed: #{e.class}: #{e.message}")
+    Rails.logger.warn("FieldPhotoAnalysisJob photo-question RAG failed correlation_id=#{correlation_id} error_class=#{e.class}")
+    Rag::ValidationCapture.record("photo_question_failure", "stage" => "rag", "error_class" => e.class.name, "backtrace" => Array(e.backtrace).first(12))
     PilotUsageLog.log(
       "photo_question_failed",
       account_id: account_id,
@@ -543,8 +569,15 @@ class FieldPhotoAnalysisJob < ApplicationJob
       citations: [],
       provenance_segments: Rag::ProvenanceSegmenter.call(answer: unavailable, citations: []),
       generation_mode: nil,
+      error_class: e.class.name,
       failed: true
     }
+  end
+
+  def photo_question_outcome(result)
+    return "failed" if result[:failed]
+
+    result[:route_outcome].presence&.to_s || photo_outcome(result[:answer])
   end
 
   def field_photo_thumbnail_url(field_photo_id)

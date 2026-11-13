@@ -122,7 +122,7 @@ module Rag
 
       raw = raw_turn.to_s.squish
       return "absent" if raw.blank?
-      return "present" if text.include?(raw) || sent_question.to_s.squish == raw
+      return "present" if text.squish.include?(raw) || sent_question.to_s.squish == raw
 
       "absent"
     end

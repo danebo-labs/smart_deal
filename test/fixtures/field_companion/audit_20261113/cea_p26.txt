@@ -1,0 +1,50 @@
+[DOCUMENT: manual-cea15p.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/manual-cea15p.pdf]
+[SEARCH_ALIASES: FPA, señal FPA, SM, SA, SPC, precierre, contacto de traba, patín retráctil]
+
+S4 — SISTEMA DE SEGURIDAD — Señales de puertas: FPA y ejemplos de configuración (continuación de página anterior)
+
+Señal FPA (continuación):
+La señal FPA es "0" cuando abren los contactos de ambas puertas (cabina y piso). Incluye el paralelo de los contactos.
+
+Si no existe la señal FPA en la instalación, se debe desactivar la opción "Usa señal FPA" en la configuración del controlador (ver sección "Parámetros del controlador" del capítulo "CONFIGURACION"). En ese caso, el controlador no procesa el terminal FPA, y el LED correspondiente puede usarse como testigo del estado de algún punto del sistema.
+
+---
+
+Ejemplos de configuración de puertas
+
+Definiciones utilizadas en los ejemplos:
+- Puerta de cabina manual: puerta de cabina de acción manual
+- Puerta de piso manual: puerta de piso de acción manual
+- Puerta de cabina automática: puerta de cabina actuada por operador de puerta
+- Puerta de piso automática: puerta de piso actuada por operador de puerta
+- Puerta de piso con doble contacto: puerta de piso con contacto de precierre (que se activa cuando la puerta cierra contra el marco) y contacto de traba (que se activa después de la acción de la traba).
+
+---
+
+Ejemplo 1: Puerta de cabina manual + Puerta de piso manual con doble contacto; contacto de traba por patín retráctil:
+- El contacto de puerta de cabina cerrada se incluye en SM
+- Los contactos de precierre de las puertas de piso se incluyen en SM
+- SPC se conecta a SM
+- Los contactos de traba de las puertas de piso se incluyen en SA
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-6E2A4FEA0315FF9B
+SOURCE_SECTION_OR_PAGE: (continuación de página anterior)
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: Si no existe la señal FPA, desactivar la opción 'Usa señal FPA' en la configuración del controlador (sección 'Parámetros del controlador', capítulo 'CONFIGURACION')
+EXPECTED_RESULT: El controlador no procesa el terminal FPA; el LED correspondiente puede usarse como testigo del estado de algún punto del sistema
+EVIDENCE: el controlador no procesa el terminal FPA, por lo que se puede usar el LED correspondiente como testigo
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-DF645A928BC9EB1F
+SOURCE_SECTION_OR_PAGE: Ejemplos
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: Configuración Ejemplo 1 — Puerta de cabina manual + Puerta de piso manual con doble contacto (traba por patín retráctil): incluir contacto de puerta de cabina cerrada en SM; incluir contactos de precierre de puertas de piso en SM; conectar SPC a SM; incluir contactos de traba de puertas de piso en SA
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+DETAILS: scope=cadena de seguridad puertas; precondition=puerta cabina manual y puerta piso manual con doble contacto con patín retráctil
+EVIDENCE: El contacto de puerta de cabina cerrada se incluye en SM … Los contactos de traba de las puertas de piso se incluyen en SA
+END_FIELD_RECORD

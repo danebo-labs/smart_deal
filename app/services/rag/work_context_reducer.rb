@@ -1284,7 +1284,10 @@ module Rag
       normalized = FollowupQueryRewriter.normalize_label(text)
       return false if normalized.blank?
 
-      TechnicalUnderstanding::SIGNAL_RE.match?(normalized)
+      return false if normalized.match?(/\b(?:no (?:veo|hay|muestra|aparece|indica)|sin)\s+(?:un\s+)?(?:codigos?|alarmas?)\b/)
+
+      TechnicalUnderstanding::SIGNAL_RE.match?(normalized) ||
+        normalized.match?(/\b(?:no (?:respond\w*|trab\w*)|se reabr\w*|ruido|se oye fuerte)\b/)
     end
   end
 end

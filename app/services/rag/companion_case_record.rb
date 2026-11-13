@@ -24,10 +24,11 @@ module Rag
       # alone is longer than FollowupQueryRewriter::MAX_COMPOSED_CHARS, Retrieve
       # receives its leading characters, current_truncated is true, and every
       # other turn is omitted. The stored message is not cut here.
-      def retrieval_text(session, raw_question, now: Time.current, correlation_id: nil, episode: nil)
+      def retrieval_text(session, raw_question, now: Time.current, correlation_id: nil, episode: nil, resumed_question: nil)
         ordered = ordered_turns(session, raw_question, now, correlation_id)
         return Retrieval.new(text: "", included: [], omitted: [], current_truncated: false) if ordered.empty?
 
+        ordered.first["text"] = resumed_question if resumed_question.present?
         ordered = omit_rejected_context(ordered, episode)
         compose_retrieval(ordered)
       end

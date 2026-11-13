@@ -610,6 +610,7 @@ class BedrockRagService
       episode: episode,
       raw_question: raw_question
     )
+    photo_evidence = Rag::ActivePhotoContext.generation_evidence(session_context)
     evidence_chunks = companion_evidence_chunks(
       applied.chunks,
       focus: companion_focus && profile_count == RagRetrievalProfile::PINNED_DOCUMENT_RESULTS,
@@ -623,14 +624,15 @@ class BedrockRagService
     companion_plan = if companion_turn && !direct_turn
       Rag::CompanionPlan.prepare(
         raw_question: raw_question, chunks: companion_chunks, episode: episode,
-        session: conv_session, correlation_id: correlation_id
+        session: conv_session, correlation_id: correlation_id, photo_evidence: photo_evidence
       )
     end
     companion_direct = if direct_turn
       Rag::CompanionDirectAnswer.prepare(
         raw_question: raw_question, chunks: companion_chunks, episode: episode,
         session: conv_session, correlation_id: correlation_id,
-        scope_uris: entity_s3_uris, viewer_account: @account
+        scope_uris: entity_s3_uris, viewer_account: @account, photo_evidence: photo_evidence,
+        unresolved_question: same_work_question(conv_session, raw_question, correlation_id)
       )
     end
     prompt = if companion
@@ -660,7 +662,7 @@ class BedrockRagService
           retrieval: retrieval,
           model_invoked: false
         ),
-        question, raw_turn: raw_question, sent_question: question, truncated: generation_truncated
+        nil, raw_turn: raw_question, sent_question: question, truncated: generation_truncated
       )
     end
     raw_answer = begin
@@ -782,6 +784,7 @@ class BedrockRagService
     identity_closed_result(
       status: :unavailable,
       reason: identity_failure_reason(e, stage: :retrieval),
+      error: e,
       question: question,
       response_locale: response_locale
     )
@@ -791,6 +794,7 @@ class BedrockRagService
     identity_closed_result(
       status: :unavailable,
       reason: :retrieval_error,
+      error: e,
       question: question,
       response_locale: response_locale
     )
@@ -927,7 +931,8 @@ class BedrockRagService
         return direct_reference_result(
           question: question, raw_question: raw_turn, chunks: chunks, retrieval: retrieval,
           response_locale: response_locale, episode: episode, conv_session: conv_session,
-          scope_uris: attempt_uris, correlation_id: query_correlation_id, attribution: attribution
+          scope_uris: attempt_uris, correlation_id: query_correlation_id, attribution: attribution,
+          photo_evidence: Rag::ActivePhotoContext.generation_evidence(session_context)
         )
       end
       if chunks.empty?
@@ -1230,7 +1235,7 @@ class BedrockRagService
   # Reference text uses the same numbered pack as publication, while field
   # applicability stays separate from the document's own facts.
   def direct_reference_result(question:, raw_question:, chunks:, retrieval:, response_locale:, episode:,
-                              conv_session:, scope_uris:, correlation_id:, attribution:, incompatible: false)
+                              conv_session:, scope_uris:, correlation_id:, attribution:, incompatible: false, photo_evidence: nil)
     locale = effective_response_locale(question, response_locale: response_locale)
     active = episode.is_a?(Rag::ActiveEpisode) ? episode : Rag::ActiveEpisode.parse(episode)
     controller = active&.fact("controller")
@@ -1264,7 +1269,8 @@ class BedrockRagService
       ].compact.join(" ")
       prepared = Rag::CompanionDirectAnswer.prepare(
         raw_question: raw_question, chunks: chunks, episode: episode, session: conv_session,
-        correlation_id: correlation_id, reference_context: context, scope_uris: scope_uris, viewer_account: @account
+        correlation_id: correlation_id, reference_context: context, photo_evidence: photo_evidence,
+        scope_uris: scope_uris, viewer_account: @account
       )
       raw = companion_direct_answer(prepared, attribution.merge(correlation_id: correlation_id, user_query: raw_question))
       result = finish_companion_turn_generation(
@@ -1274,7 +1280,7 @@ class BedrockRagService
         correlation_id: correlation_id, reference_pending: pending, reference_mode: true,
         reference_confirmed: confirmed, episode: episode
       )
-      return result if result[:route_outcome] == :answered
+      return attach_generation_trace!(result, prepared.user, raw_turn: raw_question, sent_question: question, truncated: prepared.omitted.any?) if result[:route_outcome] == :answered
     end
 
     withheld = result[:answer] if result&.dig(:applicability_violation)
@@ -1648,13 +1654,20 @@ class BedrockRagService
     composed.text
   end
 
+  def same_work_question(session, raw_question, correlation_id)
+    return unless Rag::TurnPerception.same_equipment_reply?(raw_question) && session
+
+    session.same_work_question_for(correlation_id)
+  end
+
   def direct_case_retrieve_question(question, raw_question:, conv_session:, correlation_id:, companion_focus:, episode: nil)
     return question unless companion_focus && companion_generation_direct? && conv_session
 
     retrieval = Rag::CompanionCaseRecord.retrieval_text(
       conv_session,
       raw_question.presence || question,
-      correlation_id: correlation_id, episode: episode
+      correlation_id: correlation_id, episode: episode,
+      resumed_question: same_work_question(conv_session, raw_question, correlation_id)
     )
     effective = retrieval.text.presence || question.to_s
     @companion_case_retrieve_question = effective
@@ -3499,6 +3512,7 @@ class BedrockRagService
   # either: "no necesito el plano" matched the old alternation and would have
   # taken the turn off the companion.
   PLAN_REQUEST = /plano|esquema|\betiquetas?\b(?!\s+del\s+equipo)|schematic|diagram|\blabels?\b/i
+  PLAN_ATTACHMENT = /\b(?:adjunt\p{L}*|env[íi]\p{L}*|compart\p{L}*|attach\w*|send\w*|shar\w*)\b[^.!?]*\z/i
   PLAN_NEGATION = /\A(?:no|ni|nunca|sin|tampoco|ningun[oa]?)\z/i
   DIAGRAM_SECTION = /(?:^|\n)\s*(?:#+\s*)?(?:diagrama|plano|esquema|tabla de etiquetas|schematic|label table)\b/i
   TOPOLOGY_EDGE_MARK = "The one exception is a RECORD_TYPE: TOPOLOGY_EDGE record:"
@@ -3507,7 +3521,9 @@ class BedrockRagService
     text = "#{question}\n#{session_context}"
     offset = 0
     while (match = text.match(PLAN_REQUEST, offset))
-      return true unless plan_term_negated?(text, match.begin(0))
+      offset_in_text = match.begin(0)
+      lead = text[0...offset_in_text].split(/[.!?\n]/, -1).last.to_s
+      return true unless plan_term_negated?(text, offset_in_text) || lead.match?(PLAN_ATTACHMENT)
 
       offset = match.end(0)
       offset += 1 if offset <= match.begin(0)

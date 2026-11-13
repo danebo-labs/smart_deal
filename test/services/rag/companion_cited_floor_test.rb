@@ -253,7 +253,41 @@ class Rag::CompanionCitedFloorTest < ActiveSupport::TestCase
     assert_equal "KP-VS está en 2,5.", generic.text
   end
 
+  test "rejects a cited commissioning preset used as a diagnostic target" do
+    installation = '18.5 Instalação. Verificar no menu PID os valores, em caso de diferença. "KP-VS" = [3,5]'
+    result = call(
+      'La evaluación sigue pendiente. Corresponde ajustarlo a 3,5.',
+      "#{@page18}\n#{installation}", "Ingeniería leyó KP-VS en 2,5"
+    )
+
+    assert_equal "La evaluación sigue pendiente.", result.text
+    assert_equal [ "installation_preset_as_diagnosis" ], result.removed.pluck("reason")
+
+    for_reference = '3,5 figura como referencia de instalación. No ajustes KP-VS a 3,5 por el ruido.'
+    assert_equal for_reference, call(for_reference, "#{@page18}\n#{installation}", "Ingeniería leyó KP-VS en 2,5").text
+    assert_includes call("Ajusta KP-VS a 3,5 durante la puesta en marcha.", installation, "Se está comisionando.").text, "3,5"
+  end
+
+  test "binds the preset to the parameter on another controller, including a later reading" do
+    manual = <<~TEXT
+      Si hay vibración fuerte, reducir el parámetro TS-K2 hasta el mínimo de 4.
+      Instalación inicial:
+      "TS-K2" = [7]
+    TEXT
+    result = call_with_installation(
+      "La evaluación sigue pendiente. Debe ajustar TS-K2 a 7. El parámetro VX-K2 está pendiente.",
+      manual, [ "El equipo midió TS K2 a 5" ]
+    )
+
+    assert_equal "La evaluación sigue pendiente. El parámetro VX-K2 está pendiente.", result.text
+    assert_equal [ "TS-K2" ], result.removed.pluck("parameter")
+  end
+
   private
+
+  def call_with_installation(text, manual, observations)
+    Rag::CompanionCitedFloor.call(text: text, sources: [ { "content" => manual } ], observations: observations)
+  end
 
   def call_with(text, technician_texts, observations)
     Rag::CompanionCitedFloor.call(

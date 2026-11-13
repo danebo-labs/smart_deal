@@ -440,6 +440,12 @@ module RagQueryConcern
       correlation_id: result[:correlation_id] || correlation_id
     )
     sanitized_answer = sanitize_answer(guarded[:answer], channel: resolved_output_channel)
+    if Rag::ValidationCapture.active? && sanitized_answer != result[:answer]
+      Rag::ValidationCapture.record(
+        "answer_presentation", "before" => result[:answer], "after" => sanitized_answer,
+        "fidelity_removed" => guarded[:removed]
+      )
+    end
     quick_replies    = result[:quick_replies]
     pending_question = result[:pending_question]
     route_outcome = result[:route_outcome]
@@ -577,10 +583,15 @@ module RagQueryConcern
     out.strip
   end
 
-  # CG-D19: a markdown heading the model writes ("# Respuesta", "## Dato
-  # faltante") is a label, not prose. The whole line goes, not just the hashes.
+  # Discard boilerplate headings. A technical heading can name the subject
+  # of the next sentence, so keep its words when flattening Markdown.
+  GENERIC_ANSWER_HEADING = /\A(?:respuesta|answer|title|t[ií]tulo|encabezado|datos? faltantes?|missing (?:data|information)|recomendaci[oó]n|recommendation|conclusi[oó]n|conclusion):?\z/i.freeze
+
   def strip_markdown_headers(text)
-    text.gsub(/^[ \t]*\#{1,6}\s+[^\n]*\n?/, '')
+    text.gsub(/^[ \t]*\#{1,6}[ \t]+([^\n]+)\n?/) do
+      title = Regexp.last_match(1).strip
+      title.match?(GENERIC_ANSWER_HEADING) || title.match?(Rag::CompanionTurnPublication::CITATION_PATTERN) ? "" : "**#{title}**\n"
+    end
   end
 
   # CG-D19, amended 2026-10-15 (Lahiri) and 2026-10-22.

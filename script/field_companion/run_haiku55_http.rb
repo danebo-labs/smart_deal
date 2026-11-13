@@ -99,9 +99,18 @@ module Haiku55Http
       ]
     }
   }.freeze
+  AUDIT_JOURNEYS = JSON.parse(Rails.root.join("test/fixtures/field_companion/audit_20261113/journeys.json").read).freeze
+  AUDIT_SCRIPTS = {
+    "audit_thyssen_photo" => { "document_uid" => FDN_DOCUMENT_UID, "turns" => AUDIT_JOURNEYS.fetch("photo"), "photo" => true },
+    "audit_thyssen_engineering" => { "document_uid" => FDN_DOCUMENT_UID, "turns" => AUDIT_JOURNEYS.fetch("engineering") },
+    "audit_thyssen_engineering_plate" => {
+      "document_uid" => FDN_DOCUMENT_UID,
+      "turns" => AUDIT_JOURNEYS.fetch("engineering").dup.tap { |turns| turns[2] = AUDIT_JOURNEYS.fetch("engineering_variant").first }
+    }
+  }.freeze
   # Revision journeys: after turn N, the card for one of the listed manuals
   # is confirmed with its own action, and the same question is replayed.
-  EXTRA_SCRIPTS = KPVS_SCRIPTS.merge(
+  EXTRA_SCRIPTS = KPVS_SCRIPTS.merge(AUDIT_SCRIPTS).merge(
     "cea" => { "document_uid" => CEA_DOCUMENT_UID, "turns" => CEA_TURNS },
     "cea_label_known" => { "document_uid" => CEA_DOCUMENT_UID, "turns" => [ CEA_TURNS.first, "Leo CEA15+ en el rótulo de la placa." ] },
     "cea_label_unseen" => { "document_uid" => CEA_DOCUMENT_UID, "turns" => [ CEA_TURNS.first, "No puedo ver el rótulo." ] },
@@ -181,6 +190,8 @@ module Haiku55Http
     turn = Haiku55Companion.per_turn_ceiling
     scripts = plan.index_with { |name| reservation(name, turn) }
     room = grant_room(ledger)
+    cap = ledger.dig("authorization", "call_cap").to_i
+    remaining = cap - ledger["attempts"].to_i
     worst = scripts.values.sum(BigDecimal("0")) { |row| BigDecimal(row["ceiling_usd"]) }
     calls = scripts.values.sum { |row| row["calls"] }
     pins = plan.index_with { |name| document_for(name)&.display_s3_uri(KbDocument::KB_BUCKET) }
@@ -195,8 +206,10 @@ module Haiku55Http
       "pin_missing"
     elsif accounts.size != 1 || AccountHostResolver.host_map.key?(request_host(document_for(plan.first).account))
       "host_account_mismatch"
-    elsif worst > room["usd"] || calls > room["calls"]
+    elsif worst > room["usd"] || calls > room["calls"] || (cap >= NEXT_CAP && calls > remaining)
       "grant_does_not_cover_plan"
+    elsif plan.any? { |name| script(name)["photo"] }
+      "photo_requires_guarded_worker"
     else
       "execute"
     end
@@ -212,6 +225,8 @@ module Haiku55Http
       "plan_calls" => calls,
       "room_usd" => money(room["usd"]),
       "room_calls" => room["calls"],
+      "assignment_call_cap" => cap,
+      "assignment_remaining_calls" => remaining,
       "attempts" => ledger["attempts"],
       "committed" => ledger["committed"],
       "unknown" => ledger["unknown"],
@@ -227,7 +242,9 @@ module Haiku55Http
   def reservation(name, turn)
     turns = script(name)["turns"].size + script(name).fetch("accept", {}).size
     ceiling = (turn["interpreter"] + turn["generation"]) * turns
-    { "turns" => turns, "calls" => turns * 2 + 1, "ceiling_usd" => money(ceiling + turn["interpreter"]) }
+    reservation = { "turns" => turns, "calls" => turns * 2 + 1, "ceiling_usd" => money(ceiling + turn["interpreter"]) }
+    reservation["vision"] = { "calls_separate_from_haiku" => 1, "route" => "field_photo" } if script(name)["photo"]
+    reservation
   end
 
   def grant_room(ledger)

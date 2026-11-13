@@ -29,7 +29,7 @@ class ConversationSession < ApplicationRecord
     :expected_revision, :current_revision, :correlation_id
   )
   PhotoTurnContext = Data.define(
-    :status, :session_context, :entity_s3_uris, :equipment_identity, :retrieval_question
+    :status, :session_context, :entity_s3_uris, :equipment_identity, :retrieval_question, :session_snapshot
   )
   PINNED_IMAGE_EXTENSIONS = %w[.gif .jpeg .jpg .png .webp].freeze
   DOCUMENT_FOCUS_KEYS = %w[added_at display_name kb_document_id source_uri].freeze
@@ -149,12 +149,12 @@ class ConversationSession < ApplicationRecord
 
   # ─── History ────────────────────────────────────────────────────────────────
 
-  def add_to_history(role, content, user_id: nil, correlation_id: nil, focus_ids: nil, prompt_reply: nil)
+  def add_to_history(role, content, user_id: nil, correlation_id: nil, focus_ids: nil, prompt_reply: nil, outcome: nil)
     with_lock do
       history = conversation_history.last(MAX_HISTORY - 1)
       history << history_message(
         role, content, user_id: user_id, correlation_id: correlation_id,
-        focus_ids: focus_ids, prompt_reply: prompt_reply
+        focus_ids: focus_ids, prompt_reply: prompt_reply, outcome: outcome
       )
       update!(conversation_history: history)
     end
@@ -239,7 +239,7 @@ class ConversationSession < ApplicationRecord
     unless episode_recording?
       add_to_history(
         "assistant", content, user_id: user_id, correlation_id: correlation_id,
-        focus_ids: focus_ids, prompt_reply: prompt_reply
+        focus_ids: focus_ids, prompt_reply: prompt_reply, outcome: outcome
       )
       capture_assistant_write!(
         correlation_id: correlation_id, presented: content, stored: conversation_history.last,
@@ -303,13 +303,18 @@ class ConversationSession < ApplicationRecord
         history = conversation_history.last(MAX_HISTORY - 1)
         history << history_message(
           "assistant", content, user_id: user_id, correlation_id: correlation_id,
-          focus_ids: focus_ids, prompt_reply: prompt_reply
+          focus_ids: focus_ids, prompt_reply: prompt_reply, outcome: outcome
         )
         capture_assistant_write!(
           correlation_id: correlation_id, presented: content, stored: history.last,
           before_state: nil, after_state: nil, dropped: false
         )
-        update!(conversation_history: history)
+        episode = Rag::ActiveEpisode.parse(active_episode)
+        Rag::ActiveEpisodeTurn.install_pending!(episode, pending_question, correlation_id) if pending_question && episode.present?
+        attrs = { conversation_history: history }
+        attrs[:active_episode] = episode.to_h if pending_question && episode.present?
+        attrs[:case_evidence] = case_evidence if case_evidence.is_a?(Hash)
+        update!(attrs)
         next
       end
 
@@ -949,13 +954,19 @@ class ConversationSession < ApplicationRecord
     end
   end
 
+  def same_work_question_for(correlation_id)
+    return @same_work_question if @same_work_correlation == correlation_id && correlation_id.present?
+
+    nil
+  end
+
   private
 
   def capture_photo_turn_context(status, question: nil, accepted_observation: nil, correlation_id: nil)
     if status == :stale
       return PhotoTurnContext.new(
         status: status, session_context: nil, entity_s3_uris: nil,
-        equipment_identity: nil, retrieval_question: nil
+        equipment_identity: nil, retrieval_question: nil, session_snapshot: nil
       )
     end
 
@@ -972,7 +983,8 @@ class ConversationSession < ApplicationRecord
       session_context: SessionContextBuilder.build(self).to_s,
       entity_s3_uris: SessionContextBuilder.entity_s3_uris(self),
       equipment_identity: derived.equipment_identity,
-      retrieval_question: derived.retrieval_question
+      retrieval_question: derived.retrieval_question,
+      session_snapshot: (self.class.instantiate(attributes).tap(&:readonly!) if status == :applied)
     )
   end
 
@@ -1122,8 +1134,14 @@ class ConversationSession < ApplicationRecord
     Rag::ValidationCapture.bind(episode_id: working.episode_id)
     Rag::EpisodeDelta.record(before_episode, working, correlation_id: correlation_id)
 
+    retrieval_turn = turn
+    if Rag::TurnPerception.same_equipment_reply?(turn) && before_episode.pending_question&.dig("type") == "work_relation"
+      @same_work_correlation = correlation_id
+      @same_work_question = previous_work_relation_turn(correlation_id)
+      retrieval_turn = @same_work_question.presence || turn
+    end
     explained = Rag::QueryComposer.explain(
-      state: working, turn: turn, perception: perception, decision: decision,
+      state: working, turn: retrieval_turn, perception: perception, decision: decision,
       active_photo_context: photo_context
     )
     query = explained[:query]
@@ -1144,6 +1162,13 @@ class ConversationSession < ApplicationRecord
     record_effective_query(turn, query, explained[:components], result)
     persist_user_turn!(stored, result, turn, user_id, correlation_id, now)
     result
+  end
+
+  def previous_work_relation_turn(correlation_id)
+    prior = SessionContextBuilder.companion_episode_user_messages(self).reverse.find do |message|
+      message["correlation_id"] != correlation_id
+    end
+    SessionContextBuilder.companion_message_text(prior) if prior
   end
 
   # The interpreter never returned a perception. The user line is stored once.

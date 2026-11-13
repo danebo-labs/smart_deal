@@ -1,0 +1,18 @@
+[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]
+[SEARCH_ALIASES: KP-VS, MENU PID, ruido motor, ruído audível, motor de tração]
+
+19.13 Ajuste del ruido en el motor de tracción — parámetro "KP-VS" en "MENU PID"
+
+- En caso de ruido audible muy elevado: disminuya el valor del parámetro **"KP-VS"**, hasta el mínimo de [3,0].
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-466F3205004C5604
+SOURCE_SECTION_OR_PAGE: 19.13 Ajuste do ruido no motor de tração com o ajuste do parametro "KP-VS" no "MENU PID"
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: En caso de ruido audible muy elevado en el motor de tracción, disminuir el valor del parámetro 'KP-VS' en MENU PID hasta el mínimo de [3,0].
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Diminua o valor deste parâmetro, até o mínimo de [3,0]
+END_FIELD_RECORD

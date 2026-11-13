@@ -1,0 +1,114 @@
+[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]
+[SEARCH_ALIASES: Sinais de Porta, motor de operador, RA-46 P19 abrindo, RA-47 P20 fechando, RA-50 P24 confirmação, RA-51 P26 portas pavimento, RA-52 P27 porta cabina, RA-53 P28 trinco]
+
+S6 — ELECTRICAL: Sinais de Porta quando com Motor de Operador (Seção 11.6)
+
+Tabela de sinais de porta para o controlador MCINV4 quando equipado com motor de operador (página 9 de 26, documento 3Z.0006.GY):
+
+| SINAL | FUNÇÃO |
+|-|-|
+| RA-46 / P19 = +110 Vcc | Ponto de alimentação da redução magnética do operador quando porta está abrindo |
+| RA-47 / P20 = +110 Vcc | Ponto de alimentação da redução magnética do operador quando a porta está fechando |
+| RA-50 / P24 = +110 Vcc | Ponto para ligar contato de confirmação de porta aberta ou fechada |
+| RA-51 / P26 = +110 Vcc | Ponto para ligar sinal do circuito série dos contatos das portas de pavimento confirmando porta fechada tipo eixo vertical |
+| RA-52 / P27 = +110 Vcc | Ponto para ligar sinal do contato da porta de cabina confirmando porta fechada |
+| RA-53 / P28 = +110 Vcc | Ponto para ligar sinal do contato de engate do trinco, confirmando portas de pavimento fechada |
+| P28K / +24 Vcc | Sinal de porta fechada, gerada pelo módulo INTERV3F para MCINV4 |
+| RA-68 / RD – 220/380 Vca | FASE "RD" — FASES DE ACIONAMENTO DO MOTOR com os seguintes filtros para o operador: 3Z.0591.GG.1, 3Z.0591.GF.1 e 3 peças X08.014.154 |
+| RA-69 / SD – 220/380 Vca | FASE "SD" — FASES DE ACIONAMENTO DO MOTOR com os seguintes filtros para o operador: 3Z.0591.GG.1, 3Z.0591.GF.1 e 3 peças X08.014.154 |
+| RA-70 / TD – 220/380 Vca | FASE "TD" — FASES DE ACIONAMENTO DO MOTOR com os seguintes filtros para o operador: 3Z.0591.GG.1, 3Z.0591.GF.1 e 3 peças X08.014.154 |
+
+Nota: Os filtros do operador de porta referenciados são: 3Z.0591.GG.1, 3Z.0591.GF.1 e 3 peças X08.014.154.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-FCE2D7A328335330
+SOURCE_SECTION_OR_PAGE: 11.6 Sinais de Porta quando com motor de Operador
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RA-46 / P19 = +110 Vcc — Ponto de alimentação da redução magnética do operador quando porta está abrindo.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Ponto de alimentação da redução magnética do operador quando porta está abrindo
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-91E05305B8F22760
+SOURCE_SECTION_OR_PAGE: 11.6 Sinais de Porta quando com motor de Operador
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RA-47 / P20 = +110 Vcc — Ponto de alimentação da redução magnética do operador quando a porta está fechando.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Ponto de alimentação da redução magnética do operador quando a porta está fechando
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-1CCB879EB066131E
+SOURCE_SECTION_OR_PAGE: 11.6 Sinais de Porta quando com motor de Operador
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RA-50 / P24 = +110 Vcc — Ponto para ligar contato de confirmação de porta aberta ou fechada.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Ponto para ligar contato de confirmação de porta aberta ou fechada
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-69FBE93A4B3FDA63
+SOURCE_SECTION_OR_PAGE: 11.6 Sinais de Porta quando com motor de Operador
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RA-51 / P26 = +110 Vcc — Ponto para ligar sinal do circuito série dos contatos das portas de pavimento confirmando porta fechada tipo eixo vertical.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: circuito série dos contatos das portas de pavimento confirmando porta fechada tipo eixo vertical
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-271E8EB787D2FAB0
+SOURCE_SECTION_OR_PAGE: 11.6 Sinais de Porta quando com motor de Operador
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RA-52 / P27 = +110 Vcc — Ponto para ligar sinal do contato da porta de cabina confirmando porta fechada.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Ponto para ligar sinal do contato da porta de cabina confirmando porta fechada
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-469FC1F086E84303
+SOURCE_SECTION_OR_PAGE: 11.6 Sinais de Porta quando com motor de Operador
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RA-53 / P28 = +110 Vcc — Ponto para ligar sinal do contato de engate do trinco, confirmando portas de pavimento fechada.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Ponto para ligar sinal do contato de engate do trinco, confirmando portas de pavimento fechada
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-B4296B49C777CAFA
+SOURCE_SECTION_OR_PAGE: 11.6 Sinais de Porta quando com motor de Operador
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: P28K / +24 Vcc — Sinal de porta fechada, gerada pelo módulo INTERV3F para MCINV4.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Sinal de porta fechada, gerada pelo módulo INTERV3F para MCINV4
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-67D436E0D9D5BF41
+SOURCE_SECTION_OR_PAGE: 11.6 Sinais de Porta quando com motor de Operador
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RA-68 / RD – 220/380 Vca — FASE 'RD': fase de acionamento do motor do operador, com filtros 3Z.0591.GG.1, 3Z.0591.GF.1 e 3 peças X08.014.154.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: FASES DE ACIONAMENTO DO MOTOR com os seguintes filtros para o operador
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-627E2751E511D8EB
+SOURCE_SECTION_OR_PAGE: 11.6 Sinais de Porta quando com motor de Operador
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RA-69 / SD – 220/380 Vca — FASE 'SD': fase de acionamento do motor do operador, com filtros 3Z.0591.GG.1, 3Z.0591.GF.1 e 3 peças X08.014.154.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: FASES DE ACIONAMENTO DO MOTOR com os seguintes filtros para o operador
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-D63EA26340BE56B3
+SOURCE_SECTION_OR_PAGE: 11.6 Sinais de Porta quando com motor de Operador
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RA-70 / TD – 220/380 Vca — FASE 'TD': fase de acionamento do motor do operador, com filtros 3Z.0591.GG.1, 3Z.0591.GF.1 e 3 peças X08.014.154.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: FASES DE ACIONAMENTO DO MOTOR com os seguintes filtros para o operador
+END_FIELD_RECORD

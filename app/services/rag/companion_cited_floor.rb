@@ -44,6 +44,9 @@ module Rag
     /ix
     # Not a decrease, but still an order on the value: not a comparison.
     SET_UP = /(?<![[:alnum:]])(?:sube|subir|s[uú]bel[oa]|aument(?:a|ar|e)(?:l[oa])?|increment(?:a|ar|e)(?:l[oa])?|pon(?:l[oa])?|poner(?:l[oa])?|deja(?:l[oa])?|dejar(?:l[oa])?|fija(?:l[oa])?)(?![[:alnum:]])/i
+    ADJUSTMENT = /#{SET_UP.source}|(?<![[:alnum:]])(?:ajusta(?:r)?|ajust[ea]|carga(?:r)?|configura(?:r)?)(?:l[oa])?(?![[:alnum:]])/i
+    INSTALLATION_CONTEXT = /\b(?:instala[cç][iã]?[oó]n?|puesta en marcha|partida inicial|comissionamento|commissioning)\b/i
+    PRESET_ROW = /["“]?(#{PARAMETER.source})["”]?\s*=\s*\[?(#{NUMBER})\]?/
     NEGATOR = /
       (?<![[:alnum:]])(?:no|nunca|jam[aá]s|tampoco|ni|sin|evit\w+|not|never|don't|do\s+not)(?![[:alnum:]])
       (?:\s+[[:alpha:]'-]+){0,3}\s*\z
@@ -279,7 +282,43 @@ module Rag
           "reported" => reported[name], "reported_from" => reports.dig(name, :source), "target" => target
         }
       end
-      nil
+      installation_order(text, written, sentence, sentences, index)
+    end
+
+    # A preset from installation cannot be promoted to a target for the
+    # active diagnosis. Require both the diagnostic floor and a read value
+    # for that parameter so a commissioning query keeps its own scope.
+    def installation_order(text, written, sentence, sentences, index)
+      match = text.match(ADJUSTMENT)
+      return if match.nil?
+      return if text[0...match.begin(0)].match?(NEGATOR)
+      return if @text[sentence].match?(INSTALLATION_CONTEXT)
+
+      target_token = written[match.end(0)..][TARGET, 1]
+      return if target_token.nil?
+
+      target = decimal(target_token)
+      name = parameter_of(text, match, sentence, sentences, index)
+      if name.nil? && names_in(text).empty? && implied_object?(text, match)
+        candidates = reports.keys.select { |key| installation_presets[key]&.include?(target) }
+        name = candidates.first if candidates.one?
+      end
+      return unless reported[name] && installation_presets[name]&.include?(target)
+
+      { "reason" => "installation_preset_as_diagnosis", "parameter" => name, "target" => target }
+    end
+
+    def installation_presets
+      @installation_presets ||= @sources.each_with_object({}) do |source, rows|
+        content = CompanionTurnPublication.content_of(source)
+        next unless content.match?(INSTALLATION_CONTEXT)
+
+        content.scan(PRESET_ROW).each do |name, number|
+          next unless floors.key?(name)
+
+          (rows[name] ||= []) << decimal(number)
+        end
+      end
     end
 
     def parameter_of(text, match, sentence, sentences, index)

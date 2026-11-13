@@ -1,0 +1,76 @@
+[DOCUMENT: manual-cea15p.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/manual-cea15p.pdf]
+[SEARCH_ALIASES: SM, SPC, SA, precierre, patín retráctil, contacto de traba, puerta de piso manual, puerta de piso automática]
+
+Configuraciones de cadena de seguridad de puertas — SM, SPC, SA (continuación)
+
+Esta sección describe cómo se distribuyen los contactos de puerta entre las señales SM, SPC y SA según el tipo de combinación de puertas de cabina y piso.
+
+**Combinación 1 (continuación de página anterior): Puerta de cabina automática + Puerta de piso manual con doble contacto; contacto de traba por operador de puerta**
+
+Asignación de contactos:
+- El contacto de puerta de cabina cerrada se incluye en SPC
+- Los contactos de precierre de las puertas de piso se incluyen en SM
+- El contacto de traba de la puerta de piso se incluye en SPC
+- Se conecta SA a SPC
+
+Estado lógico resultante:
+- SM = "1" si cierran todas las puertas de piso, los límites generales, contactos de emergencia, llave de parada, etc.
+- SPC = "1" si se cumplió el cierre del operador de puerta.
+- SA = "1" si se cumplió el cierre del operador de puerta (por conexión SA a SPC).
+
+---
+
+**Combinación 2: Puerta de cabina automática + Puerta de piso manual con doble contacto; contacto de traba por patín retráctil**
+
+Asignación de contactos:
+- El contacto de puerta de cabina cerrada se incluye en SPC
+- Los contactos de precierre de las puertas de piso se incluyen en SM
+- Los contactos de traba de las puertas de piso se incluyen en SA
+
+Estado lógico resultante:
+- SM = "1" si cierran todas las puertas de piso, los límites generales, contactos de emergencia, llave de parada, etc.
+- SPC = "1" si se cumplió el cierre del operador de puerta.
+- SA = "1" si el patín retráctil está retirado.
+
+---
+
+**Combinación 3: Puerta de cabina automática + Puerta de piso automática con doble contacto; contacto de traba por operador de puerta**
+
+Asignación de contactos:
+- El contacto de puerta de cabina cerrada se incluye en SPC
+- Los contactos de precierre de las puertas de piso se incluyen en SPC
+- Los contactos de traba de las puertas de piso se incluyen en SPC
+- SA se conecta a SPC
+
+Estado lógico resultante: pendiente en página siguiente (r=DATA_NOT_AVAILABLE para esta combinación).
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-CB3FDC201E6A574F
+SOURCE_SECTION_OR_PAGE: (continuación de página anterior)
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: Puerta de cabina automática + puerta de piso manual con doble contacto, traba por operador de puerta: incluir contacto de cabina cerrada en SPC, contactos de precierre de piso en SM, contacto de traba de piso en SPC, y conectar SA a SPC.
+EXPECTED_RESULT: SM='1' si cierran todas las puertas de piso, límites generales, contactos de emergencia, llave de parada, etc. SPC y SA='1' si se cumplió el cierre del operador de puerta.
+EVIDENCE: SM es "1" si cierran todas las puertas de piso, los límites generales
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-FEF1C6B6A2121A7D
+SOURCE_SECTION_OR_PAGE: Puerta de cabina automática. Puerta de piso manual con doble contacto; contacto de traba por patín retráctil
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: Incluir contacto de cabina cerrada en SPC, contactos de precierre de piso en SM, y contactos de traba de puertas de piso en SA.
+EXPECTED_RESULT: SM='1' si cierran todas las puertas de piso, límites generales, contactos de emergencia, llave de parada. SPC='1' si se cumplió el cierre del operador de puerta. SA='1' si el patín retráctil está retirado.
+EVIDENCE: Los contactos de traba de las puertas de piso se incluyen SA
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-80045116E9A7ABDC
+SOURCE_SECTION_OR_PAGE: Puerta de cabina automática. Puerta de piso automática con doble contacto; contacto de traba por operador de puerta
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: Incluir contacto de cabina cerrada en SPC, contactos de precierre de piso en SPC, contactos de traba de piso en SPC, y conectar SA a SPC.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+UNCERTAINTY: El estado lógico resultante para esta combinación no aparece en esta página; continúa en página siguiente.
+EVIDENCE: Los contactos de traba de las puertas de piso se incluyen en SPC
+END_FIELD_RECORD

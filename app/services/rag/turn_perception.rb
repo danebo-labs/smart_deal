@@ -370,6 +370,14 @@ module Rag
 
       assertions = literal_assertions(data["assertions"])
       observations = literal_observations(data["observations"])
+      if data["move"] == "new_work" && open_job?
+        reading = @turn.split(/(?<=[.!?])\s+/).find do |sentence|
+          !sentence.match?(/[?¿]/) && sentence.match?(FIELD_READING)
+        end
+        if reading && !ObservationText.covered_by?(observations.join(" "), reading.delete_suffix("."))
+          observations = literal_observations([ *observations, reading.delete_suffix(".").strip ])
+        end
+      end
       checks = literal_checks(data["checks"])
       replies = prepared.is_a?(Hash) ? Array(prepared["part_replies"]) : []
       observations = absorb_quote_observations(observations, replies)

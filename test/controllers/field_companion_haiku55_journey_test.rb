@@ -679,12 +679,16 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
   test "audit VF5 asks for the reopening check before the technician names its input" do
     document = revision_pin(:guion1)
     questions = AUDIT_JOURNEYS.fetch("reopening")
-    capture = load_turns(SCRIPTS.dig("guion1", "capture")).first
-    rows = capture.rows.select { |row| row["content"].to_s.include?("Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)") }.first(1)
+    captures = load_turns(SCRIPTS.dig("guion1", "capture"))
+    capture = captures.first
+    reopening = capture.rows.find { |row| row["content"].to_s.include?("Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)") }
+    signal = "Indicador LED y relé activado cuando la fotocélula o la entrada de re-apertura está activada"
+    input = captures[2].rows.find { |row| row["content"].to_s.include?(signal) }
+    rows = [ reopening, input ]
     answers = [
       "Comprueba la sensibilidad de reapertura. Para la puerta que se reabre sola, el manual dice «Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)» [p12].",
       "Para ubicar el siguiente paso, dime cuál LED está encendido. ¿Es el de la fotocélula? El manual indica «Comprobar que la fotocélula no esté activada» [p12].",
-      "La fotocélula ya quedó observada. El manual documenta «Comprobar que no hay una obstrucción mecánica en la puerta» [p12].",
+      "Con la fotocélula ya observada, queda por distinguir la entrada de reapertura. La fuente indica «#{signal}» [p#{input.fetch('page').to_i}/re-apertura]. ¿Puedes confirmar si la entrada #21 está activa?",
       "Deja #21 y #23 pendientes para quien tenga acceso al operador. Con lo revisado, sigue abierta la causa de la reapertura. La comprobación del manual es «Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)» [p12]."
     ]
     id = nil
@@ -697,7 +701,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       turn = audit_turn(question, answers[index], rows: rows, move: index == 1 ? "correct" : (index.zero? ? "report" : "follow_up"),
         observations: observations, assertions: assertions)
       body, = revision_ask("audit-vf5", index + 1, turn, document)
-      assert_includes body.fetch("answer"), [ "#54", "LED", "fotocélula", "pendientes" ][index]
+      assert_includes body.fetch("answer"), [ "#54", "LED", "#21", "pendientes" ][index]
       session = reloaded_session
       id ||= session.live_episode_id
       assert_equal id, session.live_episode_id
@@ -711,9 +715,9 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
   def play_audit_photo(name, questions)
     document = audit_thyssen_pin
     replies = [
-      "Para orientar la comprobación, lee el código del display. En la sección de señales del operador, P28 es «#{P28_LINE}» [p9]. ¿Qué código aparece?",
+      "Lee el código del display para orientar la comprobación. En la sección de señales del operador, P28 es «#{P28_LINE}» [p9]. En el esquema se distingue PV-1. El equipo Thyssen FDN Universal con MCINV4 es el que reportaste. ¿Qué código aparece?",
       "Con EA, sigue por la línea de trincos: «#{EA_LINE}» [p24]. ¿Qué lecturas tienes de P28 y P27 con la orden de cierre?",
-      "Prioriza la línea de trincos: «#{EA_LINE}» [p24]. P28 dio 0 Vcc y P27 dio 110 Vcc en terreno. P26 queda pendiente para quien tenga acceso. ¿El trinco de piso queda enganchado?",
+      "Prioriza la línea de trincos: «#{EA_LINE}» [p24]. P28 dio 0 Vcc y P27 dio 110 Vcc en terreno. La tabla de señales del operador documenta «RA-53 / P28 = +110 Vcc» [p9]. P26 queda pendiente para quien tenga acceso. ¿El trinco de piso queda enganchado?",
       "La fila de EA orienta a los trincos: «#{EA_LINE}» [p24]. Esa fila no respalda cambiar un parámetro con TLS. Con EA persistente, conserva P28 en 0 Vcc y P27 en 110 Vcc como lecturas de terreno. P26 queda pendiente para quien tenga acceso."
     ]
     if name == "photo-original"
@@ -782,7 +786,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       observations = [
         [ "En viaje se oye fuerte el motor de tracción" ],
         [ questions[1].delete_suffix(".") ],
-        [ "Ingeniería leyó KP-VS en 2,5", ("La corriente no se alcanza a leer" if variant) ].compact,
+        variant ? [ "La corriente no se alcanza a leer" ] : [ "Ingeniería leyó KP-VS en 2,5" ],
         variant ? [] : [ "el ruido sigue" ]
       ].fetch(index)
       turn = audit_thyssen_turn(document, question, replies[index],
@@ -1394,11 +1398,16 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
         @index += 1
 
         answer = turn.raw
-        if answer.is_a?(String) && answer.match?(/\[p\d+\]/)
+        if answer.is_a?(String) && answer.match?(/\[p\d+/)
           prompt = payload.fetch(:messages).last.fetch(:content).pluck(:text).join
-          answer = answer.gsub(/\[p(\d+)\]/) do
-            page = Regexp.last_match(1)
-            marker = prompt[/^\[(\d+)\] [^\n]+, página #{page}(?:\D|$)/, 1]
+          sources = prompt.split(/(?=^\[\d+\] [^\n]+, página )/)
+          answer = answer.gsub(/\[p(\d+)(?:\/([^\]]+))?\]/) do
+            page, keyword = Regexp.last_match.captures
+            matches = sources.select do |source|
+              source.match?(/\A\[\d+\] [^\n]+, página #{page}(?:\D|$)/) &&
+                (keyword.nil? || source.include?(keyword))
+            end
+            marker = matches.filter_map { |source| source[/\A\[(\d+)\]/, 1] }.last
             "[#{marker || raise("pinned page #{page} missing from generator")}]"
           end
         end

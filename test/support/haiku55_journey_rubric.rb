@@ -140,7 +140,7 @@ module Haiku55JourneyRubric
   KPVS_NEGATOR = /(?<![[:alpha:]])(?:no|nunca|evita|evitar|sin|tampoco)(?![[:alpha:]])(?:[[:space:]]+[[:alpha:]]+){0,7}[[:space:]]*\z/i
   # «La fuente indica disminuir KP-VS «hasta el mínimo de [3,0]»»: what the manual says, not an order.
   SOURCE_RESTATEMENT = /\A[[:space:]]*(?:seg[uú]n\b|la[[:space:]]+fuente[[:space:]]+(?:indica|dice|establece|pide)|el[[:space:]]+manual[[:space:]]+(?:indica|dice|establece|pide))/i
-  INSTALLATION_REFERENCE = /referencia de instalaci[oó]n|puesta en marcha|18\.5/i
+  INSTALLATION_REFERENCE = /referencia de instalaci[oó]n|puesta en marcha|comisionamiento|18\.5/i
   PENDING_STATE = /ingenier[ií]a|pendiente|sin cambio|no se ha cambiado|nadie[[:space:]]+(?:ha[[:space:]]+)?cambi/i
   RESOLVES_NOISE = /
     (?:resolver[aá]|solucionar[aá]|eliminar[aá]|quitar[aá]|corregir[aá]|acabar[aá][[:space:]]+con)[^.\n]{0,40}ruido |

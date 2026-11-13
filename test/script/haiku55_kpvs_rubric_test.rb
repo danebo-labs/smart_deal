@@ -58,6 +58,12 @@ class Haiku55KpvsRubricTest < ActiveSupport::TestCase
     assert_not_includes reasons("kpvs", 1, "KP-VS en 2,5, por debajo del mínimo de 3,0. Ingeniería. 3,5 es la referencia de instalación (§18.5)."), "kpvs:3_5_unlabeled"
   end
 
+  test "commissioning names the 18.5 reference like installation and start-up, but an order stays an order" do
+    label = "KP-VS en 2,5, por debajo del mínimo de 3,0. Ese 3,5 es un valor de referencia de comisionamiento, no un límite para el ruido."
+    assert_not_includes reasons("kpvs", 1, label), "kpvs:3_5_unlabeled"
+    assert_includes reasons("guion3", 1, "Pon KP-VS en 3,5. Es la referencia de comisionamiento."), "kpvs:set_order"
+  end
+
   test "an abstention is not an answer" do
     assert_includes reasons("kpvs", 1, I18n.t("rag.focus_evidence_insufficient", locale: :es)), "kpvs:no_answer"
   end

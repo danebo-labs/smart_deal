@@ -880,7 +880,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     assert_equal({ type: "adaptive", display: "summarized" }, generator[:thinking])
     assert_nil generator[:output_config]
     assert_nil generator[:tools]
-    assert_equal "eb1f8dac7be301d27c469c3fd5b9b9428c179f3abc6546e8ea1baf314e2100cd",
+    assert_equal "b66a2da018be7ae7fb4075fa57e5896be01f0e6bb658541c299556e87f8bc096",
       Digest::SHA256.hexdigest(generator[:system].to_s)
   end
 

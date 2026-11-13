@@ -522,25 +522,24 @@ class BedrockRagService
       )
     end
 
-    profile = RagRetrievalProfile.new(entity_sources: entity_sources, question: question)
-    profile_count = profile.number_of_results.clamp(1, ContractualLimits::QUERY[:max_top_k])
     companion_focus = companion_pinned_focus?(
       entity_s3_uris: entity_s3_uris,
       entity_sources: entity_sources,
       episode: episode,
       raw_question: raw_question
     )
-    number_of_results = if companion_focus && profile_count == RagRetrievalProfile::PINNED_DOCUMENT_RESULTS
-      RagRetrievalProfile::COMPANION_PINNED_CANDIDATES.clamp(1, ContractualLimits::QUERY[:max_top_k])
-    else
-      profile_count
-    end
+    # The case text is what Retrieve sends. A fault that survives in that text
+    # stays on the safety budget and is not widened to sixteen candidates.
     retrieve_question = direct_case_retrieve_question(
       question,
       raw_question: raw_question,
       conv_session: conv_session,
       correlation_id: correlation_id,
       companion_focus: companion_focus, episode: episode
+    )
+    profile_count = self.class.companion_profile_count(retrieve_question, entity_sources)
+    number_of_results = self.class.companion_retrieve_count(
+      profile_count, companion_focus: companion_focus
     )
     retrieval = retrieve_chunks(
       retrieve_question,
@@ -1470,6 +1469,20 @@ class BedrockRagService
 
   def companion_generation_direct?
     Rag::DirectInferenceBoot.direct_generation?
+  end
+
+  def self.companion_profile_count(question, entity_sources)
+    RagRetrievalProfile.new(entity_sources: entity_sources, question: question)
+      .number_of_results
+      .clamp(1, ContractualLimits::QUERY[:max_top_k])
+  end
+
+  # Sixteen candidates replace the plain pinned-document budget only.
+  # A safety, photo, or open count is returned unchanged.
+  def self.companion_retrieve_count(profile_count, companion_focus:)
+    return profile_count unless companion_focus && profile_count == RagRetrievalProfile::PINNED_DOCUMENT_RESULTS
+
+    RagRetrievalProfile::COMPANION_PINNED_CANDIDATES.clamp(1, ContractualLimits::QUERY[:max_top_k])
   end
 
   def companion_pinned_focus?(entity_s3_uris:, entity_sources:, episode:, raw_question:)

@@ -28,19 +28,33 @@ require Rails.root.join("test/support/haiku55_journey_rubric").to_s
 
 module Haiku55Http
   PHASE = ENV.fetch("HTTP55_PHASE", "acceptance")
-  GRANTS = { "acceptance" => [24, 1054], "regression" => [104, 1158] }.freeze
-  GRANT_CALLS, NEXT_CAP = GRANTS.fetch(PHASE)
+  # Same ids, call counts, and dollar ceilings the spend guard recognizes.
+  # Acceptance stays inside the standing cap of 1158. Regression is the step
+  # to 1190. CEA completion keeps its own one-shot grant.
+  FIELD_GRANTS = {
+    "acceptance" => {
+      "id" => Rag::AssignmentSpend::FIELD_ACCEPTANCE_ID,
+      "calls" => Rag::AssignmentSpend::FIELD_ACCEPTANCE_CALLS,
+      "usd" => Rag::AssignmentSpend::FIELD_ACCEPTANCE_USD,
+      "next_cap" => 1158,
+      "bump" => false
+    }.freeze,
+    "regression" => {
+      "id" => Rag::AssignmentSpend::FIELD_REGRESSION_ID,
+      "calls" => Rag::AssignmentSpend::FIELD_REGRESSION_CALLS,
+      "usd" => Rag::AssignmentSpend::FIELD_REGRESSION_USD,
+      "next_cap" => Rag::AssignmentSpend::FIELD_VALIDATION_CALL_CAP,
+      "bump" => true
+    }.freeze
+  }.freeze
   CEA_COMPLETION = PHASE == "regression" && ENV["HTTP55_CEA_COMPLETION"] == "1"
-  EXECUTION_ID = if CEA_COMPLETION
-    Rag::AssignmentSpend::CEA_COMPLETION_ID
-  else
-    "haiku55-http-guion3-20261112-#{PHASE}"
-  end
+  SPEC = FIELD_GRANTS.fetch(PHASE)
+  GRANT_CALLS = CEA_COMPLETION ? Rag::AssignmentSpend::CEA_COMPLETION_CALLS : SPEC["calls"]
+  NEXT_CAP = CEA_COMPLETION ? 1158 : SPEC["next_cap"]
+  GRANT_USD = CEA_COMPLETION ? Rag::AssignmentSpend::CEA_COMPLETION_USD : SPEC["usd"]
+  EXECUTION_ID = CEA_COMPLETION ? Rag::AssignmentSpend::CEA_COMPLETION_ID : SPEC["id"]
   ACCEPTANCE_PLAN = %w[kpvs guion3].freeze
   REGRESSION_PLAN = %w[guion2 guion1 elemont cea cea_label_known cea_label_unseen].freeze
-  FROM_ATTEMPTS = 1030
-  FROM_SEQUENCE = 1032
-  GRANT_USD = "0.100000"
   KB_ID = "Y7RZWMFJSR"
   MODEL_ID = "claude-haiku-5-5"
   TRACKING_MODEL_ID = "claude-haiku-5-5-direct"
@@ -253,18 +267,23 @@ module Haiku55Http
     { "turns" => turns, "calls" => turns * 2 + 1, "ceiling_usd" => money(ceiling + turn["interpreter"]) }
   end
 
-  def grant_room(ledger)
-    granted = Array(ledger["executions"]).find { |row| row.is_a?(Hash) && row["id"] == EXECUTION_ID }
+  def grant_room(ledger, phase: PHASE)
+    spec = FIELD_GRANTS.fetch(phase)
+    cea = phase == "regression" && ENV["HTTP55_CEA_COMPLETION"] == "1"
+    execution_id = cea ? Rag::AssignmentSpend::CEA_COMPLETION_ID : spec["id"]
+    granted = Array(ledger["executions"]).find { |row| row.is_a?(Hash) && row["id"] == execution_id }
     after = granted ? granted["after_attempt"].to_i : ledger["seq"].to_i
     rows = Array(ledger["entries"]).select { |entry| entry.is_a?(Hash) && entry["id"].to_i > after && entry["status"] != "released" }
     exposure = rows.sum(BigDecimal("0")) { |entry| Haiku55Companion.exposure(entry) }
     assignment_room = BigDecimal(ledger["cost_cap_usd"]) - BigDecimal(ledger["committed"]) -
       BigDecimal(ledger["unknown"]) - ledger.fetch("open").values.sum(BigDecimal("0")) { |amount| BigDecimal(amount) }
-    cap_usd = CEA_COMPLETION ? Rag::AssignmentSpend::CEA_COMPLETION_USD : GRANT_USD
-    cap_calls = CEA_COMPLETION ? Rag::AssignmentSpend::CEA_COMPLETION_CALLS : GRANT_CALLS
+    cap_usd = cea ? Rag::AssignmentSpend::CEA_COMPLETION_USD : spec["usd"]
+    cap_calls = cea ? Rag::AssignmentSpend::CEA_COMPLETION_CALLS : spec["calls"]
+    next_cap = cea ? 1158 : spec["next_cap"]
     { "usd" => [ BigDecimal(cap_usd) - exposure, assignment_room ].min,
-      "calls" => [ cap_calls - rows.size, NEXT_CAP - ledger["attempts"].to_i ].min,
-      "exposure" => exposure, "entries" => rows.size }
+      "calls" => [ cap_calls - rows.size, next_cap - ledger["attempts"].to_i ].min,
+      "exposure" => exposure, "entries" => rows.size, "execution_id" => execution_id,
+      "after_attempt" => after, "next_cap" => next_cap }
   end
 
   def acceptance_passed?
@@ -285,28 +304,56 @@ module Haiku55Http
   def admit!(io)
     return assignment_spend.admit_cea_completion!.present? if CEA_COMPLETION
 
+    admit_field_grant!(io, PHASE)
+  rescue Rag::AssignmentSpend::Stop => error
+    io.puts JSON.generate("status" => "refused", "reason" => error.message)
+    false
+  end
+
+  # Writes the phase grant once. Acceptance keeps call cap 1158 and cuts the
+  # window at the current sequence. Regression bumps 1158 to 1190 only while
+  # the file is still at the attempt count read here.
+  def admit_field_grant!(io, phase)
     ledger = read_ledger
-    existing = ledger.fetch("executions").find { |row| row["id"] == EXECUTION_ID }
-    expected_cap = PHASE == "acceptance" ? 1034 : 1054
-    baseline_ok = if PHASE == "acceptance"
-      ledger.values_at("attempts", "seq") == [ FROM_ATTEMPTS, FROM_SEQUENCE ]
-    else
-      ledger["attempts"].between?(FROM_ATTEMPTS + 8, FROM_ATTEMPTS + 24)
-    end
-    unless existing || (baseline_ok && ledger.dig("authorization", "call_cap") == expected_cap)
+    spec = FIELD_GRANTS.fetch(phase)
+    existing = Array(ledger["executions"]).find { |row| row.is_a?(Hash) && row["id"] == spec["id"] }
+    unless existing || field_baseline?(ledger, phase)
       io.puts JSON.generate("status" => "refused", "reason" => "ledger_baseline_changed")
       return false
     end
 
-    spend = assignment_spend
-    spend.admit_execution!(
-      id: EXECUTION_ID, cost_usd: GRANT_USD, calls: GRANT_CALLS,
-      bump_call_cap_to: NEXT_CAP, bump_only_if_attempts: ledger["attempts"], start_after_sequence: true
+    spend = Rag::AssignmentSpend.new(
+      path: Guion2Direct.spend_path, call_cap: spec["next_cap"],
+      cost_cap_usd: Rag::LocalPassLedger::ASSIGNMENT_COST_CAP_USD
     )
-    spend.snapshot.dig("authorization", "call_cap") == NEXT_CAP
-  rescue Rag::AssignmentSpend::Stop => error
-    io.puts JSON.generate("status" => "refused", "reason" => error.message)
-    false
+    spend.admit_execution!(
+      id: spec["id"], cost_usd: spec["usd"], calls: spec["calls"],
+      bump_call_cap_to: (spec["bump"] ? spec["next_cap"] : nil),
+      bump_only_if_attempts: (spec["bump"] ? ledger["attempts"] : nil),
+      start_after_sequence: true
+    )
+    spend.snapshot.dig("authorization", "call_cap") == spec["next_cap"]
+  end
+
+  def field_baseline?(ledger, phase)
+    return false unless BigDecimal(ledger["cost_cap_usd"].to_s) == BigDecimal("4.0")
+    return false unless ledger.dig("authorization", "call_cap").to_i == 1158
+
+    executions = Array(ledger["executions"])
+    if phase == "acceptance"
+      ledger["attempts"].to_i == 1143 && ledger["seq"].to_i == 1145 &&
+        executions.last.is_a?(Hash) && executions.last["id"] == Rag::AssignmentSpend::FIELD_ACCEPTANCE_PREVIOUS_ID
+    else
+      row = executions.find { |item| item.is_a?(Hash) && item["id"] == Rag::AssignmentSpend::FIELD_ACCEPTANCE_ID }
+      return false unless row && row["after_attempt"].to_i == Rag::AssignmentSpend::FIELD_ACCEPTANCE_SEQUENCE &&
+        row["calls"].to_i == Rag::AssignmentSpend::FIELD_ACCEPTANCE_CALLS &&
+        BigDecimal(row["cost_usd"].to_s) == BigDecimal(Rag::AssignmentSpend::FIELD_ACCEPTANCE_USD)
+
+      used = Array(ledger["entries"]).count { |entry|
+        entry.is_a?(Hash) && entry["id"].to_i > row["after_attempt"].to_i && entry["status"] != "released"
+      }
+      used <= row["calls"].to_i
+    end
   end
 
   # ---- one script ---------------------------------------------------------

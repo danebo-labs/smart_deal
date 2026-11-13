@@ -30,8 +30,10 @@ module Rag
     # attempt 999, no retry. The monetary cap does not move. The 1034 step is
     # the live validation of a200991 (Lahiri, 2026-11-12): the 2,5 case and
     # guion 3, each planned twice, twenty new calls above attempt 1014.
-    # Anything else stays.
-    CALL_CAP_BUMPS = { 150 => 152, 152 => 164, 164 => 166, 166 => 174, 174 => 175, 175 => 180, 180 => 185, 185 => 194, 194 => 196, 196 => 211, 211 => 213, 213 => 229, 229 => 245, 245 => 295, 295 => 311, 311 => 320, 320 => 328, 328 => 1000, 1000 => 1015, 1015 => 1034, 1034 => 1054, 1054 => 1158 }.freeze
+    # The 1190 step is the field validation: ten acceptance calls and
+    # thirty-seven regression calls above attempt 1143. The dollar cap stays
+    # US$4. Anything else stays.
+    CALL_CAP_BUMPS = { 150 => 152, 152 => 164, 164 => 166, 166 => 174, 174 => 175, 175 => 180, 180 => 185, 185 => 194, 194 => 196, 196 => 211, 211 => 213, 213 => 229, 229 => 245, 245 => 295, 295 => 311, 311 => 320, 320 => 328, 328 => 1000, 1000 => 1015, 1015 => 1034, 1034 => 1054, 1054 => 1158, 1158 => 1190 }.freeze
     # A later dollar grant. It does not rewrite authorization.cost_usd.
     # It applies only to entry ids above its attempt, and only when the
     # admitted execution matches this cost and this call count. 229 is the
@@ -58,6 +60,22 @@ module Rag
     # Carries the unused US$0.011939 of regression plus the US$0.043121
     # authorized for one complete CEA execution.
     CEA_COMPLETION_USD = "0.055060"
+
+    # Field validation on the ledger that is at 1,143 attempts and sequence
+    # 1,145. The cutoff is the sequence, so entries 1144 and 1145 stay in the
+    # previous window. Acceptance can run while the cap is still 1158.
+    # Regression is the 1158 -> 1190 step and starts at whatever the sequence
+    # is after those acceptance calls, never earlier than 1145 and never more
+    # than ten sequence numbers later.
+    FIELD_ACCEPTANCE_ID = "haiku55-http-field-acceptance-20261113"
+    FIELD_ACCEPTANCE_SEQUENCE = 1145
+    FIELD_ACCEPTANCE_CALLS = 10
+    FIELD_ACCEPTANCE_USD = "0.033640"
+    FIELD_ACCEPTANCE_PREVIOUS_ID = "haiku55-http-guion3-final-e7a2991-20261113"
+    FIELD_REGRESSION_ID = "haiku55-http-field-regression-20261113"
+    FIELD_REGRESSION_CALLS = 37
+    FIELD_REGRESSION_USD = "0.129988"
+    FIELD_VALIDATION_CALL_CAP = 1190
 
     def initialize(path:, call_cap:, cost_cap_usd:)
       @path = Pathname(path)
@@ -351,6 +369,18 @@ module Rag
         if row["id"] == CEA_COMPLETION_ID
           next row["after_attempt"] == CEA_COMPLETION_SEQUENCE &&
             row["calls"] == CEA_COMPLETION_CALLS && decimal(row["cost_usd"]) == BigDecimal(CEA_COMPLETION_USD)
+        end
+        if row["id"] == FIELD_ACCEPTANCE_ID
+          next row["after_attempt"] == FIELD_ACCEPTANCE_SEQUENCE &&
+            row["calls"] == FIELD_ACCEPTANCE_CALLS &&
+            decimal(row["cost_usd"]) == BigDecimal(FIELD_ACCEPTANCE_USD)
+        end
+        if row["id"] == FIELD_REGRESSION_ID
+          after = row["after_attempt"].to_i
+          next after >= FIELD_ACCEPTANCE_SEQUENCE &&
+            after <= FIELD_ACCEPTANCE_SEQUENCE + FIELD_ACCEPTANCE_CALLS &&
+            row["calls"] == FIELD_REGRESSION_CALLS &&
+            decimal(row["cost_usd"]) == BigDecimal(FIELD_REGRESSION_USD)
         end
 
         spec = DOLLAR_SUCCESSORS[row["after_attempt"].to_i]

@@ -25,6 +25,8 @@ module Rag
     INLINE_LABEL = /\A\s*\*\*[^*]+:\*\*\s*/.freeze
     REPORTED_FORM = /(?:aste|asteis|aron|ieron|ado|ada|ados|adas|ido|ida|ed)\z/i.freeze
     MAX_CARRY_PASSES = 3
+    # «ese mínimo»: points at a limit that an earlier sentence quoted.
+    DANGLING_LIMIT = /(?<![[:alnum:]])(?:ese|dicho|este)\s+(?:m[ií]nimo|l[ií]mite)/i.freeze
     STATED_LIMIT = /\bno\s+(?:puedes|puede|sabes|es\s+posible)\b|\bsin\s+poder\b|\bcannot\b|\bcan't\b/i.freeze
 
     Result = Struct.new(:text, :removed, :reattributed, keyword_init: true) do
@@ -54,6 +56,7 @@ module Rag
     def call
       lines = filter_lines
       lines = carry_quotes(lines)
+      lines = drop_dangling_limits(lines)
       lines = drop_orphan_labels(lines) if changed?
       body = lines.join("\n").gsub(/\n{3,}/, "\n\n").strip
       Result.new(text: body, removed: @removed, reattributed: @reattributed)
@@ -88,6 +91,23 @@ module Rag
 
     def changed?
       @removed.any?
+    end
+
+    # «Esa lectura está por debajo de ese mínimo» has no referent once the
+    # sentence that quoted the limit left. Without a kept quote of a limit
+    # anywhere in the answer, the sentence that points at it leaves too.
+    def drop_dangling_limits(lines)
+      return lines if lines.join("\n").scan(QUOTE_PATTERN).flatten.compact.any? { |text| text.match?(BoundComparison::LIMIT_WORD) }
+
+      lines.filter_map do |line|
+        next line unless line.match?(DANGLING_LIMIT)
+
+        prefix = line[LIST_PREFIX, 1].to_s
+        kept = sentences(line.delete_prefix(prefix)).reject do |sentence|
+          sentence.match?(DANGLING_LIMIT) && @removed.push("sentence" => sentence, "reason" => "dangling_limit")
+        end
+        "#{prefix}#{kept.join(' ')}" if kept.any?
+      end
     end
 
     # A heading such as «**Pasos a seguir:**» loses its meaning once the

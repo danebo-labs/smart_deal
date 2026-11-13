@@ -324,6 +324,23 @@ class Rag::CompanionClaimBackingTest < ActiveSupport::TestCase
     assert_not_includes dropped.text, "documentado"
   end
 
+  test "a sentence that points at a limit no kept quote carries leaves with it" do
+    quote = "En caso de ruido audible muy elevado: disminuya el valor del parámetro **\"KP-VS\"**, hasta el mínimo de [3,0]"
+    # live w1 guion 3 T2: the quote left for dropping its condition.
+    text = "Ingeniería leyó 2,5. La fuente indica que hay que disminuir KP-VS «hasta el mínimo de [3,0]» [1]. " \
+      "Esa lectura está por debajo de ese mínimo. Conviene que Ingeniería confirme qué valor quedó cargado."
+    result = call(text, "- #{quote}.", technician: [ "Ingeniería leyó KP-VS en 2,5." ])
+
+    assert_equal [ "unverified_quote", "dangling_limit" ], result.removed.pluck("reason")
+    assert_not_includes result.text, "ese mínimo"
+    assert_includes result.text, "Conviene que Ingeniería confirme"
+
+    kept = call("La fuente indica «#{quote}» [1]. Esa lectura está por debajo de ese mínimo.", "- #{quote}.",
+      technician: [ "Ingeniería leyó KP-VS en 2,5." ])
+    assert_includes kept.text, "ese mínimo"
+    assert_empty kept.removed.pluck("reason") & [ "dangling_limit" ]
+  end
+
   test "a comparison keeps a negated order and the second person of the verb" do
     [ "Con KP-VS en 2,5, el valor ya está por debajo del mínimo que documenta la fuente, así que no hay respaldo para bajarlo más.",
       "Con KP-VS en 2,5 ya estás por debajo del mínimo que documenta la fuente." ].each do |reading|

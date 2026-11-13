@@ -980,6 +980,32 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_equal "new_work", perceive(raw.call(turn), turn, episode: episode).move
   end
 
+  # live w1 guion 3 T3: «el ruido sigue» opened a new episode and dropped the
+  # KP-VS reading, the plate and the identity of the open job.
+  test "a turn that says the open job's state continues stays in that job" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "query:1", now: Time.current)
+    episode.assign_goal!("En viaje se oye fuerte el motor de tracción", correlation_id: "query:1")
+    episode.append_observation!("Ingeniería leyó KP-VS en 2,5", correlation_id: "query:2")
+    turn = "No hemos cambiado nada y el ruido sigue. ¿Le digo a Ingeniería que lo deje en 3,5?"
+    raw = ->(text) {
+      { "move" => "new_work", "assertions" => [], "observations" => [ text[/el ruido sigue|ruido sigue|variador no arranca/] ],
+        "pending_resolution" => nil, "clarification_target" => nil }
+    }
+
+    result = nil
+    events = Rag::ValidationCapture.capture { result = perceive(raw.call(turn), turn, episode: episode) }
+    applied = events.find { |row| row["kind"] == "perception_applied" }
+    assert_equal "follow_up", result.move
+    assert applied["adjustments"].any? { |row| row["reason"] == "new_work_on_open_job_persistence" }
+
+    other = "En otro ascensor el ruido sigue."
+    assert_equal "new_work", perceive(raw.call(other), other, episode: episode).move
+    fresh = "El variador no arranca. ¿Qué reviso?"
+    assert_equal "new_work", perceive(raw.call(fresh), fresh, episode: episode).move
+    episode.pending_question = { "type" => "work_relation" }
+    assert_equal "new_work", perceive(raw.call(turn), turn, episode: episode).move
+  end
+
   test "ruby does not reclassify a photo offer or a greeting" do
     source = Rails.root.join("app/services/rag/turn_perception.rb").read
     assert_not_includes source, "EQUIPMENT_SYMPTOM_RE"

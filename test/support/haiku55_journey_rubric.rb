@@ -14,6 +14,10 @@ module Haiku55JourneyRubric
     |no[[:space:]]+te[[:space:]]+lo[[:space:]]+(?:pido|pedir[eé]|voy[[:space:]]+a[[:space:]]+pedir)
     |no[[:space:]]+puedo[[:space:]]+darte[[:space:]]+(?:ese[[:space:]]+paso|un[[:space:]]+m[eé]todo|otra[[:space:]]+forma)
   /ix
+  T5_TERMINAL_LIMIT = /
+    \bno[[:space:]]+(?:puede(?:s)?|sabe(?:s)?|necesita(?:s)?)[[:space:]]+
+    (?:identificar|comprobar|verificar)[[:space:]]+[^.!?\n]*\b(?:21|23)\b
+  /ix
   T5_REASKS_CONTACT = /
     confirmar[[:space:]]+si[[:space:]]+hay[[:space:]]+un[[:space:]]+contacto
     |conexi[oó]n[[:space:]]+f[ií]sica[[:space:]]+entre
@@ -80,7 +84,8 @@ module Haiku55JourneyRubric
       reasons << "t5:reasks_identification" if reading.dig("identification_request", "present")
       reasons.delete("t5:misses_unknown")
       limited = reading.dig("technician_limitation", "recognized") || reading.dig("method_limit", "present") ||
-        answer.match?(T5_LIMIT)
+        answer.match?(T5_LIMIT) ||
+        answer.gsub(Rag::CompanionTurnPublication::QUOTE_PATTERN, " ").match?(T5_TERMINAL_LIMIT)
       reasons << "t5:limit_not_acknowledged" unless limited
     end
     reasons.concat(elemont_reasons(number, answer)) if name == "elemont"

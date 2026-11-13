@@ -142,6 +142,24 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     fallas: [ "85590ab2-d2b2-49b2-a36d-0c8c50f9bd76", "Monarch nice 3000 fallas-1.pdf", "Monarch nice 3000 fallas-1" ],
     monarch: [ "6e578b57-0f5e-42f0-91d6-4dd908e0eba2", "Manual_monarch_Español_3000+.pdf", "Manual_monarch_Español_3000+" ]
   }.freeze
+  test "guion 1 turn 5 credits the limit in the full published answer" do
+    questions = load_turns(SCRIPTS.fetch("guion1")["capture"]).map(&:question)
+    published = Rails.root.join(REVISION_FIXTURES, "guion1_c8e9cbf_t5_published.txt").read
+    clauses = published.split(/(?<=\.)[ \t]+|\n+/)
+    dispensations, rest = clauses.partition { |clause| clause.start_with?("No necesitas identificar") }
+    reports, omitted = rest.partition { |clause| clause.start_with?("No puede identificar") }
+
+    assert_equal 1, dispensations.size
+    assert_equal 1, reports.size
+    assert_empty Haiku55JourneyRubric.reasons("guion1", 5, published, questions)
+    assert_empty Haiku55JourneyRubric.reasons("guion1", 5, (reports + omitted).join("\n"), questions)
+    assert_empty Haiku55JourneyRubric.reasons("guion1", 5, (dispensations + omitted).join("\n"), questions)
+    assert_equal [ "t5:limit_not_acknowledged" ],
+      Haiku55JourneyRubric.reasons("guion1", 5, omitted.join("\n"), questions)
+    assert_equal [ "t5:limit_not_acknowledged" ],
+      Haiku55JourneyRubric.reasons("guion1", 5, "No puede identificar el LED. #{omitted.join("\n")}", questions)
+  end
+
   CEA_QUESTION = "La puerta de piso no traba. Hay patín retráctil. ¿Qué tiene que cumplirse para que la seguridad automática SA quede en 1?"
   # Manual DD549-R05, PDF p. 24. Production exited before Retrieve, so
   # the SDK row and the generation here are synthetic, not captured traffic.

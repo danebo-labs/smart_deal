@@ -19,7 +19,8 @@ module Rag
       [^.]{0,180}?
       \b(?:empez|reinici|repet|rehac|recomenz)\p{L}*
     /ix
-    READING = /(\d+(?:[.,]\d+)?)\s*[A-Za-zµ%]{1,6}/
+    # A reported unit. A digit glued to a model token («KDL16 y») is not one.
+    READING = /(?<![[:alnum:]])\d+(?:[.,]\d+)?\s*[A-Za-zµ%]{1,6}/
 
     def self.prompt(...)
       new(...).prompt

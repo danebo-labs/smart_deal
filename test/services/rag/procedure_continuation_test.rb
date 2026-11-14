@@ -206,9 +206,16 @@ class Rag::ProcedureContinuationTest < ActiveSupport::TestCase
       sources: [ source ]
     )
 
+    model_name = Rag::ProcedureContinuation.carry(
+      generated, episode: nil,
+      question: "Estoy en la puesta en marcha de un equipo KDL16 y no logro terminar el ajuste.",
+      sources: [ source ]
+    )
+
     assert_includes carried, "«Seleccione el parámetro de Ajuste del pesacargas (6_74).» [1]"
     assert_includes carried, "carga cero"
     assert_not_includes without_reading, "Seleccione el parámetro de Ajuste del pesacargas (6_74)."
+    assert_not_includes model_name, "Seleccione el parámetro de Ajuste del pesacargas (6_74)."
     assert_equal true, published.accepted?, published.reasons.inspect
   end
 

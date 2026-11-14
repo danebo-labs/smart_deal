@@ -315,11 +315,10 @@ module Haiku55JourneyRubric
   end
 
   def requested_observation(answer)
-    text = I18n.transliterate(kpvs_without_quotes(answer)).downcase
+    text = kpvs_without_quotes(answer)
     questions = text.scan(/¿([^?]+)\?/).flatten
-    return questions.join(" ") if questions.any?
-
-    text
+    questions = text.scan(/(?:^|[.!\n]\s*)([^?¿.!\n]+)\?/).flatten if questions.empty?
+    I18n.transliterate(questions.any? ? questions.join(" ") : text).downcase
   end
 
   # A quotation of the manual is evidence, not the answer's own order.

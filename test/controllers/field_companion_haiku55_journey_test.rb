@@ -762,6 +762,12 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "KONE checks that the field reply answers the question instead of incidental prose" do
+    unrelated = "Pendiente: revisar la conexión del sensor y el espacio. ¿Tu sistema tiene placa LCEVTC?"
+    assert_equal "field_reply_does_not_answer_kone_t2", Haiku55JourneyRubric.kone_lwi_followup_stop(2, unrelated)
+    assert_nil Haiku55JourneyRubric.kone_lwi_followup_stop(2, "El sensor está conectado?")
+  end
+
   test "captured EA answer passes the connection branch and independently fails provenance" do
     answer = <<~TEXT
       EA es falla de señales. [1] indica: «#{EA_LINE}».

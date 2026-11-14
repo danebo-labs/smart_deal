@@ -172,19 +172,32 @@ module Rag
 
     # «al conectar el sensor, pasó a 7 mA, y el rango pedido es 6-8 [1]»
     # keeps the reported measurement and drops the clause that cites without
-    # a literal quote. A sentence without that measurement is unchanged.
+    # a literal quote. When the citation sits in that same clause, the marker
+    # leaves and the reading stays, unless the remainder names a value the
+    # sources and the technician did not. A sentence without that measurement
+    # is unchanged.
     def salvage_report(sentence)
-      return nil if documentary_quotes(sentence, QUOTE_PATTERN).any?
+      return nil if documentary_quotes(sentence, QUOTE_PATTERN).any? { |quoted, _lead| backing?(quoted) }
 
       measurement = reported_measurement
-      return nil if measurement.nil?
+      return nil if measurement.nil? || !sentence.match?(measurement)
 
       body, cited = split_cited_clause(sentence)
-      return nil if body.blank? || cited.blank? || body.match?(CITATION_PATTERN)
-      return nil unless body.match?(measurement) && drop_reason(body).nil?
+      if body.present? && cited.present? && !body.match?(CITATION_PATTERN) &&
+          body.match?(measurement) && drop_reason(body).nil?
+        @removed << { "sentence" => cited, "reason" => "unbacked_citation" }
+        return body
+      end
 
-      @removed << { "sentence" => cited, "reason" => "unbacked_citation" }
-      body
+      stripped = sentence.gsub(CITATION_PATTERN, "").gsub(/[[:space:]]+/, " ").gsub(/\s+([,.;])/, "\\1").strip
+      return nil if stripped.blank? || stripped == sentence.strip || !stripped.match?(measurement)
+      return nil unless drop_reason(stripped).nil?
+
+      pool = @sources.select { |source| CompanionTurnPublication.citable_source?(source) }
+      return nil if pool.empty? || foreign_tokens?(stripped, pool)
+
+      @removed << { "sentence" => sentence, "reason" => "unbacked_citation" }
+      stripped
     end
 
     def reported_measurement

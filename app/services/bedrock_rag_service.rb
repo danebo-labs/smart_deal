@@ -2319,7 +2319,7 @@ class BedrockRagService
         extracted = floor.text
       end
       if sequence.nil? && !parameter_review && !reference_mode
-        extracted = Rag::ProcedureContinuation.carry(extracted, episode: episode, question: question)
+        extracted = Rag::ProcedureContinuation.carry(extracted, episode: episode, question: question, sources: sources)
       end
     end
     citations = document_identity_citation_records(chunks)

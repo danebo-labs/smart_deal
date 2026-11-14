@@ -10,6 +10,15 @@ module Rag
     MIN_WORDS = 4
 
     STOP_WORDS = %w[esta estan este para como desde hasta sobre entre cuando donde tiene tienen].freeze
+    # A procedure that says to start over after a skipped step or a wrong
+    # value. The sentence is copied from that source; it is not a new step.
+    GATE = /
+      \b[Ss]i\b
+      [^.]{0,180}?
+      \b(?:olvid|incorrect|equivoc|omit|salt)\p{L}*
+      [^.]{0,180}?
+      \b(?:empez|reinici|repet|rehac|recomenz)\p{L}*
+    /ix
 
     def self.prompt(...)
       new(...).prompt
@@ -18,8 +27,10 @@ module Rag
     # The generator can name the section and drop a condition the technician
     # already gave. The omitted excerpt is their words, placed ahead of the
     # answer. An excerpt already reflected, or one that is this turn, stays out.
-    def self.carry(text, episode:, question:)
-      new(history: [], chunks: [], question: question, episode: episode).carry(text)
+    # A restart condition of a source the answer cites is quoted after it
+    # while the technician has not confirmed that condition.
+    def self.carry(text, episode:, question:, sources: [])
+      new(history: [], chunks: sources, question: question, episode: episode).carry(text)
     end
 
     def initialize(history:, chunks:, question:, episode: nil)
@@ -47,9 +58,14 @@ module Rag
     def carry(text)
       body = text.to_s
       missing = missing_conditions(body)
-      return body if missing.empty?
+      gate = open_prerequisite(body)
+      return body if missing.empty? && gate.nil?
 
-      [ missing.map { |excerpt| "Condición ya reportada: #{excerpt}." }.join("\n"), body ].join("\n\n").strip
+      [
+        missing.map { |excerpt| "Condición ya reportada: #{excerpt}." }.join("\n"),
+        body,
+        gate
+      ].compact_blank.join("\n\n").strip
     end
 
     private
@@ -89,6 +105,39 @@ module Rag
         folded = I18n.transliterate(text).downcase
         folded_answer.include?(folded) || reflected?(folded, folded_answer)
       }
+    end
+
+    # The cited source's own restart condition, still unconfirmed. A source
+    # the answer does not cite contributes nothing.
+    def open_prerequisite(answer)
+      numbers = answer.scan(/\[(\d+)\]/).flatten.map(&:to_i).uniq
+      numbers.filter_map { |number|
+        body = source_body(number)
+        sentence = gate_sentence(body)
+        next if sentence.nil? || answer.include?(sentence) || already_stated?(sentence)
+
+        "Prerrequisito de la fuente [#{number}], todavía sin confirmar: «#{sentence}» [#{number}]."
+      }.first
+    end
+
+    def gate_sentence(body)
+      return nil if body.blank?
+
+      body.each_line do |line|
+        line.strip.split(/(?<=[.!?])\s+/).each do |sentence|
+          candidate = sentence.strip.sub(/[.!?]+\z/, "").strip
+          next unless candidate.match?(GATE) && words(candidate) >= MIN_WORDS && body.include?(candidate)
+
+          return candidate
+        end
+      end
+      nil
+    end
+
+    def already_stated?(sentence)
+      folded = I18n.transliterate(sentence).downcase
+      blob = I18n.transliterate([ @question, *condition_texts ].join("\n")).downcase
+      blob.include?(folded)
     end
 
     def reflected?(excerpt, folded_answer)

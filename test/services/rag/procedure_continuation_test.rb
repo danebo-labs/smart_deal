@@ -107,6 +107,48 @@ class Rag::ProcedureContinuationTest < ActiveSupport::TestCase
     assert prepared.user.index("Apartado en curso") < prepared.user.index("Fuentes de este turno:")
   end
 
+  test "an unconfirmed restart condition of the cited procedure stays quoted" do
+    generic = <<~TEXT
+      Si omites un paso o anotas un valor incorrecto, vuelve a empezar todo el procedimiento.
+
+      **Arranque:**
+
+      | Paso | Acción | Display |
+      |------|--------|---------|
+      | 2 | Mida la salida. Si marca 0 => el cable no está puesto o la separación es grande. | valor |
+      | 3 | Grabe el cero en el registro del equipo. | listo |
+    TEXT
+    generated = "El paso que sigue es: «Grabe el cero en el registro del equipo.» [1]."
+    source = { "content" => generic, "applicability" => "compatible" }
+    carried = Rag::ProcedureContinuation.carry(
+      generated, episode: nil, question: "Lo conecté y ahora marca 7 mA.", sources: [ source ]
+    )
+    manual = Rails.root.join("test/fixtures/field_companion/audit_20261113/kone_lwi_p38.txt").read
+    captured = Rag::ProcedureContinuation.carry(
+      "El paso que sigue es: «Seleccione el parámetro de Ajuste del pesacargas (6_74).» [1].",
+      episode: nil, question: "Lo conecté y ahora marca 7 mA.",
+      sources: [ { "content" => manual, "applicability" => "compatible" } ]
+    )
+    repeated = Rag::ProcedureContinuation.carry(captured, episode: nil, question: "Lo conecté.", sources: [ { "content" => manual, "applicability" => "compatible" } ])
+    other = Rag::ProcedureContinuation.carry(
+      "«Grabe el cero en el registro del equipo.» [1].",
+      episode: nil, question: "marca 0",
+      sources: [ { "content" => TABLE, "applicability" => "compatible" }, source ]
+    )
+
+    assert_includes carried, "«Si omites un paso o anotas un valor incorrecto, vuelve a empezar todo el procedimiento» [1]"
+    assert_not_includes carried, "6_74"
+    assert_includes captured, "«Si olvida algún paso o proporciona valores incorrectos, vuelva a empezar todo el ajuste del pesacargas» [1]"
+    assert_equal captured, repeated
+    assert_not_includes other, "Prerrequisito"
+    published = Rag::CompanionTurnPublication.call(
+      text: captured, stop_reason: "end_turn",
+      technician_texts: [ "Lo conecté y ahora marca 7 mA." ],
+      sources: [ { "content" => manual, "applicability" => "compatible" } ]
+    )
+    assert_equal true, published.accepted?, published.reasons.inspect
+  end
+
   test "the same quote in two sources does not choose one" do
     quoted = "Si marca 0 => el cable no está puesto o la separación es grande"
     history = [ { role: "assistant", text: "«#{quoted}»." } ]

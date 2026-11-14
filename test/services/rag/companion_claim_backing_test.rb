@@ -392,6 +392,25 @@ class Rag::CompanionClaimBackingTest < ActiveSupport::TestCase
     assert_equal [ "uncited_attribution" ], result.removed.pluck("reason")
   end
 
+  test "a measured reading keeps its range when the citation is inside the same clause" do
+    sentence = "Mi lectura: 7 mA cae en el rango 6-8 que la fuente indica para carga cero [1], así que la condición queda cumplida."
+    source = "Compruebe que LOP-CB muestre el valor entre 6-8."
+    kept = call(sentence, source, technician: [ "ahora marca 7 mA" ])
+    heading = call("Apartado en curso: «Carga cero» [1].", "Carga cero\n#{source}", technician: [ "ahora marca 7 mA" ])
+
+    invented = call(
+      "Mi lectura: 7 mA y el umbral 99 bar que la fuente indica [1].",
+      source, technician: [ "ahora marca 7 mA" ]
+    )
+
+    assert_includes kept.text, "rango 6-8"
+    assert_includes kept.text, "carga cero"
+    assert_not_includes kept.text, "[1]"
+    assert_equal [ "unbacked_citation" ], kept.removed.pluck("reason")
+    assert_not_includes heading.text, "Carga cero"
+    assert_not_includes invented.text, "99"
+  end
+
   test "a reported measurement stays when its sentence cites without a literal quote" do
     sentence = "Buena noticia: al conectar el sensor, 6_75 pasó de 0 a 7 mA, y el rango pedido en el paso 2 es 6-8 mA [1]."
     source = "Compruebe que el valor esté entre 6-8. Si el valor es 0 => el sensor no está conectado."

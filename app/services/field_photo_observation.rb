@@ -7,7 +7,7 @@ class FieldPhotoObservation
   SCHEMA_VERSION = 1
   MAX_BYTES = 2048
   MAX_CHARS = 80
-  MAX_VISIBLE_TEXT = 8
+  MAX_VISIBLE_TEXT = 24
   FINGERPRINT_RE = /\A[0-9a-f]{64}\z/
   CONDITIONS = %w[GOOD DEGRADED DAMAGED UNKNOWN].freeze
   RELEVANCE = %w[relevant unrelated uncertain].freeze

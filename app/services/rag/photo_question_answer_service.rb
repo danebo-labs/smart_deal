@@ -250,7 +250,7 @@ module Rag
     end
 
     def photo_evidence_block
-      visible_codes = Array(@evidence[:visible_codes]).presence&.join(", ") || UNKNOWN
+      visible_codes = ActivePhotoContext.generation_labels(@evidence[:visible_codes]).presence&.join(", ") || UNKNOWN
       lines = [
         "## Photo Evidence (this turn)",
         "These fields are read from the attached photo. Do not print UNKNOWN. Lead with the next documented check. Keep reported identity, visible labels and measured values distinct. A diagram does not supply measurements."

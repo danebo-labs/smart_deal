@@ -28,6 +28,29 @@ class Rag::ThyssenAuditGrantTest < ActiveSupport::TestCase
     end
   end
 
+  test "a recheck keeps prior usage and opens only its new one-shot window" do
+    Dir.mktmpdir do |directory|
+      path = File.join(directory, "assignment.json")
+      fixture = ENV["AUDIT_HAIKU_RECHECK_LEDGER_FIXTURE"]
+      state = fixture_ledger
+      state.merge!("attempts" => 1205, "seq" => 1207, "call_cap" => 1213)
+      state.fetch("authorization")["call_cap"] = 1213
+      state.fetch("executions") << {
+        "id" => Rag::AssignmentSpend::THYSSEN_AUDIT_ID, "after_attempt" => 1197,
+        "calls" => 18, "cost_usd" => "0.064872"
+      }
+      File.write(path, fixture ? File.read(fixture) : state.to_json)
+      book = Rag::AssignmentSpend.new(path: path, call_cap: 1223, cost_cap_usd: "4")
+      row = book.admit_thyssen_audit!(recheck: true)
+      assert_equal Rag::AssignmentSpend::THYSSEN_RECHECK_ID, row.fetch("id")
+      assert_equal 1207, row.fetch("after_attempt")
+      assert_raises(Rag::AssignmentSpend::Stop) { book.admit_thyssen_audit!(recheck: true) }
+      assert_raises(Rag::AssignmentSpend::Stop) { reserve(book, "original") }
+      book.reserve!(ceiling_usd: "0.001", required_execution: row.fetch("id"))
+      assert_equal 1206, book.snapshot.fetch("attempts")
+    end
+  end
+
   private
 
   def fixture_ledger

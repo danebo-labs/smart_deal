@@ -88,23 +88,37 @@ module Rag
       [ "haiku55-http-elemont-5892b69", 1189, "0.032116", 9 ]
     ].freeze
 
-    def self.thyssen_baseline?(state)
-      state.values_at("attempts", "seq", "cost_cap_usd") == [ THYSSEN_AUDIT_ATTEMPTS, THYSSEN_AUDIT_SEQUENCE, "4.0" ] &&
-        state.dig("authorization", "call_cap") == 1198 &&
-        Array(state["executions"]).last(2).map { |row| row.values_at("id", "after_attempt", "cost_usd", "calls") if row.is_a?(Hash) } == THYSSEN_PRIOR
+    THYSSEN_RECHECK_ID = "haiku55-http-photo-engineering-recheck"
+    THYSSEN_RECHECK_CAP = 1223
+    THYSSEN_RECHECK_ATTEMPTS = 1205
+    THYSSEN_RECHECK_SEQUENCE = 1207
+
+    def self.thyssen_baseline?(state, recheck: false)
+      rows = Array(state["executions"]).last(3).map do |row|
+        row.values_at("id", "after_attempt", "cost_usd", "calls") if row.is_a?(Hash)
+      end
+      if recheck
+        state.values_at("attempts", "seq", "cost_cap_usd") == [ THYSSEN_RECHECK_ATTEMPTS, THYSSEN_RECHECK_SEQUENCE, "4.0" ] &&
+          state.dig("authorization", "call_cap") == THYSSEN_AUDIT_CAP &&
+          rows == THYSSEN_PRIOR + [[ THYSSEN_AUDIT_ID, THYSSEN_AUDIT_SEQUENCE, THYSSEN_AUDIT_USD, THYSSEN_AUDIT_CALLS ]]
+      else
+        state.values_at("attempts", "seq", "cost_cap_usd") == [ THYSSEN_AUDIT_ATTEMPTS, THYSSEN_AUDIT_SEQUENCE, "4.0" ] &&
+          state.dig("authorization", "call_cap") == 1198 && rows.last(2) == THYSSEN_PRIOR
+      end
     end
 
-    def admit_thyssen_audit!
+    def admit_thyssen_audit!(recheck: false)
       with_lock do |state, file|
-        raise Stop, "thyssen_ledger_baseline_changed" unless self.class.thyssen_baseline?(state)
+        raise Stop, "thyssen_ledger_baseline_changed" unless self.class.thyssen_baseline?(state, recheck: recheck)
         if exposure(state) + decimal(THYSSEN_AUDIT_USD) > [ @cost_cap, decimal(state["cost_cap_usd"]) ].min
           raise Stop, "thyssen_assignment_budget"
         end
 
-        state.fetch("authorization")["call_cap"] = THYSSEN_AUDIT_CAP
-        state["call_cap"] = THYSSEN_AUDIT_CAP
+        cap = recheck ? THYSSEN_RECHECK_CAP : THYSSEN_AUDIT_CAP
+        state.fetch("authorization")["call_cap"] = cap
+        state["call_cap"] = cap
         row = {
-          "id" => THYSSEN_AUDIT_ID, "after_attempt" => state.fetch("seq"),
+          "id" => (recheck ? THYSSEN_RECHECK_ID : THYSSEN_AUDIT_ID), "after_attempt" => state.fetch("seq"),
           "cost_usd" => THYSSEN_AUDIT_USD, "calls" => THYSSEN_AUDIT_CALLS, "at" => Time.now.utc.iso8601
         }
         state.fetch("executions") << row
@@ -416,6 +430,7 @@ module Rag
         terms = row.values_at("id", "after_attempt", "cost_usd", "calls")
         next true if THYSSEN_PRIOR.include?(terms)
         next true if terms == [ THYSSEN_AUDIT_ID, THYSSEN_AUDIT_SEQUENCE, THYSSEN_AUDIT_USD, THYSSEN_AUDIT_CALLS ]
+        next true if terms == [ THYSSEN_RECHECK_ID, THYSSEN_RECHECK_SEQUENCE, THYSSEN_AUDIT_USD, THYSSEN_AUDIT_CALLS ]
 
         if row["id"] == CEA_COMPLETION_ID
           next row["after_attempt"] == CEA_COMPLETION_SEQUENCE &&

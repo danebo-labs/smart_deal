@@ -309,7 +309,8 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
     context = captured[:session_context]
     assert_includes context, "## Photo Evidence (this turn)"
     assert_includes context, "Component: GECB"
-    assert_includes context, "Visible text/codes: System=1, Tools=2, UNKNOWN"
+    assert_includes context, "Visible text/codes: System=1, Tools=2"
+    assert_not_includes context, "Visible text/codes: System=1, Tools=2, UNKNOWN"
     assert_not_includes context, "- Subsystem:"
     assert_not_includes context, "substituting"
     assert_not_includes context, "Never infer"

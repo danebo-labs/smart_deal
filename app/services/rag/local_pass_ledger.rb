@@ -359,6 +359,10 @@ module Rag
             authorized == AssignmentSpend::THYSSEN_AUDIT_CAP
           return authorized
         end
+        if ENV[EXECUTION_ENV] == AssignmentSpend::THYSSEN_RECHECK_ID &&
+            authorized == AssignmentSpend::THYSSEN_RECHECK_CAP
+          return authorized
+        end
 
         ASSIGNMENT_CALL_CAP
       rescue JSON::ParserError, SystemCallError

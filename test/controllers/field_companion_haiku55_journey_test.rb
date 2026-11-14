@@ -637,6 +637,25 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "photo codes from the real uncertain reading reach generation without suggesting a diagnosis" do
+    @audit_photo_reading = JSON.parse(AUDIT_ROOT.join("photo_sonnet_live.json").read)
+    play_audit_photo("photo-live-reading", AUDIT_JOURNEYS.fetch("photo"))
+  end
+
+  test "real Engineering opening asks the current parameter before continuing" do
+    document = audit_thyssen_pin
+    question = AUDIT_JOURNEYS.fetch("engineering").first
+    turn = audit_thyssen_turn(document, question,
+      'Antes de tocar el parámetro, ¿el equipo muestra algún código de falla (E, F o EA/EC)?',
+      pages: %w[18_3], observations: [ "se oye fuerte el motor de tracción" ], opening: true)
+    turn.rows.first["content"] = AUDIT_ROOT.join("kpvs_live_passage.txt").read
+
+    body, _ = revision_ask("audit-engineering-live-opening", 1, turn, document)
+    assert_match(/¿Cuál es la lectura actual de KP-VS en el menú PID\?/i, body.fetch("answer"))
+    assert_includes body.fetch("answer"), NOISE_LINE
+    assert_equal "parameter_reading", reloaded_session.active_episode.dig("pending_question", "aspect")
+  end
+
   test "audit 18:36 caption and its original follow-ups replay independently of the corrected conversation" do
     turns = AUDIT_PRODUCTION.dig("photo", "history").select { |row| row["role"] == "user" }
     play_audit_photo("photo-original", turns.map { |row| row["full_content"] || row.fetch("content") })
@@ -891,6 +910,12 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       assert_includes prompt, question
       assert_includes prompt, "PV-1"
       assert_includes prompt, "Photo Evidence"
+      if @audit_photo_reading
+        evidence = Rag::ActivePhotoContext.generation_evidence(prompt.split("Fuentes de este turno:").first)
+        assert_includes evidence, "P26"
+        assert_includes evidence, "P27"
+        assert_includes evidence, "P28"
+      end
       assert_includes cassette.sent.last.fetch(:messages).to_json, "P27 marca 110" if index == 3 && name == "photo"
       episode = reloaded_session.active_episode
       @audit_photo_episode ||= episode.fetch("episode_id")
@@ -937,7 +962,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       body, cassette = revision_ask("audit-#{name}", index + 1, turn, document)
       assert_revision_scope(cassette, document)
       answer = body.fetch("answer")
-      assert_includes answer, [ "¿Qué valor", "Ingeniería", "por debajo", "puesta en marcha" ].fetch(index)
+      assert_includes answer, [ "¿Cuál es la lectura actual", "Ingeniería", "por debajo", "puesta en marcha" ].fetch(index)
       assert_includes answer, "Eberle" if variant && index == 2
       assert_includes audit_generator_prompt(cassette), questions[3] if variant && index == 3
       assert_includes cassette.queries.first, questions[3] if variant && index == 3
@@ -1018,7 +1043,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
         { data: data, media_type: media, binary: Base64.decode64(data) }
       end
     end
-    observation = AUDIT_PRODUCTION.dig("photo", "observation").merge("subsystem" => "UNKNOWN")
+    observation = @audit_photo_reading || AUDIT_PRODUCTION.dig("photo", "observation").merge("subsystem" => "UNKNOWN")
     if @guarded_photo
       vision_text = JSON.generate(observation.merge("summary" => "Se distingue la bornera PV-1."))
       vision_client = Object.new
@@ -1040,7 +1065,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
         raise "photo bytes differ from upload" unless @binary == binary
 
         { parsed: observation, analysis: component, compact_context: "[FOTO] #{component}", usage: {},
-          model: "claude-sonnet-5-5", target_visible: true, relevance_to_goal: "relevant" }
+          model: "claude-sonnet-5-5", target_visible: true, relevance_to_goal: observation.fetch("relevance_to_goal", "relevant") }
       end
     end
     store = Object.new

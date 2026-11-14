@@ -15,12 +15,13 @@ module Rag
     SECTION = /\A\s*(\d+\.\d+(?:\.\d+)?)\s+/
     SUPPLEMENT = "<respuesta_complementaria>"
 
-    Limit = Data.define(:parameter, :number, :display, :condition, :quote, :section, :source, :document)
+    Limit = Data.define(:parameter, :number, :display, :condition, :quote, :section, :heading, :source, :document)
     Reference = Data.define(:display, :section, :source, :quote)
     Review = Data.define(:kind, :limit, :reading, :reference, :pending, :supplement) do
       def prompt
         lines = [ "Dato de este caso: #{limit.parameter}. Límite condicionado de la fuente [#{limit.source}]: «#{limit.quote}»." ]
         lines << "Lectura reportada en este episodio: #{reading}." if reading
+        lines << "Pregunta por la lectura actual antes de cualquier ajuste." if kind == :reading_requested
         lines << "La lectura está pendiente para Ingeniería." if kind == :reading_pending
         lines << "La propuesta es una referencia de puesta en marcha [#{reference.source}]." if reference
         if supplement
@@ -33,6 +34,9 @@ module Rag
 
       def answer
         limit_note = "§#{limit.section}: «#{limit.quote}» [#{limit.source}]."
+        if kind == :reading_requested
+          return "#{pending.fetch('question')} Esa lectura permite compararla con el mínimo de esta rama. La causa sigue abierta.\n\n#{limit_note}"
+        end
         return "#{pending.fetch('question')} Esa lectura queda pendiente. Ingeniería debe verificarla.\n\n#{limit_note}" if kind == :reading_pending
 
         comparison = "#{limit.parameter}: la lectura reportada de #{reading} está por debajo del mínimo de #{limit.display}."
@@ -104,20 +108,43 @@ module Rag
                 (reference = reference_in(passages, limit, proposal))
               Review.new(:proposed_reference, limit, latest, reference, nil, false)
             end
-          elsif latest.nil? && (pending.nil? || pending == limit.parameter) &&
-              access_unavailable?(question, observations) && !question.to_s.match?(/[¿?]/)
-            target = { "item" => limit.parameter, "document_key" => limit.document.join("/") }
-            state = {
-              "type" => "documented_context", "aspect" => "parameter_reading", "about" => limit.parameter,
-              "question" => "¿Cuál es la lectura actual de #{limit.parameter}?", "targets" => [ target ]
-            }
-            Review.new(:reading_pending, limit, nil, nil, state, false)
+          elsif latest.nil? && (pending.nil? || pending == limit.parameter) && !question.to_s.match?(/[¿?]/)
+            if access_unavailable?(question, observations)
+              reading_review(limit, :reading_pending)
+            elsif opened_with_matching_symptom?(active, question, limit)
+              reading_review(limit, :reading_requested)
+            end
           end
         end
         matching.one? ? matching.first : nil
       end
 
       private
+
+      def reading_review(limit, kind)
+        target = { "item" => limit.parameter, "document_key" => limit.document.join("/") }
+        question = "¿Cuál es la lectura actual de #{limit.parameter}?"
+        if kind == :reading_requested && limit.heading.match?(/menu pid/i)
+          question = "¿Cuál es la lectura actual de #{limit.parameter} en el menú PID?"
+        end
+        state = {
+          "type" => "documented_context", "aspect" => "parameter_reading", "about" => limit.parameter,
+          "question" => question, "targets" => [ target ]
+        }
+        Review.new(kind, limit, nil, nil, state, false)
+      end
+
+      def opened_with_matching_symptom?(episode, question, limit)
+        goal = episode.goal
+        return false unless goal&.dig("correlation_id").present? && goal["correlation_id"] == episode.opened_by
+
+        symptom = FollowupQueryRewriter.normalize_label(goal["text"])
+        return false if symptom.blank? || !FollowupQueryRewriter.normalize_label(question).include?(symptom)
+
+        words = symptom.scan(/\b[[:alpha:]]{4,}\b/).uniq
+        documented = FollowupQueryRewriter.normalize_label("#{limit.heading} #{limit.condition}").split
+        (words & documented).size >= 2
+      end
 
       def access_unavailable?(question, observations)
         question.to_s.match?(UNAVAILABLE) && observations.any? { |text| !text.match?(UNAVAILABLE) }
@@ -137,8 +164,12 @@ module Rag
 
       def limits_in(body, document, source)
         section = nil
+        heading = nil
         body.lines.filter_map do |line|
-          section = line[SECTION, 1] || section
+          if (number = line[SECTION, 1])
+            section = number
+            heading = line.strip
+          end
           match = line.strip.match(CONDITION)
           next unless section && match
 
@@ -148,7 +179,7 @@ module Rag
           next unless names.one? && display && action.match?(CompanionCitedFloor::SOURCE_DECREASE)
 
           quote = line.strip.sub(/\A[-*•]\s*/, "").delete_suffix(".").gsub("**", "")
-          Limit.new(names.first, BigDecimal(display.tr(",", ".")), display, match[1], quote, section, source, document)
+          Limit.new(names.first, BigDecimal(display.tr(",", ".")), display, match[1], quote, section, heading, source, document)
         end
       end
 

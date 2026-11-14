@@ -47,6 +47,10 @@ module Haiku55Http
       "id" => SPEND::THYSSEN_AUDIT_ID, "calls" => SPEND::THYSSEN_AUDIT_CALLS,
       "usd" => SPEND::THYSSEN_AUDIT_USD, "next_cap" => SPEND::THYSSEN_AUDIT_CAP
     }.freeze,
+    "thyssen_recheck" => {
+      "id" => SPEND::THYSSEN_RECHECK_ID, "calls" => SPEND::THYSSEN_AUDIT_CALLS,
+      "usd" => SPEND::THYSSEN_AUDIT_USD, "next_cap" => SPEND::THYSSEN_RECHECK_CAP
+    }.freeze,
     "regression" => {
       "id" => Rag::AssignmentSpend::FIELD_REGRESSION_ID,
       "calls" => Rag::AssignmentSpend::FIELD_REGRESSION_CALLS,
@@ -56,7 +60,8 @@ module Haiku55Http
     }.freeze
   }.freeze
   CEA_COMPLETION = PHASE == "regression" && ENV["HTTP55_CEA_COMPLETION"] == "1"
-  AUDIT = PHASE == "thyssen_audit"
+  RECHECK = PHASE == "thyssen_recheck"
+  AUDIT = PHASE == "thyssen_audit" || RECHECK
   SPEC = FIELD_GRANTS.fetch(PHASE)
   GRANT_CALLS = CEA_COMPLETION ? Rag::AssignmentSpend::CEA_COMPLETION_CALLS : SPEC["calls"]
   NEXT_CAP = CEA_COMPLETION ? 1158 : SPEC["next_cap"]
@@ -286,7 +291,7 @@ module Haiku55Http
       "audit_kb_bucket_mismatch"
     elsif AUDIT && !audit_photo_input
       "audit_jpeg_missing_or_invalid"
-    elsif AUDIT && !SPEND.thyssen_baseline?(ledger)
+    elsif AUDIT && !SPEND.thyssen_baseline?(ledger, recheck: RECHECK)
       "thyssen_ledger_baseline_changed"
     elsif AUDIT && worst != BigDecimal(GRANT_USD)
       "thyssen_price_changed"
@@ -389,7 +394,7 @@ module Haiku55Http
     if AUDIT
       return false unless directory && ENV[AUDIT_APPROVAL] == head
 
-      assignment_spend.admit_thyssen_audit!
+      assignment_spend.admit_thyssen_audit!(recheck: RECHECK)
       Rag::GuardedPhotoVision.assignment(directory.join("vision-spend.json")).admit_execution!(
         id: Rag::GuardedPhotoVision::GRANT_ID, calls: 1, cost_usd: Rag::GuardedPhotoVision.ceiling
       )
@@ -498,6 +503,8 @@ module Haiku55Http
           focus: focus, browser: browser, reserved: reserved)
         if name == AUDIT_PLAN.last
           row["block_reason"] ||= engineering_stop(number, row, rows.first&.dig("episode_id"))
+        elsif name == AUDIT_PLAN.first
+          row["block_reason"] ||= photo_followup_stop(number, row["answer"])
         end
         accept = script(name).dig("accept", number)
         if row["block_reason"] == "generator_not_sent" && planned_card?(row["manual_suggestion"], accept)
@@ -630,6 +637,7 @@ module Haiku55Http
     File.write(turn_dir.join("scope.json"), JSON.pretty_generate(scope))
     {
       "script" => name, "turn" => number, "label" => label, "status" => body["status"] || response[:status].to_s,
+      "answer" => answer,
       "block_reason" => reason, "rubric" => rubric, "wall_ms" => wall_ms,
       "route_outcome" => events.reverse.find { |event| event["kind"] == "published_answer" }&.dig("route_outcome"),
       "episode_id" => episode_id, "focus" => session&.focus_document_ids, "scope" => scope,
@@ -707,6 +715,21 @@ module Haiku55Http
     return "engineering_episode_changed" if number > 1 && (first_episode.blank? || first_episode != row["episode_id"])
 
     row["rubric"].first
+  end
+
+  def photo_followup_stop(number, answer)
+    body = Haiku55JourneyRubric.kpvs_without_quotes(answer).unicode_normalize(:nfd).gsub(/\p{Mn}/, "").downcase
+    case number
+    when 1
+      return "photo_code_not_requested" unless body.match?(/(?:codigo|display)[^?¿]*\?/)
+    when 2
+      checks = body.split(/[.!?\n]+/)
+      asked_reading = checks.any? do |line|
+        line.match?(/\bp2[678]\b|trinco|enclavamiento/) && line.match?(/lectura|tension|voltaje|mide|medir|comprueba|verifica/)
+      end
+      return "photo_readings_not_requested" unless asked_reading
+    end
+    nil
   end
 
   def photo_checks(number, answer, events, session)

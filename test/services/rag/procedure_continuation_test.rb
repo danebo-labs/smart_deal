@@ -38,6 +38,33 @@ class Rag::ProcedureContinuationTest < ActiveSupport::TestCase
     assert_not_includes prompt, "Lo conecté y ahora marca 7 mA. Si esa"
   end
 
+  test "an omitted cabin condition is placed ahead of the generated answer" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "query:t1", now: Time.current)
+    episode.excerpts = [
+      { "text" => "La cabina está vacía y no logro terminar el ajuste" },
+      { "text" => "Lo conecté y ahora marca 7 mA" }
+    ]
+    generated = "Tras conectar el sensor, LOP-CB marca 7 mA, dentro del rango 6-8 de carga cero. " \
+      "El paso siguiente es: «Seleccione el parámetro de registro.» [1]."
+
+    carried = Rag::ProcedureContinuation.carry(generated, episode: episode, question: "Lo conecté y ahora marca 7 mA.")
+    reflected = Rag::ProcedureContinuation.carry(
+      "La cabina está vacía y no logro terminar el ajuste. #{generated}",
+      episode: episode, question: "Lo conecté y ahora marca 7 mA."
+    )
+
+    assert_includes carried, "Condición ya reportada: La cabina está vacía y no logro terminar el ajuste."
+    assert_includes carried, "«Seleccione el parámetro de registro.» [1]"
+    assert_not_includes carried, "Condición ya reportada: Lo conecté"
+    assert_equal "La cabina está vacía y no logro terminar el ajuste. #{generated}", reflected
+    published = Rag::CompanionTurnPublication.call(
+      text: carried, stop_reason: "end_turn",
+      technician_texts: [ "Lo conecté y ahora marca 7 mA.", "La cabina está vacía y no logro terminar el ajuste" ],
+      sources: [ { "content" => "Seleccione el parámetro de registro. El 0 parpadea.", "applicability" => "compatible" } ]
+    )
+    assert_equal true, published.accepted?, published.reasons.inspect
+  end
+
   test "a question and the last step do not invent a continuation" do
     assert_nil prompt_for("¿Qué valor marca ahora?", TABLE)
     last = TABLE.sub("3 | Grabe el cero en el registro del equipo.", "3 | Listo.")

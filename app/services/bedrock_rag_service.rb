@@ -2318,6 +2318,9 @@ class BedrockRagService
         record_companion_cited_floor(floor)
         extracted = floor.text
       end
+      if sequence.nil? && !parameter_review && !reference_mode
+        extracted = Rag::ProcedureContinuation.carry(extracted, episode: episode, question: question)
+      end
     end
     citations = document_identity_citation_records(chunks)
     safety = Rag::AnswerSafetyProcessor.new(locale: locale).call(

@@ -9,8 +9,17 @@ module Rag
     HEADING = /\A\s*\*\*([^*]+)\*\*\s*\z/
     MIN_WORDS = 4
 
+    STOP_WORDS = %w[esta estan este para como desde hasta sobre entre cuando donde tiene tienen].freeze
+
     def self.prompt(...)
       new(...).prompt
+    end
+
+    # The generator can name the section and drop a condition the technician
+    # already gave. The omitted excerpt is their words, placed ahead of the
+    # answer. An excerpt already reflected, or one that is this turn, stays out.
+    def self.carry(text, episode:, question:)
+      new(history: [], chunks: [], question: question, episode: episode).carry(text)
     end
 
     def initialize(history:, chunks:, question:, episode: nil)
@@ -35,6 +44,14 @@ module Rag
       [ continuation_text(number, heading, action), prior_conditions ].compact_blank.join(" ")
     end
 
+    def carry(text)
+      body = text.to_s
+      missing = missing_conditions(body)
+      return body if missing.empty?
+
+      [ missing.map { |excerpt| "Condición ya reportada: #{excerpt}." }.join("\n"), body ].join("\n\n").strip
+    end
+
     private
 
     def continuation_text(number, heading, action)
@@ -46,17 +63,37 @@ module Rag
     end
 
     # A section title does not replace a condition the technician already gave.
-    def prior_conditions
+    def condition_texts
       active = @episode.is_a?(ActiveEpisode) ? @episode : ActiveEpisode.parse(@episode)
-      return nil if active.blank?
+      return [] if active.blank?
 
       folded = I18n.transliterate(@question).downcase
-      kept = Array(active.excerpts).filter_map { |row| row["text"].to_s.strip.presence }.uniq.reject { |text|
+      Array(active.excerpts).filter_map { |row| row["text"].to_s.strip.presence }.uniq.reject { |text|
         folded.include?(I18n.transliterate(text).downcase)
-      }.first(3)
+      }
+    end
+
+    def prior_conditions
+      kept = condition_texts.first(3)
       return nil if kept.empty?
 
       "El técnico ya dijo: #{kept.join(' / ')}. Si esa condición sigue vigente, consérvala en la oración de la lectura y no la sustituyas por el título del apartado."
+    end
+
+    def missing_conditions(answer)
+      active = @episode.is_a?(ActiveEpisode) ? @episode : ActiveEpisode.parse(@episode)
+      return [] if active.blank?
+
+      folded_answer = I18n.transliterate(answer.to_s).downcase
+      condition_texts.reject { |text|
+        folded = I18n.transliterate(text).downcase
+        folded_answer.include?(folded) || reflected?(folded, folded_answer)
+      }
+    end
+
+    def reflected?(excerpt, folded_answer)
+      words = excerpt.scan(/[[:alpha:]]{4,}/).uniq.reject { |word| STOP_WORDS.include?(word) }
+      words.empty? || words.all? { |word| folded_answer.match?(/\b#{Regexp.escape(word)}\b/) }
     end
 
     def last_cited_quote

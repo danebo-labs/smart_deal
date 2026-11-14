@@ -286,7 +286,7 @@ class Rag::CompanionCaseRecordTest < ActiveSupport::TestCase
     assert_includes texts.join("\n"), G2_PHRASE
     assert_equal 1, Rag::CompanionCaseRecord.number_of(source)
     assert_equal digest_before, source[:chunk_sha256]
-    assert_equal passage_text, Rag::CompanionCaseRecord.text_of(source)
+    assert_equal Rag::DocumentIdentityScope.omit_terminal_evidence_records(passage_text), Rag::CompanionCaseRecord.text_of(source)
     assert_equal digest_before, session.case_evidence["sources"][0]["sha256"]
   end
 
@@ -308,7 +308,7 @@ class Rag::CompanionCaseRecordTest < ActiveSupport::TestCase
 
     assert_equal 1, Rag::CompanionCaseRecord.number_of(kept)
     assert_equal digest(body), kept[:chunk_sha256]
-    assert_equal body, Rag::CompanionCaseRecord.text_of(kept)
+    assert_equal Rag::DocumentIdentityScope.omit_terminal_evidence_records(body), Rag::CompanionCaseRecord.text_of(kept)
     assert_equal 2, Rag::CompanionCaseRecord.number_of(merged.last)
     assert_equal "pasaje que retrieve trae ahora", Rag::CompanionCaseRecord.text_of(merged.last)
   end

@@ -1,0 +1,153 @@
+[DOCUMENT: puesta en marcha de ascensores sin sala de maquina.pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-24/puesta en marcha de ascensores sin sala de maquina.pdf]
+[SEARCH_ALIASES: ajuste pesacargas, LWI, LCEVTC, 6_74, 6_75, 6_99, 5_1, LOP-CB]
+
+S18 — COMMISSIONING
+
+6.1.3 Ajuste del pesacargas (cuando es LWI o placa LCEVTC)
+
+NOTA: Si el ascensor se usa antes de que la decoración esté lista por completo, se debe rehacer el ajuste del pesacargas cuando se termine la cabina.
+
+Siga las instrucciones de trabajo paso a paso. Si olvida algún paso o proporciona valores incorrectos, vuelva a empezar todo el ajuste del pesacargas.
+
+Procedimiento paso a paso (columna «Acción» → columna «En el display de LOP-CB»):
+
+**Reiniciar el ajuste del pesacargas:**
+
+| Paso | Acción | Display LOP-CB |
+|------|--------|----------------|
+| 1 | Seleccione el parámetro de Ajuste del pesacargas (6_74). | El 0 parpadea. |
+| 1 | Cambie 0 por -1 (menos uno). | El -1 parpadea. |
+| 1 | Pulse ACEPTAR. | 6_74_0, todos los dígitos parpadean. |
+| 1 | Pulse MENÚ. | 6_74 |
+
+**Carga cero:**
+
+| Paso | Acción | Display LOP-CB |
+|------|--------|----------------|
+| 2 | Ajuste Selección de monitor del display en tiempo real (6_75) a 65 (valor de entrada del pesacargas). Compruebe que LOP-CB muestre el valor entre 6-8. | Esto indica la intensidad de salida desde el sensor (mA). Si el valor es 0 => El sensor no está conectado o hay un espacio demasiado grande. Si el valor es demasiado alto => Compruebe el sensor del pesacargas. |
+| 3 | Seleccione el parámetro de Ajuste del pesacargas (6_74). | El 0 parpadea. |
+| 3 | Pulse ACEPTAR. | 6_74_0, todos los dígitos parpadean. |
+| 3 | Pulse MENÚ. | 6_74 |
+
+**Media carga:**
+
+| Paso | Acción | Display LOP-CB |
+|------|--------|----------------|
+| 4 | Coloque del 40 al 60% de la carga nominal en cabina. | 6_74 |
+| 5 | Ajuste Selección de monitor del display en tiempo real (6_75) a 65 (valor de entrada del pesacargas). Compruebe que LOP-CB muestre el valor entre 10-12. | — |
+| 6 | Seleccione el parámetro de Ajuste del pesacargas (6_74). | El 0 parpadea. |
+| 6 | Ajuste el valor de carga en forma de porcentaje de la carga nominal. | El valor de la carga parpadea. |
+| 6 | Pulse ACEPTAR. | 6_74_0, todos los dígitos parpadean. |
+| 6 | Pulse MENÚ. | 6_74 |
+
+**Verificación y guardado:**
+
+| Paso | Acción |
+|------|--------|
+| 7 | Salga del menú 6 y compruebe que el valor correcto quede registrado accediendo al valor del parámetro de ajuste del pesacargas (5_1). |
+| 8 | Compruebe que la información del pesacargas varía cuando se modifica la carga. |
+| 9 | Guarde poniendo (6_99) a 1. |
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-B27D0940A7A9DA30
+SOURCE_SECTION_OR_PAGE: 6.1.3 Ajuste del pesacargas (cuando es LWI o placa LCEVTC)
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: Reiniciar el ajuste del pesacargas: seleccione parámetro 6_74, cambie 0 por -1 (menos uno), pulse ACEPTAR, pulse MENÚ.
+EXPECTED_RESULT: Display LOP-CB muestra 6_74_0 con todos los dígitos parpadeando; finaliza en 6_74.
+EVIDENCE: Cambie 0 por -1 (menos uno). El -1 parpadea. Pulse ACEPTAR.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-9A3290BC8D46D19B
+SOURCE_SECTION_OR_PAGE: 6.1.3 Ajuste del pesacargas — Carga cero
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: Con cabina vacía (carga cero), ajuste parámetro 6_75 a 65 y compruebe que LOP-CB muestre valor entre 6-8.
+EXPECTED_RESULT: LOP-CB muestra valor entre 6-8 (intensidad de salida del sensor en mA).
+DETAILS: criteria=valor 6-8 mA en LOP-CB con cabina vacía
+EVIDENCE: Compruebe que LOP-CB muestre el valor entre 6-8. Esto indica la intensidad de salida desde el sensor (mA).
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-81B3D11018421000
+SOURCE_SECTION_OR_PAGE: 6.1.3 Ajuste del pesacargas — Carga cero, diagnóstico sensor
+RECORD_TYPE: TROUBLESHOOTING_STEP
+ACTION: Si el valor en LOP-CB es 0, verificar conexión del sensor y distancia del gap. Si el valor es demasiado alto, comprobar el sensor del pesacargas.
+EXPECTED_RESULT: Valor 0 indica sensor no conectado o espacio demasiado grande. Valor excesivo indica fallo del sensor.
+EVIDENCE: Si el valor es 0 => El sensor no está conectado o hay un espacio demasiado grande.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-1E79F6775B10FEA9
+SOURCE_SECTION_OR_PAGE: 6.1.3 Ajuste del pesacargas — Carga cero
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: Seleccione parámetro 6_74, pulse ACEPTAR, pulse MENÚ para confirmar ajuste de carga cero.
+EXPECTED_RESULT: Display LOP-CB muestra 6_74_0 con todos los dígitos parpadeando; finaliza en 6_74.
+EVIDENCE: Pulse ACEPTAR. 6_74_0, todos los dígitos parpadean. Pulse MENÚ. 6_74
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-9A5E18C13EE5874E
+SOURCE_SECTION_OR_PAGE: 6.1.3 Ajuste del pesacargas — Media carga
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: Coloque del 40 al 60% de la carga nominal en cabina.
+EXPECTED_RESULT: Display LOP-CB muestra 6_74.
+EVIDENCE: Coloque del 40 al 60% de la carga nominal en cabina.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-254CB84382013400
+SOURCE_SECTION_OR_PAGE: 6.1.3 Ajuste del pesacargas — Media carga
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: Con media carga en cabina, ajuste parámetro 6_75 a 65 y compruebe que LOP-CB muestre valor entre 10-12.
+EXPECTED_RESULT: LOP-CB muestra valor entre 10-12.
+DETAILS: criteria=valor 10-12 mA en LOP-CB con 40-60% de carga nominal
+EVIDENCE: Compruebe que LOP-CB muestre el valor entre 10-12.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-4565F9D17F16A381
+SOURCE_SECTION_OR_PAGE: 6.1.3 Ajuste del pesacargas — Media carga
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: Seleccione parámetro 6_74, ajuste el valor de carga en porcentaje de la carga nominal, pulse ACEPTAR, pulse MENÚ.
+EXPECTED_RESULT: El valor de la carga parpadea; display finaliza en 6_74_0 con todos los dígitos parpadeando, luego 6_74.
+EVIDENCE: Ajuste el valor de carga en forma de porcentaje de la carga nominal. El valor de la carga parpadea.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-D1AAC9319078EF88
+SOURCE_SECTION_OR_PAGE: 6.1.3 Ajuste del pesacargas — Verificación
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: Salga del menú 6 y acceda al valor del parámetro de ajuste del pesacargas (5_1) para comprobar que el valor correcto quede registrado.
+EXPECTED_RESULT: El valor correcto queda registrado en parámetro 5_1.
+EVIDENCE: Salga del menú 6 y compruebe que el valor correcto quede registrado accediendo al valor del parámetro de ajuste del pesacargas (5_1).
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-1101FB445035FEBC
+SOURCE_SECTION_OR_PAGE: 6.1.3 Ajuste del pesacargas — Verificación dinámica
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: Compruebe que la información del pesacargas varía cuando se modifica la carga.
+EXPECTED_RESULT: La lectura del pesacargas cambia al modificar la carga en cabina.
+EVIDENCE: Compruebe que la información del pesacargas varía cuando se modifica la carga.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-A1831F90E7E6D831
+SOURCE_SECTION_OR_PAGE: 6.1.3 Ajuste del pesacargas — Guardado
+RECORD_TYPE: COMMISSIONING_STEP
+ACTION: Guarde el ajuste poniendo parámetro (6_99) a 1.
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Guarde poniendo (6_99) a 1.
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-BA8A6AB43803E825
+SOURCE_SECTION_OR_PAGE: 6.1.3 Ajuste del pesacargas (cuando es LWI o placa LCEVTC) — NOTA
+RECORD_TYPE: SAFETY_WARNING
+ACTION: Si el ascensor se usa antes de que la decoración esté lista por completo, rehacer el ajuste del pesacargas cuando se termine la cabina.
+EXPECTED_RESULT: Ajuste del pesacargas correcto con cabina en configuración final.
+EVIDENCE: Si el ascensor se usa antes de que la decoración esté lista por completo, se debe rehacer el ajuste del pesacargas cuando se termine la cabina.
+END_FIELD_RECORD

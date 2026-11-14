@@ -69,6 +69,8 @@ module Haiku55JourneyRubric
     reasons = case name
     when "guion2" then judge.send(:judge_guion2, number, answer)
     when "guion1" then judge.send(:judge_guion1, number, answer, technician_texts: questions.first(number))
+    when "audit_thyssen_photo_ea" then photo_ea_reasons(number, answer)
+    when "audit_kone_lwi" then kone_lwi_reasons(number, answer)
     when /\Acea/ then cea_reasons(number, answer)
     when /\A(?:kpvs|guion3)/ then kpvs_reasons(name, number, answer)
     else []
@@ -226,6 +228,98 @@ module Haiku55JourneyRubric
       reasons << "kpvs:no_comparison" unless body.match?(/2,5/) && body.match?(/por debajo|debajo del|menor/i)
     end
     reasons
+  end
+
+  def photo_ea_reasons(number, answer)
+    text = I18n.transliterate(answer).downcase
+    reasons = []
+    case number
+    when 1
+      reasons << "observed_labels_missing" unless %w[p26 p27 p28].all? { |label| text.match?(/\b#{label}\b/) }
+    when 2
+      reasons << "ea_signals_or_latch_line_missing" unless text.match?(/\bea\b/) && text.match?(/fall[ao]\s+de\s+se[ñn]al|falha de sinais/) &&
+        text.include?("p28") && text.match?(/trinc|enclav|cerradur/) && text.match?(/\[\d+\]/)
+      if text.match?(/(?:correccion|rectific|no (?:lo |los )?(?:uses|tomes en cuenta)|descarta lo (?:dicho|anterior))[^.!?]*(?:p26|p27|p28)|(?:p26|p27|p28)[^.!?]*(?:no (?:lo |los )?uses|no aparece\w* en (?:la foto|el esquema))/)
+        reasons << "undue_photo_retraction"
+      end
+    when 3
+      reasons << "confirmed_connection_not_carried" unless text.match?(/firm|conect|fij|apret|descart/)
+    when 4
+      reasons << "misalignment_not_checked" unless text.match?(/alin[eé]|descentr|fuera de posicion|no coincide/)
+    when 5
+      reasons << "alignment_and_postcheck_missing" unless text.match?(/alin/) && text.match?(/procedimiento|autorizad/) &&
+        text.match?(/cierr|cerr/) && text.match?(/trab|engan|enclav/) && text.match?(/\bea\b/)
+    when 6
+      reasons << "recovered_engagement_and_persistent_ea_missing" unless text.match?(/trab|engan|enclav/) &&
+        text.match?(/\bea\b/) && text.match?(/cerrad|cierra/)
+    when 7
+      reasons << "voltage_comparison_missing" unless text.match?(/\b0\s*v(?:cc|dc)?\b/) &&
+        text.match?(/\b110\s*v(?:cc|dc)?\b/) && text.match?(/ra\s*-?53|p28/) && text.match?(/\[\d+\]/)
+      reasons << "contact_or_wiring_not_addressed" unless text.match?(/contact|conexion|cablead/) && text.match?(/trinc|enclav|cerradur/)
+    when 8
+      reasons << "electrical_reference_points_missing" unless text.match?(/\b0\s*v(?:cc|dc)?\b/) &&
+        text.match?(/\bra\s*-?30\b/) && text.include?("a4+") && text.match?(/alimenta/) &&
+        text.match?(/\bra\s*-?53\b/) && text.include?("p28") && text.match?(/confirm|senal/) &&
+        text.match?(/plano|esquema/) && text.match?(/procedimiento/)
+      body = kpvs_without_quotes(text)
+      reasons << "bridge_proposed" if body.match?(/(?:haz|coloca|instala|usa)\s+(?:un\s+)?puente|puentea\s+(?:el|la|entre)/)
+    end
+    reasons
+  end
+
+  # Send the prepared field reply only when it answers the published question
+  # or requested observation. A mismatch leaves the actual answer in the trace.
+  def photo_ea_followup_stop(number, answer)
+    request = requested_observation(answer)
+    matches = case number
+    when 1 then request.match?(/codigo|display/)
+    when 2 then request.match?(/p28/) && request.match?(/conexion|conect|borne|bornera/) &&
+      request.match?(/firme|floja|apretad|ajustad|suelta|bien conect|estado de la conexion/) &&
+      !request.match?(/lectura|tension|voltaje|mide|midas|midir|medir/)
+    when 3 then request.match?(/trinco|traba|enclav|pestillo|enganche/) &&
+      request.match?(/engancha|enganchar|traba|acciona|enclava|entra|encaja/)
+    when 4 then request.match?(/alin|descentr|posicion|coincide|encaja/)
+    when 5 then request.match?(/alin|corrig|correg|ajust/) && request.match?(/cierr|cerr|trab|engan|ea/)
+    when 6 then request.match?(/ra\s*-?53|p28/) && request.match?(/lectura|tension|voltaje|mide|medir|valor|vcc/)
+    else true
+    end
+    "field_reply_does_not_answer_photo_t#{number}" unless matches
+  end
+
+  def kone_lwi_reasons(number, answer)
+    text = I18n.transliterate(answer).downcase
+    reasons = []
+    case number
+    when 1
+      reasons << "lwi_monitor_missing" unless text.match?(/lop[ -]?cb/) && text.match?(/6[_.,-]75/) && text.match?(/\b65\b/)
+    when 2
+      reasons << "engineering_reading_not_linked" unless text.match?(/\b0\b/) && text.match?(/sensor|lop[ -]?cb|6[_.,-]75|monitor/)
+      reasons << "zero_reading_alternatives_missing" unless text.match?(/desconect|no esta conect/) &&
+        text.match?(/separaci|espacio|distancia|holgura/)
+    when 3
+      reasons << "lwi_field_result_missing" unless text.match?(/desconect|reconect|conect/) &&
+        text.match?(/\b7\s*ma\b/) && text.match?(/\b6\s*(?:a|y|[-–])\s*8\b/) && text.match?(/vacia|sin carga/)
+      reasons << "lwi_zero_load_step_missing" unless text.match?(/6[_.,-]74/) && text.match?(/carga cero|cero de carga/) && text.match?(/\[\d+\]/)
+    end
+    reasons
+  end
+
+  def kone_lwi_followup_stop(number, answer)
+    request = requested_observation(answer)
+    matches = case number
+    when 1 then request.match?(/lectura|valor|cuanto|marca|indica|muestra|reporta|dime/) && request.match?(/sensor|lop[ -]?cb|6[_.,-]75|monitor/)
+    when 2 then request.match?(/sensor/) && request.match?(/conect|conexion/)
+    else true
+    end
+    "field_reply_does_not_answer_kone_t#{number}" unless matches
+  end
+
+  def requested_observation(answer)
+    text = I18n.transliterate(kpvs_without_quotes(answer)).downcase
+    questions = text.scan(/¿([^?]+)\?/).flatten
+    return questions.join(" ") if questions.any?
+
+    text
   end
 
   # A quotation of the manual is evidence, not the answer's own order.

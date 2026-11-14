@@ -3548,7 +3548,7 @@ class BedrockRagService
   # either: "no necesito el plano" matched the old alternation and would have
   # taken the turn off the companion.
   PLAN_REQUEST = /plano|esquema|\betiquetas?\b(?!\s+del\s+equipo)|schematic|diagram|\blabels?\b/i
-  PLAN_ATTACHMENT = /\b(?:adjunt\p{L}*|env[íi]\p{L}*|compart\p{L}*|attach\w*|send\w*|shar\w*)\b[^.!?]*\z/i
+  PLAN_ATTACHMENT = /\b(?:adjunt\p{L}*|env[íi]\p{L}*|compart\p{L}*|te\s+mando|attach\w*|send\w*|shar\w*)\b[^.!?]*\z/i
   PLAN_NEGATION = /\A(?:no|ni|nunca|sin|tampoco|ningun[oa]?)\z/i
   DIAGRAM_SECTION = /(?:^|\n)\s*(?:#+\s*)?(?:diagrama|plano|esquema|tabla de etiquetas|schematic|label table)\b/i
   TOPOLOGY_EDGE_MARK = "The one exception is a RECORD_TYPE: TOPOLOGY_EDGE record:"

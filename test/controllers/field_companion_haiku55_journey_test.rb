@@ -642,6 +642,127 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     play_audit_photo("photo-live-reading", AUDIT_JOURNEYS.fetch("photo"))
   end
 
+  test "photo keeps its observed labels and the manually sourced passage on the EA follow-up" do
+    document = audit_thyssen_pin
+    @audit_photo_reading = JSON.parse(AUDIT_ROOT.join("photo_sonnet_live.json").read)
+    opening = "Estoy con un Thyssen FDN Universal con MCINV4. Está detenido y la puerta no cierra. Te adjunto el esquema de la bornera."
+    opening_reply = "Si el código es EA, «#{EA_LINE}» [p24]. En el esquema se ven P26, P27 y P28. El manual describe P28 como «sinal do contato de engate do trinco» [p9]. ¿Qué código aparece?"
+    turn = audit_thyssen_turn(document, opening, opening_reply, pages: %w[24_1 9_3],
+      observations: [ "Está detenido", "la puerta no cierra" ], opening: true)
+    opening_body, = audit_photo_post("photo-source-carry", turn, document)
+    original_episode = reloaded_session.live_episode_id
+    assert_includes opening_body.fetch("answer"), "sinal do contato de engate do trinco"
+
+    question = "El display marca EA."
+    followup = audit_thyssen_turn(document, question,
+      "EA es falla de señales. «#{EA_LINE}» [p24]. ¿La conexión de P28 en la bornera está firme?",
+      pages: %w[24_1], observations: [ question.delete_suffix(".") ], move: "follow_up")
+    body, cassette = revision_ask("audit-photo-source-carry", 2, followup, document)
+    prompt = audit_generator_prompt(cassette)
+    assert_includes prompt, question
+    visual = Rag::ActivePhotoContext.generation_evidence(prompt)
+    %w[P26 P27 P28].each { |label| assert_match(/\b#{label}\b/, visual) }
+    assert_includes prompt, "RA-53 / P28 = +110 Vcc"
+    assert_includes prompt, EA_LINE
+    assert_equal original_episode, reloaded_session.live_episode_id
+    assert_includes body.fetch("answer"), "¿La conexión de P28 en la bornera está firme?"
+
+    correction = "Me corrijo: el rótulo es P29, no P28."
+    correction_turn = audit_thyssen_turn(document, correction,
+      "Tomo P29 como el rótulo que ves. La correspondencia con el borne del manual queda por confirmar. «#{EA_LINE}» [p24].",
+      pages: %w[24_1], observations: [ "el rótulo es P29" ], move: "follow_up")
+    corrected, correction_capture = revision_ask("audit-photo-source-carry", 3, correction_turn, document)
+    assert_includes audit_generator_prompt(correction_capture), correction
+    assert_includes corrected.fetch("answer"), "Tomo P29 como el rótulo que ves."
+    assert_equal original_episode, reloaded_session.live_episode_id
+  end
+
+  test "EA journey follows the requested observations through the persistent electrical fault" do
+    document = audit_thyssen_pin
+    @audit_photo_reading = JSON.parse(AUDIT_ROOT.join("photo_sonnet_live.json").read)
+    questions = AUDIT_JOURNEYS.fetch("photo_ea")
+    replies = [
+      "En el esquema se ven P26, P27 y P28. La imagen no da mediciones. Si aparece EA, «#{EA_LINE}» [p24]. ¿Qué código muestra el display?",
+      "EA es falla de señales. «#{EA_LINE}» [p24]. La puerta de piso orienta a esa línea. ¿La conexión de P28 en la bornera está firme?",
+      "Con la conexión de P28 firme queda por comprobar el enganche. «#{EA_LINE}» [p24]. Cuando intenta cerrar, ¿el trinco llega a enganchar?",
+      "Si el trinco no engancha, fíjate si queda desalineado. «#{EA_LINE}» [p24]. ¿El trinco queda desalineado?",
+      "Con el trinco desalineado, corrige la alineación según el procedimiento autorizado de tu empresa. Luego comprueba si la puerta cierra, traba y sigue marcando EA. «#{EA_LINE}» [p24].",
+      "La puerta ya cierra y traba, pero EA sigue activo. El manual documenta «Ponto para ligar sinal do contato de engate do trinco, confirmando portas de pavimento fechada» [p9]. Con la puerta cerrada y trabada, ¿qué tensión lees en RA-53/P28?",
+      "La tabla identifica «RA-53 / P28 = +110 Vcc» para el «sinal do contato de engate do trinco» [p9]. Los 0 Vcc que reportas en RA-53/P28 están por debajo de los +110 Vcc. Revisa el contacto y las conexiones de la línea de trincos; falta localizar la pérdida.",
+      "Reportaste 0 Vcc en RA-53/P28. El manual identifica ese punto como confirmación de enganche: «Ponto para ligar sinal do contato de engate do trinco, confirmando portas de pavimento fechada» [p9]. RA-30/A4+ alimenta el circuito: «Ponto para ligar alimentação do circuito de trinco e palhetas das portas de pavimento» [p10]. Para localizar la pérdida hace falta el plano y el procedimiento de la instalación."
+    ]
+    original_episode = nil
+    questions.each_with_index do |question, index|
+      number = index + 1
+      rows = number == 8 ? %w[24_1 9_3 10_1] : %w[24_1 9_3]
+      observations = number == 1 ? [ "Está detenido", "la puerta de piso no cierra" ] : [ question ]
+      turn = audit_thyssen_turn(document, question, replies.fetch(index), pages: rows,
+        observations: observations, opening: number == 1, move: number == 1 ? "report" : "follow_up")
+      body, cassette = if number == 1
+        audit_photo_post("photo-ea", turn, document)
+      else
+        revision_ask("audit-photo-ea", number, turn, document)
+      end
+      assert_revision_scope(cassette, document)
+      prompt = audit_generator_prompt(cassette)
+      assert_includes prompt, question
+      assert_match(/\bP28\b/, Rag::ActivePhotoContext.generation_evidence(prompt))
+      answer = body.fetch("answer")
+      assert_empty Haiku55JourneyRubric.photo_ea_reasons(number, answer), answer
+      assert_nil Haiku55JourneyRubric.photo_ea_followup_stop(number, answer), answer
+      original_episode ||= reloaded_session.live_episode_id
+      assert_equal original_episode, reloaded_session.live_episode_id
+    end
+  end
+
+  test "KONE uses the Engineering reading and advances after the sensor is reconnected" do
+    @account = accounts(:pilot)
+    host! "piloto.danebo.ai"
+    @user.update!(account: @account)
+    sign_in @user
+    document = KbDocument.create!(account: @account, document_uid: "6b37e94e-1d4c-4d59-a33a-66e894116c9a",
+      display_name: "puesta en marcha de ascensores sin sala de maquina",
+      s3_key: "bulk_uploads/3/2026-08-24/puesta en marcha de ascensores sin sala de maquina.pdf",
+      aliases: %w[KONE MonoSpace KDL16 AM-11.65.031])
+    post pinned_documents_path, params: { kb_document_id: document.id }, as: :json
+    assert_response :no_content
+    questions = AUDIT_JOURNEYS.fetch("kone_lwi")
+    replies = [
+      "Con la cabina vacía, el paso 2 pide «Ajuste Selección de monitor del display en tiempo real (6_75) a 65 (valor de entrada del pesacargas)» [p38]. ¿Qué valor de entrada ves en el panel LOP-CB?",
+      "El 0 que reporta Ingeniería corresponde a la entrada del sensor con cabina vacía. El paso 2 dice «Si el valor es 0 => El sensor no está conectado o hay un espacio demasiado grande» [p38]. ¿El sensor está conectado?",
+      "Estaba desconectado y, después de conectarlo, mediste 7 mA con cabina vacía. El paso 2 dice «Compruebe que LOP-CB muestre el valor entre 6-8» [p38]. Los 7 mA quedan dentro de ese rango. Mantén la cabina vacía y registra la carga cero en el paso 3: «Seleccione el parámetro de Ajuste del pesacargas (6_74)» [p38]. Los 7 mA son la señal del sensor; el ajuste sigue en curso."
+    ]
+    episode = nil
+    questions.each_with_index do |question, index|
+      row = audit_manual_row(document, AUDIT_ROOT.join("kone_lwi_p38.txt").read, 38)
+      assertions = index.zero? ? [ { "span" => "KONE", "act" => "assert", "slot_hint" => "manufacturer" } ] : []
+      observations = index.zero? ? [ "La cabina está vacía", "no logro terminar el ajuste del pesacargas" ] : [question]
+      turn = audit_turn(question, replies.fetch(index), rows: [row], move: index.zero? ? "report" : "follow_up",
+        observations: observations, assertions: assertions)
+      body, cassette = revision_ask("audit-kone-lwi", index + 1, turn, document)
+      assert_revision_scope(cassette, document)
+      assert_includes audit_generator_prompt(cassette), question
+      answer = body.fetch("answer")
+      assert_empty Haiku55JourneyRubric.kone_lwi_reasons(index + 1, answer), answer
+      assert_nil Haiku55JourneyRubric.kone_lwi_followup_stop(index + 1, answer), answer
+      episode ||= reloaded_session.live_episode_id
+      assert_equal episode, reloaded_session.live_episode_id
+    end
+  end
+
+  test "captured EA answer passes the connection branch and independently fails provenance" do
+    answer = <<~TEXT
+      EA es falla de señales. [1] indica: «#{EA_LINE}».
+      Corrección: lo que dije antes sobre P26, P27 y P28 no está en las fuentes de este turno, así que no lo uses.
+      ¿Ya revisaste la conexión de P28 en la bornera y está firme?
+    TEXT
+
+    assert_equal ["undue_photo_retraction"], Haiku55JourneyRubric.photo_ea_reasons(2, answer)
+    assert_nil Haiku55JourneyRubric.photo_ea_followup_stop(2, answer)
+    assert_equal "field_reply_does_not_answer_photo_t2",
+      Haiku55JourneyRubric.photo_ea_followup_stop(2, "¿Cuánto mide la tensión en P28?")
+  end
+
   test "real Engineering opening asks the current parameter before continuing" do
     document = audit_thyssen_pin
     question = AUDIT_JOURNEYS.fetch("engineering").first

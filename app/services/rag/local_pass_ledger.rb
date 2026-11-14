@@ -364,6 +364,11 @@ module Rag
           return authorized
         end
 
+        if ENV[EXECUTION_ENV] == AssignmentSpend::FIELD_CONTINUATION_ID &&
+            authorized == AssignmentSpend::FIELD_CONTINUATION_CAP
+          return authorized
+        end
+
         ASSIGNMENT_CALL_CAP
       rescue JSON::ParserError, SystemCallError
         ASSIGNMENT_CALL_CAP

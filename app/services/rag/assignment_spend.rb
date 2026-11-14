@@ -93,6 +93,40 @@ module Rag
     THYSSEN_RECHECK_ATTEMPTS = 1205
     THYSSEN_RECHECK_SEQUENCE = 1207
 
+    FIELD_CONTINUATION_ID = "haiku55-http-field-continuation-20261114"
+    FIELD_CONTINUATION_ATTEMPTS = 1217
+    FIELD_CONTINUATION_SEQUENCE = 1219
+    FIELD_CONTINUATION_CALLS = 33
+    FIELD_CONTINUATION_CAP = FIELD_CONTINUATION_ATTEMPTS + FIELD_CONTINUATION_CALLS
+    FIELD_CONTINUATION_USD = "0.120792"
+
+    def self.field_continuation_baseline?(state)
+      state.values_at("attempts", "seq", "cost_cap_usd") ==
+        [ FIELD_CONTINUATION_ATTEMPTS, FIELD_CONTINUATION_SEQUENCE, "4.0" ] &&
+        state.dig("authorization", "call_cap") == THYSSEN_RECHECK_CAP &&
+        Array(state["executions"]).last&.values_at("id", "after_attempt", "cost_usd", "calls") ==
+          [ THYSSEN_RECHECK_ID, THYSSEN_RECHECK_SEQUENCE, THYSSEN_AUDIT_USD, THYSSEN_AUDIT_CALLS ]
+    end
+
+    def admit_field_continuation!
+      with_lock do |state, file|
+        raise Stop, "field_continuation_ledger_baseline_changed" unless self.class.field_continuation_baseline?(state)
+        if exposure(state) + decimal(FIELD_CONTINUATION_USD) > [ @cost_cap, decimal(state["cost_cap_usd"]) ].min
+          raise Stop, "field_continuation_assignment_budget"
+        end
+
+        state.fetch("authorization")["call_cap"] = FIELD_CONTINUATION_CAP
+        state["call_cap"] = FIELD_CONTINUATION_CAP
+        row = {
+          "id" => FIELD_CONTINUATION_ID, "after_attempt" => state.fetch("seq"),
+          "cost_usd" => FIELD_CONTINUATION_USD, "calls" => FIELD_CONTINUATION_CALLS, "at" => Time.now.utc.iso8601
+        }
+        state.fetch("executions") << row
+        write!(file, state)
+        row
+      end
+    end
+
     def self.thyssen_baseline?(state, recheck: false)
       rows = Array(state["executions"]).last(3).map do |row|
         row.values_at("id", "after_attempt", "cost_usd", "calls") if row.is_a?(Hash)
@@ -429,6 +463,7 @@ module Rag
 
         terms = row.values_at("id", "after_attempt", "cost_usd", "calls")
         next true if THYSSEN_PRIOR.include?(terms)
+        next true if terms == [ FIELD_CONTINUATION_ID, FIELD_CONTINUATION_SEQUENCE, FIELD_CONTINUATION_USD, FIELD_CONTINUATION_CALLS ]
         next true if terms == [ THYSSEN_AUDIT_ID, THYSSEN_AUDIT_SEQUENCE, THYSSEN_AUDIT_USD, THYSSEN_AUDIT_CALLS ]
         next true if terms == [ THYSSEN_RECHECK_ID, THYSSEN_RECHECK_SEQUENCE, THYSSEN_AUDIT_USD, THYSSEN_AUDIT_CALLS ]
 

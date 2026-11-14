@@ -299,7 +299,7 @@ module Rag
           slots[number - 1] ||= gap_chunk(number) if number.positive?
         end
         slots.map!.with_index { |slot, index| slot || gap_chunk(index + 1) } if max_number.positive?
-        known = history_chunks.compact.map { |chunk| [ uri_of(chunk), digest(text_of(chunk)) ] }
+        known = history_chunks.compact.map { |chunk| [ uri_of(chunk), chunk.fetch(:chunk_sha256) ] }
         next_number = max_number
         fresh_chunks.each do |chunk|
           next if gap?(chunk)
@@ -375,13 +375,16 @@ module Rag
       end
 
       def entry_for(chunk, number, correlation_id)
-        text = text_of(chunk)
+        original = text_of(chunk)
+        # Store the passage shown to the generator and keep the full chunk digest
+        # to match a later Retrieve of the same passage.
+        text = DocumentIdentityScope.omit_terminal_evidence_records(original)
         {
           "n" => number,
           "location_uri" => uri_of(chunk),
           "page" => page_of(chunk),
           "metadata" => source_metadata(chunk),
-          "sha256" => digest(text),
+          "sha256" => digest(original),
           "text" => text,
           "first_cid" => correlation_id.to_s,
           "provenance" => PROVENANCE

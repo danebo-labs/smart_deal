@@ -308,15 +308,14 @@ module Rag
         ].compact_blank.join("\n\n")
       end
 
-      # Past the third exchange a manual rarely adds more; an open case is
-      # handed over instead of extended.
+      # Offer a handoff when the next check requires someone else or cannot
+      # proceed with the available information.
       def referral_note(technician_turn)
         return nil if technician_turn < REFERRAL_TURN
 
-        "Turno #{technician_turn} del técnico en este caso. Responde primero a la consulta actual. Si la consulta sigue abierta, termina con un resumen " \
-          "para derivar: lo que contó el técnico, lo que ya comprobó, lo que respalda la fuente con [n] y lo que falta. " \
-          "Lo que falta no incluye un componente, ajuste o modo cuya condición o ejemplo documentado depende de algo " \
-          "que el técnico ya descartó. Sin pregunta nueva salvo que su respuesta cierre el caso."
+        "Turno #{technician_turn} del técnico en este caso. Responde primero a la consulta actual. Si el último resultado permite avanzar, " \
+          "indica la siguiente comprobación respaldada o pide la observación que permite decidirla. Si el técnico no puede seguir, resume " \
+          "lo que contó, lo que comprobó, el respaldo y lo que queda pendiente para derivar."
       end
 
       def sources_block(chunks)

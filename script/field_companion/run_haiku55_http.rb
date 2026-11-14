@@ -30,6 +30,8 @@ module Haiku55Http
   PHASE = ENV.fetch("HTTP55_PHASE", "acceptance")
   SPEND = Rag::AssignmentSpend
   AUDIT_PLAN = %w[audit_thyssen_photo audit_thyssen_engineering].freeze
+  CONTINUATION_PLAN = %w[audit_thyssen_photo_ea audit_kone_lwi audit_thyssen_engineering].freeze
+  CONTINUATION = PHASE == "field_continuation"
   AUDIT_APPROVAL = "HTTP55_THYSSEN_AUTHORIZED_SHA"
   AUDIT_KB_BUCKET = "multimodal-source-destination"
   # Same ids, call counts, and dollar ceilings the spend guard recognizes.
@@ -51,6 +53,10 @@ module Haiku55Http
       "id" => SPEND::THYSSEN_RECHECK_ID, "calls" => SPEND::THYSSEN_AUDIT_CALLS,
       "usd" => SPEND::THYSSEN_AUDIT_USD, "next_cap" => SPEND::THYSSEN_RECHECK_CAP
     }.freeze,
+    "field_continuation" => {
+      "id" => SPEND::FIELD_CONTINUATION_ID, "calls" => SPEND::FIELD_CONTINUATION_CALLS,
+      "usd" => SPEND::FIELD_CONTINUATION_USD, "next_cap" => SPEND::FIELD_CONTINUATION_CAP
+    }.freeze,
     "regression" => {
       "id" => Rag::AssignmentSpend::FIELD_REGRESSION_ID,
       "calls" => Rag::AssignmentSpend::FIELD_REGRESSION_CALLS,
@@ -61,7 +67,7 @@ module Haiku55Http
   }.freeze
   CEA_COMPLETION = PHASE == "regression" && ENV["HTTP55_CEA_COMPLETION"] == "1"
   RECHECK = PHASE == "thyssen_recheck"
-  AUDIT = PHASE == "thyssen_audit" || RECHECK
+  AUDIT = PHASE == "thyssen_audit" || RECHECK || CONTINUATION
   SPEC = FIELD_GRANTS.fetch(PHASE)
   GRANT_CALLS = CEA_COMPLETION ? Rag::AssignmentSpend::CEA_COMPLETION_CALLS : SPEC["calls"]
   NEXT_CAP = CEA_COMPLETION ? 1158 : SPEC["next_cap"]
@@ -136,9 +142,12 @@ module Haiku55Http
       ]
     }
   }.freeze
+  KONE_LWI_DOCUMENT_UID = "6b37e94e-1d4c-4d59-a33a-66e894116c9a"
   AUDIT_JOURNEYS = JSON.parse(Rails.root.join("test/fixtures/field_companion/audit_20261113/journeys.json").read).freeze
   AUDIT_SCRIPTS = {
     "audit_thyssen_photo" => { "document_uid" => FDN_DOCUMENT_UID, "turns" => AUDIT_JOURNEYS.fetch("photo"), "photo" => true },
+    "audit_thyssen_photo_ea" => { "document_uid" => FDN_DOCUMENT_UID, "turns" => AUDIT_JOURNEYS.fetch("photo_ea"), "photo" => true },
+    "audit_kone_lwi" => { "document_uid" => KONE_LWI_DOCUMENT_UID, "turns" => AUDIT_JOURNEYS.fetch("kone_lwi") },
     "audit_thyssen_engineering" => { "document_uid" => FDN_DOCUMENT_UID, "turns" => AUDIT_JOURNEYS.fetch("engineering") },
     "audit_thyssen_engineering_plate" => {
       "document_uid" => FDN_DOCUMENT_UID,
@@ -227,6 +236,7 @@ module Haiku55Http
   end
 
   def authorized_plan
+    return CONTINUATION_PLAN if CONTINUATION
     return AUDIT_PLAN if AUDIT
 
     PHASE == "acceptance" ? ACCEPTANCE_PLAN : REGRESSION_PLAN
@@ -275,7 +285,7 @@ module Haiku55Http
       "cea_completion_already_started"
     elsif CEA_COMPLETION && ledger.fetch("executions").any? { |row| row["id"] == EXECUTION_ID }
       "cea_completion_already_admitted"
-    elsif AUDIT && (plan != AUDIT_PLAN || ENV["HTTP55_GUI"] == "1")
+    elsif AUDIT && (plan != authorized_plan || ENV["HTTP55_GUI"] == "1")
       "outside_thyssen_audit_plan"
     elsif !plan.all? { |name| authorized_plan.include?(name) }
       "outside_authorized_plan"
@@ -291,7 +301,7 @@ module Haiku55Http
       "audit_kb_bucket_mismatch"
     elsif AUDIT && !audit_photo_input
       "audit_jpeg_missing_or_invalid"
-    elsif AUDIT && !SPEND.thyssen_baseline?(ledger, recheck: RECHECK)
+    elsif AUDIT && !audit_baseline?(ledger)
       "thyssen_ledger_baseline_changed"
     elsif AUDIT && worst != BigDecimal(GRANT_USD)
       "thyssen_price_changed"
@@ -321,7 +331,7 @@ module Haiku55Http
         "haiku_execution_usd" => money(worst), "haiku_execution_calls" => calls,
         "haiku_required_cumulative_cap" => ledger["attempts"].to_i + calls,
         "haiku_cap_increase" => [ calls - remaining, 0 ].max,
-        "vision" => scripts.dig(AUDIT_PLAN.first, "vision")
+        "vision" => scripts.dig(authorized_plan.first, "vision")
       } : nil),
       "photo_input" => (audit_photo_input if AUDIT),
       "bedrock" => (AUDIT ? { "mode" => "read_only", "rerank_model" => "cohere.rerank-v3-5:0",
@@ -390,11 +400,21 @@ module Haiku55Http
     ACCEPTANCE_PLAN.all? { |name| summary["results"].any? { |row| row["script"] == name && row["rubric_ok"] } }
   end
 
+  def audit_baseline?(ledger)
+    return SPEND.field_continuation_baseline?(ledger) if CONTINUATION
+
+    SPEND.thyssen_baseline?(ledger, recheck: RECHECK)
+  end
+
   def admit!(io, directory: nil)
     if AUDIT
       return false unless directory && ENV[AUDIT_APPROVAL] == head
 
-      assignment_spend.admit_thyssen_audit!(recheck: RECHECK)
+      if CONTINUATION
+        assignment_spend.admit_field_continuation!
+      else
+        assignment_spend.admit_thyssen_audit!(recheck: RECHECK)
+      end
       Rag::GuardedPhotoVision.assignment(directory.join("vision-spend.json")).admit_execution!(
         id: Rag::GuardedPhotoVision::GRANT_ID, calls: 1, cost_usd: Rag::GuardedPhotoVision.ceiling
       )
@@ -505,6 +525,10 @@ module Haiku55Http
           row["block_reason"] ||= engineering_stop(number, row, rows.first&.dig("episode_id"))
         elsif name == AUDIT_PLAN.first
           row["block_reason"] ||= photo_followup_stop(number, row["answer"])
+        elsif name == CONTINUATION_PLAN.first
+          row["block_reason"] ||= Haiku55JourneyRubric.photo_ea_followup_stop(number, row["answer"])
+        elsif name == "audit_kone_lwi"
+          row["block_reason"] ||= Haiku55JourneyRubric.kone_lwi_followup_stop(number, row["answer"])
         end
         accept = script(name).dig("accept", number)
         if row["block_reason"] == "generator_not_sent" && planned_card?(row["manual_suggestion"], accept)
@@ -547,7 +571,7 @@ module Haiku55Http
       "script" => name, "status" => status, "user_id" => user.id, "session_id" => session&.id,
       "episodes" => episodes, "single_episode" => single_episode,
       "rubric_ok" => status == "executed" && episode_ok && rows.all? { |row| row["rubric"].empty? && row.fetch("scope", {}).fetch("ok", true) },
-      "turns" => rows.map { |row| row.slice("turn", "label", "status", "block_reason", "abstained_with_card", "rubric", "wall_ms", "route_outcome", "episode_id", "focus", "scope", "replayed") },
+      "turns" => rows.map { |row| row.slice("turn", "label", "question", "answer", "status", "block_reason", "abstained_with_card", "rubric", "wall_ms", "route_outcome", "episode_id", "focus", "scope", "replayed") },
       "ledger_before" => before, "ledger_after" => ledger_view
     }
     File.write(directory.join("summary.json"), JSON.pretty_generate(payload))
@@ -630,14 +654,15 @@ module Haiku55Http
     end
     if name == AUDIT_PLAN.last
       rubric += engineering_checks(number, answer, session)
-    elsif name == AUDIT_PLAN.first
-      rubric += photo_checks(number, answer, events, session)
+    elsif script(name)["photo"]
+      rubric += photo_checks(number, answer, events, session, evidence_dir, question, persistent_ea: name == CONTINUATION_PLAN.first)
     end
     scope = scope_view(events, body, focus)
     File.write(turn_dir.join("scope.json"), JSON.pretty_generate(scope))
     {
       "script" => name, "turn" => number, "label" => label, "status" => body["status"] || response[:status].to_s,
       "answer" => answer,
+      "question" => question,
       "block_reason" => reason, "rubric" => rubric, "wall_ms" => wall_ms,
       "route_outcome" => events.reverse.find { |event| event["kind"] == "published_answer" }&.dig("route_outcome"),
       "episode_id" => episode_id, "focus" => session&.focus_document_ids, "scope" => scope,
@@ -732,16 +757,25 @@ module Haiku55Http
     nil
   end
 
-  def photo_checks(number, answer, events, session)
+  def photo_checks(number, answer, events, session, evidence_dir, question, persistent_ea:)
     reasons = []
     ask = events.reverse.find { |event| event["kind"] == "converse" && event["provider"] == "anthropic" }
-    reasons << "photo_evidence_missing_from_generation" unless ask&.to_json&.match?(/Photo Evidence/)
+    prompt = Array(ask&.dig("messages", -1, "content")).filter_map { |block| body_text(evidence_dir, block["text"]) }.join
+    visual = Rag::ActivePhotoContext.generation_evidence(prompt)
+    reasons << "photo_evidence_missing_from_generation" unless visual
+    reasons << "literal_question_missing_from_generation" unless prompt.start_with?("Mensaje de este turno:\n#{question}")
+    if persistent_ea && visual
+      labels = number <= 2 ? %w[P26 P27 P28] : %w[P28]
+      reasons << "visual_labels_missing_from_generation" unless labels.all? { |label| visual.match?(/\b#{label}\b/) }
+    end
     if number == 1
       input = events.find { |event| event["kind"] == "photo_worker_input" }
       reasons << "worker_jpeg_digest_missing_or_different" unless input && input["sha256"] == input["declared_sha256"]
       reasons << "vision_reading_missing" unless events.any? { |event| event["kind"] == "photo_vision_reading" }
     end
     reasons << "active_photo_missing" if session&.active_episode.to_h.dig("active_photo", "field_photo_id").blank?
+    return reasons if persistent_ea
+
     expected = case number
     when 1 then /display|codigo|p28|trincos|cerradur|enclavamiento/
     when 2 then /trincos|p28/

@@ -428,6 +428,9 @@ module RagQueryConcern
     # the full evidence context (native citations or the fallback_retrieve chunks).
     # Re-running it here would degrade correct answers a second time, so the
     # concern only applies the unit guard and presentation sanitization.
+    case_reports = if result[:case_episode_id].present? && conv_session&.live_episode_id == result[:case_episode_id]
+      conv_session.episode_user_messages
+    end
     guarded = Rag::SourceFidelityGuard.call(
       answer: result[:answer],
       evidence_texts: Rag::SourceFidelityGuard.evidence_texts(result[:retrieved_citations]),
@@ -435,7 +438,7 @@ module RagQueryConcern
         question: question,
         effective_question: effective_question,
         session_context: merged_session_context
-      ),
+      ) + Array(case_reports),
       locale: resolved_response_locale,
       correlation_id: result[:correlation_id] || correlation_id
     )

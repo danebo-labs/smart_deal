@@ -65,12 +65,13 @@ class Rag::Haiku55DirectCutTest < ActiveSupport::TestCase
     BedrockClient.define_singleton_method(:new) { |*args, **kwargs, &block| original.call(*args, **kwargs, &block) } if original
   end
 
-  test "the referral note starts at turn 4 and keeps discarded conditions out of what is missing" do
+  test "the referral note supports another check while the technician can advance" do
     assert_nil Rag::CompanionDirectAnswer.send(:referral_note, 3)
     note = Rag::CompanionDirectAnswer.send(:referral_note, 4)
 
-    assert_includes note, "resumen para derivar"
-    assert_includes note, "Lo que falta no incluye un componente, ajuste o modo cuya condición o ejemplo documentado depende de algo que el técnico ya descartó."
+    assert_includes note, "la siguiente comprobación respaldada"
+    assert_includes note, "Si el técnico no puede seguir"
+    assert_includes note, "lo que queda pendiente para derivar"
   end
 
   test "a truncated interpreter response and a missing tool fail closed" do

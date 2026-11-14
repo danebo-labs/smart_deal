@@ -109,6 +109,7 @@ class Rag::CompanionPlanRouteTest < ActiveSupport::TestCase
     assert_not BedrockRagService.plan_request?("¿qué sigue?", nil)
     assert BedrockRagService.plan_request?("muéstrame el plano de la fotocélula", nil)
     assert_not BedrockRagService.plan_request?("La puerta no cierra. Adjunto el esquema de la bornera.", nil)
+    assert_not BedrockRagService.plan_request?("La puerta no cierra. Te mando el esquema de la bornera.", nil)
     assert_not BedrockRagService.plan_request?("The motor stopped. I'm attaching the wiring diagram.", nil)
     assert BedrockRagService.plan_request?("Adjunto el esquema. ¿Dónde cruza el plano la línea de seguridad?", nil)
     assert_not BedrockRagService.plan_request?("no necesito el plano", nil)

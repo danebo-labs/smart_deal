@@ -108,7 +108,8 @@ module Rag
         referent = CompanionSequence.referent_context(raw_question, episode)
         parameter_review = CompanionParameterReview.build(question: raw_question, episode: episode, chunks: merged)
         carry = "Pregunta del mismo caso que quedó sin responder: #{unresolved_question}" if unresolved_question.present?
-        context = [ carry, reference_context, referent, parameter_review&.prompt, photo_evidence ].compact_blank.join("\n\n")
+        continuation = ProcedureContinuation.prompt(history: history, chunks: merged, question: raw_question)
+        context = [ continuation, carry, reference_context, referent, parameter_review&.prompt, photo_evidence ].compact_blank.join("\n\n")
         current = current_text(raw_question, merged, technician_turn, context: context)
         messages = converse_messages(history, current)
         system = SYSTEM_PROMPT

@@ -392,6 +392,20 @@ class Rag::CompanionClaimBackingTest < ActiveSupport::TestCase
     assert_equal [ "uncited_attribution" ], result.removed.pluck("reason")
   end
 
+  test "a reported measurement stays when its sentence cites without a literal quote" do
+    sentence = "Buena noticia: al conectar el sensor, 6_75 pasó de 0 a 7 mA, y el rango pedido en el paso 2 es 6-8 mA [1]."
+    source = "Compruebe que el valor esté entre 6-8. Si el valor es 0 => el sensor no está conectado."
+    kept = call(sentence, source, technician: [ "Lo conecté y ahora marca 7 mA." ])
+    dropped = call(sentence, source)
+
+    assert_includes kept.text, "al conectar el sensor"
+    assert_includes kept.text, "7 mA"
+    assert_not_includes kept.text, "[1]"
+    assert_equal [ "unbacked_citation" ], kept.removed.pluck("reason")
+    assert_equal [ "unbacked_citation" ], dropped.removed.pluck("reason")
+    assert_not_includes dropped.text, "conectar"
+  end
+
   test "a quote that leaves out the condition of the passage is still dropped" do
     text = "Con KP-VS en 3,0 ya estás en el mínimo que indica la fuente: " \
            "«disminuya el valor del parámetro \"KP-VS\", hasta el mínimo de [3,0]» [1]."

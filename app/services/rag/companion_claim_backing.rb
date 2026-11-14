@@ -28,6 +28,10 @@ module Rag
     # «ese mínimo»: points at a limit that an earlier sentence quoted.
     DANGLING_LIMIT = /(?<![[:alnum:]])(?:ese|dicho|este)\s+(?:m[ií]nimo|l[ií]mite)/i.freeze
     STATED_LIMIT = /\bno\s+(?:puedes|puede|sabes|es\s+posible)\b|\bsin\s+poder\b|\bcannot\b|\bcan't\b/i.freeze
+    # A reported reading stays when it shares its sentence with an unquoted
+    # citation. Only the clause that carries [n] leaves.
+    SOURCE_CUE = /\A\s*(?:y\s+)?(?:el\s+|la\s+|los\s+|las\s+)?(?:rango|fuente|manual|paso|criterio|seg[uú]n|documentad)/i.freeze
+    MEASUREMENT = /(\d+(?:[.,]\d+)?)\s*([A-Za-zµ%]{1,6})/
 
     Result = Struct.new(:text, :removed, :reattributed, keyword_init: true) do
       def changed?
@@ -158,9 +162,44 @@ module Rag
 
       moved = reattributed(sentence) if reason == "unverified_quote"
       return moved if moved
+      if reason == "unbacked_citation" && (kept = salvage_report(sentence))
+        return kept
+      end
 
       @removed << { "sentence" => sentence, "reason" => reason }
       nil
+    end
+
+    # «al conectar el sensor, pasó a 7 mA, y el rango pedido es 6-8 [1]»
+    # keeps the reported measurement and drops the clause that cites without
+    # a literal quote. A sentence without that measurement is unchanged.
+    def salvage_report(sentence)
+      return nil if documentary_quotes(sentence, QUOTE_PATTERN).any?
+
+      measurement = reported_measurement
+      return nil if measurement.nil?
+
+      body, cited = split_cited_clause(sentence)
+      return nil if body.blank? || cited.blank? || body.match?(CITATION_PATTERN)
+      return nil unless body.match?(measurement) && drop_reason(body).nil?
+
+      @removed << { "sentence" => cited, "reason" => "unbacked_citation" }
+      body
+    end
+
+    def reported_measurement
+      pairs = @technician_texts.flat_map { |text| text.to_s.scan(MEASUREMENT) }.uniq
+      return nil if pairs.empty?
+
+      Regexp.union(pairs.map { |number, unit| /#{Regexp.escape(number)}\s*#{Regexp.escape(unit)}/i })
+    end
+
+    def split_cited_clause(sentence)
+      parts = sentence.split(/,\s+/)
+      cited_at = parts.rindex { |part| part.match?(CITATION_PATTERN) || part.match?(SOURCE_CUE) }
+      return nil unless cited_at&.positive?
+
+      [ parts[0...cited_at].join(", "), parts[cited_at..].join(", ") ]
     end
 
     # Only a single [n], and only when one other citable source holds every

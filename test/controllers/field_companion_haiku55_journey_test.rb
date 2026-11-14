@@ -628,6 +628,15 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     play_audit_photo("photo", AUDIT_JOURNEYS.fetch("photo"))
   end
 
+  test "audit Thyssen photo caps real worker and HTTP provider boundaries offline" do
+    with_guarded_thyssen_photo do |haiku_spend, vision_spend|
+      play_audit_photo("photo", AUDIT_JOURNEYS.fetch("photo"))
+      assert_equal 8, haiku_spend.snapshot.fetch("attempts")
+      assert_equal 1, vision_spend.snapshot.fetch("attempts")
+      assert_equal "settled", vision_spend.snapshot.fetch("entries").sole.fetch("status")
+    end
+  end
+
   test "audit 18:36 caption and its original follow-ups replay independently of the corrected conversation" do
     turns = AUDIT_PRODUCTION.dig("photo", "history").select { |row| row["role"] == "user" }
     play_audit_photo("photo-original", turns.map { |row| row["full_content"] || row.fetch("content") })
@@ -813,6 +822,38 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
 
   private
 
+  def with_guarded_thyssen_photo
+    skip "Set AUDIT_THYSSEN_PHOTO_PATH to use the technician's JPEG" unless ENV["AUDIT_THYSSEN_PHOTO_PATH"]
+    ledger = Rag::LocalPassLedger
+    guard = Rag::GuardedPhotoVision
+    Dir.mktmpdir do |directory|
+      haiku_path = File.join(directory, "haiku.json")
+      vision_path = File.join(directory, "vision.json")
+      spend = Rag::AssignmentSpend.new(path: haiku_path, call_cap: 150, cost_cap_usd: "0.1")
+      spend.admit_execution!(id: "offline-replay", calls: 8, cost_usd: "0.1")
+      vision = guard.assignment(vision_path)
+      vision.admit_execution!(id: guard::GRANT_ID, calls: 1, cost_usd: guard.ceiling)
+      config = {
+        ledger::GUARD_ENV => "1", ledger::CALL_CAP_ENV => "8", ledger::COST_CAP_ENV => "0.1",
+        ledger::ATTEMPTS_ENV => "1", ledger::ASSIGNMENT_PATH_ENV => haiku_path, guard::PATH_ENV => vision_path,
+        ledger::ALLOWED_CALLS_ENV => "converse@claude-haiku-5-5-direct,converse_message@claude-haiku-5-5-direct,photo_vision@claude-sonnet-5-5-direct",
+        ledger::EXECUTION_ENV => "offline-replay", ledger::SCOPE_ENV => "offline-replay/photo",
+        "RAG_PHOTO_LOCAL_STORE" => directory
+      }
+      previous = config.keys.to_h { |key| [key, ENV[key]] }
+      config.each { |key, value| ENV[key] = value }
+      @guarded_photo = true
+      ledger.reset!
+      ledger.reset_local_process!
+      yield spend, vision
+    ensure
+      previous&.each { |key, value| ENV[key] = value }
+      ledger.reset!
+      ledger.reset_local_process!
+      @guarded_photo = false
+    end
+  end
+
   def play_audit_photo(name, questions)
     document = audit_thyssen_pin
     replies = [
@@ -867,10 +908,10 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       "¿Qué valor indica KP-VS en el menú PID? La lectura permite ubicar el caso frente al límite de la rama «#{NOISE_LINE}» [1]. La causa del ruido sigue abierta.",
       "Deja pendiente la lectura actual de KP-VS en el menú PID y deriva la verificación a Ingeniería. La rama se aplica «#{NOISE_LINE}» [1].",
       "Con KP-VS en 2,5, que leyó Ingeniería, la lectura está por debajo del mínimo documentado. La condición y el límite son «#{NOISE_LINE}» [1]. La evaluación del ruido sigue pendiente.",
-      "No le pidas a Ingeniería que cambie KP-VS a 3,5 por el ruido. Esa es una referencia de instalación: «#{audit_installation_quote}» [2]. Sigue pendiente la evaluación del ruido con la lectura de 2,5."
+      "No le pidas a Ingeniería que cambie KP-VS a 3,5 por el ruido. Esa es una referencia de puesta en marcha: «#{audit_installation_quote}» [2]. Sigue pendiente la evaluación del ruido con la lectura de 2,5."
     ]
     if variant
-      replies[2] += ' El ejemplo Eberle no completa la placa de obra: «Os valores reais dependem do motor instalado na obra» [2]. La corriente nominal queda pendiente.'
+      replies[2] += ' <respuesta_complementaria>El ejemplo Eberle no completa la placa de obra: «Os valores reais dependem do motor instalado na obra» [2]. La corriente nominal queda pendiente.</respuesta_complementaria>'
     end
 
     episode_id = nil
@@ -896,7 +937,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       body, cassette = revision_ask("audit-#{name}", index + 1, turn, document)
       assert_revision_scope(cassette, document)
       answer = body.fetch("answer")
-      assert_includes answer, [ "¿Qué valor", "Ingeniería", "por debajo", "instalación" ].fetch(index)
+      assert_includes answer, [ "¿Qué valor", "Ingeniería", "por debajo", "puesta en marcha" ].fetch(index)
       assert_includes answer, "Eberle" if variant && index == 2
       assert_includes audit_generator_prompt(cassette), questions[3] if variant && index == 3
       assert_includes cassette.queries.first, questions[3] if variant && index == 3
@@ -965,6 +1006,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     cassette = JourneyCassette.new([ turn ], viewer_id: @account.id, focus_uri: document.canonical_uri)
     original_compression = ImageCompressionService.method(:compress_with_thumbnail)
     original_vision = FieldPhotoAnalysisService.instance_method(:call)
+    original_stream = ClaudeChunkingClient.instance_method(:build_client)
     original_s3 = S3DocumentsService.method(:new)
     photo_path = ENV["AUDIT_THYSSEN_PHOTO_PATH"].presence
     binary = photo_path ? File.binread(photo_path) : "fixture transport bytes"
@@ -977,12 +1019,29 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       end
     end
     observation = AUDIT_PRODUCTION.dig("photo", "observation").merge("subsystem" => "UNKNOWN")
-    FieldPhotoAnalysisService.define_method(:call) do
-      component = observation.fetch("canonical_component")
-      raise "photo bytes differ from upload" unless @binary == binary
+    if @guarded_photo
+      vision_text = JSON.generate(observation.merge("summary" => "Se distingue la bornera PV-1."))
+      vision_client = Object.new
+      vision_client.define_singleton_method(:messages) { self }
+      vision_client.define_singleton_method(:stream) do |**request|
+        raise "SDK retries enabled" unless request.dig(:request_options, :max_retries) == 0
+        image = request.fetch(:messages).sole.fetch(:content).find { |part| part[:type] == "image" }
+        raise "photo bytes differ from upload" unless Base64.strict_decode64(image.dig(:source, :data)) == binary
 
-      { parsed: observation, analysis: component, compact_context: "[FOTO] #{component}", usage: {},
-        model: "claude-sonnet-5-5", target_visible: true, relevance_to_goal: "relevant" }
+        usage = Struct.new(:input_tokens, :output_tokens).new(300, 100)
+        text = Struct.new(:type, :text).new("text", vision_text)
+        response = Struct.new(:model, :usage, :content, :stop_reason).new("claude-sonnet-5-5", usage, [text], "end_turn")
+        Struct.new(:accumulated_message).new(response)
+      end
+      ClaudeChunkingClient.define_method(:build_client) { vision_client }
+    else
+      FieldPhotoAnalysisService.define_method(:call) do
+        component = observation.fetch("canonical_component")
+        raise "photo bytes differ from upload" unless @binary == binary
+
+        { parsed: observation, analysis: component, compact_context: "[FOTO] #{component}", usage: {},
+          model: "claude-sonnet-5-5", target_visible: true, relevance_to_goal: "relevant" }
+      end
     end
     store = Object.new
     store.define_singleton_method(:upload_binary) { |key, _data, _media| key }
@@ -1023,6 +1082,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
   ensure
     ImageCompressionService.define_singleton_method(:compress_with_thumbnail) { |*a, **kw| original_compression.call(*a, **kw) }
     FieldPhotoAnalysisService.define_method(:call, original_vision)
+    ClaudeChunkingClient.define_method(:build_client, original_stream)
     S3DocumentsService.define_singleton_method(:new) { |*a, **kw| original_s3.call(*a, **kw) }
     Rails.cache = cache
     %w[PHOTO_QUESTION_RAG_ENABLED RAG_TRANSIENT_ATTEMPT_LIMIT].each do |key|

@@ -77,6 +77,42 @@ module Rag
     FIELD_REGRESSION_USD = "0.129988"
     FIELD_VALIDATION_CALL_CAP = 1190
 
+    THYSSEN_AUDIT_ID = "haiku55-http-photo-engineering-audit"
+    THYSSEN_AUDIT_CAP = 1213
+    THYSSEN_AUDIT_CALLS = 18
+    THYSSEN_AUDIT_USD = "0.064872"
+    THYSSEN_AUDIT_ATTEMPTS = 1195
+    THYSSEN_AUDIT_SEQUENCE = 1197
+    THYSSEN_PRIOR = [
+      [ "haiku55-http-accept-5892b69", 1181, "0.033640", 10 ],
+      [ "haiku55-http-elemont-5892b69", 1189, "0.032116", 9 ]
+    ].freeze
+
+    def self.thyssen_baseline?(state)
+      state.values_at("attempts", "seq", "cost_cap_usd") == [ THYSSEN_AUDIT_ATTEMPTS, THYSSEN_AUDIT_SEQUENCE, "4.0" ] &&
+        state.dig("authorization", "call_cap") == 1198 &&
+        Array(state["executions"]).last(2).map { |row| row.values_at("id", "after_attempt", "cost_usd", "calls") if row.is_a?(Hash) } == THYSSEN_PRIOR
+    end
+
+    def admit_thyssen_audit!
+      with_lock do |state, file|
+        raise Stop, "thyssen_ledger_baseline_changed" unless self.class.thyssen_baseline?(state)
+        if exposure(state) + decimal(THYSSEN_AUDIT_USD) > [ @cost_cap, decimal(state["cost_cap_usd"]) ].min
+          raise Stop, "thyssen_assignment_budget"
+        end
+
+        state.fetch("authorization")["call_cap"] = THYSSEN_AUDIT_CAP
+        state["call_cap"] = THYSSEN_AUDIT_CAP
+        row = {
+          "id" => THYSSEN_AUDIT_ID, "after_attempt" => state.fetch("seq"),
+          "cost_usd" => THYSSEN_AUDIT_USD, "calls" => THYSSEN_AUDIT_CALLS, "at" => Time.now.utc.iso8601
+        }
+        state.fetch("executions") << row
+        write!(file, state)
+        row
+      end
+    end
+
     def initialize(path:, call_cap:, cost_cap_usd:)
       @path = Pathname(path)
       @call_cap = Integer(call_cap)
@@ -170,9 +206,20 @@ module Rag
 
     # Reserves one attempt and its ceiling. The hold stays until settle!,
     # keep!, or release!.
-    def reserve!(ceiling_usd:, **meta)
+    def reserve!(ceiling_usd:, required_execution: nil, scope: nil, **meta)
       ceiling = money(ceiling_usd)
       with_lock do |state, file|
+        if required_execution && Array(state["executions"]).last&.dig("id") != required_execution
+          raise Stop, "execution_not_admitted"
+        end
+        if scope
+          rows = state["entries"].select { |row| row["run_scope"] == scope.fetch(:id) && row["status"] != "released" }
+          if rows.size >= scope.fetch(:calls) ||
+              rows.sum(BigDecimal("0")) { |row| exposure_of(state, row) } + ceiling > scope.fetch(:cost)
+            raise Stop, "run_scope_exhausted"
+          end
+          meta[:run_scope] = scope.fetch(:id)
+        end
         if over_cap?(state, ceiling)
           state["blocked"] = state["blocked"].to_i + 1
           write!(file, state)
@@ -366,6 +413,10 @@ module Rag
       Array(state["executions"]).select { |row|
         next false unless row.is_a?(Hash)
 
+        terms = row.values_at("id", "after_attempt", "cost_usd", "calls")
+        next true if THYSSEN_PRIOR.include?(terms)
+        next true if terms == [ THYSSEN_AUDIT_ID, THYSSEN_AUDIT_SEQUENCE, THYSSEN_AUDIT_USD, THYSSEN_AUDIT_CALLS ]
+
         if row["id"] == CEA_COMPLETION_ID
           next row["after_attempt"] == CEA_COMPLETION_SEQUENCE &&
             row["calls"] == CEA_COMPLETION_CALLS && decimal(row["cost_usd"]) == BigDecimal(CEA_COMPLETION_USD)
@@ -474,8 +525,9 @@ module Rag
         "ceiling_usd" => ceiling_usd,
         "model_id" => meta[:model_id].to_s,
         "turn" => meta[:turn],
+        "run_scope" => meta[:run_scope],
         "at" => Time.now.utc.iso8601
-      }
+      }.compact
     end
 
     def replace_entry(state, id, meta)

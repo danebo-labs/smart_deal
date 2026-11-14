@@ -48,17 +48,25 @@ class ClaudeChunkingClient
   def call(user_content:, filename:, page_number: nil, total_pages: nil,
            max_tokens: BatchChunkingPrompt::MAX_TOKENS, tracking_prefix: "web_parse",
            attempt: 1, correlation_id: nil, route: "sync", telemetry: {})
+    guarded = Rag::LocalPassLedger.guard_requested?
     overloaded_attempt = 0
     begin
       overloaded_attempt += 1
       start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
-      response = @client.messages.stream(
-        model:      @model,
-        max_tokens: max_tokens,
-        system:     @system,
-        messages:   [ { role: "user", content: user_content } ]
-      ).accumulated_message
+      request = {
+        model: @model, max_tokens: max_tokens, system: @system,
+        messages: [ { role: "user", content: user_content } ]
+      }
+      response = if guarded
+        raise Rag::LocalPassLedger::Stop, "chunking_not_allowed:#{route}" unless route == "visual_query"
+
+        Rag::GuardedPhotoVision.call(model: @model, system: @system, user_content: user_content, output_tokens: max_tokens) do
+          @client.messages.stream(**request, request_options: { max_retries: 0 }).accumulated_message
+        end
+      else
+        @client.messages.stream(**request).accumulated_message
+      end
 
       latency_ms  = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000).round
       text_block  = response.content.find { |b| b.type.to_s == "text" }
@@ -88,7 +96,7 @@ class ClaudeChunkingClient
         )
         raise CreditBalanceError, "Anthropic credit balance too low (model=#{@model}): #{e.message}"
       end
-      if e.message.to_s.include?("overloaded") && overloaded_attempt <= MAX_OVERLOADED_RETRIES
+      if !guarded && e.message.to_s.include?("overloaded") && overloaded_attempt <= MAX_OVERLOADED_RETRIES
         delay = OVERLOADED_BACKOFF_SECONDS[overloaded_attempt - 1] || OVERLOADED_BACKOFF_SECONDS.last
         Rails.logger.warn(
           "ClaudeChunkingClient: overloaded (attempt #{overloaded_attempt}/#{MAX_OVERLOADED_RETRIES + 1}) " \

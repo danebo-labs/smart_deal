@@ -26,7 +26,9 @@ class Rag::FieldValidationGrantTest < ActiveSupport::TestCase
     turn = Haiku55Companion.per_turn_ceiling
 
     assert_equal INTERPRETER, turn["interpreter"]
-    assert_equal GENERATION, turn["generation"]
+    # The historical grant amounts below remain fixed. The integrated system
+    # prompt adds to the ceiling for current requests.
+    assert_equal BigDecimal("0.006204"), turn["generation"]
     assert_equal 10, acceptance_amounts.size
     assert_equal BigDecimal("0.033640"), acceptance_amounts.sum(BigDecimal("0"))
     assert_equal 37, regression_amounts.size

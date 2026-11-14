@@ -3,7 +3,14 @@
 require "digest"
 
 class FieldPhotoAnalysisJob < ApplicationJob
-  queue_as :default
+  queue_as do
+    if Rag::LocalPassLedger.armed?
+      ENV["RAG_PHOTO_WORKER_QUEUE"].presence || :default
+    else
+      :default
+    end
+  end
+  around_perform :capture_guarded_photo
   self.log_arguments = false
 
   # The temporary payload is deleted on every outcome, so retrying cannot safely
@@ -115,6 +122,14 @@ class FieldPhotoAnalysisJob < ApplicationJob
       return
     end
 
+    if @photo_capture_dir
+      path = @photo_capture_dir.join("worker-input.jpg")
+      File.binwrite(path, image.fetch(:binary))
+      path.chmod(0o600)
+      Rag::ValidationCapture.record("photo_worker_input",
+        "bytes" => path.size, "sha256" => Digest::SHA256.file(path).hexdigest, "declared_sha256" => image_sha256)
+    end
+
     if rehydrated
       PilotUsageLog.log(
         "photo_reuse",
@@ -222,6 +237,46 @@ class FieldPhotoAnalysisJob < ApplicationJob
   end
 
   private
+
+  def capture_guarded_photo
+    unless Rag::LocalPassLedger.guard_requested? && Rag::WebRequestCapture.enabled?
+      return yield
+    end
+
+    args = arguments.first.to_h.symbolize_keys
+    correlation = args.fetch(:correlation_id)
+    unless correlation.match?(/\A(?:photo|query):[a-f0-9-]+\z/)
+      raise Rag::LocalPassLedger::Stop, "invalid_photo_correlation"
+    end
+    key = "worker-#{correlation.tr(':', '-')}"
+    key += "-retry-#{executions}" if executions > 1
+    @photo_capture_dir = Rails.root.join(Rag::WebRequestCapture::ROOT, Rag::WebRequestCapture.run_id, key)
+    FileUtils.mkdir_p(@photo_capture_dir, mode: 0o700)
+    Rag::ValidationCapture.capture do |events|
+      Rag::ValidationCapture.bind(
+        run_id: Rag::WebRequestCapture.run_id, account_id: args[:account_id], user_id: args[:user_id],
+        session_id: args[:conversation_session_id], episode_id: args[:expected_episode_id],
+        correlation_root: correlation
+      )
+      Rag::ValidationCapture.with_turn(correlation) do
+        Rag::ValidationCapture.record("photo_worker", "job_id" => job_id, "execution" => executions)
+        begin
+          yield
+        rescue Rag::LocalPassLedger::Stop => error
+          Rag::ValidationCapture.record("photo_worker_refused", "reason" => error.message)
+          KbSyncBroadcaster.failed(filenames: [ args[:filename] ], account_id: args[:account_id],
+            reason: "local_pass_refused", correlation_id: correlation)
+        rescue StandardError => error
+          Rag::ValidationCapture.record("photo_worker_error", "error_class" => error.class.name)
+          raise
+        end
+      end
+    ensure
+      Rag::WebRequestCapture.export!(events, key)
+    end
+  ensure
+    Rag::LocalPassLedger.release_thread! if @photo_capture_dir
+  end
 
   def reuse_stored_observation(field_photo_id:, account_id:, user_id:, conversation_session_id:, session:,
                                filename:, locale:, correlation_id:, question:, started_at:, expected_episode_id: nil)

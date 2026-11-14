@@ -56,7 +56,10 @@ class FieldPhotoAnalysisService
       telemetry: telemetry
     )
 
+    Rag::ValidationCapture.record("photo_vision_raw", "model" => model, "text" => response.fetch(:text),
+      "usage" => usage_payload(response[:usage]))
     parsed = parse(response.fetch(:text))
+    Rag::ValidationCapture.record("photo_vision_reading", "reading" => parsed)
     latency_ms = elapsed_ms(started_at)
     result = {
       analysis: build_analysis(parsed),

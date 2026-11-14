@@ -372,6 +372,10 @@ module Rag
             authorized.between?(AssignmentSpend::FIELD_CONTINUATION_CAP, AssignmentSpend::KONE_LWI_MAX_CAP)
           return authorized
         end
+        if ENV[EXECUTION_ENV] == AssignmentSpend::THYSSEN_PHOTO_LIVE_ID &&
+            authorized.between?(AssignmentSpend::FIELD_CONTINUATION_CAP, AssignmentSpend::THYSSEN_PHOTO_MAX_CAP)
+          return authorized
+        end
 
         ASSIGNMENT_CALL_CAP
       rescue JSON::ParserError, SystemCallError

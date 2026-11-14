@@ -114,6 +114,17 @@ module Rag
     KONE_LWI_BASE_SEQUENCE = 1247
     KONE_LWI_MAX_CAP = KONE_LWI_BASE_ATTEMPTS + KONE_LWI_MAX_CALLS
 
+    # One Thyssen photo dialogue, appended after a KONE LWI chain. Each
+    # admission is the eight-turn script: at most 17 Haiku calls and
+    # US$0.063916. Ten runs stay inside 170 calls and US$0.639160. Vision
+    # stays on its own ledger. The US$4 assignment cap does not move.
+    THYSSEN_PHOTO_LIVE_ID = "haiku55-http-thyssen-photo-live-20261114"
+    THYSSEN_PHOTO_RUN_CALLS = 17
+    THYSSEN_PHOTO_RUN_USD = "0.063916"
+    THYSSEN_PHOTO_MAX_CALLS = THYSSEN_PHOTO_RUN_CALLS * 10
+    THYSSEN_PHOTO_MAX_USD = "0.639160"
+    THYSSEN_PHOTO_MAX_CAP = KONE_LWI_MAX_CAP + THYSSEN_PHOTO_MAX_CALLS
+
     def self.field_continuation_baseline?(state)
       state.values_at("attempts", "seq", "cost_cap_usd") ==
         [ FIELD_CONTINUATION_ATTEMPTS, FIELD_CONTINUATION_SEQUENCE, "4.0" ] &&
@@ -284,6 +295,103 @@ module Rag
 
     def self.kone_lwi_dollar_room(state)
       BigDecimal(state["cost_cap_usd"].to_s) - kone_lwi_exposure(state)
+    end
+
+    def self.thyssen_photo_grant?(row)
+      return false unless row.is_a?(Hash) && row["id"] == THYSSEN_PHOTO_LIVE_ID
+      return false unless row["calls"].to_i.between?(1, THYSSEN_PHOTO_RUN_CALLS)
+      return false unless row["cost_usd"].to_s.match?(/\A\d+(?:\.\d+)?\z/)
+
+      cost = BigDecimal(row["cost_usd"].to_s)
+      cost.positive? && cost <= BigDecimal(THYSSEN_PHOTO_RUN_USD)
+    end
+
+    def self.thyssen_photo_step_admissible?(state, calls:, cost_usd:)
+      thyssen_photo_refusal(state, calls:, cost_usd:).nil?
+    end
+
+    # The KONE window cannot hold the photo script. The cap moves only by
+    # the calls the current authorization cannot already hold.
+    def admit_thyssen_photo_run!(calls:, cost_usd:)
+      with_lock do |state, file|
+        reason = self.class.thyssen_photo_refusal(state, calls:, cost_usd:)
+        raise Stop, reason if reason
+
+        count = calls.to_i
+        cost = BigDecimal(format("%.6f", BigDecimal(cost_usd.to_s)))
+        auth_room, = self.class.kone_lwi_call_rooms(state)
+        increase = [ count - auth_room, 0 ].max
+        auth = state.fetch("authorization")
+        auth["call_cap"] = auth["call_cap"].to_i + increase
+        state["call_cap"] = auth["call_cap"]
+        row = {
+          "id" => THYSSEN_PHOTO_LIVE_ID, "after_attempt" => state.fetch("seq"),
+          "cost_usd" => format_money(cost), "calls" => count, "at" => Time.now.utc.iso8601
+        }
+        state.fetch("executions") << row
+        write!(file, state)
+        row
+      end
+    end
+
+    def self.thyssen_photo_chain?(state)
+      return false unless state.is_a?(Hash) && state["cost_cap_usd"].to_s == "4.0"
+      return false unless state.dig("authorization", "call_cap").to_i.between?(FIELD_CONTINUATION_CAP, THYSSEN_PHOTO_MAX_CAP)
+      return false unless kone_lwi_attempts_match?(state)
+
+      rows = Array(state["executions"])
+      continuation = rows.find { |row| row.is_a?(Hash) && row["id"] == FIELD_CONTINUATION_ID }
+      return false unless continuation&.values_at("id", "after_attempt", "cost_usd", "calls") ==
+        [ FIELD_CONTINUATION_ID, FIELD_CONTINUATION_SEQUENCE, FIELD_CONTINUATION_USD, FIELD_CONTINUATION_CALLS ]
+
+      tail = rows[(rows.index(continuation) + 1)..] || []
+      split = tail.index { |row| !kone_lwi_grant?(row) }
+      return false if split.nil?
+
+      prefix = tail[0...split]
+      suffix = tail[split..]
+      return false unless prefix.any? && prefix.all? { |row| kone_lwi_grant?(row) }
+      return false unless suffix.any? && suffix.all? { |row| thyssen_photo_grant?(row) }
+
+      calls = suffix.sum { |row| row["calls"].to_i }
+      usd = suffix.sum(BigDecimal("0")) { |row| BigDecimal(row["cost_usd"].to_s) }
+      calls <= THYSSEN_PHOTO_MAX_CALLS && usd <= BigDecimal(THYSSEN_PHOTO_MAX_USD)
+    end
+
+    def self.thyssen_photo_refusal(state, calls:, cost_usd:)
+      count = calls.to_i
+      return "thyssen_photo_calls" unless count.between?(1, THYSSEN_PHOTO_RUN_CALLS)
+      return "thyssen_photo_usd" unless cost_usd.to_s.match?(/\A\d+(?:\.\d+)?\z/)
+
+      cost = BigDecimal(format("%.6f", BigDecimal(cost_usd.to_s)))
+      return "thyssen_photo_usd" unless cost.positive? && cost <= BigDecimal(THYSSEN_PHOTO_RUN_USD)
+      return "thyssen_photo_cost_cap" unless state.is_a?(Hash) && state["cost_cap_usd"].to_s == "4.0"
+      return "thyssen_photo_attempt_mismatch" unless kone_lwi_attempts_match?(state)
+      return "thyssen_photo_sequence" if Array(state["entries"]).any? { |entry| entry.is_a?(Hash) && entry["id"].to_i > state["seq"].to_i }
+
+      recorded = Array(state["executions"]).select { |row| row.is_a?(Hash) && row["id"] == THYSSEN_PHOTO_LIVE_ID }
+      if recorded.empty?
+        return "thyssen_photo_ledger_baseline_changed" unless kone_lwi_chain?(state)
+      else
+        return "thyssen_photo_chain_changed" unless thyssen_photo_chain?(state)
+      end
+      used_calls = recorded.sum { |row| thyssen_photo_grant?(row) ? row["calls"].to_i : THYSSEN_PHOTO_MAX_CALLS + 1 }
+      used_usd = recorded.sum(BigDecimal("0")) { |row| row["cost_usd"].to_s.match?(/\A\d+(?:\.\d+)?\z/) ? BigDecimal(row["cost_usd"].to_s) : BigDecimal(THYSSEN_PHOTO_MAX_USD) + 1 }
+      return "thyssen_photo_call_ceiling" if used_calls + count > THYSSEN_PHOTO_MAX_CALLS
+      return "thyssen_photo_usd_ceiling" if used_usd + cost > BigDecimal(THYSSEN_PHOTO_MAX_USD)
+      return "thyssen_photo_assignment_budget" if kone_lwi_exposure(state) + cost > BigDecimal("4.0")
+
+      auth_room, window_room = kone_lwi_call_rooms(state)
+      last = Array(state["executions"]).last
+      window_usd = BigDecimal(last["cost_usd"].to_s) - kone_lwi_window_exposure(state, last["after_attempt"])
+      call_room = [ auth_room, window_room ].min
+      dollar_room = [ window_usd, kone_lwi_dollar_room(state) ].min
+      return "thyssen_photo_room_already_covers" if call_room >= count && dollar_room >= cost
+
+      increase = [ count - auth_room, 0 ].max
+      return "thyssen_photo_cap" if state.dig("authorization", "call_cap").to_i + increase > THYSSEN_PHOTO_MAX_CAP
+
+      nil
     end
 
     def self.thyssen_baseline?(state, recheck: false)
@@ -620,6 +728,7 @@ module Rag
       Array(state["executions"]).select { |row|
         next false unless row.is_a?(Hash)
         next self.class.kone_lwi_grant?(row) if row["id"] == KONE_LWI_LIVE_ID
+        next self.class.thyssen_photo_grant?(row) if row["id"] == THYSSEN_PHOTO_LIVE_ID
 
         terms = row.values_at("id", "after_attempt", "cost_usd", "calls")
         next true if THYSSEN_PRIOR.include?(terms)

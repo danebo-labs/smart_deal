@@ -212,9 +212,12 @@ module Haiku55Http
     FileUtils.mkdir_p(directory)
     preflight = preflight_document(plan)
     File.write(directory.join("preflight.json"), JSON.pretty_generate(preflight))
-    io.puts JSON.generate(preflight.except("scripts"))
+    io.puts JSON.generate(preflight.except("scripts", "vision_preflight"))
+    io.puts JSON.generate(preflight["vision_preflight"]) if preflight["vision_preflight"]
     return 0 unless ENV["HTTP55_EXECUTE"] == "1"
     return refuse(io, preflight["decision"]) unless preflight["decision"] == "execute"
+    vision_decision = preflight.dig("vision_preflight", "decision")
+    return refuse(io, vision_decision) if vision_decision && vision_decision != "not_requested" && vision_decision != "execute"
     return 2 unless admit!(io, directory: directory)
 
     File.write(directory.join("manifest.json"), JSON.pretty_generate(manifest))
@@ -237,11 +240,16 @@ module Haiku55Http
   end
 
   def authorized_plan
+    return [ "audit_thyssen_photo_ea" ] if photo_continuation?
     return ["audit_kone_lwi"] if CONTINUATION_RETRY
     return CONTINUATION_PLAN if CONTINUATION
     return AUDIT_PLAN if AUDIT
 
     PHASE == "acceptance" ? ACCEPTANCE_PLAN : REGRESSION_PLAN
+  end
+
+  def photo_continuation?
+    CONTINUATION && ENV["HTTP55_PLAN"].to_s.split(",").map(&:strip) == [ "audit_thyssen_photo_ea" ]
   end
 
   def audit_photo_path
@@ -297,6 +305,8 @@ module Haiku55Http
       "pin_missing"
     elsif accounts.any? { |id| id.nil? } || plan.any? { |name| AccountHostResolver.host_map.key?(request_host(document_for(name).account)) }
       "host_account_mismatch"
+    elsif (photo_choice = photo_decision(ledger, calls, worst, room))
+      photo_choice
     elsif kone_lwi_admission?(ledger, calls, worst, scripts, room)
       "execute"
     elsif scripts.values.any? { |row| BigDecimal(row["ceiling_usd"]) > room["usd"] } || calls > room["calls"]
@@ -307,7 +317,7 @@ module Haiku55Http
       "audit_jpeg_missing_or_invalid"
     elsif AUDIT && !audit_baseline?(ledger)
       "thyssen_ledger_baseline_changed"
-    elsif AUDIT && !CONTINUATION_RETRY && worst != BigDecimal(GRANT_USD)
+    elsif AUDIT && !CONTINUATION_RETRY && !photo_continuation? && worst != BigDecimal(GRANT_USD)
       "thyssen_price_changed"
     elsif AUDIT && ENV[AUDIT_APPROVAL] != head
       "thyssen_grants_pending"
@@ -350,8 +360,38 @@ module Haiku55Http
       "system_sha256" => Digest::SHA256.hexdigest(Rag::CompanionDirectAnswer::SYSTEM_PROMPT),
       "interpreter_prompt_sha256" => Digest::SHA256.hexdigest(Rag::TurnInterpreter::PROMPT),
       "anthropic_key_present" => ENV["ANTHROPIC_API_KEY"].present?,
-      "kone_lwi_admission" => (kone_lwi_admission?(ledger, calls, worst, scripts, room) ? "pending" : nil)
+      "kone_lwi_admission" => (kone_lwi_admission?(ledger, calls, worst, scripts, room) ? "pending" : nil),
+      "vision_preflight" => vision_preflight_document(plan)
     }
+  end
+
+  # Sonnet has its own one-call ledger. This decision does not spend Haiku
+  # room and does not move the US$4 assignment cap.
+  def vision_preflight_document(plan)
+    return { "status" => "preflight", "lane" => "vision", "decision" => "not_requested" } unless plan.any? { |name| script(name)["photo"] }
+
+    input = audit_photo_input
+    {
+      "status" => "preflight", "lane" => "vision",
+      "decision" => (input ? "execute" : "audit_jpeg_missing_or_invalid"),
+      "model_id" => Rag::GuardedPhotoVision::MODEL_ID, "calls" => 1,
+      "ceiling_usd" => money(Rag::GuardedPhotoVision.ceiling),
+      "photo_input" => input, "ledger" => "separate", "counts_toward_haiku_cap" => false
+    }
+  end
+
+  # nil lets the shared checks continue. A short window returns execute only
+  # when the photo admission can open its own 17-call grant.
+  def photo_decision(ledger, calls, worst, room)
+    return nil unless photo_continuation?
+    return "audit_jpeg_missing_or_invalid" unless audit_photo_input
+    return "thyssen_grants_pending" unless ENV[AUDIT_APPROVAL] == head
+    return "audit_kb_bucket_mismatch" unless KbDocument::KB_BUCKET == AUDIT_KB_BUCKET
+
+    short = calls > room["calls"] || BigDecimal(worst.to_s) > room["usd"]
+    return nil unless short
+
+    SPEND.thyssen_photo_refusal(ledger, calls: calls, cost_usd: money(worst)) || "execute"
   end
 
   # One script, complete: two calls per turn plus one, priced at the ceiling.
@@ -372,8 +412,9 @@ module Haiku55Http
   end
 
   def grant_room(ledger, phase: PHASE)
-    if phase == "field_continuation" && SPEND.kone_lwi_grant?(Array(ledger["executions"]).last)
-      return kone_live_room(ledger)
+    if phase == "field_continuation"
+      last = Array(ledger["executions"]).last
+      return kone_live_room(ledger) if SPEND.thyssen_photo_grant?(last) || SPEND.kone_lwi_grant?(last)
     end
 
     spec = FIELD_GRANTS.fetch(phase)
@@ -433,6 +474,10 @@ module Haiku55Http
   end
 
   def audit_baseline?(ledger)
+    if photo_continuation?
+      last = ledger.fetch("executions").last
+      return SPEND.thyssen_photo_grant?(last) && SPEND.thyssen_photo_chain?(ledger)
+    end
     if CONTINUATION_RETRY
       last = ledger.fetch("executions").last
       return true if SPEND.kone_lwi_grant?(last) && SPEND.kone_lwi_chain?(ledger)
@@ -449,6 +494,19 @@ module Haiku55Http
   def admit!(io, directory: nil)
     if AUDIT
       return false unless directory && ENV[AUDIT_APPROVAL] == head
+      if photo_continuation?
+        reserved = reservation("audit_thyssen_photo_ea", Haiku55Companion.per_turn_ceiling)
+        return false unless audit_photo_input
+
+        room = grant_room(read_ledger)
+        covered = BigDecimal(reserved["ceiling_usd"]) <= room["usd"] && reserved["calls"] <= room["calls"]
+        assignment_spend.admit_thyssen_photo_run!(calls: reserved["calls"], cost_usd: reserved["ceiling_usd"]) unless covered
+        Rag::GuardedPhotoVision.assignment(directory.join("vision-spend.json")).admit_execution!(
+          id: Rag::GuardedPhotoVision::GRANT_ID, calls: 1, cost_usd: Rag::GuardedPhotoVision.ceiling
+        )
+        refreshed = grant_room(read_ledger)
+        return BigDecimal(reserved["ceiling_usd"]) <= refreshed["usd"] && reserved["calls"] <= refreshed["calls"]
+      end
       if CONTINUATION_RETRY
         reserved = reservation("audit_kone_lwi", Haiku55Companion.per_turn_ceiling)
         room = grant_room(read_ledger)
@@ -1194,6 +1252,7 @@ module Haiku55Http
 
   def server_execution_id
     last = read_ledger.fetch("executions").last
+    return SPEND::THYSSEN_PHOTO_LIVE_ID if photo_continuation? && SPEND.thyssen_photo_grant?(last)
     return SPEND::KONE_LWI_LIVE_ID if CONTINUATION_RETRY && SPEND.kone_lwi_grant?(last)
 
     EXECUTION_ID

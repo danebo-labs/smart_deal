@@ -164,6 +164,7 @@ module Rag
     def self.open_reply?(question, turn)
       return false unless question.is_a?(Hash)
       return true if answered_part(question, turn)
+      return true if code_report?(question, turn)
       return false if question_parts(question["question"]).size > 1
       return true if same_published_datum?(question, turn)
 
@@ -399,6 +400,23 @@ module Rag
       text.to_s.scan(/#?\d+/).map { |token| token.delete("#") }.uniq
     end
 
+    # "código de falla o de estado" is one request. The reply names the
+    # code. A display, a screen, or the code itself fits. Another component
+    # does not, and a voltage reading is not that code.
+    def self.code_report?(question, turn)
+      asked = datum_parts(question["question"])
+      return false unless asked.entities.include?(CompanionPlanCheck.stem("codigo"))
+      return false unless turn.to_s.match?(CODE_TOKEN)
+      return false if reading_properties(turn).any?
+
+      said = datum_parts(turn)
+      (said.entities - asked.entities - code_places.to_a - report_stems.to_a).empty?
+    end
+
+    def self.code_places
+      @code_places ||= %w[display pantalla visor].map { |word| CompanionPlanCheck.stem(word) }.to_set
+    end
+
     # A reported unit is a reading, not another component number.
     def self.reading_numbers(text)
       text.to_s.scan(READING_VALUE).map(&:first).uniq
@@ -428,6 +446,7 @@ module Rag
     CONTINUATION = %w[sigue seguir seguimos siguiente ahora luego entonces despues proximo hago hacemos].to_set
     CONTINUATION_FILLER = %w[que como cual cuando donde y o a el la lo los las un una me te se por para con del].to_set
     READING_VALUE = /(?<![[:alnum:]])(\d+(?:[.,]\d+)?)[[:space:]]*([A-Za-zµ%]{1,6})/
+    CODE_TOKEN = /(?<![[:alnum:]])(?:[A-Z]{2,3}|\d{2})(?![[:alnum:]])/
     UNIT_PROPERTIES = { "v" => "tension", "vcc" => "tension", "vdc" => "tension", "vac" => "tension", "ma" => "corriente" }.freeze
     private_class_method :unknown_clarification?, :published_documented_question,
       :open_documented_question?, :open_answer?, :clear_matching_pending!,
@@ -437,7 +456,7 @@ module Rag
       :undesignated_part,
       :datum_covers?, :unspecified_unknown?, :promote_shown_question, :generic_entity?,
       :referent_placeholder?,
-      :designators, :reading_numbers, :reading_properties, :report_stems,
+      :designators, :code_report?, :code_places, :reading_numbers, :reading_properties, :report_stems,
       :closed_reply?, :connection_stems, :question_parts, :component_parts,
       :other_connection?
 

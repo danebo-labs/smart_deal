@@ -6,6 +6,7 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
   LATCH = "¿La puerta de piso está abierta al momento de la falla, o el cerrojo (trinco) no enganchó?"
   FIRM = "¿La conexión de P28 en la bornera está firme?"
   VOLTAGE = "¿Qué tensión lees en RA-53/P28?"
+  CODE = "¿Qué código de falla o de estado muestra la MCINV4?"
   TARGETS = [ { "item" => "Manual de maniobra.", "document_key" => "doc", "filename" => "p24.txt", "page" => "24" } ].freeze
 
   test "a paraphrase answers the latch part and another component does not" do
@@ -31,6 +32,33 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
     assert_not Rag::WorkContextReducer.open_reply?(voltage, "Sí, está firme.")
   end
 
+  test "a display code answers the code question and another component does not" do
+    question = documented(CODE)
+
+    assert Rag::WorkContextReducer.open_reply?(question, "El display marca EA.")
+    assert Rag::WorkContextReducer.open_reply?(question, "En pantalla marca EA.")
+    assert_not Rag::WorkContextReducer.open_reply?(question, "El freno marca EA.")
+    assert_not Rag::WorkContextReducer.open_reply?(question, "Sí, está firme.")
+    assert_not Rag::WorkContextReducer.open_reply?(question, "El display marca 0 Vcc.")
+    assert_not Rag::WorkContextReducer.open_reply?(documented(LATCH), "El display marca EA.")
+  end
+
+  test "the runner keeps the display reading that answers the code question" do
+    load_runner
+    questions = [
+      "Estoy con el equipo.",
+      "El display marca EA.",
+      "Sí, está firme.",
+      "No engancha."
+    ]
+    row = { "pending_question" => documented(CODE), "answer" => "publicado" }
+
+    Haiku55Http.place_photo_reply!(questions, 0, row)
+
+    assert_nil row["block_reason"]
+    assert_equal "El display marca EA.", questions[1]
+  end
+
   test "a direct answer stores its single published question" do
     service = BedrockRagService.allocate
     service.instance_variable_set(:@companion_direct_turn, true)
@@ -49,8 +77,7 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
   end
 
   test "the runner keeps the prepared line that answers the stored question" do
-    ENV["HTTP55_REQUIRE"] = "1"
-    load Rails.root.join("script/field_companion/run_haiku55_http.rb")
+    load_runner
     questions = [
       "El display marca EA.",
       "Sí, está firme.",
@@ -67,6 +94,13 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
   end
 
   private
+
+  def load_runner
+    return if defined?(Haiku55Http)
+
+    ENV["HTTP55_REQUIRE"] = "1"
+    load Rails.root.join("script/field_companion/run_haiku55_http.rb")
+  end
 
   def documented(text)
     { "type" => "documented_context", "question" => text, "targets" => TARGETS }

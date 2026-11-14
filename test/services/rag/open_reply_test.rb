@@ -10,6 +10,7 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
   ACTIVE = "Para decidir entre ambas ramas necesito una lectura: con la puerta de piso cerrada, ¿la línea de trincos (P28) está activa?"
   CONNECTIONS = "¿Ya revisaste las conexiones de esas líneas?"
   DOOR = "Pregunta: ¿La puerta de piso queda abierta o sólo no cierra del todo?"
+  LATCH_OPEN = "Pregunta: Al intentar cerrar la puerta, ¿los trincos del piso quedan cerrados o alguno queda abierto?"
   TARGETS = [ { "item" => "Manual de maniobra.", "document_key" => "doc", "filename" => "p24.txt", "page" => "24" } ].freeze
 
   test "a paraphrase answers the latch part and another component does not" do
@@ -70,6 +71,42 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
     assert_not Rag::WorkContextReducer.open_reply?(question, "El freno marca 0 Vcc.")
     assert_not Rag::WorkContextReducer.open_reply?(question, "Sí, está firme.")
     assert_not Rag::WorkContextReducer.open_reply?(documented(CODE), "Sí, marca 0 Vcc.")
+  end
+
+  test "a latch that does not engage answers the open trinco and a brake does not" do
+    question = documented(LATCH_OPEN)
+
+    assert Rag::WorkContextReducer.open_reply?(question, "No engancha.")
+    assert Rag::WorkContextReducer.open_reply?(question, "El trinco no engancha.")
+    assert_not Rag::WorkContextReducer.open_reply?(question, "El freno no engancha.")
+    assert_not Rag::WorkContextReducer.open_reply?(question, "Sí, está firme.")
+  end
+
+  test "a missing pending question is read from the one published question" do
+    load_runner
+    questions = [ "El display marca EA.", "Sí, está firme.", "No engancha." ]
+    row = { "answer" => "#{LATCH_OPEN} La tabla indica «linha dos trincos» [1]." }
+
+    Haiku55Http.place_photo_reply!(questions, 0, row)
+
+    assert_nil row["block_reason"]
+    assert_equal LATCH_OPEN, row.dig("pending_question", "question")
+    assert_equal "No engancha.", questions[1]
+  end
+
+  test "a string-keyed source still stores its published question" do
+    service = BedrockRagService.allocate
+    service.instance_variable_set(:@companion_direct_turn, true)
+    sources = service.send(:companion_publication_sources, [
+      { "content" => "linha dos trincos", "metadata" => { "original_filename" => "Manual de maniobra." }, "identity_applicability" => "compatible" }
+    ])
+    service.instance_variable_set(:@companion_direct_sources, sources)
+
+    stored = service.send(:direct_documented_question, "#{LATCH_OPEN} [1]")
+
+    assert_equal LATCH_OPEN, stored["question"]
+    assert_equal "Manual de maniobra.", stored.dig("targets", 0, "item")
+    assert_nil service.send(:direct_documented_question, "#{LATCH_OPEN} ¿Y el freno? [1]")
   end
 
   test "an open-or-not-closed door gets the reported closure and a brake does not" do

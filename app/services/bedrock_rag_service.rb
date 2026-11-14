@@ -1891,11 +1891,13 @@ class BedrockRagService
 
   def companion_publication_sources(chunks)
     Array(chunks).each_with_index.map do |chunk, index|
+      metadata = chunk[:metadata] || chunk["metadata"] || {}
+      metadata = metadata.to_h.stringify_keys if metadata.respond_to?(:to_h)
       applicability = (chunk[:identity_applicability] || chunk["identity_applicability"]).to_s
       {
         "index" => index + 1,
-        "content" => chunk[:content].to_s,
-        "document" => chunk[:metadata].to_h.stringify_keys["canonical_name"],
+        "content" => (chunk[:content] || chunk["content"]).to_s,
+        "document" => metadata["canonical_name"].presence || metadata["original_filename"].presence,
         "applicability" => applicability,
         "reference_only" => Rag::DocumentIdentityScope.reference_only_chunk?(chunk)
       }

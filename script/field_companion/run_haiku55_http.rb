@@ -792,6 +792,12 @@ module Haiku55Http
 
     pending = row["pending_question"]
     unless pending.is_a?(Hash) && pending["question"].present?
+      pending = published_pending(row["answer"])
+      row["pending_question"] = pending if pending
+    end
+    unless pending.is_a?(Hash) && pending["question"].present?
+      return if rest.empty?
+
       row["block_reason"] ||= Haiku55JourneyRubric.photo_ea_followup_stop(index + 1, row["answer"])
       return
     end
@@ -811,6 +817,22 @@ module Haiku55Http
     return if at.nil? || at == index + 1
 
     questions.insert(index + 1, questions.delete_at(at))
+  end
+
+  # The episode did not keep the one question the answer published.
+  def published_pending(answer)
+    questions = Rag::CompanionTurnPublication.claim_fragments(answer.to_s).select { |fragment|
+      Rag::CompanionTurnPublication.question_sentence?(fragment)
+    }
+    return nil unless questions.one?
+
+    text = questions.first.squish
+    text = "#{text}?" if answer.to_s.include?("#{text}?")
+    {
+      "type" => "documented_context",
+      "question" => text,
+      "targets" => [ { "item" => "manual", "document_key" => "", "filename" => "", "page" => "" } ]
+    }
   end
 
   # The reported symptom is that the floor door does not close. A brake

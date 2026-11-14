@@ -27,11 +27,34 @@ load Rails.root.join("script/field_companion/run_haiku55_companion.rb") unless d
 require Rails.root.join("test/support/haiku55_journey_rubric").to_s
 
 module Haiku55Http
-  EXECUTION_ID = "haiku55-http-a200991-20261112"
-  FROM_ATTEMPTS = 1014
-  NEXT_CAP = 1034
-  GRANT_CALLS = 22
-  GRANT_USD = "0.100000"
+  PHASE = ENV.fetch("HTTP55_PHASE", "acceptance")
+  # Same ids, call counts, and dollar ceilings the spend guard recognizes.
+  # Acceptance stays inside the standing cap of 1158. Regression is the step
+  # to 1190. CEA completion keeps its own one-shot grant.
+  FIELD_GRANTS = {
+    "acceptance" => {
+      "id" => Rag::AssignmentSpend::FIELD_ACCEPTANCE_ID,
+      "calls" => Rag::AssignmentSpend::FIELD_ACCEPTANCE_CALLS,
+      "usd" => Rag::AssignmentSpend::FIELD_ACCEPTANCE_USD,
+      "next_cap" => 1158,
+      "bump" => false
+    }.freeze,
+    "regression" => {
+      "id" => Rag::AssignmentSpend::FIELD_REGRESSION_ID,
+      "calls" => Rag::AssignmentSpend::FIELD_REGRESSION_CALLS,
+      "usd" => Rag::AssignmentSpend::FIELD_REGRESSION_USD,
+      "next_cap" => Rag::AssignmentSpend::FIELD_VALIDATION_CALL_CAP,
+      "bump" => true
+    }.freeze
+  }.freeze
+  CEA_COMPLETION = PHASE == "regression" && ENV["HTTP55_CEA_COMPLETION"] == "1"
+  SPEC = FIELD_GRANTS.fetch(PHASE)
+  GRANT_CALLS = CEA_COMPLETION ? Rag::AssignmentSpend::CEA_COMPLETION_CALLS : SPEC["calls"]
+  NEXT_CAP = CEA_COMPLETION ? 1158 : SPEC["next_cap"]
+  GRANT_USD = CEA_COMPLETION ? Rag::AssignmentSpend::CEA_COMPLETION_USD : SPEC["usd"]
+  EXECUTION_ID = CEA_COMPLETION ? Rag::AssignmentSpend::CEA_COMPLETION_ID : SPEC["id"]
+  ACCEPTANCE_PLAN = %w[kpvs guion3].freeze
+  REGRESSION_PLAN = %w[guion2 guion1 elemont cea cea_label_known cea_label_unseen].freeze
   KB_ID = "Y7RZWMFJSR"
   MODEL_ID = "claude-haiku-5-5"
   TRACKING_MODEL_ID = "claude-haiku-5-5-direct"
@@ -135,6 +158,7 @@ module Haiku55Http
     "BEDROCK_INFERENCE" => "blocked",
     "BEDROCK_KNOWLEDGE_BASE_ID" => KB_ID,
     "SHOW_RAG_SOURCES" => "true",
+    "SHARED_SESSION_ENABLED" => "false",
     "AWS_MAX_ATTEMPTS" => "1",
     "AWS_RETRY_MODE" => "standard",
     "AWS_HTTP_OPEN_TIMEOUT" => "15",
@@ -144,7 +168,7 @@ module Haiku55Http
   }.freeze
   CLEARED_ENV = %w[
     COMPANION_DIRECT_PROVIDER COMPANION_DIRECT_MODEL_ID COMPANION_DIRECT_MAX_TOKENS COMPANION_DIRECT_EFFORT
-    COMPANION_DIRECT_THINKING INTERPRETER_MAX_TOKENS SOLID_QUEUE_IN_PUMA SHARED_SESSION_ENABLED
+    COMPANION_DIRECT_THINKING INTERPRETER_MAX_TOKENS SOLID_QUEUE_IN_PUMA
     RAG_VALIDATION_CAPTURE_ACCOUNT_IDS PHASE4_WEB_CHECK
     FIELD_COMPANION_EPISODE_ENABLED FIELD_COMPANION_TURN_ENABLED DOCUMENT_IDENTITY_SCOPE_ENABLED
     HAIKU_QUERY_ANALYSIS_MODE RAG_EPISODE_SCOPE_ENABLED RAG_COMPANION_TURN RAG_COMPANION_GENERATION
@@ -154,7 +178,7 @@ module Haiku55Http
 
   def run(io: $stdout)
     iteration = ENV["HTTP55_ITERATION"].presence || "live0"
-    plan = (ENV["HTTP55_PLAN"].presence || "guion2,guion1,elemont").split(",").map(&:strip)
+    plan = (ENV["HTTP55_PLAN"].presence || (PHASE == "acceptance" ? ACCEPTANCE_PLAN : REGRESSION_PLAN).join(",")).split(",").map(&:strip)
     directory = ROOT.join(iteration)
     FileUtils.mkdir_p(directory)
     preflight = preflight_document(plan)
@@ -202,11 +226,21 @@ module Haiku55Http
       "dirty_tree"
     elsif ENV["ANTHROPIC_API_KEY"].blank?
       "anthropic_api_key_missing"
+    elsif CEA_COMPLETION && (plan != ["cea"] || ENV["HTTP55_GUI"] == "1")
+      "outside_cea_completion_plan"
+    elsif CEA_COMPLETION && ledger["seq"] != Rag::AssignmentSpend::CEA_COMPLETION_SEQUENCE
+      "cea_completion_already_started"
+    elsif CEA_COMPLETION && ledger.fetch("executions").any? { |row| row["id"] == EXECUTION_ID }
+      "cea_completion_already_admitted"
+    elsif !plan.all? { |name| (PHASE == "acceptance" ? ACCEPTANCE_PLAN : REGRESSION_PLAN).include?(name) }
+      "outside_authorized_plan"
+    elsif PHASE == "regression" && !acceptance_passed?
+      "acceptance_missing_for_head"
     elsif pins.values.any?(&:blank?)
       "pin_missing"
-    elsif accounts.size != 1 || AccountHostResolver.host_map.key?(request_host(document_for(plan.first).account))
+    elsif accounts.any? { |id| id.nil? } || plan.any? { |name| AccountHostResolver.host_map.key?(request_host(document_for(name).account)) }
       "host_account_mismatch"
-    elsif worst > room["usd"] || calls > room["calls"] || (cap >= NEXT_CAP && calls > remaining)
+    elsif scripts.values.any? { |row| BigDecimal(row["ceiling_usd"]) > room["usd"] } || calls > room["calls"]
       "grant_does_not_cover_plan"
     elsif plan.any? { |name| script(name)["photo"] }
       "photo_requires_guarded_worker"
@@ -227,6 +261,9 @@ module Haiku55Http
       "room_calls" => room["calls"],
       "assignment_call_cap" => cap,
       "assignment_remaining_calls" => remaining,
+      "regression_window_usd" => CEA_COMPLETION ? "0.143121" : (GRANT_USD if PHASE == "regression"),
+      "cea_completion_admitted" => CEA_COMPLETION && ledger.fetch("executions").any? { |row| row["id"] == EXECUTION_ID },
+      "assignment_cap_usd" => ledger["cost_cap_usd"],
       "attempts" => ledger["attempts"],
       "committed" => ledger["committed"],
       "unknown" => ledger["unknown"],
@@ -249,29 +286,93 @@ module Haiku55Http
     reservation
   end
 
-  def grant_room(ledger)
-    granted = Array(ledger["executions"]).find { |row| row.is_a?(Hash) && row["id"] == EXECUTION_ID }
-    after = granted ? granted["after_attempt"].to_i : FROM_ATTEMPTS
+  def grant_room(ledger, phase: PHASE)
+    spec = FIELD_GRANTS.fetch(phase)
+    cea = phase == "regression" && ENV["HTTP55_CEA_COMPLETION"] == "1"
+    execution_id = cea ? Rag::AssignmentSpend::CEA_COMPLETION_ID : spec["id"]
+    granted = Array(ledger["executions"]).find { |row| row.is_a?(Hash) && row["id"] == execution_id }
+    after = granted ? granted["after_attempt"].to_i : ledger["seq"].to_i
     rows = Array(ledger["entries"]).select { |entry| entry.is_a?(Hash) && entry["id"].to_i > after && entry["status"] != "released" }
     exposure = rows.sum(BigDecimal("0")) { |entry| Haiku55Companion.exposure(entry) }
-    { "usd" => BigDecimal(GRANT_USD) - exposure, "calls" => GRANT_CALLS - rows.size, "exposure" => exposure, "entries" => rows.size }
+    assignment_room = BigDecimal(ledger["cost_cap_usd"]) - BigDecimal(ledger["committed"]) -
+      BigDecimal(ledger["unknown"]) - ledger.fetch("open").values.sum(BigDecimal("0")) { |amount| BigDecimal(amount) }
+    cap_usd = cea ? Rag::AssignmentSpend::CEA_COMPLETION_USD : spec["usd"]
+    cap_calls = cea ? Rag::AssignmentSpend::CEA_COMPLETION_CALLS : spec["calls"]
+    next_cap = cea ? 1158 : spec["next_cap"]
+    { "usd" => [ BigDecimal(cap_usd) - exposure, assignment_room ].min,
+      "calls" => [ cap_calls - rows.size, next_cap - ledger["attempts"].to_i ].min,
+      "exposure" => exposure, "entries" => rows.size, "execution_id" => execution_id,
+      "after_attempt" => after, "next_cap" => next_cap }
+  end
+
+  def acceptance_passed?
+    directory = ROOT.join(ENV["HTTP55_ACCEPTANCE"].to_s)
+    summary = Haiku55Companion.read_json(directory.join("summary.json"))
+    manifest = Haiku55Companion.read_json(directory.join("manifest.json"))
+    return false unless summary && manifest
+    accepted_head = summary["head"]
+    return false unless accepted_head == head || (CEA_COMPLETION &&
+      accepted_head == "3217057e7bebd75acae93ef2ff16d6c580e5e9f2" &&
+      system("git", "-C", Rails.root.to_s, "merge-base", "--is-ancestor", accepted_head, head))
+    return false unless manifest.values_at("system_sha256", "interpreter_prompt_sha256") ==
+      self.manifest.values_at("system_sha256", "interpreter_prompt_sha256")
+
+    ACCEPTANCE_PLAN.all? { |name| summary["results"].any? { |row| row["script"] == name && row["rubric_ok"] } }
   end
 
   def admit!(io)
-    spend = assignment_spend
-    granted = spend.admit_execution!(
-      id: EXECUTION_ID, cost_usd: GRANT_USD, calls: GRANT_CALLS,
-      bump_call_cap_to: NEXT_CAP, bump_only_if_attempts: FROM_ATTEMPTS
-    )
-    snap = spend.snapshot
-    unless snap["call_cap"].to_i == NEXT_CAP && granted["after_attempt"].to_i == FROM_ATTEMPTS
-      io.puts JSON.generate("status" => "refused", "reason" => "bump_not_applied", "authorization" => snap["authorization"])
-      return false
-    end
-    true
+    return assignment_spend.admit_cea_completion!.present? if CEA_COMPLETION
+
+    admit_field_grant!(io, PHASE)
   rescue Rag::AssignmentSpend::Stop => error
     io.puts JSON.generate("status" => "refused", "reason" => error.message)
     false
+  end
+
+  # Writes the phase grant once. Acceptance keeps call cap 1158 and cuts the
+  # window at the current sequence. Regression bumps 1158 to 1190 only while
+  # the file is still at the attempt count read here.
+  def admit_field_grant!(io, phase)
+    ledger = read_ledger
+    spec = FIELD_GRANTS.fetch(phase)
+    existing = Array(ledger["executions"]).find { |row| row.is_a?(Hash) && row["id"] == spec["id"] }
+    unless existing || field_baseline?(ledger, phase)
+      io.puts JSON.generate("status" => "refused", "reason" => "ledger_baseline_changed")
+      return false
+    end
+
+    spend = Rag::AssignmentSpend.new(
+      path: Guion2Direct.spend_path, call_cap: spec["next_cap"],
+      cost_cap_usd: Rag::LocalPassLedger::ASSIGNMENT_COST_CAP_USD
+    )
+    spend.admit_execution!(
+      id: spec["id"], cost_usd: spec["usd"], calls: spec["calls"],
+      bump_call_cap_to: (spec["bump"] ? spec["next_cap"] : nil),
+      bump_only_if_attempts: (spec["bump"] ? ledger["attempts"] : nil),
+      start_after_sequence: true
+    )
+    spend.snapshot.dig("authorization", "call_cap") == spec["next_cap"]
+  end
+
+  def field_baseline?(ledger, phase)
+    return false unless BigDecimal(ledger["cost_cap_usd"].to_s) == BigDecimal("4.0")
+    return false unless ledger.dig("authorization", "call_cap").to_i == 1158
+
+    executions = Array(ledger["executions"])
+    if phase == "acceptance"
+      ledger["attempts"].to_i == 1143 && ledger["seq"].to_i == 1145 &&
+        executions.last.is_a?(Hash) && executions.last["id"] == Rag::AssignmentSpend::FIELD_ACCEPTANCE_PREVIOUS_ID
+    else
+      row = executions.find { |item| item.is_a?(Hash) && item["id"] == Rag::AssignmentSpend::FIELD_ACCEPTANCE_ID }
+      return false unless row && row["after_attempt"].to_i == Rag::AssignmentSpend::FIELD_ACCEPTANCE_SEQUENCE &&
+        row["calls"].to_i == Rag::AssignmentSpend::FIELD_ACCEPTANCE_CALLS &&
+        BigDecimal(row["cost_usd"].to_s) == BigDecimal(Rag::AssignmentSpend::FIELD_ACCEPTANCE_USD)
+
+      used = Array(ledger["entries"]).count { |entry|
+        entry.is_a?(Hash) && entry["id"].to_i > row["after_attempt"].to_i && entry["status"] != "released"
+      }
+      used <= row["calls"].to_i
+    end
   end
 
   # ---- one script ---------------------------------------------------------
@@ -336,15 +437,18 @@ module Haiku55Http
     ensure
       stop_server(server)
     end
-    session = ConversationSession.find_by(identifier: user.id.to_s, channel: "web")
-    episodes = rows.filter_map { |row| row["episode_id"] }.uniq
+    session = ConversationSession.find_by(identifier: user.id.to_s, channel: "web", account_id: user.account_id)
+    episode_ids = rows.map { |row| row["episode_id"] }
+    episodes = episode_ids.compact.uniq
+    single_episode = episode_ids.none?(&:nil?) && episodes.one?
+    episode_ok = !(ACCEPTANCE_PLAN.include?(name) || CEA_COMPLETION) || single_episode
     expected = script(name)["turns"].size + script(name).fetch("accept", {}).size
     status = rows.size == expected && rows.all? { |row| row["block_reason"].nil? } ? "executed" : "stopped"
     payload = {
       "script" => name, "status" => status, "user_id" => user.id, "session_id" => session&.id,
-      "episodes" => episodes, "single_episode" => episodes.size == 1,
-      "rubric_ok" => status == "executed" && rows.all? { |row| row["rubric"].empty? && row.fetch("scope", {}).fetch("ok", true) },
-      "turns" => rows.map { |row| row.slice("turn", "label", "status", "block_reason", "abstained_with_card", "rubric", "wall_ms", "route_outcome", "focus", "scope", "replayed") },
+      "episodes" => episodes, "single_episode" => single_episode,
+      "rubric_ok" => status == "executed" && episode_ok && rows.all? { |row| row["rubric"].empty? && row.fetch("scope", {}).fetch("ok", true) },
+      "turns" => rows.map { |row| row.slice("turn", "label", "status", "block_reason", "abstained_with_card", "rubric", "wall_ms", "route_outcome", "episode_id", "focus", "scope", "replayed") },
       "ledger_before" => before, "ledger_after" => ledger_view
     }
     File.write(directory.join("summary.json"), JSON.pretty_generate(payload))
@@ -356,7 +460,7 @@ module Haiku55Http
     turn_dir = directory.join(label)
     FileUtils.mkdir_p(turn_dir)
     File.write(turn_dir.join("question.txt"), question)
-    session = ConversationSession.find_by(identifier: user.id.to_s, channel: "web")
+    session = ConversationSession.find_by(identifier: user.id.to_s, channel: "web", account_id: user.account_id)
     File.write(turn_dir.join("before.json"), JSON.pretty_generate(
       "episode_id" => stored_episode_id(session), "case_evidence" => session&.case_evidence,
       "focus_document_ids" => session&.focus_document_ids
@@ -374,11 +478,12 @@ module Haiku55Http
     events = Array((Haiku55Companion.read_json(turn_dir.join("capture.json")) || {})["events"])
     direct = events.reverse.find { |event| event["kind"] == "companion_direct" }
     File.write(turn_dir.join("raw.txt"), Haiku55JourneyFixtures.text(turn_dir.to_s, direct&.fetch("text", nil)))
-    session = ConversationSession.find_by(identifier: user.id.to_s, channel: "web")
+    session = ConversationSession.find_by(identifier: user.id.to_s, channel: "web", account_id: user.account_id)
     reply = Array(session&.conversation_history).reverse.find { |message| message["role"] == "assistant" }
     delta = events.reverse.find { |event| event["kind"] == "episode_delta" }
+    episode_id = stored_episode_id(session) || delta&.dig("episode_after", "episode_id") || delta&.dig("episode_id")
     File.write(turn_dir.join("episode.json"), JSON.pretty_generate(
-      "episode_id" => stored_episode_id(session),
+      "episode_id" => episode_id,
       "active_episode" => delta&.dig("episode_after"),
       "stored_active_episode" => session&.active_episode,
       "focus_document_ids" => session&.focus_document_ids,
@@ -396,6 +501,9 @@ module Haiku55Http
       .map { |event| event.except("run_id", "account_id", "user_id") }
     File.write(turn_dir.join("trace.json"), JSON.pretty_generate(trace))
     rubric = Haiku55JourneyRubric.reasons(name, number, answer, questions)
+    if CEA_COMPLETION
+      rubric += Haiku55JourneyRubric.cea_completion_reasons(number, answer, body.fetch("citations", []))
+    end
     reason = block_reason(name, response, body, events, focus, replay: payload.key?(:replay_correlation_id))
     scope = scope_view(events, body, focus)
     File.write(turn_dir.join("scope.json"), JSON.pretty_generate(scope))
@@ -403,7 +511,7 @@ module Haiku55Http
       "script" => name, "turn" => number, "label" => label, "status" => body["status"] || response[:status].to_s,
       "block_reason" => reason, "rubric" => rubric, "wall_ms" => wall_ms,
       "route_outcome" => events.reverse.find { |event| event["kind"] == "published_answer" }&.dig("route_outcome"),
-      "episode_id" => stored_episode_id(session), "focus" => session&.focus_document_ids, "scope" => scope,
+      "episode_id" => episode_id, "focus" => session&.focus_document_ids, "scope" => scope,
       "replayed" => body["replayed"],
       "manual_suggestion" => body["manual_suggestion"]
     }
@@ -454,7 +562,7 @@ module Haiku55Http
     blocked = { "script" => name, "turn" => number, "label" => label, "rubric" => [] }
     return blocked.merge("block_reason" => "card_missing", "cards" => Array(suggestion && suggestion["cards"]).map { |item| item.slice("document_uid", "action") }) unless card
 
-    session = ConversationSession.find_by(identifier: user.id.to_s, channel: "web")
+    session = ConversationSession.find_by(identifier: user.id.to_s, channel: "web", account_id: user.account_id)
     before = session.focus_document_ids
     pin = client.post_json("/pinned_documents", {
       kb_document_id: card["kb_document_id"], document_uid: card["document_uid"], focus_mode: card["action"] || "add",
@@ -551,7 +659,7 @@ module Haiku55Http
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + GUI_TIMEOUT_SECONDS
       last = nil
       until stop.exist? || Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
-        session = ConversationSession.find_by(identifier: user.id.to_s, channel: "web")
+        session = ConversationSession.find_by(identifier: user.id.to_s, channel: "web", account_id: user.account_id)
         state = { "focus" => session&.focus_document_ids, "episode_id" => stored_episode_id(session) }
         timeline << state.merge("at" => Time.now.utc.iso8601(3)) unless state == last
         last = state
@@ -804,7 +912,8 @@ module Haiku55Http
   # reads the persisted id instead of parsing the live window.
   def stored_episode_id(session)
     episode = session&.active_episode
-    episode.is_a?(Hash) ? episode["episode_id"] : nil
+    episode = JSON.parse(episode) if episode.is_a?(String)
+    episode["episode_id"] if episode.is_a?(Hash)
   end
 
   def new_user(account, name)

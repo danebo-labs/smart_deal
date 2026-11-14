@@ -14,6 +14,13 @@ module Haiku55JourneyRubric
     |no[[:space:]]+te[[:space:]]+lo[[:space:]]+(?:pido|pedir[eé]|voy[[:space:]]+a[[:space:]]+pedir)
     |no[[:space:]]+puedo[[:space:]]+darte[[:space:]]+(?:ese[[:space:]]+paso|un[[:space:]]+m[eé]todo|otra[[:space:]]+forma)
   /ix
+  # "No necesitas identificar" only says the case can move on without the
+  # reading. It does not record that the technician cannot identify the
+  # terminal. puede/sabe, in either person, has to name #21 or #23.
+  T5_TERMINAL_LIMIT = /
+    \bno[[:space:]]+(?:puede(?:s)?|sabe(?:s)?)[[:space:]]+
+    (?:identificar|comprobar|verificar)[[:space:]]+[^.!?\n]*\b(?:21|23)\b
+  /ix
   T5_REASKS_CONTACT = /
     confirmar[[:space:]]+si[[:space:]]+hay[[:space:]]+un[[:space:]]+contacto
     |conexi[oó]n[[:space:]]+f[ií]sica[[:space:]]+entre
@@ -80,7 +87,8 @@ module Haiku55JourneyRubric
       reasons << "t5:reasks_identification" if reading.dig("identification_request", "present")
       reasons.delete("t5:misses_unknown")
       limited = reading.dig("technician_limitation", "recognized") || reading.dig("method_limit", "present") ||
-        answer.match?(T5_LIMIT)
+        answer.match?(T5_LIMIT) ||
+        answer.gsub(Rag::CompanionTurnPublication::QUOTE_PATTERN, " ").match?(T5_TERMINAL_LIMIT)
       reasons << "t5:limit_not_acknowledged" unless limited
     end
     reasons.concat(elemont_reasons(number, answer)) if name == "elemont"
@@ -102,6 +110,26 @@ module Haiku55JourneyRubric
     # puerta automática».
     reasons << "cea:t7_operator_in_sm" if number == 7 && answer.match?(/\A[\s*_]*s[ií]\b/i)
     reasons
+  end
+
+  def cea_completion_reasons(number, answer, citations)
+    pages = Array(citations).map { |row| row["page"].to_i }
+    case number
+    when 2
+      definitions = [ /seguridad manual/i, /seguridad de puertas cerradas/i, /seguridad autom[aá]tica/i ]
+      pages.include?(22) && definitions.all? { |label| answer.match?(label) } ? [] : ["cea:t2_no_terminal_definitions"]
+    when 3
+      pages.include?(22) ? [] : ["cea:t3_missing_reference"]
+    when 5
+      reasons = []
+      reasons << "cea:t5_no_documented_assignment" unless pages.include?(25) &&
+        answer.match?(/precierre.*SM/i) && answer.match?(/traba.*SA/i)
+      reasons << "cea:t5_contact_not_pending" unless answer.match?(/confirmar el contacto de traba/i) &&
+        answer.match?(/¿[^?]*contacto de traba[^?]*pat[ií]n retr[aá]ctil[^?]*\?/i)
+      reasons
+    else
+      []
+    end
   end
 
   # CEA-T3 asks which voltage is a 1 and which a 0. Manual p. 22: 24 Vcc is
@@ -134,9 +162,11 @@ module Haiku55JourneyRubric
       b[aá]jalo|baja|bajar(?:lo)?|bajes?|(?:sigue|seguir|siga)[[:space:]]+(?:bajando|reduciendo))(?![[:alpha:]])
   /ix
   KPVS_SET = /
-    (?<![[:alpha:]])(?:pon(?:lo|erlo)?|d[eé]jalo|dejarlo|c[aá]rgalo|cargarlo|configura(?:lo)?|ajusta(?:lo)?|
+    (?<![[:alpha:]])(?:pon(?:lo|erlo)?|d[eé]jalo|dejarlo|c[aá]rgalo|cargarlo|carg[aá](?=[[:space:]]+(?:el[[:space:]]+)?KP-VS\b)|configura(?:lo)?|ajusta(?:lo)?|
       cambia(?:lo)?|modifica(?:lo)?|teclea(?:lo)?|ingresa(?:lo)?)(?![[:alpha:]])
   /ix
+  TEMPORAL_INFINITIVE_LEAD = /\b(?:antes|despu[eé]s)\s+de\s*\z/i
+  INFINITIVE = /(?:ar|er|ir)(?:l[oa]s?)?\z/i
   KPVS_NEGATOR = /(?<![[:alpha:]])(?:no|nunca|evita|evitar|sin|tampoco)(?![[:alpha:]])(?:[[:space:]]+[[:alpha:]]+){0,7}[[:space:]]*\z/i
   # «La fuente indica disminuir KP-VS «hasta el mínimo de [3,0]»»: what the manual says, not an order.
   SOURCE_RESTATEMENT = /\A[[:space:]]*(?:seg[uú]n\b|la[[:space:]]+fuente[[:space:]]+(?:indica|dice|establece|pide)|el[[:space:]]+manual[[:space:]]+(?:indica|dice|establece|pide))/i
@@ -152,7 +182,7 @@ module Haiku55JourneyRubric
     reasons = []
     reasons << "kpvs:no_answer" if kpvs_abstained?(answer)
     reasons << "kpvs:decrease_order" if kpvs_order?(body, KPVS_DECREASE)
-    reasons << "kpvs:set_order" if name == "guion3" ? kpvs_order?(body, KPVS_SET) : false
+    reasons << "kpvs:set_order" if name == "guion3" && kpvs_set_order?(body)
     if name == "guion3"
       reasons.concat(guion3_reasons(number, body, answer))
     else
@@ -208,6 +238,14 @@ module Haiku55JourneyRubric
       I18n.t("rag.data_not_available", locale: :es) ].any? { |text| answer.start_with?(text) }
   end
 
+  def kpvs_set_order?(body)
+    kpvs_order?(body, KPVS_SET) do |action|
+      # The directive is the main verb. An infinitive introduced by a
+      # temporal preposition only sets the timing of that directive.
+      action.pre_match.match?(TEMPORAL_INFINITIVE_LEAD) && action[0].match?(INFINITIVE)
+    end
+  end
+
   # An unnegated match. A negation reaches back at most seven words inside
   # the same clause, so «No reinicies y baja KP-VS» is one order, not none.
   def kpvs_order?(body, pattern)
@@ -216,7 +254,10 @@ module Haiku55JourneyRubric
 
       sentence.split(/(?<!\d),|,(?!\d)|;|:|[[:space:]](?:y|e|o|pero)[[:space:]]/i).any? do |clause|
         clause.to_enum(:scan, pattern).any? do
-          !clause[0...Regexp.last_match.begin(0)].match?(KPVS_NEGATOR)
+          action = Regexp.last_match
+          next false if action.pre_match.match?(KPVS_NEGATOR)
+
+          !block_given? || !yield(action)
         end
       end
     end

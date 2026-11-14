@@ -30,8 +30,10 @@ module Rag
     # attempt 999, no retry. The monetary cap does not move. The 1034 step is
     # the live validation of a200991 (Lahiri, 2026-11-12): the 2,5 case and
     # guion 3, each planned twice, twenty new calls above attempt 1014.
-    # Anything else stays.
-    CALL_CAP_BUMPS = { 150 => 152, 152 => 164, 164 => 166, 166 => 174, 174 => 175, 175 => 180, 180 => 185, 185 => 194, 194 => 196, 196 => 211, 211 => 213, 213 => 229, 229 => 245, 245 => 295, 295 => 311, 311 => 320, 320 => 328, 328 => 1000, 1000 => 1015, 1015 => 1034 }.freeze
+    # The 1190 step is the field validation: ten acceptance calls and
+    # thirty-seven regression calls above attempt 1143. The dollar cap stays
+    # US$4. Anything else stays.
+    CALL_CAP_BUMPS = { 150 => 152, 152 => 164, 164 => 166, 166 => 174, 174 => 175, 175 => 180, 180 => 185, 185 => 194, 194 => 196, 196 => 211, 211 => 213, 213 => 229, 229 => 245, 245 => 295, 295 => 311, 311 => 320, 320 => 328, 328 => 1000, 1000 => 1015, 1015 => 1034, 1034 => 1054, 1054 => 1158, 1158 => 1190 }.freeze
     # A later dollar grant. It does not rewrite authorization.cost_usd.
     # It applies only to entry ids above its attempt, and only when the
     # admitted execution matches this cost and this call count. 229 is the
@@ -51,6 +53,29 @@ module Rag
       # plus entries 1015 and 1016, already stored above attempt 1014.
       1014 => { "cost_usd" => "0.100000", "calls" => 22 }.freeze
     }.freeze
+
+    CEA_COMPLETION_ID = "haiku55-http-cea-completion-20261112"
+    CEA_COMPLETION_SEQUENCE = 1123
+    CEA_COMPLETION_CALLS = 15
+    # Carries the unused US$0.011939 of regression plus the US$0.043121
+    # authorized for one complete CEA execution.
+    CEA_COMPLETION_USD = "0.055060"
+
+    # Field validation on the ledger that is at 1,143 attempts and sequence
+    # 1,145. The cutoff is the sequence, so entries 1144 and 1145 stay in the
+    # previous window. Acceptance can run while the cap is still 1158.
+    # Regression is the 1158 -> 1190 step and starts at whatever the sequence
+    # is after those acceptance calls, never earlier than 1145 and never more
+    # than ten sequence numbers later.
+    FIELD_ACCEPTANCE_ID = "haiku55-http-field-acceptance-20261113"
+    FIELD_ACCEPTANCE_SEQUENCE = 1145
+    FIELD_ACCEPTANCE_CALLS = 10
+    FIELD_ACCEPTANCE_USD = "0.033640"
+    FIELD_ACCEPTANCE_PREVIOUS_ID = "haiku55-http-guion3-final-e7a2991-20261113"
+    FIELD_REGRESSION_ID = "haiku55-http-field-regression-20261113"
+    FIELD_REGRESSION_CALLS = 37
+    FIELD_REGRESSION_USD = "0.129988"
+    FIELD_VALIDATION_CALL_CAP = 1190
 
     def initialize(path:, call_cap:, cost_cap_usd:)
       @path = Pathname(path)
@@ -94,7 +119,7 @@ module Rag
     # Records this execution once. The same id does not move the cutoff
     # backward or raise the ceiling. A call-cap bump is only the next
     # recorded step, and only while the file is still at that attempt count.
-    def admit_execution!(id:, cost_usd:, calls:, bump_call_cap_to: nil, bump_only_if_attempts: nil)
+    def admit_execution!(id:, cost_usd:, calls:, bump_call_cap_to: nil, bump_only_if_attempts: nil, start_after_sequence: false)
       with_lock do |state, file|
         grants = state["executions"].is_a?(Array) ? state["executions"] : []
         state["executions"] = grants
@@ -108,10 +133,34 @@ module Rag
         apply_call_cap_bump!(state, bump_call_cap_to, bump_only_if_attempts)
         row = {
           "id" => id.to_s,
-          "after_attempt" => state["attempts"].to_i,
+          "after_attempt" => state[start_after_sequence ? "seq" : "attempts"].to_i,
           "cost_usd" => format_money(cost_usd),
           "calls" => calls.to_i,
           "at" => Time.now.utc.iso8601
+        }
+        grants << row
+        write!(file, state)
+        row
+      end
+    end
+
+    def admit_cea_completion!
+      with_lock do |state, file|
+        grants = state.fetch("executions")
+        raise Stop, "cea_completion_already_started" unless state["seq"] == CEA_COMPLETION_SEQUENCE
+        raise Stop, "cea_completion_already_admitted" if grants.any? { |row| row["id"] == CEA_COMPLETION_ID }
+
+        previous = grants.last
+        unless previous&.fetch("id") == "haiku55-http-guion3-20261112-regression" &&
+            previous["calls"] == 104 && decimal(previous["cost_usd"]) == BigDecimal("0.100000") &&
+            scoped_attempts(state, previous["after_attempt"]) + CEA_COMPLETION_CALLS <= previous["calls"] &&
+            scoped_exposure(state, previous["after_attempt"]) + BigDecimal(CEA_COMPLETION_USD) <= BigDecimal("0.143121")
+          raise Stop, "cea_completion_grant_mismatch"
+        end
+
+        row = {
+          "id" => CEA_COMPLETION_ID, "after_attempt" => CEA_COMPLETION_SEQUENCE,
+          "cost_usd" => CEA_COMPLETION_USD, "calls" => CEA_COMPLETION_CALLS, "at" => Time.now.utc.iso8601
         }
         grants << row
         write!(file, state)
@@ -281,7 +330,7 @@ module Rag
 
     def over_cap?(state, ceiling)
       return true if state["attempts"] + 1 > attempt_cap(state)
-      return true if exposure(state) + ceiling > @cost_cap
+      return true if exposure(state) + ceiling > [ @cost_cap, decimal(state["cost_cap_usd"]) ].select(&:positive?).min
 
       authorization_exceeded?(state, ceiling) || executions_exceeded?(state, ceiling)
     end
@@ -317,7 +366,28 @@ module Rag
       Array(state["executions"]).select { |row|
         next false unless row.is_a?(Hash)
 
+        if row["id"] == CEA_COMPLETION_ID
+          next row["after_attempt"] == CEA_COMPLETION_SEQUENCE &&
+            row["calls"] == CEA_COMPLETION_CALLS && decimal(row["cost_usd"]) == BigDecimal(CEA_COMPLETION_USD)
+        end
+        if row["id"] == FIELD_ACCEPTANCE_ID
+          next row["after_attempt"] == FIELD_ACCEPTANCE_SEQUENCE &&
+            row["calls"] == FIELD_ACCEPTANCE_CALLS &&
+            decimal(row["cost_usd"]) == BigDecimal(FIELD_ACCEPTANCE_USD)
+        end
+        if row["id"] == FIELD_REGRESSION_ID
+          after = row["after_attempt"].to_i
+          next after >= FIELD_ACCEPTANCE_SEQUENCE &&
+            after <= FIELD_ACCEPTANCE_SEQUENCE + FIELD_ACCEPTANCE_CALLS &&
+            row["calls"] == FIELD_REGRESSION_CALLS &&
+            decimal(row["cost_usd"]) == BigDecimal(FIELD_REGRESSION_USD)
+        end
+
         spec = DOLLAR_SUCCESSORS[row["after_attempt"].to_i]
+        if row["id"].to_s.start_with?("haiku55-http-guion3-20261112-")
+          cap = { "acceptance" => 24, "regression" => 104 }[row["id"].to_s.split("-").last]
+          next row["calls"] == cap && cap.present? && decimal(row["cost_usd"]) == BigDecimal("0.1")
+        end
         spec && row["calls"].to_i == spec["calls"].to_i && decimal(row["cost_usd"]) == decimal(spec["cost_usd"])
       }.sort_by { |row| row["after_attempt"].to_i }
     end

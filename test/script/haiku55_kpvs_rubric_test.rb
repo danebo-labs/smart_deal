@@ -83,6 +83,23 @@ class Haiku55KpvsRubricTest < ActiveSupport::TestCase
     assert_includes reasons("guion3", 2, bad), "g3t2:example_not_distinguished"
   end
 
+  test "guion 3 turn 2 accepts the live nameplate prerequisite and rejects an explicit parameter order" do
+    published = Rails.root.join("test/fixtures/files/field_companion/companion_revision/guion3_e7a2991_t2_published.txt").read
+    assert_empty reasons("guion3", 2, published)
+
+    with_order = "#{published}\n\nCarga KP‑VS en 3,5."
+    assert_includes reasons("guion3", 2, with_order), "kpvs:set_order"
+  end
+
+  test "the main action determines whether a temporal prerequisite is an adjustment order" do
+    assert_not_includes reasons("guion3", 2,
+      "La corriente nominal de placa sigue pendiente. Comprueba ese dato antes de ponerlo en el registro."), "kpvs:set_order"
+    assert_includes reasons("guion3", 2,
+      "Antes de cargarlo, carga KP-VS en 3,5."), "kpvs:set_order"
+    assert_includes reasons("guion3", 2,
+      "Hay que cargarlo en 3,5 después de verificar la corriente de placa."), "kpvs:set_order"
+  end
+
   test "guion 3 turn 3 keeps 3,5 as installation reference and the case pending" do
     good = "3,5 es la referencia de instalación (§18.5), no un valor para este ruido. Nadie cambió el ajuste: sigue pendiente de Ingeniería."
     assert_empty reasons("guion3", 3, good)

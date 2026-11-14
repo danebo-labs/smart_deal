@@ -58,6 +58,7 @@ module Rag
       lines = filter_lines
       lines = carry_quotes(lines)
       lines = drop_dangling_limits(lines)
+      lines = drop_uncited_list_attributions(lines)
       lines = drop_orphan_labels(lines) if changed?
       body = lines.join("\n").gsub(/\n{3,}/, "\n\n").strip
       Result.new(text: body, removed: @removed, reattributed: @reattributed)
@@ -119,6 +120,21 @@ module Rag
 
         following = lines[(index + 1)..].to_a.find { |item| !item.strip.empty? }
         following.nil? || label?(following) || following.strip.start_with?("¿")
+      end.map(&:first)
+    end
+
+    # An attributed introduction can assert a condition or an instruction.
+    # Discard it independently of the following items, each of which already
+    # passed its own backing check.
+    def drop_uncited_list_attributions(lines)
+      lines.each_with_index.reject do |line, index|
+        next false unless label?(line) && line.match?(CompanionTurnPublication::CLAIM_VERBS)
+        next false if line.match?(CITATION_PATTERN)
+
+        following = lines[(index + 1)..].find(&:present?)
+        next false unless following&.match?(LIST_PREFIX) && following.match?(CITATION_PATTERN)
+
+        @removed << { "sentence" => line.strip, "reason" => "uncited_attribution" }
       end.map(&:first)
     end
 

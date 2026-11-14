@@ -1,0 +1,828 @@
+{
+  "document": {
+    "key": "bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf",
+    "uid": "02ae6128-077b-4c00-8029-f0cf80e0f6c4",
+    "name": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+    "indexed_document_id": "e32b956e25df4bc2dea0d200f5f25bb34750"
+  },
+  "passages": {
+    "d536509f000dbd908885b0eb35d148884bf5a0da23c424c0198bca395fdbddd7": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: ligação triângulo 220V, ligação estrela 380V, motor tração U V W X Y Z, placa identificação motor, wye delta connection, tração motor cabos]\n\nS16 — INSTALLATION\n\n### 13.3 Ligação do motor de tração conforme a tensão da obra\n\nA configuração estrela/triângulo deve ser verificada na placa de identificação do motor. Os cabos do motor de tração são identificados com: U, V, W, X, Y, Z.\n\n**Ligação em triângulo para obras com tensão trifásica de 220 Vca:**\n- Juntar U com Z e ligar em U2;\n- Juntar V com X e ligar em V2;\n- Juntar W com Y e ligar em W2;\n\n**Ligação em estrela para obras com tensão trifásica de 380 Vca:**\n- Juntar X com Y e com Z;\n- Ligar U em U2;\n- Ligar V em V2;\n- Ligar W em W2;\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-A3ABAFF0279E4CE2\nSOURCE_SECTION_OR_PAGE: 13.3 Ligação do motor de tração conforme a tensão da obra\nRECORD_TYPE: INSTALLATION_STEP\nACTION: Para tensão trifásica de 220 Vca, realizar ligação em triângulo: juntar U com Z e ligar em U2; juntar V com X e ligar em V2; juntar W com Y e ligar em W2.\nEXPECTED_RESULT: Motor configurado em triângulo para rede trifásica de 220 Vca.\nDETAILS: scope=motor de tração; precondition=verificar placa de identificação do motor\nEVIDENCE: Ligação em triângulo para obras com tensão trifásica de 220 Vca\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-97D500BB55764DF3\nSOURCE_SECTION_OR_PAGE: 13.3 Ligação do motor de tração conforme a tensão da obra\nRECORD_TYPE: INSTALLATION_STEP\nACTION: Para tensão trifásica de 380 Vca, realizar ligação em estrela: juntar X com Y e com Z; ligar U em U2; ligar V em V2; ligar W em W2.\nEXPECTED_RESULT: Motor configurado em estrela para rede trifásica de 380 Vca.\nDETAILS: scope=motor de tração; precondition=verificar placa de identificação do motor\nEVIDENCE: Ligação em estrela para obras com tensão trifásica de 380 Vca\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-4284AEA18B6D687B\nSOURCE_SECTION_OR_PAGE: 13.3 Ligação do motor de tração conforme a tensão da obra\nRECORD_TYPE: INSPECTION_CHECK\nACTION: Verificar na placa de identificação do motor qual a ligação correta (estrela ou triângulo) antes de realizar as conexões.\nEXPECTED_RESULT: Ligação confirmada conforme placa de identificação do motor.\nEVIDENCE: ligação Estrela/ Triangulo ver placa de identificação do motor\nEND_FIELD_RECORD",
+    "a30bbfcc09ec3b6b9a9844edf84d0d59beba01aea95413879d3c03830407c788": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: Banco de Resistores de frenagem, IGBT, cabos de potência, borne de potência, QC FDN, fusíveis, casa de máquinas]\n\nS9 — CUIDADOS ANTES DE LIGAR O QC FDN UNIVERSAL\n\n9.1 Banco de Resistores de frenagem: instalar este Kit ao lado ou em cima do Quadro de comando, conforme a disponibilidade da casa de máquinas. Verificar se os terminais dos resistores não estão encostados na grade ou se a mesma não esta amassada.\n\n9.2 As conexões elétricas de potência indicadas abaixo devem ser revisadas e os cabos que estiverem com folga devem ser re-apertados:\n- Os cabos no motor: no borne de potência do QC;\n- Os cabos na unidade IGBT: verificar os parafusos ou os terminais da unidade onde são conectados os cabos de potência;\n- Os cabos de entrada de força: verificar as linhas na base de fusíveis do QC até a chave de entrada de força da casa de maquinas.\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-0BB7D2DDAEF480EE\nSOURCE_SECTION_OR_PAGE: 9 Cuidados que devem ser tomados antes de ligar o QC FDN Universal.\nRECORD_TYPE: INSTALLATION_STEP\nACTION: Instalar o Kit do Banco de Resistores de frenagem ao lado ou em cima do Quadro de comando, conforme a disponibilidade da casa de máquinas.\nEXPECTED_RESULT: Kit instalado sem terminais dos resistores encostados na grade; grade não amassada.\nEVIDENCE: instalar este Kit ao lado ou em cima do Quadro de comando\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-95EBE960BCF3485C\nSOURCE_SECTION_OR_PAGE: 9.1 Banco de Resistores de frenagem\nRECORD_TYPE: INSPECTION_CHECK\nACTION: Verificar se os terminais dos resistores não estão encostados na grade ou se a mesma não está amassada.\nEXPECTED_RESULT: Terminais sem contato com a grade; grade sem deformação.\nEVIDENCE: Verificar se os terminais dos resistores não estão encostados na grade\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-9E132AD9A5FA0877\nSOURCE_SECTION_OR_PAGE: 9.2 Conexões elétricas de potência\nRECORD_TYPE: INSPECTION_CHECK\nACTION: Revisar os cabos no motor no borne de potência do QC e re-apertar os cabos com folga.\nEXPECTED_RESULT: Cabos firmes, sem folga.\nEVIDENCE: Os cabos no motor: no borne de potência do QC\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-99A1DAA01011E30A\nSOURCE_SECTION_OR_PAGE: 9.2 Conexões elétricas de potência\nRECORD_TYPE: INSPECTION_CHECK\nACTION: Verificar os parafusos ou os terminais da unidade IGBT onde são conectados os cabos de potência; re-apertar cabos com folga.\nEXPECTED_RESULT: Parafusos e terminais firmes, sem folga.\nEVIDENCE: Os cabos na unidade IGBT: verificar os parafusos ou os terminais da unidade\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-2DD2DA32A9EA8FB6\nSOURCE_SECTION_OR_PAGE: 9.2 Conexões elétricas de potência\nRECORD_TYPE: INSPECTION_CHECK\nACTION: Verificar as linhas na base de fusíveis do QC até a chave de entrada de força da casa de máquinas; re-apertar cabos com folga.\nEXPECTED_RESULT: Linhas firmes, sem folga, do QC até a chave de entrada de força.\nEVIDENCE: Os cabos de entrada de força: verificar as linhas na base de fusíveis do QC\nEND_FIELD_RECORD",
+    "e5d09a375b66f48c881ae9f1d2b5a07c60cc2ce64fb8dcb6fd64cf38f5d05c4f": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: modo manual, SDLU, SDLD, MCP5, parada imediata, velocidade baixa, indicador digital]\n\n(Continuação da página anterior — modo manual, comportamento nos limites e registros de chamada)\n\nApós, a porta da cabina irá fechar, proporcionando a partida do inversor para subida e para descida, a cabina terá o seu movimento em velocidade baixa.\n\nDurante o modo manual toda vez que a cabina atingir os limites SDLU na subida ou SDLD na descida o indicador digital e o comando são atualizados definindo posições corretas na indicação dos pavimentos.\n\nÉ importante observar que se a cabina chegar até o limite SDLU na subida o módulo MCP5 desliga esta direção e o mesmo acontece com o limite SDLD na descida o módulo MCP5 desliga esta direção, ocorrendo a parada imediata do elevador bloqueando o movimento.\n\nNo modo manual não é possível registrar chamadas.\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-71EF6757270FF6AB\nSOURCE_SECTION_OR_PAGE: (continuação de página anterior)\nRECORD_TYPE: FUNCTIONAL_TEST\nACTION: No modo manual, verificar que ao atingir o limite SDLU na subida o módulo MCP5 desliga a direção de subida e ocorre parada imediata.\nEXPECTED_RESULT: Módulo MCP5 desliga a direção de subida e o elevador para imediatamente, bloqueando o movimento.\nEVIDENCE: a cabina chegar até o limite SDLU na subida o módulo MCP5 desliga esta direção\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-1970F27B8E17CFCD\nSOURCE_SECTION_OR_PAGE: (continuação de página anterior)\nRECORD_TYPE: FUNCTIONAL_TEST\nACTION: No modo manual, verificar que ao atingir o limite SDLD na descida o módulo MCP5 desliga a direção de descida e ocorre parada imediata.\nEXPECTED_RESULT: Módulo MCP5 desliga a direção de descida e o elevador para imediatamente, bloqueando o movimento.\nEVIDENCE: o limite SDLD na descida o módulo MCP5 desliga esta direção, ocorrendo a parada imediata\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-48D0A85F0343DCEF\nSOURCE_SECTION_OR_PAGE: (continuação de página anterior)\nRECORD_TYPE: STOP_WORK_CONDITION\nACTION: Se a cabina atingir o limite SDLU (subida) ou SDLD (descida) em modo manual, o módulo MCP5 desliga a direção correspondente.\nEXPECTED_RESULT: Parada imediata do elevador; movimento bloqueado.\nSTOP_WORK_TRIGGER: cabina atinge limite SDLU ou SDLD em modo manual\nSTOP_WORK_REQUIRED_ACTION: MCP5 desliga a direção e bloqueia o movimento\nEVIDENCE: ocorrendo a parada imediata do elevador bloqueando o movimento\nEND_FIELD_RECORD",
+    "fb758aed868e5ab8fb43506703be99868381c1d30cffce58e859660b18553476": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: KI-SLIP, MENU PID, partida contra a carga, conforto na partida, FDN 105m/min]\n\n19.11 Ajuste del confort en la partida — parámetro \"KI-SLIP\" en \"MENU PID\"\n\n19.12 En caso de partida contra la carga:\n\n- Si en la partida la cabina \"vuelve\" algunos milímetros en sentido opuesto al movimiento y luego parte: aumente el valor de **\"KI-SLIP\"** y verifique el resultado.\n- Ajuste máximo para FDN (hasta 105 m/min): MAX. = [100,0]\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-9325EC0AA322461A\nSOURCE_SECTION_OR_PAGE: 19.11 Ajuste do conforto na partida parametro \"KI-SLIP\" no \"MENU PID\"\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: Si en la partida la cabina retrocede algunos milímetros en sentido opuesto al movimiento, aumente el valor de 'KI-SLIP' en MENU PID y verifique el resultado.\nEXPECTED_RESULT: La cabina parte sin retroceso en sentido opuesto.\nEVIDENCE: aumente o valor de \"KI-SLIP\" e verifique o resultado\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-F5F159DAC87BF979\nSOURCE_SECTION_OR_PAGE: 19.12 No caso de partida contra a carga\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: Verificar que el valor máximo de KI-SLIP para FDN (hasta 105 m/min) no supere MAX. = [100,0].\nEXPECTED_RESULT: Valor de KI-SLIP dentro del límite máximo permitido [100,0].\nEVIDENCE: Ajuste máximo para FDN (até 105m/min) MAX. = [100,0]\nEND_FIELD_RECORD",
+    "101f3d9900a846823fa8e73705816042b1a46a9d36484526d7e145301c5fbefa": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: MCINV4, MFCH, MCP5, INTERV3F, IGBT, LINCK, HALL, Encoder]\n\nS4 — DEFINIÇÕES DAS SIGLAS\n\nGlossário oficial de siglas utilizadas neste manual:\n\n| Sigla | Definição |\n|-|-|\n| TDIGQ-002 | Tabela das siglas do SQS |\n| MCINV4 | Módulo Controlador do Inversor |\n| MFCH | Módulo de fonte para MCINV4 |\n| MCP5 | Módulo controlador programável 5.0 |\n| INTERV3F | Módulo interface de sinais 24/110Vcc e 110/24 Vcc |\n| IGBT | Transistores da etapa de potência |\n| LINCK | Tensão da etapa de potência (IN+) |\n| IN+ | Tensão positiva do Linck |\n| IN- | Tensão negativa do Linck |\n| HALL | Sensor de efeito de campo magnético |\n| Encoder | Gerador eletrônico de pulsos do motor de tração |\n| QC | Quadro de Comando |\n| Teclado | Teclado TLS |\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-C150CAC5B238C8F6\nSOURCE_SECTION_OR_PAGE: Definições das siglas\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: MCINV4 — identificar módulo no quadro de comando\nEXPECTED_RESULT: Módulo Controlador do Inversor\nEVIDENCE: MCINV4........................Módulo Controlador do Inversor\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-7C4C090BBC6AE8F0\nSOURCE_SECTION_OR_PAGE: Definições das siglas\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: MFCH — identificar módulo no quadro de comando\nEXPECTED_RESULT: Módulo de fonte para MCINV4\nEVIDENCE: MFCH...........................Módulo de fonte para MCINV4\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-90592BFD1C9DDE43\nSOURCE_SECTION_OR_PAGE: Definições das siglas\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: MCP5 — identificar módulo no quadro de comando\nEXPECTED_RESULT: Módulo controlador programável 5.0\nEVIDENCE: MCP5 ...........................módulo controlador programável 5.0\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-C6C15D96692E387F\nSOURCE_SECTION_OR_PAGE: Definições das siglas\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: INTERV3F — identificar módulo no quadro de comando\nEXPECTED_RESULT: Módulo interface de sinais 24/110Vcc e 110/24 Vcc\nEVIDENCE: INTERV3F....................Módulo interface de sinais 24/ 110vcc e 110/ 24 Vcc\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-A20376196A693684\nSOURCE_SECTION_OR_PAGE: Definições das siglas\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: IGBT — identificar componentes da etapa de potência\nEXPECTED_RESULT: Transistores da etapa de potência\nEVIDENCE: IGBT.............................Transistores da etapa de potência\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-76B9552BA80B8ADA\nSOURCE_SECTION_OR_PAGE: Definições das siglas\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: HALL — identificar sensor\nEXPECTED_RESULT: Sensor de efeito de campo magnético\nEVIDENCE: HALL ............................Sensor de efeito de campo magnético\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-A481BEF33CC71D42\nSOURCE_SECTION_OR_PAGE: Definições das siglas\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: Encoder — identificar dispositivo no motor de tração\nEXPECTED_RESULT: Gerador eletrônico de pulsos do motor de tração\nEVIDENCE: Encoder:.......................Gerador eletrônico de pulsos do motor de tração\nEND_FIELD_RECORD",
+    "0bd8663bcb566689d415f75a4353051e5c9da72088bc408df2caafa17f232673": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: códigos de falha MCINV4, E0 E1 E2 fase IGBT, E3 fase entrada fusíveis, E4 CHINV contatora, E5 E6 sub sobre tensão IGBT, EA falha sinais BKF S0S P28, EC segurança poço cabina T2+, ED erro operação teclado]\n\nS10 — TROUBLESHOOTING\n\n23 Códigos de falhas da MCINV4\n\nTabela completa de códigos de erro da controladora MCINV4 (FrequenceDyne Universal), com falha detectada, localização e solução:\n\n| Código Erro | Falha Detectada | Onde acontece | Solução |\n|---|---|---|---|\n| E0 | Falha na fase EU | Na fase U7 | 1- testar unidade IGBT; 2- cabos do motor em curto |\n| E1 | Falha na fase EV | Na fase V7 | 1- testar unidade IGBT; 2- cabos do motor em curto |\n| E2 | Falha na fase EW | Na fase W7 | 1- testar unidade IGBT; 2- cabos do motor em curto |\n| E3 | Falha na fase IN | Nas fases de entrada | 1- testar as fases R, S, T; 2- ver fusíveis ultra-rápidos |\n| E4 | Falha de carga | Contatora \"CHINV\" não liga | 1- verificar circuito da CHINV |\n| E5 | Falha de sub-tensão | Tensão do link da unidade IGBT | 1- tensão de entrada (R, S, T) abaixo da tolerância permitida; 2- IGBT de frenagem sempre ligado = trocar unidade IGBT |\n| E6 | Falha de sobre tensão | Tensão no link da unidade IGBT | 1- Tensão de entrada (R, S, T) acima da tolerância permitida; 2- IGBT de frenagem sempre desligado – trocar unidade IGBT |\n| EA | Falha de sinais | Fiação das linhas START, RED, MAN, DIRU, 1VEL, 2VEL, 3VL, T100, P28, P26, S0S E BKF | 1. Revisar conexão destas linhas; 2. Quando falha de P28 - porta aberta - revisar linha dos trincos; 3. Quando falha de BKF - revisar circuito do freio; 4. Revisar circuito S0S |\n| EC | Falha na segurança de poço, cabina ou casa de máquina | Falta tensão na linha T2+ | 1. Revisar toda fiação e contatos entre as linhas A1+K e T2+ |\n| ED | Erro de operação | Desliga o rele Seg. em qualquer estado de movimento | 1. Teclado conectado durante ajuste de algum parâmetro ou dentro de qualquer MENU e com o elevador em movimento = desconectar teclado |\n| EE | Falha na segurança do QC | Falta tensão na linha A1+K | 1. Revisar toda fiação e componentes entre as linhas T2+ e A1+K (FC, TD1) |\n| EF | Falha de sub ou sobre velocidade | Elevador para por velocidade acima ou abaixo da nominal | ENCODER não esta fixado ou alinhado corretamente no eixo do motor |\n\nRevisor: João Carlos Sá — Aprovador: Claudia Bothona\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-77ACEAC4AD5062B2\nSOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4\nRECORD_TYPE: FAULT_CONDITION\nACTION: Código E0 — Falha na fase EU (fase U7): 1- testar unidade IGBT; 2- verificar cabos do motor em curto\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Falha na fase EU Na fase U7 1- testar unidade IGBT 2- cabos do motor em curto\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-359B262C52193B65\nSOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4\nRECORD_TYPE: FAULT_CONDITION\nACTION: Código E1 — Falha na fase EV (fase V7): 1- testar unidade IGBT; 2- verificar cabos do motor em curto\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Falha na fase EV Na fase V7 1- testar unidade IGBT 2- cabos do motor em curto\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-657480DD6569F34E\nSOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4\nRECORD_TYPE: FAULT_CONDITION\nACTION: Código E2 — Falha na fase EW (fase W7): 1- testar unidade IGBT; 2- verificar cabos do motor em curto\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Falha na fase EW Na fase W7 1- testar unidade IGBT 2- cabos do motor em curto\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-1AA1C14B3C82821E\nSOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4\nRECORD_TYPE: FAULT_CONDITION\nACTION: Código E3 — Falha na fase IN (fases de entrada): 1- testar as fases R, S, T; 2- ver fusíveis ultra-rápidos\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Falha na fase IN Nas fases de entrada 1- testar as fases R, S, T; 2- ver fusíveis ultra-rápidos\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-D32746CE0677304E\nSOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4\nRECORD_TYPE: FAULT_CONDITION\nACTION: Código E4 — Falha de carga (Contatora CHINV não liga): 1- verificar circuito da CHINV\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Falha de carga Contatora \"CHINV\" não liga 1- verificar circuito da CHINV\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-E3BEF1E2736FFA5D\nSOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4\nRECORD_TYPE: FAULT_CONDITION\nACTION: Código E5 — Falha de sub-tensão (link da unidade IGBT): 1- tensão de entrada (R, S, T) abaixo da tolerância permitida; 2- IGBT de frenagem sempre ligado = trocar unidade IGBT\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: tensão de entrada (R, S, T) abaixo da tolerância permitida 2- IGBT de frenagem sempre ligado = trocar unidade IGBT\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-0501DD70667BA397\nSOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4\nRECORD_TYPE: FAULT_CONDITION\nACTION: Código E6 — Falha de sobre tensão (link da unidade IGBT): 1- Tensão de entrada (R, S, T) acima da tolerância permitida; 2- IGBT de frenagem sempre desligado – trocar unidade IGBT\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Tensão de entrada (R, S ,T) acima da tolerância permitida 2- IGBT de frenagem sempre desligado – trocar unidade IGBT\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-7F612F4D36395E65\nSOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4\nRECORD_TYPE: FAULT_CONDITION\nACTION: Código EA — Falha de sinais: revisar conexão das linhas START, RED, MAN, DIRU, 1VEL, 2VEL, 3VL, T100, P28, P26, S0S e BKF. Se falha P28: revisar linha dos trincos (porta aberta). Se falha BKF: revisar circuito do freio. Revisar circuito S0S\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Fiação das linhas START ,RED ,MAN ,DIRU ,1VEL ,2VEL ,3VL ,T100, P28, P26, S0S E BKF\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-274F5A760C89D76C\nSOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4\nRECORD_TYPE: FAULT_CONDITION\nACTION: Código EC — Falha na segurança de poço, cabina ou casa de máquina (falta tensão na linha T2+): revisar toda fiação e contatos entre as linhas A1+K e T2+\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Falta tensão na linha T2+ 1. Revisar toda fiação e contatos entre as linhas A1+K e T2+\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-255A34710F7706D4\nSOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4\nRECORD_TYPE: FAULT_CONDITION\nACTION: Código ED — Erro de operação (desliga o relé Seg. em qualquer estado de movimento): desconectar teclado se conectado durante ajuste de parâmetro ou dentro de qualquer MENU com elevador em movimento\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Teclado conectado durante ajuste de algum parâmetro ou dentro de qualquer MENU e com o elevador em movimento = desconectar teclado\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-3ED8549DFCF58C43\nSOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4\nRECORD_TYPE: FAULT_CONDITION\nACTION: Código EE — Falha na segurança do QC (falta tensão na linha A1+K): revisar toda fiação e componentes entre as linhas T2+ e A1+K (FC, TD1)\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Falta tensão na linha A1+K 1. Revisar toda fiação e componentes entre as linhas T2+ e A1+K (FC, TD1)\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-E44FFFA99C164AA8\nSOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4\nRECORD_TYPE: FAULT_CONDITION\nACTION: Código EF — Falha de sub ou sobre velocidade (elevador para por velocidade acima ou abaixo da nominal): verificar se ENCODER está fixado e alinhado corretamente no eixo do motor\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: ENCODER não esta fixado ou alinhado corretamente no eixo do motor\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-F0E19FDBBF92C40B\nSOURCE_SECTION_OR_PAGE: 23 Códigos de falhas da MCINV4\nRECORD_TYPE: STOP_WORK_CONDITION\nACTION: Código ED — Desconectar teclado imediatamente se conectado durante ajuste de parâmetro ou dentro de qualquer MENU com elevador em movimento\nEXPECTED_RESULT: Desliga o rele Seg. em qualquer estado de movimento\nSTOP_WORK_TRIGGER: Teclado conectado durante ajuste de algum parâmetro ou dentro de qualquer MENU e com o elevador em movimento\nSTOP_WORK_REQUIRED_ACTION: desconectar teclado\nEVIDENCE: Desliga o rele Seg. em qualquer estado de movimento\nEND_FIELD_RECORD",
+    "4a72336f463240f6c56507bb33384dfae2af966852c2f76d9a10c8e698155b6a": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: ENCODER rabicho, E8 falha encoder, sentido de rotação, inversão de fases, bornes de potência, quadro de comando, modo manutenção]\n\n(Continuação da seção 18 — Comissionamento / verificação do ENCODER e sentido de rotação)\n\n18.8 Se real = 0, ele desligará por E8, verifique ENCODER e seu rabicho;\n18.9 Se real com valor de sinal oposto ao da padrão = sentido de rotação do motor está errado — inverta duas fases a partir dos bornes de potência;\n18.10 Desligar o quadro de comando;\n18.11 Desconectar o teclado;\n18.12 Ligar o Quadro de comando;\n18.13 Neste momento o elevador esta pronto, para ser utilizado em manutenção.\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-0DA1319DFA61066D\nSOURCE_SECTION_OR_PAGE: (continuação de página anterior)\nRECORD_TYPE: FAULT_CONDITION\nACTION: Se real = 0 após leitura do encoder\nEXPECTED_RESULT: Desligará por E8 — verificar ENCODER e seu rabicho\nEVIDENCE: Se real = 0, ele desligará por E8, verifique ENCODER e seu rabicho\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-47263AF4505F312E\nSOURCE_SECTION_OR_PAGE: (continuação de página anterior)\nRECORD_TYPE: TROUBLESHOOTING_STEP\nACTION: Se real com valor de sinal oposto ao da padrão, inverter duas fases a partir dos bornes de potência\nEXPECTED_RESULT: Sentido de rotação do motor corrigido\nEVIDENCE: sentido de rotação do motor está errado inverta duas fases a partir dos bornes de potência\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-025984B8B3561001\nSOURCE_SECTION_OR_PAGE: (continuação de página anterior)\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: Desligar o quadro de comando; desconectar o teclado; ligar o quadro de comando\nEXPECTED_RESULT: Elevador pronto para ser utilizado em manutenção\nEVIDENCE: Neste momento o elevador esta pronto, para ser utilizado em manutenção\nEND_FIELD_RECORD",
+    "733ea86e4c3956b19a67f61f7ff35a27de54668684ffc15946605e0d602e1c09": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: códigos de estado MCINV4, código 02 Parado, código 04 BKF, código 06 nivelamento, código 08 manutenção, código A3 aceleração, código B3 aceleração 2 VEL, estados operacionais MCINV4]\n\nS10 — TROUBLESHOOTING (continuação) / CÓDIGOS DE ESTADOS DA MCINV4\n\nSeção 24 — Códigos de estados da MCINV4\n\nA tabela abaixo lista todos os códigos de estado operacional da placa MCINV4:\n\n| Código | Estado |\n|---|---|\n| 02 | Parado |\n| 04 | Espera do sinal de freio (BKF) |\n| 06 | Velocidade de Nivelamento |\n| 08 | Estado de manutenção |\n| 09 | Nominal de manutenção |\n| 0A | Redução de manutenção |\n| A3 | Aceleração em 1 VEL |\n| A4 | Nominal de 1 VEL |\n| A5 | Redução de 1 VEL |\n| B3 | Aceleração em 2 VEL |\n| B4 | Nominal de 2 VEL |\n| B5 | Redução de 2 VEL |\n\nEstes códigos são exibidos pela MCINV4 para indicar o estado atual do sistema. Úteis para diagnóstico em campo e verificação do ciclo de operação do elevador.\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-CC21B6B15B8A8F47\nSOURCE_SECTION_OR_PAGE: 24 Códigos de estados da MCINV4\nRECORD_TYPE: FAULT_CONDITION\nACTION: Identificar estado atual do sistema mediante o código exibido pela MCINV4: 02=Parado; 04=Espera do sinal de freio (BKF); 06=Velocidade de Nivelamento; 08=Estado de manutenção; 09=Nominal de manutenção; 0A=Redução de manutenção; A3=Aceleração em 1 VEL; A4=Nominal de 1 VEL; A5=Redução de 1 VEL; B3=Aceleração em 2 VEL; B4=Nominal de 2 VEL; B5=Redução de 2 VEL.\nEXPECTED_RESULT: Código de estado visível na MCINV4 corresponde ao estado operacional listado na tabela.\nDETAILS: scope=CONTROLLER_LOGIC; function=diagnóstico em campo do ciclo operacional do elevador\nEVIDENCE: Códigos de estados da MCINV4\nEND_FIELD_RECORD",
+    "a1cb493b73732454676768f0ff7cb8dd0becfcdf0d8b1fc55502fc587ac86dce": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: 3Z.0006.GY, MCINV4, Frequencedyne Universal, ThyssenKrupp Elevadores, Manual de Instalação, Quadro de Comando, FDN Universal, INDICE 01]\n\nS0 — DOCUMENT IDENTIFICATION\n\n| Field | Value |\n|-|-|\n| TECHNICAL_ID | ThyssenKrupp Elevadores — Frequencedyne (FDN) Universal com MCINV4 |\n| DOCUMENT_REF | 3Z.0006.GY, Índice: 01 |\n| DOCUMENT_TITLE | Manual de Instalação do Quadro de Comando Frequencedyne Universal com MCINV4 |\n| TOTAL_PAGES | 26 |\n| REVISOR | João Carlos Sá |\n| APROVADOR | Claudia Bothona |\n| ORIGINAL_FILE_NAME | PIPELINE_INJECTED |\n| NORMALIZED_FILE_NAME | PIPELINE_INJECTED |\n| SOURCE_URI | PIPELINE_INJECTED |\n| REGIONAL_NORMATIVE | DATA_NOT_AVAILABLE |\n| IMAGE_QUALITY | CLEAR |\n| CONFIDENCE | HIGH |\n| ERA | MODERN_MICROPROCESSOR |\n\nEsta página es la portada del manual de instalación del cuadro de maniobras Frequencedyne Universal con MCINV4, fabricado por ThyssenKrupp Elevadores. La referencia del documento es 3Z.0006.GY, índice 01. La fotografía en la portada muestra el interior del cuadro de maniobras con placas electrónicas de color verde montadas sobre el fondo metálico, con cableado azul y multicolor visible.\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-D9F2AF9B51D4A97F\nSOURCE_SECTION_OR_PAGE: Portada — Manual de Instalação do Quadro de Comando Frequencedyne Universal com MCINV4\nRECORD_TYPE: DOCUMENTATION_REQUIREMENT\nACTION: Identificar el documento como referencia 3Z.0006.GY, Índice 01, revisado por João Carlos Sá y aprobado por Claudia Bothona antes de proceder con la instalación.\nEXPECTED_RESULT: Documento identificado correctamente como manual de instalación del cuadro de maniobras Frequencedyne Universal con MCINV4.\nEVIDENCE: Manual de Instalação do Quadro de Comando Frequencedyne Universal com MCINV4, 3Z.0006.GY, INDICE 01\nEND_FIELD_RECORD",
+    "e86065c4f826ecb25c1f8244bba8eba16811cace852e111f1339e496436a7a1f": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: MACB, módulo MACB, 3Y.0591.SF.1, 3Y.0591.SF.2, Jump1, Jump2, bobina do freio, tensão de partida]\n\nS16 — INSTALLATION\n\n25 Tabela 1 — Codificação para o módulo MACB\n\nEsta tabela define a configuração dos jumpers (Jump1 e Jump2) do módulo MACB em função das tensões de partida e de trabalho da bobina do freio:\n\n| Jump1 | Jump2 | Tensão de partida | Tensão de Trabalho | Código |\n|---|---|---|---|---|\n| Aberto | Aberto | em 95V | em 65V | 3Y.0591.SF.1 |\n| Aberto | Fechado | em 95V | em 95V | 3Y.0591.SF.1 |\n| Fechado | Aberto | em 190V | em 135V | 3Y.0591.SF.2 |\n\nObs.9: Se a bobina do freio da máquina for com operação em 135V substituir o módulo MACB para o código 3Y.0591.SF.2 (código de peça 19006.1).\n\nObs.8: Se a bobina do freio não estiver legível, o instalador deverá sempre iniciar com a tensão de 60V e ir aumentando gradualmente.\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-0520843CFD1C22EB\nSOURCE_SECTION_OR_PAGE: 25 Tabela 1 codificação para o módulo MACB\nRECORD_TYPE: INSTALLATION_STEP\nACTION: Se a bobina do freio da máquina for com operação em 135V, substituir o módulo MACB para o código 3Y.0591.SF.2 (código de peça 19006.1). Configurar Jump1=Fechado, Jump2=Aberto.\nEXPECTED_RESULT: Tensão de partida em 190V, tensão de trabalho em 135V.\nEVIDENCE: Se a bobina do freio for com operação em 135V substituir o módulo MACB para o código 3Y.0591.SF.2\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-364888D162EE1252\nSOURCE_SECTION_OR_PAGE: 25 Tabela 1 codificação para o módulo MACB\nRECORD_TYPE: INSTALLATION_STEP\nACTION: Se a bobina do freio não estiver legível, iniciar com a tensão de 60V e ir aumentando gradualmente.\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Se a bobina do freio não estiver legível, o instalador deverá sempre iniciar com a tensão de 60V e ir aumentando gradualmente\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-5B0B6EA4E815616D\nSOURCE_SECTION_OR_PAGE: 25 Tabela 1 codificação para o módulo MACB — Obs.8\nRECORD_TYPE: SAFETY_WARNING\nACTION: Quando a bobina do freio não estiver legível, NÃO aplicar tensão plena diretamente. Iniciar sempre em 60V e aumentar gradualmente.\nEXPECTED_RESULT: Risco de dano à bobina ou operação incorreta do freio se a tensão incorreta for aplicada.\nEVIDENCE: o instalador deverá sempre iniciar com a tensão de 60V e ir aumentando gradualmente\nEND_FIELD_RECORD",
+    "87df11d6e508a84cdb5e8fa7e0b9ca1d3dbd2aac89b2d7d1e03ea9e7458688de": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: Aplicação, FDN Universal, ThyssenKrupp Sûr, modernização, instalação]\n\nS3 — APLICAÇÃO\n\nEsta norma é aplicável no treinamento, instalação, manutenção, modernização e ajuste dos elevadores FDN Universal para aproveitamento de todos os elevadores da Marca ThyssenKrupp (Sûr) e outras marcas (com analise caso-a-caso).",
+    "2df1697d4e94e3e90434ef130b144a05bc9d6ed3131ee782a6f90acf98d0cac5": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: indicador de pavimento, indicador horizontal, indicador digital, 1100 RPM mínimo, lâmpadas 24Vcc, inversor ThyssenKrupp]\n\nS16 — INSTALLATION (continuación de página anterior)\n\nIndicador de pavimento — tabla de compatibilidad con indicadores de otras marcas:\n\n| Nº Paradas | Horizontal | Digital | O que fazer com os de outras marcas? |\n|---|---|---|---|\n| De 2 a 16 Paradas | X | — | Trocar as Lâmpadas p/ 24Vcc |\n| De 2 a 16 Paradas | — | X | Analisar o nível de tensão |\n| De 17 a 24 Paradas | X | — | Substituir para indicador Digital |\n| De 17 a 24 Paradas | — | X | Analisar o nível de tensão |\n\nObs.6: a especificação mínima aceita pelo inversor da ThyssenKrupp Elevadores é para motores de 1100 RPM, abaixo deste valor de RPM o motor deve ser substituído.\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-05D9933DC83CA86F\nSOURCE_SECTION_OR_PAGE: (continuação de página anterior)\nRECORD_TYPE: INSTALLATION_STEP\nACTION: Para indicadores horizontais de outras marcas con 2 a 16 paradas: trocar as lâmpadas para 24Vcc.\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Trocar as Lâmpadas p/ 24Vcc\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-647DF69187382954\nSOURCE_SECTION_OR_PAGE: (continuação de página anterior)\nRECORD_TYPE: INSTALLATION_STEP\nACTION: Para indicadores digitais de outras marcas con 2 a 16 paradas: analisar o nível de tensão.\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Analisar o nível de tensão\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-F91CFA883D5A0AC9\nSOURCE_SECTION_OR_PAGE: (continuação de página anterior)\nRECORD_TYPE: INSTALLATION_STEP\nACTION: Para indicadores horizontais de outras marcas con 17 a 24 paradas: substituir para indicador Digital.\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Substituir para indicador Digital\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-00DE4780641501CF\nSOURCE_SECTION_OR_PAGE: (continuação de página anterior)\nRECORD_TYPE: INSTALLATION_STEP\nACTION: Para indicadores digitais de outras marcas con 17 a 24 paradas: analisar o nível de tensão.\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Analisar o nível de tensão\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-F8A13DE8C34266E3\nSOURCE_SECTION_OR_PAGE: (continuação de página anterior)\nRECORD_TYPE: STOP_WORK_CONDITION\nACTION: Verificar RPM do motor antes de prosseguir com a instalação do inversor.\nEXPECTED_RESULT: Se o motor operar abaixo de 1100 RPM, deve ser substituído antes de continuar.\nSTOP_WORK_TRIGGER: motor abaixo de 1100 RPM\nSTOP_WORK_REQUIRED_ACTION: motor deve ser substituído\nEVIDENCE: abaixo deste valor de RPM o motor deve ser substituído\nEND_FIELD_RECORD",
+    "92746ffaeba6e6d258dd6f348209b5c420275af5531cc1391dad1dfb09d4b1a4": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: modo manual instalação, pontes provisórias segurança, A2+ P14 P21 P22, A4+ P26 P28, A+ P7, operação manual manutenção, Quadro de Comando instalação]\n\nS16 — INSTALLATION: Operação em Modo Manual (Sección 12 / 12.1)\n\nDurante la fase de instalación es común utilizar el elevador operando en comando manual; cuando está en mantenimiento también se utiliza, proporcionando condiciones para que el técnico haga los ajustes necesarios para el buen desempeño del equipo.\n\nObs.4: El Frequencedyne Universal es suministrado de fábrica con puentes provisorios de seguridad para uso en la instalación del Cuadro de Mando, conforme descripción a continuación:\n\n- A2+ con P14, P21, P22 — sempre (R-27, R-43, R-48 e R-49)\n- A4+ con P26 e P28 — sempre (RA-30, RA-51 e RA-53)\n- A+ con P7 — sempre (RA-26 e RA-36)\n\nNota de seguridad: Estos puentes son provisorios y exclusivos para la fase de instalación del cuadro. REQUIRES_FIELD_VERIFICATION: confirmar que los puentes provisorios han sido retirados antes de la puesta en servicio definitiva.\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-00A11FFD67E3550B\nSOURCE_SECTION_OR_PAGE: 12.1 Operação em modo manual\nRECORD_TYPE: INSTALLATION_STEP\nACTION: Durante a fase de instalação utilizar o elevador operando em comando manual para que o técnico faça os ajustes necessários para o bom desempenho do equipamento.\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Durante a fase de instalação é comum utilizar o elevador operando em comando manual\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-E141D15AD84155A2\nSOURCE_SECTION_OR_PAGE: 12.1 Operação em modo manual — Obs.4\nRECORD_TYPE: INSTALLATION_STEP\nACTION: Verificar pontes provisórias de segurança instaladas de fábrica: A2+ com P14, P21, P22 — sempre (R-27, R-43, R-48 e R-49); A4+ com P26 e P28 — sempre (RA-30, RA-51 e RA-53); A+ com P7 — sempre (RA-26 e RA-36).\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nUNCERTAINTY: REQUIRES_FIELD_VERIFICATION — confirmar remoção dos pontes antes da entrada em serviço definitivo\nEVIDENCE: fornecido de fábrica com pontes provisórias de segurança para uso na instalação do Quadro de Comando\nEND_FIELD_RECORD",
+    "6402e0b48a0b10705c4982b436f2e50ea82664642d4c01f0f8a7613ee4dcc0de": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: KP-VS, MENU PID, ruido motor, ruído audível, motor de tração]\n\n19.13 Ajuste del ruido en el motor de tracción — parámetro \"KP-VS\" en \"MENU PID\"\n\n- En caso de ruido audible muy elevado: disminuya el valor del parámetro **\"KP-VS\"**, hasta el mínimo de [3,0].\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-466F3205004C5604\nSOURCE_SECTION_OR_PAGE: 19.13 Ajuste do ruido no motor de tração com o ajuste do parametro \"KP-VS\" no \"MENU PID\"\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: En caso de ruido audible muy elevado en el motor de tracción, disminuir el valor del parámetro 'KP-VS' en MENU PID hasta el mínimo de [3,0].\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Diminua o valor deste parâmetro, até o mínimo de [3,0]\nEND_FIELD_RECORD",
+    "5a326b9f9d3d3b2a80a335528456c5217dda7f065e8df6da9f291b1a6d861333": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: Pontos de Emergência, RA-75 BOMB, RA-77 B4C, DAG dispositivo, B4A freno máquina tracción, señales emergencia FDN]\n\nS6 — ELECTRICAL: Pontos de Emergência (Sección 11.11)\n\nTabla de señales de emergencia del controlador Frequencedyne Universal con MCINV4:\n\n| Señal | Tensión | Función |\n|---|---|---|\n| RA-75 / BOMB. | 110 Vcc | Bombeiro, salvamento em caso de incêndio |\n| RA-77 / B4C | 110 Vcc | Informação de movimento para elevador com dispositivo D.A.G. e sistema de proteção do Freio da Máquina de tração (B4A) |\n\nNota: Estos puntos corresponden a señales de emergencia — BOMB. para bomberos/rescate en caso de incendio, y B4C vinculado al dispositivo D.A.G. y protección del freno de la máquina de tracción (B4A).\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-0C91E39F4C47B534\nSOURCE_SECTION_OR_PAGE: 11.11 Pontos de Emergência\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: RA-75 / BOMB. = 110 Vcc\nEXPECTED_RESULT: Bombeiro, salvamento em caso de incêndio\nEVIDENCE: RA-75/ BOMB. = 110 Vcc Bombeiro, salvamento em caso de incêndio\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-7BAC38CB6862B71F\nSOURCE_SECTION_OR_PAGE: 11.11 Pontos de Emergência\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: RA-77 / B4C = 110 Vcc\nEXPECTED_RESULT: Informação de movimento para elevador com dispositivo D.A.G. e sistema de proteção do Freio da Máquina de tração (B4A)\nEVIDENCE: RA-77/ B4C = 110 Vcc Informação de movimento para elevador com dispositivo D.A.G.\nEND_FIELD_RECORD",
+    "dde05a55788415f95f401583516df06f8c951427a29f6cbc8ba3637851a60d02": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: F1, F2, F4, F5, F6, Falha HALL fase U7, Falha HALL fase V7, Falha frenagem IGBT]\n\nS10 — TROUBLESHOOTING\n\nCódigos de Falha da MCINV4 (Página 25 de 26 — documento 3Z.0006.GY, Índice 01)\n\nA tabela abaixo lista os códigos de erro da MCINV4, a falha detectada, onde ocorre e a solução correspondente:\n\n| Código Erro | Falha Detectada | Onde acontece | Solução |\n|---|---|---|---|\n| F1 | Falha do HALL da fase U7 ou do BKF | Sensor HALL1 ou seu rabicho | 1. Revisar conexão do rabicho do HALL na MCINV4 e no sensor de efeito HALL 1; 2. Fase U7 do motor está desconectada; 3. Sensor HALL com defeito, trocá-lo; 4. Revisar circuito de disparo do IGBT de frenagem |\n| F2 | Falha do HALL da fase V7 ou do BKF | Sensor HALL2 ou seu rabicho | 1. Revisar conexão do rabicho do HALL na MCINV4 e no sensor de efeito HALL 2; 2. Fase V7 do motor está desconectada; 3. Sensor HALL com defeito = trocá-lo; 4. Revisar circuito de disparo do IGBT de frenagem; 5. Parâmetro KP-VS baixo |\n| F4 | Falha da frenagem | Fiação do IGBT de frenagem / o próprio IGBT / resistor de frenagem aberto | 1. Revisar fiação; 2. Se IGBT queimado = trocar unidade IGBT |\n| F5 | Falha de limite linear | Limite linear e limite físico estão em zero (subida e descida) | 1. Somente o limite físico onde o elevador se encontrar poderá estar zerado; 2. Verificar chave do limite linear e limite físico |\n| F6 | Falha de relé térmico eletrônico | Motor anda por 20seg. com fases invertidas | 1. Inverter fases na saída do quadro de comando que vão para o motor |\n\nRevisor: João Carlos Sá — Aprovador: Claudia Bothona\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-BF9F409FBEB014A2\nSOURCE_SECTION_OR_PAGE: Códigos de Falha da MCINV4\nRECORD_TYPE: TROUBLESHOOTING_STEP\nACTION: Código F1 — Falha do HALL da fase U7 ou do BKF: 1. Revisar conexão do rabicho do HALL na MCINV4 e no sensor de efeito HALL 1; 2. Verificar se fase U7 do motor está desconectada; 3. Se sensor HALL com defeito, trocá-lo; 4. Revisar circuito de disparo do IGBT de frenagem.\nEXPECTED_RESULT: Falha F1 resolvida após identificar e corrigir a causa entre: rabicho desconectado, fase U7 aberta, sensor HALL1 defeituoso, ou circuito de disparo do IGBT de frenagem com problema.\nDETAILS: scope=MOTOR_DRIVE / BRAKE_SYSTEM; precondition=código F1 ativo na MCINV4\nEVIDENCE: Revisar conexão do rabicho do HALL na MCINV4 e no sensor de efeito HALL 1\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-B175C2412AE215BE\nSOURCE_SECTION_OR_PAGE: Códigos de Falha da MCINV4\nRECORD_TYPE: TROUBLESHOOTING_STEP\nACTION: Código F2 — Falha do HALL da fase V7 ou do BKF: 1. Revisar conexão do rabicho do HALL na MCINV4 e no sensor de efeito HALL 2; 2. Verificar se fase V7 do motor está desconectada; 3. Se sensor HALL com defeito = trocá-lo; 4. Revisar circuito de disparo do IGBT de frenagem; 5. Verificar se parâmetro KP-VS está baixo.\nEXPECTED_RESULT: Falha F2 resolvida após identificar e corrigir a causa entre: rabicho desconectado, fase V7 aberta, sensor HALL2 defeituoso, circuito de disparo do IGBT de frenagem com problema, ou parâmetro KP-VS insuficiente.\nDETAILS: scope=MOTOR_DRIVE / BRAKE_SYSTEM; precondition=código F2 ativo na MCINV4\nEVIDENCE: Revisar conexão do rabicho do HALL na MCINV4 e no sensor de efeito HALL 2\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-0D8B3BFA4CE0E180\nSOURCE_SECTION_OR_PAGE: Códigos de Falha da MCINV4\nRECORD_TYPE: TROUBLESHOOTING_STEP\nACTION: Código F4 — Falha da frenagem: 1. Revisar fiação do IGBT de frenagem; 2. Se IGBT queimado = trocar unidade IGBT.\nEXPECTED_RESULT: Falha F4 resolvida após revisar fiação ou substituir unidade IGBT queimada.\nDETAILS: scope=BRAKE_SYSTEM; precondition=código F4 ativo na MCINV4; causa possível=fiação do IGBT de frenagem, o próprio IGBT, resistor de frenagem aberto\nEVIDENCE: se IGBT queimado = trocar unidade IGBT\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-E720FB2C6214F2D1\nSOURCE_SECTION_OR_PAGE: Códigos de Falha da MCINV4\nRECORD_TYPE: TROUBLESHOOTING_STEP\nACTION: Código F5 — Falha de limite linear: 1. Verificar que somente o limite físico onde o elevador se encontrar poderá estar zerado; 2. Verificar chave do limite linear e limite físico.\nEXPECTED_RESULT: Falha F5 resolvida após corrigir o estado das chaves de limite linear e limite físico (subida e descida).\nDETAILS: scope=SAFETY_CHAIN; precondition=código F5 ativo — limite linear e limite físico estão em zero tanto na subida quanto na descida\nEVIDENCE: Verificar chave do limite linear e limite físico\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-6CB5A800076B9FA7\nSOURCE_SECTION_OR_PAGE: Códigos de Falha da MCINV4\nRECORD_TYPE: TROUBLESHOOTING_STEP\nACTION: Código F6 — Falha de relé térmico eletrônico: Inverter fases na saída do quadro de comando que vão para o motor.\nEXPECTED_RESULT: Falha F6 resolvida após inversão das fases na saída do quadro de comando.\nDETAILS: scope=MOTOR_DRIVE; precondition=código F6 ativo — motor anda por 20seg. com fases invertidas\nEVIDENCE: Inverter fases na saída do quadro de comando que vão para o motor\nEND_FIELD_RECORD",
+    "db1f8b1a4b1503f0282258869690e49fd5fcfd690705cf1f5661c9039fc00012": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: menu ajuste, menu PID, menu Vel, menu E2PROM, teclado TLS, conector J1, RPM MANUT, KI-SLIP]\n\nS18 — COMMISSIONING\n\n18 Ajuste dos parâmetros do módulo MCINV4\n\nEste procedimento descreve o ajuste fino dos parâmetros do módulo MCINV4 durante a fase de comissionamento, com o sistema em modo manutenção.\n\n18.1 Desligar o QC.\n\n18.2 Conectar o teclado TLS na MCINV4 (conector J1).\n\n18.3 Ligar o quadro de comando ainda em estado de manutenção.\n\n18.4 No \"menu ajuste\" digitar os parâmetros de placa do motor da obra (como referência usaremos o motor Eberle 7,5 kW / 220V):\n- \"RPM de placa\" = ver RPM de placa do motor, exemplo = 1660 [RPM]\n- \"Corrente Nominal\" = ver corrente nominal de placa do motor, exemplo = 12 [A]\n- \"tensão trifásica\" = ver tensão do QC, exemplo = 220 [V]\n- \"sentido maquina\" = 1 [dir ---> 1]\n\nNota: Os valores acima são exemplos baseados no motor Eberle 7,5 kW/220V. Os valores reais dependem do motor instalado na obra — REQUIRES_FIELD_VERIFICATION.\n\n18.5 Verificar no \"menu PID\" os valores dos parâmetros abaixo; em caso de diferença, alterar conforme abaixo:\n- \"KI-SLIP\" = [90,0]\n- \"KP-SLIP\" = [60,0]\n- \"ganho - inércia\" = [30,0]\n- \"KP-VS\" = [3,5]\n\n18.6 No \"menu Vel\" ajustar o parâmetro:\n- \"RPM MANUT\" = ¼ do RPM de placa do motor de tração = 650 (arredondar para mais)\n- Salvar os dados no \"menu E2PROM\"\n\n18.7 Acionar o painel manutenção (sobe/desce) colocando o elevador em movimento e verificar na tela 2 o RPM real com RPM MANUT (tolerância de 1 RPM).\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-71C6E26D49B8D8A7\nSOURCE_SECTION_OR_PAGE: 18 Ajuste dos parâmetros do módulo MCINV4\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: Desligar o QC, conectar o teclado TLS na MCINV4 pelo conector J1, depois religar o QC em estado de manutenção\nEXPECTED_RESULT: QC ligado em modo manutenção com teclado TLS conectado ao conector J1 da MCINV4\nEVIDENCE: Conectar o teclado TLS na MCINV4 (conector J1)\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-993460D3A2B99488\nSOURCE_SECTION_OR_PAGE: 18 Ajuste dos parâmetros do módulo MCINV4\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: No 'menu ajuste' digitar os parâmetros de placa do motor da obra: 'RPM de placa' (ex. 1660 RPM), 'Corrente Nominal' (ex. 12 A), 'tensão trifásica' (ex. 220 V), 'sentido maquina' = 1 [dir ---> 1]\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nUNCERTAINTY: Valores reais dependem do motor instalado — REQUIRES_FIELD_VERIFICATION; os valores listados são exemplos do motor Eberle 7,5 kW/220V\nEVIDENCE: digitar os parâmetros de placa do motor da obra\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-D513DFA2CA88A5CC\nSOURCE_SECTION_OR_PAGE: 18 Ajuste dos parâmetros do módulo MCINV4\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: Verificar no 'menu PID' os parâmetros e, se divergentes, alterar para: KI-SLIP = 90,0; KP-SLIP = 60,0; ganho - inércia = 30,0; KP-VS = 3,5\nEXPECTED_RESULT: Parâmetros PID configurados conforme valores de referência\nDETAILS: scope=menu PID; criteria=KI-SLIP=90,0; KP-SLIP=60,0; ganho-inércia=30,0; KP-VS=3,5\nEVIDENCE: em caso de diferença, altere-os conforme abaixo: KI-SLIP=[90,0] KP-SLIP=[60,0] ganho-inércia=[30,0] KP-VS=[3,5]\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-DD78B8CFA851E873\nSOURCE_SECTION_OR_PAGE: 18 Ajuste dos parâmetros do módulo MCINV4\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: No 'menu Vel' ajustar 'RPM MANUT' = ¼ do RPM de placa do motor de tração (arredondar para mais; exemplo = 650); salvar os dados no 'menu E2PROM'\nEXPECTED_RESULT: RPM MANUT configurado e dados salvos na E2PROM\nEVIDENCE: RPM MANUT = ¼ do RPM de placa do motor de tração = 650 (arredondar para mais)\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-34219E044DF66954\nSOURCE_SECTION_OR_PAGE: 18 Ajuste dos parâmetros do módulo MCINV4\nRECORD_TYPE: FUNCTIONAL_TEST\nACTION: Acionar o painel manutenção (sobe/desce) para colocar o elevador em movimento e verificar na tela 2 o RPM real comparado ao RPM MANUT configurado\nEXPECTED_RESULT: RPM real coincide com RPM MANUT com tolerância de 1 RPM\nDETAILS: criteria=tolerância de 1 RPM entre RPM real e RPM MANUT; output=verificação em tela 2\nEVIDENCE: verifique na tela 2 o RPM real com RPM MANUT (tolerância de 1RPM)\nEND_FIELD_RECORD",
+    "eaec5cf35f3c7a49ed909acbdc756e7b01a56a67a37a0e3cf51fdf47fc44708e": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: RPM MAX4V, RPM MAX3V, RPM MAX2V, RPM MAX1V, MENU VEL, TP CURV, RPM NIVE, POS LA]\n\nS16 — INSTALLATION\n\n(Continuação da seção 16 — Ajuste de parâmetros de velocidade)\n\n16.8 Elevador até 60 m/min (1 velocidade)\n\nPara elevadores com uma única velocidade até 60 m/min, os seguintes parâmetros de RPM máximo devem ser configurados com o RPM de placa do motor:\n- em \"RPM MAX4V\" colocar o RPM de placa do motor = XXXX\n- em \"RPM MAX3V\" colocar o RPM de placa do motor = XXXX\n- em \"RPM MAX2V\" colocar o RPM de placa do motor = XXXX\n- em \"RPM MAX1V\" colocar o RPM de placa do motor = XXXX\n\nNota: O valor XXXX deve ser substituído pelo RPM nominal constante na placa de identificação do motor da obra. O valor exato não está predefinido neste manual — REQUIRES_FIELD_VERIFICATION (valor de RPM de placa do motor específico da instalação).\n\n16.9 No \"MENU VEL\" digitar os parâmetros básicos de nivelamento e conforto:\n- \"TP CURV\" o valor 339 [0.1seg]\n- \"RPM NIVE\" digitar o valor 10 [rpm]\n- \"POS LA\" digitar o valor conforme ANEXO 2\n\nNota: O valor de \"POS LA\" depende do ANEXO 2 do manual — REQUIRES_FIELD_VERIFICATION (consultar ANEXO 2 do documento original para o valor correto).\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-A5130E2585B265D3\nSOURCE_SECTION_OR_PAGE: (continuación de página anterior)\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: Para elevador até 60 m/min (1 velocidade): em 'RPM MAX4V', 'RPM MAX3V', 'RPM MAX2V' e 'RPM MAX1V', colocar o RPM de placa do motor (valor XXXX conforme placa da obra)\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nUNCERTAINTY: Valor numérico real dependente do motor da obra — REQUIRES_FIELD_VERIFICATION\nEVIDENCE: colocar o RPM de placa do motor = XXXX\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-C7878B133D8FD14D\nSOURCE_SECTION_OR_PAGE: (continuación de página anterior)\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: No 'MENU VEL' digitar: 'TP CURV' = 339 [0.1seg]; 'RPM NIVE' = 10 [rpm]; 'POS LA' = valor conforme ANEXO 2\nEXPECTED_RESULT: Parâmetros básicos de nivelamento e conforto configurados\nDETAILS: scope=MENU VEL; criteria=TP CURV=339 [0.1seg], RPM NIVE=10 [rpm], POS LA=ver ANEXO 2\nEVIDENCE: digitar os parametros básicos de nivelamento e conforto\nEND_FIELD_RECORD",
+    "c891d24b86113166a509050a0d056dcc21d2874c56eba63be83cacc26b41bac8": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: Curva S, curva de movimento, RPM MAX, RPM MAX4V, RPM MAX3V, RPM MAX2V, RPM MAX1V, MENU VEL]\n\nS16 — INSTALLATION (continuação)\n\n16 Curva de movimento do Elevador – Curva \"S\" – e parâmetros de cada movimento\n\nO diagrama da Curva \"S\" representa as fases de movimento do elevador:\n- PARTIDA: início do movimento desde PARADO (torque zero / 0A)\n- ACELERAÇÃO (A3/B3/C3/D3): rampa de aceleração\n- NOMINAL (A4/B4/C4/D4): velocidade nominal plena\n- DESACELERAÇÃO (A5/B5/C5/D5): rampa de desaceleração\n- NIVELAMENTO: fase de nivelamento\n- PARADA COM TORQUE ZERO (0A): parada final\n\nOs parâmetros dos segmentos de curva são identificados pelos códigos A3/B3/C3/D3 (aceleração), A4/B4/C4/D4 (nominal), A5/B5/C5/D5 (desaceleração), e os valores 02 e 06 visíveis nos eixos do diagrama. Função exata dos valores numéricos no diagrama (02, 06) — REQUIRES_FIELD_VERIFICATION; a escala do eixo não está explicitada no texto visível.\n\n16.1 Seqüência de Pré-ajuste:\n\n16.2 Exemplo de ajuste para motor Eberle de 4 pólos, 7,5 Kw / 220V, RPM de placa 1660.\n\n16.3 Desligar o Quadro de Comando.\n\n16.4 Conectar o teclado TLS na MCINV4 conector K7.\n\n16.5 Ligar o Quadro de Comando, mantendo-o em estado de manutenção e parado.\n\n16.6 No \"MENU VEL\" digitar o \"RPM MAX\" de acordo com a velocidade do elevador da obra.\n\n16.7 Elevador de 75 até 105 m/min (2 velocidades):\n- em \"RPM MAX4V\" colocar o RPM de placa do motor = XXXX\n- em \"RPM MAX3V\" colocar o RPM de placa do motor = XXXX\n- em \"RPM MAX2V\" colocar o RPM de placa do motor = XXXX\n- em \"RPM MAX1V\" colocar o RPM de placa do motor = XXXX\n\nNota: os valores XXXX indicam que o valor a inserir é o RPM de placa do motor específico da obra. Para o exemplo do motor Eberle 4 pólos 7,5 Kw / 220V, o RPM de placa é 1660.\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-95C93B56DD9772F8\nSOURCE_SECTION_OR_PAGE: 16.1 Seqüência de Pré-ajuste\nRECORD_TYPE: INSTALLATION_STEP\nACTION: Desligar o Quadro de Comando\nEXPECTED_RESULT: Quadro de Comando desligado\nEVIDENCE: Desligar o Quadro de Comando\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-4F304E2BEBE196CC\nSOURCE_SECTION_OR_PAGE: 16.1 Seqüência de Pré-ajuste\nRECORD_TYPE: INSTALLATION_STEP\nACTION: Conectar o teclado TLS na MCINV4 conector K7\nEXPECTED_RESULT: Teclado TLS conectado ao conector K7 da MCINV4\nEVIDENCE: Conectar o teclado TLS na MCINV4 conector K7\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-914CCA686717D20C\nSOURCE_SECTION_OR_PAGE: 16.1 Seqüência de Pré-ajuste\nRECORD_TYPE: INSTALLATION_STEP\nACTION: Ligar o Quadro de Comando, mantendo-o em estado de manutenção e parado\nEXPECTED_RESULT: Quadro de Comando ligado em estado de manutenção e parado\nEVIDENCE: Ligar o Quadro de Comando, mantendo-o em estado de manutenção e parado\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-A35E7C51E98DCD47\nSOURCE_SECTION_OR_PAGE: 16.6 / 16.7 — MENU VEL\nRECORD_TYPE: INSTALLATION_STEP\nACTION: No \"MENU VEL\" digitar o \"RPM MAX\" de acordo com a velocidade do elevador da obra. Para elevador de 75 até 105 m/min (2 velocidades): inserir RPM de placa do motor nos campos RPM MAX4V, RPM MAX3V, RPM MAX2V, RPM MAX1V\nEXPECTED_RESULT: Valores RPM MAX configurados conforme RPM de placa do motor da obra\nDETAILS: scope=elevador 75 a 105 m/min (2 velocidades); exemplo=motor Eberle 4 pólos 7,5 Kw/220V RPM 1660\nEVIDENCE: No \"MENU VEL\" digitar o \"RPM MAX\" de acordo com a velocidade do elevador da obra\nEND_FIELD_RECORD",
+    "a8b3713654f371bf3fdf5e4772e5e21993916e48f8eadcf94ce3689e92c386d5": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: ajuste final, TP CURV, MENU VEL, RPM MAX1V, 2 Vel, 1 VEL, zona de nivelamento, placa de parada]\n\nS18 — COMMISSIONING\n\n19.4 Sequencia de ajuste final\n\n19.5 Ajuste do conforto, parâmetro \"TP CURV\" no \"MENU VEL\"\n\n19.6 Ajuste para elevadores de 75 a 105 m/min (2 Vel)\n\n19.7 Após a parada, fazer uma chamada com a diferença de pavimentos necessária para pegar a velocidade máxima do elevador. No caso de 2 Vel, chamada com diferença de 2 paradas. Verificar:\n\n• Se a parada, dentro da placa de parada, do elevador for brusca, reduza o valor do parâmetro \"TP CURV\", repita este procedimento até que, ao reduzir em velocidade de nivelamento, a polia da máquina de tração ande no máximo 3 cm (centímetros).\n\n• Se ao entrar na zona de nivelamento, o elevador manter essa velocidade por mais de 3 cm (centímetros), aumente o valor do parâmetro \"TP CURV\", repita este procedimento até que, ao reduzir em velocidade de nivelamento, a polia da máquina de tração ande no máximo 3 cm (centímetros).\n\n19.8 Fazer uma chamada com a diferença de pavimentos necessária para pegar 1vel. No caso de 1 Vel, chamada com diferença de 1 parada. Verificar:\n\n• Se a parada, dentro da placa de parada, do elevador for brusca, reduza o valor do parâmetro \"RPM MAX1V\", repita este procedimento até que, ao reduzir em velocidade de nivelamento, a polia da máquina de tração ande no máximo 3 cm (centímetros).\n\n• Se ao entrar na zona de nivelamento o elevador manter essa velocidade por mais de 3 cm (centímetros), aumente o valor do parâmetro \"RPM MAX1V\", repita este procedimento até que, ao reduzir em velocidade de nivelamento, a polia da máquina de tração ande no máximo 3 cm (centímetros).\n\n19.9 Ajuste para elevadores de até 60 m/min (1 VEL)\n\n19.10 Após a parada fazer uma chamada com a diferença de pavimentos necessária para pegar a velocidade máxima do elevador. No caso de 1 Vel, chamada com diferença de 1 parada. Verificar: (continua na página seguinte)\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-3191271996151638\nSOURCE_SECTION_OR_PAGE: 19.5 Ajuste do conforto, parâmetro \"TP CURV\" no \"MENU VEL\"\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: Acessar o parâmetro \"TP CURV\" no \"MENU VEL\" para ajuste do conforto de parada.\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Ajuste do conforto, parametro \"TP CURV\" no \"MENU VEL\"\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-8B971BC958912B90\nSOURCE_SECTION_OR_PAGE: 19.7 Ajuste para elevadores de 75 a 105 m/min (2 Vel)\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: Para elevadores 2 Vel (75–105 m/min): após parada, fazer chamada com diferença de 2 paradas para atingir velocidade máxima. Se a parada dentro da placa de parada for brusca, reduzir o valor do parâmetro \"TP CURV\". Repetir até que a polia da máquina de tração ande no máximo 3 cm ao reduzir para velocidade de nivelamento.\nEXPECTED_RESULT: Polia da máquina de tração anda no máximo 3 cm ao reduzir em velocidade de nivelamento.\nEVIDENCE: reduza o valor do parâmetro \"TP CURV\", repita este procedimento até que... a polia da maquina de tração ande no máximo 3 cm\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-FEC60B51486C7FD7\nSOURCE_SECTION_OR_PAGE: 19.7 Ajuste para elevadores de 75 a 105 m/min (2 Vel)\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: Para elevadores 2 Vel (75–105 m/min): se ao entrar na zona de nivelamento o elevador manter velocidade por mais de 3 cm, aumentar o valor do parâmetro \"TP CURV\". Repetir até que a polia da máquina de tração ande no máximo 3 cm ao reduzir para velocidade de nivelamento.\nEXPECTED_RESULT: Polia da máquina de tração anda no máximo 3 cm ao reduzir em velocidade de nivelamento.\nEVIDENCE: aumente o valor do parâmetro \"TP CURV\", repita este procedimento ate que... a polia da maquina de tração ande no máximo 3 cm\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-D7AF53EAACB63F19\nSOURCE_SECTION_OR_PAGE: 19.8 Ajuste 1 Vel\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: Para 1 Vel: fazer chamada com diferença de 1 parada. Se a parada dentro da placa de parada for brusca, reduzir o valor do parâmetro \"RPM MAX1V\". Repetir até que a polia da máquina de tração ande no máximo 3 cm ao reduzir para velocidade de nivelamento.\nEXPECTED_RESULT: Polia da máquina de tração anda no máximo 3 cm ao reduzir em velocidade de nivelamento.\nEVIDENCE: reduza o valor do parâmetro \"RPM MAX1V\", repita este procedimento ate que... a polia da maquina de tração ande no máximo 3 cm\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-3753808A107A2E96\nSOURCE_SECTION_OR_PAGE: 19.8 Ajuste 1 Vel\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: Para 1 Vel: se ao entrar na zona de nivelamento o elevador manter velocidade por mais de 3 cm, aumentar o valor do parâmetro \"RPM MAX1V\". Repetir até que a polia da máquina de tração ande no máximo 3 cm ao reduzir para velocidade de nivelamento.\nEXPECTED_RESULT: Polia da máquina de tração anda no máximo 3 cm ao reduzir em velocidade de nivelamento.\nEVIDENCE: aumente o valor do parâmetro \"RPM MAX1V\", repita este procedimento ate que... a polia da maquina de tração ande no máximo 3 cm\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-66BB8367C9207307\nSOURCE_SECTION_OR_PAGE: 19.9 Ajuste para elevadores de até 60 m/min (1 VEL)\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: Para elevadores de até 60 m/min (1 VEL): após parada, fazer chamada com diferença de 1 parada para pegar velocidade máxima. Critérios de verificação continuam na página seguinte.\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nUNCERTAINTY: Resultado/critérios do item 19.10 continuam na página seguinte — DATA_NOT_AVAILABLE nesta página.\nEVIDENCE: Ajuste para elevadores de até 60 m/min (1 VEL)\nEND_FIELD_RECORD",
+    "93a7180ebcaacc618045feda7f773122be31cc30ab0a601954e151ec5848b3b1": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: aterramento TN-S, cabo PE, linha SX, linha RX, L60 L70, NBR 5419, subestação, casa de máquinas alimentação]\n\nS6 — ELECTRICAL (continuação)\n\nSECTION 7 — Aterramento (Grounding)\n\n7.1 O esquema de aterramento utilizado pela ThyssenKrupp é o TN-S, conforme NBR 5419;\n7.2 Todas as massas metálicas são ligadas a este ponto através de condutores de proteção de terra denominados cabo PE;\n7.3 O condutor neutro (linha SX) é usado para a iluminação, tomadas e alguns opcionais do elevador e quando é alimentado com 380 Vca o neutro é usado para gerar a rede de 220Vca (L60 e L70) que alimenta o freio, MCINV4 e os ventiladores da unidade IGBT;\n\nObs.1: \"Cuidado\" quando a tensão monofásica for 220 Vca certifique-se que a linha SX foi ligada no cabo neutro que chega no \"C.D.\" da casa de máquinas;\n\n7.4 Representação gráfica do esquema de alimentação elétrica TN-S da Subestação:\n\nSubestação do Prédio\n  Rede trifásica:\n    FASE R = LINHA R0\n    FASE S = LINHA S0\n    FASE T = LINHA T0\n  Rede monof.:\n    FASE = LINHA RX\n    NEUTRO = LINHA SX\n  Proteção:\n    PE = LINHA DE PROTEÇÃO DO EQUIPAMENTO = TERRA\n\n7.5 Representação gráfica do esquema de alimentação elétrica TN-S da casa de Máquinas:\n\nCasa de Máquinas\n  Rede trifásica:\n    FASE R = LINHA R\n    FASE S = LINHA S\n    FASE T = LINHA T\n  Rede monof.:\n    LINHA RX\n    NEUTRO = LINHA SX\n  Proteção:\n    PE = LINHA DE PROTEÇÃO DO EQUIPAMENTO = TERRA\n\nLine mapping summary:\n| Rede | Subestação | Casa de Máquinas |\n|---|---|---|\n| Trifásica Fase R | LINHA R0 | LINHA R |\n| Trifásica Fase S | LINHA S0 | LINHA S |\n| Trifásica Fase T | LINHA T0 | LINHA T |\n| Monofásica Fase | LINHA RX | LINHA RX |\n| Monofásica Neutro | LINHA SX | LINHA SX |\n| Proteção Terra | PE | PE |\n\nNote: Lines L60 and L70 (220 Vca network) are generated from the neutral (SX) when the supply is 380 Vca, powering the brake, MCINV4, and IGBT unit fans.\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-BF541317D36AE44F\nSOURCE_SECTION_OR_PAGE: 7 Aterramento\nRECORD_TYPE: INSTALLATION_STEP\nACTION: Verificar que o esquema de aterramento TN-S está implementado conforme NBR 5419; ligar todas as massas metálicas ao cabo PE\nEXPECTED_RESULT: Todas as massas metálicas conectadas ao condutor de proteção de terra (cabo PE)\nEVIDENCE: O esquema de aterramento utilizado pela ThyssenKrupp é o TN-S, conforme NBR 5419\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-B41E1F4C23DB2BA2\nSOURCE_SECTION_OR_PAGE: 7 Aterramento\nRECORD_TYPE: INSTALLATION_STEP\nACTION: Quando a alimentação for 380 Vca, verificar que o condutor neutro (linha SX) está conectado para gerar a rede de 220 Vca (L60 e L70) que alimenta o freio, MCINV4 e os ventiladores da unidade IGBT\nEXPECTED_RESULT: Rede 220 Vca (L60/L70) disponível para freio, MCINV4 e ventiladores IGBT\nEVIDENCE: quando é alimentado com 380 Vca o neutro é usado para gerar a rede de 220Vca (L60 e L70) que alimenta o freio, MCINV4 e os ventiladores da unidade IGBT\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-B64FB705A06C7717\nSOURCE_SECTION_OR_PAGE: 7 Aterramento — Obs.1\nRECORD_TYPE: SAFETY_WARNING\nACTION: Quando a tensão monofásica for 220 Vca, certificar-se que a linha SX foi ligada no cabo neutro que chega no \"C.D.\" da casa de máquinas\nEXPECTED_RESULT: Linha SX corretamente conectada ao neutro no C.D. da casa de máquinas\nEVIDENCE: quando a tensão monofásica for 220 Vca certifique-se que a linha SX foi ligada no cabo neutro que chega no \"C.D.\" da casa de máquinas\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-7539A96433C32E0D\nSOURCE_SECTION_OR_PAGE: 7.4 Esquema TN-S Subestação\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: Identificar linhas na subestação do prédio: FASE R=LINHA R0, FASE S=LINHA S0, FASE T=LINHA T0, FASE (monof.)=LINHA RX, NEUTRO=LINHA SX, Proteção=PE\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: FASE R = LINHA R0 / FASE S = LINHA S0 / FASE T = LINHA T0 / NEUTRO = LINHA SX\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-84160A36EEB3D6C5\nSOURCE_SECTION_OR_PAGE: 7.5 Esquema TN-S Casa de Máquinas\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: Identificar linhas na casa de máquinas: FASE R=LINHA R, FASE S=LINHA S, FASE T=LINHA T, LINHA RX, NEUTRO=LINHA SX, Proteção=PE\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: FASE R = LINHA R / FASE S = LINHA S / FASE T = LINHA T / NEUTRO = LINHA SX / PE = LINHA DE PROTEÇÃO DO EQUIPAMENTO = TERRA\nEND_FIELD_RECORD",
+    "a78e37d8a1690246f2249cab7c73c52629e1ac7712b3c39f750081e07e841cdc": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: auto-ajuste, MANUT AUTO, MCP5, MCP-5, 2IR3, placa de parada, RPM MAX1V, sensor eletrônico]\n\nS18 — COMMISSIONING\n\nProcedimento de Auto-ajuste FDN Universal / MCINV4 (Seção 21.2 a 21.10)\n\nPasos previos al auto-ajuste:\n\n21.2 Ainda em manutenção, nivele a cabina do elevador no extremo inferior.\n21.3 Desligar o Quadro de Comando.\n21.4 Retirar todas as pontes utilizadas na manutenção e passar a chave MANUT da cabina para a posição AUTO.\n21.5 Ligar novamente o Quadro de Comando.\n21.6 No FDN e MCP iniciar o Auto-ajuste.\n\n21.7 Atenção:\n• Auto-ajuste deve ser sempre concluído sem defeitos.\n• Repetir o Auto-ajuste quando:\n  - Ocorrer algum defeito;\n  - A cabina parar fora da placa de parada;\n  - A cabina bater no limite de parada;\n  - Se o elevador, ao reduzir, andar em velocidade de nivelamento mais de três segundos sem encontrar a placa de parada, regule novamente o \"RPM MAX1V\".\n\n21.8 Operação em modo Automático.\n\n21.9 Funcionamento básico da seleção de pavimentos\n\nNo FDN Universal a contagem dos pavimentos é feita na programação do auto-ajuste através do acionamento do sinalizador 2IR3 (placa de parada):\n\n• Sensores Eletrônicos — são dispositivos constituídos de um receptor e um emissor, fixados na cabina e têm os raios infrared cortados por uma placa, fixada no poço obedecendo às distâncias preestabelecidas onde pulsa o sinal de 110 Vcc.\n\n• Sensor por Indução — em um mesmo dispositivo é colocado uma ampola, e paralelo a ela é fixado um imã. Este dispositivo é montado na cabina e o sinal de 110 Vcc é pulsado através de uma placa fixada no poço obedecendo distâncias preestabelecidas.\n\n21.10 Inicialização\n\nUma vez instalados todos os dispositivos no poço e casa de máquina é necessário retirar as pontes de segurança e acionar a chave geral no quadro de comando. Ao acionar a chave, o elevador entra em modo perdido, indicando no display do módulo MCP5 as letras \"EP\". O elevador vai partir em alta com direção de descida até encontrar o limite, reduz, para e corrige o seletor, atualizando o sistema, e indicando \"AJ\" no display da MCP-5; em seguida o elevador está apto para a programação do auto-ajuste.\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-30BF8D5050EDBFF5\nSOURCE_SECTION_OR_PAGE: 21.2–21.6 Procedimento pré auto-ajuste\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: Nivelar a cabina no extremo inferior, desligar o Quadro de Comando, retirar todas as pontes de manutenção, passar chave MANUT para posição AUTO, e ligar novamente o Quadro de Comando.\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Retirar todas as pontes utilizadas na manutenção e passar a chave MANUT da cabina para a posição AUTO\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-42445DE232936C32\nSOURCE_SECTION_OR_PAGE: 21.6 Auto-ajuste\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: No FDN e MCP iniciar o Auto-ajuste.\nEXPECTED_RESULT: Auto-ajuste deve ser sempre concluído sem defeitos.\nEVIDENCE: Auto-ajuste deve ser sempre concluído sem defeitos\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-2089D86D37FDDA5A\nSOURCE_SECTION_OR_PAGE: 21.7 Atenção — repetir Auto-ajuste\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: Repetir o Auto-ajuste quando ocorrer algum defeito, a cabina parar fora da placa de parada, ou a cabina bater no limite de parada.\nEXPECTED_RESULT: Auto-ajuste concluído sem defeitos.\nEVIDENCE: repetir o Auto-ajuste quando: Ocorrer algum defeito; A cabina parar fora da placa de parada\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-569F723014D6F322\nSOURCE_SECTION_OR_PAGE: 21.7 Atenção — RPM MAX1V\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: Se o elevador, ao reduzir, andar em velocidade de nivelamento mais de três segundos sem encontrar a placa de parada, regule novamente o parâmetro \"RPM MAX1V\".\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: regule novamente o \"RPM MAX1V\"\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-7E562FE78D423627\nSOURCE_SECTION_OR_PAGE: 21.10 Inicialização\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: Retirar as pontes de segurança e acionar a chave geral no quadro de comando. Verificar que o display do módulo MCP5 indica \"EP\" (modo perdido).\nEXPECTED_RESULT: Display MCP5 mostra \"EP\" indicando modo perdido.\nEVIDENCE: ao acionar a chave o elevador entra em modo perdido, indicando no display do módulo MCP5 as letras EP\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-CE757404F445F717\nSOURCE_SECTION_OR_PAGE: 21.10 Inicialização\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: Aguardar o elevador partir em alta com direção de descida até encontrar o limite, reduzir, parar e corrigir o seletor. Verificar display MCP-5.\nEXPECTED_RESULT: Display MCP-5 indica \"AJ\"; elevador apto para programação do auto-ajuste.\nEVIDENCE: indicando \"AJ\" no display da MCP-5, em seguida o elevador está apto para a programação do auto-ajuste\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-2ABEC99D1087631F\nSOURCE_SECTION_OR_PAGE: 21.9 Funcionamento básico da seleção de pavimentos\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: Identificar sinalizador 2IR3 (placa de parada) no poço — utilizado para contagem de pavimentos durante auto-ajuste.\nEXPECTED_RESULT: Sinal de 110 Vcc pulsado pela placa fixada no poço.\nEVIDENCE: através do acionamento do sinalizador 2IR3 (placa de parada)\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-FA5E3A1844F73DCE\nSOURCE_SECTION_OR_PAGE: 21.9 Sensores Eletrônicos\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: Sensor eletrônico: receptor e emissor fixados na cabina; raios infrared cortados por placa fixada no poço. Sinal: 110 Vcc.\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: raios infrared cortados por uma placa, fixada no poço obedecendo às distâncias preestabelecidas onde pulsa o sinal de 110 Vcc\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-1467168080B06ED0\nSOURCE_SECTION_OR_PAGE: 21.9 Sensor por Indução\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: Sensor por indução: ampola e imã paralelo montados na cabina; sinal de 110 Vcc pulsado por placa no poço.\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: o sinal de 110 Vcc é pulsado através de uma placa fixada no poço obedecendo distancias preestabelecidas\nEND_FIELD_RECORD",
+    "e24ae7ea84080ff8e7c5c57ea3f90f43a95629b34ec5a9959c9eec96850beed7": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: enrolamento de alta motor, ligação IGBT, U2 V2 W2, módulo Hall, banco de resistores BR DOR, painel de manutenção, ferramenta manutenção 3X.0700.BW, Plug MANUT]\n\nS6 — ELÉTRICO / INSTALAÇÃO\n\nManual de Instalação do Elevador FrequenceDyne (FDN) Universal com MCINV4 — Documento 3Z.0006.GY, Índice 01, Página 12 de 26.\n\nComando Manual pós-montagem (continuação de página anterior)\n\nO comando FDN Universal permite o acionamento por comando manual após a montagem de todos os dispositivos de segurança e sinalizações de poço. O elevador está habilitado para uso através de:\n- Um dispositivo em cima da cabina: \"painel de manutenção\".\n- A ferramenta de manutenção (3X.0700.BW), que deve ser ligada no Plug MANUT junto à régua \"B\" de plugação do QC.\n\n---\n\n**Seção 13 — Ligação do Enrolamento de Alta do Motor**\n\n**13.1** As linhas U2, V2 e W2 que saem do enrolamento de alta do motor devem ser ligadas na unidade IGBT, passando as linhas U2 e V2 pelo módulo Hall do QC FDN Universal.\n\n**13.2** Instalar as linhas do banco de resistores BR e DOR e verificar a resistência equivalente entre as linhas e comparar com a Tabela 2 (item 26).\n\n---\n\n**Diagrama de ligação da Unidade IGBT (conforme figura na página 12)**\n\nA figura mostra a barra de terminais da UNIDADE com 10 posições numeradas (1–10) e os componentes associados:\n\n| Terminal | Identificação | Grupo |\n|---|---|---|\n| 1 | R | LINE (FASES DA CHINV) |\n| 2 | S | LINE (FASES DA CHINV) |\n| 3 | T | LINE (FASES DA CHINV) |\n| 4 | W | MOTOR |\n| 5 | U | MOTOR |\n| 6 | V | MOTOR |\n| 7 | –UD | RESISTOR |\n| 8 | BR | RESISTOR |\n| 9 | +UD | RESISTOR |\n| 10 | DOR | RESISTOR |\n\nAlém dos terminais principais, a figura mostra:\n- Dois módulos Hall (HALL1 e HALL2) montados na unidade, com linhas provenientes do MOTOR passando por eles antes de chegar aos terminais U e V.\n- Contator K1 visível no módulo HALL2.\n- Conector \"IN+, IN– PARA MCINV4\" à direita da barra de terminais.\n- Conexão de TERRA no motor.\n- Bloco de RESISTORES à direita.\n\n**Nota de fidelidade:** A função exata de cada terminal individual e a ordem de cada ligação ao motor/resistores deve ser verificada no campo contra o diagrama original e a Tabela 2 referenciada no item 26 do manual.\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-1A0D2F2C72AAC3BF\nSOURCE_SECTION_OR_PAGE: (continuação de página anterior)\nRECORD_TYPE: INSTALLATION_STEP\nACTION: Após montagem de todos os dispositivos de segurança e sinalizações de poço, ligar o elevador via 'painel de manutenção' no topo da cabina OU via ferramenta de manutenção (3X.0700.BW) conectada no Plug MANUT junto à régua 'B' de plugação do QC.\nEXPECTED_RESULT: Elevador habilitado para acionamento por comando manual.\nEVIDENCE: o elevador está habilitado para uso, através de um dispositivo em cima da cabina\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-53028F69391524D7\nSOURCE_SECTION_OR_PAGE: 13 Ligação do enrolamento de alta do Motor\nRECORD_TYPE: INSTALLATION_STEP\nACTION: Ligar as linhas U2, V2 e W2 do enrolamento de alta do motor na unidade IGBT, passando as linhas U2 e V2 pelo módulo Hall do QC FDN Universal.\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: As linhas U2, V2 e W2 que saem do enrolamento de alta do motor, devem ser ligadas na unidade IGBT passando as linhas U2 e V2 pelo módulo Hall\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-C8E4CCCEAEE39DB5\nSOURCE_SECTION_OR_PAGE: 13 Ligação do enrolamento de alta do Motor\nRECORD_TYPE: INSTALLATION_STEP\nACTION: Instalar as linhas do banco de resistores BR e DOR e verificar a resistência equivalente entre as linhas, comparando com a Tabela 2 (item 26).\nEXPECTED_RESULT: Resistência equivalente conforme valores da Tabela 2 (item 26) do manual.\nEVIDENCE: verificar a resistência equivalente entre as linhas e comparar com a Tabela 2 (item 26)\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-FB048502A45570EB\nSOURCE_SECTION_OR_PAGE: Diagrama Unidade IGBT — figura pág. 12\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: Terminais LINE (R, S, T — terminais 1, 2, 3): FASES DA CHINV\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: R S T — LINE — FASES DA CHINV\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-741B4075FB4B4C0F\nSOURCE_SECTION_OR_PAGE: Diagrama Unidade IGBT — figura pág. 12\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: Terminais MOTOR (W, U, V — terminais 4, 5, 6): ligação ao motor via módulos HALL2 e HALL1\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: W U V — MOTOR\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-640937AB6418FCE4\nSOURCE_SECTION_OR_PAGE: Diagrama Unidade IGBT — figura pág. 12\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: Terminais RESISTOR (–UD, BR, +UD, DOR — terminais 7, 8, 9, 10): banco de resistores\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: –UD BR +UD DOR — RESISTOR\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-79F0EBF4A5EC81D7\nSOURCE_SECTION_OR_PAGE: Diagrama Unidade IGBT — figura pág. 12\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: Conector lateral direito: IN+, IN– PARA MCINV4\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: IN+, IN– PARA MCINV4\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-0042CC8CE99B1F8A\nSOURCE_SECTION_OR_PAGE: Diagrama Unidade IGBT — figura pág. 12\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: Módulos Hall identificados como HALL1 e HALL2 no caminho das linhas de motor U2 e V2; contator K1 visível no módulo HALL2.\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: passando as linhas U2 e V2 pelo módulo Hall do QC FDN Universal\nEND_FIELD_RECORD",
+    "4825df98ee39dc3c7af4278d7db1fba4e67a725dc479de99cfc1c354850cf8ab": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: Objetivo instalação MCINV4, Características FDN Universal, CHINV contatora potência, INTERV3F conversão 110V 24V, MCP5 módulo, MACB freio ThyssenKrupp, MFCH fonte chaveada, 2IR3 nivelamento]\n\nS16 — INSTALLATION\n\n## 1 Objetivo\n\nEste manual tem por finalidade instruir os montadores, instaladores, supervisores ou instrutores sobre como ligar o elevador Frequencedyne Universal com MCINV4.\n\n## 2 Características do equipamento\n\n- Comando eletrônico computadorizado para controle de elevadores com velocidade de 30 a 105 m/min.\n- Aplica-se a elevadores passageiros em prédios com até 16 pavimentos com sistemas de comando automático com seleção na descida e subida (ACS), ou a elevadores passageiros em prédios com até 24 pavimentos com sistemas de comando automático com seleção na descida (ACSD).\n- Com inversor de Frequência ThyssenKrupp, com monitoramento do motor através de Encoder.\n- Dimensões do quadro de comando: Altura: 1060 mm, Largura: 450 mm, Profundidade: 330 mm.\n- Contatora de potência CHINV com bobina de 220 Vca.\n- Seccionadora com fusível ultra-rápido no quadro de comando para proteção da rede de entrada de força.\n- Rede monofásica de 220 Vca fixa criada para circuitos de alimentação em ca (régua eletrônica, fontes, freio, inversor para o operador de porta, contatoras, etc.).\n- Módulo MCINV4 com alimentação por fonte chaveada, módulo MFCH.\n- Módulo INTERV3F, que faz a conversão dos sinais de 110 V para 24 V; permite a utilização do inversor mais atual da empresa Thyssen (MCINV4).\n- Módulo MCP5 com as seguintes características:\n  - Entradas de 110 V.\n  - Saídas para indicador digital com tensão de 6,3 Vcc, para display de 7 segmentos TK-99 (1 ou 2 dígitos) ou display matricial TK-99 Plus.\n  - Utilizando as 16 saídas digitais, possível usar o módulo INDHOR com saídas de 24 Vcc para aproveitar os indicadores Horizontais Thyssen, Sûr e outras marcas, trocando somente as lâmpadas para 24 Vcc.\n- Módulo MACB alimentado por 220 Vca para acionamento do freio padrão ThyssenKrupp, Sûr, e outras marcas, dentro das características de acionamento entre 60, 90, 110 e 135 (unidade DATA_NOT_AVAILABLE — REQUIRES_FIELD_VERIFICATION).\n- Códigos liberados para controle de operadores de porta automáticos (com inversor ou com motor trifásico) e porta manual (PEV ou por rampa magnética).\n- Opcionais de controle: AP, FP (Abre e Fecha Porta), Bombeiro, Chave Preferencial, Fotocélula ou Régua de Segurança Eletrônica, Pesador de carga, comando Sobe e Desce para manutenção em cima da cabina.\n- Controle da antecipação da abertura da porta de cabina.\n- Utilização de uma única contagem de placas no poço (2IR3 — nivelamento).\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-45C6EE017FB0FADE\nSOURCE_SECTION_OR_PAGE: 2 Características do equipamento\nRECORD_TYPE: INSTALLATION_STEP\nACTION: Verificar que o módulo INTERV3F está instalado para conversão dos sinais de 110V para 24V, habilitando o uso do MCINV4\nEXPECTED_RESULT: Sinais convertidos de 110V para 24V; MCINV4 habilitado para operação\nEVIDENCE: módulo INTERV3F, que faz a conversão dos sinais de 110V para 24V\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-9CFFC64B072E5C1A\nSOURCE_SECTION_OR_PAGE: 2 Características do equipamento\nRECORD_TYPE: INSTALLATION_STEP\nACTION: Verificar que a rede monofásica de 220 Vca está criada e fixa para alimentação dos circuitos em ca (régua eletrônica, fontes, freio, inversor para operador de porta, contatoras)\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Criada rede monofásica de 220 Vca fixa para circuitos de alimentação em ca\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-6004153C0394DD73\nSOURCE_SECTION_OR_PAGE: 2 Características do equipamento\nRECORD_TYPE: INSTALLATION_STEP\nACTION: Confirmar instalação do módulo MACB alimentado por 220 Vca para acionamento do freio compatível com padrão ThyssenKrupp, Sûr e outras marcas nas faixas de acionamento indicadas (60, 90, 110 e 135)\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: modulo MACB alimentado por 220 Vca para acionamento do freio Padrão ThyssenKrupp, Sûr\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-C9877209FA95E9CF\nSOURCE_SECTION_OR_PAGE: 2 Características do equipamento\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: CHINV — contatora de potência com bobina de 220 Vca\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Contatora de potência CHINV com bobina de 220 Vca\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-D5751AC8A469A213\nSOURCE_SECTION_OR_PAGE: 2 Características do equipamento\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: 2IR3 — placa de nivelamento no poço; única contagem de placas utilizada neste modelo\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Utilização de uma única contagem de placas no poço (2IR3 – nivelamento)\nEND_FIELD_RECORD",
+    "88cd3af8e3fff02b43707b29f8f9584d3d088574c70b0a4ed2e1e8f2866d8a0a": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: circuito de alimentação, cabo PE, condutor neutro SX, aterramento, resistência de terra, derivação radial PE, quadro de força, split-bolt]\n\nS6 — ELECTRICAL\n\n7.6 Limites de variação de tensão (continuação da seção anterior)\n\nNão ligar o quadro FDN Universal se os limites das variações de tensão não forem conforme a tabela abaixo (segundo NBR 5410):\n\n| Tensões trifásicas | Mínimo | Máximo |\n|-|-|-|\n| 220 V | 201 V | 229 V |\n| 380 V | 348 V | 396 V |\n\n---\n\n8 — Circuito de alimentação do Elevador\n\n8.1 No disjuntor ou na chave geral do circuito do elevador, na casa de máquinas, não deve ser ligado nenhum outro circuito, nem mesmo a iluminação da casa de máquinas.\n\n8.2 A bitola do cabo neutro da rede monofásica (SX) é independente da bitola dos condutores da alimentação trifásica (3Φ) do elevador. A bitola do cabo PE será sempre definida em função das bitolas dos condutores da alimentação trifásica dos elevadores.\n\n8.3 O condutor neutro (linha SX) e o condutor de proteção (cabo PE) são separados ao longo de todo o circuito do elevador. O neutro SX não pode ser derivado do cabo PE na casa de máquinas — o correto é que o neutro seja derivado da subestação ou do centro de distribuição (CD) do prédio, porque o cabo PE não deve conduzir corrente.\n\n8.4 Todos os condutores de proteção (cabos PE) e os condutores de neutro (linha SX) utilizados no circuito do elevador devem estar ligados no mesmo ponto de aterramento do prédio ou interligados por condutor equipotencial, para garantir o mesmo potencial elétrico.\n\n8.5 O valor da resistência do terra, para instalações elétricas de baixa tensão, segundo a NBR 5419, deve ser da ordem de 10 Ω.\n\n8.6 A ligação do cabo PE (terra) ao quadro de comando e à máquina de tração deve garantir o aterramento de todas as partes metálicas do elevador.\n\n8.7 As derivações do cabo PE para cada QC devem ser feitas diretamente no quadro de força da casa de máquinas e devem obedecer aos seguintes critérios:\n- Deve ser do tipo radial: todas as derivações partindo do mesmo ponto de derivação de terra do quadro de força da casa de máquinas.\n- As derivações devem ser por compressão do cabo, através de conector (por compressão, por parafusos, ou conector tipo split-bolt). Ligar o QC e a máquina de tração com conector tipo olhal; emendas mal feitas aumentam a resistência de aterramento mascarando seu valor.\n\n8.8 Recomenda-se que a rede elétrica do prédio esteja protegida contra descargas atmosféricas (para-raios) antes da ligação do quadro de comando, e que todos os pontos de aterramento estejam no mesmo potencial (equipotenciais).\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-AD9EBD1E91206387\nSOURCE_SECTION_OR_PAGE: 7.6 Limites de variação de tensão\nRECORD_TYPE: STOP_WORK_CONDITION\nACTION: Verificar se a tensão trifásica da rede está dentro dos limites permitidos antes de energizar o quadro FDN Universal\nEXPECTED_RESULT: 220 V: mín. 201 V, máx. 229 V; 380 V: mín. 348 V, máx. 396 V. Não ligar o quadro se fora destes limites.\nSTOP_WORK_TRIGGER: tensão fora dos limites da tabela NBR 5410\nSTOP_WORK_REQUIRED_ACTION: não ligar o quadro FDN Universal\nEVIDENCE: Não ligar o quadro FDN Universal se os limites das variações de tensão não forem conforme tabela\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-3667A09767845DB3\nSOURCE_SECTION_OR_PAGE: 8.1 Circuito de alimentação do Elevador\nRECORD_TYPE: INSTALLATION_STEP\nACTION: No disjuntor ou chave geral do circuito do elevador, na casa de máquinas, não ligar nenhum outro circuito, inclusive a iluminação da casa de máquinas.\nEXPECTED_RESULT: Circuito exclusivo para o elevador, sem derivações.\nEVIDENCE: não deve ser ligado nenhum outro circuito, nem mesmo a iluminação da casa de máquinas\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-1076440283B406B3\nSOURCE_SECTION_OR_PAGE: 8.3 Separação do neutro SX e cabo PE\nRECORD_TYPE: INSTALLATION_STEP\nACTION: Manter o condutor neutro (linha SX) e o condutor de proteção (cabo PE) separados ao longo de todo o circuito. O neutro SX deve ser derivado da subestação ou CD do prédio — nunca do cabo PE na casa de máquinas.\nEXPECTED_RESULT: Cabo PE não conduz corrente; potencial elétrico correto mantido.\nEVIDENCE: O neutro SX não pode ser derivado do cabo PE na casa de máquinas\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-4589EECB791EE25A\nSOURCE_SECTION_OR_PAGE: 8.4 Equipotencialidade\nRECORD_TYPE: INSTALLATION_STEP\nACTION: Ligar todos os cabos PE e condutores de neutro (SX) no mesmo ponto de aterramento do prédio ou interligá-los por condutor equipotencial.\nEXPECTED_RESULT: Mesmo potencial elétrico garantido em todo o circuito.\nEVIDENCE: devem estar ligados no mesmo ponto de aterramento do prédio ou interligados por condutor eqüipotencial\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-CEE093EDB8181F0C\nSOURCE_SECTION_OR_PAGE: 8.5 Resistência de terra\nRECORD_TYPE: INSPECTION_CHECK\nACTION: Verificar que o valor da resistência do terra para instalações elétricas de baixa tensão esteja da ordem de 10 Ω, conforme NBR 5419.\nEXPECTED_RESULT: Resistência de terra da ordem de 10 Ω.\nEVIDENCE: valor da resistência do terra... segundo a NBR 5419, deve ser da ordem de 10 R\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-121F50234E558EFB\nSOURCE_SECTION_OR_PAGE: 8.6 Aterramento do QC e máquina de tração\nRECORD_TYPE: INSTALLATION_STEP\nACTION: Ligar o cabo PE (terra) ao quadro de comando e à máquina de tração garantindo o aterramento de todas as partes metálicas do elevador.\nEXPECTED_RESULT: Todas as partes metálicas do elevador aterradas.\nEVIDENCE: A ligação do cabo PE (terra) ao quadro de comando e a maquina de tração deve garantir o aterramento de todas as partes metálicas\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-6372285FA7919E9D\nSOURCE_SECTION_OR_PAGE: 8.7 Derivações do cabo PE para cada QC\nRECORD_TYPE: INSTALLATION_STEP\nACTION: Executar as derivações do cabo PE para cada QC diretamente no quadro de força da casa de máquinas, em configuração radial (todas partindo do mesmo ponto de derivação de terra). Usar conexão por compressão, parafusos ou conector tipo split-bolt. Usar conector tipo olhal para ligar QC e máquina de tração.\nEXPECTED_RESULT: Resistência de aterramento não mascarada; derivações corretas e seguras.\nEVIDENCE: Deve ser do tipo radial... As derivações devem ser por compressão do cabo, através de conector\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-ADA62BC72E577F31\nSOURCE_SECTION_OR_PAGE: 8.7 Derivações do cabo PE\nRECORD_TYPE: SAFETY_WARNING\nACTION: Evitar emendas mal feitas nas derivações do cabo PE.\nEXPECTED_RESULT: Emendas mal feitas aumentam a resistência de aterramento mascarando seu valor.\nEVIDENCE: as emendas mal feitas aumentam a resistência de aterramento mascarando seu valor\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-DA7907A65BEFC93E\nSOURCE_SECTION_OR_PAGE: 8.8 Proteção contra descargas atmosféricas\nRECORD_TYPE: INSTALLATION_STEP\nACTION: Verificar que a rede elétrica do prédio esteja protegida contra descargas atmosféricas (para-raios) antes da ligação do quadro de comando e que todos os pontos de aterramento estejam equipotenciais.\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Recomenda-se que a rede elétrica do prédio deva estar protegida contra descargas atmosféricas (pára-raios) antes da ligação do quadro de comando\nEND_FIELD_RECORD",
+    "1eb6f19beb4b5c36253111604f482daf57d11f0c931bb2237da7968d488385d9": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: esquema elétrico circuito de segurança, safety chain diagram, FC 5A, TD1, LFS LFD, MCINV4 wiring diagram, 3Z.0006.GY diagrama]\n\nS7 — DIAGRAM\n\n11.3 Esquema Elétrico do circuito de segurança\n\nO esquema elétrico do circuito de segurança (página 8, documento 3Z.0006.GY) mostra a cadeia série dos contatos de segurança ligada a +110 Vcc. Abaixo estão os componentes e labels identificados visualmente no diagrama. A leitura detalhada de cada conexão individual REQUIRES_FIELD_VERIFICATION devido à resolução do esquema impresso.\n\nComponentes e labels identificados no esquema:\n\n| Label | Identificação conforme legenda |\n|---|---|\n| GOV / [REG] | Contato elétrico do regulador de velocidade — ligado em RA-26 / A+ |\n| CP1 | Contato de segurança do alçapão da casa de máquina |\n| BT1 | Bulbo térmico do motor, enrolamento de alta |\n| P1C | Label visível no diagrama — função: DATA_NOT_AVAILABLE (não descrita na legenda textual) |\n| CPF | Contato de proteção do flange da máquina de tração (lonas do freio) |\n| GRS | Contato elétrico do aparelho de segurança |\n| CPS | Contato elétrico da porta de emergência da cabina |\n| GCE [IG] | Chave geral em cima da cabina |\n| FUL [LFS] | Limite final de subida |\n| FDL [LFD] | Limite final de descida |\n| EFP | Chave de segurança no fundo do poço — ligada em RA-35 / P3 |\n| GERAL | Chave geral na botoeira de cabina |\n| TD1 | Label visível no diagrama — função: DATA_NOT_AVAILABLE (não descrita na legenda textual) |\n| FC 5A | Fusível 5A visível no diagrama — ponto 7/8, associado à alimentação A+ |\n| A1+ | Label visível na parte inferior do diagrama |\n| (20) | Referência visível no diagrama — significado: DATA_NOT_AVAILABLE |\n\nNotas do diagrama:\n- Legenda visível: \"ABRIR A PONTE QUANDO COM PORTA DE INSPEÇÃO\"\n- Legenda visível: \"ABRIR A PONTE QUANDO COM CONTATO DE PROTEÇÃO DO FLANGE\"\n- A cadeia de segurança opera em série a +110 Vcc entre RA-26 (A+) e RA-35 (P3 / [I.FUS]).\n- A ordem exata de cada contato em série REQUIRES_FIELD_VERIFICATION pela leitura direta do esquema original em maior resolução.\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-7A6C96237B486D56\nSOURCE_SECTION_OR_PAGE: 11.3 Esquema Elétrico do circuito de segurança\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: GOV / [REG] — contato elétrico do regulador de velocidade, ligado em RA-26 / A+\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: GOV – contato elétrico do regulador de velocidade\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-385317324321ED07\nSOURCE_SECTION_OR_PAGE: 11.3 Esquema Elétrico do circuito de segurança\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: FC 5A — fusível visível no diagrama, posição 7/8, associado à alimentação A+\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nUNCERTAINTY: Função do fusível identificada por posição no diagrama; valor exato de proteção REQUIRES_FIELD_VERIFICATION\nEVIDENCE: FC 5A\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-34875111D0156A5C\nSOURCE_SECTION_OR_PAGE: 11.3 Esquema Elétrico do circuito de segurança\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: FUL [LFS] — limite final de subida\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: FUL – limite final de subida\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-64FAD868A5804BEC\nSOURCE_SECTION_OR_PAGE: 11.3 Esquema Elétrico do circuito de segurança\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: FDL [LFD] — limite final de descida\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: FDL – limite final de descida\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-BFFD719CBAF80A96\nSOURCE_SECTION_OR_PAGE: 11.3 Esquema Elétrico do circuito de segurança\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: EFP — chave de segurança no fundo do poço, ligada em RA-35 / P3 [I.FUS]\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: EFP – chave de segurança no fundo do poço\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-6A13B66BB760AD8F\nSOURCE_SECTION_OR_PAGE: 11.3 Esquema Elétrico do circuito de segurança\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: P1C — label visível no diagrama entre BT1 e CPF\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nUNCERTAINTY: Função de P1C não descrita na legenda textual da página; REQUIRES_FIELD_VERIFICATION\nEVIDENCE: P1C\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-7449C99CA6F1CB4E\nSOURCE_SECTION_OR_PAGE: 11.3 Esquema Elétrico do circuito de segurança\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: TD1 — label visível no diagrama, posição inferior esquerda junto a A1+\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nUNCERTAINTY: Função de TD1 não descrita na legenda textual da página; REQUIRES_FIELD_VERIFICATION\nEVIDENCE: TD1\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-9106E9789C7E94CA\nSOURCE_SECTION_OR_PAGE: 11.3 Esquema Elétrico do circuito de segurança\nRECORD_TYPE: SAFETY_WARNING\nACTION: Abrir a ponte quando com porta de inspeção (conforme legenda visível no diagrama)\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: ABRIR A PONTE QUANDO COM PORTA DE INSPEÇÃO\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-24BD14033204DC3B\nSOURCE_SECTION_OR_PAGE: 11.3 Esquema Elétrico do circuito de segurança\nRECORD_TYPE: SAFETY_WARNING\nACTION: Abrir a ponte quando com contato de proteção do flange (conforme legenda visível no diagrama)\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: ABRIR A PONTE QUANDO COM CONTATO DE PROTEÇÃO DO FLANGE\nEND_FIELD_RECORD",
+    "ae89c2bcf99251b6aa268bd9718fbda4f73243732a4fae5bcf8db337eb6a8856": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: TP CURV, zona de nivelamento, placa de parada, velocidade de nivelamento, polia, maquina de tração]\n\n(continuación de página anterior — ajuste de la rampa de nivelamiento, parámetro \"TP CURV\")\n\nAjuste fino del parámetro TP CURV para nivelamiento correcto:\n\n- Si la parada del elevador dentro de la placa de parada es brusca: reduzca el valor del parámetro **\"TP CURV\"** en 2 unidades. Repita el procedimiento hasta que, al reducir a velocidad de nivelamiento, la polea de la máquina de tracción avance un máximo de 3 cm.\n\n- Si al entrar en la zona de nivelamiento el elevador mantiene esa velocidad por más de 3 cm: aumente el valor del parámetro **\"TP CURV\"** en 2 unidades. Repita el procedimiento hasta que, al reducir a velocidad de nivelamiento, la polea de la máquina de tracción avance un máximo de 3 cm.\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-DF7B2FF55F33F94D\nSOURCE_SECTION_OR_PAGE: (continuación de página anterior)\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: Si la parada dentro de la placa de parada es brusca, reduzca el parámetro 'TP CURV' en 2 unidades; repita hasta que la polea avance máximo 3 cm al reducir a velocidad de nivelamiento.\nEXPECTED_RESULT: La polea de la máquina de tracción avanza un máximo de 3 cm al reducir a velocidad de nivelamiento.\nEVIDENCE: reduza o valor do parâmetro \"TP CURV\" em 2 unidades... polia da maquina de tração ande no máximo 3 cm\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-B382F6A29B2470A5\nSOURCE_SECTION_OR_PAGE: (continuación de página anterior)\nRECORD_TYPE: COMMISSIONING_STEP\nACTION: Si al entrar en la zona de nivelamiento el elevador mantiene la velocidad por más de 3 cm, aumente el parámetro 'TP CURV' en 2 unidades; repita hasta que la polea avance máximo 3 cm al reducir a velocidad de nivelamiento.\nEXPECTED_RESULT: La polea de la máquina de tracción avanza un máximo de 3 cm al reducir a velocidad de nivelamiento.\nEVIDENCE: aumente o valor do parâmetro \"TP CURV\" em 2 unidades... polia da maquina de tração ande no máximo 3 cm\nEND_FIELD_RECORD",
+    "41b4f9e437f734365f41fc53a97f35cdf3c1bec5d5868e1cf076c439c911eacf": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: botoeira capacitiva, setas de direção, botão abre porta, motor de tração, indicador de pavimento, E-1130, E-1177, E-1240]\n\nS16 — INSTALLATION (continuación: Tablas de compatibilidad de componentes existentes — página 21 de 26)\n\nEsta página presenta tablas de compatibilidad y acciones requeridas para la modernización/instalación del sistema FrequenceDyne (FDN) Universal con MCINV4, según el controlador/relé existente en la instalación.\n\n---\n\n**Tabla: Botoeira capacitiva (Pulsador capacitivo)**\n\n| Item | 12Vcc | 24Vcc | 60Vcc | 110Vcc | O que fazer? |\n|------|-------|-------|-------|--------|---------------|\n| E-1130 | | | X | | Trocar para botoeira com alimentação igual a 24 Vcc |\n| E-1177 | | | X | | Idem acima |\n| E-1240 | | | X | | Idem acima |\n| E-1380 | | | X | | Idem acima |\n| E-1464 | | | | X | Idem acima |\n| E-1471 | | | | X | Idem acima |\n| RELÉ FUJI | | | | X | Idem acima |\n| Outras Marcas | — | — | — | — | Substituir Botoeiras |\n\n**Obs.5:** Quando botão capacitivo — trocar as lâmpadas das botoeiras de cabina e pavimento para lâmpadas de 24 Vcc, ver TBM-010.\n\n---\n\n**Tabla: Setas de direção (Flechas de dirección)**\n\n| Item | 6,3 Vcc | 24Vcc | 52Vcc | 60Vcc | O que fazer? |\n|------|---------|-------|-------|-------|---------------|\n| E-1130 | X | | | | Trocar as lâmpadas para 24V |\n| E-1177 | | | | X | Idem acima |\n| E-1240 | X | | | | Idem acima |\n| E-1380 | | | | X | Idem acima |\n| E-1464 | — | — | — | — | C/ seta mantém o mesmo conj. |\n| E-1471 | — | — | — | — | Idem acima |\n| RELÉ FUJI | | X | | | Mantém o mesmo conjunto |\n| Outras Marcas | — | — | — | — | Trocar as lâmpadas para 24V |\n\n---\n\n**Tabla: Botão abre porta (Botón abrepuertas)**\n\n| Item | Contato Fechado = NF | Aberto = NA | O que fazer? |\n|------|----------------------|-------------|---------------|\n| E-1130 | — | — | — |\n| E-1177 | X | | Ligar conforme observação no esquema elétrico 3W.0503.LG |\n| E-1471 | X | | Idem acima |\n| RELÉ FUJI | | X | Manter a mesma ligação |\n| Outras Marcas | — | — | Ligar conforme o esquema elétrico 3W.0503.LG |\n\n---\n\n**Tabla: Motor de tração (Motor de tracción)**\n\n| Item | O que fazer? |\n|------|---------------|\n| 1 Velocidade | Trocar ou re-bobinar motor ver TBM-038 e TBM-039 |\n| Com Pólos Conseqüentes | Idem acima |\n| Outras Marcas com RPM inferior a 1100 RPM | Idem acima |\n\n---\n\n**Tabla: Indicador de pavimento (Indicador de piso)**\n\n| Nº Paradas | Horizontal | Digital | Marca Thyssen/Sûr? | O que fazer? |\n|------------|------------|---------|--------------------|--------------|\n| De 2 a 16 Paradas | X | | — | Manter o conjunto |\n| De 2 a 16 Paradas | | X | — | Manter o conjunto |\n| De 17 a 24 Paradas | X | | — | Substituir para indicador Digital |\n| De 17 a 24 Paradas | | X | — | Mantém o mesmo conjunto |\n\nRevisor: João Carlos Sá | Aprovador: Claudia Bothona\nDocumento: 3Z.0006.GY | Índice: 01 | Página: 21 de 26\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-4858B783B86F0D9A\nSOURCE_SECTION_OR_PAGE: Botoeira capacitiva\nRECORD_TYPE: MODERNIZATION_STEP\nACTION: Para controladores E-1130, E-1177, E-1240, E-1380 (60Vcc): trocar para botoeira com alimentação igual a 24 Vcc.\nEXPECTED_RESULT: Botoeira capacitiva compatible con 24 Vcc instalada.\nEVIDENCE: Trocar para botoeira com alimentação igual a 24 Vcc\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-3425AFF7E144CA2D\nSOURCE_SECTION_OR_PAGE: Botoeira capacitiva\nRECORD_TYPE: MODERNIZATION_STEP\nACTION: Para controladores E-1464, E-1471, RELÉ FUJI (110Vcc): trocar para botoeira con alimentação igual a 24 Vcc.\nEXPECTED_RESULT: Botoeira capacitiva compatible con 24 Vcc instalada.\nDETAILS: scope=E-1464, E-1471, RELÉ FUJI; tensão original=110Vcc\nEVIDENCE: Idem acima\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-89B1E2D0F027524A\nSOURCE_SECTION_OR_PAGE: Botoeira capacitiva\nRECORD_TYPE: MODERNIZATION_STEP\nACTION: Para Outras Marcas: substituir botoeiras.\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Outras Marcas — Substituir Botoeiras\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-BFA3F2B3DB3BBB87\nSOURCE_SECTION_OR_PAGE: Obs.5 — Botoeira capacitiva\nRECORD_TYPE: MODERNIZATION_STEP\nACTION: Quando instalar botão capacitivo, trocar as lâmpadas das botoeiras de cabina e pavimento para lâmpadas de 24 Vcc. Consultar TBM-010.\nEXPECTED_RESULT: Lâmpadas de botoeiras de cabina e pavimento sustituidas por 24 Vcc.\nEVIDENCE: trocar as lâmpadas das botoeiras de cabina e pavimento para lâmpadas de 24 Vcc, ver TBM-010\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-DBDA167EF6D080B4\nSOURCE_SECTION_OR_PAGE: Setas de direção\nRECORD_TYPE: MODERNIZATION_STEP\nACTION: Para E-1130, E-1240 (6,3 Vcc) y para E-1177, E-1380 (60 Vcc) y Outras Marcas: trocar as lâmpadas para 24V.\nEXPECTED_RESULT: Lâmpadas de setas de direção sustituidas por 24V.\nEVIDENCE: Trocar as lâmpadas para 24V\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-5115B61B8D2AE8FB\nSOURCE_SECTION_OR_PAGE: Setas de direção\nRECORD_TYPE: MODERNIZATION_STEP\nACTION: Para E-1464 y E-1471: mantener el mismo conjunto de flechas de dirección.\nEXPECTED_RESULT: Conjunto de setas de direção mantido sin cambios.\nEVIDENCE: C/ seta mantém o mesmo conj.\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-2FD299D2323B0385\nSOURCE_SECTION_OR_PAGE: Setas de direção\nRECORD_TYPE: MODERNIZATION_STEP\nACTION: Para RELÉ FUJI (24Vcc): mantém o mesmo conjunto.\nEXPECTED_RESULT: Conjunto de setas de direção mantido sin cambios.\nEVIDENCE: Mantém o mesmo conjunto\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-9B9A8E8E28276FD0\nSOURCE_SECTION_OR_PAGE: Botão abre porta\nRECORD_TYPE: MODERNIZATION_STEP\nACTION: Para E-1177 (contato NF) y E-1471 (contato NF): ligar conforme observação no esquema elétrico 3W.0503.LG.\nEXPECTED_RESULT: Botão abre porta cableado según esquema 3W.0503.LG.\nEVIDENCE: Ligar conforme observação no esquema elétrico 3W.0503.LG\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-BC6AC7F19805D3C6\nSOURCE_SECTION_OR_PAGE: Botão abre porta\nRECORD_TYPE: MODERNIZATION_STEP\nACTION: Para RELÉ FUJI (contato NA): manter a mesma ligação.\nEXPECTED_RESULT: Ligação do botão abre porta mantenida sin cambios.\nEVIDENCE: Manter a mesma ligação\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-B0D6624D8D3C4FA1\nSOURCE_SECTION_OR_PAGE: Botão abre porta\nRECORD_TYPE: MODERNIZATION_STEP\nACTION: Para Outras Marcas: ligar conforme o esquema elétrico 3W.0503.LG.\nEXPECTED_RESULT: Botão abre porta cableado según esquema 3W.0503.LG.\nEVIDENCE: Ligar conforme o esquema elétrico 3W.0503.LG\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-D1BAFA6B007FD2B3\nSOURCE_SECTION_OR_PAGE: Motor de tração\nRECORD_TYPE: MODERNIZATION_STEP\nACTION: Para motores de 1 velocidade, Com Pólos Conseqüentes, y Outras Marcas con RPM inferior a 1100 RPM: trocar ou re-bobinar motor. Consultar TBM-038 e TBM-039.\nEXPECTED_RESULT: Motor sustituido o rebobinado conforme TBM-038 y TBM-039.\nEVIDENCE: Trocar ou re-bobinar motor ver TBM-038 e TBM-039\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-6FAA5A6C70F29667\nSOURCE_SECTION_OR_PAGE: Indicador de pavimento\nRECORD_TYPE: MODERNIZATION_STEP\nACTION: Para 2 a 16 paradas con indicador Horizontal o Digital: manter o conjunto.\nEXPECTED_RESULT: Indicador de pavimento existente mantenido sin cambios.\nEVIDENCE: Manter o conjunto\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-ED8827268D07CD46\nSOURCE_SECTION_OR_PAGE: Indicador de pavimento\nRECORD_TYPE: MODERNIZATION_STEP\nACTION: Para 17 a 24 paradas con indicador Horizontal: substituir para indicador Digital.\nEXPECTED_RESULT: Indicador de pavimento horizontal sustituido por indicador Digital.\nEVIDENCE: Substituir para indicador Digital\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-1144E7594EE8BBC8\nSOURCE_SECTION_OR_PAGE: Indicador de pavimento\nRECORD_TYPE: MODERNIZATION_STEP\nACTION: Para 17 a 24 paradas con indicador Digital: mantém o mesmo conjunto.\nEXPECTED_RESULT: Indicador de pavimento digital mantenido sin cambios.\nEVIDENCE: Mantém o mesmo conjunto\nEND_FIELD_RECORD",
+    "76c972c27a3fa7479eb1f59161fa663aa9bb76e5022102897fc5dea209d64227": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: Sinais de controle FDN, A1+ seguridades, STEK MCINV4, BKF freio bobina, BDL segurança FDN, DUD encoder direção, PRT antecipação porta, INTERV3F MCP5 señales]\n\nS6 — ELECTRICAL: Sinais de Controle do Frequencedyne Universal (Sección 11.13)\n\nTabla de señales de control del sistema FDN entre módulos MCINV4, INTERV3F y MCP5:\n\n| Señal | Tensión | Función |\n|---|---|---|\n| A1+ | +110 Vcc | Sinal da confirmação das seguranças de poço, cabina e casa de máquinas |\n| A1+K | +24 Vcc | Sinal da confirmação das seguranças gerada pelo módulo INTERV3F p/ MCINV4 |\n| STEK | +24 Vcc | Sinal gerado pela MCINV4 para o modulo INTERV3F elevar para a MCP5 |\n| STE | +110 Vcc | Sinal analisado pela MCP5 para mapeamento do poço |\n| BKFK | +110 Vcc | Sinal de monitoramento da bobina do freio da máquina |\n| BKF | +24 Vcc | Sinal da bobina do freio da máquina para o modulo INTERV3F para a MCINV4 |\n| BDL | +110 Vcc | Sinal de segurança do sistema FDN gerado pela INTERV3F para a MCP5 |\n| BDLK | +24 Vcc | Sinal de segurança do sistema FDN gerado pela MCINV4 para a INTERV3F |\n| DUD | +110 Vcc | Sinal de direção do Encoder gerado pela INTERV3F para a MCP5 |\n| DUDK | +24 Vcc | Sinal de direção do Encoder gerado pela MCINV4 para a INTERV3F |\n| PRT | +110 Vcc | Sinal de antecipação da abertura de porta gerado pela INTERV3F para a MCP5 |\n| PRTK | +24 Vcc | Sinal de antecipação da abertura de porta gerado pela MCINV4 para a INTERV3F |\n\nNota: Las señales duplicadas con sufijo K (BKFK/BKF, BDL/BDLK, DUD/DUDK, PRT/PRTK) corresponden a pares de interoperabilidad entre el dominio de 110 Vcc (MCP5/INTERV3F) y el dominio de 24 Vcc (MCINV4). La señal A1+ a 110 Vcc agrupa la confirmación de todas las seguridades del circuito de seguridad (pozo, cabina y cuarto de máquinas).\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-B3C6FBDE26322587\nSOURCE_SECTION_OR_PAGE: 11.13 Sinais de controle do Frequencedyne Universal\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: A1+ / +110 Vcc\nEXPECTED_RESULT: Sinal da confirmação das seguranças de poço, cabina e casa de máquinas\nEVIDENCE: Sinal da confirmação das seguranças de poço, cabina e casa de máquinas\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-31399019C3C8996E\nSOURCE_SECTION_OR_PAGE: 11.13 Sinais de controle do Frequencedyne Universal\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: A1+K / +24 Vcc\nEXPECTED_RESULT: Sinal da confirmação das seguranças gerada pelo módulo INTERV3F p/ MCINV4\nEVIDENCE: Sinal da confirmação das seguranças gerada pelo módulo INTERV3F p/ MCINV4\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-F141EE9583DE6AC0\nSOURCE_SECTION_OR_PAGE: 11.13 Sinais de controle do Frequencedyne Universal\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: STEK / +24 Vcc\nEXPECTED_RESULT: Sinal gerado pela MCINV4 para o modulo INTERV3F elevar para a MCP5\nEVIDENCE: Sinal gerado pela MCINV4 para o modulo INTERV3F elevar para a MCP5\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-53DA7F8108287921\nSOURCE_SECTION_OR_PAGE: 11.13 Sinais de controle do Frequencedyne Universal\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: STE / +110 Vcc\nEXPECTED_RESULT: Sinal analisado pela MCP5 para mapeamento do poço\nEVIDENCE: Sinal analisado pela MCP5 para mapeamento do poço\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-ABE092F90EF493C9\nSOURCE_SECTION_OR_PAGE: 11.13 Sinais de controle do Frequencedyne Universal\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: BKFK / +110 Vcc\nEXPECTED_RESULT: Sinal de monitoramento da bobina do freio da máquina\nEVIDENCE: Sinal de monitoramento da bobina do freio da máquina\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-B832BEDFE0C4468B\nSOURCE_SECTION_OR_PAGE: 11.13 Sinais de controle do Frequencedyne Universal\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: BKF / +24 Vcc\nEXPECTED_RESULT: Sinal da bobina do freio da máquina para o modulo INTERV3F para a MCINV4\nEVIDENCE: Sinal da bobina do freio da máquina para o modulo INTERV3F para a MCINV4\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-93077FEFD2EF148E\nSOURCE_SECTION_OR_PAGE: 11.13 Sinais de controle do Frequencedyne Universal\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: BDL / +110 Vcc\nEXPECTED_RESULT: Sinal de segurança do sistema FDN gerado pela INTERV3F para a MCP5\nEVIDENCE: Sinal de segurança do sistema FDN gerado pela INTERV3F para a MCP5\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-D195345AB46C3792\nSOURCE_SECTION_OR_PAGE: 11.13 Sinais de controle do Frequencedyne Universal\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: BDLK / +24 Vcc\nEXPECTED_RESULT: Sinal de segurança do sistema FDN gerado pela MCINV4 para a INTERV3F\nEVIDENCE: Sinal de segurança do sistema FDN gerado pela MCINV4 para a INTERV3F\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-7990F31F507135E9\nSOURCE_SECTION_OR_PAGE: 11.13 Sinais de controle do Frequencedyne Universal\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: DUD / +110 Vcc\nEXPECTED_RESULT: Sinal de direção do Encoder gerado pela INTERV3F para a MCP5\nEVIDENCE: Sinal de direção do Encoder gerado pela INTERV3F para a MCP5\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-225BC3293F7B5E23\nSOURCE_SECTION_OR_PAGE: 11.13 Sinais de controle do Frequencedyne Universal\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: DUDK / +24 Vcc\nEXPECTED_RESULT: Sinal de direção do Encoder gerado pela MCINV4 para a INTERV3F\nEVIDENCE: Sinal de direção do Encoder gerado pela MCINV4 para a INTERV3F\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-2BE9D54353830E37\nSOURCE_SECTION_OR_PAGE: 11.13 Sinais de controle do Frequencedyne Universal\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: PRT / +110 Vcc\nEXPECTED_RESULT: Sinal de antecipação da abertura de porta gerado pela INTERV3F para a MCP5\nEVIDENCE: Sinal de antecipação da abertura de porta gerado pela INTERV3F para a MCP5\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-21C01575B3D2A1F0\nSOURCE_SECTION_OR_PAGE: 11.13 Sinais de controle do Frequencedyne Universal\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: PRTK / +24 Vcc\nEXPECTED_RESULT: Sinal de antecipação da abertura de porta gerado pela MCINV4 para a INTERV3F\nEVIDENCE: Sinal de antecipação da abertura de porta gerado pela MCINV4 para a INTERV3F\nEND_FIELD_RECORD",
+    "810140a753b589a6f572dbcdb0dc4a63cd178b789c4b979e8e9536cad83a3345": "[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]\n[SEARCH_ALIASES: Sinais de seleção, RA-39 P23, P23K INTERV3F, RA-48 P21 SD1U, RA-49 P22 SD1D, SD2U SD2D, nivelamento, redução velocidade]\n\nS6 — ELECTRICAL: Sinais de Seleção (Seção 11.4)\n\nTabela de sinais de seleção para o controlador MCINV4 (página 9 de 26, documento 3Z.0006.GY):\n\n| SINAL | FUNÇÃO |\n|-|-|\n| RA-39 / P23 = +110 Vcc | Ponto de informação de nivelamento que detecta a manobra de atendimento da chamada de cabina ou pavimento. |\n| P23K = +24 Vcc | Ponto de informação gerada pelo módulo INTERV3F para MCINV4 |\n| RA-48 / P21 = +110 Vcc | Ponto de informação que o comando recebe para detectar redução de subida em 1 velocidade, pelo limite (SD1U), e inicialização do comando em modo automático no pavimento extremo superior. |\n| RA-49 / P22 = +110 Vcc | Ponto de informação que o comando recebe para detectar redução de descida em 1 velocidade, pelo limite (SD1D), e inicialização do comando em modo automático no pavimento extremo inferior. |\n| RA-49 / P39 = +110 Vcc | Ponto de informação do limite de 2 Velocidades (SD2U) |\n| RA-49 / P41 = +110 Vcc | Ponto de informação do limite de 2 Velocidades (SD2D) |\n\n# FIELD-SAFETY EVIDENCE RECORDS\n\nFIELD_RECORD:\nRECORD_ID: FR-67DB9210859C389A\nSOURCE_SECTION_OR_PAGE: 11.4 Sinais de seleção\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: RA-39 / P23 = +110 Vcc — Ponto de informação de nivelamento que detecta a manobra de atendimento da chamada de cabina ou pavimento.\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Ponto de informação de nivelamento que detecta a manobra de atendimento\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-895282540529D571\nSOURCE_SECTION_OR_PAGE: 11.4 Sinais de seleção\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: P23K = +24 Vcc — Ponto de informação gerada pelo módulo INTERV3F para MCINV4.\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Ponto de informação gerada pelo módulo INTERV3F para MCINV4\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-027081304B9F2E99\nSOURCE_SECTION_OR_PAGE: 11.4 Sinais de seleção\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: RA-48 / P21 = +110 Vcc — Ponto de informação para detectar redução de subida em 1 velocidade, pelo limite (SD1U), e inicialização do comando em modo automático no pavimento extremo superior.\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: detectar redução de subida em 1 velocidade, pelo limite (SD1U)\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-3D4AC21467C8C7B6\nSOURCE_SECTION_OR_PAGE: 11.4 Sinais de seleção\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: RA-49 / P22 = +110 Vcc — Ponto de informação para detectar redução de descida em 1 velocidade, pelo limite (SD1D), e inicialização do comando em modo automático no pavimento extremo inferior.\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: detectar redução de descida em 1 velocidade, pelo limite (SD1D)\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-3A961AAC685592D0\nSOURCE_SECTION_OR_PAGE: 11.4 Sinais de seleção\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: RA-49 / P39 = +110 Vcc — Ponto de informação do limite de 2 Velocidades (SD2U).\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Ponto de informação do limite de 2 Velocidades (SD2U)\nEND_FIELD_RECORD\n\nFIELD_RECORD:\nRECORD_ID: FR-28C1609ABB087015\nSOURCE_SECTION_OR_PAGE: 11.4 Sinais de seleção\nRECORD_TYPE: SCHEMATIC_LABEL\nACTION: RA-49 / P41 = +110 Vcc — Ponto de informação do limite de 2 Velocidades (SD2D).\nEXPECTED_RESULT: DATA_NOT_AVAILABLE\nEVIDENCE: Ponto de informação do limite de 2 Velocidades (SD2D)\nEND_FIELD_RECORD"
+  },
+  "turns": [
+    {
+      "question": "Thyssen FDN Universal con MCINV4. En viaje se oye fuerte el motor de tracción. No tengo acceso al TLS.",
+      "tool_input": {
+        "move": "report",
+        "assertions": [
+          {
+            "span": "Thyssen",
+            "act": "assert",
+            "slot_hint": "manufacturer"
+          },
+          {
+            "span": "FDN Universal",
+            "act": "assert",
+            "slot_hint": "model"
+          },
+          {
+            "span": "MCINV4",
+            "act": "assert",
+            "slot_hint": "controller"
+          }
+        ],
+        "observations": [
+          "En viaje se oye fuerte el motor de tracción",
+          "No tengo acceso al TLS"
+        ],
+        "pending_resolution": null,
+        "clarification_target": null
+      },
+      "rows": [
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p13_1.txt",
+          "page": 13.0,
+          "score": 0.5,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "d536509f000dbd908885b0eb35d148884bf5a0da23c424c0198bca395fdbddd7"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p7_1.txt",
+          "page": 7.0,
+          "score": 0.49193548387096775,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "a30bbfcc09ec3b6b9a9844edf84d0d59beba01aea95413879d3c03830407c788"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p17_1.txt",
+          "page": 17.0,
+          "score": 0.48412698412698413,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "e5d09a375b66f48c881ae9f1d2b5a07c60cc2ce64fb8dcb6fd64cf38f5d05c4f"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p18_2.txt",
+          "page": 18.0,
+          "score": 0.4765625,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "fb758aed868e5ab8fb43506703be99868381c1d30cffce58e859660b18553476"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p4_2.txt",
+          "page": 4.0,
+          "score": 0.46923076923076923,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "101f3d9900a846823fa8e73705816042b1a46a9d36484526d7e145301c5fbefa"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p24_1.txt",
+          "page": 24.0,
+          "score": 0.4621212121212121,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "0bd8663bcb566689d415f75a4353051e5c9da72088bc408df2caafa17f232673"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p16_1.txt",
+          "page": 16.0,
+          "score": 0.4552238805970149,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "4a72336f463240f6c56507bb33384dfae2af966852c2f76d9a10c8e698155b6a"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p25_2.txt",
+          "page": 25.0,
+          "score": 0.4485294117647059,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "733ea86e4c3956b19a67f61f7ff35a27de54668684ffc15946605e0d602e1c09"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p1_1.txt",
+          "page": 1.0,
+          "score": 0.4420289855072464,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "a1cb493b73732454676768f0ff7cb8dd0becfcdf0d8b1fc55502fc587ac86dce"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p26_1.txt",
+          "page": 26.0,
+          "score": 0.4357142857142857,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "e86065c4f826ecb25c1f8244bba8eba16811cace852e111f1339e496436a7a1f"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p4_1.txt",
+          "page": 4.0,
+          "score": 0.4295774647887324,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "87df11d6e508a84cdb5e8fa7e0b9ca1d3dbd2aac89b2d7d1e03ea9e7458688de"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p22_1.txt",
+          "page": 22.0,
+          "score": 0.4236111111111111,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "2df1697d4e94e3e90434ef130b144a05bc9d6ed3131ee782a6f90acf98d0cac5"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p11_4.txt",
+          "page": 11.0,
+          "score": 0.4178082191780822,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "92746ffaeba6e6d258dd6f348209b5c420275af5531cc1391dad1dfb09d4b1a4"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p18_3.txt",
+          "page": 18.0,
+          "score": 0.41216216216216217,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "6402e0b48a0b10705c4982b436f2e50ea82664642d4c01f0f8a7613ee4dcc0de"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p11_1.txt",
+          "page": 11.0,
+          "score": 0.4066666666666667,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "5a326b9f9d3d3b2a80a335528456c5217dda7f065e8df6da9f291b1a6d861333"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p25_1.txt",
+          "page": 25.0,
+          "score": 0.40131578947368424,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "dde05a55788415f95f401583516df06f8c951427a29f6cbc8ba3637851a60d02"
+        }
+      ],
+      "generator_text": "Sin acceso al TLS no puedo darte el ajuste de ruido. La fuente [2] lo ubica en \"MENU PID\" y dice «En caso de ruido audible muy elevado: disminuya el valor del parámetro \"KP-VS\"» [2].\n\nTu descripción coincide con ese caso de ruido audible, pero no confirma la causa.\n\nPregunta: ¿el controlador muestra algún código de falla al viajar o al parar, como F1, F2 o E0 a E2? Si aparece alguno, cambia la orientación.",
+      "retrieve_query": "Thyssen FDN Universal con MCINV4. En viaje se oye fuerte el motor de tracción. No tengo acceso al TLS.",
+      "rerank_sha256": [
+        "0bd8663bcb566689d415f75a4353051e5c9da72088bc408df2caafa17f232673",
+        "6402e0b48a0b10705c4982b436f2e50ea82664642d4c01f0f8a7613ee4dcc0de",
+        "101f3d9900a846823fa8e73705816042b1a46a9d36484526d7e145301c5fbefa",
+        "dde05a55788415f95f401583516df06f8c951427a29f6cbc8ba3637851a60d02",
+        "a30bbfcc09ec3b6b9a9844edf84d0d59beba01aea95413879d3c03830407c788",
+        "5a326b9f9d3d3b2a80a335528456c5217dda7f065e8df6da9f291b1a6d861333",
+        "a1cb493b73732454676768f0ff7cb8dd0becfcdf0d8b1fc55502fc587ac86dce",
+        "2df1697d4e94e3e90434ef130b144a05bc9d6ed3131ee782a6f90acf98d0cac5",
+        "d536509f000dbd908885b0eb35d148884bf5a0da23c424c0198bca395fdbddd7",
+        "e5d09a375b66f48c881ae9f1d2b5a07c60cc2ce64fb8dcb6fd64cf38f5d05c4f",
+        "fb758aed868e5ab8fb43506703be99868381c1d30cffce58e859660b18553476",
+        "4a72336f463240f6c56507bb33384dfae2af966852c2f76d9a10c8e698155b6a",
+        "733ea86e4c3956b19a67f61f7ff35a27de54668684ffc15946605e0d602e1c09",
+        "92746ffaeba6e6d258dd6f348209b5c420275af5531cc1391dad1dfb09d4b1a4",
+        "87df11d6e508a84cdb5e8fa7e0b9ca1d3dbd2aac89b2d7d1e03ea9e7458688de",
+        "e86065c4f826ecb25c1f8244bba8eba16811cace852e111f1339e496436a7a1f"
+      ]
+    },
+    {
+      "question": "Ingeniería leyó KP-VS en 2,5. La placa del motor dice 5,5 kW, 380 V y 1.175 rpm. La corriente no se alcanza a leer. ¿Sirven los datos del motor Eberle del manual?",
+      "tool_input": {
+        "move": "new_work",
+        "assertions": [
+          {
+            "span": "Eberle",
+            "act": "mention",
+            "slot_hint": "manufacturer"
+          },
+          {
+            "span": "KP-VS",
+            "act": "assert",
+            "slot_hint": "designator"
+          }
+        ],
+        "observations": [],
+        "pending_resolution": null,
+        "clarification_target": null
+      },
+      "rows": [
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p18_3.txt",
+          "page": 18.0,
+          "score": 0.5,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "6402e0b48a0b10705c4982b436f2e50ea82664642d4c01f0f8a7613ee4dcc0de"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p15_3.txt",
+          "page": 15.0,
+          "score": 0.49193548387096775,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "db1f8b1a4b1503f0282258869690e49fd5fcfd690705cf1f5661c9039fc00012"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p15_1.txt",
+          "page": 15.0,
+          "score": 0.48412698412698413,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "eaec5cf35f3c7a49ed909acbdc756e7b01a56a67a37a0e3cf51fdf47fc44708e"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p14_2.txt",
+          "page": 14.0,
+          "score": 0.4765625,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "c891d24b86113166a509050a0d056dcc21d2874c56eba63be83cacc26b41bac8"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p17_2.txt",
+          "page": 17.0,
+          "score": 0.46923076923076923,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "a8b3713654f371bf3fdf5e4772e5e21993916e48f8eadcf94ce3689e92c386d5"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p24_1.txt",
+          "page": 24.0,
+          "score": 0.4621212121212121,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "0bd8663bcb566689d415f75a4353051e5c9da72088bc408df2caafa17f232673"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p5_2.txt",
+          "page": 5.0,
+          "score": 0.4552238805970149,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "93a7180ebcaacc618045feda7f773122be31cc30ab0a601954e151ec5848b3b1"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p22_1.txt",
+          "page": 22.0,
+          "score": 0.4485294117647059,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "2df1697d4e94e3e90434ef130b144a05bc9d6ed3131ee782a6f90acf98d0cac5"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p22_2.txt",
+          "page": 22.0,
+          "score": 0.4420289855072464,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "a78e37d8a1690246f2249cab7c73c52629e1ac7712b3c39f750081e07e841cdc"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p13_1.txt",
+          "page": 13.0,
+          "score": 0.4357142857142857,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "d536509f000dbd908885b0eb35d148884bf5a0da23c424c0198bca395fdbddd7"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p25_1.txt",
+          "page": 25.0,
+          "score": 0.4295774647887324,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "dde05a55788415f95f401583516df06f8c951427a29f6cbc8ba3637851a60d02"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p12_1.txt",
+          "page": 12.0,
+          "score": 0.4236111111111111,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "e24ae7ea84080ff8e7c5c57ea3f90f43a95629b34ec5a9959c9eec96850beed7"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p3_1.txt",
+          "page": 3.0,
+          "score": 0.4178082191780822,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "4825df98ee39dc3c7af4278d7db1fba4e67a725dc479de99cfc1c354850cf8ab"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p6_1.txt",
+          "page": 6.0,
+          "score": 0.41216216216216217,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "88cd3af8e3fff02b43707b29f8f9584d3d088574c70b0a4ed2e1e8f2866d8a0a"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p16_1.txt",
+          "page": 16.0,
+          "score": 0.4066666666666667,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "4a72336f463240f6c56507bb33384dfae2af966852c2f76d9a10c8e698155b6a"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p8_2.txt",
+          "page": 8.0,
+          "score": 0.40131578947368424,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "1eb6f19beb4b5c36253111604f482daf57d11f0c931bb2237da7968d488385d9"
+        }
+      ],
+      "generator_text": "No, los datos del motor Eberle no sirven para este motor. [1] dice: \"Os valores acima são exemplos baseados no motor Eberle 7,5 kW/220V\". Para su motor, \"Os valores reais dependem do motor instalado na obra\" [1], así que aplican los de placa que reportó: 5,5 kW, 380 V y 1.175 rpm.\n\nLa corriente nominal queda pendiente. El ajuste pide \"ver corriente nominal de placa do motor\" [1]. Ingeniería debe obtener ese dato de la documentación del motor.\n\nSobre KP-VS: 2,5 no coincide con el valor de verificación de 3,5. [1] indica \"em caso de diferença, alterar conforme abaixo\". Además, está por debajo del mínimo de 3,0 que da [3] para el caso de ruido: \"En caso de ruido audible muy elevado\". Usted no reportó si ese ruido existe, así que todavía no puedo darle el ajuste.\n\n¿El ruido audible del motor es muy elevado?",
+      "retrieve_query": "Ingeniería leyó KP-VS en 2,5. La placa del motor dice 5,5 kW, 380 V y 1.175 rpm. La corriente no se alcanza a leer. ¿Sirven los datos del motor Eberle del manual?",
+      "rerank_sha256": [
+        "db1f8b1a4b1503f0282258869690e49fd5fcfd690705cf1f5661c9039fc00012",
+        "c891d24b86113166a509050a0d056dcc21d2874c56eba63be83cacc26b41bac8",
+        "6402e0b48a0b10705c4982b436f2e50ea82664642d4c01f0f8a7613ee4dcc0de",
+        "dde05a55788415f95f401583516df06f8c951427a29f6cbc8ba3637851a60d02",
+        "0bd8663bcb566689d415f75a4353051e5c9da72088bc408df2caafa17f232673",
+        "d536509f000dbd908885b0eb35d148884bf5a0da23c424c0198bca395fdbddd7",
+        "eaec5cf35f3c7a49ed909acbdc756e7b01a56a67a37a0e3cf51fdf47fc44708e",
+        "4a72336f463240f6c56507bb33384dfae2af966852c2f76d9a10c8e698155b6a",
+        "88cd3af8e3fff02b43707b29f8f9584d3d088574c70b0a4ed2e1e8f2866d8a0a",
+        "2df1697d4e94e3e90434ef130b144a05bc9d6ed3131ee782a6f90acf98d0cac5",
+        "93a7180ebcaacc618045feda7f773122be31cc30ab0a601954e151ec5848b3b1",
+        "a8b3713654f371bf3fdf5e4772e5e21993916e48f8eadcf94ce3689e92c386d5",
+        "a78e37d8a1690246f2249cab7c73c52629e1ac7712b3c39f750081e07e841cdc",
+        "1eb6f19beb4b5c36253111604f482daf57d11f0c931bb2237da7968d488385d9",
+        "e24ae7ea84080ff8e7c5c57ea3f90f43a95629b34ec5a9959c9eec96850beed7",
+        "4825df98ee39dc3c7af4278d7db1fba4e67a725dc479de99cfc1c354850cf8ab"
+      ]
+    },
+    {
+      "question": "No hemos cambiado nada y el ruido sigue. ¿Le digo a Ingeniería que lo deje en 3,5?",
+      "tool_input": {
+        "move": "meta",
+        "assertions": [],
+        "observations": [],
+        "pending_resolution": null,
+        "clarification_target": null
+      },
+      "rows": [
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p18_3.txt",
+          "page": 18.0,
+          "score": 0.5,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "6402e0b48a0b10705c4982b436f2e50ea82664642d4c01f0f8a7613ee4dcc0de"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p15_3.txt",
+          "page": 15.0,
+          "score": 0.49193548387096775,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "db1f8b1a4b1503f0282258869690e49fd5fcfd690705cf1f5661c9039fc00012"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p15_1.txt",
+          "page": 15.0,
+          "score": 0.48412698412698413,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "eaec5cf35f3c7a49ed909acbdc756e7b01a56a67a37a0e3cf51fdf47fc44708e"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p17_2.txt",
+          "page": 17.0,
+          "score": 0.4765625,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "a8b3713654f371bf3fdf5e4772e5e21993916e48f8eadcf94ce3689e92c386d5"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p14_2.txt",
+          "page": 14.0,
+          "score": 0.46923076923076923,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "c891d24b86113166a509050a0d056dcc21d2874c56eba63be83cacc26b41bac8"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p22_2.txt",
+          "page": 22.0,
+          "score": 0.4621212121212121,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "a78e37d8a1690246f2249cab7c73c52629e1ac7712b3c39f750081e07e841cdc"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p22_1.txt",
+          "page": 22.0,
+          "score": 0.4552238805970149,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "2df1697d4e94e3e90434ef130b144a05bc9d6ed3131ee782a6f90acf98d0cac5"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p24_1.txt",
+          "page": 24.0,
+          "score": 0.4485294117647059,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "0bd8663bcb566689d415f75a4353051e5c9da72088bc408df2caafa17f232673"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p16_1.txt",
+          "page": 16.0,
+          "score": 0.4420289855072464,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "4a72336f463240f6c56507bb33384dfae2af966852c2f76d9a10c8e698155b6a"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p25_1.txt",
+          "page": 25.0,
+          "score": 0.4357142857142857,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "dde05a55788415f95f401583516df06f8c951427a29f6cbc8ba3637851a60d02"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p12_1.txt",
+          "page": 12.0,
+          "score": 0.4295774647887324,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "e24ae7ea84080ff8e7c5c57ea3f90f43a95629b34ec5a9959c9eec96850beed7"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p18_1.txt",
+          "page": 18.0,
+          "score": 0.4236111111111111,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "ae89c2bcf99251b6aa268bd9718fbda4f73243732a4fae5bcf8db337eb6a8856"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p21_1.txt",
+          "page": 21.0,
+          "score": 0.4178082191780822,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "41b4f9e437f734365f41fc53a97f35cdf3c1bec5d5868e1cf076c439c911eacf"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p13_1.txt",
+          "page": 13.0,
+          "score": 0.41216216216216217,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "d536509f000dbd908885b0eb35d148884bf5a0da23c424c0198bca395fdbddd7"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p18_2.txt",
+          "page": 18.0,
+          "score": 0.4066666666666667,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "fb758aed868e5ab8fb43506703be99868381c1d30cffce58e859660b18553476"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p6_1.txt",
+          "page": 6.0,
+          "score": 0.40131578947368424,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "88cd3af8e3fff02b43707b29f8f9584d3d088574c70b0a4ed2e1e8f2866d8a0a"
+        }
+      ],
+      "generator_text": "No. Los datos del Eberle son solo un ejemplo: «Os valores acima são exemplos baseados no motor Eberle 7,5 kW/220V» [3]. Use los de su placa: 5,5 kW, 380 V y 1.175 rpm. La fuente aclara que «Os valores reais dependem do motor instalado na obra» [3].\n\nLa corriente nominal de placa queda pendiente. Debe obtenerla quien pueda leer la placa del motor. No use los 12 A del ejemplo.\n\nSobre KP-VS, el manual indica «em caso de diferença, alterar conforme abaixo» [3], dentro de un procedimiento de puesta a punto «com o sistema em modo manutenção» [3]. Antes de recomendar el cambio a 3,5, ¿el sistema está en modo mantenimiento?\n\nTampoco puedo decir que 3,5 solucione el ruido. La fuente no relaciona KP-VS con ese síntoma.",
+      "retrieve_query": "No hemos cambiado nada y el ruido sigue. ¿Le digo a Ingeniería que lo deje en 3,5? KP-VS Ingeniería leyó KP-VS en 2,5. La placa del motor dice 5,5 kW, 380 V y 1.175 rpm. La corriente no se alcanza a leer. ¿Sirven los datos del motor Eberle del manual?",
+      "rerank_sha256": [
+        "0bd8663bcb566689d415f75a4353051e5c9da72088bc408df2caafa17f232673",
+        "41b4f9e437f734365f41fc53a97f35cdf3c1bec5d5868e1cf076c439c911eacf",
+        "db1f8b1a4b1503f0282258869690e49fd5fcfd690705cf1f5661c9039fc00012",
+        "6402e0b48a0b10705c4982b436f2e50ea82664642d4c01f0f8a7613ee4dcc0de",
+        "88cd3af8e3fff02b43707b29f8f9584d3d088574c70b0a4ed2e1e8f2866d8a0a",
+        "a8b3713654f371bf3fdf5e4772e5e21993916e48f8eadcf94ce3689e92c386d5",
+        "dde05a55788415f95f401583516df06f8c951427a29f6cbc8ba3637851a60d02",
+        "e24ae7ea84080ff8e7c5c57ea3f90f43a95629b34ec5a9959c9eec96850beed7",
+        "eaec5cf35f3c7a49ed909acbdc756e7b01a56a67a37a0e3cf51fdf47fc44708e",
+        "c891d24b86113166a509050a0d056dcc21d2874c56eba63be83cacc26b41bac8",
+        "a78e37d8a1690246f2249cab7c73c52629e1ac7712b3c39f750081e07e841cdc",
+        "ae89c2bcf99251b6aa268bd9718fbda4f73243732a4fae5bcf8db337eb6a8856",
+        "4a72336f463240f6c56507bb33384dfae2af966852c2f76d9a10c8e698155b6a",
+        "165f6cafde987350f24b6efec16455c591583a141ace63d6857e1b63a02baf2b",
+        "a30bbfcc09ec3b6b9a9844edf84d0d59beba01aea95413879d3c03830407c788",
+        "2df1697d4e94e3e90434ef130b144a05bc9d6ed3131ee782a6f90acf98d0cac5",
+        "fb758aed868e5ab8fb43506703be99868381c1d30cffce58e859660b18553476",
+        "5a326b9f9d3d3b2a80a335528456c5217dda7f065e8df6da9f291b1a6d861333",
+        "e5d09a375b66f48c881ae9f1d2b5a07c60cc2ce64fb8dcb6fd64cf38f5d05c4f",
+        "d536509f000dbd908885b0eb35d148884bf5a0da23c424c0198bca395fdbddd7",
+        "92746ffaeba6e6d258dd6f348209b5c420275af5531cc1391dad1dfb09d4b1a4",
+        "a1cb493b73732454676768f0ff7cb8dd0becfcdf0d8b1fc55502fc587ac86dce"
+      ]
+    }
+  ],
+  "alternates": {
+    "w2_kpvs": {
+      "question": "FDN Universal MCINV4. En viaje hay ruido fuerte en el motor de tracción. En el menú PID, KP-VS está en 2,5.",
+      "tool_input": {
+        "move": "report",
+        "assertions": [
+          {
+            "span": "FDN Universal",
+            "act": "assert",
+            "slot_hint": "manufacturer"
+          },
+          {
+            "span": "MCINV4",
+            "act": "assert",
+            "slot_hint": "controller"
+          }
+        ],
+        "checks": [],
+        "observations": [
+          "ruido fuerte en el motor de tracción",
+          "KP-VS está en 2,5"
+        ],
+        "pending_resolution": null,
+        "clarification_target": null
+      },
+      "rows": [
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p18_3.txt",
+          "page": 18.0,
+          "score": 0.5,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "6402e0b48a0b10705c4982b436f2e50ea82664642d4c01f0f8a7613ee4dcc0de"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p18_2.txt",
+          "page": 18.0,
+          "score": 0.49193548387096775,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "fb758aed868e5ab8fb43506703be99868381c1d30cffce58e859660b18553476"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p25_1.txt",
+          "page": 25.0,
+          "score": 0.48412698412698413,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "dde05a55788415f95f401583516df06f8c951427a29f6cbc8ba3637851a60d02"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p15_3.txt",
+          "page": 15.0,
+          "score": 0.4765625,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "db1f8b1a4b1503f0282258869690e49fd5fcfd690705cf1f5661c9039fc00012"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p24_1.txt",
+          "page": 24.0,
+          "score": 0.46923076923076923,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "0bd8663bcb566689d415f75a4353051e5c9da72088bc408df2caafa17f232673"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p11_3.txt",
+          "page": 11.0,
+          "score": 0.4621212121212121,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "76c972c27a3fa7479eb1f59161fa663aa9bb76e5022102897fc5dea209d64227"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p9_1.txt",
+          "page": 9.0,
+          "score": 0.4552238805970149,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "810140a753b589a6f572dbcdb0dc4a63cd178b789c4b979e8e9536cad83a3345"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p7_1.txt",
+          "page": 7.0,
+          "score": 0.4485294117647059,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "a30bbfcc09ec3b6b9a9844edf84d0d59beba01aea95413879d3c03830407c788"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p1_1.txt",
+          "page": 1.0,
+          "score": 0.4420289855072464,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "a1cb493b73732454676768f0ff7cb8dd0becfcdf0d8b1fc55502fc587ac86dce"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p17_1.txt",
+          "page": 17.0,
+          "score": 0.4357142857142857,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "e5d09a375b66f48c881ae9f1d2b5a07c60cc2ce64fb8dcb6fd64cf38f5d05c4f"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p4_2.txt",
+          "page": 4.0,
+          "score": 0.4295774647887324,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "101f3d9900a846823fa8e73705816042b1a46a9d36484526d7e145301c5fbefa"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p14_2.txt",
+          "page": 14.0,
+          "score": 0.4236111111111111,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "c891d24b86113166a509050a0d056dcc21d2874c56eba63be83cacc26b41bac8"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p3_1.txt",
+          "page": 3.0,
+          "score": 0.4178082191780822,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "4825df98ee39dc3c7af4278d7db1fba4e67a725dc479de99cfc1c354850cf8ab"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p15_1.txt",
+          "page": 15.0,
+          "score": 0.41216216216216217,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "eaec5cf35f3c7a49ed909acbdc756e7b01a56a67a37a0e3cf51fdf47fc44708e"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p25_2.txt",
+          "page": 25.0,
+          "score": 0.4066666666666667,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "733ea86e4c3956b19a67f61f7ff35a27de54668684ffc15946605e0d602e1c09"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p4_1.txt",
+          "page": 4.0,
+          "score": 0.40131578947368424,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "87df11d6e508a84cdb5e8fa7e0b9ca1d3dbd2aac89b2d7d1e03ea9e7458688de"
+        }
+      ],
+      "generator_text": "Según la fuente, el ajuste de KP-VS aplica «En caso de ruido audible muy elevado» [1]. Entonces hay que disminuir el valor «hasta el mínimo de [3,0]» [1].\n\nTu valor actual es 2,5, por debajo de ese mínimo. La fuente no dice qué hacer en ese caso, así que no puedo indicarte bajarlo más.\n\n¿El ruido que oyes en viaje es muy elevado?",
+      "retrieve_query": "FDN Universal MCINV4. En viaje hay ruido fuerte en el motor de tracción. En el menú PID, KP-VS está en 2,5.",
+      "rerank_sha256": [
+        "6402e0b48a0b10705c4982b436f2e50ea82664642d4c01f0f8a7613ee4dcc0de",
+        "0bd8663bcb566689d415f75a4353051e5c9da72088bc408df2caafa17f232673",
+        "76c972c27a3fa7479eb1f59161fa663aa9bb76e5022102897fc5dea209d64227",
+        "db1f8b1a4b1503f0282258869690e49fd5fcfd690705cf1f5661c9039fc00012",
+        "4825df98ee39dc3c7af4278d7db1fba4e67a725dc479de99cfc1c354850cf8ab",
+        "dde05a55788415f95f401583516df06f8c951427a29f6cbc8ba3637851a60d02",
+        "a30bbfcc09ec3b6b9a9844edf84d0d59beba01aea95413879d3c03830407c788",
+        "810140a753b589a6f572dbcdb0dc4a63cd178b789c4b979e8e9536cad83a3345",
+        "101f3d9900a846823fa8e73705816042b1a46a9d36484526d7e145301c5fbefa",
+        "c891d24b86113166a509050a0d056dcc21d2874c56eba63be83cacc26b41bac8",
+        "fb758aed868e5ab8fb43506703be99868381c1d30cffce58e859660b18553476",
+        "eaec5cf35f3c7a49ed909acbdc756e7b01a56a67a37a0e3cf51fdf47fc44708e",
+        "a1cb493b73732454676768f0ff7cb8dd0becfcdf0d8b1fc55502fc587ac86dce",
+        "e5d09a375b66f48c881ae9f1d2b5a07c60cc2ce64fb8dcb6fd64cf38f5d05c4f",
+        "733ea86e4c3956b19a67f61f7ff35a27de54668684ffc15946605e0d602e1c09",
+        "87df11d6e508a84cdb5e8fa7e0b9ca1d3dbd2aac89b2d7d1e03ea9e7458688de"
+      ]
+    },
+    "w1_guion3": {
+      "question": "Thyssen FDN Universal con MCINV4. En viaje se oye fuerte el motor de tracción. No tengo acceso al TLS.",
+      "tool_input": {
+        "move": "report",
+        "assertions": [
+          {
+            "span": "Thyssen FDN Universal",
+            "act": "assert",
+            "slot_hint": "model"
+          },
+          {
+            "span": "MCINV4",
+            "act": "assert",
+            "slot_hint": "controller"
+          }
+        ],
+        "observations": [
+          "En viaje se oye fuerte el motor de tracción"
+        ],
+        "pending_resolution": null,
+        "clarification_target": null
+      },
+      "rows": [
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p13_1.txt",
+          "page": 13.0,
+          "score": 0.5,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "d536509f000dbd908885b0eb35d148884bf5a0da23c424c0198bca395fdbddd7"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p7_1.txt",
+          "page": 7.0,
+          "score": 0.49193548387096775,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "a30bbfcc09ec3b6b9a9844edf84d0d59beba01aea95413879d3c03830407c788"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p17_1.txt",
+          "page": 17.0,
+          "score": 0.48412698412698413,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "e5d09a375b66f48c881ae9f1d2b5a07c60cc2ce64fb8dcb6fd64cf38f5d05c4f"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p18_2.txt",
+          "page": 18.0,
+          "score": 0.4765625,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "fb758aed868e5ab8fb43506703be99868381c1d30cffce58e859660b18553476"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p4_2.txt",
+          "page": 4.0,
+          "score": 0.46923076923076923,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "101f3d9900a846823fa8e73705816042b1a46a9d36484526d7e145301c5fbefa"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p24_1.txt",
+          "page": 24.0,
+          "score": 0.4621212121212121,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "0bd8663bcb566689d415f75a4353051e5c9da72088bc408df2caafa17f232673"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p16_1.txt",
+          "page": 16.0,
+          "score": 0.4552238805970149,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "4a72336f463240f6c56507bb33384dfae2af966852c2f76d9a10c8e698155b6a"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p25_2.txt",
+          "page": 25.0,
+          "score": 0.4485294117647059,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "733ea86e4c3956b19a67f61f7ff35a27de54668684ffc15946605e0d602e1c09"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p1_1.txt",
+          "page": 1.0,
+          "score": 0.4420289855072464,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "a1cb493b73732454676768f0ff7cb8dd0becfcdf0d8b1fc55502fc587ac86dce"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p26_1.txt",
+          "page": 26.0,
+          "score": 0.4357142857142857,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "e86065c4f826ecb25c1f8244bba8eba16811cace852e111f1339e496436a7a1f"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p4_1.txt",
+          "page": 4.0,
+          "score": 0.4295774647887324,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "87df11d6e508a84cdb5e8fa7e0b9ca1d3dbd2aac89b2d7d1e03ea9e7458688de"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p22_1.txt",
+          "page": 22.0,
+          "score": 0.4236111111111111,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "2df1697d4e94e3e90434ef130b144a05bc9d6ed3131ee782a6f90acf98d0cac5"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p11_4.txt",
+          "page": 11.0,
+          "score": 0.4178082191780822,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "92746ffaeba6e6d258dd6f348209b5c420275af5531cc1391dad1dfb09d4b1a4"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p18_3.txt",
+          "page": 18.0,
+          "score": 0.41216216216216217,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "6402e0b48a0b10705c4982b436f2e50ea82664642d4c01f0f8a7613ee4dcc0de"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p11_1.txt",
+          "page": 11.0,
+          "score": 0.4066666666666667,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "5a326b9f9d3d3b2a80a335528456c5217dda7f065e8df6da9f291b1a6d861333"
+        },
+        {
+          "uri": "s3://multimodal-source-destination/bulk_chunks/3/e32b956e25df4bc2dea0d200f5f25bb34750/chunk_p25_1.txt",
+          "page": 25.0,
+          "score": 0.40131578947368424,
+          "document": "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+          "body_sha256": "dde05a55788415f95f401583516df06f8c951427a29f6cbc8ba3637851a60d02"
+        }
+      ],
+      "generator_text": "Lo que reportas coincide con la condición de la fuente: ruido audible muy elevado. La fuente indica: «disminuya el valor del parámetro KP-VS, hasta el mínimo de [3,0]» [2].\n\nComo no tienes acceso al TLS, no puedes hacer ese ajuste desde aquí. Queda pendiente para quien pueda acceder al TLS.",
+      "retrieve_query": "Thyssen FDN Universal con MCINV4. En viaje se oye fuerte el motor de tracción. No tengo acceso al TLS.",
+      "rerank_sha256": [
+        "0bd8663bcb566689d415f75a4353051e5c9da72088bc408df2caafa17f232673",
+        "6402e0b48a0b10705c4982b436f2e50ea82664642d4c01f0f8a7613ee4dcc0de",
+        "101f3d9900a846823fa8e73705816042b1a46a9d36484526d7e145301c5fbefa",
+        "dde05a55788415f95f401583516df06f8c951427a29f6cbc8ba3637851a60d02",
+        "a30bbfcc09ec3b6b9a9844edf84d0d59beba01aea95413879d3c03830407c788",
+        "5a326b9f9d3d3b2a80a335528456c5217dda7f065e8df6da9f291b1a6d861333",
+        "a1cb493b73732454676768f0ff7cb8dd0becfcdf0d8b1fc55502fc587ac86dce",
+        "2df1697d4e94e3e90434ef130b144a05bc9d6ed3131ee782a6f90acf98d0cac5",
+        "d536509f000dbd908885b0eb35d148884bf5a0da23c424c0198bca395fdbddd7",
+        "e5d09a375b66f48c881ae9f1d2b5a07c60cc2ce64fb8dcb6fd64cf38f5d05c4f",
+        "fb758aed868e5ab8fb43506703be99868381c1d30cffce58e859660b18553476",
+        "4a72336f463240f6c56507bb33384dfae2af966852c2f76d9a10c8e698155b6a",
+        "733ea86e4c3956b19a67f61f7ff35a27de54668684ffc15946605e0d602e1c09",
+        "92746ffaeba6e6d258dd6f348209b5c420275af5531cc1391dad1dfb09d4b1a4",
+        "87df11d6e508a84cdb5e8fa7e0b9ca1d3dbd2aac89b2d7d1e03ea9e7458688de",
+        "e86065c4f826ecb25c1f8244bba8eba16811cace852e111f1339e496436a7a1f"
+      ]
+    }
+  }
+}

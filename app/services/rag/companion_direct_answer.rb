@@ -19,7 +19,7 @@ module Rag
     HISTORICAL_MARKER = /\[\d+\]/
     ASLEEP_STATUS = [ 500, 502, 503, 504, 529 ].freeze
 
-    Prepared = Data.define(:params, :system, :user, :chunks, :messages, :omitted, :history_chars)
+    Prepared = Data.define(:params, :system, :user, :chunks, :messages, :omitted, :history_chars, :parameter_review)
     Composed = Data.define(:text, :stop_reason, :rejected)
 
     class AnthropicMessage
@@ -106,8 +106,9 @@ module Rag
         history, omitted = fit_history(turns)
         technician_turn = turns.count { |turn| turn[:role] == "user" } + 1
         referent = CompanionSequence.referent_context(raw_question, episode)
+        parameter_review = CompanionParameterReview.build(question: raw_question, episode: episode, chunks: merged)
         carry = "Pregunta del mismo caso que quedó sin responder: #{unresolved_question}" if unresolved_question.present?
-        context = [ carry, reference_context, referent, photo_evidence ].compact_blank.join("\n\n")
+        context = [ carry, reference_context, referent, parameter_review&.prompt, photo_evidence ].compact_blank.join("\n\n")
         current = current_text(raw_question, merged, technician_turn, context: context)
         messages = converse_messages(history, current)
         system = SYSTEM_PROMPT
@@ -118,7 +119,8 @@ module Rag
           chunks: merged,
           messages: messages,
           omitted: omitted,
-          history_chars: packed_length(history)
+          history_chars: packed_length(history),
+          parameter_review: parameter_review
         ).tap { |prepared|
           record_history(prepared)
           record_case_sources(merged)

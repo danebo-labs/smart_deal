@@ -1,0 +1,19 @@
+No necesitas identificar los bornes #21 y #23 para seguir. Según [17], «Para activar esta señal, se debe conectar la entrada re-apertura (21) con la entrada de +12V (23).» La señal depende de un contacto externo entre esos bornes.
+
+Lectura sin confirmar: si no hay un interruptor de puerta de cabina ni una barrera externa conectados a esa entrada, no habría un contacto que explique el LED encendido. Eso no está comprobado.
+
+¿Hay un interruptor de puerta de cabina o una barrera externa instalados en el equipo?
+
+Resumen para derivar
+
+- **Reportado por el técnico:** la puerta se reabre sola durante el cierre. Hay un LED encendido. No ve obstrucción. No puede identificar el estado de #21 ni el contacto entre #21 y #23.
+- **Comprobado:** la fotocélula no está activada.
+- **Respaldo de la fuente:**
+  - [15]: «Indicador LED y relé activado cuando la fotocélula o la entrada de re-apertura está activada.»
+  - [2]: «En caso que el problema persista, desconectar la fotocélula y volver a pulsar el botón de TEST.» Aplica solo si el problema persiste.
+- **Pendiente:**
+  - Qué LED está encendido.
+  - Si hay un dispositivo externo conectado a #21/#23.
+  - Ajuste de #54. La fuente no documenta qué efecto tiene cada sentido de giro; confírmalo en el equipo antes de girarlo.
+  - Si el problema persiste.
+- **Mediciones:** ninguna. No hay lectura pendiente documentada.

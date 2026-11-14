@@ -144,6 +144,31 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     fallas: [ "85590ab2-d2b2-49b2-a36d-0c8c50f9bd76", "Monarch nice 3000 fallas-1.pdf", "Monarch nice 3000 fallas-1" ],
     monarch: [ "6e578b57-0f5e-42f0-91d6-4dd908e0eba2", "Manual_monarch_Español_3000+.pdf", "Manual_monarch_Español_3000+" ]
   }.freeze
+  test "guion 1 turn 5 credits the limit in the full published answer" do
+    questions = load_turns(SCRIPTS.fetch("guion1")["capture"]).map(&:question)
+    published = Rails.root.join(REVISION_FIXTURES, "guion1_c8e9cbf_t5_published.txt").read
+    clauses = published.split(/(?<=\.)[ \t]+|\n+/)
+    dispensations, rest = clauses.partition { |clause| clause.start_with?("No necesitas identificar") }
+    reports, omitted = rest.partition { |clause| clause.start_with?("No puede identificar") }
+
+    assert_equal 1, dispensations.size
+    assert_equal 1, reports.size
+    dispensed = (dispensations + omitted).join("\n")
+    recognized = (reports + omitted).join("\n")
+    # T5_LIMIT, technician_limitation, and method_limit do not read the
+    # dispensation as the technician's limit. The final reasons stay on
+    # the terminal clause.
+
+    assert_empty Haiku55JourneyRubric.reasons("guion1", 5, published, questions)
+    assert_empty Haiku55JourneyRubric.reasons("guion1", 5, recognized, questions)
+    assert_equal [ "t5:limit_not_acknowledged" ],
+      Haiku55JourneyRubric.reasons("guion1", 5, dispensed, questions)
+    assert_equal [ "t5:limit_not_acknowledged" ],
+      Haiku55JourneyRubric.reasons("guion1", 5, omitted.join("\n"), questions)
+    assert_equal [ "t5:limit_not_acknowledged" ],
+      Haiku55JourneyRubric.reasons("guion1", 5, "No puede identificar el LED. #{omitted.join("\n")}", questions)
+  end
+
   CEA_QUESTION = "La puerta de piso no traba. Hay patín retráctil. ¿Qué tiene que cumplirse para que la seguridad automática SA quede en 1?"
   # Manual DD549-R05, PDF p. 24. Production exited before Retrieve, so
   # the SDK row and the generation here are synthetic, not captured traffic.
@@ -416,6 +441,40 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       body.fetch("answer").include?(I18n.t("rag.controller_label_question", locale: :es))
     end
     assert_equal [ true, false, false, false, false, false, false ], asked
+  end
+
+  test "CEA captured T2 T3 and T5 publish documentary evidence through HTTP" do
+    document = revision_pin(:cea)
+    fixture = JSON.parse(Rails.root.join(REVISION_FIXTURES, "cea_reference_failures.json").read)
+    revision_ask("cea-captured-repair", 1, cea_turn(CEA_QUESTION, document), document)
+    episode = reloaded_session.live_episode_id
+
+    [2, 3, 5].each do |number|
+      captured = fixture.fetch(number.to_s)
+      question = captured.fetch("question")
+      rows = captured.fetch("rows").map do |row|
+        row.merge("uri" => "s3://#{KbDocument::KB_BUCKET}/bulk_chunks/1/cea/chunk_p#{row.fetch('page')}_1.txt",
+          "original_source_uri" => document.canonical_uri, "document" => "CEA15+", "score" => 0.9)
+      end
+      turn = TurnCapture.new("question" => question, "retrieve_query" => question,
+        "tool_input" => cea_turn(question, document, move: "follow_up").tool_input,
+        "rows" => rows, "generator_text" => captured.fetch("raw"))
+      body, cassette = revision_ask("cea-captured-repair", number, turn, document)
+      answer = body.fetch("answer")
+      assert_revision_scope(cassette, document)
+      assert_equal episode, reloaded_session.live_episode_id
+      assert_empty Haiku55JourneyRubric.reasons("cea", number, answer, CEA_SCRIPT)
+      assert_empty Haiku55JourneyRubric.cea_completion_reasons(number, answer, body.fetch("citations"))
+      assert_includes answer, "terminal SPC" if number == 2
+      assert_includes answer, "0 Vcc" if number == 3
+      next unless number == 5
+
+      assert_includes body.fetch("citations").pluck("page"), 25
+      assert_includes answer, "Los contactos de traba de las puertas de piso se incluyen en SA"
+      assert_match(/condicionada a confirmar el contacto de traba/i, answer)
+      assert_includes answer, "¿El contacto de traba de la puerta de piso cierra por acción del patín retráctil?"
+      refute_includes answer, "SA no iría a SPC"
+    end
   end
 
   %w[elemont_first elemont_second].each do |name|
@@ -712,6 +771,46 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "Thyssen guion 3 replays w2 and keeps the engineering reading in the open job" do
+    data, document = pin_thyssen_guion3
+    turns = revision_turns("thyssen_guion3", data: data)
+    first, cassette = revision_ask("thyssen-guion3-w2", 1, turns[0], document)
+    assert_revision_scope(cassette, document)
+    assert_equal [16], cassette.sizes
+    assert_includes cassette.sent.last.fetch(:messages).last.to_json, "hasta el mínimo de [3,0]"
+    episode = reloaded_session.live_episode_id
+    assert episode
+
+    second, = revision_ask("thyssen-guion3-w2", 2, turns[1], document)
+    assert_equal episode, reloaded_session.live_episode_id
+    third, = revision_ask("thyssen-guion3-w2", 3, turns[2], document)
+    assert_equal episode, reloaded_session.live_episode_id
+
+    assert_match(/Ingeniería/i, first.fetch("answer"))
+    assert_match(/lectura actual de KP-VS.*pendiente/i, first.fetch("answer"))
+    assert_match(/2,5.*por debajo.*3,0/i, second.fetch("answer"))
+    assert_match(/3,5.*(?:instalación|comisionamiento|puesta en marcha)/i, third.fetch("answer"))
+  end
+
+  test "Thyssen guion 3 w1 preserves the complete noise condition when referring the reading" do
+    data, document = pin_thyssen_guion3
+    data["turns"] = [data.fetch("alternates").fetch("w1_guion3")]
+    turn = revision_turns("thyssen_guion3", data: data).sole
+    body, = revision_ask("thyssen-guion3-w1", 1, turn, document)
+
+    assert_match(/Ingeniería/i, body.fetch("answer"))
+    assert_match(/ruido audible muy elevado.*mínimo de \[3,0\]/i, body.fetch("answer"))
+  end
+
+  test "Thyssen isolated w2 keeps the comparison without a decrease order" do
+    data, document = pin_thyssen_guion3
+    data["turns"] = [data.fetch("alternates").fetch("w2_kpvs")]
+    turn = revision_turns("thyssen_guion3", data: data).sole
+    body, = revision_ask("thyssen-kpvs-w2", 1, turn, document)
+
+    assert_empty Haiku55JourneyRubric.reasons("kpvs", 1, body.fetch("answer"), [turn.question])
+  end
+
   private
 
   def play_audit_photo(name, questions)
@@ -931,6 +1030,19 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     end
   end
 
+  def pin_thyssen_guion3
+    data = JSON.parse(Rails.root.join(REVISION_FIXTURES, "thyssen_guion3.json").read)
+    @account = accounts(:pilot)
+    host! "piloto.danebo.ai"
+    @user.update!(account: @account)
+    spec = data.fetch("document")
+    document = KbDocument.create!(account: @account, s3_key: spec.fetch("key"),
+      document_uid: spec.fetch("uid"), display_name: spec.fetch("name"), aliases: [])
+    post pinned_documents_path, params: { kb_document_id: document.id }, as: :json
+    assert_response :no_content
+    [data, document]
+  end
+
   def play_thyssen_kpvs(scenario)
     name = "thyssen_kpvs"
     data = JSON.parse(Rails.root.join(REVISION_FIXTURES, "#{name}.json").read)
@@ -956,6 +1068,8 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     end
     entry["rows"][2] = contrasts.fetch("installation_row") if scenario == "installation"
     turn = revision_turns(name, data: data).sole
+    original_review = Rag::CompanionParameterReview.method(:build)
+    Rag::CompanionParameterReview.define_singleton_method(:build) { |**| nil }
     body, cassette = revision_ask("thyssen-kpvs-#{scenario}", 1, turn, document)
     assert_revision_scope(cassette, document)
     assert cassette.sizes.all? { |size| size == 16 }
@@ -1053,6 +1167,8 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       assert_includes answer, "[3]"
       assert_not_includes Array(backing.fetch("removed")).pluck("reason"), "unbacked_citation"
     end
+  ensure
+    Rag::CompanionParameterReview.define_singleton_method(:build, original_review) if original_review
   end
 
   def assert_floor_sentence(answer, scenario = nil)

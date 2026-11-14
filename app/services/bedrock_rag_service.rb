@@ -522,25 +522,24 @@ class BedrockRagService
       )
     end
 
-    profile = RagRetrievalProfile.new(entity_sources: entity_sources, question: question)
-    profile_count = profile.number_of_results.clamp(1, ContractualLimits::QUERY[:max_top_k])
     companion_focus = companion_pinned_focus?(
       entity_s3_uris: entity_s3_uris,
       entity_sources: entity_sources,
       episode: episode,
       raw_question: raw_question
     )
-    number_of_results = if companion_focus && profile_count == RagRetrievalProfile::PINNED_DOCUMENT_RESULTS
-      RagRetrievalProfile::COMPANION_PINNED_CANDIDATES.clamp(1, ContractualLimits::QUERY[:max_top_k])
-    else
-      profile_count
-    end
+    # The case text is what Retrieve sends. A fault that survives in that text
+    # stays on the safety budget and is not widened to sixteen candidates.
     retrieve_question = direct_case_retrieve_question(
       question,
       raw_question: raw_question,
       conv_session: conv_session,
       correlation_id: correlation_id,
       companion_focus: companion_focus, episode: episode
+    )
+    profile_count = self.class.companion_profile_count(retrieve_question, entity_sources)
+    number_of_results = self.class.companion_retrieve_count(
+      profile_count, companion_focus: companion_focus
     )
     retrieval = retrieve_chunks(
       retrieve_question,
@@ -758,6 +757,7 @@ class BedrockRagService
       manufacturer: companion_turn ? companion_manufacturer(episode) : nil,
       raw_question: raw_question,
       conv_session: conv_session,
+      parameter_review: companion_direct&.parameter_review,
       correlation_id: correlation_id,
       episode: episode
     )
@@ -1274,11 +1274,11 @@ class BedrockRagService
       )
       raw = companion_direct_answer(prepared, attribution.merge(correlation_id: correlation_id, user_query: raw_question))
       result = finish_companion_turn_generation(
-        question: question, raw_answer: raw, chunks: prepared.chunks,
+        question: raw_question.presence || question, raw_answer: raw, chunks: prepared.chunks,
         response_locale: response_locale, retrieval: retrieval, stop_reason: @companion_direct_stop_reason,
         technician_texts: companion_technician_texts(conv_session, episode, raw_question), manufacturer: nil,
         correlation_id: correlation_id, reference_pending: pending, reference_mode: true,
-        reference_confirmed: confirmed, episode: episode
+        reference_confirmed: confirmed, episode: episode, parameter_review: prepared.parameter_review
       )
       return attach_generation_trace!(result, prepared.user, raw_turn: raw_question, sent_question: question, truncated: prepared.omitted.any?) if result[:route_outcome] == :answered
     end
@@ -1475,6 +1475,20 @@ class BedrockRagService
 
   def companion_generation_direct?
     Rag::DirectInferenceBoot.direct_generation?
+  end
+
+  def self.companion_profile_count(question, entity_sources)
+    RagRetrievalProfile.new(entity_sources: entity_sources, question: question)
+      .number_of_results
+      .clamp(1, ContractualLimits::QUERY[:max_top_k])
+  end
+
+  # Sixteen candidates replace the plain pinned-document budget only.
+  # A safety, photo, or open count is returned unchanged.
+  def self.companion_retrieve_count(profile_count, companion_focus:)
+    return profile_count unless companion_focus && profile_count == RagRetrievalProfile::PINNED_DOCUMENT_RESULTS
+
+    RagRetrievalProfile::COMPANION_PINNED_CANDIDATES.clamp(1, ContractualLimits::QUERY[:max_top_k])
   end
 
   def companion_pinned_focus?(entity_s3_uris:, entity_sources:, episode:, raw_question:)
@@ -2179,7 +2193,7 @@ class BedrockRagService
   def finish_document_identity_generation(question:, raw_answer:, chunks:, response_locale:, retrieval:,
                                            companion: false, safety_evidence: nil, companion_turn: false,
                                            stop_reason: nil, technician_texts: nil, manufacturer: nil,
-                                           raw_question: nil, conv_session: nil, correlation_id: nil, episode: nil)
+                                           raw_question: nil, conv_session: nil, correlation_id: nil, episode: nil, parameter_review: nil)
     if companion_turn
       return finish_companion_turn_generation(
         question: raw_question.presence || question,
@@ -2190,7 +2204,7 @@ class BedrockRagService
         stop_reason: stop_reason,
         technician_texts: technician_texts,
         manufacturer: manufacturer,
-        correlation_id: correlation_id, episode: episode
+        correlation_id: correlation_id, episode: episode, parameter_review: parameter_review
       )
     end
 
@@ -2256,11 +2270,28 @@ class BedrockRagService
   def finish_companion_turn_generation(question:, raw_answer:, chunks:, response_locale:, retrieval:,
                                        stop_reason:, technician_texts:, manufacturer:, correlation_id: nil,
                                        reference_pending: nil, reference_mode: false, reference_confirmed: false,
-                                       episode: nil)
+                                       episode: nil, parameter_review: nil)
     locale = effective_response_locale(question, response_locale: response_locale)
     extracted = extract_doc_refs(raw_answer.to_s)[:clean_answer]
     sources = companion_publication_sources(chunks)
     sequence = nil
+    if parameter_review
+      # The case comparison and referral are rendered from the bound data.
+      # Only the independent documentary question uses Haiku's prose.
+      supplement = parameter_review.supplemental_text(extracted)
+      extracted = [ parameter_review.answer, supplement ].compact.join("\n\n")
+      Rag::ValidationCapture.record("companion_parameter_review",
+        "kind_of_review" => parameter_review.kind.to_s, "parameter" => parameter_review.limit.parameter,
+        "reading" => parameter_review.reading, "limit" => parameter_review.limit.display,
+        "condition" => parameter_review.limit.condition, "source" => parameter_review.limit.source)
+    end
+    if @companion_direct_turn && reference_mode && !parameter_review && stop_reason == "end_turn"
+      reference = Rag::CompanionSignalReference.resolve(question: question, sources: sources, technician_texts: technician_texts)
+      if reference
+        Rag::ValidationCapture.record("companion_signal_reference", "text" => reference)
+        extracted = reference
+      end
+    end
     if @companion_direct_turn
       unless reference_mode
         sequence = Rag::CompanionSequence.resolve(question: question, episode: episode, sources: sources)
@@ -2279,12 +2310,14 @@ class BedrockRagService
       )
       record_companion_claim_backing(backing)
       extracted = backing.text
-      floor = Rag::CompanionCitedFloor.call(
-        text: extracted, sources: sources, technician_texts: technician_texts,
-        observations: companion_episode_observations(episode)
-      )
-      record_companion_cited_floor(floor)
-      extracted = floor.text
+      unless parameter_review
+        floor = Rag::CompanionCitedFloor.call(
+          text: extracted, sources: sources, technician_texts: technician_texts,
+          observations: companion_episode_observations(episode)
+        )
+        record_companion_cited_floor(floor)
+        extracted = floor.text
+      end
     end
     citations = document_identity_citation_records(chunks)
     safety = Rag::AnswerSafetyProcessor.new(locale: locale).call(
@@ -2334,7 +2367,7 @@ class BedrockRagService
       companion_reason: accepted ? nil : "companion_contract_invalid",
       companion_publication: publication.to_h,
       document_identity: Thread.current[:document_identity_scope],
-      pending_question: companion_turn_pending(accepted, answer_text)
+      pending_question: (parameter_review&.pending if accepted) || companion_turn_pending(accepted, answer_text)
     }
     if reference_mode && accepted
       unless reference_confirmed
@@ -2349,9 +2382,9 @@ class BedrockRagService
         reference_pending = nil if result[:answer].include?("?")
         result[:answer] = [
           result[:answer], I18n.t("rag.controller_reference_boundary", locale: locale),
-          reference_pending&.dig("question")
+          (reference_pending&.dig("question") unless parameter_review)
         ].compact.join("\n\n")
-        result[:pending_question] = reference_pending
+        result[:pending_question] = reference_pending unless parameter_review
       end
     end
     capture_cited_sources(result[:citations])

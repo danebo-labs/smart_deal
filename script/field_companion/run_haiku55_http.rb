@@ -798,7 +798,7 @@ module Haiku55Http
 
     match = rest.find { |line| Rag::WorkContextReducer.open_reply?(pending, line) }
     if match.nil?
-      reply = persistent_code_reply(pending)
+      reply = door_closure_reply(pending) || persistent_code_reply(pending)
       if reply
         questions.insert(index + 1, reply)
         return
@@ -811,6 +811,21 @@ module Haiku55Http
     return if at.nil? || at == index + 1
 
     questions.insert(index + 1, questions.delete_at(at))
+  end
+
+  # The reported symptom is that the floor door does not close. A brake
+  # question is not that door.
+  def door_closure_reply(pending)
+    question = pending["question"].to_s
+    return nil if question.match?(/freno|motor|variador|contactor/i)
+    return nil unless question.match?(/puerta/i)
+
+    parts = question.split(/\s+o\s+/i)
+    return nil unless parts.size == 2
+    return nil unless parts.any? { |part| part.match?(/abiert/i) }
+    return nil unless parts.any? { |part| part.match?(/cierr|cerrar/i) }
+
+    "La puerta de piso no cierra del todo."
   end
 
   # A check the script did not prepare: the displayed code is still there.

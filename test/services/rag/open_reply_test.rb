@@ -9,6 +9,7 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
   CODE = "¿Qué código de falla o de estado muestra la MCINV4?"
   ACTIVE = "Para decidir entre ambas ramas necesito una lectura: con la puerta de piso cerrada, ¿la línea de trincos (P28) está activa?"
   CONNECTIONS = "¿Ya revisaste las conexiones de esas líneas?"
+  DOOR = "Pregunta: ¿La puerta de piso queda abierta o sólo no cierra del todo?"
   TARGETS = [ { "item" => "Manual de maniobra.", "document_key" => "doc", "filename" => "p24.txt", "page" => "24" } ].freeze
 
   test "a paraphrase answers the latch part and another component does not" do
@@ -69,6 +70,32 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
     assert_not Rag::WorkContextReducer.open_reply?(question, "El freno marca 0 Vcc.")
     assert_not Rag::WorkContextReducer.open_reply?(question, "Sí, está firme.")
     assert_not Rag::WorkContextReducer.open_reply?(documented(CODE), "Sí, marca 0 Vcc.")
+  end
+
+  test "an open-or-not-closed door gets the reported closure and a brake does not" do
+    load_runner
+    questions = [ "El display marca EA.", "Sí, está firme.", "No engancha." ]
+    row = { "pending_question" => documented(DOOR), "answer" => "publicado" }
+
+    Haiku55Http.place_photo_reply!(questions, 0, row)
+
+    assert_nil row["block_reason"]
+    assert_equal "La puerta de piso no cierra del todo.", questions[1]
+    assert_equal "Sí, está firme.", questions[2]
+
+    paraphrase = [ "turno", "Sí, está firme." ]
+    other_row = {
+      "pending_question" => documented("¿La puerta queda abierta o no llega a cerrar?"),
+      "answer" => "publicado"
+    }
+    Haiku55Http.place_photo_reply!(paraphrase, 0, other_row)
+    assert_equal "La puerta de piso no cierra del todo.", paraphrase[1]
+
+    brake = [ "turno", "Sí, está firme.", "No engancha." ]
+    blocked = { "pending_question" => documented("¿El freno queda abierto o sólo no cierra?"), "answer" => "publicado" }
+    Haiku55Http.place_photo_reply!(brake, 0, blocked)
+    assert_equal "pending_question_unanswered", blocked["block_reason"]
+    assert_equal "Sí, está firme.", brake[1]
   end
 
   test "a firm connection answers the connection check and another component does not" do

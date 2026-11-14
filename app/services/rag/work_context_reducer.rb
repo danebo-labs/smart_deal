@@ -166,6 +166,7 @@ module Rag
       return true if answered_part(question, turn)
       return true if code_report?(question, turn)
       return true if line_reading?(question, turn)
+      return true if connection_reply?(question, turn)
       return false if question_parts(question["question"]).size > 1
 
       said = datum_parts(turn)
@@ -403,6 +404,28 @@ module Rag
       text.to_s.scan(/#?\d+/).map { |token| token.delete("#") }.uniq
     end
 
+    # "¿Ya revisaste las conexiones?" is answered by a firm connection.
+    # A firm brake is another component.
+    def self.connection_reply?(question, turn)
+      asked = datum_parts(question["question"])
+      return false unless asked.entities.include?(CompanionPlanCheck.stem("conexion"))
+
+      said = datum_parts(turn)
+      firm = CompanionPlanCheck.stem("firme")
+      return false unless said.entities.include?(firm)
+
+      entities = said.entities - report_stems.to_a - [ firm ]
+      return false if (entities - asked.entities).any?
+
+      specific = asked.entities - connection_place_stems.to_a
+      specific.empty? || (specific - said.entities).empty?
+    end
+
+    def self.connection_place_stems
+      @connection_place_stems ||= %w[conexion revisar linea puerta piso bornera esas trinco]
+        .map { |word| CompanionPlanCheck.stem(word) }.to_set
+    end
+
     # A voltage reading answers a request for that reading, or for whether
     # the named line is active. Another component's reading does not.
     def self.line_reading?(question, turn)
@@ -474,7 +497,8 @@ module Rag
       :undesignated_part,
       :datum_covers?, :unspecified_unknown?, :promote_shown_question, :generic_entity?,
       :referent_placeholder?,
-      :designators, :code_report?, :code_places, :line_reading?, :reading_numbers, :reading_properties, :report_stems,
+      :designators, :code_report?, :code_places, :line_reading?, :connection_reply?, :connection_place_stems,
+      :reading_numbers, :reading_properties, :report_stems,
       :closed_reply?, :connection_stems, :question_parts, :component_parts,
       :other_connection?
 

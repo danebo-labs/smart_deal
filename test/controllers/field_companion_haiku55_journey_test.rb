@@ -730,7 +730,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     replies = [
       "Con la cabina vacía, el paso 2 pide «Ajuste Selección de monitor del display en tiempo real (6_75) a 65 (valor de entrada del pesacargas)» [p38]. ¿Qué valor de entrada ves en el panel LOP-CB?",
       "El 0 que reporta Ingeniería corresponde a la entrada del sensor con cabina vacía. El paso 2 dice «Si el valor es 0 => El sensor no está conectado o hay un espacio demasiado grande» [p38]. ¿El sensor está conectado?",
-      "Estaba desconectado y, después de conectarlo, mediste 7 mA con cabina vacía. El paso 2 dice «Compruebe que LOP-CB muestre el valor entre 6-8» [p38]. Los 7 mA quedan dentro de ese rango. Mantén la cabina vacía y registra la carga cero en el paso 3: «Seleccione el parámetro de Ajuste del pesacargas (6_74)» [p38]. Los 7 mA son la señal del sensor; el ajuste sigue en curso."
+      "Estaba desconectado y, después de conectarlo, mediste 7 mA con cabina vacía. El paso 2 dice «Compruebe que LOP-CB muestre el valor entre 6-8» [p38]. Los 7 mA quedan dentro de ese rango. Con la cabina aún vacía y si ya completaste el reinicio del paso 1, el paso 3 registra la carga cero: «Seleccione el parámetro de Ajuste del pesacargas (6_74)» [p38]. Los 7 mA son la señal del sensor; el ajuste sigue en curso."
     ]
     episode = nil
     questions.each_with_index do |question, index|
@@ -756,6 +756,16 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       assert_equal "KDL16", reloaded_session.active_episode.dig("facts", "model", "value")
       answer = body.fetch("answer")
       assert_empty Haiku55JourneyRubric.kone_lwi_reasons(index + 1, answer), answer
+      if index == 1
+        assert_match(/0 que reporta Ingeniería/, answer)
+        assert_match(/Si el valor es 0 => El sensor no está conectado o hay un espacio demasiado grande/, answer)
+      elsif index == 2
+        payload = cassette.sent.reject { |request| request[:tool_choice] }.sole
+        user_messages = payload.fetch(:messages).select { |message| message[:role] == "user" }
+        assert_includes user_messages.flat_map { |message| message[:content].pluck(:text) }.join("\n"), "La cabina está vacía"
+        assert_match(/desconectado.*conectarlo.*7 mA con cabina vacía/, answer)
+        assert_match(/si ya completaste el reinicio del paso 1.*paso 3 registra la carga cero.*6_74/, answer)
+      end
       assert_nil Haiku55JourneyRubric.kone_lwi_followup_stop(index + 1, answer), answer
       episode ||= reloaded_session.live_episode_id
       assert_equal episode, reloaded_session.live_episode_id

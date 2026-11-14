@@ -142,6 +142,19 @@ class Rag::CompanionClaimBackingTest < ActiveSupport::TestCase
     assert_empty carried.removed
   end
 
+  test "the captured reading requires the full condition from the cited table" do
+    source = Rails.root.join("test/fixtures/field_companion/audit_20261113/kone_lwi_p38.txt").read
+    technician = [ "Ingeniería me dice que marca 0." ]
+    partial = "Un 0 en el paso 2 (6_75, carga cero) cae en la condición documentada: " \
+      "«El sensor no está conectado o hay un espacio demasiado grande.» [1]"
+    complete = "Ingeniería reportó un 0. «Si el valor es 0 => El sensor no está conectado o hay un espacio demasiado grande.» [1]"
+    invented = "«Si el valor es 0 => El sensor no está conectado o tiene un cortocircuito.» [1]"
+
+    assert_equal ["unverified_quote"], call(partial, source, technician: technician).removed.pluck("reason")
+    assert_equal complete, call(complete, source, technician: technician).text
+    assert_equal ["unverified_quote"], call(invented, source, technician: technician).removed.pluck("reason")
+  end
+
   test "a period inside a quote and a decimal do not split sentences" do
     text = "Ver sección 5.8: «verificar el paso libre. Solo es necesario realizar otra vez el autoajuste» [1]."
     result = call(text, VF5_58)

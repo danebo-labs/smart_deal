@@ -59,6 +59,58 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
     assert_equal "El display marca EA.", questions[1]
   end
 
+  test "a labeled question is stored and a second question is not" do
+    service = BedrockRagService.allocate
+    service.instance_variable_set(:@companion_direct_turn, true)
+    service.instance_variable_set(:@companion_direct_sources, [
+      { "document" => "Manual de maniobra.", "reference_only" => false, "applicability" => "compatible" }
+    ])
+    labeled = "EA es falla de señales. La tabla indica: «linha dos trincos» [1].\n\nPregunta: con la puerta de piso cerrada a mano, ¿el display sigue marcando EA?"
+    paraphrase = "Consulta: ¿la pantalla sigue marcando EC con la puerta cerrada a mano? [1]"
+
+    assert_equal "Pregunta: con la puerta de piso cerrada a mano, ¿el display sigue marcando EA?",
+      service.send(:direct_documented_question, labeled)["question"]
+    assert_equal "Consulta: ¿la pantalla sigue marcando EC con la puerta cerrada a mano?",
+      service.send(:direct_documented_question, paraphrase)["question"]
+    assert_nil service.send(:direct_documented_question, "#{labeled} ¿Y el freno?")
+    assert_nil service.send(:direct_documented_question, "La tabla indica ¿el freno engancha? [1].")
+  end
+
+  test "an unmatched code check gets one simulated reply and another component does not" do
+    load_runner
+    questions = [
+      "El display marca EA.",
+      "Sí, está firme.",
+      "No engancha.",
+      "Ya lo alineé. Ahora cierra y traba bien, pero sigue marcando EA."
+    ]
+    row = {
+      "pending_question" => documented("Pregunta: con la puerta de piso cerrada a mano, ¿el display sigue marcando EA?"),
+      "answer" => "publicado"
+    }
+
+    Haiku55Http.place_photo_reply!(questions, 0, row)
+
+    assert_nil row["block_reason"]
+    assert_equal "Sí, la cerré a mano y el display sigue marcando EA.", questions[1]
+    assert_equal "Sí, está firme.", questions[2]
+    assert_not Rag::WorkContextReducer.open_reply?(
+      row["pending_question"],
+      "Ya lo alineé. Ahora cierra y traba bien, pero sigue marcando EA."
+    )
+    assert_not Rag::WorkContextReducer.open_reply?(
+      row["pending_question"],
+      "El freno sigue marcando EA."
+    )
+
+    other = [ "turno", "Sí, está firme.", "No engancha." ]
+    blocked = { "pending_question" => documented("¿El freno sigue marcando EA?"), "answer" => "publicado" }
+    Haiku55Http.place_photo_reply!(other, 0, blocked)
+
+    assert_equal "pending_question_unanswered", blocked["block_reason"]
+    assert_equal "Sí, está firme.", other[1]
+  end
+
   test "a direct answer stores its single published question" do
     service = BedrockRagService.allocate
     service.instance_variable_set(:@companion_direct_turn, true)

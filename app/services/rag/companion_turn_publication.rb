@@ -274,10 +274,13 @@ module Rag
       end
 
       # A question about the manual attributes nothing to it. A question that
-      # also states what the manual says still does.
+      # also states what the manual says still does. The fragment splitter
+      # drops the closing mark, so a labeled question keeps its opening mark
+      # inside the sentence.
       def question_only?(fragment)
         body = fragment.to_s.strip
-        (body.start_with?("¿") || body.end_with?("?")) && !body.match?(CLAIM_VERBS)
+        asked = body.start_with?("¿") || body.end_with?("?") || body.include?("¿")
+        asked && !body.match?(CLAIM_VERBS)
       end
 
       def attributes_source?(fragment, manufacturer)

@@ -798,6 +798,11 @@ module Haiku55Http
 
     match = rest.find { |line| Rag::WorkContextReducer.open_reply?(pending, line) }
     if match.nil?
+      reply = persistent_code_reply(pending)
+      if reply
+        questions.insert(index + 1, reply)
+        return
+      end
       row["block_reason"] ||= "pending_question_unanswered"
       return
     end
@@ -806,6 +811,24 @@ module Haiku55Http
     return if at.nil? || at == index + 1
 
     questions.insert(index + 1, questions.delete_at(at))
+  end
+
+  # A check the script did not prepare: the displayed code is still there.
+  # Another component is not that check. The code is the one the question names.
+  def persistent_code_reply(pending)
+    question = pending["question"].to_s
+    return nil if question.match?(/freno|motor|variador|contactor/i)
+    return nil unless question.match?(/sigue|continu|permanec|marcando/i)
+    return nil unless question.match?(/display|pantalla|visor|c[oó]digo/i)
+
+    code = question[/(?<![[:alnum:]])([A-Z]{2,3}|\d{2})(?![[:alnum:]])/, 1]
+    return nil if code.blank?
+
+    if question.match?(/a mano|cerrad/i)
+      "Sí, la cerré a mano y el display sigue marcando #{code}."
+    else
+      "Sí, el display sigue marcando #{code}."
+    end
   end
 
   def await_photo_worker(browser, directory, turn_dir, run_id, reserved, account, correlation)

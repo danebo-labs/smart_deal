@@ -166,15 +166,17 @@ module Rag
       return true if answered_part(question, turn)
       return true if code_report?(question, turn)
       return false if question_parts(question["question"]).size > 1
-      return true if same_published_datum?(question, turn)
 
       said = datum_parts(turn)
       asked = datum_parts(question_datum_text(question))
       entities = said.entities - report_stems.to_a
+      # A later repair shares "sigue marcando" and also reports the alignment.
+      # Those extra entities are another step, not this question's answer.
+      return false if (entities - asked.entities).any?
+      return true if same_published_datum?(question, turn)
       properties = said.properties | reading_properties(turn)
       numbers = said.numbers - reading_numbers(turn)
       return false if entities.empty? && properties.empty?
-      return false if (entities - asked.entities).any?
       return false if (properties - asked.properties).any?
       return false if numbers.any? && (numbers - asked.numbers).any?
 

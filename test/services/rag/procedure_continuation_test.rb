@@ -22,6 +22,22 @@ class Rag::ProcedureContinuationTest < ActiveSupport::TestCase
     assert_includes prompt, "sin [n]"
   end
 
+  test "a prior case condition stays beside the section title" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "query:t1", now: Time.current)
+    episode.excerpts = [ { "text" => "La cabina está vacía" }, { "text" => "Lo conecté y ahora marca 7 mA" } ]
+
+    prompt = Rag::ProcedureContinuation.prompt(
+      history: [ { role: "assistant", text: "«#{QUOTE}» [1]." } ],
+      chunks: [ { content: TABLE } ],
+      question: "Lo conecté y ahora marca 7 mA.",
+      episode: episode
+    )
+
+    assert_includes prompt, "La cabina está vacía"
+    assert_includes prompt, "no la sustituyas por el título"
+    assert_not_includes prompt, "Lo conecté y ahora marca 7 mA. Si esa"
+  end
+
   test "a question and the last step do not invent a continuation" do
     assert_nil prompt_for("¿Qué valor marca ahora?", TABLE)
     last = TABLE.sub("3 | Grabe el cero en el registro del equipo.", "3 | Listo.")

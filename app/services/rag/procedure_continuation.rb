@@ -13,10 +13,11 @@ module Rag
       new(...).prompt
     end
 
-    def initialize(history:, chunks:, question:)
+    def initialize(history:, chunks:, question:, episode: nil)
       @history = Array(history)
       @chunks = Array(chunks)
       @question = question.to_s.strip
+      @episode = episode
     end
 
     def prompt
@@ -31,6 +32,12 @@ module Rag
       heading, action = next_action(body, quoted)
       return nil if heading.blank? || action.blank?
 
+      [ continuation_text(number, heading, action), prior_conditions ].compact_blank.join(" ")
+    end
+
+    private
+
+    def continuation_text(number, heading, action)
       "Apartado en curso de la fuente [#{number}], título «#{heading}». " \
         "El paso que sigue en ese mismo apartado es: «#{action}» [#{number}]. " \
         "Nombra ese título y cita ese paso literal, con su [n]. " \
@@ -38,7 +45,19 @@ module Rag
         "No lo cambies por un ajuste de otro apartado."
     end
 
-    private
+    # A section title does not replace a condition the technician already gave.
+    def prior_conditions
+      active = @episode.is_a?(ActiveEpisode) ? @episode : ActiveEpisode.parse(@episode)
+      return nil if active.blank?
+
+      folded = I18n.transliterate(@question).downcase
+      kept = Array(active.excerpts).filter_map { |row| row["text"].to_s.strip.presence }.uniq.reject { |text|
+        folded.include?(I18n.transliterate(text).downcase)
+      }.first(3)
+      return nil if kept.empty?
+
+      "El técnico ya dijo: #{kept.join(' / ')}. Si esa condición sigue vigente, consérvala en la oración de la lectura y no la sustituyas por el título del apartado."
+    end
 
     def last_cited_quote
       text = last_assistant

@@ -19,6 +19,7 @@ module Rag
       [^.]{0,180}?
       \b(?:empez|reinici|repet|rehac|recomenz)\p{L}*
     /ix
+    READING = /(\d+(?:[.,]\d+)?)\s*[A-Za-zµ%]{1,6}/
 
     def self.prompt(...)
       new(...).prompt
@@ -43,14 +44,8 @@ module Rag
     def prompt
       return nil if @question.blank? || @question.match?(/[?¿]/)
 
-      quoted, number = last_cited_quote
-      return nil unless quoted && number
-
-      body = source_body(number)
-      return nil unless body&.include?(quoted)
-
-      heading, action = next_action(body, quoted)
-      return nil if heading.blank? || action.blank?
+      number, heading, action = continuation_for(last_assistant)
+      return nil if action.blank?
 
       [ continuation_text(number, heading, action), prior_conditions ].compact_blank.join(" ")
     end
@@ -58,12 +53,14 @@ module Rag
     def carry(text)
       body = text.to_s
       missing = missing_conditions(body)
+      step = omitted_step(body)
       gate = open_prerequisite(body)
-      return body if missing.empty? && gate.nil?
+      return body if missing.empty? && step.nil? && gate.nil?
 
       [
         missing.map { |excerpt| "Condición ya reportada: #{excerpt}." }.join("\n"),
         body,
+        step,
         gate
       ].compact_blank.join("\n\n").strip
     end
@@ -145,10 +142,19 @@ module Rag
       words.empty? || words.all? { |word| folded_answer.match?(/\b#{Regexp.escape(word)}\b/) }
     end
 
-    def last_cited_quote
-      text = last_assistant
+    # The last step quoted before the answer's question. A later section named
+    # after that question, and a restart sentence that is not a table row, do
+    # not replace it. With no question, the last row that still has a next
+    # step is the one in progress.
+    def continuation_for(text)
       return nil if text.blank?
 
+      boundary = text.rindex(/[?¿]/)
+      scoped = boundary ? text[0...boundary] : text
+      actionable_quote(scoped) || (boundary ? actionable_quote(text) : nil)
+    end
+
+    def actionable_quote(text)
       found = nil
       text.to_enum(:scan, QUOTE).each do
         match = Regexp.last_match
@@ -157,9 +163,28 @@ module Rag
 
         number = text[match.end(0), 24].to_s[/\A\s*\[(\d+)\]/, 1]&.to_i
         number = source_containing(quoted) if number.nil? || number < 1
-        found = [ quoted, number ] if number
+        next unless number
+
+        body = source_body(number)
+        next unless body&.include?(quoted)
+
+        heading, action = next_action(body, quoted)
+        next if heading.blank? || action.blank?
+
+        found = [ number, heading, action ]
       end
       found
+    end
+
+    # The technician already reported a reading and the answer cited the
+    # current row, but left out that row's next step.
+    def omitted_step(answer)
+      return nil unless @question.match?(READING)
+
+      number, heading, action = continuation_for(answer)
+      return nil if action.blank? || answer.include?(action)
+
+      "El paso que sigue de #{heading} es: «#{action}» [#{number}]."
     end
 
     def last_assistant

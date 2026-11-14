@@ -149,6 +149,69 @@ class Rag::ProcedureContinuationTest < ActiveSupport::TestCase
     assert_equal true, published.accepted?, published.reasons.inspect
   end
 
+  test "a quote after the question does not replace the step already in progress" do
+    later = <<~TEXT
+      Si omites un paso o anotas un valor incorrecto, vuelve a empezar todo el procedimiento.
+
+      **Arranque:**
+
+      | Paso | Acción | Display |
+      |------|--------|---------|
+      | 2 | Mida la salida. Si marca 0 => el cable no está puesto o la separación es grande. | valor |
+      | 3 | Grabe el cero en el registro del equipo. | listo |
+
+      **Siguiente:**
+
+      | Paso | Acción | Display |
+      |------|--------|---------|
+      | 4 | Coloque una carga de prueba en el equipo. | espera |
+      | 5 | Mida otra vez la salida con la carga de prueba. | listo |
+    TEXT
+    previous = <<~TEXT
+      «Si marca 0 => el cable no está puesto o la separación es grande» [1].
+      ¿Qué valor marca?
+      «Coloque una carga de prueba en el equipo.» [1].
+      Prerrequisito de la fuente [1], todavía sin confirmar: «Si omites un paso o anotas un valor incorrecto, vuelve a empezar todo el procedimiento» [1].
+    TEXT
+    prompt = Rag::ProcedureContinuation.prompt(
+      history: [ { role: "assistant", text: previous } ],
+      chunks: [ { content: later } ],
+      question: "Lo conecté y ahora marca 7 mA."
+    )
+    only_later = Rag::ProcedureContinuation.prompt(
+      history: [ { role: "assistant", text: "«Coloque una carga de prueba en el equipo.» [1]. ¿Sigue igual?" } ],
+      chunks: [ { content: later } ],
+      question: "Lo conecté y ahora marca 7 mA."
+    )
+
+    assert_includes prompt, "«Grabe el cero en el registro del equipo.» [1]"
+    assert_not_includes prompt, "Mida otra vez"
+    assert_includes only_later, "«Mida otra vez la salida con la carga de prueba.» [1]"
+  end
+
+  test "a reported reading keeps the next step the answer cited but did not publish" do
+    manual = Rails.root.join("test/fixtures/field_companion/audit_20261113/kone_lwi_p38.txt").read
+    source = { "content" => manual, "applicability" => "compatible" }
+    generated = "La fuente dice: «Compruebe que LOP-CB muestre el valor entre 6-8.» [1]. " \
+      "Con 7 mA, la lectura de carga cero cumple ese criterio. ¿El reinicio ya quedó hecho?"
+    carried = Rag::ProcedureContinuation.carry(
+      generated, episode: nil, question: "Lo conecté y ahora marca 7 mA.", sources: [ source ]
+    )
+    without_reading = Rag::ProcedureContinuation.carry(
+      generated, episode: nil, question: "Ingeniería me dice que marca 0.", sources: [ source ]
+    )
+    published = Rag::CompanionTurnPublication.call(
+      text: carried, stop_reason: "end_turn",
+      technician_texts: [ "Lo conecté y ahora marca 7 mA." ],
+      sources: [ source ]
+    )
+
+    assert_includes carried, "«Seleccione el parámetro de Ajuste del pesacargas (6_74).» [1]"
+    assert_includes carried, "carga cero"
+    assert_not_includes without_reading, "Seleccione el parámetro de Ajuste del pesacargas (6_74)."
+    assert_equal true, published.accepted?, published.reasons.inspect
+  end
+
   test "the same quote in two sources does not choose one" do
     quoted = "Si marca 0 => el cable no está puesto o la separación es grande"
     history = [ { role: "assistant", text: "«#{quoted}»." } ]

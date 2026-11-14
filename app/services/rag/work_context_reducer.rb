@@ -158,17 +158,40 @@ module Rag
       datum_covers?(asked, said)
     end
 
+    # A prepared field reply answers the open question when it names one
+    # published part and no other component. A paraphrase keeps the same
+    # entities. A different component does not.
+    def self.open_reply?(question, turn)
+      return false unless question.is_a?(Hash)
+      return true if answered_part(question, turn)
+      return false if question_parts(question["question"]).size > 1
+      return true if same_published_datum?(question, turn)
+
+      said = datum_parts(turn)
+      asked = datum_parts(question_datum_text(question))
+      entities = said.entities - report_stems.to_a
+      properties = said.properties | reading_properties(turn)
+      numbers = said.numbers - reading_numbers(turn)
+      return false if entities.empty? && properties.empty?
+      return false if (entities - asked.entities).any?
+      return false if (properties - asked.properties).any?
+      return false if numbers.any? && (numbers - asked.numbers).any?
+
+      (asked.entities & entities).any? || (asked.properties & properties).any?
+    end
+
     # One part that carries designators, inside a question split on "o".
     # The reply has to name those designators and a property of that part.
     # A shared number does not identify another component. Entrada, salida,
     # or contacto says how a numbered point is wired; two different ones
-    # still differ. A part without a designator is not recognized. This is
-    # not a general reading of compound questions.
+    # still differ. A compound question with no designator uses the part
+    # whose entities the reply fits inside.
     def self.answered_part(question, turn)
       return nil unless question.is_a?(Hash)
 
       parts = question_parts(question["question"])
       return nil if parts.size < 2
+      return undesignated_part(parts, turn) if parts.none? { |part| designators(part).any? }
 
       said = datum_parts(turn)
       return nil if said.numbers.empty?
@@ -181,6 +204,25 @@ module Rag
       return nil if (properties & said.properties).empty?
       return nil if other_connection?(asked, said)
       return nil if other_entity?(component_parts(asked), component_parts(said))
+
+      named.first
+    end
+
+    # A compound question with no terminal number. The reply's entities and
+    # properties have to fit inside exactly one part.
+    def self.undesignated_part(parts, turn)
+      said = datum_parts(turn)
+      return nil if designators(turn).any?
+      return nil if said.entities.empty? && said.properties.empty?
+
+      named = parts.select { |part|
+        asked = datum_parts(part)
+        next false if (said.entities - asked.entities).any?
+        next false if (said.properties - asked.properties).any?
+
+        (asked.entities & said.entities).any? || (asked.properties & said.properties).any?
+      }
+      return nil unless named.size == 1
 
       named.first
     end
@@ -357,6 +399,22 @@ module Rag
       text.to_s.scan(/#?\d+/).map { |token| token.delete("#") }.uniq
     end
 
+    # A reported unit is a reading, not another component number.
+    def self.reading_numbers(text)
+      text.to_s.scan(READING_VALUE).map(&:first).uniq
+    end
+
+    def self.reading_properties(text)
+      text.to_s.scan(READING_VALUE).filter_map { |_number, unit|
+        stem = UNIT_PROPERTIES[unit.to_s.downcase]
+        CompanionPlanCheck.stem(stem) if stem
+      }.uniq
+    end
+
+    def self.report_stems
+      @report_stems ||= %w[marca mide medir valor lectura].map { |word| CompanionPlanCheck.stem(word) }.to_set
+    end
+
     def self.closed_reply?(turn)
       FollowupQueryRewriter.normalize_label(turn).match?(CLOSED_REPLY)
     end
@@ -369,14 +427,18 @@ module Rag
     REFERENT_PLACEHOLDERS = %w[parte].to_set
     CONTINUATION = %w[sigue seguir seguimos siguiente ahora luego entonces despues proximo hago hacemos].to_set
     CONTINUATION_FILLER = %w[que como cual cuando donde y o a el la lo los las un una me te se por para con del].to_set
+    READING_VALUE = /(?<![[:alnum:]])(\d+(?:[.,]\d+)?)[[:space:]]*([A-Za-zµ%]{1,6})/
+    UNIT_PROPERTIES = { "v" => "tension", "vcc" => "tension", "vdc" => "tension", "vac" => "tension", "ma" => "corriente" }.freeze
     private_class_method :unknown_clarification?, :published_documented_question,
       :open_documented_question?, :open_answer?, :clear_matching_pending!,
       :closable_documented_question?,
       :shown_documented_question, :chosen_unknown_datum, :same_question_text?, :clear_shown!,
       :question_datum_text, :datum_parts, :other_scope?, :other_property?, :other_entity?,
+      :undesignated_part,
       :datum_covers?, :unspecified_unknown?, :promote_shown_question, :generic_entity?,
       :referent_placeholder?,
-      :designators, :closed_reply?, :connection_stems, :question_parts, :component_parts,
+      :designators, :reading_numbers, :reading_properties, :report_stems,
+      :closed_reply?, :connection_stems, :question_parts, :component_parts,
       :other_connection?
 
     def self.apply!(episode:, perception:, decision:, turn:, correlation_id:, now:)

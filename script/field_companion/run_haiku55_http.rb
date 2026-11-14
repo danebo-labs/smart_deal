@@ -619,9 +619,11 @@ module Haiku55Http
         require_relative "haiku55_photo_browser"
         browser = PhotoBrowser.new(PORT, request_host(document.account), user, user_password(user))
       end
-      questions = script(name)["turns"]
+      questions = script(name)["turns"].dup
       focus = [ document ]
-      questions.each_with_index do |question, index|
+      index = 0
+      while index < questions.size
+        question = questions[index]
         number = index + 1
         unless Haiku55Companion.network_ready?(io)
           rows << { "turn" => number, "status" => "network_unreachable" }
@@ -634,7 +636,7 @@ module Haiku55Http
         elsif name == AUDIT_PLAN.first
           row["block_reason"] ||= photo_followup_stop(number, row["answer"])
         elsif name == CONTINUATION_PLAN.first
-          row["block_reason"] ||= Haiku55JourneyRubric.photo_ea_followup_stop(number, row["answer"])
+          place_photo_reply!(questions, index, row)
         elsif name == "audit_kone_lwi"
           row["block_reason"] ||= Haiku55JourneyRubric.kone_lwi_followup_stop(number, row["answer"])
         end
@@ -646,6 +648,7 @@ module Haiku55Http
         rows << row
         io.puts JSON.generate(row.slice("script", "turn", "status", "block_reason", "abstained_with_card", "rubric", "wall_ms"))
         break if row["block_reason"]
+        index += 1
 
         card = row.delete("manual_suggestion")
         if accept
@@ -679,7 +682,7 @@ module Haiku55Http
       "script" => name, "status" => status, "user_id" => user.id, "session_id" => session&.id,
       "episodes" => episodes, "single_episode" => single_episode,
       "rubric_ok" => status == "executed" && episode_ok && rows.all? { |row| row["rubric"].empty? && row.fetch("scope", {}).fetch("ok", true) },
-      "turns" => rows.map { |row| row.slice("turn", "label", "question", "answer", "status", "block_reason", "abstained_with_card", "rubric", "wall_ms", "route_outcome", "episode_id", "focus", "scope", "replayed") },
+      "turns" => rows.map { |row| row.slice("turn", "label", "question", "answer", "status", "block_reason", "abstained_with_card", "rubric", "wall_ms", "route_outcome", "episode_id", "focus", "scope", "replayed", "pending_question") },
       "ledger_before" => before, "ledger_after" => ledger_view
     }
     File.write(directory.join("summary.json"), JSON.pretty_generate(payload))
@@ -775,8 +778,34 @@ module Haiku55Http
       "route_outcome" => events.reverse.find { |event| event["kind"] == "published_answer" }&.dig("route_outcome"),
       "episode_id" => episode_id, "focus" => session&.focus_document_ids, "scope" => scope,
       "replayed" => body["replayed"],
-      "manual_suggestion" => body["manual_suggestion"]
+      "manual_suggestion" => body["manual_suggestion"],
+      "pending_question" => (session&.active_episode.is_a?(Hash) ? session.active_episode["pending_question"] : nil)
     }
+  end
+
+  # The next technician line has to answer the question the episode stored.
+  # A line that names another component stays where it is. With no stored
+  # question, the prepared line still has to match the published request.
+  def place_photo_reply!(questions, index, row)
+    rest = questions[(index + 1)..].to_a
+    return if rest.empty?
+
+    pending = row["pending_question"]
+    unless pending.is_a?(Hash) && pending["question"].present?
+      row["block_reason"] ||= Haiku55JourneyRubric.photo_ea_followup_stop(index + 1, row["answer"])
+      return
+    end
+
+    match = rest.find { |line| Rag::WorkContextReducer.open_reply?(pending, line) }
+    if match.nil?
+      row["block_reason"] ||= "pending_question_unanswered"
+      return
+    end
+
+    at = questions.index(match)
+    return if at.nil? || at == index + 1
+
+    questions.insert(index + 1, questions.delete_at(at))
   end
 
   def await_photo_worker(browser, directory, turn_dir, run_id, reserved, account, correlation)

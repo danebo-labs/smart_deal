@@ -494,6 +494,7 @@ class BedrockRagService
     @companion_plan_stop_reason = nil
     @companion_direct_stop_reason = nil
     @companion_direct_turn = false
+    @companion_direct_sources = nil
     @companion_case_before = nil
     @companion_case_revision = nil
     @companion_case_episode_id = nil
@@ -2354,6 +2355,7 @@ class BedrockRagService
         publication.quotes.group_by { |row| row["source"] }.transform_values { |rows| rows.pluck("text").uniq }
       end
     end
+    @companion_direct_sources = sources if @companion_direct_turn
     result = {
       answer: answer_text,
       correlation_id: correlation_id,
@@ -2396,10 +2398,48 @@ class BedrockRagService
   end
 
   def companion_turn_pending(accepted, answer_text)
-    return nil if @companion_direct_turn
     return nil unless accepted
+    return direct_documented_question(answer_text) if @companion_direct_turn
 
     Rag::PendingQuestion.presented(@companion_plan_pending, answer_text, retained: @companion_plan_retained)
+  end
+
+  # The one question the direct answer already published. The text is that
+  # sentence. Targets are the cited sources already on the answer. A second
+  # question, or none, stores nothing.
+  def direct_documented_question(answer_text)
+    body = answer_text.to_s
+    questions = Rag::CompanionTurnPublication.claim_fragments(body).select { |fragment|
+      Rag::CompanionTurnPublication.question_sentence?(fragment)
+    }
+    return nil unless questions.one?
+
+    numbers = body.scan(/\[(\d+)\]/).flatten.map(&:to_i).uniq
+    sources = Array(@companion_direct_sources)
+    cited = numbers.filter_map { |number| sources[number - 1] }
+    cited.select! { |source|
+      source.is_a?(Hash) && source["reference_only"] != true && source["applicability"].to_s != "reference_only"
+    }
+    return nil unless cited.size.between?(1, 2)
+
+    targets = cited.filter_map { |source|
+      item = source["document"].to_s.squish.presence
+      next if item.blank?
+
+      {
+        "item" => item.first(160),
+        "document_key" => source["document_key"].to_s,
+        "filename" => source["filename"].to_s,
+        "page" => source["page"].to_s
+      }
+    }
+    return nil unless targets.size == cited.size
+
+    question = questions.first.squish
+    question = "#{question}?" if body.include?("#{question}?")
+    Rag::PendingQuestion.coerce(
+      "type" => "documented_context", "question" => question, "targets" => targets
+    )
   end
 
   def record_companion_claim_backing(backing)

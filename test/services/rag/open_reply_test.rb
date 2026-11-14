@@ -7,6 +7,7 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
   FIRM = "¿La conexión de P28 en la bornera está firme?"
   VOLTAGE = "¿Qué tensión lees en RA-53/P28?"
   CODE = "¿Qué código de falla o de estado muestra la MCINV4?"
+  ACTIVE = "Para decidir entre ambas ramas necesito una lectura: con la puerta de piso cerrada, ¿la línea de trincos (P28) está activa?"
   TARGETS = [ { "item" => "Manual de maniobra.", "document_key" => "doc", "filename" => "p24.txt", "page" => "24" } ].freeze
 
   test "a paraphrase answers the latch part and another component does not" do
@@ -57,6 +58,33 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
 
     assert_nil row["block_reason"]
     assert_equal "El display marca EA.", questions[1]
+  end
+
+  test "a voltage reading answers the latch-line check and another component does not" do
+    question = documented(ACTIVE)
+
+    assert Rag::WorkContextReducer.open_reply?(question, "Sí, marca 0 Vcc.")
+    assert Rag::WorkContextReducer.open_reply?(question, "La línea marca 0 Vcc.")
+    assert_not Rag::WorkContextReducer.open_reply?(question, "El freno marca 0 Vcc.")
+    assert_not Rag::WorkContextReducer.open_reply?(question, "Sí, está firme.")
+    assert_not Rag::WorkContextReducer.open_reply?(documented(CODE), "Sí, marca 0 Vcc.")
+  end
+
+  test "the runner uses the prepared voltage reading for the latch-line check" do
+    load_runner
+    questions = [
+      "El display marca EA.",
+      "Sí, está firme.",
+      "No engancha.",
+      "Sí, marca 0 Vcc."
+    ]
+    row = { "pending_question" => documented(ACTIVE), "answer" => "publicado" }
+
+    Haiku55Http.place_photo_reply!(questions, 0, row)
+
+    assert_nil row["block_reason"]
+    assert_equal "Sí, marca 0 Vcc.", questions[1]
+    assert_equal "Sí, está firme.", questions[2]
   end
 
   test "a labeled question is stored and a second question is not" do

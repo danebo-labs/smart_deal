@@ -165,6 +165,7 @@ module Rag
       return false unless question.is_a?(Hash)
       return true if answered_part(question, turn)
       return true if code_report?(question, turn)
+      return true if line_reading?(question, turn)
       return false if question_parts(question["question"]).size > 1
 
       said = datum_parts(turn)
@@ -402,6 +403,21 @@ module Rag
       text.to_s.scan(/#?\d+/).map { |token| token.delete("#") }.uniq
     end
 
+    # A voltage reading answers a request for that reading, or for whether
+    # the named line is active. Another component's reading does not.
+    def self.line_reading?(question, turn)
+      return false if reading_properties(turn).empty?
+
+      asked = datum_parts(question["question"])
+      said = datum_parts(turn)
+      entities = said.entities - report_stems.to_a
+      return false if (entities - asked.entities).any?
+
+      asked.entities.include?(CompanionPlanCheck.stem("lectura")) ||
+        asked.properties.include?(CompanionPlanCheck.stem("activa")) ||
+        asked.properties.include?(CompanionPlanCheck.stem("tension"))
+    end
+
     # "código de falla o de estado" is one request. The reply names the
     # code. A display, a screen, or the code itself fits. Another component
     # does not, and a voltage reading is not that code.
@@ -458,7 +474,7 @@ module Rag
       :undesignated_part,
       :datum_covers?, :unspecified_unknown?, :promote_shown_question, :generic_entity?,
       :referent_placeholder?,
-      :designators, :code_report?, :code_places, :reading_numbers, :reading_properties, :report_stems,
+      :designators, :code_report?, :code_places, :line_reading?, :reading_numbers, :reading_properties, :report_stems,
       :closed_reply?, :connection_stems, :question_parts, :component_parts,
       :other_connection?
 

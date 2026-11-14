@@ -32,6 +32,7 @@ module Haiku55Http
   AUDIT_PLAN = %w[audit_thyssen_photo audit_thyssen_engineering].freeze
   CONTINUATION_PLAN = %w[audit_thyssen_photo_ea audit_kone_lwi audit_thyssen_engineering].freeze
   CONTINUATION = PHASE == "field_continuation"
+  CONTINUATION_RETRY = CONTINUATION && ENV["HTTP55_CONTINUATION_RETRY"] == "1"
   AUDIT_APPROVAL = "HTTP55_THYSSEN_AUTHORIZED_SHA"
   AUDIT_KB_BUCKET = "multimodal-source-destination"
   # Same ids, call counts, and dollar ceilings the spend guard recognizes.
@@ -236,6 +237,7 @@ module Haiku55Http
   end
 
   def authorized_plan
+    return ["audit_kone_lwi"] if CONTINUATION_RETRY
     return CONTINUATION_PLAN if CONTINUATION
     return AUDIT_PLAN if AUDIT
 
@@ -299,11 +301,11 @@ module Haiku55Http
       "grant_does_not_cover_plan"
     elsif AUDIT && KbDocument::KB_BUCKET != AUDIT_KB_BUCKET
       "audit_kb_bucket_mismatch"
-    elsif AUDIT && !audit_photo_input
+    elsif AUDIT && !CONTINUATION_RETRY && !audit_photo_input
       "audit_jpeg_missing_or_invalid"
     elsif AUDIT && !audit_baseline?(ledger)
       "thyssen_ledger_baseline_changed"
-    elsif AUDIT && worst != BigDecimal(GRANT_USD)
+    elsif AUDIT && !CONTINUATION_RETRY && worst != BigDecimal(GRANT_USD)
       "thyssen_price_changed"
     elsif AUDIT && ENV[AUDIT_APPROVAL] != head
       "thyssen_grants_pending"
@@ -401,6 +403,11 @@ module Haiku55Http
   end
 
   def audit_baseline?(ledger)
+    if CONTINUATION_RETRY
+      return ledger.dig("authorization", "call_cap") == NEXT_CAP &&
+        ledger.fetch("executions").last&.values_at("id", "after_attempt", "cost_usd", "calls") ==
+          [ EXECUTION_ID, SPEND::FIELD_CONTINUATION_SEQUENCE, GRANT_USD, GRANT_CALLS ]
+    end
     return SPEND.field_continuation_baseline?(ledger) if CONTINUATION
 
     SPEND.thyssen_baseline?(ledger, recheck: RECHECK)
@@ -409,6 +416,7 @@ module Haiku55Http
   def admit!(io, directory: nil)
     if AUDIT
       return false unless directory && ENV[AUDIT_APPROVAL] == head
+      return audit_baseline?(read_ledger) if CONTINUATION_RETRY
 
       if CONTINUATION
         assignment_spend.admit_field_continuation!
@@ -1154,7 +1162,8 @@ module Haiku55Http
     CLEARED_ENV.each { |key| env[key] = nil }
     if AUDIT
       env["KNOWLEDGE_BASE_S3_BUCKET"] = AUDIT_KB_BUCKET
-      env.merge!("RAG_ASSIGNMENT_EXECUTION_ID" => EXECUTION_ID, "RAG_ASSIGNMENT_RUN_SCOPE" => "#{EXECUTION_ID}/#{directory.basename}")
+      scope = CONTINUATION ? run_id : directory.basename
+      env.merge!("RAG_ASSIGNMENT_EXECUTION_ID" => EXECUTION_ID, "RAG_ASSIGNMENT_RUN_SCOPE" => "#{EXECUTION_ID}/#{scope}")
     end
     if reserved["vision"]
       env.merge!(

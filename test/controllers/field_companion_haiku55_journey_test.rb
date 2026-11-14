@@ -735,13 +735,25 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     episode = nil
     questions.each_with_index do |question, index|
       row = audit_manual_row(document, AUDIT_ROOT.join("kone_lwi_p38.txt").read, 38)
-      assertions = index.zero? ? [ { "span" => "KONE", "act" => "assert", "slot_hint" => "manufacturer" } ] : []
-      observations = index.zero? ? [ "La cabina está vacía", "no logro terminar el ajuste del pesacargas" ] : [question]
+      # The live interpreter emits the drive separately from the brand/platform.
+      assertions = if index.zero?
+        [
+          { "span" => "KONE MonoSpace", "act" => "assert", "slot_hint" => "model" },
+          { "span" => "KDL16", "act" => "assert", "slot_hint" => "controller" },
+          { "span" => "pesacargas LWI", "act" => "assert", "slot_hint" => nil }
+        ]
+      else
+        []
+      end
+      observations = index.zero? ? [ "no logro terminar el ajuste del pesacargas" ] : [question]
       turn = audit_turn(question, replies.fetch(index), rows: [row], move: index.zero? ? "report" : "follow_up",
         observations: observations, assertions: assertions)
       body, cassette = revision_ask("audit-kone-lwi", index + 1, turn, document)
       assert_revision_scope(cassette, document)
-      assert_includes audit_generator_prompt(cassette), question
+      prompt = audit_generator_prompt(cassette)
+      assert_includes prompt, question
+      refute_includes prompt, "Un documento seleccionado no identifica la instalación"
+      assert_equal "KDL16", reloaded_session.active_episode.dig("facts", "model", "value")
       answer = body.fetch("answer")
       assert_empty Haiku55JourneyRubric.kone_lwi_reasons(index + 1, answer), answer
       assert_nil Haiku55JourneyRubric.kone_lwi_followup_stop(index + 1, answer), answer

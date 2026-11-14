@@ -100,6 +100,20 @@ module Rag
     FIELD_CONTINUATION_CAP = FIELD_CONTINUATION_ATTEMPTS + FIELD_CONTINUATION_CALLS
     FIELD_CONTINUATION_USD = "0.120792"
 
+    # One KONE LWI live run, appended after the field-continuation grant.
+    # Each admission is the current script: at most 7 Haiku calls and
+    # US$0.024921. Ten runs stay inside 70 calls and US$0.249210. The US$4
+    # assignment cap does not move. The call cap rises only by the calls the
+    # current authorization cannot already hold.
+    KONE_LWI_LIVE_ID = "haiku55-http-kone-lwi-live-20261114"
+    KONE_LWI_RUN_CALLS = 7
+    KONE_LWI_RUN_USD = "0.024921"
+    KONE_LWI_MAX_CALLS = 70
+    KONE_LWI_MAX_USD = "0.249210"
+    KONE_LWI_BASE_ATTEMPTS = 1245
+    KONE_LWI_BASE_SEQUENCE = 1247
+    KONE_LWI_MAX_CAP = KONE_LWI_BASE_ATTEMPTS + KONE_LWI_MAX_CALLS
+
     def self.field_continuation_baseline?(state)
       state.values_at("attempts", "seq", "cost_cap_usd") ==
         [ FIELD_CONTINUATION_ATTEMPTS, FIELD_CONTINUATION_SEQUENCE, "4.0" ] &&
@@ -125,6 +139,151 @@ module Rag
         write!(file, state)
         row
       end
+    end
+
+    def self.kone_lwi_grant?(row)
+      return false unless row.is_a?(Hash) && row["id"] == KONE_LWI_LIVE_ID
+      return false unless row["calls"].to_i.between?(1, KONE_LWI_RUN_CALLS)
+      return false unless row["after_attempt"].to_i >= KONE_LWI_BASE_SEQUENCE
+      return false unless row["cost_usd"].to_s.match?(/\A\d+(?:\.\d+)?\z/)
+
+      cost = BigDecimal(row["cost_usd"].to_s)
+      cost.positive? && cost <= BigDecimal(KONE_LWI_RUN_USD)
+    end
+
+    def self.kone_lwi_step_admissible?(state, calls:, cost_usd:)
+      kone_lwi_refusal(state, calls:, cost_usd:).nil?
+    end
+
+    # The continuation window and the cumulative cap both had five calls left
+    # at attempt 1,245. A new run needs its own 7-call window. The cap moves
+    # only by the portion those seven calls do not already fit.
+    def admit_kone_lwi_run!(calls:, cost_usd:)
+      with_lock do |state, file|
+        reason = self.class.kone_lwi_refusal(state, calls:, cost_usd:)
+        raise Stop, reason if reason
+
+        count = calls.to_i
+        cost = BigDecimal(format("%.6f", BigDecimal(cost_usd.to_s)))
+        auth_room, = self.class.kone_lwi_call_rooms(state)
+        increase = [ count - auth_room, 0 ].max
+        auth = state.fetch("authorization")
+        auth["call_cap"] = auth["call_cap"].to_i + increase
+        state["call_cap"] = auth["call_cap"]
+        row = {
+          "id" => KONE_LWI_LIVE_ID, "after_attempt" => state.fetch("seq"),
+          "cost_usd" => format_money(cost), "calls" => count, "at" => Time.now.utc.iso8601
+        }
+        state.fetch("executions") << row
+        write!(file, state)
+        row
+      end
+    end
+
+    def self.kone_lwi_chain?(state)
+      return false unless state.is_a?(Hash) && state["cost_cap_usd"].to_s == "4.0"
+      return false unless state.dig("authorization", "call_cap").to_i.between?(FIELD_CONTINUATION_CAP, KONE_LWI_MAX_CAP)
+      return false unless kone_lwi_attempts_match?(state)
+
+      rows = Array(state["executions"])
+      continuation = rows.find { |row| row.is_a?(Hash) && row["id"] == FIELD_CONTINUATION_ID }
+      return false unless continuation&.values_at("id", "after_attempt", "cost_usd", "calls") ==
+        [ FIELD_CONTINUATION_ID, FIELD_CONTINUATION_SEQUENCE, FIELD_CONTINUATION_USD, FIELD_CONTINUATION_CALLS ]
+
+      tail = rows[(rows.index(continuation) + 1)..] || []
+      kone = tail.select { |row| kone_lwi_grant?(row) }
+      return false unless tail.any? && kone.size == tail.size
+
+      calls = kone.sum { |row| row["calls"].to_i }
+      usd = kone.sum(BigDecimal("0")) { |row| BigDecimal(row["cost_usd"].to_s) }
+      calls <= KONE_LWI_MAX_CALLS && usd <= BigDecimal(KONE_LWI_MAX_USD)
+    end
+
+    def self.kone_lwi_refusal(state, calls:, cost_usd:)
+      count = calls.to_i
+      return "kone_lwi_calls" unless count.between?(1, KONE_LWI_RUN_CALLS)
+      return "kone_lwi_usd" unless cost_usd.to_s.match?(/\A\d+(?:\.\d+)?\z/)
+
+      cost = BigDecimal(format("%.6f", BigDecimal(cost_usd.to_s)))
+      return "kone_lwi_usd" unless cost.positive? && cost <= BigDecimal(KONE_LWI_RUN_USD)
+      return "kone_lwi_cost_cap" unless state.is_a?(Hash) && state["cost_cap_usd"].to_s == "4.0"
+      return "kone_lwi_attempt_mismatch" unless kone_lwi_attempts_match?(state)
+      return "kone_lwi_sequence" if Array(state["entries"]).any? { |entry| entry.is_a?(Hash) && entry["id"].to_i > state["seq"].to_i }
+
+      recorded = Array(state["executions"]).select { |row| row.is_a?(Hash) && row["id"] == KONE_LWI_LIVE_ID }
+      if recorded.empty?
+        return "kone_lwi_ledger_baseline_changed" unless kone_lwi_anchor?(state)
+      else
+        return "kone_lwi_chain_changed" unless kone_lwi_chain?(state)
+      end
+      used_calls = recorded.sum { |row| kone_lwi_grant?(row) ? row["calls"].to_i : KONE_LWI_MAX_CALLS + 1 }
+      used_usd = recorded.sum(BigDecimal("0")) { |row| row["cost_usd"].to_s.match?(/\A\d+(?:\.\d+)?\z/) ? BigDecimal(row["cost_usd"].to_s) : BigDecimal(KONE_LWI_MAX_USD) + 1 }
+      return "kone_lwi_call_ceiling" if used_calls + count > KONE_LWI_MAX_CALLS
+      return "kone_lwi_usd_ceiling" if used_usd + cost > BigDecimal(KONE_LWI_MAX_USD)
+      return "kone_lwi_assignment_budget" if kone_lwi_exposure(state) + cost > BigDecimal("4.0")
+
+      auth_room, window_room = kone_lwi_call_rooms(state)
+      last = Array(state["executions"]).last
+      window_usd = BigDecimal(last["cost_usd"].to_s) - kone_lwi_window_exposure(state, last["after_attempt"])
+      call_room = [ auth_room, window_room ].min
+      dollar_room = [ window_usd, kone_lwi_dollar_room(state) ].min
+      return "kone_lwi_room_already_covers" if call_room >= count && dollar_room >= cost
+
+      increase = [ count - auth_room, 0 ].max
+      return "kone_lwi_cap" if state.dig("authorization", "call_cap").to_i + increase > KONE_LWI_MAX_CAP
+
+      nil
+    end
+
+    def self.kone_lwi_anchor?(state)
+      state.is_a?(Hash) &&
+        state.values_at("attempts", "seq", "cost_cap_usd") == [ KONE_LWI_BASE_ATTEMPTS, KONE_LWI_BASE_SEQUENCE, "4.0" ] &&
+        state.dig("authorization", "call_cap") == FIELD_CONTINUATION_CAP &&
+        state.dig("authorization", "after_attempt") == 134 &&
+        Array(state["executions"]).last&.values_at("id", "after_attempt", "cost_usd", "calls") ==
+          [ FIELD_CONTINUATION_ID, FIELD_CONTINUATION_SEQUENCE, FIELD_CONTINUATION_USD, FIELD_CONTINUATION_CALLS ]
+    end
+
+    def self.kone_lwi_attempts_match?(state)
+      auth = state.is_a?(Hash) ? state["authorization"] : nil
+      return false unless auth.is_a?(Hash)
+
+      state["attempts"].to_i == auth["after_attempt"].to_i + kone_lwi_scoped_count(state, auth["after_attempt"])
+    end
+
+    def self.kone_lwi_call_rooms(state)
+      auth = state["authorization"]
+      auth_room = auth["call_cap"].to_i - auth["after_attempt"].to_i - kone_lwi_scoped_count(state, auth["after_attempt"])
+      last = Array(state["executions"]).last
+      window_room = last.is_a?(Hash) ? last["calls"].to_i - kone_lwi_scoped_count(state, last["after_attempt"]) : 0
+      [ auth_room, window_room ]
+    end
+
+    def self.kone_lwi_scoped_count(state, after)
+      Array(state["entries"]).count { |entry| entry.is_a?(Hash) && entry["id"].to_i > after.to_i && entry["status"] != "released" }
+    end
+
+    def self.kone_lwi_window_exposure(state, after)
+      Array(state["entries"]).sum(BigDecimal("0")) do |entry|
+        next BigDecimal("0") unless entry.is_a?(Hash) && entry["id"].to_i > after.to_i && entry["status"] != "released"
+
+        case entry["status"]
+        when "settled", "kept" then BigDecimal(entry["actual_usd"].to_s)
+        when "unknown" then BigDecimal((entry["reserved_usd"].presence || entry["ceiling_usd"]).to_s)
+        when "reserved"
+          BigDecimal((state.dig("open", entry["id"].to_s).presence || entry["ceiling_usd"]).to_s)
+        else BigDecimal("0")
+        end
+      end
+    end
+
+    def self.kone_lwi_exposure(state)
+      BigDecimal(state["committed"].to_s) + BigDecimal(state["unknown"].to_s) +
+        Array(state["open"]&.values).sum(BigDecimal("0")) { |amount| BigDecimal(amount.to_s) }
+    end
+
+    def self.kone_lwi_dollar_room(state)
+      BigDecimal(state["cost_cap_usd"].to_s) - kone_lwi_exposure(state)
     end
 
     def self.thyssen_baseline?(state, recheck: false)
@@ -460,6 +619,7 @@ module Rag
     def dollar_successors(state)
       Array(state["executions"]).select { |row|
         next false unless row.is_a?(Hash)
+        next self.class.kone_lwi_grant?(row) if row["id"] == KONE_LWI_LIVE_ID
 
         terms = row.values_at("id", "after_attempt", "cost_usd", "calls")
         next true if THYSSEN_PRIOR.include?(terms)

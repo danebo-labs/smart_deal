@@ -297,6 +297,8 @@ module Haiku55Http
       "pin_missing"
     elsif accounts.any? { |id| id.nil? } || plan.any? { |name| AccountHostResolver.host_map.key?(request_host(document_for(name).account)) }
       "host_account_mismatch"
+    elsif kone_lwi_admission?(ledger, calls, worst, scripts, room)
+      "execute"
     elsif scripts.values.any? { |row| BigDecimal(row["ceiling_usd"]) > room["usd"] } || calls > room["calls"]
       "grant_does_not_cover_plan"
     elsif AUDIT && KbDocument::KB_BUCKET != AUDIT_KB_BUCKET
@@ -347,7 +349,8 @@ module Haiku55Http
       "kb_bucket" => KbDocument::KB_BUCKET,
       "system_sha256" => Digest::SHA256.hexdigest(Rag::CompanionDirectAnswer::SYSTEM_PROMPT),
       "interpreter_prompt_sha256" => Digest::SHA256.hexdigest(Rag::TurnInterpreter::PROMPT),
-      "anthropic_key_present" => ENV["ANTHROPIC_API_KEY"].present?
+      "anthropic_key_present" => ENV["ANTHROPIC_API_KEY"].present?,
+      "kone_lwi_admission" => (kone_lwi_admission?(ledger, calls, worst, scripts, room) ? "pending" : nil)
     }
   end
 
@@ -369,6 +372,10 @@ module Haiku55Http
   end
 
   def grant_room(ledger, phase: PHASE)
+    if phase == "field_continuation" && SPEND.kone_lwi_grant?(Array(ledger["executions"]).last)
+      return kone_live_room(ledger)
+    end
+
     spec = FIELD_GRANTS.fetch(phase)
     cea = phase == "regression" && ENV["HTTP55_CEA_COMPLETION"] == "1"
     execution_id = cea ? Rag::AssignmentSpend::CEA_COMPLETION_ID : spec["id"]
@@ -385,6 +392,29 @@ module Haiku55Http
       "calls" => [ cap_calls - rows.size, next_cap - ledger["attempts"].to_i ].min,
       "exposure" => exposure, "entries" => rows.size, "execution_id" => execution_id,
       "after_attempt" => after, "next_cap" => next_cap }
+  end
+
+  def kone_live_room(ledger)
+    grant = ledger.fetch("executions").last
+    after = grant["after_attempt"].to_i
+    rows = Array(ledger["entries"]).select { |entry| entry.is_a?(Hash) && entry["id"].to_i > after && entry["status"] != "released" }
+    exposure = rows.sum(BigDecimal("0")) { |entry| Haiku55Companion.exposure(entry) }
+    assignment_room = BigDecimal(ledger["cost_cap_usd"]) - BigDecimal(ledger["committed"]) -
+      BigDecimal(ledger["unknown"]) - ledger.fetch("open", {}).values.sum(BigDecimal("0")) { |amount| BigDecimal(amount) }
+    next_cap = ledger.dig("authorization", "call_cap").to_i
+    { "usd" => [ BigDecimal(grant["cost_usd"]) - exposure, assignment_room ].min,
+      "calls" => [ grant["calls"].to_i - rows.size, next_cap - ledger["attempts"].to_i ].min,
+      "exposure" => exposure, "entries" => rows.size, "execution_id" => grant["id"],
+      "after_attempt" => after, "next_cap" => next_cap }
+  end
+
+  # The SHA authorizes one KONE script when the current window is short and
+  # the added run still fits inside 70 calls, US$0.249210, and the US$4 cap.
+  def kone_lwi_admission?(ledger, calls, worst, scripts, room)
+    short = scripts.values.any? { |row| BigDecimal(row["ceiling_usd"]) > room["usd"] } || calls > room["calls"]
+    short && CONTINUATION_RETRY && ENV[AUDIT_APPROVAL] == head &&
+      KbDocument::KB_BUCKET == AUDIT_KB_BUCKET &&
+      SPEND.kone_lwi_step_admissible?(ledger, calls: calls, cost_usd: worst)
   end
 
   def acceptance_passed?
@@ -404,8 +434,11 @@ module Haiku55Http
 
   def audit_baseline?(ledger)
     if CONTINUATION_RETRY
+      last = ledger.fetch("executions").last
+      return true if SPEND.kone_lwi_grant?(last) && SPEND.kone_lwi_chain?(ledger)
+
       return ledger.dig("authorization", "call_cap") == NEXT_CAP &&
-        ledger.fetch("executions").last&.values_at("id", "after_attempt", "cost_usd", "calls") ==
+        last&.values_at("id", "after_attempt", "cost_usd", "calls") ==
           [ EXECUTION_ID, SPEND::FIELD_CONTINUATION_SEQUENCE, GRANT_USD, GRANT_CALLS ]
     end
     return SPEND.field_continuation_baseline?(ledger) if CONTINUATION
@@ -416,7 +449,16 @@ module Haiku55Http
   def admit!(io, directory: nil)
     if AUDIT
       return false unless directory && ENV[AUDIT_APPROVAL] == head
-      return audit_baseline?(read_ledger) if CONTINUATION_RETRY
+      if CONTINUATION_RETRY
+        reserved = reservation("audit_kone_lwi", Haiku55Companion.per_turn_ceiling)
+        room = grant_room(read_ledger)
+        covered = BigDecimal(reserved["ceiling_usd"]) <= room["usd"] && reserved["calls"] <= room["calls"]
+        return audit_baseline?(read_ledger) if covered
+
+        assignment_spend.admit_kone_lwi_run!(calls: reserved["calls"], cost_usd: reserved["ceiling_usd"])
+        refreshed = grant_room(read_ledger)
+        return BigDecimal(reserved["ceiling_usd"]) <= refreshed["usd"] && reserved["calls"] <= refreshed["calls"]
+      end
 
       if CONTINUATION
         assignment_spend.admit_field_continuation!
@@ -1150,6 +1192,13 @@ module Haiku55Http
     "#{account.slug}.haiku55.test"
   end
 
+  def server_execution_id
+    last = read_ledger.fetch("executions").last
+    return SPEND::KONE_LWI_LIVE_ID if CONTINUATION_RETRY && SPEND.kone_lwi_grant?(last)
+
+    EXECUTION_ID
+  end
+
   def server_env(directory, run_id, reserved, account)
     env = SERVER_ENV.merge(
       "DEV_TUNNEL_FALLBACK_ACCOUNT_SLUG" => account.slug,
@@ -1163,7 +1212,8 @@ module Haiku55Http
     if AUDIT
       env["KNOWLEDGE_BASE_S3_BUCKET"] = AUDIT_KB_BUCKET
       scope = CONTINUATION ? run_id : directory.basename
-      env.merge!("RAG_ASSIGNMENT_EXECUTION_ID" => EXECUTION_ID, "RAG_ASSIGNMENT_RUN_SCOPE" => "#{EXECUTION_ID}/#{scope}")
+      execution_id = server_execution_id
+      env.merge!("RAG_ASSIGNMENT_EXECUTION_ID" => execution_id, "RAG_ASSIGNMENT_RUN_SCOPE" => "#{execution_id}/#{scope}")
     end
     if reserved["vision"]
       env.merge!(

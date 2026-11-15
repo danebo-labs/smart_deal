@@ -152,6 +152,21 @@ class Rag::PendingQuestionTest < ActiveSupport::TestCase
     assert_nil Rag::PendingQuestion.presented(reworded, indicator_question, retained: held_question)
   end
 
+  test "a bold question label is stored as the wording the answer published" do
+    screen = documented_question("**Consulta:** ¿la pantalla sigue marcando EC?")
+    published = Object.new.extend(RagQueryConcern).send(
+      :sanitize_answer, "La lectura queda pendiente.\n\n**Consulta:** ¿la pantalla sigue marcando EC?"
+    )
+    kept = Rag::PendingQuestion.presented(screen, published)
+    assert_equal "Consulta: ¿la pantalla sigue marcando EC?", kept["question"]
+    assert_equal screen["targets"], kept["targets"]
+
+    brake = documented_question("**Pregunta:** ¿el freno queda abierto?")
+    assert_equal "Pregunta: ¿el freno queda abierto?", Rag::PendingQuestion.presented(brake, "Pregunta: ¿el freno queda abierto?")["question"]
+    assert_nil Rag::PendingQuestion.presented(brake, "El variador no arranca.")
+    assert_equal "¿La entrada está activa?", Rag::PendingQuestion.presented(documented_question("¿La entrada está activa?"), "¿La entrada está activa?")["question"]
+  end
+
   test "a clarification withdrawn from the final answer is not stored even though the proposal had it" do
     proposal_text = "Orientación.\n#{entry_question}\n#{indicator_question}"
     final_answer = "Orientación.\n#{entry_question}"
@@ -194,6 +209,14 @@ class Rag::PendingQuestionTest < ActiveSupport::TestCase
   end
 
   private
+
+  def documented_question(text)
+    Rag::PendingQuestion.coerce(
+      "type" => "documented_context",
+      "question" => text,
+      "targets" => entry_target
+    )
+  end
 
   def entry_question
     "¿Está activada la entrada A?"

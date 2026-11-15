@@ -988,6 +988,11 @@ module Rag
       @catalog.resolve_brand(span, viewer_account: @viewer_account)
     end
 
+    def documented_context_pending?
+      question = @episode.respond_to?(:pending_question) ? @episode.pending_question : nil
+      question.is_a?(Hash) && question["type"] == "documented_context"
+    end
+
     def pending_slot
       question = @episode.respond_to?(:pending_question) ? @episode.pending_question : nil
       if question.is_a?(Hash) && ActiveEpisode::PENDING_SUBJECTS.include?(question["type"].to_s)
@@ -1447,6 +1452,10 @@ module Rag
     end
 
     def pending_answer?(resolution, identities)
+      if documented_context_pending?
+        return resolution == "value" && WorkContextReducer.open_reply?(@episode.pending_question, @turn)
+      end
+
       slot = pending_slot
       return false if slot.nil? || resolution.nil?
       return value_matches?(identities, slot) if resolution == "value"
@@ -1586,6 +1595,7 @@ module Rag
 
     def type_pending_value(identities)
       slot = pending_slot
+      return identities if slot.nil?
       return identities if identities.any? { |item| item.kind == "fact" && item.slot == slot }
 
       typed = false

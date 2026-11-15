@@ -1160,6 +1160,11 @@ module Rag
         @episode.clear_pending! if @perception.observations.any? { |text| CompanionParameterReview.readings(text, parameter).any? }
         return
       end
+      if open_documented_pending? && @perception.move == "answer_pending" &&
+          self.class.open_reply?(@episode.pending_question, @turn)
+        self.class.settle_answered_pending!(@episode, @episode.pending_question["question"])
+        return
+      end
       return if open_documented_pending?
 
       @episode.clear_pending!

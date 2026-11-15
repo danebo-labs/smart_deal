@@ -91,6 +91,12 @@ module Rag
       return nil if question.nil? || question["question"].blank?
 
       body = text.to_s
+      # The publisher removes a bold colon label before the technician sees it.
+      # The question stored is that published wording.
+      unless body.include?(question["question"])
+        visible = question["question"].sub(/\A\*\*([^*\n]{1,80}?)(?::\*\*|\*\*:)/, '\1:')
+        question = question.merge("question" => visible) if visible != question["question"] && body.include?(visible)
+      end
       stored = retained.is_a?(Hash) ? retained : {}
       shown = question["shown"]
       if shown && body.exclude?(shown["question"]) && shown["question"] != stored.dig("shown", "question")

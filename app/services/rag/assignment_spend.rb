@@ -116,13 +116,15 @@ module Rag
 
     # One Thyssen photo dialogue, appended after a KONE LWI chain. Each
     # admission is the eight-turn script: at most 17 Haiku calls and
-    # US$0.063916. Ten runs stay inside 170 calls and US$0.639160. Vision
-    # stays on its own ledger. The US$4 assignment cap does not move.
+    # US$0.063916. The first ten runs used that window. Ten more were
+    # authorized for the same dialogue. Twenty stay inside 340 calls and
+    # US$1.278320. Vision stays on its own ledger. The US$4 assignment cap
+    # does not move.
     THYSSEN_PHOTO_LIVE_ID = "haiku55-http-thyssen-photo-live-20261114"
     THYSSEN_PHOTO_RUN_CALLS = 17
     THYSSEN_PHOTO_RUN_USD = "0.063916"
-    THYSSEN_PHOTO_MAX_CALLS = THYSSEN_PHOTO_RUN_CALLS * 10
-    THYSSEN_PHOTO_MAX_USD = "0.639160"
+    THYSSEN_PHOTO_MAX_CALLS = THYSSEN_PHOTO_RUN_CALLS * 20
+    THYSSEN_PHOTO_MAX_USD = "1.278320"
     THYSSEN_PHOTO_MAX_CAP = KONE_LWI_MAX_CAP + THYSSEN_PHOTO_MAX_CALLS
 
     def self.field_continuation_baseline?(state)

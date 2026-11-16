@@ -77,8 +77,8 @@ class Rag::ThyssenPhotoLiveGrantTest < ActiveSupport::TestCase
     assert_equal "4.0", ledger["cost_cap_usd"]
   end
 
-  test "ten photo runs reach the ceiling and the next run is refused" do
-    10.times do
+  test "twenty photo runs reach the ceiling and the next run is refused" do
+    20.times do
       current = book_for_ledger
       current.admit_thyssen_photo_run!(calls: PHOTO_CALLS, cost_usd: PHOTO_USD)
       settle_calls(PHOTO_CALLS, "0.001000", Rag::AssignmentSpend::THYSSEN_PHOTO_LIVE_ID)

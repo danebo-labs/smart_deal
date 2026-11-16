@@ -31,6 +31,7 @@ module Haiku55Http
   SPEND = Rag::AssignmentSpend
   AUDIT_PLAN = %w[audit_thyssen_photo audit_thyssen_engineering].freeze
   CONTINUATION_PLAN = %w[audit_thyssen_photo_ea audit_kone_lwi audit_thyssen_engineering].freeze
+  PHOTO_EA_TURNS = 8
   CONTINUATION = PHASE == "field_continuation"
   CONTINUATION_RETRY = CONTINUATION && ENV["HTTP55_CONTINUATION_RETRY"] == "1"
   AUDIT_APPROVAL = "HTTP55_THYSSEN_AUTHORIZED_SHA"
@@ -396,7 +397,7 @@ module Haiku55Http
 
   # One script, complete: two calls per turn plus one, priced at the ceiling.
   def reservation(name, turn)
-    turns = script(name)["turns"].size + script(name).fetch("accept", {}).size
+    turns = name == CONTINUATION_PLAN.first ? PHOTO_EA_TURNS : script(name)["turns"].size + script(name).fetch("accept", {}).size
     ceiling = (turn["interpreter"] + turn["generation"]) * turns
     reservation = { "turns" => turns, "calls" => turns * 2 + 1, "ceiling_usd" => money(ceiling + turn["interpreter"]) }
     if script(name)["photo"]
@@ -636,7 +637,7 @@ module Haiku55Http
         elsif name == AUDIT_PLAN.first
           row["block_reason"] ||= photo_followup_stop(number, row["answer"])
         elsif name == CONTINUATION_PLAN.first
-          place_photo_reply!(questions, index, row)
+          place_photo_reply!(questions, index, row, limit: reserved.fetch("turns"))
         elsif name == "audit_kone_lwi"
           row["block_reason"] ||= Haiku55JourneyRubric.kone_lwi_followup_stop(number, row["answer"])
         end
@@ -677,7 +678,12 @@ module Haiku55Http
     single_episode = episode_ids.none?(&:nil?) && episodes.one?
     episode_ok = !(ACCEPTANCE_PLAN.include?(name) || CEA_COMPLETION || AUDIT) || single_episode
     expected = script(name)["turns"].size + script(name).fetch("accept", {}).size
-    status = rows.size == expected && rows.all? { |row| row["block_reason"].nil? } ? "executed" : "stopped"
+    complete = if name == CONTINUATION_PLAN.first
+      rows.map { |row| row["question"] }.last(2) == AUDIT_JOURNEYS.fetch("photo_ea").last(2)
+    else
+      rows.size == expected
+    end
+    status = complete && rows.all? { |row| row["block_reason"].nil? } ? "executed" : "stopped"
     payload = {
       "script" => name, "status" => status, "user_id" => user.id, "session_id" => session&.id,
       "episodes" => episodes, "single_episode" => single_episode,
@@ -786,51 +792,84 @@ module Haiku55Http
   # The next technician line has to answer the question the episode stored.
   # A line that names another component stays where it is. With no stored
   # question, the prepared line still has to match the published request.
-  def place_photo_reply!(questions, index, row)
+  def place_photo_reply!(questions, index, row, limit: PHOTO_EA_TURNS)
     rest = questions[(index + 1)..].to_a
     return if rest.empty?
 
-    pending = row["pending_question"]
-    unless pending.is_a?(Hash) && pending["question"].present?
-      pending = published_pending(row["answer"])
-      row["pending_question"] = pending if pending
-    end
-    unless pending.is_a?(Hash) && pending["question"].present?
-      return if rest.empty?
-
-      row["block_reason"] ||= Haiku55JourneyRubric.photo_ea_followup_stop(index + 1, row["answer"])
+    if index + 1 >= limit
+      row["block_reason"] ||= "photo_turn_reservation_exhausted"
       return
     end
 
-    match = rest.find { |line| Rag::WorkContextReducer.open_reply?(pending, line) }
-    if match.nil?
-      reply = door_closure_reply(pending) || persistent_code_reply(pending) || code_only_reply(pending)
-      if reply
-        questions.insert(index + 1, reply)
-        return
+    opening, display, firm, latch, misaligned, aligned, reading, how = AUDIT_JOURNEYS.fetch("photo_ea")
+    sent = questions.first(index + 1)
+    repaired = sent.include?(aligned)
+    misalignment_reported = sent.include?(misaligned)
+    latch_reported = sent.include?(latch)
+    request = Haiku55JourneyRubric.requested_observation(row["answer"].to_s)
+    pending = row["pending_question"]
+    # Match the question that reached the technician. The persisted question
+    # can still be the previous one when Danebo published a field instruction.
+    visible = published_pending(row["answer"])
+    if visible
+      pending = visible unless pending&.dig("question")&.include?(visible["question"])
+      row["pending_question"] = pending
+    end
+    pending = nil unless visible
+
+    reply = if sent.last == opening
+      display if request.match?(/codigo|display|pantalla|visor/)
+    elsif sent.last == reading
+      how if request.present? || row["answer"].to_s.present?
+    elsif misalignment_reported && !repaired && photo_repair_requested?(I18n.transliterate(row["answer"].to_s).downcase)
+      aligned
+    elsif pending
+      asked = pending["question"]
+      if (code = display_followup_reply(asked, sent, repaired: repaired))
+        code
+      elsif repaired
+        reading if request.match?(/ra\s*-?53|\bp28\b/) && Rag::WorkContextReducer.open_reply?(pending, reading)
+      elsif latch_reported && request.match?(/alin|descentr|desplaz|fuera de posicion|no coincide/)
+        misaligned
+      else
+        candidates = [firm, latch].select { |line| rest.include?(line) }
+        candidates.find { |line| Rag::WorkContextReducer.open_reply?(pending, line) } || door_closure_reply(pending)
       end
+    elsif repaired && request.match?(/ra\s*-?53|p28/) && request.match?(/lectura|tension|voltaje|mide|medir|valor|vcc/)
+      reading
+    elsif latch_reported && !misalignment_reported && request.match?(/alin|descentr|desplaz|fuera de posicion|no coincide/)
+      misaligned
+    elsif !latch_reported && request.match?(/trinco|cerrojo|pestillo|enclavamiento/) && request.match?(/engancha|enganchar|traba|enclava|encaja/)
+      latch
+    end
+
+    if reply.nil? || sent.include?(reply)
       row["block_reason"] ||= "pending_question_unanswered"
       return
     end
 
-    at = questions.index(match)
-    return if at.nil? || at == index + 1
+    rest.delete(reply)
+    # A firm connection is optional, and the question after the electrical
+    # reading ends the script regardless of any earlier optional checks.
+    rest.delete(firm) if [latch, misaligned, aligned, reading].include?(reply)
+    rest.clear if reply == how
+    questions[(index + 1)..] = [reply, *rest]
+  end
 
-    questions.insert(index + 1, questions.delete_at(at))
+  def photo_repair_requested?(request)
+    request.match?(/alin/) && request.match?(/corrig|correg|ajust|realin|aline[ae]/) &&
+      request.match?(/cierr|cerr|trab|engan|ea/)
   end
 
   # The episode did not keep the one question the answer published.
   def published_pending(answer)
-    questions = Rag::CompanionTurnPublication.claim_fragments(answer.to_s).select { |fragment|
-      Rag::CompanionTurnPublication.question_sentence?(fragment)
-    }
+    body = Haiku55JourneyRubric.kpvs_without_quotes(answer)
+    questions = body.scan(/(?:^|[.!?\n]\s*)([^?\n]+\?)/).flatten
     return nil unless questions.one?
 
-    text = questions.first.squish
-    text = "#{text}?" if answer.to_s.include?("#{text}?")
     {
       "type" => "documented_context",
-      "question" => text,
+      "question" => questions.first.squish.delete_prefix("**").delete_suffix("**"),
       "targets" => [ { "item" => "manual", "document_key" => "", "filename" => "", "page" => "" } ]
     }
   end
@@ -850,35 +889,24 @@ module Haiku55Http
     "La puerta de piso no cierra del todo."
   end
 
-  # A check the script did not prepare: the displayed code is still there.
-  # Another component is not that check. The code is the one the question names.
-  def persistent_code_reply(pending)
-    question = pending["question"].to_s
+  # The simulation can report only the code already read by the technician
+  # and the mechanical state reached in this run.
+  def display_followup_reply(question, sent, repaired:)
     return nil if question.match?(/freno|motor|variador|contactor/i)
-    return nil unless question.match?(/sigue|continu|permanec|marcando/i)
-    return nil unless question.match?(/display|pantalla|visor|c[oó]digo/i)
 
-    code = question[/(?<![[:alnum:]])([A-Z]{2,3}|\d{2})(?![[:alnum:]])/, 1]
-    return nil if code.blank?
+    code = sent.filter_map { |line| line[/\b(?:display|pantalla|visor) (?:marca|muestra) ([A-Z]{2,3}|\d{2})\b/, 1] }.last
+    return nil unless code
 
-    if question.match?(/a mano|cerrad/i)
-      "Sí, la cerré a mano y el display sigue marcando #{code}."
-    else
-      "Sí, el display sigue marcando #{code}."
+    if question.match?(/solo aparece|solo muestra|solamente|[uú]nicamente/i)
+      "Solo aparece #{code}."
+    elsif question.match?(/sigue|continu|permanec/i) && question.match?(/display|pantalla|visor|c[oó]digo/i)
+      if question.match?(/a mano|cerrad|trabada|trincada/i)
+        repaired ? "Sí, cierra y traba bien. El display sigue marcando #{code}." :
+          "Todavía no cierra ni traba. Solo aparece #{code}."
+      else
+        "Sí, el display sigue marcando #{code}."
+      end
     end
-  end
-
-  # The display shows the code and does not name the failed line. A brake
-  # question is not that display.
-  def code_only_reply(pending)
-    question = pending["question"].to_s
-    return nil if question.match?(/freno|motor|variador|contactor/i)
-    return nil unless question.match?(/solo aparece|solo muestra|solamente/i)
-
-    code = question[/(?<![[:alnum:]])([A-Z]{2,3}|\d{2})(?![[:alnum:]])/, 1]
-    return nil if code.blank?
-
-    "Solo aparece #{code}."
   end
 
   def await_photo_worker(browser, directory, turn_dir, run_id, reserved, account, correlation)
@@ -972,11 +1000,10 @@ module Haiku55Http
     ask = events.reverse.find { |event| event["kind"] == "converse" && event["provider"] == "anthropic" }
     prompt = Array(ask&.dig("messages", -1, "content")).filter_map { |block| body_text(evidence_dir, block["text"]) }.join
     visual = Rag::ActivePhotoContext.generation_evidence(prompt)
-    reasons << "photo_evidence_missing_from_generation" unless visual
+    reasons << "photo_evidence_missing_from_generation" if (number <= 2 || !persistent_ea) && !visual
     reasons << "literal_question_missing_from_generation" unless prompt.start_with?("Mensaje de este turno:\n#{question}")
     if persistent_ea && visual
-      labels = number <= 2 ? %w[P26 P27 P28] : %w[P28]
-      reasons << "visual_labels_missing_from_generation" unless labels.all? { |label| visual.match?(/\b#{label}\b/) }
+      reasons << "visual_labels_missing_from_generation" unless visual.match?(/\bP2[678]\b/)
     end
     if number == 1
       input = events.find { |event| event["kind"] == "photo_worker_input" }

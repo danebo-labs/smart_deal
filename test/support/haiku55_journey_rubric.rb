@@ -37,6 +37,10 @@ module Haiku55JourneyRubric
     no[[:space:]]+(?:puedes|sabes)[[:space:]]+(?:identificar|comprobar|verificar|medir)
     |no[[:space:]]+te[[:space:]]+(?:pido|vuelvo[[:space:]]+a[[:space:]]+pedir)
   /ix
+  PHOTO_EA_TURNS = JSON.parse(Rails.root.join("test/fixtures/field_companion/audit_20261113/journeys.json").read).fetch("photo_ea").freeze
+  PHOTO_DOOR_LABELS = %w[p26 p27 p28].freeze
+  # Labels verified on the original JPEG for the opening door check.
+  PHOTO_OPENING_LABELS = %w[p26 p27 p28 pv-1 mq-5 t2+].freeze
 
   module_function
 
@@ -69,7 +73,9 @@ module Haiku55JourneyRubric
     reasons = case name
     when "guion2" then judge.send(:judge_guion2, number, answer)
     when "guion1" then judge.send(:judge_guion1, number, answer, technician_texts: questions.first(number))
-    when "audit_thyssen_photo_ea" then photo_ea_reasons(number, answer)
+    when "audit_thyssen_photo_ea"
+      milestone = PHOTO_EA_TURNS.index(questions[number - 1])
+      milestone ? photo_ea_reasons(milestone + 1, answer) : []
     when "audit_kone_lwi" then kone_lwi_reasons(number, answer)
     when /\Acea/ then cea_reasons(number, answer)
     when /\A(?:kpvs|guion3)/ then kpvs_reasons(name, number, answer)
@@ -235,7 +241,7 @@ module Haiku55JourneyRubric
     reasons = []
     case number
     when 1
-      reasons << "observed_labels_missing" unless %w[p26 p27 p28].all? { |label| text.match?(/\b#{label}\b/) }
+      reasons.concat(photo_opening_reasons(text))
     when 2
       reasons << "ea_signals_or_latch_line_missing" unless text.match?(/\bea\b/) && text.match?(/fall[ao]\s+de\s+se[ñn]al|falha de sinais/) &&
         text.include?("p28") && text.match?(/trinc|enclav|cerradur/) && text.match?(/\[\d+\]/)
@@ -252,6 +258,9 @@ module Haiku55JourneyRubric
     when 6
       reasons << "recovered_engagement_and_persistent_ea_missing" unless text.match?(/trab|engan|enclav/) &&
         text.match?(/\bea\b/) && text.match?(/cerrad|cierra/)
+      request = requested_observation(answer)
+      reasons << "closed_door_reading_not_requested" unless request.match?(/ra\s*-?53|p28/) &&
+        request.match?(/lectura|tension|voltaje|mide|medir|valor|vcc/) && text.match?(/cerrad|cierra/) && text.match?(/trab|engan|enclav/)
     when 7
       reasons << "voltage_comparison_missing" unless text.match?(/\b0\s*v(?:cc|dc)?\b/) &&
         text.match?(/\b110\s*v(?:cc|dc)?\b/) && text.match?(/ra\s*-?53|p28/) && text.match?(/\[\d+\]/)
@@ -264,6 +273,19 @@ module Haiku55JourneyRubric
       body = kpvs_without_quotes(text)
       reasons << "bridge_proposed" if body.match?(/(?:haz|coloca|instala|usa)\s+(?:un\s+)?puente|puentea\s+(?:el|la|entre)/)
     end
+    reasons
+  end
+
+  def photo_opening_reasons(text)
+    reasons = []
+    visual = text.split(/(?<=[.!?])\s+|\n+/).select { |sentence| sentence.match?(/\bfoto\b|\bimagen\b|\besquema\b/) }
+    labels = visual.flat_map { |sentence| sentence.scan(/\b(?:ra\s*-?\d+|[a-z]{1,4}-?\d+\+?|a\d+\+)(?![\w+])/) }
+    reasons << "observed_labels_missing" if (labels & PHOTO_DOOR_LABELS).empty?
+    reasons << "unsupported_photo_label" if (labels - PHOTO_OPENING_LABELS).any?
+    reasons << "photo_used_as_measurement" if visual.any? { |sentence|
+      sentence.match?(/\b\d+\s*v(?:cc|dc|ca)?\b|\b(?:p26|p27|p28)\s+(?:esta|queda|se ve)\s+(?:activ|energiz)|\b(?:mide|marca|indica|confirma)\b[^.?!]*(?:tension|voltaje|activ|energiz)/) &&
+        !sentence.match?(/\b(?:no|sin)\b.{0,35}(?:mid|med|tension|voltaje|confirm|indic)|\bni\b/)
+    }
     reasons
   end
 

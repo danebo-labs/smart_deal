@@ -47,17 +47,11 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
     assert_not Rag::WorkContextReducer.open_reply?(documented(LATCH), "El display marca EA.")
   end
 
-  test "the runner keeps the display reading that answers the code question" do
-    load_runner
-    questions = [
-      "Estoy con el equipo.",
-      "El display marca EA.",
-      "Sí, está firme.",
-      "No engancha."
-    ]
-    row = { "pending_question" => documented(CODE), "answer" => "publicado" }
+  test "the runner keeps the display reading that answers the published code question" do
+    questions = photo_questions
+    row = { "pending_question" => documented(CODE), "answer" => CODE }
 
-    Haiku55Http.place_photo_reply!(questions, 0, row)
+    select_photo_reply(questions, 0, row)
 
     assert_nil row["block_reason"]
     assert_equal "El display marca EA.", questions[1]
@@ -89,42 +83,38 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
       "El trinco no engancha."
     )
 
-    load_runner
-    questions = [ "turno", "Sí, está firme.", "No engancha." ]
-    row = { "pending_question" => code, "answer" => "publicado" }
-    Haiku55Http.place_photo_reply!(questions, 0, row)
+    questions = photo_questions
+    row = { "pending_question" => code, "answer" => code["question"] }
+
+    select_photo_reply(questions, 1, row)
+
     assert_nil row["block_reason"]
-    assert_equal "Sí, la cerré a mano y el display sigue marcando EA.", questions[1]
-    assert_equal "No engancha.", questions[3]
+    assert_equal "Todavía no cierra ni traba. Solo aparece EA.", questions[2]
+    assert_includes questions.drop(3), "No engancha."
   end
 
   test "only the displayed code answers which line failed, and a brake does not" do
-    load_runner
-    question = documented("Pregunta: ¿La MCINV4 o algún indicador te muestra cuál de esas líneas falla, o solo aparece EA?")
-    questions = [ "turno", "Sí, está firme.", "No engancha." ]
-    row = { "pending_question" => question, "answer" => "publicado" }
-    Haiku55Http.place_photo_reply!(questions, 0, row)
+    questions = photo_questions
+    published = "Pregunta: ¿La MCINV4 o algún indicador te muestra cuál de esas líneas falla, o solo aparece EA?"
+    row = { "pending_question" => documented(published), "answer" => published }
+
+    select_photo_reply(questions, 1, row)
 
     assert_nil row["block_reason"]
-    assert_equal "Solo aparece EA.", questions[1]
-    assert_equal "No engancha.", questions[3]
+    assert_equal "Solo aparece EA.", questions[2]
+    assert_includes questions.drop(3), "No engancha."
 
-    screen = [ "turno", "Sí, está firme." ]
-    screen_row = {
-      "pending_question" => documented("¿El visor indica la línea, o solamente marca EC?"),
-      "answer" => "publicado"
-    }
-    Haiku55Http.place_photo_reply!(screen, 0, screen_row)
-    assert_equal "Solo aparece EC.", screen[1]
+    questions = photo_questions
+    questions[1] = "La pantalla marca EC."
+    row = { "answer" => "¿El visor indica la línea, o solamente marca EC?" }
+    select_photo_reply(questions, 1, row)
+    assert_equal "Solo aparece EC.", questions[2]
 
-    brake = [ "turno", "Sí, está firme." ]
-    blocked = {
-      "pending_question" => documented("¿El freno muestra cuál falla, o solo aparece EA?"),
-      "answer" => "publicado"
-    }
-    Haiku55Http.place_photo_reply!(brake, 0, blocked)
-    assert_equal "pending_question_unanswered", blocked["block_reason"]
-    assert_equal "Sí, está firme.", brake[1]
+    questions = photo_questions
+    row = { "answer" => "¿El freno muestra cuál falla, o solo aparece EA?" }
+    select_photo_reply(questions, 1, row)
+    assert_equal "pending_question_unanswered", row["block_reason"]
+    assert_equal "Sí, está firme.", questions[2]
   end
 
   test "a latch that does not engage answers the open trinco and a brake does not" do
@@ -138,14 +128,14 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
 
   test "a missing pending question is read from the one published question" do
     load_runner
-    questions = [ "El display marca EA.", "Sí, está firme.", "No engancha." ]
+    questions = photo_questions
     row = { "answer" => "#{LATCH_OPEN} La tabla indica «linha dos trincos» [1]." }
 
-    Haiku55Http.place_photo_reply!(questions, 0, row)
+    select_photo_reply(questions, 1, row)
 
     assert_nil row["block_reason"]
     assert_equal LATCH_OPEN, row.dig("pending_question", "question")
-    assert_equal "No engancha.", questions[1]
+    assert_equal "No engancha.", questions[2]
   end
 
   test "a string-keyed source still stores its published question" do
@@ -164,29 +154,22 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
   end
 
   test "an open-or-not-closed door gets the reported closure and a brake does not" do
-    load_runner
-    questions = [ "El display marca EA.", "Sí, está firme.", "No engancha." ]
-    row = { "pending_question" => documented(DOOR), "answer" => "publicado" }
+    [ DOOR, "¿La puerta queda abierta o no llega a cerrar?" ].each do |published|
+      questions = photo_questions
+      row = { "answer" => published }
 
-    Haiku55Http.place_photo_reply!(questions, 0, row)
+      select_photo_reply(questions, 1, row)
 
-    assert_nil row["block_reason"]
-    assert_equal "La puerta de piso no cierra del todo.", questions[1]
+      assert_nil row["block_reason"]
+      assert_equal "La puerta de piso no cierra del todo.", questions[2]
+      assert_equal "Sí, está firme.", questions[3]
+    end
+
+    questions = photo_questions
+    row = { "answer" => "¿El freno queda abierto o sólo no cierra?" }
+    select_photo_reply(questions, 1, row)
+    assert_equal "pending_question_unanswered", row["block_reason"]
     assert_equal "Sí, está firme.", questions[2]
-
-    paraphrase = [ "turno", "Sí, está firme." ]
-    other_row = {
-      "pending_question" => documented("¿La puerta queda abierta o no llega a cerrar?"),
-      "answer" => "publicado"
-    }
-    Haiku55Http.place_photo_reply!(paraphrase, 0, other_row)
-    assert_equal "La puerta de piso no cierra del todo.", paraphrase[1]
-
-    brake = [ "turno", "Sí, está firme.", "No engancha." ]
-    blocked = { "pending_question" => documented("¿El freno queda abierto o sólo no cierra?"), "answer" => "publicado" }
-    Haiku55Http.place_photo_reply!(brake, 0, blocked)
-    assert_equal "pending_question_unanswered", blocked["block_reason"]
-    assert_equal "Sí, está firme.", brake[1]
   end
 
   test "a firm connection answers the connection check and another component does not" do
@@ -199,37 +182,27 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
   end
 
   test "the runner uses the prepared firm reply for the connection check" do
-    load_runner
-    questions = [
-      "El display marca EA.",
-      "No engancha.",
-      "Sí, está firme.",
-      "Sí, marca 0 Vcc."
-    ]
-    row = { "pending_question" => documented(CONNECTIONS), "answer" => "publicado" }
+    questions = photo_questions
+    row = { "pending_question" => documented(CONNECTIONS), "answer" => CONNECTIONS }
 
-    Haiku55Http.place_photo_reply!(questions, 0, row)
+    select_photo_reply(questions, 1, row)
 
     assert_nil row["block_reason"]
-    assert_equal "Sí, está firme.", questions[1]
-    assert_equal "No engancha.", questions[2]
+    assert_equal "Sí, está firme.", questions[2]
+    assert_equal "No engancha.", questions[3]
   end
 
-  test "the runner uses the prepared voltage reading for the latch-line check" do
-    load_runner
-    questions = [
-      "El display marca EA.",
-      "Sí, está firme.",
-      "No engancha.",
-      "Sí, marca 0 Vcc."
-    ]
-    row = { "pending_question" => documented(ACTIVE), "answer" => "publicado" }
-
-    Haiku55Http.place_photo_reply!(questions, 0, row)
-
-    assert_nil row["block_reason"]
-    assert_equal "Sí, marca 0 Vcc.", questions[1]
+  test "the runner waits for restored engagement before reporting voltage" do
+    questions = photo_questions
+    row = { "answer" => ACTIVE }
+    select_photo_reply(questions, 1, row)
+    assert_equal "pending_question_unanswered", row["block_reason"]
     assert_equal "Sí, está firme.", questions[2]
+
+    row = { "answer" => ACTIVE }
+    select_photo_reply(questions, 5, row)
+    assert_nil row["block_reason"]
+    assert_equal "Sí, marca 0 Vcc.", questions[6]
   end
 
   test "a labeled question is stored and a second question is not" do
@@ -249,39 +222,17 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
     assert_nil service.send(:direct_documented_question, "La tabla indica ¿el freno engancha? [1].")
   end
 
-  test "an unmatched code check gets one simulated reply and another component does not" do
-    load_runner
-    questions = [
-      "El display marca EA.",
-      "Sí, está firme.",
-      "No engancha.",
-      "Ya lo alineé. Ahora cierra y traba bien, pero sigue marcando EA."
-    ]
-    row = {
-      "pending_question" => documented("Pregunta: con la puerta de piso cerrada a mano, ¿el display sigue marcando EA?"),
-      "answer" => "publicado"
-    }
+  test "a code check with the repaired door uses the reported mechanical result" do
+    questions = photo_questions
+    row = { "answer" => "Pregunta: con la puerta de piso cerrada, ¿el display sigue marcando EA?" }
 
-    Haiku55Http.place_photo_reply!(questions, 0, row)
+    select_photo_reply(questions, 5, row)
 
     assert_nil row["block_reason"]
-    assert_equal "Sí, la cerré a mano y el display sigue marcando EA.", questions[1]
-    assert_equal "Sí, está firme.", questions[2]
-    assert_not Rag::WorkContextReducer.open_reply?(
-      row["pending_question"],
-      "Ya lo alineé. Ahora cierra y traba bien, pero sigue marcando EA."
-    )
-    assert_not Rag::WorkContextReducer.open_reply?(
-      row["pending_question"],
-      "El freno sigue marcando EA."
-    )
-
-    other = [ "turno", "Sí, está firme.", "No engancha." ]
-    blocked = { "pending_question" => documented("¿El freno sigue marcando EA?"), "answer" => "publicado" }
-    Haiku55Http.place_photo_reply!(other, 0, blocked)
-
-    assert_equal "pending_question_unanswered", blocked["block_reason"]
-    assert_equal "Sí, está firme.", other[1]
+    assert_equal "Sí, cierra y traba bien. El display sigue marcando EA.", questions[6]
+    assert_equal "Sí, marca 0 Vcc.", questions[7]
+    assert_not Rag::WorkContextReducer.open_reply?(row["pending_question"], questions[5])
+    assert_not Rag::WorkContextReducer.open_reply?(row["pending_question"], "El freno sigue marcando EA.")
   end
 
   test "a direct answer stores its single published question" do
@@ -301,24 +252,35 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
     assert_nil service.send(:direct_documented_question, "Sin pregunta y sin cita [1].")
   end
 
-  test "the runner keeps the prepared line that answers the stored question" do
-    load_runner
-    questions = [
-      "El display marca EA.",
-      "Sí, está firme.",
-      "No engancha.",
-      "Sí, está desalineado."
-    ]
-    row = { "pending_question" => documented(LATCH), "answer" => "publicado" }
+  test "the runner follows the published latch question when the episode still has a different question" do
+    questions = photo_questions
+    row = { "pending_question" => documented(FIRM), "answer" => LATCH }
 
-    Haiku55Http.place_photo_reply!(questions, 0, row)
+    select_photo_reply(questions, 1, row)
 
     assert_nil row["block_reason"]
-    assert_equal "No engancha.", questions[1]
-    assert_equal "Sí, está firme.", questions[2]
+    assert_equal "No engancha.", questions[2]
+    refute_includes questions, "Sí, está firme."
+  end
+
+  test "the photo opening checks relevant labels and rejects unsupported photo claims" do
+    load_runner
+    assert_empty Haiku55JourneyRubric.photo_ea_reasons(1, "En el esquema se lee P28. ¿Qué muestra el display?")
+    assert_includes Haiku55JourneyRubric.photo_ea_reasons(1, "En el esquema se leen P28 y P99."), "unsupported_photo_label"
+    assert_includes Haiku55JourneyRubric.photo_ea_reasons(1, "La foto muestra P28 a 0 Vcc."), "photo_used_as_measurement"
+    assert_includes Haiku55JourneyRubric.photo_ea_reasons(1, "La imagen confirma que P28 está activo."), "photo_used_as_measurement"
   end
 
   private
+
+  def photo_questions
+    load_runner
+    Haiku55Http::AUDIT_JOURNEYS.fetch("photo_ea").dup
+  end
+
+  def select_photo_reply(questions, index, row)
+    Haiku55Http.place_photo_reply!(questions, index, row)
+  end
 
   def load_runner
     return if defined?(Haiku55Http)

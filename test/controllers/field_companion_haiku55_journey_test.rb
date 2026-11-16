@@ -1146,6 +1146,82 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     %w[HTTP55_RESUME_CAPTURE HTTP55_REQUIRE OPUS55_REQUIRE].each { |key| ENV[key] = previous[key] }
   end
 
+  test "Thyssen measurement replay carries the reading and relates the two documented points" do
+    previous = ENV.slice("HTTP55_REQUIRE", "HTTP55_RESUME_CAPTURE", "OPUS55_REQUIRE")
+    ENV["HTTP55_REQUIRE"] = "1"
+    load Rails.root.join("script/field_companion/run_haiku55_http.rb") unless defined?(Haiku55Http)
+    runner = Haiku55Http
+    document = audit_thyssen_pin
+    signal = "Ponto para ligar sinal do contato de engate do trinco, confirmando portas de pavimento fechada"
+    supply = "Ponto para ligar alimentação do circuito de trinco e palhetas das portas de pavimento."
+    # Stub candidates exercise publication. The generator request is tested
+    # separately because replay cannot predict the model's new answer.
+    candidates = [
+      "Mediste 0 Vcc en RA-53/P28 con la puerta cerrada y trabada. «RA-53 / P28 = +110 Vcc» [p9].\n\n" \
+      "La diferencia orienta a revisar el contacto de enganche del trinco y su cableado.\n\n" \
+      "RA-30/A4+ es alimentación del circuito: «#{supply}» [p10].\n\n" \
+      "Su lectura ayudaría a distinguir si falta alimentación al circuito o si la pérdida está en el recorrido hacia el contacto. " \
+      "¿Puedes ubicar A4+ en el plano del tablero?",
+      "Reportaste 0 Vcc en RA-53/P28 con la puerta cerrada y trabada. El punto lleva la señal de enganche: «#{signal}» [p9].\n\n" \
+      "RA-30/A4+ es la alimentación: «#{supply}» [p10].\n\n" \
+      "La pérdida queda pendiente de ubicar. Hace falta el plano del tablero para identificar A4+, el procedimiento autorizado " \
+      "y una lectura en ese punto para saber si la alimentación llega al circuito. ¿Tienes el plano del tablero?"
+    ]
+
+    Dir.mktmpdir("thyssen-measurement") do |directory|
+      ENV["HTTP55_RESUME_CAPTURE"] = ENV["HTTP55_TEST_LIVE19_CAPTURE"].presence ||
+        write_thyssen_resume_fixture(Pathname.new(directory), runner, document).to_s
+      state = runner.resume_capture(document)
+      assert state
+      runner.restore_photo_case!(reloaded_session, @user, document, state)
+      questions = state.fetch(:history).map(&:first) + runner.resume_questions
+      id = state[:episode].fetch("episode_id")
+      pending = state[:episode].fetch("pending_question")
+      part_id = pending.fetch("parts").sole.fetch("id")
+      candidates.each_with_index do |candidate, index|
+        number = index + 6
+        question = questions[number - 1]
+        turn = audit_thyssen_turn(document, question, candidate, pages: %w[9_3 10_1 24_1],
+          move: index.zero? ? "answer_pending" : "follow_up", observations: index.zero? ? [ "marca 0 Vcc" ] : [])
+        if index.zero?
+          turn.tool_input["pending_resolution"] = "value"
+          turn.tool_input["part_replies"] = [
+            { "question_id" => pending.fetch("id"), "part_id" => part_id, "state" => "complete", "quote" => "marca 0 Vcc" }
+          ]
+        end
+        body, cassette = revision_ask("thyssen-measurement", number, turn, document)
+        generator = cassette.sent.reject { |payload| payload[:tool_choice] }.sole
+        system = generator.fetch(:system)
+        assert_includes system, "Vincula la discrepancia con el tramo o la función que orienta revisar."
+        assert_includes system, "distingue la función documentada de cada uno"
+        assert_includes system, "qué lectura, plano o procedimiento falta para ubicar la falla"
+        messages = generator.fetch(:messages).flat_map { |message| message.fetch(:content).pluck(:text) }.join("\n")
+        assert_includes messages, "No, marca 0 Vcc."
+        assert_includes messages, pending.fetch("question")
+        assert_includes messages, "RA-53 / P28 = +110 Vcc"
+        assert_includes messages, "RA-30/ A4+ = 110 Vcc"
+        answer = body.fetch("answer")
+        assert_empty Haiku55JourneyRubric.reasons("audit_thyssen_photo_ea", number, answer, questions), answer
+        assert_includes answer, supply
+        assert_revision_scope(cassette, document)
+        assert_equal id, reloaded_session.live_episode_id
+        episode = Rag::ActiveEpisode.parse(reloaded_session.active_episode)
+        reading = Rag::AnswerContract.current_replies(episode, part_id).sole
+        assert_equal "marca 0 Vcc", Rag::AnswerContract.reconstruct(reading, reloaded_session)
+        assert_equal "complete", reading.fetch("state")
+        if index.positive?
+          assert_includes answer, signal
+          assert_includes answer, "La pérdida queda pendiente de ubicar."
+          assert_equal "¿Tienes el plano del tablero?", episode.pending_question.fetch("question")
+        else
+          assert_includes answer, "Su lectura ayudaría a distinguir si falta alimentación al circuito"
+        end
+      end
+    end
+  ensure
+    %w[HTTP55_REQUIRE HTTP55_RESUME_CAPTURE OPUS55_REQUIRE].each { |key| ENV[key] = previous[key] }
+  end
+
   def write_thyssen_resume_fixture(root, runner, document)
     photo_correlation = "photo:resume-fixture"
     sha256 = Digest::SHA256.hexdigest(photo_correlation)

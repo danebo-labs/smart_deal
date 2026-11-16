@@ -1,8 +1,6 @@
 # frozen_string_literal: true
 
-# Create and read a technician's cases. Admission of a turn stays in
-# FieldCases::AdmitTurn until the chat route is connected. A case is always
-# created without pins.
+# Create and read a technician's cases. Chat submissions enter via RagController.
 class FieldCasesController < ApplicationController
   include AuthenticationConcern
 

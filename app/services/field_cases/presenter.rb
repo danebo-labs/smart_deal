@@ -44,7 +44,8 @@ module FieldCases
         "base_state_revision" => record.base_state_revision,
         "result_state_revision" => record.result_state_revision,
         "admitted_at" => record.admitted_at&.iso8601,
-        "completed_at" => record.completed_at&.iso8601
+        "completed_at" => record.completed_at&.iso8601,
+        "lease_expires_at" => (record.lease_expires_at&.iso8601 if record.status == "pending")
       }
     end
   end

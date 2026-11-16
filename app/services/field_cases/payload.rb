@@ -25,7 +25,7 @@ module FieldCases
     FAILURE_FORMAT = /\A[a-z][a-z0-9_]{0,39}\z/
     CONTENT_TYPE_FORMAT = /\Aimage\/[a-z0-9.+-]{1,40}\z/
     SHA_FORMAT = /\A[0-9a-f]{64}\z/
-    SIGNED = /X-Amz-|Signature=/i
+    SIGNED = /(?:X-Amz-[\w-]+|Signature)=/i
     RESPONSE_KEYS = %w[published_text citations provenance render].freeze
     PIN_KEYS = %w[kb_document_id document_uid display_name].freeze
 

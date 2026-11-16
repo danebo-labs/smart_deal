@@ -7,14 +7,14 @@ import { formatAnswerForWeb, renderVerificationNotice } from "rag/answer_present
 import { hasSelectableEvidenceCards, renderEvidenceResolution } from "rag/evidence_cards_renderer"
 
 export default class extends Controller {
-  static targets = ["input", "sendButton", "messages", "chatContainer", "fileInput", "filePreview", "imageThumb", "docIcon", "fileName", "inputStack", "archivosTabBtn", "chatTabBtn", "archivosPanel", "chatPanel", "sourcesBadge"]
+  static targets = ["input", "sendButton", "messages", "chatContainer", "fileInput", "filePreview", "imageThumb", "docIcon", "fileName", "inputStack", "archivosTabBtn", "chatTabBtn", "archivosPanel", "chatPanel", "sourcesBadge", "caseList", "caseMore", "caseTitle", "caseNotice"]
   // locale: chat chrome's own language state (notices/invites/nudges/errors).
   // Deliberately NOT derived from document.documentElement.lang — that reflects
   // the Devise auth-time locale switcher (session[:locale]), which must never
   // leak into the response-language policy (P0 idioma). Defaults to Spanish and
   // only moves to "en" when the server tells us the actual response_locale for
   // a given answer (JSON from /rag/ask or the photo_analyzed KbSync broadcast).
-  static values = { showSources: Boolean, evidenceCards: Boolean, resolutionCopy: Object, locale: { type: String, default: "es" } }
+  static values = { showSources: Boolean, evidenceCards: Boolean, caseHistory: Boolean, resolutionCopy: Object, locale: { type: String, default: "es" } }
 
   static MAX_IMAGE_SIZE = 3.75 * 1024 * 1024  // 3.75 MB (Bedrock KB ingest limit, after compression)
   static MAX_IMAGE_INPUT_SIZE = 25 * 1024 * 1024  // 25 MB (raw camera file before Canvas)
@@ -78,6 +78,20 @@ export default class extends Controller {
     this.subscribeToKbSync()
     this.setupMobileTabs()
     this.setupKeyboardLift()
+    if (this.caseHistoryValue) {
+      this.caseSends = new Set()
+      this.caseView = 0
+      this.applyServerFocus([])
+      this.caseFocusObserver = new MutationObserver((changes) => {
+        const docRowsAdded = changes.some((change) => Array.from(change.addedNodes).some((node) =>
+          node.nodeType === Node.ELEMENT_NODE && (node.matches("[data-doc-id]") || node.querySelector("[data-doc-id]"))
+        ))
+        if (docRowsAdded) this.applyServerFocus([...this.caseFocusIds])
+      })
+      this.caseFocusObserver.observe(this.element, { childList: true, subtree: true })
+      const savedCase = new URL(location.href).searchParams.get("caso")
+      if (savedCase && /^\d+$/.test(savedCase)) this.openCase(savedCase)
+    }
     // Auto-focus only on desktop. On mobile, programmatic focus after a
     // navigation (e.g. Devise login redirect) opens the on-screen keyboard
     // immediately, shifting the layout up and hiding the nav + tab bar.
@@ -87,6 +101,9 @@ export default class extends Controller {
   }
 
   disconnect() {
+    clearTimeout(this.casePoll)
+    this.caseFocusObserver?.disconnect()
+    this.caseView++
     this.kbSyncSubscription?.unsubscribe()
     window.removeEventListener("resize", this._onResize)
     this.teardownKeyboardLift()
@@ -408,8 +425,13 @@ export default class extends Controller {
     const hasFile = this.pendingFile !== null
 
     if (!question && !hasFile) return
+    if (this.caseHistoryValue && !hasFile && !this.pendingFieldPhotoId) {
+      await this.sendCaseText(question)
+      return
+    }
     if (!await this.awaitDocumentFocus()) return
 
+    this.legacySending = true
     this.switchToChatTab()
     this.disableForm()
 
@@ -476,12 +498,192 @@ export default class extends Controller {
         : "Algo falló de mi parte. Inténtalo de nuevo en un momento."
       this.addMessage(friendlyError, "error")
     } finally {
+      this.legacySending = false
       if (ragTextQuery) {
         this.clearQueryNudgeTimer()
         this.clearQueryStallTimer()
       }
       this.enableForm()
     }
+  }
+
+  async caseRequest(path, body) {
+    const response = await fetch(path, {
+      method: body ? "POST" : "GET",
+      headers: { ...this._jsonHeaders(), "Accept-Language": this.localeValue },
+      credentials: "same-origin",
+      body: body && JSON.stringify(body)
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.message || data.error || response.status)
+    return data
+  }
+
+  async newCase() {
+    if (this.caseLoading || this.legacySending || this.kbSyncInProgress) return
+
+    this.caseLoading = true
+    try {
+      this.caseCreationKey ||= crypto.randomUUID()
+      const created = await this.caseRequest("/field_cases", { creation_key: this.caseCreationKey })
+      this.caseCreationKey = null
+      await this.openCase(String(created.id))
+    } catch {
+      this.caseNoticeTarget.textContent = "No se pudo crear el caso. Intenta de nuevo."
+    } finally {
+      this.caseLoading = false
+    }
+  }
+
+  listCases(event) {
+    if (!event.currentTarget.open) return
+
+    this.caseListTarget.replaceChildren()
+    this.caseCursor = null
+    return this.moreCases()
+  }
+
+  async moreCases() {
+    const params = new URLSearchParams()
+    if (this.caseCursor) params.set("cursor", this.caseCursor)
+    this.caseMoreTarget.hidden = true
+    try {
+      const data = await this.caseRequest(`/field_cases?${params}`)
+      for (const entry of data.cases) {
+        const button = document.createElement("button")
+        button.type = "button"
+        button.className = "block min-h-11 w-full truncate rounded px-2 text-left hover:bg-slate-100"
+        button.textContent = entry.title || `Caso ${entry.id}`
+        button.dataset.action = "rag-chat#chooseCase"
+        button.dataset.caseId = entry.id
+        this.caseListTarget.append(button)
+      }
+      if (!this.caseCursor && !data.cases.length) this.caseListTarget.textContent = "Aún no hay casos."
+      this.caseCursor = data.next_cursor
+      this.caseMoreTarget.hidden = !this.caseCursor
+    } catch {
+      this.caseNoticeTarget.textContent = "No se pudo cargar el historial."
+    }
+  }
+
+  chooseCase(event) {
+    if (this.caseLoading || this.legacySending || this.kbSyncInProgress) return
+
+    event.currentTarget.closest("details").open = false
+    return this.openCase(event.currentTarget.dataset.caseId)
+  }
+
+  async openCase(id) {
+    clearTimeout(this.casePoll)
+    const view = ++this.caseView
+    const switched = this.caseId !== id
+    this.caseLoading = true
+    this.disableForm()
+    try {
+      const base = `/field_cases/${id}`
+      let page = await this.caseRequest(base)
+      const kase = page.case
+      const turns = [...page.turns]
+      while (page.next_after_sequence) {
+        page = await this.caseRequest(`${base}?after_sequence=${page.next_after_sequence}`)
+        turns.push(...page.turns)
+      }
+      if (view !== this.caseView) return
+
+      this.caseId = id
+      this.caseNoticeTarget.textContent = ""
+      this.caseTitleTarget.textContent = kase.title || `Caso ${id}`
+      const url = new URL(location.href)
+      url.searchParams.set("caso", id)
+      history.replaceState(history.state, "", url)
+      if (switched) {
+        this.inputTarget.value = ""
+        this.pendingFieldPhotoId = null
+        this.removeFile()
+        this.switchToChatTab()
+      }
+      this.applyServerFocus(page.case.document_focus.map((pin) => pin.kb_document_id))
+      this.messagesTarget.replaceChildren()
+      this.casePending = null
+      for (const turn of turns) this.renderCaseTurn(turn)
+      this.scroll()
+      if (this.casePending) this.watchCaseTurn(id, this.casePending, view)
+    } catch {
+      if (view === this.caseView) this.caseNoticeTarget.textContent = "No se pudo abrir el caso. Intenta de nuevo."
+    } finally {
+      if (view === this.caseView) {
+        this.caseLoading = false
+        this.updateCaseComposer()
+      }
+    }
+  }
+
+  renderCaseTurn(turn) {
+    const saved = turn.response || {}
+    this.addMessage(turn.message, "user")
+    if (turn.status === "completed") {
+      this._setLocale(saved.render?.response_locale)
+      this.renderAssistantAnswer({
+        ...saved.render, answer: saved.published_text, citations: saved.citations, provenance_segments: saved.provenance
+      })
+    } else if (turn.status === "pending" && Date.parse(turn.lease_expires_at) > Date.now()) {
+      this.casePending = turn
+      this.addLoadingMessage()
+    } else {
+      this.addMessage(saved.render?.message || "El envío quedó sin respuesta. Puedes intentarlo de nuevo.", "error")
+    }
+  }
+
+  watchCaseTurn(id, turn, view) {
+    this.casePoll = setTimeout(async () => {
+      if (view !== this.caseView) return
+
+      if (Date.parse(turn.lease_expires_at) <= Date.now()) return this.openCase(id)
+      try {
+        const data = await this.caseRequest(`/field_cases/${id}/turns/${turn.id}`)
+        if (view !== this.caseView) return
+        if (data.turn.status !== "pending") return this.openCase(id)
+      } catch {
+        if (view !== this.caseView) return
+      }
+      this.watchCaseTurn(id, turn, view)
+    }, 2000)
+  }
+
+  async sendCaseText(question) {
+    if (this.caseLoading || this.casePending || this.caseSends.has(this.caseId)) return
+    if (!this.caseId) {
+      this.caseNoticeTarget.textContent = "Abre un caso del historial o crea uno para empezar."
+      return
+    }
+    const id = this.caseId
+    const view = this.caseView
+    if (!await this.awaitDocumentFocus() || view !== this.caseView || this.caseSends.has(id)) return
+
+    this.switchToChatTab()
+    this.caseSends.add(id)
+    this.updateCaseComposer()
+    this.inputTarget.value = ""
+    this.addMessage(question, "user")
+    this.addLoadingMessage()
+    const submission = { question, field_case_id: id, client_submission_id: crypto.randomUUID() }
+    let error
+    try {
+      await this.caseRequest("/rag/ask", submission)
+    } catch {
+      error = "No se pudo confirmar el envío. Revisa el historial del caso."
+    } finally {
+      this.caseSends.delete(id)
+      if (this.caseId === id && !this.caseLoading) {
+        await this.openCase(id)
+        if (error && this.caseId === id) this.caseNoticeTarget.textContent = error
+      }
+    }
+  }
+
+  updateCaseComposer() {
+    if (this.casePending || this.caseSends.has(this.caseId)) this.disableForm()
+    else this.enableForm()
   }
 
   async ask(question, file = null) {
@@ -620,6 +822,10 @@ export default class extends Controller {
 
   updateSourcesBadge() {
     if (!this.hasSourcesBadgeTarget) return
+    if (this.caseHistoryValue && this.caseFocusIds) {
+      this.paintFocusBadge()
+      return
+    }
     if (!this._focusIds) {
       const raw = this.element.dataset.focusIds
       const ids = raw ? JSON.parse(raw) : []
@@ -886,6 +1092,26 @@ export default class extends Controller {
     if (!docId) return
 
     const wasSelected = btn.dataset.selected === "true"
+    if (this.caseHistoryValue) {
+      const id = this.caseId
+      if (!id || this.caseLoading) {
+        this.caseNoticeTarget.textContent = "Abre un caso para fijar manuales."
+        return
+      }
+      return this.enqueueFocusMutation(async () => {
+        try {
+          const response = wasSelected
+            ? await this.unpinManualFocus(docId, "", null, id)
+            : await this.pinManualFocus(docId, "", null, "add", null, id)
+          if (!response.ok) throw new Error("focus failed")
+          const data = await response.json()
+          if (this.caseId === id && !this.caseLoading) this.applyServerFocus(data.focus_ids)
+        } catch {
+          if (this.caseId === id) this.caseNoticeTarget.textContent = "No se pudo actualizar el manual fijado."
+        }
+      })
+    }
+
     this._setSelectedUI(docId, !wasSelected)
 
     this.enqueueFocusMutation(async () => {
@@ -1021,7 +1247,9 @@ export default class extends Controller {
     const text = this.escapeHtml(card.text || "")
     const provenance = this.escapeHtml(card.provenance || "")
     const actionable = card.kb_document_id != null && card.kb_document_id !== "" && card.document_uid
-    const focused = card.focused === true
+    const focused = this.caseHistoryValue
+      ? this.caseFocusIds.has(String(card.kb_document_id))
+      : card.focused === true
     const action = actionable ? this.renderManualFocusButton(card, correlationId, focused, actionLabel, clearLabel, focusedStatus, episodeId) : ""
     return `<article class="rounded-xl border border-[hsl(215,20%,88%)] bg-[hsl(215,20%,97%)] px-4 py-3" data-suggestion-label="${this.escapeAttribute(card.label || "")}" data-suggestion-scope="${this.escapeAttribute(card.knowledge_scope || "")}" data-focused="${focused ? "true" : "false"}">
         <p class="text-sm font-medium leading-5 text-[hsl(215,25%,16%)]">${name}</p>
@@ -1073,6 +1301,8 @@ export default class extends Controller {
     if (!docId || !uid || button.disabled) return
 
     const focused = button.dataset.focused === "true"
+    const caseId = this.caseId
+    if (this.caseHistoryValue && (!caseId || this.caseLoading)) return
     const replayOnly = button.dataset.replayOnly === "true"
     button.disabled = true
     this.enqueueFocusMutation(async () => {
@@ -1083,9 +1313,10 @@ export default class extends Controller {
           return
         }
         const response = focused
-          ? await this.unpinManualFocus(docId, uid, correlation)
-          : await this.pinManualFocus(docId, uid, correlation, button.dataset.focusMode || "add", button.dataset.episodeId)
+          ? await this.unpinManualFocus(docId, uid, correlation, caseId)
+          : await this.pinManualFocus(docId, uid, correlation, button.dataset.focusMode || "add", button.dataset.episodeId, caseId)
         const payload = await response.json().catch(() => ({}))
+        if (caseId && (caseId !== this.caseId || this.caseLoading)) return
         if (!response.ok) {
           this.setManualFocusStatus(article, payload.error || section?.dataset.focusInvalid || "No pude seleccionar este manual.")
           this._focusSawFailure = true
@@ -1111,12 +1342,14 @@ export default class extends Controller {
   }
 
   applyServerFocus(ids) {
-    this._focusIds = new Set(ids.map(String))
+    const selectedIds = new Set(ids.map(String))
+    if (this.caseHistoryValue) this.caseFocusIds = selectedIds
+    this._focusIds = new Set(selectedIds)
     this.element.querySelectorAll("[data-doc-id]").forEach((el) => {
-      const selected = this._focusIds.has(String(el.dataset.docId))
+      const selected = selectedIds.has(String(el.dataset.docId))
       if ((el.dataset.selected === "true") !== selected) this._setSelectedUI(el.dataset.docId, selected)
     })
-    this._focusIds = new Set(ids.map(String))
+    this._focusIds = selectedIds
     this.paintFocusBadge()
   }
 
@@ -1157,10 +1390,11 @@ export default class extends Controller {
     button.disabled = true
   }
 
-  pinManualFocus(docId, uid, correlationId, focusMode, episodeId) {
+  pinManualFocus(docId, uid, correlationId, focusMode, episodeId, caseId) {
     const body = { kb_document_id: docId, document_uid: uid, focus_mode: focusMode || "add" }
     if (correlationId) body.correlation_id = correlationId
     if (episodeId) body.episode_id = episodeId
+    if (caseId) body.field_case_id = caseId
     return fetch("/pinned_documents", {
       method: "POST",
       headers: this._jsonHeaders(),
@@ -1169,9 +1403,10 @@ export default class extends Controller {
     })
   }
 
-  unpinManualFocus(docId, uid, correlationId) {
+  unpinManualFocus(docId, uid, correlationId, caseId) {
     const params = new URLSearchParams({ document_uid: uid })
     if (correlationId) params.set("correlation_id", correlationId)
+    if (caseId) params.set("field_case_id", caseId)
     return fetch(`/pinned_documents/${encodeURIComponent(docId)}?${params}`, {
       method: "DELETE",
       headers: this._jsonHeaders(),

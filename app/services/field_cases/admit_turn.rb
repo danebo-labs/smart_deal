@@ -63,6 +63,7 @@ module FieldCases
 
       turn = nil
       kase = nil
+      created = false
       FieldCase.transaction do
         kase = Guard.locked_case(account: @account, user: @user, field_case_id: @field_case_id)
         return Result.new(:not_found) unless kase
@@ -70,6 +71,7 @@ module FieldCases
         existing = kase.field_turns.find_by(client_submission_id: @client_submission_id)
         if existing
           if existing.input_digest == @digest
+            expire_text_turn(existing)
             turn = existing
             next
           end
@@ -80,7 +82,9 @@ module FieldCases
         return Result.new(:conflict, error: :not_resumable, field_case: kase) unless kase.resumable?
 
         pending = kase.field_turns.find_by(status: "pending")
-        return Result.new(:conflict, error: :case_busy, field_case: kase, turn: pending) if pending
+        if pending && !expire_text_turn(pending)
+          return Result.new(:conflict, error: :case_busy, field_case: kase, turn: pending)
+        end
 
         sequence = kase.last_sequence + 1
         turn = kase.field_turns.create!(
@@ -103,13 +107,21 @@ module FieldCases
         )
         # Locked row. Check constraints back the write; validations would reload the owner.
         kase.update_columns(last_sequence: sequence, last_activity_at: @now, updated_at: @now) # rubocop:disable Rails/SkipsModelValidations
+        created = true
       end
-      Result.new(:ok, field_case: kase.reload, turn: turn.reload)
+      Result.new(:ok, field_case: kase.reload, turn: turn.reload, created:)
     rescue ActiveRecord::RecordNotUnique
       reconcile
     end
 
     private
+
+    def expire_text_turn(turn)
+      return false unless turn.kind == "text" && turn.status == "pending" && turn.lease_expires_at && turn.lease_expires_at <= @now
+
+      turn.update!(status: "failed", phase: "failed", failure_code: "lease_expired", completed_at: @now)
+      true
+    end
 
     def invalid(error)
       Result.new(:invalid, error:)

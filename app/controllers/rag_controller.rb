@@ -16,12 +16,35 @@ class RagController < ApplicationController
     Rag::SemanticQueryAnalyzer.clear_observation!
     question  = params[:question].to_s.strip
     question_sha256 = question.present? ? Digest::SHA256.hexdigest(question) : nil
+    if params.key?(:field_case_id)
+      response.set_header("Cache-Control", "private, no-store")
+      return head :not_found unless FieldCaseHistoryFlag.enabled?
+      unless params[:question].is_a?(String)
+        return render json: { status: "error", error: "message" }, status: :unprocessable_entity
+      end
+      if %i[image images document documents field_photo_id replay_correlation_id].any? { |key| params[key].present? }
+        return render json: { status: "error", message: "Solo se admite texto en este envío." }, status: :unprocessable_entity
+      end
+
+      admission = FieldCases::AdmitTurn.call(
+        account: current_account, user: current_user, field_case_id: params[:field_case_id],
+        client_submission_id: params[:client_submission_id], message: question
+      )
+      return render_case_admission(admission) unless admission.created?
+
+      field_turn = FieldCases::TextTurn.new(admission, account: current_account, user: current_user)
+      correlation_id = admission.turn.correlation_id
+      conv_session = field_turn.context
+      unless conv_session
+        return render_case_result(field_turn.fail("invalid_pins", "Revisa los manuales fijados en este caso."))
+      end
+    end
     # Coined before extraction so an interaction that fails during image
     # compression (i.e. before Bedrock is ever reached) still carries an id —
     # H3/Fase 1. Corrected to the query: scheme once we know images is empty.
-    correlation_id = "photo:#{SecureRandom.uuid}"
+    correlation_id ||= "photo:#{SecureRandom.uuid}"
     images    = extract_images_from_params
-    correlation_id = "query:#{SecureRandom.uuid}" if images.empty?
+    correlation_id = "query:#{SecureRandom.uuid}" if images.empty? && !field_turn
     # The open capture is thread-local. Naming the turn here links the plan,
     # the retrieval, and the published answer to this request. It does not
     # change the question, the route, or the answer.
@@ -30,7 +53,7 @@ class RagController < ApplicationController
 
     # In shared-session mode, omit user_id to avoid storing "last web user" as owner of the shared row.
     effective_user_id = SharedSession::ENABLED ? nil : current_user.id
-    conv_session = ConversationSession.find_or_create_for(
+    conv_session ||= ConversationSession.find_or_create_for(
       identifier:  current_user.id.to_s,
       channel:     "web",
       user_id:     effective_user_id,
@@ -76,7 +99,7 @@ class RagController < ApplicationController
       question,
       images:          images,
       documents:       documents,
-      session_id:      params[:session_id].presence,
+      session_id:      (params[:session_id].presence unless field_turn),
       session_context: session_context,
       conv_session:    conv_session,
       entity_s3_uris:  entity_s3_uris,
@@ -104,13 +127,18 @@ class RagController < ApplicationController
         answer:          result.answer,
         **generation_trace_kwargs(result)
       )
-      render_rag_json_error(result)
+      if field_turn
+        render_case_result(field_turn.fail(result.error_type.to_s, json_error_config(result.error_type)[:message]))
+      else
+        render_rag_json_error(result)
+      end
       return
     end
 
     conflict = false
     if result.images_uploaded.blank?
       conv_session.stamp_user_retrieval_query!(correlation_id, result.effective_question || question)
+      conv_session.capture_pending!(result) if field_turn
       written = persist_companion_result!(
         conv_session, result,
         user_id: current_user.id,
@@ -121,6 +149,10 @@ class RagController < ApplicationController
     end
 
     if conflict
+      if field_turn
+        return render_case_result(field_turn.fail("case_write_conflict", Rag::CompanionCaseWrite.conflict_answer(result.response_locale)))
+      end
+
       raw_citations = []
       sources_visible = false
       provenance_segments = []
@@ -189,7 +221,8 @@ class RagController < ApplicationController
     json[:documents_uploaded] = result.documents_uploaded if result.documents_uploaded.present?
     json[:images_uploaded]    = result.images_uploaded    if result.images_uploaded.present?
     json[:correlation_id]     = result.correlation_id     if result.correlation_id.present?
-    attach_manual_suggestion(json, question, correlation_id, conv_session, result)
+    attach_manual_suggestion(json, question, correlation_id, conv_session, result,
+      allow_outside: !field_turn || entity_s3_uris.empty?)
     json[:quick_replies]      = result.quick_replies      if result.quick_replies.present?
     if json[:quick_replies].blank? && resolution[:needs_selection]
       json[:quick_replies] = resolution[:evidence_cards].first(3).filter_map do |card|
@@ -205,7 +238,16 @@ class RagController < ApplicationController
       fallback_names = consulted_documents_fallback(result.doc_refs)
       json[:consulted_documents] = fallback_names if fallback_names.present?
     end
-    render json: json
+    if field_turn
+      closed = field_turn.complete(json, conv_session, prompt_reply: result.history_answer)
+      if closed.invalid?
+        Rails.logger.error("Field case result rejected correlation_id=#{correlation_id} reason=#{closed.error}")
+        closed = field_turn.fail("invalid_result", I18n.t("rag.case_write_conflict"))
+      end
+      render_case_result(closed)
+    else
+      render json: json
+    end
   rescue ImageCompressionService::CompressionError
     emit_interaction_completed(
       correlation_id:  correlation_id,
@@ -219,9 +261,34 @@ class RagController < ApplicationController
       effective_query: question
     )
     render json: { status: 'error', message: I18n.t('rag.image_compression_failed') }, status: :bad_request
+  rescue StandardError => error
+    raise if !field_turn || performed?
+
+    Rails.error.report(error, handled: true, context: { correlation_id: correlation_id })
+    render_case_result(field_turn.fail("unexpected_error", json_error_config(:unexpected_error)[:message]))
   end
 
   private
+
+  def render_case_admission(result)
+    return head :not_found if result.disabled? || result.not_found?
+    return render_case_result(result) if result.ok?
+
+    body = { status: "error", error: result.error }
+    body[:field_turn] = FieldCases::Presenter.turn_hash(result.turn) if result.error == :case_busy
+    render json: body, status: result.invalid? ? :unprocessable_entity : :conflict
+  end
+
+  def render_case_result(result)
+    return head :not_found unless result.turn
+
+    turn = result.turn
+    if turn.status == "pending"
+      return render json: { status: "pending", field_turn: FieldCases::Presenter.turn_hash(turn) }, status: :accepted
+    end
+
+    render json: FieldCases::TextTurn.chat_response(turn)
+  end
 
   # Focus ids captured under the episode lock. A later reread can see a
   # different selection than the one RoutePolicy used.
@@ -437,7 +504,7 @@ class RagController < ApplicationController
   # Suggest-only. The ranker does not retrieve and does not write active_entities.
   # Eligibility is the physical KbDocument through Rag::KnowledgeScopePolicy.
   # A catalog classification is not an approval. A card tap is a later request.
-  def attach_manual_suggestion(json, question, correlation_id, conv_session, result)
+  def attach_manual_suggestion(json, question, correlation_id, conv_session, result, allow_outside: true)
     return if question.blank? || current_account.nil?
     return if result&.generation_mode.to_s == "clarify_first"
 
@@ -449,7 +516,8 @@ class RagController < ApplicationController
       doc_refs: result&.doc_refs,
       abstained: result.present? && interaction_outcome(result) == "abstained",
       discovery_query: understanding&.retrieval_query.presence || result&.effective_question.presence || question,
-      allow_outside: result&.generation_mode != "direct_reference" && (understanding.nil? || understanding.outside_discovery),
+      allow_outside: allow_outside && result&.generation_mode != "direct_reference" &&
+        (understanding.nil? || understanding.outside_discovery),
       retriever: lambda { |text, top_k|
         BedrockRagService.new(account: current_account).retrieve_chunks(
           text,

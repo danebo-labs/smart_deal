@@ -72,7 +72,7 @@ class WebValidationCaptureTest < ActionDispatch::IntegrationTest
     assert_not_includes answers(first), "respuesta del request B"
   end
 
-  test "a request without the run id does not open the capture" do
+  test "a request without the run id skips the file and still stores the durable trace" do
     ENV.delete("RAG_VALIDATION_CAPTURE_RUN")
     sign_in @user
     active = nil
@@ -81,8 +81,15 @@ class WebValidationCaptureTest < ActionDispatch::IntegrationTest
     end
 
     assert_response :success
-    assert_equal false, active
+    assert_equal true, active
     assert_empty capture_paths
+    row = FieldCompanionTrace.where(account_id: @account.id, kind: "capture").order(:id).last
+    assert row
+    assert_equal "observed", row.provenance
+    kinds = Array(row.payload["events"]).pluck("kind")
+    assert_includes kinds, "web_request"
+    assert_includes kinds, "published_answer"
+    assert_not_includes JSON.generate(row.payload), "AKIA"
   end
 
   test "the second model call is refused by the local cap and is not sent" do

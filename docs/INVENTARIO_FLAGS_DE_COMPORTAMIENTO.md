@@ -628,8 +628,8 @@ Estos controles permanecen configurables.
 
 | Campo | Información |
 |---|---|
-| Propósito | Incluir pregunta, consulta efectiva y respuesta en claro en `[TURN_EVIDENCE]` |
-| Qué controla | `Rag::TurnEvidence`. No abre `ValidationCapture` |
+| Propósito | Incluir pregunta, consulta efectiva y respuesta en claro en `[TURN_EVIDENCE]` para cualquier cuenta |
+| Qué controla | `Rag::TurnEvidence` y `PilotAuditLog`. No abre `ValidationCapture`. No es la compuerta del texto durable: `field_companion_traces` guarda el mensaje igual |
 | Valores | Exactamente `true` |
 | Default real | Apagado. Sin él igual se registran los SHA |
 | Encendido | El log lleva el texto del técnico |
@@ -695,14 +695,14 @@ Estos controles permanecen configurables.
 |---|---|
 | Propósito | Abrir `ValidationCapture` en el request que pinta el navegador |
 | Qué controla | `WebRequestCapture`. El id debe cumplir el patrón de 1 a 81 caracteres seguros |
-| Valores | Id presente. En un proceso local captura ese proceso. Fuera de él, solo si `RAG_VALIDATION_CAPTURE_ACCOUNT_IDS` nombra la cuenta |
-| Default real | Apagado |
+| Valores | Id presente. En un proceso local captura ese proceso. Fuera de él, el archivo se abre para cualquier cuenta. `RAG_VALIDATION_CAPTURE_ACCOUNT_IDS` no es una compuerta |
+| Default real | Apagado para el archivo. El rastro durable se escribe igual |
 | Encendido | Escribe `tmp/field_companion/validation_captures/<run>/<request>/` |
-| Apagado | El request no exporta esa captura. `PILOT_AUDIT_CAPTURE` no la abre |
-| Lectura | Request. El cubo es del hilo. El worker de Solid Queue no lo hereda |
+| Apagado | El request no exporta ese archivo. El rastro durable sigue abierto. `PILOT_AUDIT_CAPTURE` no lo sustituye |
+| Lectura | Request. El cubo es del hilo. El worker abre el suyo en el job |
 | Consumidores | `WebRequestCapture`, `bin/pilot_metrics` |
-| Dependencias | Proceso local, o la lista de cuentas. No arma `LocalPassLedger` |
-| Conflictos | Una lista vacía no abre producción. El worker no hereda el cubo del request |
+| Dependencias | El id del run para el archivo. No arma `LocalPassLedger` |
+| Conflictos | El worker no hereda el cubo del request. Persiste su propio rastro |
 | Configuración versionada | Comentada en `config/deploy.yml.example` |
 | Clasificación | Operación |
 | Vigencia | Activo |
@@ -710,7 +710,7 @@ Estos controles permanecen configurables.
 | Local observado | Ausente |
 | VF5+ | `vf5-reabre-20261020T0238Z` |
 
-`RAG_VALIDATION_CAPTURE_ACCOUNT_IDS` es la lista, separada por comas, que abre esa misma captura fuera de un proceso local. Vacía, producción sigue apagada. No captura otra cuenta ni el worker.
+`RAG_VALIDATION_CAPTURE_ACCOUNT_IDS` ya no condiciona el archivo ni el rastro durable. No debe definirse.
 
 ### `AWS_MAX_ATTEMPTS`
 

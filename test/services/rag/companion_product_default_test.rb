@@ -101,7 +101,7 @@ class Rag::CompanionProductDefaultTest < ActiveSupport::TestCase
     assert_equal antecedent, row["prompt_reply"]
   end
 
-  test "raw audit text follows the account list and still keeps hashes" do
+  test "raw audit text is included for every account when capture is on" do
     common = {
       correlation_id: "query:archive",
       route: "text",
@@ -113,20 +113,19 @@ class Rag::CompanionProductDefaultTest < ActiveSupport::TestCase
 
     isolate_env("PILOT_AUDIT_CAPTURE", "true") do
       isolate_env("PILOT_AUDIT_CAPTURE_ACCOUNT_IDS", "1") do
-        included = Rag::TurnEvidence.build(**common, account_id: 1)
-        excluded = Rag::TurnEvidence.build(**common, account_id: 2)
-        unknown = Rag::TurnEvidence.build(**common, account_id: nil)
-
-        assert_equal common[:answer], included["answer"]
-        assert_not excluded.key?("answer")
-        assert_not unknown.key?("answer")
-        assert_equal Digest::SHA256.hexdigest(common[:answer]), excluded["answer_sha256"]
+        [ 1, 3, nil ].each do |account_id|
+          included = Rag::TurnEvidence.build(**common, account_id: account_id)
+          assert_equal common[:answer], included["answer"]
+          assert_equal common[:original_query], included["original_query"]
+          assert_equal Digest::SHA256.hexdigest(common[:answer]), included["answer_sha256"]
+        end
       end
+    end
 
-      isolate_env("PILOT_AUDIT_CAPTURE_ACCOUNT_IDS", nil) do
-        global = Rag::TurnEvidence.build(**common, account_id: nil)
-        assert_equal common[:answer], global["answer"]
-      end
+    isolate_env("PILOT_AUDIT_CAPTURE", nil) do
+      hashed = Rag::TurnEvidence.build(**common, account_id: 3)
+      assert_not hashed.key?("answer")
+      assert_equal Digest::SHA256.hexdigest(common[:answer]), hashed["answer_sha256"]
     end
   end
 

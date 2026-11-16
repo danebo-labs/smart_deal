@@ -100,20 +100,17 @@ env:
     # default is off (foto_mas_pregunta_rag plan).
     PHOTO_QUESTION_RAG_ENABLED: "false"
     # Emits one [PILOT_AUDIT] line per interaction with the full question,
-    # answer and citations, plus one line per retrieved chunk. Required for the
-    # pilot dossier (docs/METRICS.md); without it only the 300-char
-    # [RAG_QUALITY] question survives and `bin/pilot_metrics --with-questions`
-    # has nothing to surface. Places raw technician text in production logs, so
-    # enable it only under the corresponding privacy authorization.
+    # answer and citations, plus one line per retrieved chunk. The durable
+    # field_companion_traces row stores that text for every account whether
+    # or not this log line is enabled. Places raw technician text in
+    # production logs, so enable the log only under the privacy authorization.
+    # Do not set PILOT_AUDIT_CAPTURE_ACCOUNT_IDS. Account lists are not a gate.
     PILOT_AUDIT_CAPTURE: "false"
-    # Empty or omitted: raw text for every account while the flag is true.
-    # A comma-separated list of account ids restricts that text. An unknown
-    # account is omitted when the list is set.
-    # PILOT_AUDIT_CAPTURE_ACCOUNT_IDS: "1"
-    # Same capture the local pass already writes, limited to these account ids
-    # when the process is not a local pass. Empty list keeps production off.
-    # RAG_VALIDATION_CAPTURE_RUN: "web-danebo-legacy"
-    # RAG_VALIDATION_CAPTURE_ACCOUNT_IDS: "1"
+    # Optional file capture under tmp/field_companion/validation_captures.
+    # A run id writes that file for every account. The worker opens its own
+    # durable trace and does not need this id. Do not set
+    # RAG_VALIDATION_CAPTURE_ACCOUNT_IDS.
+    # RAG_VALIDATION_CAPTURE_RUN: "web-danebo"
     # Kill-switch for the durable pilot_events INSERT. Default is persist
     # (unset or any value other than "false"). Not a privacy gate — that is
     # the PilotUsageLog whitelist plus the rag_quality raw-text exclusions.

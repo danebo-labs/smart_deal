@@ -41,7 +41,10 @@ class PilotMetricsReport
     log_data = read_log_data
     @usage_logs_loaded = %w[loaded partial].include?(log_data[:status])
     messages, sessions = daily_messages_and_sessions
+    @durable_package = Rag::DurableTrace.export(range: @range, user_ids: @user_ids)
+    merge_durable_archive!(Rag::DurableTrace.archive_rows(range: @range, user_ids: @user_ids))
     interaction_report = interactions(rows, log_data[:pilot], log_data[:quality], log_data[:audit])
+    attach_durable_dialogue!(interaction_report)
     attach_session_turns!(interaction_report, @session_archive)
     users = user_reports(rows, log_data[:pilot], log_data[:quality], messages)
     accounts = account_reports(rows, log_data[:pilot], log_data[:quality], messages)
@@ -67,6 +70,7 @@ class PilotMetricsReport
       },
       interactions: interaction_report,
       session_archive: session_archive_export,
+      durable_traces: Array(@durable_package && @durable_package[:turns]),
       adoption_signals: adoption_signals(rows, log_data[:pilot], messages, sessions),
       repeat_usage: repeat_usage(log_data[:pilot]),
       evidence_quality: evidence_quality(log_data[:quality]),
@@ -216,7 +220,67 @@ class PilotMetricsReport
     exported[:full_content_truncated] = true if turn[:full_content_truncated]
     exported[:prompt_reply] = turn[:prompt_reply] if turn.key?(:prompt_reply)
     exported[:prompt_reply_truncated] = true if turn[:prompt_reply_truncated]
+    exported[:provenance] = turn[:provenance] if turn[:provenance]
+    exported[:content_sha256] = turn[:content_sha256] if turn[:content_sha256]
+    exported[:recovered_from] = turn[:recovered_from] if turn[:recovered_from]
     exported
+  end
+
+  def merge_durable_archive!(rows)
+    Array(rows).each do |row|
+      next unless archive_account_visible?(row)
+
+      match = @session_archive.find { |existing| same_archive_message?(existing, row) }
+      if match
+        literal = row[:full_content].presence || row[:content].to_s
+        current = match[:full_content].presence || match[:content].to_s
+        if literal.length > current.length
+          match[:full_content] = literal
+        end
+        match[:provenance] = row[:provenance]
+        match[:content_sha256] = row[:content_sha256]
+        match[:recovered_from] = row[:recovered_from] if row[:recovered_from]
+      else
+        @session_archive << row
+      end
+    end
+  end
+
+  def same_archive_message?(left, right)
+    return false unless left[:session_id] == right[:session_id]
+    return false unless left[:correlation_id].to_s == right[:correlation_id].to_s
+    return false unless left[:role].to_s == right[:role].to_s
+
+    first = left[:full_content].presence || left[:content].to_s
+    second = right[:full_content].presence || right[:content].to_s
+    return false if first.blank? || second.blank?
+
+    first == second || first.start_with?(second) || second.start_with?(first)
+  end
+
+  def archive_account_visible?(row)
+    return true if @user_ids.empty?
+
+    @user_ids.include?(row[:user_id]) || row[:user_id].nil?
+  end
+
+  def attach_durable_dialogue!(interactions)
+    turns = Array(@durable_package && @durable_package[:turns])
+    indexed = turns.index_by { |turn| turn[:correlation_id].to_s }
+    rows = interactions.is_a?(Hash) ? interactions[:by_correlation] : nil
+    return unless rows.is_a?(Array)
+
+    rows.each do |row|
+      turn = indexed[row[:correlation_id].to_s]
+      next unless turn
+
+      question = turn.dig(:technician_message, :text)
+      answer = turn.dig(:technical_response, :text)
+      row[:question] = question if question.present? && row[:question].blank?
+      row[:answer] = answer if answer.present?
+      row[:durable_trace] = turn
+      row[:uncaptured_fields] = turn[:uncaptured_fields]
+    end
   end
 
   def read_log_data

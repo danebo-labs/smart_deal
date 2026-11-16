@@ -226,6 +226,9 @@ class ConversationSession < ApplicationRecord
 
   # History stays truncated. pending_fact is calculated from the full reply.
   def record_assistant_turn!(content, user_id:, correlation_id:, pending_question: nil, expected_episode_id: nil, writer: "assistant", focus_ids: nil, prompt_reply: nil, case_evidence: nil, outcome: nil, expected_case_revision: nil)
+    if writer == "photo_assistant" && archived_photo_reply?(correlation_id, content)
+      return :applied
+    end
     if !episode_recording? && case_write_requested?(expected_case_revision)
       return case_write_conflict(
         status: "not_recording",
@@ -358,6 +361,16 @@ class ConversationSession < ApplicationRecord
   # :not_recording has no episode to protect, so the capture follows the
   # history write without treating that path as stale.
   def record_photo_assistant_context!(content, user_id:, correlation_id:, expected_episode_id: nil, question: nil, accepted_observation: nil, confirm_identity: false)
+    if archived_photo_reply?(correlation_id, content)
+      return archived_photo_context!(
+        user_id: user_id,
+        correlation_id: correlation_id,
+        expected_episode_id: expected_episode_id,
+        question: question,
+        accepted_observation: accepted_observation,
+        confirm_identity: confirm_identity
+      )
+    end
     unless episode_recording?
       add_to_history("assistant", content, user_id: user_id, correlation_id: correlation_id)
       return capture_photo_turn_context(
@@ -951,6 +964,51 @@ class ConversationSession < ApplicationRecord
 
   private
 
+  # The card is already stored. A job retry must not append it again.
+  # A later reuse of that same card still confirms identity and can go stale.
+  def archived_photo_context!(user_id:, correlation_id:, expected_episode_id:, question:, accepted_observation:, confirm_identity:)
+    unless episode_recording?
+      return capture_photo_turn_context(
+        :not_recording, question: question, accepted_observation: accepted_observation, correlation_id: correlation_id
+      )
+    end
+
+    promotion = nil
+    snapshot = nil
+    stale_event = nil
+    dropped = false
+    with_lock do
+      current_id = live_episode_id
+      expected = expected_episode_id.presence
+      if expected != current_id
+        stale_event = stale_case_payload(
+          writer: "photo_assistant",
+          expected_episode_id: expected,
+          current_episode_id: current_id,
+          correlation_id: correlation_id
+        )
+        dropped = true
+        next
+      end
+
+      if confirm_identity
+        promotion = promote_reused_photo_identity!(
+          correlation_id: correlation_id,
+          question: question,
+          accepted_observation: accepted_observation
+        )
+      end
+      snapshot = capture_photo_turn_context(
+        :applied, question: question, accepted_observation: accepted_observation, correlation_id: correlation_id
+      )
+    end
+    emit_stale_case_write(stale_event)
+    emit_identity_promotion(promotion, user_id: user_id)
+    return capture_photo_turn_context(:stale) if dropped
+
+    snapshot
+  end
+
   def capture_photo_turn_context(status, question: nil, accepted_observation: nil, correlation_id: nil)
     if status == :stale
       return PhotoTurnContext.new(
@@ -1008,7 +1066,7 @@ class ConversationSession < ApplicationRecord
     else
       self.interpreter_input_chars = { original: original_text.length, sent: admitted.length }
     end
-    record_user_message(original_text, turn)
+    record_user_message(original_text, turn, correlation_id: correlation_id)
     focus_before = Rag::ValidationCapture.active? ? document_focus_entries : :unset
     if duplicate_user_correlation?(correlation_id)
       note_owner_exit("duplicate_correlation", "duplicate_user_correlation", correlation_id)
@@ -1268,16 +1326,27 @@ class ConversationSession < ApplicationRecord
     Rails.logger.warn("assistant history capture failed #{error.class}")
   end
 
-  def record_user_message(original, sent)
-    return unless Rag::ValidationCapture.active?
-
-    Rag::ValidationCapture.record(
-      "user_message",
-      "stage" => "prepare",
-      "original" => original.to_s,
-      "sent" => sent.to_s,
-      "limit" => MAX_MSG_LENGTH,
-      "transform" => original.to_s == sent.to_s ? "none" : "truncate"
+  def record_user_message(original, sent, correlation_id: nil)
+    if Rag::ValidationCapture.active?
+      Rag::ValidationCapture.record(
+        "user_message",
+        "stage" => "prepare",
+        "original" => original.to_s,
+        "sent" => sent.to_s,
+        "limit" => MAX_MSG_LENGTH,
+        "transform" => original.to_s == sent.to_s ? "none" : "truncate"
+      )
+    end
+    Rag::DurableTrace.record_message!(
+      session: self,
+      message: {
+        "role" => "user",
+        "content" => sent.to_s,
+        "correlation_id" => correlation_id,
+        "user_id" => user_id,
+        "ts" => Time.current.iso8601
+      },
+      literal: original.to_s
     )
   end
 
@@ -1408,8 +1477,15 @@ class ConversationSession < ApplicationRecord
     episode_before = raw_episode_id(stored_episode)
     boundary = case_boundary_changes(stored_episode, result, now)
     attrs.merge!(boundary.attributes) if boundary
+    written_state = keep_episode ? stored_episode : result.state
     update!(attrs)
-    capture_persisted_answer_report!(correlation_id, keep_episode ? stored_episode : result.state)
+    Rag::DurableTrace.link_turn!(
+      account_id: account_id,
+      correlation_id: correlation_id,
+      episode_id: raw_episode_id(written_state),
+      active_photo: written_state.is_a?(Hash) ? written_state["active_photo"] : nil
+    )
+    capture_persisted_answer_report!(correlation_id, written_state)
     log_case_boundary!(
       episode_before: episode_before,
       episode_after: raw_episode_id(keep_episode ? stored_episode : result.state),
@@ -1886,7 +1962,40 @@ class ConversationSession < ApplicationRecord
     # copy, so that record does not occupy the 200 characters reinjected later.
     # content stays on MAX_MSG_LENGTH. prompt_reply has its own cap.
     assign_prompt_reply!(message, prompt_reply)
+    archive_durable_message!(message, literal: content.to_s)
     message
+  end
+
+  def archive_durable_message!(message, literal:)
+    Rag::DurableTrace.record_message!(session: self, message: message, literal: literal)
+  rescue StandardError => error
+    Rails.logger.warn("durable message failed #{error.class}")
+  end
+
+  # A photo job retry must not append the same final card or answer again.
+  def archived_photo_reply?(correlation_id, content)
+    return true if duplicate_history_reply?(correlation_id, content)
+
+    Rag::DurableTrace.publication_exists?(
+      account_id: account_id,
+      correlation_id: correlation_id,
+      text: content,
+      kind: Rag::DurableTrace.kind_for(role: "assistant", text: content)
+    )
+  rescue StandardError
+    false
+  end
+
+  def duplicate_history_reply?(correlation_id, content)
+    needle = content.to_s
+    preview = Rag::TurnText.truncate(needle)
+    conversation_history.any? do |message|
+      next false unless message.is_a?(Hash)
+      next false unless message["role"] == "assistant" && message["correlation_id"].to_s == correlation_id.to_s
+
+      stored = message["full_content"].presence || message["prompt_reply"].presence || message["content"].to_s
+      stored == needle || stored == preview || message["content"].to_s == preview
+    end
   end
 
   # content keeps the shared MAX_MSG_LENGTH cut. A longer technician message

@@ -41,7 +41,7 @@ Canonical catalog, effects, and the retirement proposal:
 |---|---|
 | Channel | Web is the product session, one per user. WhatsApp stays unmounted. Shared session is incompatible with the Companion |
 | Operation | Activity view, usage footer, batch thresholds, retention, dictation provider, local-pass budget |
-| Protection | `PILOT_AUDIT_CAPTURE` for raw technician text. `PILOT_EVENTS_PERSIST` for the event insert |
+| Protection | `PILOT_AUDIT_CAPTURE` for raw text in logs, every account. The durable dialogue is `field_companion_traces` and does not use an account list. `PILOT_EVENTS_PERSIST` for the capped event insert |
 
 ## Capabilities
 

@@ -33,26 +33,28 @@ class Rag::WebTurnCaptureExportTest < ActiveSupport::TestCase
     Rag::LocalPassLedger.reset_local_process!
   end
 
-  test "a local pass still captures and a production list stays on the named account" do
+  test "a local pass still captures and a run id covers every account" do
     assert Rag::WebRequestCapture.enabled?
 
     Rag::LocalPassLedger.instance_variable_set(:@local_process, false)
     assert_not Rag::WebRequestCapture.enabled?
-    assert_not Rag::WebRequestCapture.enabled_for(1)
+    assert Rag::WebRequestCapture.enabled_for(1)
+    assert Rag::WebRequestCapture.enabled_for(3)
+    assert_not Rag::WebRequestCapture.enabled_for(nil)
 
     ENV["RAG_VALIDATION_CAPTURE_ACCOUNT_IDS"] = "1"
     assert Rag::WebRequestCapture.enabled_for(1)
-    assert_not Rag::WebRequestCapture.enabled_for(2)
+    assert Rag::WebRequestCapture.enabled_for(3)
     assert_not Rag::WebRequestCapture.enabled_for(nil)
 
-    foreign = controller_for(account_id: 2, question: "ajena")
+    foreign = controller_for(account_id: 3, question: "ajena")
     assert_not foreign.respond_to?(:current_account)
     assert_nil foreign.try(:current_account)
 
     Rag::WebRequestCapture.wrap(controller: foreign) do
       Rag::ValidationCapture.record("user_message", "original" => "ajena", "sent" => "ajena", "transform" => "none")
     end
-    assert_empty capture_paths
+    assert_equal 1, capture_paths.size
 
     correlation = "query:cuenta-uno"
     Rag::WebRequestCapture.wrap(controller: controller_for(account_id: 1, question: "cuenta uno")) do
@@ -60,14 +62,15 @@ class Rag::WebTurnCaptureExportTest < ActiveSupport::TestCase
       Rag::ValidationCapture.record("user_message", "original" => "cuenta uno", "sent" => "cuenta uno", "transform" => "none")
     end
 
-    document = JSON.parse(File.read(capture_paths.sole))
+    own_path = capture_paths.find { |path| File.read(path).include?("cuenta uno") }
+    document = JSON.parse(File.read(own_path))
     recorded = document["events"].find { |event| event["original"] == "cuenta uno" }
     assert_equal "cuenta uno", document["events"].first["question"]
-    assert_equal "account", document["events"].first["capture_scope"]
+    assert_equal "all_accounts", document["events"].first["capture_scope"]
     assert_equal 1, recorded["account_id"]
     assert_equal @user.id, recorded["user_id"]
     assert_equal correlation, recorded["correlation_id"]
-    assert_equal 0o600, File.stat(capture_paths.sole).mode & 0o777
+    assert_equal 0o600, File.stat(own_path).mode & 0o777
 
     index = Rag::ValidationCaptureIndex.build(Rails.root.join(Rag::WebRequestCapture::ROOT, @run_id))
     turn = index["turns"].find { |item| item["correlation_id"] == correlation }

@@ -16,6 +16,7 @@ class PilotMetricsHumanFormatter
       adoption_section,
       interactions_section,
       turns_section,
+      durable_trace_section,
       repeat_usage_section,
       evidence_route_section,
       evidence_quality_section,
@@ -107,6 +108,7 @@ class PilotMetricsHumanFormatter
     trace = row[:field_companion]
     lines = [ "TURN #{row[:correlation_id]}" ]
     lines << "question=#{row[:question]}" if row[:question].present?
+    lines << "answer=#{row[:answer]}" if row[:answer].present?
     lines << "session=#{row[:conversation_session_id]}" if row[:conversation_session_id]
     lines << "episode=#{trace[:episode_id]}" if trace[:episode_id]
     lines << "turn=#{trace[:interpreter_move]}" if trace[:interpreter_move]
@@ -203,7 +205,29 @@ class PilotMetricsHumanFormatter
       bits << "latency_ms=#{call[:latency_ms]}" unless call[:latency_ms].nil?
       lines << bits.join(" ")
     end
-    lines << "answer=#{row[:answer_snippet]}" if row[:answer_snippet].present?
+    lines << "answer=#{row[:answer_snippet]}" if row[:answer].blank? && row[:answer_snippet].present?
+    lines.join("\n")
+  end
+
+  def durable_trace_section
+    turns = Array(report[:durable_traces])
+    return nil if turns.empty?
+
+    lines = [ "== Durable trace ==" ]
+    turns.each do |turn|
+      lines << "TURN #{turn[:correlation_id]} provenance=#{turn[:provenance]} account=#{turn[:account_id]}"
+      question = turn.dig(:technician_message, :text)
+      answer = turn.dig(:technical_response, :text)
+      card = turn.dig(:visual_card, :text)
+      lines << "question=#{question}" if question.present?
+      lines << "visual_card=#{card}" if card.present?
+      lines << "answer=#{answer}" if answer.present?
+      lines << "browser_render=#{turn[:browser_render]}"
+      missing = Array(turn[:uncaptured_fields])
+      lines << "uncaptured=#{missing.join(',')}" if missing.any?
+      source = Array(turn[:recovered_from]).join(",")
+      lines << "recovered_from=#{source}" if source.present?
+    end
     lines.join("\n")
   end
 

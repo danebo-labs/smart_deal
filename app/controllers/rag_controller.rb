@@ -355,6 +355,55 @@ class RagController < ApplicationController
       sources: sources,
       account_id: current_account&.id
     )
+    record_durable_terminal(
+      correlation_id: correlation_id, conv_session: conv_session, outcome: outcome, route: route,
+      stage: stage, error_class: error_class, original_query: original_query,
+      effective_query: effective_query.nil? ? original_query : effective_query, answer: answer,
+      chunk_ids: chunk_ids, sources: sources, generation_mode: generation_mode,
+      generation_context: generation_context, generation_prompt_chars: generation_prompt_chars,
+      context_truncated: context_truncated, question_sha256: question_sha256
+    )
+  end
+
+  def record_durable_terminal(correlation_id:, conv_session:, outcome:, route:, stage:, error_class:,
+                              original_query:, effective_query:, answer:, chunk_ids:, sources:,
+                              generation_mode:, generation_context:, generation_prompt_chars:,
+                              context_truncated:, question_sha256:)
+    account_id = current_account&.id
+    return if account_id.blank?
+
+    Rag::DurableTrace.record_terminal!(
+      account_id: account_id,
+      user_id: current_user&.id,
+      conversation_session_id: (conv_session.id if conv_session.respond_to?(:id)),
+      episode_id: (conv_session.live_episode_id if conv_session.respond_to?(:live_episode_id)),
+      correlation_id: correlation_id,
+      route: route,
+      outcome: outcome,
+      stage: stage,
+      error_class: error_class,
+      original_query: original_query,
+      effective_query: effective_query,
+      answer: answer,
+      chunk_ids: chunk_ids,
+      sources: sources,
+      generation_mode: generation_mode,
+      generation_context: generation_context,
+      generation_prompt_chars: generation_prompt_chars,
+      context_truncated: context_truncated,
+      question_sha256: question_sha256
+    )
+    return unless outcome.to_s == "failed"
+
+    Rag::DurableTrace.record_failure!(
+      account_id: account_id,
+      user_id: current_user&.id,
+      conversation_session_id: (conv_session.id if conv_session.respond_to?(:id)),
+      correlation_id: correlation_id,
+      stage: stage,
+      error_class: error_class,
+      outcome: outcome
+    )
   end
 
   # Lengths of the technician message before and after the existing cut that
@@ -488,6 +537,32 @@ class RagController < ApplicationController
       )
     end
     attach_focus_notices(json, conv_session, discovery, correlation_id)
+    record_presented_answer(json, payload, correlation_id, conv_session)
+  end
+
+  def record_presented_answer(json, payload, correlation_id, conv_session)
+    return if current_account.nil?
+
+    cards = Array(payload && payload[:cards]).map { |card|
+      card.to_h.slice(:document_uid, :kb_document_id, :title, :display_name, :knowledge_scope, :focused, :canonical_name)
+    }
+    notices = []
+    notices << json[:pin_conflict][:message] if json[:pin_conflict].is_a?(Hash)
+    notices << json[:identity_conflict][:message] if json[:identity_conflict].is_a?(Hash)
+    return if cards.empty? && notices.empty?
+
+    Rag::DurableTrace.record_presentation!(
+      account_id: current_account.id,
+      user_id: current_user&.id,
+      conversation_session_id: (conv_session.id if conv_session.respond_to?(:id)),
+      episode_id: (conv_session.live_episode_id if conv_session.respond_to?(:live_episode_id)),
+      correlation_id: correlation_id,
+      cards: cards,
+      notices: notices,
+      response_type: payload ? "manual_suggestion" : "focus_notice",
+      final_state: json[:status],
+      browser_render: "uncaptured"
+    )
   end
 
   def mark_focused_cards!(payload, conv_session)

@@ -160,6 +160,7 @@ class PinnedDocumentsController < ApplicationController
   end
 
   def record_focus_confirmed(session, kb_doc)
+    source_uri = kb_doc.display_s3_uri(KbDocument::KB_BUCKET)
     PilotUsageLog.log(
       "manual_focus_confirmed",
       account_id: current_account.id,
@@ -167,8 +168,19 @@ class PinnedDocumentsController < ApplicationController
       conversation_session_id: session.id,
       correlation_id: create_params[:correlation_id].presence,
       document_id: kb_doc.document_uid,
-      source_uri: kb_doc.display_s3_uri(KbDocument::KB_BUCKET),
+      source_uri: source_uri,
       knowledge_scope: Rag::KnowledgeScopePolicy.scope_for(kb_doc, viewer_account: current_account)
+    )
+    Rag::DurableTrace.record_click!(
+      account_id: current_account.id,
+      user_id: current_user.id,
+      conversation_session_id: session.id,
+      episode_id: (session.live_episode_id if session.respond_to?(:live_episode_id)),
+      correlation_id: create_params[:correlation_id].presence,
+      action: "manual_focus_confirmed",
+      document_uid: kb_doc.document_uid,
+      source_uri: source_uri,
+      browser_render: "uncaptured"
     )
   end
 
@@ -193,6 +205,15 @@ class PinnedDocumentsController < ApplicationController
       correlation_id: params[:correlation_id].presence,
       document_id: document_id,
       outcome: "unpinned"
+    )
+    Rag::DurableTrace.record_click!(
+      account_id: current_account.id,
+      user_id: current_user.id,
+      conversation_session_id: session.id,
+      correlation_id: params[:correlation_id].presence,
+      action: "manual_suggestion_dismissed",
+      document_uid: document_id,
+      browser_render: "uncaptured"
     )
   end
 

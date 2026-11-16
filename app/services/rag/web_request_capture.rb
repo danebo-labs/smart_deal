@@ -7,7 +7,6 @@ module Rag
   # wrapper returns, including when the action raises.
   module WebRequestCapture
     RUN_ENV = "RAG_VALIDATION_CAPTURE_RUN"
-    ACCOUNTS_ENV = "RAG_VALIDATION_CAPTURE_ACCOUNT_IDS"
     ROOT = "tmp/field_companion/validation_captures"
 
     module_function
@@ -16,25 +15,15 @@ module Rag
       run_id.present? && LocalPassLedger.local_process?
     end
 
-    # A local pass captures every request of that process. Outside it, the
-    # same capture opens only for an account id named in ACCOUNTS_ENV. An
-    # empty list does not open production. This does not arm LocalPassLedger.
+    # A local pass captures every request of that process. Outside it, a run
+    # id opens the file capture for every account. The account list is not a
+    # gate. This does not arm LocalPassLedger. The durable trace is separate
+    # and does not need the run id.
     def enabled_for(account_id)
       return false unless run_id
       return true if LocalPassLedger.local_process?
 
-      selected_account?(account_id)
-    end
-
-    def selected_account?(account_id)
-      ids = account_ids
-      return false if ids.empty? || account_id.nil?
-
-      ids.include?(account_id.to_s)
-    end
-
-    def account_ids
-      ENV[ACCOUNTS_ENV].to_s.split(",").filter_map { |item| item.strip.presence }
+      account_id.present?
     end
 
     def run_id
@@ -48,41 +37,78 @@ module Rag
       account = controller_record(controller, :current_account)
       user = controller_record(controller, :current_user)
       account_id = account&.id
-      unless enabled_for(account_id)
+      file_export = enabled_for(account_id)
+      durable = account_id.present?
+      unless file_export || durable
         yield
         return
       end
 
-      request_key = request_key_for(controller)
+      request_key = file_export ? request_key_for(controller) : request_token(controller)
       failure = nil
-      events = ValidationCapture.capture do |bucket|
-        ValidationCapture.bind(
-          run_id: run_id,
-          user_id: user&.id,
-          account_id: account_id
-        )
-        ValidationCapture.record("web_request", request_meta(controller, request_key))
-        ValidationCapture.record("process_contract", process_contract)
-        begin
-          yield
-        rescue Exception => error # rubocop:disable Lint/RescueException
-          failure = error
+      events = nil
+      Rag::DurableTrace.with_context(
+        account_id: account_id,
+        user_id: user&.id,
+        request_id: request_key,
+        attempt: 1
+      ) do
+        events = ValidationCapture.capture do |bucket|
+          ValidationCapture.bind(
+            run_id: run_id,
+            user_id: user&.id,
+            account_id: account_id
+          )
+          ValidationCapture.record("web_request", request_meta(controller, request_key))
+          ValidationCapture.record("process_contract", process_contract)
+          begin
+            yield
+          rescue Exception => error # rubocop:disable Lint/RescueException
+            failure = error
+            Rag::DurableTrace.record_failure!(
+              account_id: account_id,
+              user_id: user&.id,
+              correlation_id: controller.params[:correlation_id].presence || request_key,
+              stage: "request",
+              error: error
+            )
+          end
+          if LocalPassLedger.guard_requested?
+            ValidationCapture.record("local_pass_ledger", LocalPassLedger.snapshot)
+          end
+          bucket
         end
-        if LocalPassLedger.guard_requested?
-          ValidationCapture.record("local_pass_ledger", LocalPassLedger.snapshot)
-        end
-        bucket
       end
-      begin
-        export!(events, request_key)
-      rescue StandardError => error
-        Rails.logger.error("web_request_capture export_failed #{error.class}")
-        failure ||= error
+      if durable
+        begin
+          Rag::DurableTrace.persist_capture!(
+            events,
+            account_id: account_id,
+            user_id: user&.id,
+            request_id: request_key
+          )
+        rescue StandardError => error
+          Rails.logger.error("web_request_capture durable_failed #{error.class}")
+        end
+      end
+      if file_export
+        begin
+          export!(events, request_key)
+        rescue StandardError => error
+          Rails.logger.error("web_request_capture export_failed #{error.class}")
+          failure ||= error
+        end
       end
       raise failure if failure
       nil
     ensure
       LocalPassLedger.release_thread!
+    end
+
+    def request_token(controller)
+      raw = controller.request.request_id.to_s
+      key = raw.gsub(/[^A-Za-z0-9_-]/, "")
+      key.presence || SecureRandom.hex(8)
     end
 
     def export!(events, request_key)
@@ -144,8 +170,7 @@ module Rag
         "bound_lengths_iseq_sha256" => (Digest::SHA256.hexdigest(iseq.disasm) if iseq),
         "kamal_version" => ENV["KAMAL_VERSION"].to_s,
         "validation_capture_run" => run_id.to_s,
-        "validation_capture_accounts" => account_ids.join(","),
-        "capture_scope" => LocalPassLedger.local_process? ? "local_process" : "account"
+        "capture_scope" => LocalPassLedger.local_process? ? "local_process" : "all_accounts"
       }
     end
 
@@ -173,7 +198,7 @@ module Rag
         "controller" => controller.controller_path,
         "action" => controller.action_name,
         "request_key" => request_key,
-        "capture_scope" => LocalPassLedger.local_process? ? "local_process" : "account",
+        "capture_scope" => LocalPassLedger.local_process? ? "local_process" : "all_accounts",
         "question" => params[:question].presence&.to_s,
         "replay_correlation_id" => params[:replay_correlation_id].presence,
         "correlation_id" => params[:correlation_id].presence,

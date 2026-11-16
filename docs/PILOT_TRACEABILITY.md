@@ -132,7 +132,7 @@ One correlation can also carry the causal chain when those events emitted it:
 
 `field_companion_turn` with `result=assistant` does not store `original_sha256` or `effective_sha256`. The reply stays `TURN_EVIDENCE.answer_sha256`.
 
-`TURN_EVIDENCE.original_query` is what the technician said on the web, worker, and photo-question lanes. The composed retrieval string stays `effective_query`. With `PILOT_AUDIT_CAPTURE` off, the raw text keys stay absent and the original hash is still the raw turn. The cohort question is not backfilled from the composed query in that case.
+`TURN_EVIDENCE.original_query` is what the technician said on the web, worker, and photo-question lanes. The composed retrieval string stays `effective_query`. With `PILOT_AUDIT_CAPTURE` off, the raw text keys stay absent from that log line and the original hash is still the raw turn. The cohort question is not backfilled from the composed query in that case. The durable row in `field_companion_traces` still stores the text.
 
 `generation_mode` on `interaction_completed` is the route that ran: `generative` for managed RetrieveAndGenerate, `document_identity_scope`, `meta`, `clarify_first`, `structured_evidence_route`, or the mode the photo service returned. Scope status and route distinguish shared strings. `meta_kind` is allowlisted and not emitted. `evidence_applicability` is emitted on the events in the table above. The TURN card still copies `open_retrieval` as `result` and `outcome_reason` only.
 
@@ -153,7 +153,7 @@ Leave it there. Do not add it to the export.
 | Mode | What it is |
 |---|---|
 | Normal | `[PILOT_USAGE]` plus `pilot_events`. No raw prompt, no image, no full history. `kb_retrieve` carries the caller's `user_id` and `conversation_session_id` when that caller has them |
-| Forensic | `PILOT_AUDIT_CAPTURE=true` writes `[PILOT_AUDIT]` and the raw question on `[TURN_EVIDENCE]`. Not copied into `pilot_events` |
+| Forensic | `PILOT_AUDIT_CAPTURE=true` writes `[PILOT_AUDIT]` and the raw question on `[TURN_EVIDENCE]` for every account. Not copied into `pilot_events`. The dialogue itself is the `field_companion_traces` row, which is written for every account without that flag |
 | Temporary | `R1A_PROBE` records filter and chunk decisions the gate already computed. It does not change retrieval |
 
 Package directory: `tmp/pilot_exports/<from>_<to>_<slug>/`.
@@ -209,10 +209,18 @@ this job's procedure.
 1. Add the key to `PilotUsageLog::ALLOWED_FIELDS` only if it is persisted.
 2. Clip strings in the caller when 500 characters is too much. Do not persist prompts, history, image bytes, secrets, or extra PII.
 3. Emit through `PilotUsageLog.log` after any episode lock.
-4. Rescue stays inside the log and the recorder. Do not add a job, a broadcast, or a new table.
+4. Rescue stays inside the log and the recorder. Do not add a job, a broadcast, or another telemetry table. The full dialogue is `field_companion_traces`, not a `pilot_events` column.
 5. Teach `field_companion` and the `TURN` card only from that event. Do not infer a missing event.
 6. Cover the branch with a Minitest that does not call Bedrock or Vision.
 7. Update this document. Do not add a second catalog in METRICS.md.
+
+## Durable dialogue
+
+`conversation_history` is the live workspace. `isolate_web_trial` and a new case replace it. `field_companion_traces` is the copy that remains, for every account. `PILOT_AUDIT_CAPTURE_ACCOUNT_IDS` and `RAG_VALIDATION_CAPTURE_ACCOUNT_IDS` are not gates. Do not set them.
+
+The export reads that table when the live history is empty. A row written by the turn is `observed`. A file imported from an isolation copy is `recovered` and names its source. A hash without the text is `uncaptured` for that field. The export does not invent the missing text. `browser_render` stays `uncaptured` unless a later client event exists. A photo card and a failed technical answer are different rows. A job retry does not insert a second final answer with the same text. `pilot_events` stays the capped telemetry table. It does not receive the prompt or the full history.
+
+After deploy, confirm the two account-list variables are unset. Ask one question on an account other than the old allowlist. `FieldCompanionTrace` for that account has the literal message. Run `bin/pilot_metrics --from TODAY --to TODAY --account SLUG --with-questions`. `report.json` `durable_traces` and `report.txt` `question=` / `answer=` contain the text. Clear or isolate the live history and export again. The same text remains. An export for another account does not contain it.
 
 ## Maintenance case (not implemented)
 

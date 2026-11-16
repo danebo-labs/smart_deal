@@ -43,7 +43,6 @@ module ActiveSupport
       ENV["RAG_COMPANION_TURN"] = "0"
       ENV["RAG_COMPANION_GENERATION"] = "plan"
       ENV["DOCUMENT_IDENTITY_SCOPE_ENABLED"] = "false"
-      ENV.delete("PILOT_AUDIT_CAPTURE_ACCOUNT_IDS")
     end
 
     def require_historical_capture(path)

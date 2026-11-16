@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_06_183000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_13_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -178,6 +178,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_06_183000) do
     t.decimal "value", precision: 20, scale: 6, null: false
     t.index [ "date", "metric_type" ], name: "index_cost_metrics_on_date_and_metric_type", unique: true
     t.index [ "date" ], name: "index_cost_metrics_on_date"
+  end
+
+  create_table "field_companion_traces", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.integer "attempt"
+    t.string "content_sha256"
+    t.bigint "conversation_session_id"
+    t.string "correlation_id"
+    t.datetime "created_at", null: false
+    t.string "deployed_version"
+    t.string "episode_id"
+    t.string "idempotency_key", null: false
+    t.string "job_id"
+    t.string "kind", null: false
+    t.datetime "occurred_at", null: false
+    t.jsonb "payload", default: {}, null: false
+    t.string "provenance", default: "observed", null: false
+    t.string "request_id"
+    t.datetime "updated_at", null: false
+    t.bigint "user_id"
+    t.index [ "account_id", "occurred_at" ], name: "index_field_companion_traces_on_account_id_and_occurred_at"
+    t.index [ "conversation_session_id", "occurred_at" ], name: "idx_field_companion_traces_on_session_and_occurred_at"
+    t.index [ "correlation_id" ], name: "index_field_companion_traces_on_correlation_id"
+    t.index [ "idempotency_key" ], name: "index_field_companion_traces_on_idempotency_key", unique: true
   end
 
   create_table "field_photos", force: :cascade do |t|

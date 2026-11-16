@@ -39,14 +39,40 @@ class FieldPhotoAnalysisJob < ApplicationJob
       error_class: error.class.name,
       route: "visual_query"
     )
+    failed_answer = I18n.with_locale(locale) { I18n.t("rag.photo_analysis_failed") }
     Rag::TurnEvidence.log(
       correlation_id: args[:correlation_id],
       route: "visual_query",
       outcome: "failed",
       original_query: args[:raw_question].nil? ? args[:question] : args[:raw_question],
       effective_query: args[:question],
-      answer: I18n.with_locale(locale) { I18n.t("rag.photo_analysis_failed") },
+      answer: failed_answer,
       account_id: args[:account_id]
+    )
+    Rag::DurableTrace.record_failure!(
+      account_id: args[:account_id],
+      user_id: args[:user_id],
+      conversation_session_id: args[:conversation_session_id],
+      correlation_id: args[:correlation_id],
+      stage: "error",
+      error: error,
+      attempt: job.executions,
+      job_id: job.job_id,
+      outcome: "failed"
+    )
+    Rag::DurableTrace.record_terminal!(
+      account_id: args[:account_id],
+      user_id: args[:user_id],
+      conversation_session_id: args[:conversation_session_id],
+      correlation_id: args[:correlation_id],
+      route: "visual_query",
+      outcome: "failed",
+      stage: "error",
+      error_class: error.class.name,
+      original_query: args[:raw_question].nil? ? args[:question] : args[:raw_question],
+      effective_query: args[:question],
+      answer: failed_answer,
+      attempt: job.executions
     )
     KbSyncBroadcaster.failed(
       filenames: [ args[:filename].presence || "photo" ],
@@ -64,6 +90,14 @@ class FieldPhotoAnalysisJob < ApplicationJob
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     locale = locale.to_s.presence || I18n.default_locale.to_s
     correlation_id ||= "photo:#{SecureRandom.uuid}"
+    @durable_trace = Rag::DurableTrace.start_job(
+      account_id: account_id,
+      user_id: user_id,
+      conversation_session_id: conversation_session_id,
+      correlation_id: correlation_id,
+      job_id: job_id,
+      attempt: [ executions.to_i, 1 ].max
+    )
     session = conversation_session_id ? ConversationSession.find_by(id: conversation_session_id) : nil
     if session && account_id && session.account_id != account_id
       raise ArgumentError, "ConversationSession #{session.id} is not owned by account #{account_id}"
@@ -216,6 +250,7 @@ class FieldPhotoAnalysisJob < ApplicationJob
       }
     )
   ensure
+    Rag::DurableTrace.finish_job(@durable_trace)
     FieldPhotoPendingImageStore.delete(token: image_token, account_id: account_id)
   end
 
@@ -523,6 +558,15 @@ class FieldPhotoAnalysisJob < ApplicationJob
     result
   rescue StandardError => e
     Rails.logger.warn("FieldPhotoAnalysisJob photo-question RAG failed: #{e.class}: #{e.message}")
+    Rag::DurableTrace.record_failure!(
+      account_id: account_id,
+      user_id: user_id,
+      conversation_session_id: session&.id,
+      correlation_id: correlation_id,
+      stage: "rag",
+      error: e,
+      outcome: "failed"
+    )
     PilotUsageLog.log(
       "photo_question_failed",
       account_id: account_id,
@@ -704,6 +748,39 @@ class FieldPhotoAnalysisJob < ApplicationJob
       chunk_ids: chunk_ids,
       sources: sources,
       account_id: account_id
+    )
+    return if account_id.blank?
+
+    Rag::DurableTrace.record_terminal!(
+      account_id: account_id,
+      user_id: user_id,
+      conversation_session_id: conversation_session_id,
+      correlation_id: correlation_id,
+      route: "visual_query",
+      outcome: outcome,
+      stage: stage,
+      error_class: error_class,
+      original_query: original_query,
+      effective_query: effective_query.nil? ? original_query : effective_query,
+      answer: answer,
+      chunk_ids: chunk_ids,
+      sources: sources,
+      photo: photo,
+      generation_mode: generation_mode,
+      generation_context: generation_context,
+      generation_prompt_chars: generation_prompt_chars,
+      context_truncated: context_truncated
+    )
+    return unless outcome.to_s == "failed"
+
+    Rag::DurableTrace.record_failure!(
+      account_id: account_id,
+      user_id: user_id,
+      conversation_session_id: conversation_session_id,
+      correlation_id: correlation_id,
+      stage: stage,
+      error_class: error_class,
+      outcome: outcome
     )
   end
 

@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-# Local pass only. Inactive unless RAG_VALIDATION_CAPTURE_RUN is set in a
-# local process. The answer text is whatever the action rendered.
+# Opens the request capture. The durable trace is written for every account.
+# The validation file is written only when RAG_VALIDATION_CAPTURE_RUN is set.
 module WebValidationCapture
   extend ActiveSupport::Concern
 

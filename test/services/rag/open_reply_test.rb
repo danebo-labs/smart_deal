@@ -73,6 +73,17 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
     assert_not Rag::WorkContextReducer.open_reply?(documented(CODE), "Sí, marca 0 Vcc.")
   end
 
+  test "a latch that does not engage answers whether it stays closed and a brake does not" do
+    question = documented("¿el contacto del cerrojo queda cerrado cuando la puerta está cerrada?")
+
+    assert Rag::WorkContextReducer.open_reply?(question, "No engancha.")
+    assert Rag::WorkContextReducer.open_reply?(question, "El trinco no enganchó.")
+    assert_not Rag::WorkContextReducer.open_reply?(question, "El freno no engancha.")
+    assert_not Rag::WorkContextReducer.open_reply?(question, "Sí, está firme.")
+    assert_not Rag::WorkContextReducer.open_reply?(documented("¿el freno queda cerrado?"), "No engancha.")
+    assert_not Rag::WorkContextReducer.open_reply?(documented(ACTIVE), "No engancha.")
+  end
+
   test "a latch that does not engage answers the open trinco and a brake does not" do
     question = documented(LATCH_OPEN)
 

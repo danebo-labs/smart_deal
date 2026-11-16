@@ -394,7 +394,7 @@ module Rag
 
     def boundary?(line, index)
       nxt = line[index]
-      nxt.nil? || nxt.match?(/[[:space:]\[]/)
+      nxt.nil? || nxt.match?(/[[:space:]\[*]/)
     end
 
     def abbreviation?(current)

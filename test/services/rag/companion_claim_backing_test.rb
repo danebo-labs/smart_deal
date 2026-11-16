@@ -155,6 +155,25 @@ class Rag::CompanionClaimBackingTest < ActiveSupport::TestCase
     assert_equal ["unverified_quote"], call(invented, source, technician: technician).removed.pluck("reason")
   end
 
+  test "a bold question stays when the cited instruction after it has no quote" do
+    latch = "Para decidir, necesito saber: **¿el contacto del cerrojo queda cerrado cuando la puerta está cerrada?** Si no cierra, revisa esa línea, como indica la fuente [1]."
+    screen = "Para decidir, necesito saber: **¿el trinco queda cerrado?** Revisa el circuito, como indica la fuente [1]."
+    brake = "¿El manual indica que el freno mide 12 V [1]?"
+
+    kept = call(latch, "linha dos trincos")
+    assert_includes kept.text, "¿el contacto del cerrojo queda cerrado cuando la puerta está cerrada?"
+    assert_not_includes kept.text, "como indica la fuente"
+    assert_equal [ "unbacked_citation" ], kept.removed.pluck("reason")
+
+    paraphrased = call(screen, "linha dos trincos")
+    assert_includes paraphrased.text, "¿el trinco queda cerrado?"
+    assert_not_includes paraphrased.text, "como indica la fuente"
+
+    dropped = call(brake, "linha dos trincos")
+    assert_empty dropped.text
+    assert_equal [ "unbacked_citation" ], dropped.removed.pluck("reason")
+  end
+
   test "a period inside a quote and a decimal do not split sentences" do
     text = "Ver sección 5.8: «verificar el paso libre. Solo es necesario realizar otra vez el autoajuste» [1]."
     result = call(text, VF5_58)

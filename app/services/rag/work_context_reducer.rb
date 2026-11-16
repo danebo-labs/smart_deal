@@ -405,8 +405,8 @@ module Rag
       text.to_s.scan(/#?\d+/).map { |token| token.delete("#") }.uniq
     end
 
-    # "¿Algún trinco queda abierto?" is answered by a latch that does not
-    # engage. A brake that does not engage is another component.
+    # "¿El trinco queda abierto?" and "¿el cerrojo queda cerrado?" are answered
+    # by a latch that does not engage. A brake that does not engage is another component.
     def self.latch_reply?(question, turn)
       said = datum_parts(turn)
       engage = CompanionPlanCheck.stem("enganchar")
@@ -416,12 +416,22 @@ module Rag
       return false if (entities - latch_stems.to_a).any?
 
       asked = datum_parts(question["question"])
-      (asked.entities & latch_stems.to_a).any? &&
-        asked.properties.include?(CompanionPlanCheck.stem("abierto"))
+      return false if asked.entities.include?(CompanionPlanCheck.stem("lectura"))
+      return false if (asked.properties & reading_ask.to_a).any?
+
+      (asked.entities & latch_stems.to_a).any? && (asked.properties & latch_states.to_a).any?
     end
 
     def self.latch_stems
       @latch_stems ||= %w[trinco cerrojo].map { |word| CompanionPlanCheck.stem(word) }.to_set
+    end
+
+    def self.latch_states
+      @latch_states ||= %w[abierto cerrado].map { |word| CompanionPlanCheck.stem(word) }.to_set
+    end
+
+    def self.reading_ask
+      @reading_ask ||= %w[activa tension].map { |word| CompanionPlanCheck.stem(word) }.to_set
     end
 
     # "¿Ya revisaste las conexiones?" is answered by a firm connection.
@@ -518,7 +528,7 @@ module Rag
       :datum_covers?, :unspecified_unknown?, :promote_shown_question, :generic_entity?,
       :referent_placeholder?,
       :designators, :code_report?, :code_places, :line_reading?, :connection_reply?, :connection_place_stems,
-      :latch_reply?, :latch_stems,
+      :latch_reply?, :latch_stems, :latch_states, :reading_ask,
       :reading_numbers, :reading_properties, :report_stems,
       :closed_reply?, :connection_stems, :question_parts, :component_parts,
       :other_connection?

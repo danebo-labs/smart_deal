@@ -98,6 +98,35 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
     assert_equal "No engancha.", questions[3]
   end
 
+  test "only the displayed code answers which line failed, and a brake does not" do
+    load_runner
+    question = documented("Pregunta: ¿La MCINV4 o algún indicador te muestra cuál de esas líneas falla, o solo aparece EA?")
+    questions = [ "turno", "Sí, está firme.", "No engancha." ]
+    row = { "pending_question" => question, "answer" => "publicado" }
+    Haiku55Http.place_photo_reply!(questions, 0, row)
+
+    assert_nil row["block_reason"]
+    assert_equal "Solo aparece EA.", questions[1]
+    assert_equal "No engancha.", questions[3]
+
+    screen = [ "turno", "Sí, está firme." ]
+    screen_row = {
+      "pending_question" => documented("¿El visor indica la línea, o solamente marca EC?"),
+      "answer" => "publicado"
+    }
+    Haiku55Http.place_photo_reply!(screen, 0, screen_row)
+    assert_equal "Solo aparece EC.", screen[1]
+
+    brake = [ "turno", "Sí, está firme." ]
+    blocked = {
+      "pending_question" => documented("¿El freno muestra cuál falla, o solo aparece EA?"),
+      "answer" => "publicado"
+    }
+    Haiku55Http.place_photo_reply!(brake, 0, blocked)
+    assert_equal "pending_question_unanswered", blocked["block_reason"]
+    assert_equal "Sí, está firme.", brake[1]
+  end
+
   test "a latch that does not engage answers the open trinco and a brake does not" do
     question = documented(LATCH_OPEN)
 

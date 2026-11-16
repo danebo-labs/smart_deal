@@ -804,7 +804,7 @@ module Haiku55Http
 
     match = rest.find { |line| Rag::WorkContextReducer.open_reply?(pending, line) }
     if match.nil?
-      reply = door_closure_reply(pending) || persistent_code_reply(pending)
+      reply = door_closure_reply(pending) || persistent_code_reply(pending) || code_only_reply(pending)
       if reply
         questions.insert(index + 1, reply)
         return
@@ -866,6 +866,19 @@ module Haiku55Http
     else
       "Sí, el display sigue marcando #{code}."
     end
+  end
+
+  # The display shows the code and does not name the failed line. A brake
+  # question is not that display.
+  def code_only_reply(pending)
+    question = pending["question"].to_s
+    return nil if question.match?(/freno|motor|variador|contactor/i)
+    return nil unless question.match?(/solo aparece|solo muestra|solamente/i)
+
+    code = question[/(?<![[:alnum:]])([A-Z]{2,3}|\d{2})(?![[:alnum:]])/, 1]
+    return nil if code.blank?
+
+    "Solo aparece #{code}."
   end
 
   def await_photo_worker(browser, directory, turn_dir, run_id, reserved, account, correlation)

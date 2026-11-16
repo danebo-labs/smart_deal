@@ -31,9 +31,11 @@ module Rag
       # receives its leading characters, current_truncated is true, and every
       # other turn is omitted. The stored message is not cut here.
       # photo_labels are the labels of the accepted reading of the episode
-      # photo. A passage quote already published in this episode that names
-      # one of them follows the current turn, so Retrieve keeps the line the
-      # case is on even when the technician never typed that label.
+      # photo. When a passage quote already published in this episode names
+      # one of them, that label follows the current turn, so Retrieve keeps
+      # the line the case is on even when the technician never typed it. The
+      # quote itself stays out of Retrieve: a whole table row pulls in every
+      # passage that lists the same terminals and crowds the evidence budget.
       def retrieval_text(session, raw_question, now: Time.current, correlation_id: nil, episode: nil, resumed_question: nil,
                          photo_labels: nil, scope_uris: nil)
         ordered = ordered_turns(session, raw_question, now, correlation_id)
@@ -233,7 +235,8 @@ module Rag
         current = ordered.first
         return truncated_current(current, ordered.drop(1), limit) if current["text"].length > limit
 
-        reference = nil if reference && current["text"].length + SEPARATOR.length + reference["text"].length > limit
+        carried = reference && reference["labels"].join(" ")
+        reference = carried = nil if carried && current["text"].length + SEPARATOR.length + carried.length > limit
         included = []
         omitted = []
         parts = []
@@ -248,10 +251,10 @@ module Rag
           else
             omitted << { "correlation_id" => turn["correlation_id"], "chars" => text.length, "reason" => "budget" }
           end
-          next unless reference && turn.equal?(current)
+          next unless carried && turn.equal?(current)
 
-          parts << reference["text"]
-          used += SEPARATOR.length + reference["text"].length
+          parts << carried
+          used += SEPARATOR.length + carried.length
         end
         Retrieval.new(text: parts.join(SEPARATOR), included: included, omitted: omitted, current_truncated: false,
           photo_reference: reference)

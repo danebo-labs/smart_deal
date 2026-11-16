@@ -139,15 +139,15 @@ class Rag::CompanionCaseRecordTest < ActiveSupport::TestCase
     previous.nil? ? ENV.delete("RAG_COMPANION_GENERATION") : ENV["RAG_COMPANION_GENERATION"] = previous
   end
 
-  test "a published quote naming a photographed label follows the current turn in retrieve" do
+  test "a photographed label named by a published quote follows the current turn in retrieve" do
     session = labeled_case
     retrieval = Rag::CompanionCaseRecord.retrieval_text(
       session, "Ya quedó, pero sigue igual.", correlation_id: "c3", now: Time.current,
       episode: episode_hash("ep_a"), photo_labels: %w[K7 K9 Q3]
     )
 
-    assert_equal "Ya quedó, pero sigue igual.\nSi falla K7, revisar la línea del contacto\nArranco con el equipo detenido.\nNo cierra.",
-      retrieval.text
+    assert_equal "Ya quedó, pero sigue igual.\nK7\nArranco con el equipo detenido.\nNo cierra.", retrieval.text
+    assert_not_includes retrieval.text, "revisar la línea"
     assert_equal({ "text" => "Si falla K7, revisar la línea del contacto", "n" => 1, "labels" => [ "K7" ] }, retrieval.photo_reference)
     assert_not_includes retrieval.text, "K9"
     assert_equal retrieval.photo_reference, Rag::CompanionCaseRecord.retrieval_trace(retrieval)["photo_reference"]

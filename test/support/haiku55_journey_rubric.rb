@@ -239,10 +239,13 @@ module Haiku55JourneyRubric
   def photo_ea_reasons(number, answer)
     text = I18n.transliterate(answer).downcase
     reasons = []
+    reasons << "case_recap_repeated" if text.scan(/^condicion ya reportada:/).size > 1
     case number
     when 1
       reasons.concat(photo_opening_reasons(text))
     when 2
+      request = requested_observation(answer)
+      reasons << "display_state_reasked" if request.match?(/que codigo de estado|cual es el codigo de estado/)
       reasons << "ea_signals_or_latch_line_missing" unless text.match?(/\bea\b/) && text.match?(/fall[ao]\s+de\s+se[ñn]al|falha de sinais/) &&
         text.include?("p28") && text.match?(/trinc|enclav|cerradur/) && text.match?(/\[\d+\]/)
       if text.match?(/(?:correccion|rectific|no (?:lo |los )?(?:uses|tomes en cuenta)|descarta lo (?:dicho|anterior))[^.!?]*(?:p26|p27|p28)|(?:p26|p27|p28)[^.!?]*(?:no (?:lo |los )?uses|no aparece\w* en (?:la foto|el esquema))/)

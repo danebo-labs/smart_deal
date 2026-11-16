@@ -678,11 +678,20 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
   end
 
   test "EA journey follows the requested observations through the persistent electrical fault" do
+    unless defined?(Haiku55Http)
+      previous = ENV["HTTP55_REQUIRE"]
+      begin
+        ENV["HTTP55_REQUIRE"] = "1"
+        load Rails.root.join("script/field_companion/run_haiku55_http.rb")
+      ensure
+        ENV["HTTP55_REQUIRE"] = previous
+      end
+    end
     document = audit_thyssen_pin
     @audit_photo_reading = JSON.parse(AUDIT_ROOT.join("photo_sonnet_live.json").read)
-    questions = AUDIT_JOURNEYS.fetch("photo_ea")
+    questions = AUDIT_JOURNEYS.fetch("photo_ea").dup
     replies = [
-      "En el esquema se ven P26, P27 y P28. La imagen no da mediciones. Si aparece EA, «#{EA_LINE}» [p24]. ¿Qué código muestra el display?",
+      "En el esquema se lee P28. La imagen identifica el rótulo. «#{EA_LINE}» [p24]. ¿Qué código muestra el display?",
       "EA es falla de señales. «#{EA_LINE}» [p24]. La puerta de piso orienta a esa línea. ¿La conexión de P28 en la bornera está firme?",
       "Con la conexión de P28 firme queda por comprobar el enganche. «#{EA_LINE}» [p24]. Cuando intenta cerrar, ¿el trinco llega a enganchar?",
       "Si el trinco no engancha, fíjate si queda desalineado. «#{EA_LINE}» [p24]. ¿El trinco queda desalineado?",
@@ -692,12 +701,19 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       "Reportaste 0 Vcc en RA-53/P28. El manual identifica ese punto como confirmación de enganche: «Ponto para ligar sinal do contato de engate do trinco, confirmando portas de pavimento fechada» [p9]. RA-30/A4+ alimenta el circuito: «Ponto para ligar alimentação do circuito de trinco e palhetas das portas de pavimento» [p10]. Para localizar la pérdida hace falta el plano y el procedimiento de la instalación."
     ]
     original_episode = nil
+    pending = nil
     questions.each_with_index do |question, index|
       number = index + 1
       rows = number == 8 ? %w[24_1 9_3 10_1] : %w[24_1 9_3]
       observations = number == 1 ? [ "Está detenido", "la puerta de piso no cierra" ] : [ question ]
       turn = audit_thyssen_turn(document, question, replies.fetch(index), pages: rows,
         observations: observations, opening: number == 1, move: number == 1 ? "report" : "follow_up")
+      if pending && number < 8
+        turn.tool_input = turn.tool_input.merge("part_replies" => [
+          { "question_id" => pending.fetch("id"), "part_id" => pending.fetch("parts").sole.fetch("id"),
+            "state" => "complete", "quote" => question, "supersedes" => nil }
+        ])
+      end
       body, cassette = if number == 1
         audit_photo_post("photo-ea", turn, document)
       else
@@ -709,10 +725,15 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       assert_match(/\bP28\b/, Rag::ActivePhotoContext.generation_evidence(prompt))
       answer = body.fetch("answer")
       assert_empty Haiku55JourneyRubric.photo_ea_reasons(number, answer), answer
-      assert_nil Haiku55JourneyRubric.photo_ea_followup_stop(number, answer), answer
-      original_episode ||= reloaded_session.live_episode_id
-      assert_equal original_episode, reloaded_session.live_episode_id
+      session = reloaded_session
+      pending = session.active_episode["pending_question"]
+      row = { "answer" => answer, "pending_question" => pending }
+      Haiku55Http.place_photo_reply!(questions, index, row)
+      assert_nil row["block_reason"], answer
+      original_episode ||= session.live_episode_id
+      assert_equal original_episode, session.live_episode_id
     end
+    assert_equal AUDIT_JOURNEYS.fetch("photo_ea"), questions
   end
 
   test "KONE uses the Engineering reading and advances after the sensor is reconnected" do

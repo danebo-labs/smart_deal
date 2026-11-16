@@ -897,7 +897,7 @@ module Haiku55Http
     code = sent.filter_map { |line| line[/\b(?:display|pantalla|visor) (?:marca|muestra) ([A-Z]{2,3}|\d{2})\b/, 1] }.last
     return nil unless code
 
-    if question.match?(/solo aparece|solo muestra|solamente|[uú]nicamente/i)
+    if question.match?(/solo aparece|solo muestra|solamente|[uú]nicamente|c[oó]digo de estado/i)
       "Solo aparece #{code}."
     elsif question.match?(/sigue|continu|permanec/i) && question.match?(/display|pantalla|visor|c[oó]digo/i)
       if question.match?(/a mano|cerrad|trabada|trincada/i)

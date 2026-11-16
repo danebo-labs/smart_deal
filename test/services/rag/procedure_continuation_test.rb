@@ -44,25 +44,38 @@ class Rag::ProcedureContinuationTest < ActiveSupport::TestCase
       { "text" => "La cabina está vacía y no logro terminar el ajuste" },
       { "text" => "Lo conecté y ahora marca 7 mA" }
     ]
-    generated = "Tras conectar el sensor, LOP-CB marca 7 mA, dentro del rango 6-8 de carga cero. " \
-      "El paso siguiente es: «Seleccione el parámetro de registro.» [1]."
+    generated = "Tras conectar el sensor, LOP-CB marca 7 mA. «#{QUOTE}» [1]. «#{NEXT_ACTION}» [1]."
+    sources = [ { "content" => TABLE, "applicability" => "compatible" } ]
 
-    carried = Rag::ProcedureContinuation.carry(generated, episode: episode, question: "Lo conecté y ahora marca 7 mA.")
+    carried = Rag::ProcedureContinuation.carry(generated, episode: episode, question: "Lo conecté y ahora marca 7 mA.", sources: sources)
     reflected = Rag::ProcedureContinuation.carry(
       "La cabina está vacía y no logro terminar el ajuste. #{generated}",
-      episode: episode, question: "Lo conecté y ahora marca 7 mA."
+      episode: episode, question: "Lo conecté y ahora marca 7 mA.", sources: sources
     )
 
     assert_includes carried, "Condición ya reportada: La cabina está vacía y no logro terminar el ajuste."
-    assert_includes carried, "«Seleccione el parámetro de registro.» [1]"
+    assert_includes carried, "«#{NEXT_ACTION}» [1]"
     assert_not_includes carried, "Condición ya reportada: Lo conecté"
     assert_equal "La cabina está vacía y no logro terminar el ajuste. #{generated}", reflected
     published = Rag::CompanionTurnPublication.call(
       text: carried, stop_reason: "end_turn",
       technician_texts: [ "Lo conecté y ahora marca 7 mA.", "La cabina está vacía y no logro terminar el ajuste" ],
-      sources: [ { "content" => "Seleccione el parámetro de registro. El 0 parpadea.", "applicability" => "compatible" } ]
+      sources: sources
     )
     assert_equal true, published.accepted?, published.reasons.inspect
+  end
+
+  test "a diagnostic answer does not republish older turn excerpts" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "query:t1", now: Time.current)
+    episode.excerpts = [
+      { "text" => "Estoy revisando un operador de puerta Fermator VF5+" },
+      { "text" => "El LED está apagado y no veo obstrucción" }
+    ]
+    answer = "Con el LED encendido, comprueba la fotocélula. «Comprobar que la fotocélula no esté activada» [1]."
+    sources = [ { content: "Comprobar que la fotocélula no esté activada" } ]
+
+    assert_equal answer, Rag::ProcedureContinuation.carry(answer, episode: episode,
+      question: "Corrijo un dato: el LED está encendido, no apagado.", sources: sources)
   end
 
   test "a question and the last step do not invent a continuation" do

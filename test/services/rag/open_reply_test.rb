@@ -271,6 +271,41 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
     assert_includes Haiku55JourneyRubric.photo_ea_reasons(1, "La imagen confirma que P28 está activo."), "photo_used_as_measurement"
   end
 
+  test "the live state-code question gets the observed EA and remains a presentation failure" do
+    questions = photo_questions
+    published = "EA es una falla de señales. «Quando falha de P28 - porta aberta - revisar linha dos trincos» [1].\n\n" \
+      "¿Qué código de estado muestra la MCINV4 ahora, detenido?"
+    row = { "answer" => published }
+
+    select_photo_reply(questions, 1, row)
+
+    assert_nil row["block_reason"]
+    assert_equal "Solo aparece EA.", questions[2]
+    assert_equal [ "display_state_reasked" ], Haiku55JourneyRubric.photo_ea_reasons(2, published)
+  end
+
+  test "a code-only detour can reach the electrical follow-up within the existing reservation" do
+    questions = photo_questions
+    expected = [ questions[0], questions[1], "Solo aparece EA.", *questions.drop(3) ]
+    published = [
+      CODE,
+      "¿El indicador identifica una línea o solo aparece EA?",
+      "¿El trinco de piso engancha?",
+      "¿Ves el cerrojo desplazado respecto a su alojamiento?",
+      "Corrige la alineación conforme al procedimiento autorizado. Después comprueba cierre, enganche y EA.",
+      "Con la puerta cerrada y trabada, ¿qué tensión lees en RA-53/P28?",
+      "Con los 0 Vcc reportados queda por revisar el contacto del trinco y la línea."
+    ]
+
+    published.each_with_index do |answer, index|
+      row = { "answer" => answer }
+      select_photo_reply(questions, index, row)
+      assert_nil row["block_reason"], answer
+      assert_equal expected[index + 1], questions[index + 1]
+    end
+    assert_equal expected, questions
+  end
+
   private
 
   def photo_questions

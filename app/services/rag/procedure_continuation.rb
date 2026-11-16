@@ -53,9 +53,10 @@ module Rag
 
     def carry(text)
       body = text.to_s
-      missing = missing_conditions(body)
-      step = omitted_step(body)
+      continuation = continuation_for(body) if @question.match?(READING)
+      step = omitted_step(body, continuation)
       gate = open_prerequisite(body)
+      missing = continuation || gate ? missing_conditions(body) : []
       return body if missing.empty? && step.nil? && gate.nil?
 
       [
@@ -179,10 +180,8 @@ module Rag
 
     # The technician already reported a reading and the answer cited the
     # current row, but left out that row's next step.
-    def omitted_step(answer)
-      return nil unless @question.match?(READING)
-
-      number, heading, action = continuation_for(answer)
+    def omitted_step(answer, continuation)
+      number, heading, action = continuation
       return nil if action.blank? || answer.include?(action)
 
       "El paso que sigue de #{heading} es: «#{action}» [#{number}]."

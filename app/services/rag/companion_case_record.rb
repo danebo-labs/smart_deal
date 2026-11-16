@@ -212,18 +212,26 @@ module Rag
         return nil if labels.empty?
 
         allowed = Array(scope_uris).filter_map { |uri| KbDocument.canonical_source(uri) }.to_set
-        best = nil
+        best = first = nil
         episode_state(read_state(session), episode_id_of(episode))["sources"].each do |row|
           next if allowed.any? && !allowed.include?(KbDocument.canonical_source(row.dig("metadata", "original_source_uri")))
 
           Array(row["quotes"]).each do |quote|
             named = labels.select { |label| names_label?(quote["text"], label) }
-            next if named.empty? || (best && best["rev"] > quote["rev"])
+            next if named.empty?
+
+            first = { "n" => row["n"], "rev" => quote["rev"] } if first.nil? || first["rev"] > quote["rev"]
+            next if best && best["rev"] > quote["rev"]
 
             best = { "text" => quote["text"], "n" => row["n"], "labels" => named, "rev" => quote["rev"] }
           end
         end
-        best&.except("rev")
+        return nil unless best
+
+        # The technician's turns already reach the first source that named the
+        # label; a later source naming it is reached only through its row.
+        best["new_source"] = true if best["n"] != first["n"]
+        best.except("rev")
       end
 
       def names_label?(text, label)
@@ -235,7 +243,7 @@ module Rag
         current = ordered.first
         return truncated_current(current, ordered.drop(1), limit) if current["text"].length > limit
 
-        carried = reference && reference["labels"].join(" ")
+        carried = reference && (reference["new_source"] ? reference["text"] : reference["labels"].join(" "))
         reference = carried = nil if carried && current["text"].length + SEPARATOR.length + carried.length > limit
         included = []
         omitted = []

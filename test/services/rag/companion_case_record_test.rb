@@ -153,6 +153,41 @@ class Rag::CompanionCaseRecordTest < ActiveSupport::TestCase
     assert_equal retrieval.photo_reference, Rag::CompanionCaseRecord.retrieval_trace(retrieval)["photo_reference"]
   end
 
+  test "a later quote from another source carries its cited row and the first source carries only the label" do
+    value = {
+      content: "| SINAL | FUNÇÃO |\n| RB-7 / K7 = +24 Vcc | Sinal do contato |",
+      location_uri: "s3://bucket/bulk_chunks/1/manual/chunk_p9_1.txt",
+      metadata: { "page_number" => 9, "canonical_name" => "Manual", "original_source_uri" => "s3://bucket/bulk_uploads/manual.pdf" }
+    }
+    first = Rag::CompanionCaseRecord.record(
+      state: {}, episode_id: "ep_a", chunks: [ labeled_passage ], correlation_id: "c2", outcome: "published",
+      published_text: "La tabla dice: «Si falla K7, revisar la línea del contacto» [1].",
+      quotes: [ { "text" => "Si falla K7, revisar la línea del contacto", "source" => 1 } ]
+    )
+    record = ->(text, quote, source) {
+      Rag::CompanionCaseRecord.record(
+        state: first.state, episode_id: "ep_a", chunks: [ labeled_passage, value ], correlation_id: "c3", outcome: "published",
+        published_text: "Valor: «#{quote}» [#{source}].", quotes: [ { "text" => quote, "source" => source } ]
+      )
+    }
+    history = [ turn("Arranco con el equipo detenido.", "c1", 3), turn("No cierra.", "c2", 2), turn("Marca 0 Vcc.", "c4", 1) ]
+    compose = ->(state) {
+      Rag::CompanionCaseRecord.retrieval_text(
+        memory_session(history, state), "Marca 0 Vcc.", correlation_id: "c4", now: Time.current,
+        episode: episode_hash("ep_a"), photo_labels: %w[K7]
+      )
+    }
+
+    moved = compose.call(record.call("valor", "RB-7 / K7 = +24 Vcc", 2).state)
+    same = compose.call(record.call("tabla", "Si falla K7, revisar la línea del contacto", 1).state)
+
+    assert_equal "Marca 0 Vcc.\nRB-7 / K7 = +24 Vcc\nArranco con el equipo detenido.\nNo cierra.", moved.text
+    assert_equal({ "text" => "RB-7 / K7 = +24 Vcc", "n" => 2, "labels" => [ "K7" ], "new_source" => true }, moved.photo_reference)
+    assert_equal "Marca 0 Vcc.\nK7\nArranco con el equipo detenido.\nNo cierra.", same.text
+    assert_equal 1, same.photo_reference["n"]
+    assert_not same.photo_reference.key?("new_source")
+  end
+
   test "the photo reference stays out without a photo, after a rejection, in another episode or another focus" do
     session = labeled_case
     plain = "Ya quedó, pero sigue igual.\nArranco con el equipo detenido.\nNo cierra."

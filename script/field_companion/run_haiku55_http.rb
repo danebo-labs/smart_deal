@@ -32,6 +32,7 @@ module Haiku55Http
   AUDIT_PLAN = %w[audit_thyssen_photo audit_thyssen_engineering].freeze
   CONTINUATION_PLAN = %w[audit_thyssen_photo_ea audit_kone_lwi audit_thyssen_engineering].freeze
   PHOTO_EA_TURNS = 8
+  PHOTO_LABEL_LINE_REPLY = "Sí, el cable de los trincos llega a ese borne."
   CONTINUATION = PHASE == "field_continuation"
   CONTINUATION_RETRY = CONTINUATION && ENV["HTTP55_CONTINUATION_RETRY"] == "1"
   AUDIT_APPROVAL = "HTTP55_THYSSEN_AUTHORIZED_SHA"
@@ -837,6 +838,10 @@ module Haiku55Http
         end
       elsif latch_reported && request.match?(/alin|descentr|desplaz|fuera de posicion|no coincide/)
         misaligned
+      elsif !latch_reported && photo_label_line_check?(request)
+        # Confirming in the field that the photographed terminal is the latch
+        # line is valid; the simulated installation is wired that way.
+        PHOTO_LABEL_LINE_REPLY
       else
         candidates = [firm, latch].select { |line| rest.include?(line) }
         candidates.find { |line| Rag::WorkContextReducer.open_reply?(pending, line) } || door_closure_reply(pending)
@@ -860,6 +865,11 @@ module Haiku55Http
     rest.delete(firm) if [latch, misaligned, aligned, reading].include?(reply)
     rest.clear if reply == how
     questions[(index + 1)..] = [reply, *rest]
+  end
+
+  def photo_label_line_check?(request)
+    request.match?(/trinco|cerrojo|pestillo/) && request.match?(/borne|cable|linea|rotul/) &&
+      request.match?(/llega|viene|corresponde|conecta/) && !request.match?(/engancha|traba|enclava|encaja/)
   end
 
   def photo_repair_requested?(request)

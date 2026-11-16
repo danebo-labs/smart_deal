@@ -327,6 +327,37 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
     assert_equal "pending_question_unanswered", again["block_reason"]
   end
 
+  test "a label-to-latch-line check is answered once and the latch question follows" do
+    [
+      "En la foto aparece el rótulo P28.\n\n¿El borne rotulado P28 en tu bornera es el que llega desde los trincos de piso?",
+      "¿El cable del trinco de piso llega al borne rotulado P28 en su bornera?"
+    ].each do |answer|
+      questions = photo_questions
+      row = { "answer" => answer }
+      select_photo_reply(questions, 1, row)
+      assert_nil row["block_reason"], answer
+      assert_equal Haiku55Http::PHOTO_LABEL_LINE_REPLY, questions[2]
+
+      latch = { "answer" => LATCH }
+      select_photo_reply(questions, 2, latch)
+      assert_nil latch["block_reason"]
+      assert_equal "No engancha.", questions[3]
+
+      again = { "answer" => answer }
+      select_photo_reply(questions, 2, again)
+      assert_equal "pending_question_unanswered", again["block_reason"]
+    end
+
+    brake = { "answer" => "¿El cable del freno llega al borne del contactor?" }
+    select_photo_reply(photo_questions, 1, brake)
+    assert_equal "pending_question_unanswered", brake["block_reason"]
+
+    engaged = { "answer" => "¿El trinco que llega al borne engancha?" }
+    questions = photo_questions
+    select_photo_reply(questions, 1, engaged)
+    assert_equal "No engancha.", questions[2]
+  end
+
   private
 
   def photo_questions

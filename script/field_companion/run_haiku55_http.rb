@@ -33,6 +33,7 @@ module Haiku55Http
   CONTINUATION_PLAN = %w[audit_thyssen_photo_ea audit_kone_lwi audit_thyssen_engineering].freeze
   PHOTO_EA_TURNS = 8
   PHOTO_LABEL_LINE_REPLY = "Sí, el cable de los trincos llega a ese borne."
+  PHOTO_OPERATOR_REPLY = "Sí, tiene motor de operador."
   CONTINUATION = PHASE == "field_continuation"
   CONTINUATION_RETRY = CONTINUATION && ENV["HTTP55_CONTINUATION_RETRY"] == "1"
   AUDIT_APPROVAL = "HTTP55_THYSSEN_AUTHORIZED_SHA"
@@ -820,7 +821,11 @@ module Haiku55Http
 
     reply = if sent.last == opening
       display if request.match?(/codigo|display|pantalla|visor/)
-    elsif sent.last == reading
+    elsif sent.last == reading && request.match?(/operador/) && request.match?(/motor|tiene|cuenta|equipad/)
+      # The documented reading applies to doors with an operator motor; the
+      # simulated installation has one.
+      PHOTO_OPERATOR_REPLY
+    elsif [ reading, PHOTO_OPERATOR_REPLY ].include?(sent.last)
       how if request.present? || row["answer"].to_s.present?
     elsif misalignment_reported && !repaired && photo_repair_requested?(I18n.transliterate(row["answer"].to_s).downcase)
       aligned

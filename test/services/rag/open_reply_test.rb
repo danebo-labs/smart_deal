@@ -327,6 +327,28 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
     assert_equal "pending_question_unanswered", again["block_reason"]
   end
 
+  test "after the reading the documented operator condition is answered once and the how question follows" do
+    questions = photo_questions
+    sent = [ questions[0], questions[1], "No engancha.", "Sí, está desalineado.", questions[5], questions[6] ]
+    questions[0, questions.size] = [ *sent, questions[7] ]
+    condition = { "answer" => "Ese valor corresponde al caso con motor de operador de puerta.\n\n¿La puerta tiene motor de operador?" }
+    select_photo_reply(questions, 5, condition)
+
+    assert_nil condition["block_reason"]
+    assert_equal Haiku55Http::PHOTO_OPERATOR_REPLY, questions[6]
+    assert_equal "¿Cómo reviso eso?", questions[7]
+
+    compared = { "answer" => "Con motor de operador, los 0 Vcc no coinciden con +110 Vcc. ¿Hay +110 Vcc en RA-30?" }
+    select_photo_reply(questions, 6, compared)
+    assert_nil compared["block_reason"]
+    assert_equal "¿Cómo reviso eso?", questions[7]
+
+    early = photo_questions
+    before = { "answer" => "¿La puerta tiene motor de operador?" }
+    select_photo_reply(early, 1, before)
+    assert_equal "pending_question_unanswered", before["block_reason"]
+  end
+
   test "a label-to-latch-line check is answered once and the latch question follows" do
     [
       "En la foto aparece el rótulo P28.\n\n¿El borne rotulado P28 en tu bornera es el que llega desde los trincos de piso?",

@@ -91,6 +91,14 @@ class Rag::CompanionClaimBackingTest < ActiveSupport::TestCase
     assert_equal "uncited_attribution", result.removed.first["reason"]
   end
 
+  test "keeps a referral to the company's authorized procedure and drops one credited to the manufacturer" do
+    referral = "Ese ajuste debe hacerse según el procedimiento autorizado de la empresa."
+    credited = "Ese ajuste debe hacerse según el procedimiento autorizado del fabricante."
+
+    assert_equal referral, call(referral, VF5_58).text
+    assert_equal [ "uncited_attribution" ], call(credited, VF5_58).removed.pluck("reason")
+  end
+
   test "keeps a literal bold quote and ignores a bold heading" do
     text = "**Qué revisar:**\n- **cruza PasCom 24V con un puente semicircular** [1]."
     result = call(text, ELEMONT)

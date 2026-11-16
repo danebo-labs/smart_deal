@@ -408,6 +408,9 @@ module Rag
     # "¿El trinco queda abierto?" and "¿el cerrojo queda cerrado?" are answered
     # by a latch that does not engage. A brake that does not engage is another component.
     def self.latch_reply?(question, turn)
+      text = question["question"].to_s
+      return false if text.match?(CODE_TOKEN) && text.match?(/display|pantalla|visor/i)
+
       said = datum_parts(turn)
       engage = CompanionPlanCheck.stem("enganchar")
       return false unless said.entities.include?(engage)

@@ -82,6 +82,20 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
     assert_not Rag::WorkContextReducer.open_reply?(question, "Sí, está firme.")
     assert_not Rag::WorkContextReducer.open_reply?(documented("¿el freno queda cerrado?"), "No engancha.")
     assert_not Rag::WorkContextReducer.open_reply?(documented(ACTIVE), "No engancha.")
+    code = documented("Pregunta: con la puerta de piso cerrada y trincada, ¿el display sigue mostrando EA?")
+    assert_not Rag::WorkContextReducer.open_reply?(code, "No engancha.")
+    assert_not Rag::WorkContextReducer.open_reply?(
+      documented("Consulta: ¿la pantalla sigue marcando EC con el cerrojo cerrado?"),
+      "El trinco no engancha."
+    )
+
+    load_runner
+    questions = [ "turno", "Sí, está firme.", "No engancha." ]
+    row = { "pending_question" => code, "answer" => "publicado" }
+    Haiku55Http.place_photo_reply!(questions, 0, row)
+    assert_nil row["block_reason"]
+    assert_equal "Sí, la cerré a mano y el display sigue marcando EA.", questions[1]
+    assert_equal "No engancha.", questions[3]
   end
 
   test "a latch that does not engage answers the open trinco and a brake does not" do

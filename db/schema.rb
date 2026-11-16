@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_06_183000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_16_190000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -180,6 +180,37 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_06_183000) do
     t.index [ "date" ], name: "index_cost_metrics_on_date"
   end
 
+  create_table "field_cases", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.string "creation_key"
+    t.jsonb "document_focus", default: [], null: false
+    t.string "episode_id", null: false
+    t.datetime "last_activity_at", null: false
+    t.integer "last_sequence", default: 0, null: false
+    t.string "mode", default: "resumable", null: false
+    t.datetime "opened_at", null: false
+    t.integer "schema_version", default: 1, null: false
+    t.integer "state_revision", default: 0, null: false
+    t.jsonb "technical_state", default: {}, null: false
+    t.string "title", limit: 300
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index [ "account_id", "user_id", "creation_key" ], name: "idx_field_cases_creation_key", unique: true, where: "(creation_key IS NOT NULL)"
+    t.index [ "account_id", "user_id", "episode_id" ], name: "idx_field_cases_episode", unique: true
+    t.index [ "account_id", "user_id", "last_activity_at", "id" ], name: "idx_field_cases_list", order: { last_activity_at: :desc, id: :desc }
+    t.index [ "account_id" ], name: "index_field_cases_on_account_id"
+    t.index [ "user_id" ], name: "index_field_cases_on_user_id"
+    t.check_constraint "creation_key IS NULL OR creation_key::text ~ '^[A-Za-z0-9_-]{1,64}$'::text", name: "chk_field_cases_creation_key"
+    t.check_constraint "episode_id::text ~ '^ep_[0-9a-f]{16}$'::text", name: "chk_field_cases_episode_id"
+    t.check_constraint "jsonb_typeof(document_focus) = 'array'::text", name: "chk_field_cases_focus_array"
+    t.check_constraint "jsonb_typeof(technical_state) = 'object'::text", name: "chk_field_cases_state_object"
+    t.check_constraint "last_sequence >= 0", name: "chk_field_cases_last_sequence"
+    t.check_constraint "mode::text = ANY (ARRAY['resumable'::character varying, 'read_only'::character varying]::text[])", name: "chk_field_cases_mode"
+    t.check_constraint "schema_version >= 1", name: "chk_field_cases_schema_version"
+    t.check_constraint "state_revision >= 0", name: "chk_field_cases_state_revision"
+  end
+
   create_table "field_photos", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.integer "byte_size", null: false
@@ -198,6 +229,64 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_06_183000) do
     t.index [ "account_id", "sha256" ], name: "index_field_photos_on_account_id_and_sha256", unique: true
     t.index [ "account_id" ], name: "index_field_photos_on_account_id"
     t.index [ "created_at" ], name: "index_field_photos_on_created_at"
+  end
+
+  create_table "field_turns", force: :cascade do |t|
+    t.datetime "admitted_at", null: false
+    t.jsonb "attachment", default: {}, null: false
+    t.integer "attempt", default: 1, null: false
+    t.integer "base_state_revision", null: false
+    t.jsonb "checkpoint"
+    t.string "client_submission_id", null: false
+    t.datetime "completed_at"
+    t.string "correlation_id", null: false
+    t.datetime "created_at", null: false
+    t.string "execution_token", null: false
+    t.string "failure_code"
+    t.string "failure_stage"
+    t.bigint "field_case_id", null: false
+    t.bigint "field_photo_id"
+    t.string "input_digest", null: false
+    t.string "kind", null: false
+    t.datetime "lease_expires_at"
+    t.string "locale"
+    t.text "message", default: "", null: false
+    t.string "phase", null: false
+    t.text "prompt_reply"
+    t.jsonb "response"
+    t.integer "result_state_revision"
+    t.integer "sequence", null: false
+    t.string "status", null: false
+    t.datetime "updated_at", null: false
+    t.index [ "correlation_id" ], name: "idx_field_turns_correlation", unique: true
+    t.index [ "field_case_id", "client_submission_id" ], name: "idx_field_turns_case_submission", unique: true
+    t.index [ "field_case_id", "sequence" ], name: "idx_field_turns_case_sequence", unique: true
+    t.index [ "field_case_id" ], name: "idx_field_turns_one_pending", unique: true, where: "((status)::text = 'pending'::text)"
+    t.index [ "field_photo_id" ], name: "index_field_turns_on_field_photo_id"
+    t.index [ "lease_expires_at" ], name: "idx_field_turns_pending_lease", where: "((status)::text = 'pending'::text)"
+    t.check_constraint "attempt > 0", name: "chk_field_turns_attempt"
+    t.check_constraint "base_state_revision >= 0", name: "chk_field_turns_base_revision"
+    t.check_constraint "char_length(message) <= 8000", name: "chk_field_turns_message_cap"
+    t.check_constraint "checkpoint IS NULL OR jsonb_typeof(checkpoint) = 'object'::text", name: "chk_field_turns_checkpoint"
+    t.check_constraint "client_submission_id::text ~ '^[A-Za-z0-9_-]{1,64}$'::text", name: "chk_field_turns_submission_id"
+    t.check_constraint "correlation_id::text ~ '^(query|photo):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'::text", name: "chk_field_turns_correlation"
+    t.check_constraint "execution_token::text ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'::text", name: "chk_field_turns_token"
+    t.check_constraint "failure_code IS NULL OR failure_code::text ~ '^[a-z][a-z0-9_]{0,39}$'::text", name: "chk_field_turns_failure_code"
+    t.check_constraint "failure_stage IS NULL OR failure_stage::text ~ '^[a-z][a-z0-9_]{0,39}$'::text", name: "chk_field_turns_failure_stage"
+    t.check_constraint "input_digest::text ~ '^[0-9a-f]{64}$'::text", name: "chk_field_turns_digest"
+    t.check_constraint "jsonb_typeof(attachment) = 'object'::text", name: "chk_field_turns_attachment"
+    t.check_constraint "kind::text = ANY (ARRAY['text'::character varying, 'photo'::character varying]::text[])", name: "chk_field_turns_kind"
+    t.check_constraint "locale IS NULL OR char_length(locale::text) <= 16", name: "chk_field_turns_locale"
+    t.check_constraint "phase::text = ANY (ARRAY['queued'::character varying, 'interpreting'::character varying, 'vision'::character varying, 'technical'::character varying, 'published'::character varying, 'failed'::character varying, 'imported'::character varying]::text[])", name: "chk_field_turns_phase"
+    t.check_constraint "prompt_reply IS NULL OR char_length(prompt_reply) <= 16000", name: "chk_field_turns_prompt_reply"
+    t.check_constraint "response IS NULL OR jsonb_typeof(response) = 'object'::text", name: "chk_field_turns_response_object"
+    t.check_constraint "result_state_revision IS NULL OR result_state_revision > base_state_revision", name: "chk_field_turns_result_revision"
+    t.check_constraint "sequence > 0", name: "chk_field_turns_sequence"
+    t.check_constraint "status::text <> 'completed'::text OR response IS NOT NULL AND COALESCE(char_length(response ->> 'published_text'::text), 0) > 0", name: "chk_field_turns_completed_response"
+    t.check_constraint "status::text <> 'failed'::text OR failure_code IS NOT NULL", name: "chk_field_turns_failed_code"
+    t.check_constraint "status::text <> 'pending'::text OR response IS NULL AND completed_at IS NULL AND failure_code IS NULL", name: "chk_field_turns_pending_open"
+    t.check_constraint "status::text = 'pending'::text OR completed_at IS NOT NULL", name: "chk_field_turns_terminal_time"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'completed'::character varying, 'failed'::character varying, 'historical_partial'::character varying]::text[])", name: "chk_field_turns_status"
   end
 
   create_table "inspection_findings", force: :cascade do |t|
@@ -423,7 +512,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_06_183000) do
 
   add_foreign_key "accounts", "users", column: "certifier_settings_user_id", on_delete: :nullify
   add_foreign_key "certification_reports", "accounts"
+  add_foreign_key "field_cases", "accounts"
+  add_foreign_key "field_cases", "users"
   add_foreign_key "field_photos", "accounts"
+  add_foreign_key "field_turns", "field_cases", on_delete: :cascade
+  add_foreign_key "field_turns", "field_photos", on_delete: :nullify
   add_foreign_key "inspection_findings", "accounts"
   add_foreign_key "inspection_findings", "certification_reports"
   add_foreign_key "inspection_findings", "field_photos"

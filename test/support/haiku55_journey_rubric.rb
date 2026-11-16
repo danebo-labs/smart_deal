@@ -74,7 +74,7 @@ module Haiku55JourneyRubric
     when "guion2" then judge.send(:judge_guion2, number, answer)
     when "guion1" then judge.send(:judge_guion1, number, answer, technician_texts: questions.first(number))
     when "audit_thyssen_photo_ea"
-      milestone = PHOTO_EA_TURNS.index(questions[number - 1])
+      milestone = photo_ea_milestone(questions[number - 1])
       milestone ? photo_ea_reasons(milestone + 1, answer) : []
     when "audit_kone_lwi" then kone_lwi_reasons(number, answer)
     when /\Acea/ then cea_reasons(number, answer)
@@ -234,6 +234,19 @@ module Haiku55JourneyRubric
       reasons << "kpvs:no_comparison" unless body.match?(/2,5/) && body.match?(/por debajo|debajo del|menor/i)
     end
     reasons
+  end
+
+  # The runner reports the same reading with or without the nominal yes/no.
+  # Both lines are the fixture reading step.
+  PHOTO_READING_VARIANTS = [ "Marca 0 Vcc.", "No, marca 0 Vcc." ].freeze
+
+  def photo_ea_milestone(question)
+    index = PHOTO_EA_TURNS.index(question)
+    return index unless index.nil?
+
+    text = question.to_s.strip.sub(/\.\z/, "")
+    reading = PHOTO_EA_TURNS.index("Sí, marca 0 Vcc.")
+    reading if PHOTO_READING_VARIANTS.map { |line| line.sub(/\.\z/, "") }.include?(text)
   end
 
   def photo_ea_reasons(number, answer)

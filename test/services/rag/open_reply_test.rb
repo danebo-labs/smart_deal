@@ -202,7 +202,7 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
     row = { "answer" => ACTIVE }
     select_photo_reply(questions, 5, row)
     assert_nil row["block_reason"]
-    assert_equal "Sí, marca 0 Vcc.", questions[6]
+    assert_equal Haiku55Http::PHOTO_OPEN_READING_REPLY, questions[6]
   end
 
   test "a labeled question is stored and a second question is not" do
@@ -287,6 +287,7 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
   test "a code-only detour can reach the electrical follow-up within the existing reservation" do
     questions = photo_questions
     expected = [ questions[0], questions[1], "Solo aparece EA.", *questions.drop(3) ]
+    expected[expected.index(questions[6])] = Haiku55Http::PHOTO_OPEN_READING_REPLY
     published = [
       CODE,
       "¿El indicador identifica una línea o solo aparece EA?",
@@ -320,7 +321,7 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
     reading = { "answer" => "Con la puerta cerrada y trabada, ¿qué tensión lees en RA-53/P28?" }
     select_photo_reply(questions, 5, reading)
     assert_nil reading["block_reason"]
-    assert_equal "Sí, marca 0 Vcc.", questions[6]
+    assert_equal Haiku55Http::PHOTO_OPEN_READING_REPLY, questions[6]
 
     again = { "answer" => "¿El cable de P28 está firme en el borne?" }
     select_photo_reply(questions, 5, again)
@@ -347,6 +348,42 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
     before = { "answer" => "¿La puerta tiene motor de operador?" }
     select_photo_reply(early, 1, before)
     assert_equal "pending_question_unanswered", before["block_reason"]
+  end
+
+  test "a nominal +110 check is negated and an open reading reports the measured value" do
+    published = "Con el trinco alineado y trabando bien, EA sigue.\n\n" \
+      "Pregunta: con la puerta cerrada y trabada, ¿mides +110 Vcc en el borne P28 de la bornera? " \
+      "Si no puedes ubicarlo con certeza en el tablero, dime y lo dejamos pendiente."
+    questions = repaired_photo_questions
+    row = { "answer" => published }
+    select_photo_reply(questions, 4, row)
+
+    assert_nil row["block_reason"]
+    assert_equal Haiku55Http::PHOTO_NOMINAL_READING_REPLY, questions[5]
+    assert_equal "¿Cómo reviso eso?", questions[6]
+    refute_includes questions, "Sí, marca 0 Vcc."
+    assert_not Rag::WorkContextReducer.open_reply?(row["pending_question"], "Sí, marca 0 Vcc.")
+    assert_not Rag::WorkContextReducer.open_reply?(row["pending_question"], Haiku55Http::PHOTO_NOMINAL_READING_REPLY)
+
+    open = { "answer" => "Con la puerta cerrada y trabada, ¿qué tensión lees en RA-53/P28?" }
+    fresh = repaired_photo_questions
+    select_photo_reply(fresh, 4, open)
+    assert_nil open["block_reason"]
+    assert_equal Haiku55Http::PHOTO_OPEN_READING_REPLY, fresh[5]
+    assert Rag::WorkContextReducer.open_reply?(open["pending_question"], Haiku55Http::PHOTO_OPEN_READING_REPLY)
+    assert Rag::WorkContextReducer.open_reply?(open["pending_question"], "Sí, marca 0 Vcc.")
+
+    weak = "Sigue la falla."
+    met = "Mediste 0 Vcc contra «RA-53 / P28 = +110 Vcc» [3]. Revisa el contacto del trinco."
+    [ "Sí, marca 0 Vcc.", Haiku55Http::PHOTO_OPEN_READING_REPLY, Haiku55Http::PHOTO_NOMINAL_READING_REPLY ].each do |line|
+      journey = photo_questions
+      journey[6] = line
+      assert_equal [ "voltage_comparison_missing", "contact_or_wiring_not_addressed" ],
+        Haiku55JourneyRubric.reasons("audit_thyssen_photo_ea", 7, weak, journey), line
+      assert_empty Haiku55JourneyRubric.reasons("audit_thyssen_photo_ea", 7, met, journey), line
+    end
+    assert_equal [ Haiku55Http::PHOTO_OPEN_READING_REPLY, Haiku55Http::PHOTO_NOMINAL_READING_REPLY ],
+      Haiku55JourneyRubric::PHOTO_READING_VARIANTS
   end
 
   test "a label-to-latch-line check is answered once and the latch question follows" do
@@ -385,6 +422,13 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
   def photo_questions
     load_runner
     Haiku55Http::AUDIT_JOURNEYS.fetch("photo_ea").dup
+  end
+
+  def repaired_photo_questions
+    questions = photo_questions
+    sent = [ questions[0], questions[1], "No engancha.", "Sí, está desalineado.", questions[5] ]
+    questions[0, questions.size] = [ *sent, questions[6], questions[7] ]
+    questions
   end
 
   def select_photo_reply(questions, index, row)

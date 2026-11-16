@@ -34,6 +34,8 @@ module Haiku55Http
   PHOTO_EA_TURNS = 8
   PHOTO_LABEL_LINE_REPLY = "Sí, el cable de los trincos llega a ese borne."
   PHOTO_OPERATOR_REPLY = "Sí, tiene motor de operador."
+  PHOTO_OPEN_READING_REPLY = "Marca 0 Vcc."
+  PHOTO_NOMINAL_READING_REPLY = "No, marca 0 Vcc."
   CONTINUATION = PHASE == "field_continuation"
   CONTINUATION_RETRY = CONTINUATION && ENV["HTTP55_CONTINUATION_RETRY"] == "1"
   AUDIT_APPROVAL = "HTTP55_THYSSEN_AUTHORIZED_SHA"
@@ -821,11 +823,11 @@ module Haiku55Http
 
     reply = if sent.last == opening
       display if request.match?(/codigo|display|pantalla|visor/)
-    elsif sent.last == reading && request.match?(/operador/) && request.match?(/motor|tiene|cuenta|equipad/)
+    elsif photo_reading_turn?(sent.last) && request.match?(/operador/) && request.match?(/motor|tiene|cuenta|equipad/)
       # The documented reading applies to doors with an operator motor; the
       # simulated installation has one.
       PHOTO_OPERATOR_REPLY
-    elsif [ reading, PHOTO_OPERATOR_REPLY ].include?(sent.last)
+    elsif photo_reading_turn?(sent.last) || sent.last == PHOTO_OPERATOR_REPLY
       how if request.present? || row["answer"].to_s.present?
     elsif misalignment_reported && !repaired && photo_repair_requested?(I18n.transliterate(row["answer"].to_s).downcase)
       aligned
@@ -838,8 +840,8 @@ module Haiku55Http
         # after the repair; the technician reports it firm once.
         if request.match?(/firme|suelt|floj|apretad|conexion/) && !sent.include?(firm)
           firm
-        elsif request.match?(/ra\s*-?53|\bp28\b/) && Rag::WorkContextReducer.open_reply?(pending, reading)
-          reading
+        elsif (line = photo_case_reading(pending, request))
+          line
         end
       elsif latch_reported && request.match?(/alin|descentr|desplaz|fuera de posicion|no coincide/)
         misaligned
@@ -851,8 +853,8 @@ module Haiku55Http
         candidates = [firm, latch].select { |line| rest.include?(line) }
         candidates.find { |line| Rag::WorkContextReducer.open_reply?(pending, line) } || door_closure_reply(pending)
       end
-    elsif repaired && request.match?(/ra\s*-?53|p28/) && request.match?(/lectura|tension|voltaje|mide|medir|valor|vcc/)
-      reading
+    elsif repaired && (line = photo_case_reading(nil, request))
+      line
     elsif latch_reported && !misalignment_reported && request.match?(/alin|descentr|desplaz|fuera de posicion|no coincide/)
       misaligned
     elsif !latch_reported && request.match?(/trinco|cerrojo|pestillo|enclavamiento/) && request.match?(/engancha|enganchar|traba|enclava|encaja/)
@@ -865,11 +867,38 @@ module Haiku55Http
     end
 
     rest.delete(reply)
+    rest.delete(reading) if [ PHOTO_OPEN_READING_REPLY, PHOTO_NOMINAL_READING_REPLY ].include?(reply)
     # A firm connection is optional, and the question after the electrical
     # reading ends the script regardless of any earlier optional checks.
-    rest.delete(firm) if [latch, misaligned, aligned, reading].include?(reply)
+    rest.delete(firm) if [ latch, misaligned, aligned, reading, PHOTO_OPEN_READING_REPLY, PHOTO_NOMINAL_READING_REPLY ].include?(reply)
     rest.clear if reply == how
     questions[(index + 1)..] = [reply, *rest]
+  end
+
+  # The fixture reading affirms 0 Vcc. open_reply? rejects that affirmation
+  # when the question asks whether the reading is +110 Vcc, and accepts an
+  # open request for the reading. The nominal question gets the negation.
+  def photo_case_reading(pending, request)
+    return nil unless request.match?(/ra\s*-?53|\bp28\b/)
+
+    if nominal_voltage_check?(pending&.dig("question"))
+      PHOTO_NOMINAL_READING_REPLY
+    elsif pending.nil?
+      PHOTO_OPEN_READING_REPLY if request.match?(/lectura|tension|voltaje|mide|medir|valor|vcc/)
+    elsif Rag::WorkContextReducer.open_reply?(pending, PHOTO_OPEN_READING_REPLY)
+      PHOTO_OPEN_READING_REPLY
+    end
+  end
+
+  def nominal_voltage_check?(question)
+    text = I18n.transliterate(question.to_s).downcase
+    return false if text.match?(/\b(?:que|cuanto|cual)\b/)
+
+    text.match?(/\bmides?\b/) && text.match?(/\b110\b/) && text.match?(/\bvcc\b|\bvdc\b|\bvolt/)
+  end
+
+  def photo_reading_turn?(line)
+    [ AUDIT_JOURNEYS.fetch("photo_ea")[6], PHOTO_OPEN_READING_REPLY, PHOTO_NOMINAL_READING_REPLY ].include?(line)
   end
 
   def photo_label_line_check?(request)

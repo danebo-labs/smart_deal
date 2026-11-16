@@ -733,7 +733,9 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       original_episode ||= session.live_episode_id
       assert_equal original_episode, session.live_episode_id
     end
-    assert_equal AUDIT_JOURNEYS.fetch("photo_ea"), questions
+    expected = AUDIT_JOURNEYS.fetch("photo_ea").dup
+    expected[6] = Haiku55Http::PHOTO_OPEN_READING_REPLY
+    assert_equal expected, questions
   end
 
   test "KONE uses the Engineering reading and advances after the sensor is reconnected" do

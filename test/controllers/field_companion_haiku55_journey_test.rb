@@ -1045,6 +1045,143 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "Thyssen resume restores the captured case before posting only T6 and T7" do
+    previous = ENV.slice("HTTP55_RESUME_CAPTURE", "HTTP55_REQUIRE", "OPUS55_REQUIRE")
+    ENV["HTTP55_REQUIRE"] = "1"
+    load Rails.root.join("script/field_companion/run_haiku55_http.rb") unless defined?(Haiku55Http)
+    runner = Haiku55Http
+    name = "audit_thyssen_photo_ea"
+    document = audit_thyssen_pin
+    expected_questions = [ "No, marca 0 Vcc.", "¿Cómo reviso eso?" ]
+    requests = []
+    Dir.mktmpdir("thyssen-resume") do |directory|
+      root = Pathname.new(directory)
+      capture_path = ENV["HTTP55_TEST_LIVE19_CAPTURE"].presence ||
+        write_thyssen_resume_fixture(root.join("capture"), runner, document).to_s
+      ENV["HTTP55_RESUME_CAPTURE"] = capture_path
+      capture = runner.resume_capture(document)
+      assert capture, capture_path
+      id = capture[:episode].fetch("episode_id")
+      pending = capture[:episode].fetch("pending_question")
+      part = pending.fetch("parts").sole.fetch("id")
+      question_id = pending.fetch("id")
+      reserve = runner.reservation(name, Haiku55Companion.per_turn_ceiling)
+      assert_equal [ 2, 4 ], reserve.values_at("turns", "calls")
+      refute reserve.key?("vision")
+      assert_equal "not_requested", runner.vision_preflight_document([ name ])["decision"]
+
+      test_case = self
+      user = @user
+      client = Object.new
+      client.define_singleton_method(:sign_in!) { |*| }
+      client.define_singleton_method(:post_json) do |path, payload|
+        raise "Unexpected request #{path}" unless path == "/pinned_documents"
+
+        test_case.post(path, params: payload, as: :json)
+        { status: test_case.response.status }
+      end
+      room = { "calls" => 4, "usd" => BigDecimal(reserve["ceiling_usd"]) }
+      send_turn = lambda do |_directory, _run_id, _client, _user, _doc, _name, number, question, _questions, **options|
+        requests << [ number, question ]
+        assert_nil options[:browser]
+        session = reloaded_session
+        assert_equal id, session.live_episode_id
+        assert_equal [ document.id ], session.focus_document_ids
+        if number == 6
+          assert_equal pending, session.active_episode.fetch("pending_question")
+          assert_equal capture[:case_evidence], session.case_evidence
+          assert_equal 10, session.conversation_history.size
+        else
+          episode = Rag::ActiveEpisode.parse(session.active_episode)
+          reply = Rag::AnswerContract.current_replies(episode, part).sole
+          assert_equal "complete", reply["state"]
+          assert_equal "No, marca 0 Vcc", Rag::AnswerContract.reconstruct(reply, session)
+        end
+        turn = audit_thyssen_turn(document, question, "Recibido.", pages: %w[9_3 24_1],
+          move: "follow_up", observations: number == 6 ? [ "No, marca 0 Vcc" ] : [])
+        if number == 6
+          turn.tool_input["part_replies"] = [
+            { "question_id" => question_id, "part_id" => part, "state" => "complete", "quote" => "No, marca 0 Vcc" }
+          ]
+        end
+        _, cassette = revision_ask("resume-t5-test", number, turn, document)
+        request = cassette.sent.find { |payload| payload[:tool_choice] }
+        context = JSON.parse(request.fetch(:messages).last.fetch(:content).sole.fetch(:text)).fetch("work_context")
+        assert_equal capture[:visual]["canonical_component"], context.dig("active_photo_context", "component")
+        if number == 6
+          assert_equal pending["question"], context.dig("pending", "question")
+        else
+          assert_includes context.fetch("observations"), "No, marca 0 Vcc"
+        end
+        { "turn" => number, "question" => question, "episode_id" => reloaded_session.live_episode_id,
+          "focus" => reloaded_session.focus_document_ids, "rubric" => [] }
+      end
+
+      swaps = {
+        runner => {
+          read_ledger: -> { {} }, grant_room: ->(*) { room }, ledger_view: -> { {} },
+          document_for: ->(*) { document }, new_user: ->(*) { user }, user_password: ->(*) { "offline" },
+          start_server: ->(*) { nil }, one_turn: send_turn
+        },
+        Haiku55Companion => { network_ready?: ->(*) { true } },
+        runner::Client => { new: ->(*) { client } }
+      }
+      originals = swaps.flat_map do |owner, methods|
+        methods.map do |method, replacement|
+          original = owner.method(method)
+          owner.define_singleton_method(method) { |*args, **kwargs| replacement.call(*args, **kwargs) }
+          [ owner, method, original ]
+        end
+      end
+      begin
+        result = runner.run_script(StringIO.new, root, name)
+        assert_equal "executed", result.fetch("status")
+        assert_equal [ id ], result.fetch("episodes")
+        assert_equal [ [ 6, expected_questions[0] ], [ 7, expected_questions[1] ] ], requests
+      ensure
+        originals.reverse_each { |owner, method, original| owner.define_singleton_method(method, original) }
+      end
+    end
+  ensure
+    %w[HTTP55_RESUME_CAPTURE HTTP55_REQUIRE OPUS55_REQUIRE].each { |key| ENV[key] = previous[key] }
+  end
+
+  def write_thyssen_resume_fixture(root, runner, document)
+    photo_correlation = "photo:resume-fixture"
+    sha256 = Digest::SHA256.hexdigest(photo_correlation)
+    episode = Rag::ActiveEpisode.open(correlation_id: photo_correlation, now: 1.day.ago)
+    episode.assign_goal!("La puerta de piso no cierra", correlation_id: photo_correlation)
+    episode.write_fact!("manufacturer", status: "known", value: "Thyssen", correlation_id: photo_correlation, at: episode.opened_at)
+    episode.append_identifier!("MCINV4", correlation_id: photo_correlation)
+    episode.active_photo = { "sha256" => sha256, "correlation_id" => photo_correlation, "field_photo_id" => 100 }
+    question = "Con la puerta cerrada y trabada, ¿mides +110 Vcc en el borne P28?"
+    episode.pending_question = { "type" => "documented_context", "question" => question,
+      "targets" => [ { "item" => document.display_name } ] }
+    Rag::AnswerContract.stamp!(episode)
+
+    FileUtils.mkdir_p(root.join("turn-1/worker"))
+    root.join("pin.json").write(JSON.generate("document_uid" => document.document_uid,
+      "indexed_uri" => document.display_s3_uri(KbDocument::KB_BUCKET)))
+    root.join("turn-1/worker/capture.json").write(JSON.generate("events" => [
+      { "kind" => "photo_worker_input", "correlation_id" => photo_correlation, "sha256" => sha256, "bytes" => 100 },
+      { "kind" => "photo_vision_raw", "model" => "claude-sonnet-5-5" }
+    ]))
+    root.join("turn-1/vision-reading.json").write(JSON.generate(
+      "canonical_component" => "Bornera de comando", "manufacturer" => "UNKNOWN", "model" => "UNKNOWN",
+      "subsystem" => "CONTROLLER_LOGIC", "condition" => "UNKNOWN", "visible_text" => [ "P28" ],
+      "relevance_to_goal" => "uncertain", "target_visible" => true))
+    runner::AUDIT_JOURNEYS.fetch("photo_ea").reject { |line| line == "Sí, está firme." }.first(5).each_with_index do |text, index|
+      turn = root.join("turn-#{index + 1}")
+      FileUtils.mkdir_p(turn)
+      turn.join("question.txt").write(text)
+      turn.join("episode.json").write(JSON.generate("episode_id" => episode.episode_id, "focus_document_ids" => [ document.id ],
+        "stored_active_episode" => episode.to_h, "case_evidence" => { "episode_id" => episode.episode_id, "revision" => 1, "sources" => [] },
+        "last_assistant" => { "correlation_id" => index.zero? ? photo_correlation : "query:fixture-#{index}",
+          "content" => index == 4 ? question : "Entendido." }))
+    end
+    root
+  end
+
   def play_audit_photo(name, questions)
     document = audit_thyssen_pin
     replies = [

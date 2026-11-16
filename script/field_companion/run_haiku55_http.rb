@@ -6,6 +6,8 @@
 #
 #   HTTP55_ITERATION=live1 HTTP55_PLAN=guion2,guion1,elemont \
 #     bin/rails runner script/field_companion/run_haiku55_http.rb          # preflight only
+#   HTTP55_RESUME_CAPTURE=/path/to/audit_thyssen_photo_ea \
+#     /bin/zsh "$wrapper" preflight run-id  # captured T5 -> reading and how
 #   HTTP55_EXECUTE=1 ...                                                   # admit and call
 #
 # Each script gets a new user (so a new web session and episode), a Puma
@@ -32,6 +34,7 @@ module Haiku55Http
   AUDIT_PLAN = %w[audit_thyssen_photo audit_thyssen_engineering].freeze
   CONTINUATION_PLAN = %w[audit_thyssen_photo_ea audit_kone_lwi audit_thyssen_engineering].freeze
   PHOTO_EA_TURNS = 8
+  PHOTO_RESUME_AFTER = 5
   PHOTO_LABEL_LINE_REPLY = "Sí, el cable de los trincos llega a ese borne."
   PHOTO_OPERATOR_REPLY = "Sí, tiene motor de operador."
   PHOTO_OPEN_READING_REPLY = "Marca 0 Vcc."
@@ -300,6 +303,8 @@ module Haiku55Http
       "cea_completion_already_started"
     elsif CEA_COMPLETION && ledger.fetch("executions").any? { |row| row["id"] == EXECUTION_ID }
       "cea_completion_already_admitted"
+    elsif resume_path && (!photo_continuation? || plan != [ CONTINUATION_PLAN.first ])
+      "outside_thyssen_resume_plan"
     elsif AUDIT && (plan != authorized_plan || ENV["HTTP55_GUI"] == "1")
       "outside_thyssen_audit_plan"
     elsif !plan.all? { |name| authorized_plan.include?(name) }
@@ -310,6 +315,8 @@ module Haiku55Http
       "pin_missing"
     elsif accounts.any? { |id| id.nil? } || plan.any? { |name| AccountHostResolver.host_map.key?(request_host(document_for(name).account)) }
       "host_account_mismatch"
+    elsif resume_path && !(resume = resume_capture(document_for(plan.sole)))
+      "invalid_resume_capture"
     elsif (photo_choice = photo_decision(ledger, calls, worst, room))
       photo_choice
     elsif kone_lwi_admission?(ledger, calls, worst, scripts, room)
@@ -318,7 +325,7 @@ module Haiku55Http
       "grant_does_not_cover_plan"
     elsif AUDIT && KbDocument::KB_BUCKET != AUDIT_KB_BUCKET
       "audit_kb_bucket_mismatch"
-    elsif AUDIT && !CONTINUATION_RETRY && !audit_photo_input
+    elsif AUDIT && !CONTINUATION_RETRY && !resume_path && !audit_photo_input
       "audit_jpeg_missing_or_invalid"
     elsif AUDIT && !audit_baseline?(ledger)
       "thyssen_ledger_baseline_changed"
@@ -334,8 +341,10 @@ module Haiku55Http
       "decision" => decision,
       "head" => head,
       "dirty" => dirty_tree?,
-      "execution_id" => EXECUTION_ID,
+      "execution_id" => resume_path ? SPEND::THYSSEN_PHOTO_LIVE_ID : EXECUTION_ID,
       "plan" => plan,
+      "resume" => resume && { "after_turn" => PHOTO_RESUME_AFTER, "episode_id" => resume[:episode]["episode_id"],
+        "questions" => resume_questions, "capture_sha256" => resume[:digest] },
       "scripts" => scripts,
       "plan_ceiling_usd" => money(worst),
       "plan_calls" => calls,
@@ -352,7 +361,7 @@ module Haiku55Http
         "haiku_cap_increase" => [ calls - remaining, 0 ].max,
         "vision" => scripts.dig(authorized_plan.first, "vision")
       } : nil),
-      "photo_input" => (audit_photo_input if AUDIT),
+      "photo_input" => (audit_photo_input if AUDIT && !resume_path),
       "bedrock" => (AUDIT ? { "mode" => "read_only", "rerank_model" => "cohere.rerank-v3-5:0",
         "rerank_estimate_usd" => money(Haiku55Companion::RERANK_USD * scripts.values.sum { |row| row["turns"] }) } : nil),
       "attempts" => ledger["attempts"],
@@ -373,7 +382,7 @@ module Haiku55Http
   # Sonnet has its own one-call ledger. This decision does not spend Haiku
   # room and does not move the US$4 assignment cap.
   def vision_preflight_document(plan)
-    return { "status" => "preflight", "lane" => "vision", "decision" => "not_requested" } unless plan.any? { |name| script(name)["photo"] }
+    return { "status" => "preflight", "lane" => "vision", "decision" => "not_requested" } unless plan.any? { |name| scripts_photo?(name) }
 
     input = audit_photo_input
     {
@@ -388,7 +397,7 @@ module Haiku55Http
   # nil lets the shared checks continue. A short window returns execute only
   # when the photo admission can open its own 17-call grant.
   def photo_decision(ledger, calls, worst, room)
-    return nil unless photo_continuation?
+    return nil unless photo_continuation? && !resume_path
     return "audit_jpeg_missing_or_invalid" unless audit_photo_input
     return "thyssen_grants_pending" unless ENV[AUDIT_APPROVAL] == head
     return "audit_kb_bucket_mismatch" unless KbDocument::KB_BUCKET == AUDIT_KB_BUCKET
@@ -401,10 +410,16 @@ module Haiku55Http
 
   # One script, complete: two calls per turn plus one, priced at the ceiling.
   def reservation(name, turn)
+    if resume_path && name == CONTINUATION_PLAN.first
+      turns = resume_questions.size
+      return { "turns" => turns, "calls" => turns * 2,
+        "ceiling_usd" => money((turn["interpreter"] + turn["generation"]) * turns) }
+    end
+
     turns = name == CONTINUATION_PLAN.first ? PHOTO_EA_TURNS : script(name)["turns"].size + script(name).fetch("accept", {}).size
     ceiling = (turn["interpreter"] + turn["generation"]) * turns
     reservation = { "turns" => turns, "calls" => turns * 2 + 1, "ceiling_usd" => money(ceiling + turn["interpreter"]) }
-    if script(name)["photo"]
+    if scripts_photo?(name)
       reservation["vision"] = {
         "calls" => 1, "model_id" => Rag::GuardedPhotoVision::MODEL_ID,
         "ceiling_usd" => money(Rag::GuardedPhotoVision.ceiling), "route" => "field_photo",
@@ -501,6 +516,12 @@ module Haiku55Http
       return false unless directory && ENV[AUDIT_APPROVAL] == head
       if photo_continuation?
         reserved = reservation("audit_thyssen_photo_ea", Haiku55Companion.per_turn_ceiling)
+        if resume_path
+          ledger = read_ledger
+          room = grant_room(ledger)
+          return audit_baseline?(ledger) && reserved["calls"] <= room["calls"] &&
+            BigDecimal(reserved["ceiling_usd"]) <= room["usd"]
+        end
         return false unless audit_photo_input
 
         room = grant_room(read_ledger)
@@ -588,6 +609,98 @@ module Haiku55Http
     end
   end
 
+  def resume_path
+    ENV["HTTP55_RESUME_CAPTURE"].presence
+  end
+
+  def scripts_photo?(name)
+    !resume_path && script(name)["photo"]
+  end
+
+  def resume_questions
+    [ PHOTO_NOMINAL_READING_REPLY, AUDIT_JOURNEYS.fetch("photo_ea").last ]
+  end
+
+  def resume_capture(document)
+    root = Pathname.new(resume_path)
+    files = []
+    read = ->(relative) do
+      content = root.join(relative).read
+      files << [relative, Digest::SHA256.hexdigest(content)]
+      content
+    end
+    pin = JSON.parse(read.call("pin.json"))
+    return unless pin["document_uid"] == document.document_uid &&
+      pin["indexed_uri"] == document.display_s3_uri(KbDocument::KB_BUCKET)
+
+    snapshots = (1..PHOTO_RESUME_AFTER).map do |number|
+      [read.call("turn-#{number}/question.txt"), JSON.parse(read.call("turn-#{number}/episode.json"))]
+    end
+    last = snapshots.last.last
+    episode = last.fetch("stored_active_episode")
+    id = episode.fetch("episode_id")
+    return unless id.present? && last.fetch("case_evidence").fetch("episode_id") == id &&
+      last.fetch("focus_document_ids").size == 1
+    return unless snapshots.all? { |text, row| text.present? && row["episode_id"] == id &&
+      row.dig("last_assistant", "correlation_id").present? && row.dig("last_assistant", "content").present? }
+
+    pending = episode.fetch("pending_question")
+    parsed = Rag::ActiveEpisode.parse(episode, now: Time.iso8601(episode.fetch("updated_at")))
+    question = pending.fetch("question")
+    return unless Rag::AnswerContract.active?(parsed) && pending["type"] == "documented_context" &&
+      Rag::AnswerContract.open_parts(parsed).any? { |part| part["text"] == question } &&
+      last.dig("last_assistant", "content").include?(question) &&
+      photo_case_reading(pending, I18n.transliterate(question).downcase) == PHOTO_NOMINAL_READING_REPLY
+
+    marker = episode.fetch("active_photo")
+    worker = JSON.parse(read.call("turn-1/worker/capture.json")).fetch("events")
+    input = worker.find { |event| event["kind"] == "photo_worker_input" }
+    vision = worker.find { |event| event["kind"] == "photo_vision_raw" }
+    reading = JSON.parse(read.call("turn-1/vision-reading.json"))
+    return unless input && vision && input["correlation_id"] == marker["correlation_id"] &&
+      input["sha256"] == marker["sha256"] && input.fetch("bytes").positive?
+
+    observation = FieldPhotoObservation.from_analysis(parsed: reading, model_id: vision.fetch("model"),
+      target_visible: reading.fetch("target_visible"), relevance_to_goal: reading.fetch("relevance_to_goal"))
+    visual = FieldPhotoObservation.sanitize(observation)
+    return unless visual
+
+    { episode: episode, history: snapshots.map { |text, row| [text, row.fetch("last_assistant")] },
+      case_evidence: last.fetch("case_evidence"), visual: visual, bytes: input["bytes"],
+      digest: Digest::SHA256.hexdigest(JSON.generate(files)) }
+  rescue SystemCallError, JSON::ParserError, KeyError, ArgumentError, TypeError, NoMethodError
+    nil
+  end
+
+  def restore_photo_case!(session, user, document, capture)
+    raise "resume pin missing" unless session&.focus_document_ids == [ document.id ]
+
+    state = capture.fetch(:episode).deep_dup
+    marker = state.fetch("active_photo")
+    session.with_lock do
+      raise "resume session is not empty" if session.active_episode.present? || session.conversation_history.present?
+
+      sha256 = marker.fetch("sha256")
+      photo = FieldPhoto.find_or_create_by!(account: document.account, sha256: sha256) do |row|
+        row.assign_attributes(s3_key_original: "capture-fixture/#{sha256}", content_type: "image/jpeg",
+          byte_size: capture.fetch(:bytes), visual_observation: capture.fetch(:visual))
+      end
+      unless FieldPhotoObservation.sanitize(photo.visual_observation) == capture.fetch(:visual)
+        raise "resume photo differs from the captured visual reading"
+      end
+
+      marker["field_photo_id"] = photo.id
+      state["updated_at"] = Time.current.iso8601
+      capture.fetch(:history).each do |text, last|
+        correlation = last.fetch("correlation_id")
+        session.add_to_history("user", text, user_id: user.id, correlation_id: correlation)
+        session.add_to_history("assistant", last.fetch("content"), user_id: user.id, correlation_id: correlation,
+          prompt_reply: last["prompt_reply"], focus_ids: [ document.id ])
+      end
+      session.update!(active_episode: state, case_evidence: capture.fetch(:case_evidence))
+    end
+  end
+
   # ---- one script ---------------------------------------------------------
 
   def run_script(io, root, name)
@@ -604,10 +717,13 @@ module Haiku55Http
     before = ledger_view
     File.write(directory.join("reservation.json"), JSON.pretty_generate(reserved.merge("room_before" => money(room["usd"]), "ledger_before" => before)))
     document = document_for(name)
+    resume = resume_capture(document) if resume_path
+    return { "script" => name, "status" => "refused", "reason" => "invalid_resume_capture" } if resume_path && !resume
+
     user = new_user(document.account, name)
     run_id = "#{root.basename}-#{name}"
     server = start_server(directory, run_id, reserved, document.account)
-    photo = script(name)["photo"]
+    photo = scripts_photo?(name)
     browser = nil
     rows = []
     begin
@@ -627,6 +743,11 @@ module Haiku55Http
       questions = script(name)["turns"].dup
       focus = [ document ]
       index = 0
+      if resume
+        restore_photo_case!(fresh_session(user), user, document, resume)
+        index = PHOTO_RESUME_AFTER
+        questions[index..] = resume_questions
+      end
       while index < questions.size
         question = questions[index]
         number = index + 1
@@ -636,7 +757,10 @@ module Haiku55Http
         end
         row = one_turn(directory, run_id, client, user, focus.first, name, number, question, questions,
           focus: focus, browser: browser, reserved: reserved)
-        if name == AUDIT_PLAN.last
+        if resume
+          row["block_reason"] ||= "resume_episode_changed" if row["episode_id"] != resume[:episode]["episode_id"]
+          row["block_reason"] ||= "resume_focus_changed" if row["focus"] != [ document.id ]
+        elsif name == AUDIT_PLAN.last
           row["block_reason"] ||= engineering_stop(number, row, rows.first&.dig("episode_id"))
         elsif name == AUDIT_PLAN.first
           row["block_reason"] ||= photo_followup_stop(number, row["answer"])
@@ -662,14 +786,14 @@ module Haiku55Http
           break if rows.last["block_reason"]
 
           focus = KbDocument.where(id: rows.last["focus"]).to_a
-        elsif card
+        elsif card && !resume
           confirm_card!(client, directory, number, card, document)
         end
       end
     rescue StandardError => error
       raise unless AUDIT
 
-      rows << { "turn" => rows.length + 1, "status" => "runner_error",
+      rows << { "turn" => (resume ? PHOTO_RESUME_AFTER : 0) + rows.length + 1, "status" => "runner_error",
         "block_reason" => error.class.name, "rubric" => [] }
       File.write(directory.join("runner_error.txt"), error.full_message)
     ensure
@@ -682,7 +806,9 @@ module Haiku55Http
     single_episode = episode_ids.none?(&:nil?) && episodes.one?
     episode_ok = !(ACCEPTANCE_PLAN.include?(name) || CEA_COMPLETION || AUDIT) || single_episode
     expected = script(name)["turns"].size + script(name).fetch("accept", {}).size
-    complete = if name == CONTINUATION_PLAN.first
+    complete = if resume
+      rows.pluck("question") == resume_questions
+    elsif name == CONTINUATION_PLAN.first
       rows.map { |row| row["question"] }.last(2) == AUDIT_JOURNEYS.fetch("photo_ea").last(2)
     else
       rows.size == expected

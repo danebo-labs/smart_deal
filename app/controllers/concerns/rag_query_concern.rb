@@ -211,7 +211,8 @@ module RagQueryConcern
       chunks: result[:case_source_chunks],
       published_text: text,
       correlation_id: result[:case_correlation_id],
-      outcome: "published"
+      outcome: "published",
+      quotes: result.dig(:companion_publication, "quotes")
     )
     result[:case_evidence] = recorded.state
     result[:case_history] = recorded.history_text

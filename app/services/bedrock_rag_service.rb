@@ -536,7 +536,7 @@ class BedrockRagService
       raw_question: raw_question,
       conv_session: conv_session,
       correlation_id: correlation_id,
-      companion_focus: companion_focus, episode: episode
+      companion_focus: companion_focus, episode: episode, scope_uris: entity_s3_uris
     )
     profile_count = self.class.companion_profile_count(retrieve_question, entity_sources)
     number_of_results = self.class.companion_retrieve_count(
@@ -1675,19 +1675,32 @@ class BedrockRagService
     session.same_work_question_for(correlation_id)
   end
 
-  def direct_case_retrieve_question(question, raw_question:, conv_session:, correlation_id:, companion_focus:, episode: nil)
+  def direct_case_retrieve_question(question, raw_question:, conv_session:, correlation_id:, companion_focus:, episode: nil, scope_uris: nil)
     return question unless companion_focus && companion_generation_direct? && conv_session
 
     retrieval = Rag::CompanionCaseRecord.retrieval_text(
       conv_session,
       raw_question.presence || question,
       correlation_id: correlation_id, episode: episode,
-      resumed_question: same_work_question(conv_session, raw_question, correlation_id)
+      resumed_question: same_work_question(conv_session, raw_question, correlation_id),
+      photo_labels: direct_case_photo_labels(conv_session, episode),
+      scope_uris: scope_uris
     )
     effective = retrieval.text.presence || question.to_s
     @companion_case_retrieve_question = effective
     record_case_retrieval(retrieval, effective)
     effective
+  end
+
+  # Same reading and the same photo check as the generation block.
+  def direct_case_photo_labels(conv_session, episode)
+    context = conv_session.turn_active_photo_context if conv_session.respond_to?(:turn_active_photo_context)
+    return [] unless context.respond_to?(:observed_labels)
+
+    parsed = episode.is_a?(Rag::ActiveEpisode) ? episode : Rag::ActiveEpisode.parse(episode)
+    return [] unless context.matches?(parsed&.active_photo&.dig("field_photo_id"))
+
+    context.observed_labels
   end
 
   def record_case_retrieval(retrieval, effective)
@@ -1720,7 +1733,8 @@ class BedrockRagService
       chunks: chunks,
       published_text: published,
       correlation_id: correlation_id || @companion_case_correlation_id,
-      outcome: outcome
+      outcome: outcome,
+      quotes: result.dig(:companion_publication, "quotes")
     )
     result[:case_outcome] = outcome
     result[:case_evidence] = recorded.state

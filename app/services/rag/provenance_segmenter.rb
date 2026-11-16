@@ -128,19 +128,20 @@ module Rag
       answer.split(/\r?\n/).flat_map { |line| split_line(line.strip) }.map(&:strip).reject(&:empty?)
     end
 
+    # A period inside a quoted passage («1. Revisar …») does not end the
+    # sentence that carries the quote and its marker.
     def split_line(line)
+      quoted = line.to_enum(:scan, CompanionTurnPublication::QUOTE_PATTERN).map { Regexp.last_match.then { |m| m.begin(0)...m.end(0) } }
       parts = []
-      remaining = line
-      while remaining.present?
-        match = remaining.match(SENTENCE_END)
-        unless match
-          parts << remaining
-          break
-        end
+      start = 0
+      line.to_enum(:scan, SENTENCE_END).each do
+        finish = Regexp.last_match.end(0)
+        next if quoted.any? { |span| span.cover?(finish - 1) }
 
-        parts << remaining[0...match.end(0)]
-        remaining = remaining[match.end(0)..].to_s.sub(/\A\s+/, "")
+        parts << line[start...finish]
+        start = finish
       end
+      parts << line[start..] if start < line.length
       parts
     end
 

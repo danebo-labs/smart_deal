@@ -14,8 +14,14 @@ module Rag
     SEPARATOR = "\n"
     MARKER = /\[(\d+)\]/
     PROVENANCE = "published_citation"
+    MAX_SOURCE_QUOTES = 3
+    MAX_QUOTE_CHARS = 160
 
-    Retrieval = Data.define(:text, :included, :omitted, :current_truncated)
+    Retrieval = Data.define(:text, :included, :omitted, :current_truncated, :photo_reference) do
+      def initialize(text:, included:, omitted:, current_truncated:, photo_reference: nil)
+        super
+      end
+    end
     Recorded = Data.define(:state, :history_text, :ledger_full, :unresolved)
 
     class << self
@@ -24,13 +30,19 @@ module Rag
       # alone is longer than FollowupQueryRewriter::MAX_COMPOSED_CHARS, Retrieve
       # receives its leading characters, current_truncated is true, and every
       # other turn is omitted. The stored message is not cut here.
-      def retrieval_text(session, raw_question, now: Time.current, correlation_id: nil, episode: nil, resumed_question: nil)
+      # photo_labels are the labels of the accepted reading of the episode
+      # photo. A passage quote already published in this episode that names
+      # one of them follows the current turn, so Retrieve keeps the line the
+      # case is on even when the technician never typed that label.
+      def retrieval_text(session, raw_question, now: Time.current, correlation_id: nil, episode: nil, resumed_question: nil,
+                         photo_labels: nil, scope_uris: nil)
         ordered = ordered_turns(session, raw_question, now, correlation_id)
         return Retrieval.new(text: "", included: [], omitted: [], current_truncated: false) if ordered.empty?
 
         ordered.first["text"] = resumed_question if resumed_question.present?
         ordered = omit_rejected_context(ordered, episode)
-        compose_retrieval(ordered)
+        reference = photo_reference(session, episode, photo_labels, scope_uris)
+        compose_retrieval(ordered, reference)
       end
 
       def retrieval_trace(retrieval)
@@ -38,8 +50,9 @@ module Rag
           "text" => retrieval.text.to_s,
           "included" => retrieval.included,
           "omitted" => retrieval.omitted,
-          "current_truncated" => retrieval.current_truncated == true
-        }
+          "current_truncated" => retrieval.current_truncated == true,
+          "photo_reference" => retrieval.photo_reference
+        }.compact
       end
 
       # Ledger passages keep the number of their first citation. Fresh chunks
@@ -63,7 +76,10 @@ module Rag
       # so a second writer that read the previous snapshot cannot commit.
       # A different episode_id starts from an empty passage list and keeps the
       # column revision as the optimistic token.
-      def record(state:, episode_id:, chunks:, published_text:, correlation_id:, outcome:)
+      # quotes are the publication gate's matches ({"text", "source"}). A
+      # quote is kept on its cited source only while the published text still
+      # contains it.
+      def record(state:, episode_id:, chunks:, published_text:, correlation_id:, outcome:, quotes: nil)
         stored = normalize(state)
         origin = stored["revision"]
         working = if episode_id.present? && stored["episode_id"] == episode_id.to_s
@@ -96,6 +112,7 @@ module Rag
           end
         end
         working["revision"] = origin + 1
+        keep_quotes(working, quotes, published_text)
         kept = working["sources"].map { |row| row["n"].to_i }
         Recorded.new(
           state: working,
@@ -164,11 +181,59 @@ module Rag
         } ]
       end
 
-      def compose_retrieval(ordered)
+      def keep_quotes(working, quotes, published_text)
+        text = published_text.to_s
+        rows = working["sources"].index_by { |row| row["n"].to_i }
+        Array(quotes).each do |quote|
+          next unless quote.is_a?(Hash)
+
+          quoted = (quote["text"] || quote[:text]).to_s
+          row = rows[(quote["source"] || quote[:source]).to_i]
+          next if row.nil? || quoted.strip.empty? || quoted.length > MAX_QUOTE_CHARS || !text.include?(quoted)
+
+          kept = Array(row["quotes"]).reject { |item| item["text"] == quoted }
+          kept << { "text" => quoted, "rev" => working["revision"] }
+          row["quotes"] = kept.last(MAX_SOURCE_QUOTES)
+        end
+      end
+
+      # Newest published quote, in this episode and focus, that names a label
+      # of the accepted photo reading. A label the technician rejected does not
+      # count. The quote is manual text; the label is only what links it.
+      def photo_reference(session, episode, photo_labels, scope_uris)
+        labels = Array(photo_labels).map { |label| label.to_s.squish }.compact_blank.uniq
+        return nil if labels.empty?
+
+        parsed = episode.is_a?(ActiveEpisode) ? episode : ActiveEpisode.parse(episode)
+        rejected = Array(parsed&.rejected).filter_map { |row| row["value"].to_s.squish.presence }
+        labels.reject! { |label| rejected.any? { |value| value.casecmp?(label) } }
+        return nil if labels.empty?
+
+        allowed = Array(scope_uris).filter_map { |uri| KbDocument.canonical_source(uri) }.to_set
+        best = nil
+        episode_state(read_state(session), episode_id_of(episode))["sources"].each do |row|
+          next if allowed.any? && !allowed.include?(KbDocument.canonical_source(row.dig("metadata", "original_source_uri")))
+
+          Array(row["quotes"]).each do |quote|
+            named = labels.select { |label| names_label?(quote["text"], label) }
+            next if named.empty? || (best && best["rev"] > quote["rev"])
+
+            best = { "text" => quote["text"], "n" => row["n"], "labels" => named, "rev" => quote["rev"] }
+          end
+        end
+        best&.except("rev")
+      end
+
+      def names_label?(text, label)
+        text.to_s.match?(/(?<![[:alnum:]])#{Regexp.escape(label)}(?![[:alnum:]+])/i)
+      end
+
+      def compose_retrieval(ordered, reference = nil)
         limit = FollowupQueryRewriter::MAX_COMPOSED_CHARS
         current = ordered.first
         return truncated_current(current, ordered.drop(1), limit) if current["text"].length > limit
 
+        reference = nil if reference && current["text"].length + SEPARATOR.length + reference["text"].length > limit
         included = []
         omitted = []
         parts = []
@@ -183,8 +248,13 @@ module Rag
           else
             omitted << { "correlation_id" => turn["correlation_id"], "chars" => text.length, "reason" => "budget" }
           end
+          next unless reference && turn.equal?(current)
+
+          parts << reference["text"]
+          used += SEPARATOR.length + reference["text"].length
         end
-        Retrieval.new(text: parts.join(SEPARATOR), included: included, omitted: omitted, current_truncated: false)
+        Retrieval.new(text: parts.join(SEPARATOR), included: included, omitted: omitted, current_truncated: false,
+          photo_reference: reference)
       end
 
       def truncated_current(current, others, limit)
@@ -454,7 +524,7 @@ module Rag
         number = item["n"].to_i
         return nil if number < 1
 
-        {
+        row = {
           "n" => number,
           "location_uri" => item["location_uri"].to_s,
           "page" => item.key?("page") ? item["page"] : nil,
@@ -464,6 +534,13 @@ module Rag
           "first_cid" => item["first_cid"].to_s,
           "provenance" => item["provenance"].to_s
         }
+        quotes = Array(item["quotes"]).filter_map do |quote|
+          next unless quote.is_a?(Hash) && quote["text"].is_a?(String) && quote["text"].present?
+
+          { "text" => quote["text"].first(MAX_QUOTE_CHARS), "rev" => quote["rev"].to_i }
+        end
+        row["quotes"] = quotes.last(MAX_SOURCE_QUOTES) if quotes.any?
+        row
       end
 
       def source_metadata(chunk)

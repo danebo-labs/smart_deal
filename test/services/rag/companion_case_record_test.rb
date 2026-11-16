@@ -139,6 +139,85 @@ class Rag::CompanionCaseRecordTest < ActiveSupport::TestCase
     previous.nil? ? ENV.delete("RAG_COMPANION_GENERATION") : ENV["RAG_COMPANION_GENERATION"] = previous
   end
 
+  test "a published quote naming a photographed label follows the current turn in retrieve" do
+    session = labeled_case
+    retrieval = Rag::CompanionCaseRecord.retrieval_text(
+      session, "Ya quedó, pero sigue igual.", correlation_id: "c3", now: Time.current,
+      episode: episode_hash("ep_a"), photo_labels: %w[K7 K9 Q3]
+    )
+
+    assert_equal "Ya quedó, pero sigue igual.\nSi falla K7, revisar la línea del contacto\nArranco con el equipo detenido.\nNo cierra.",
+      retrieval.text
+    assert_equal({ "text" => "Si falla K7, revisar la línea del contacto", "n" => 1, "labels" => [ "K7" ] }, retrieval.photo_reference)
+    assert_not_includes retrieval.text, "K9"
+    assert_equal retrieval.photo_reference, Rag::CompanionCaseRecord.retrieval_trace(retrieval)["photo_reference"]
+  end
+
+  test "the photo reference stays out without a photo, after a rejection, in another episode or another focus" do
+    session = labeled_case
+    plain = "Ya quedó, pero sigue igual.\nArranco con el equipo detenido.\nNo cierra."
+    compose = ->(**options) {
+      Rag::CompanionCaseRecord.retrieval_text(session, "Ya quedó, pero sigue igual.", correlation_id: "c3", now: Time.current, **options)
+    }
+    episode = episode_hash("ep_a")
+
+    no_photo = compose.call(episode: episode, photo_labels: [])
+    rejected = compose.call(episode: episode.merge("rejected" => [ { "slot" => "identifier", "value" => "k7" } ]), photo_labels: %w[K7])
+    other_episode = compose.call(episode: episode_hash("ep_b"), photo_labels: %w[K7])
+    other_focus = compose.call(episode: episode, photo_labels: %w[K7], scope_uris: [ "s3://bucket/bulk_uploads/otro.pdf" ])
+    same_focus = compose.call(episode: episode, photo_labels: %w[K7], scope_uris: [ "s3://bucket/bulk_uploads/manual.pdf" ])
+    prefix_only = compose.call(episode: episode, photo_labels: %w[K])
+
+    [ no_photo, rejected, other_episode, other_focus, prefix_only ].each do |retrieval|
+      assert_equal plain, retrieval.text
+      assert_nil retrieval.photo_reference
+    end
+    assert_equal 1, same_focus.photo_reference["n"]
+  end
+
+  test "a quote is kept on its cited source only while the published text contains it" do
+    chunk = labeled_passage
+    quote = { "text" => "Si falla K7, revisar la línea del contacto", "source" => 1 }
+    kept = Rag::CompanionCaseRecord.record(
+      state: {}, episode_id: "ep_a", chunks: [ chunk ], correlation_id: "c1", outcome: "published",
+      published_text: "La tabla dice: «#{quote['text']}» [1].", quotes: [ quote, { "text" => "ajeno", "source" => 2 } ]
+    )
+    dropped = Rag::CompanionCaseRecord.record(
+      state: {}, episode_id: "ep_a", chunks: [ chunk ], correlation_id: "c1", outcome: "published",
+      published_text: "Revisa la línea [1].", quotes: [ quote ]
+    )
+    again = Rag::CompanionCaseRecord.record(
+      state: kept.state, episode_id: "ep_a", chunks: [ chunk ], correlation_id: "c2", outcome: "published",
+      published_text: "Sigue: «#{quote['text']}» [1].", quotes: [ quote ]
+    )
+
+    assert_equal [ { "text" => quote["text"], "rev" => 1 } ], kept.state["sources"].first["quotes"]
+    assert_not dropped.state["sources"].first.key?("quotes")
+    assert_equal [ { "text" => quote["text"], "rev" => 2 } ], again.state["sources"].first["quotes"]
+    assert_equal again.state, Rag::CompanionCaseRecord.send(:normalize, again.state.deep_dup)
+  end
+
+  test "photo labels reach the case composition only when generation sees the reading" do
+    shown = Rag::ActivePhotoContext.new(
+      status: "loaded", field_photo_id: 7, generation_codes: %w[K7 K9],
+      projection: { "relevance_to_goal" => "uncertain", "target_visible" => true }
+    )
+    hidden = Rag::ActivePhotoContext.new(
+      status: "loaded", field_photo_id: 7, generation_codes: %w[K7 K9],
+      projection: { "relevance_to_goal" => "uncertain", "target_visible" => false }
+    )
+    service = BedrockRagService.allocate
+    holder = Struct.new(:turn_active_photo_context)
+    episode = episode_hash("ep_a", "active_photo" => { "field_photo_id" => 7, "sha256" => "abc", "correlation_id" => "photo:1" })
+
+    assert_equal %w[K7 K9], service.send(:direct_case_photo_labels, holder.new(shown), episode)
+    assert_includes shown.generation_block, "Visible text: K7, K9"
+    assert_empty service.send(:direct_case_photo_labels, holder.new(hidden), episode)
+    assert_nil hidden.generation_block
+    assert_empty service.send(:direct_case_photo_labels, holder.new(shown), episode.merge("active_photo" => { "field_photo_id" => 8, "sha256" => "def", "correlation_id" => "photo:2" }))
+    assert_empty service.send(:direct_case_photo_labels, memory_session([]), episode)
+  end
+
   test "cited passages keep their number and a fresh passage takes the next free number" do
     first = passage("alpha estable", "s3://manual/a")
     second = passage("beta estable", "s3://manual/b")
@@ -561,6 +640,32 @@ class Rag::CompanionCaseRecordTest < ActiveSupport::TestCase
       "ts" => minutes_ago.minutes.ago.iso8601,
       "correlation_id" => correlation_id
     }
+  end
+
+  def episode_hash(id, extra = {})
+    now = Time.current.iso8601
+    { "v" => 1, "episode_id" => id, "status" => "active", "opened_at" => now, "updated_at" => now }.merge(extra)
+  end
+
+  def labeled_passage
+    {
+      content: "| Código | Solución |\n| X1 | 1. Revisar conexión; 2. Si falla K7, revisar la línea del contacto; 3. Si falla K9, revisar el freno |",
+      location_uri: "s3://bucket/bulk_chunks/1/manual/chunk_p4_1.txt",
+      metadata: { "page_number" => 4, "canonical_name" => "Manual", "original_source_uri" => "s3://bucket/bulk_uploads/manual.pdf" }
+    }
+  end
+
+  def labeled_case
+    recorded = Rag::CompanionCaseRecord.record(
+      state: {}, episode_id: "ep_a", chunks: [ labeled_passage ], correlation_id: "c2", outcome: "published",
+      published_text: "La tabla dice: «Si falla K7, revisar la línea del contacto» [1].",
+      quotes: [ { "text" => "Si falla K7, revisar la línea del contacto", "source" => 1 } ]
+    )
+    memory_session([
+      turn("Arranco con el equipo detenido.", "c1", 3),
+      turn("No cierra.", "c2", 2),
+      turn("Ya quedó, pero sigue igual.", "c3", 1)
+    ], recorded.state)
   end
 
   def passage(text, uri)

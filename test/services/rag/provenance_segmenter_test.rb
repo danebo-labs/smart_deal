@@ -18,6 +18,15 @@ class Rag::ProvenanceSegmenterTest < ActiveSupport::TestCase
     assert_not_includes segments.sole["text"], "[1]"
   end
 
+  test "a numbered item inside a quote stays in its cited sentence" do
+    answer = "La falla sigue. La tabla indica: «1. Revisar la conexión de estas líneas» [1], y añade: «2. Revisar la línea» [1].\n" \
+             "Pregunta: ¿lo mediste?"
+    segments = segment(answer, citations: cite(1))
+
+    assert_equal %w[DANEBO_GUIDANCE MANUAL_FACT DANEBO_GUIDANCE], segments.pluck("band")
+    assert_equal "La tabla indica: «1. Revisar la conexión de estas líneas», y añade: «2. Revisar la línea».", segments[1]["text"]
+  end
+
   test "an unresolved marker is not a manual fact" do
     segments = segment("El fabricante indica X [99].", citations: cite(1, 2))
 

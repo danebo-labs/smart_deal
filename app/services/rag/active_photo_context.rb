@@ -144,9 +144,16 @@ module Rag
       labels
     end
 
+    # The labels the generator receives as read from the photo. Empty when the
+    # reading is not shown to generation.
+    def observed_labels
+      return [] unless presented?
+
+      self.class.generation_labels(@generation_codes || projection["visible_text"])
+    end
+
     def generation_block
-      visible_despite_uncertainty = loaded? && projection["relevance_to_goal"] == "uncertain" && projection["target_visible"] == true
-      return nil unless relevant? || visible_despite_uncertainty
+      return nil unless presented?
 
       lines = [ HEADER ]
       lines << "Component: #{projection['component']}" if projection["component"].present?
@@ -154,14 +161,24 @@ module Rag
         lines << "Manufacturer: #{projection['manufacturer']}" if projection["manufacturer"].present?
         lines << "Model: #{projection['model']}" if projection["model"].present?
       end
-      codes = self.class.generation_labels(@generation_codes || projection["visible_text"])
+      codes = observed_labels
       lines << "Visible text: #{codes.join(', ')}" if codes.any?
-      if visible_despite_uncertainty
+      if visible_despite_uncertainty?
         lines << "Vision saw the target but was unsure how it relates to this fault. Use labels as observations only."
       end
       lines << "Condition: #{projection['condition']}" if relevant? && projection["condition"].present?
       lines << "Read from the active episode photo. Not stated by the technician."
       lines.join("\n")
+    end
+
+    private
+
+    def presented?
+      relevant? || visible_despite_uncertainty?
+    end
+
+    def visible_despite_uncertainty?
+      loaded? && projection["relevance_to_goal"] == "uncertain" && projection["target_visible"] == true
     end
   end
 end

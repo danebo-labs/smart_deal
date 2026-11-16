@@ -306,6 +306,27 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
     assert_equal expected, questions
   end
 
+  test "after the repair a connection check gets a firm line once and the reading follows" do
+    questions = photo_questions
+    sent = [ questions[0], questions[1], "No engancha.", "Sí, está desalineado.", questions[5] ]
+    questions[0, questions.size] = [ *sent, questions[6], questions[7] ]
+    connection = { "answer" => "La falla EA sigue. La foto muestra P28 como rótulo visible.\n\n" \
+      "Pregunta: ¿puedes ver el cable que llega al borne P28 y está firme?" }
+    select_photo_reply(questions, 4, connection)
+
+    assert_nil connection["block_reason"]
+    assert_equal "Sí, está firme.", questions[5]
+
+    reading = { "answer" => "Con la puerta cerrada y trabada, ¿qué tensión lees en RA-53/P28?" }
+    select_photo_reply(questions, 5, reading)
+    assert_nil reading["block_reason"]
+    assert_equal "Sí, marca 0 Vcc.", questions[6]
+
+    again = { "answer" => "¿El cable de P28 está firme en el borne?" }
+    select_photo_reply(questions, 5, again)
+    assert_equal "pending_question_unanswered", again["block_reason"]
+  end
+
   private
 
   def photo_questions

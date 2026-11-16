@@ -828,7 +828,13 @@ module Haiku55Http
       if (code = display_followup_reply(asked, sent, repaired: repaired))
         code
       elsif repaired
-        reading if request.match?(/ra\s*-?53|\bp28\b/) && Rag::WorkContextReducer.open_reply?(pending, reading)
+        # A visual check of the line's connection is a valid field question
+        # after the repair; the technician reports it firm once.
+        if request.match?(/firme|suelt|floj|apretad|conexion/) && !sent.include?(firm)
+          firm
+        elsif request.match?(/ra\s*-?53|\bp28\b/) && Rag::WorkContextReducer.open_reply?(pending, reading)
+          reading
+        end
       elsif latch_reported && request.match?(/alin|descentr|desplaz|fuera de posicion|no coincide/)
         misaligned
       else

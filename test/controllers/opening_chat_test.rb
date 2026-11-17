@@ -65,6 +65,24 @@ class OpeningChatTest < ActionDispatch::IntegrationTest
     assert_equal "Respuesta: segundo aviso", stored.field_turns.order(:sequence).last.response.fetch("published_text")
   end
 
+  test "the first text stores the manual selected on the empty chat" do
+    document = KbDocument.create!(
+      s3_key: "uploads/2026/thyssen-chat.pdf", display_name: "Thyssen", aliases: []
+    )
+
+    assert_difference("FieldCase.count", 1) do
+      post_opening("con manual", SecureRandom.uuid, SecureRandom.uuid, kb_document_ids: [ document.id ])
+    end
+    assert_response :ok
+    stored = FieldCase.find(response.parsed_body.fetch("field_case_id"))
+    assert_equal [ document.id ], stored.document_focus.pluck("kb_document_id")
+
+    assert_no_difference("FieldCase.count") do
+      post_opening("sin manual", SecureRandom.uuid, SecureRandom.uuid, kb_document_ids: [ 9_000_000_001 ])
+    end
+    assert_response :not_found
+  end
+
   test "a blank message, a file, and the flag off leave no case" do
     key = SecureRandom.uuid
     assert_no_difference("FieldCase.count") do
@@ -89,9 +107,9 @@ class OpeningChatTest < ActionDispatch::IntegrationTest
 
   private
 
-  def post_opening(question, key, submission)
+  def post_opening(question, key, submission, **extra)
     post rag_ask_path, params: {
-      question:, creation_key: key, client_submission_id: submission
+      question:, creation_key: key, client_submission_id: submission, **extra
     }, as: :json
   end
 end

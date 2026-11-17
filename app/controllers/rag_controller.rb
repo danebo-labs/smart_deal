@@ -28,10 +28,12 @@ class RagController < ApplicationController
       end
 
       admission = if opening_text
+        return render json: { status: "error", error: "pins" }, status: :unprocessable_entity if opening_pins.nil?
+
         FieldCases::OpenText.call(
           account: current_account, user: current_user,
           creation_key: params[:creation_key], client_submission_id: params[:client_submission_id],
-          message: question
+          message: question, document_ids: opening_pins
         )
       else
         FieldCases::AdmitTurn.call(
@@ -278,6 +280,15 @@ class RagController < ApplicationController
   end
 
   private
+
+  def opening_pins
+    return [] unless params.key?(:kb_document_ids)
+
+    raw = params[:kb_document_ids]
+    return nil unless raw.is_a?(Array)
+
+    raw
+  end
 
   def render_case_admission(result)
     return head :not_found if result.disabled? || result.not_found?

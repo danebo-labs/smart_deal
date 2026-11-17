@@ -57,6 +57,33 @@ class FieldCases::OpenTextTest < ActiveSupport::TestCase
     end
   end
 
+  test "manuals chosen before the first text stay on that case" do
+    document = KbDocument.create!(
+      account: accounts(:legacy), s3_key: "uploads/2026/thyssen-opening.pdf",
+      display_name: "Thyssen", aliases: []
+    )
+    key = SecureRandom.uuid
+    opened = open_text(accounts(:legacy), users(:one), key, "sub-pin", "el motor suena", document_ids: [ document.id.to_s ])
+    replay = open_text(accounts(:legacy), users(:one), key, "sub-pin", "el motor suena", document_ids: [])
+
+    assert opened.created?, opened.error.inspect
+    assert_equal [ document.id ], opened.field_case.reload.document_focus.pluck("kb_document_id")
+    assert_equal [ document.document_uid ], opened.field_case.document_focus.pluck("document_uid")
+    assert_not replay.created?
+    assert_equal [ document.id ], replay.field_case.reload.document_focus.pluck("kb_document_id")
+    assert_equal 1, FieldCase.count
+  end
+
+  test "an unknown manual does not leave a case" do
+    missing = open_text(accounts(:legacy), users(:one), SecureRandom.uuid, "sub-missing", "hola", document_ids: [ 9_000_000_001 ])
+    malformed = open_text(accounts(:legacy), users(:one), SecureRandom.uuid, "sub-bad", "hola", document_ids: [ "no" ])
+
+    assert missing.not_found?
+    assert malformed.invalid?
+    assert_equal :pins, malformed.error
+    assert_equal 0, FieldCase.count
+  end
+
   test "the flag off does not open a case" do
     disable_history!
     result = open_text(accounts(:legacy), users(:one), SecureRandom.uuid, "sub-off", "hola")
@@ -67,9 +94,9 @@ class FieldCases::OpenTextTest < ActiveSupport::TestCase
 
   private
 
-  def open_text(account, user, key, submission, message)
+  def open_text(account, user, key, submission, message, document_ids: [])
     FieldCases::OpenText.call(
-      account:, user:, creation_key: key, client_submission_id: submission, message:
+      account:, user:, creation_key: key, client_submission_id: submission, message:, document_ids:
     )
   end
 end

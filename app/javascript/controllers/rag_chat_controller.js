@@ -691,7 +691,12 @@ export default class extends Controller {
       this.addLoadingMessage()
     }
     const submission = opening
-      ? { question, creation_key: this.caseCreationKey, client_submission_id: this.caseSubmissionId }
+      ? {
+          question,
+          creation_key: this.caseCreationKey,
+          client_submission_id: this.caseSubmissionId,
+          kb_document_ids: [ ...(this.caseFocusIds || []) ]
+        }
       : { question, field_case_id: id, client_submission_id: crypto.randomUUID() }
     let error
     let openedId = null
@@ -1135,9 +1140,15 @@ export default class extends Controller {
 
     const wasSelected = btn.dataset.selected === "true"
     if (this.caseHistoryValue) {
+      if (this.caseLoading) return
+
       const id = this.caseId
-      if (!id || this.caseLoading) {
-        this.caseNoticeTarget.textContent = "Abre un caso para fijar manuales."
+      if (!id) {
+        this.caseNoticeTarget.textContent = ""
+        const ids = new Set([ ...(this.caseFocusIds || []) ].map(String))
+        if (wasSelected) ids.delete(String(docId))
+        else ids.add(String(docId))
+        this.applyServerFocus([ ...ids ])
         return
       }
       return this.enqueueFocusMutation(async () => {

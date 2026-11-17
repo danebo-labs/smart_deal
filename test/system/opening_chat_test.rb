@@ -71,6 +71,33 @@ class OpeningChatTest < ApplicationSystemTestCase
     assert_equal 2, FieldTurn.count
   end
 
+  test "the empty chat selects a manual without asking for a new case" do
+    ENV["FIELD_CASE_HISTORY_ENABLED"] = "true"
+    sign_in_through_the_form
+    page.execute_script(<<~JS)
+      const root = document.querySelector("[data-controller='rag-chat']")
+      const button = document.createElement("button")
+      button.type = "button"
+      button.dataset.docId = "4242"
+      button.dataset.selected = "false"
+      button.dataset.action = "click->rag-chat#toggleDocSelection"
+      button.textContent = "Manual Thyssen"
+      root.appendChild(button)
+    JS
+
+    click_button "Manual Thyssen"
+    assert_selector "[data-doc-id='4242'][data-selected='true']"
+    assert_no_text "Abre un caso para fijar manuales."
+    assert_equal 0, FieldCase.count
+
+    click_button "＋ Nuevo caso"
+    assert_selector "[data-doc-id='4242'][data-selected='false']"
+    click_button "Manual Thyssen"
+    assert_selector "[data-doc-id='4242'][data-selected='true']"
+    assert_no_text "Abre un caso para fijar manuales."
+    assert_equal 0, FieldCase.count
+  end
+
   test "a failed first send keeps the draft and the retry creates one case" do
     ENV["FIELD_CASE_HISTORY_ENABLED"] = "true"
     sign_in_through_the_form

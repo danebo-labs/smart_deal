@@ -363,7 +363,7 @@ class Rag::OpenReplyTest < ActiveSupport::TestCase
     assert_equal "¿Cómo reviso eso?", questions[6]
     assert_not_includes questions, "Sí, marca 0 Vcc."
     assert_not Rag::WorkContextReducer.open_reply?(row["pending_question"], "Sí, marca 0 Vcc.")
-    assert_not Rag::WorkContextReducer.open_reply?(row["pending_question"], Haiku55Http::PHOTO_NOMINAL_READING_REPLY)
+    assert Rag::WorkContextReducer.open_reply?(row["pending_question"], Haiku55Http::PHOTO_NOMINAL_READING_REPLY)
 
     open = { "answer" => "Con la puerta cerrada y trabada, ¿qué tensión lees en RA-53/P28?" }
     fresh = repaired_photo_questions

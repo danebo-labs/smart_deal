@@ -203,6 +203,7 @@ module Rag
       return true if answered_part(question, turn)
       return true if code_report?(question, turn)
       return true if line_reading?(question, turn)
+      return true if nominal_voltage_negation?(question, turn)
       return true if connection_reply?(question, turn)
       return true if latch_reply?(question, turn)
       return false if question_parts(question["question"]).size > 1
@@ -496,6 +497,19 @@ module Rag
         .map { |word| CompanionPlanCheck.stem(word) }.to_set
     end
 
+    # "¿Mides +110 Vcc?" is answered by the negation that states the measured
+    # voltage. An affirmation of 0 Vcc does not say that the nominal is present.
+    def self.nominal_voltage_negation?(question, turn)
+      return false unless question.is_a?(Hash)
+
+      text = I18n.transliterate(question["question"].to_s).downcase
+      return false if text.match?(/\b(?:que|cuanto|cual)\b/)
+      return false unless text.match?(/\bmides?\b/) && text.match?(/\b110\b/) && text.match?(/\bvcc\b|\bvdc\b|\bvolt/)
+
+      label = FollowupQueryRewriter.normalize_label(turn)
+      label.match?(/\Ano\b/) && reading_properties(turn).any?
+    end
+
     # A voltage reading answers a request for that reading, or for whether
     # the named line is active. Another component's reading does not.
     def self.line_reading?(question, turn)
@@ -624,6 +638,7 @@ module Rag
       write_absent_fault_code
       write_observations unless @decision&.decision == "clarify_first"
       record_stated_reading!
+      record_nominal_voltage_reply!
       assign_goal_if_needed
       record_part_replies
       retain_turn_excerpts
@@ -914,6 +929,23 @@ module Rag
     # reading of this case. It does not answer that question and it does not
     # become the goal. The span stays an identifier only when it is also an
     # equipment token; the reading itself is the observation.
+    # The measured value stays on the case after the nominal check closes.
+    # The question names the point; the reply is the technician's reading.
+    def record_nominal_voltage_reply!
+      question = @episode.pending_question
+      return unless self.class.nominal_voltage_negation?(question, @turn)
+
+      @episode.append_observation!(
+        @turn.to_s.squish,
+        correlation_id: @correlation_id,
+        answers: {
+          "q" => question["question"],
+          "t" => Array(question["targets"]),
+          "r" => "no"
+        }
+      )
+    end
+
     def record_stated_reading!
       if (reading = parameter_reading(@turn)) && !@turn.match?(/[¿?]/)
         @episode.append_observation!(reading[:text], correlation_id: @correlation_id)

@@ -1633,7 +1633,6 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     candidates = [
       "Mediste 0 Vcc en RA-53/P28 con la puerta cerrada y trabada. «RA-53 / P28 = +110 Vcc» [p9].\n\n" \
       "La diferencia orienta a revisar el contacto de enganche del trinco y su cableado.\n\n" \
-      "RA-30/A4+ es alimentación del circuito: «#{supply}» [p10].\n\n" \
       "Su lectura ayudaría a distinguir si falta alimentación al circuito o si la pérdida está en el recorrido hacia el contacto. " \
       "¿Puedes ubicar A4+ en el plano del tablero?",
       "Reportaste 0 Vcc en RA-53/P28 con la puerta cerrada y trabada. El punto lleva la señal de enganche: «#{signal}» [p9].\n\n" \
@@ -1655,7 +1654,8 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       candidates.each_with_index do |candidate, index|
         number = index + 6
         question = questions[number - 1]
-        turn = audit_thyssen_turn(document, question, candidate, pages: %w[9_3 10_1 24_1],
+        pages = index.zero? ? %w[9_3 24_1] : %w[9_3 10_1 24_1]
+        turn = audit_thyssen_turn(document, question, candidate, pages: pages,
           move: index.zero? ? "answer_pending" : "follow_up", observations: index.zero? ? [ "marca 0 Vcc" ] : [])
         if index.zero?
           turn.tool_input["pending_resolution"] = "value"
@@ -1671,19 +1671,24 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
         assert_includes system, "qué lectura, plano o procedimiento falta para ubicar la falla"
         messages = generator.fetch(:messages).flat_map { |message| message.fetch(:content).pluck(:text) }.join("\n")
         assert_includes messages, "No, marca 0 Vcc."
-        assert_includes messages, pending.fetch("question")
         assert_includes messages, "RA-53 / P28 = +110 Vcc"
-        assert_includes messages, "RA-30/ A4+ = 110 Vcc"
         answer = body.fetch("answer")
         assert_empty Haiku55JourneyRubric.reasons("audit_thyssen_photo_ea", number, answer, questions), answer
-        assert_includes answer, supply
         assert_revision_scope(cassette, document)
         assert_equal id, reloaded_session.live_episode_id
         episode = Rag::ActiveEpisode.parse(reloaded_session.active_episode)
         reading = Rag::AnswerContract.current_replies(episode, part_id).sole
         assert_equal "marca 0 Vcc", Rag::AnswerContract.reconstruct(reading, reloaded_session)
         assert_equal "complete", reading.fetch("state")
+        stored = episode.observations.find { |item| item["text"] == "No, marca 0 Vcc." }
+        assert stored, episode.observations.inspect
+        assert_equal "no", stored.dig("answers", "r")
+        assert_match(/P28/, stored.dig("answers", "q"))
+        assert_match(/\+110 Vcc/, stored.dig("answers", "q"))
+        assert Rag::AnswerContract.open_parts(episode).none? { |part| part["id"] == part_id }
         if index.positive?
+          assert_includes messages, "RA-30/ A4+ = 110 Vcc"
+          assert_includes answer, supply
           assert_includes answer, signal
           assert_includes answer, "La pérdida queda pendiente de ubicar."
           assert_equal "¿Tienes el plano del tablero?", episode.pending_question.fetch("question")

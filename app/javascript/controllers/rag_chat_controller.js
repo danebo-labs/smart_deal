@@ -81,16 +81,17 @@ export default class extends Controller {
     if (this.caseHistoryValue) {
       this.caseSends = new Set()
       this.caseView = 0
-      this.applyServerFocus([])
+      this.openingSend = false
       this.caseFocusObserver = new MutationObserver((changes) => {
         const docRowsAdded = changes.some((change) => Array.from(change.addedNodes).some((node) =>
           node.nodeType === Node.ELEMENT_NODE && (node.matches("[data-doc-id]") || node.querySelector("[data-doc-id]"))
         ))
-        if (docRowsAdded) this.applyServerFocus([...this.caseFocusIds])
+        if (docRowsAdded && this.caseFocusIds) this.applyServerFocus([...this.caseFocusIds])
       })
       this.caseFocusObserver.observe(this.element, { childList: true, subtree: true })
       const savedCase = new URL(location.href).searchParams.get("caso")
       if (savedCase && /^\d+$/.test(savedCase)) this.openCase(savedCase)
+      else this.applyServerFocus([])
     }
     // Auto-focus only on desktop. On mobile, programmatic focus after a
     // navigation (e.g. Devise login redirect) opens the on-screen keyboard
@@ -425,6 +426,8 @@ export default class extends Controller {
     const hasFile = this.pendingFile !== null
 
     if (!question && !hasFile) return
+    // Text opens the case. A photo or a document still uses ask(): that request
+    // does not create a case and does not attach the file to the open thread.
     if (this.caseHistoryValue && !hasFile && !this.pendingFieldPhotoId) {
       await this.sendCaseText(question)
       return
@@ -515,24 +518,37 @@ export default class extends Controller {
       body: body && JSON.stringify(body)
     })
     const data = await response.json().catch(() => ({}))
-    if (!response.ok) throw new Error(data.message || data.error || response.status)
+    if (!response.ok) {
+      const error = new Error(data.message || data.error || String(response.status))
+      error.payload = data
+      throw error
+    }
     return data
   }
 
-  async newCase() {
-    if (this.caseLoading || this.legacySending || this.kbSyncInProgress) return
+  newCase() {
+    if (this.caseLoading || this.legacySending || this.kbSyncInProgress || this.openingSend) return
+    if (this.caseId && this.caseSends.has(this.caseId)) return
 
-    this.caseLoading = true
-    try {
-      this.caseCreationKey ||= crypto.randomUUID()
-      const created = await this.caseRequest("/field_cases", { creation_key: this.caseCreationKey })
-      this.caseCreationKey = null
-      await this.openCase(String(created.id))
-    } catch {
-      this.caseNoticeTarget.textContent = "No se pudo crear el caso. Intenta de nuevo."
-    } finally {
-      this.caseLoading = false
-    }
+    clearTimeout(this.casePoll)
+    this.caseView = (this.caseView || 0) + 1
+    this.caseId = null
+    this.casePending = null
+    this.caseCreationKey = null
+    this.caseSubmissionId = null
+    this.caseNoticeTarget.textContent = ""
+    this.caseTitleTarget.textContent = ""
+    this.inputTarget.value = ""
+    this.pendingFieldPhotoId = null
+    this.removeFile()
+    this.messagesTarget.replaceChildren()
+    this.applyServerFocus([])
+    const url = new URL(location.href)
+    url.searchParams.delete("caso")
+    history.replaceState(history.state, "", url)
+    this.switchToChatTab()
+    this.updateCaseComposer()
+    if (window.innerWidth >= 768) this.inputTarget.focus()
   }
 
   listCases(event) {
@@ -651,32 +667,58 @@ export default class extends Controller {
   }
 
   async sendCaseText(question) {
-    if (this.caseLoading || this.casePending || this.caseSends.has(this.caseId)) return
-    if (!this.caseId) {
-      this.caseNoticeTarget.textContent = "Abre un caso del historial o crea uno para empezar."
-      return
+    if (this.caseLoading || this.casePending || this.openingSend) return
+    if (this.caseId && this.caseSends.has(this.caseId)) return
+
+    const opening = !this.caseId
+    if (opening) {
+      this.openingSend = true
+      this.caseCreationKey ||= crypto.randomUUID()
+      this.caseSubmissionId ||= crypto.randomUUID()
     }
     const id = this.caseId
     const view = this.caseView
-    if (!await this.awaitDocumentFocus() || view !== this.caseView || this.caseSends.has(id)) return
+    if (!opening && (!await this.awaitDocumentFocus() || view !== this.caseView || this.caseSends.has(id))) return
 
     this.switchToChatTab()
-    this.caseSends.add(id)
-    this.updateCaseComposer()
-    this.inputTarget.value = ""
-    this.addMessage(question, "user")
-    this.addLoadingMessage()
-    const submission = { question, field_case_id: id, client_submission_id: crypto.randomUUID() }
+    if (opening) {
+      this.disableForm()
+    } else {
+      this.caseSends.add(id)
+      this.updateCaseComposer()
+      this.inputTarget.value = ""
+      this.addMessage(question, "user")
+      this.addLoadingMessage()
+    }
+    const submission = opening
+      ? { question, creation_key: this.caseCreationKey, client_submission_id: this.caseSubmissionId }
+      : { question, field_case_id: id, client_submission_id: crypto.randomUUID() }
     let error
+    let openedId = null
     try {
-      await this.caseRequest("/rag/ask", submission)
-    } catch {
-      error = "No se pudo confirmar el envío. Revisa el historial del caso."
+      const data = await this.caseRequest("/rag/ask", submission)
+      if (data.field_case_id) openedId = String(data.field_case_id)
+      else error = "No se pudo enviar. El texto sigue en el campo."
+    } catch (failure) {
+      const stored = failure.payload && failure.payload.field_case_id
+      if (stored) openedId = String(stored)
+      else error = "No se pudo enviar. El texto sigue en el campo."
     } finally {
-      this.caseSends.delete(id)
-      if (this.caseId === id && !this.caseLoading) {
-        await this.openCase(id)
-        if (error && this.caseId === id) this.caseNoticeTarget.textContent = error
+      if (opening) this.openingSend = false
+      else this.caseSends.delete(id)
+      const here = opening ? this.caseView === view && !this.caseId : this.caseId === id && !this.caseLoading
+      if (here && openedId) {
+        await this.openCase(openedId)
+        if (this.caseId === openedId) {
+          this.caseCreationKey = null
+          this.caseSubmissionId = null
+          error = null
+        }
+      }
+      if (error && (opening ? this.caseView === view && !this.caseId : this.caseId === id)) {
+        this.inputTarget.value = question
+        this.caseNoticeTarget.textContent = error
+        this.enableForm()
       }
     }
   }
@@ -1695,7 +1737,9 @@ export default class extends Controller {
     if (window.location.pathname !== '/' && window.location.pathname !== '/home') return
 
     try {
-      const response = await fetch('/home/documents', {
+      const documentsUrl = new URL("/home/documents", location.origin)
+      if (this.caseHistoryValue && this.caseId) documentsUrl.searchParams.set("caso", this.caseId)
+      const response = await fetch(documentsUrl, {
         method: 'GET',
         headers: {
           'Accept': 'text/vnd.turbo-stream.html',

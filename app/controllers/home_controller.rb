@@ -11,8 +11,7 @@ class HomeController < ApplicationController
     WarmBedrockKbJob.perform_later
     @current_metrics   = current_metrics
     @kb_documents, @kb_docs_has_more = RecentKbDocumentsQuery.page(0, per_page: PAGE_SIZE, account: current_account)
-    @pinned_uris         = pinned_uris_for_current_session
-    @focus_document_ids  = focus_document_ids_for_current_session
+    @pinned_uris, @focus_document_ids = focus_for_page
     @image_url_service = KbDocumentImageUrlService.new(account: current_account)
   end
 
@@ -30,7 +29,7 @@ class HomeController < ApplicationController
   def documents
     q = params[:q]
     kb_docs, has_more = RecentKbDocumentsQuery.page(0, per_page: PAGE_SIZE, account: current_account, q: q)
-    pinned_uris       = pinned_uris_for_current_session
+    pinned_uris, = focus_for_page
     image_url_service = KbDocumentImageUrlService.new(account: current_account)
 
     render turbo_stream: [
@@ -50,7 +49,7 @@ class HomeController < ApplicationController
     page              = [ params[:page].to_i, 1 ].max
     q                 = params[:q]
     kb_docs, has_more = RecentKbDocumentsQuery.page(page, per_page: PAGE_SIZE, account: current_account, q: q)
-    pinned_uris       = pinned_uris_for_current_session
+    pinned_uris, = focus_for_page
     image_url_service = KbDocumentImageUrlService.new(account: current_account)
 
     streams = [
@@ -67,6 +66,27 @@ class HomeController < ApplicationController
   end
 
   private
+
+  # Case history paints no manuals until a case is open. The web session's
+  # pins stay on the flag-off screen.
+  def focus_for_page
+    return [ pinned_uris_for_current_session, focus_document_ids_for_current_session ] unless FieldCaseHistoryFlag.enabled?
+
+    kase = history_case_from_params
+    return [ Set.new, [] ] unless kase
+
+    ids = kase.document_focus.filter_map { |entry| entry["kb_document_id"] }
+    documents = KbDocument.where(id: ids).index_by(&:id)
+    uris = ids.filter_map { |id| documents[id]&.display_s3_uri(KbDocument::KB_BUCKET) }
+    [ Set.new(uris), ids ]
+  end
+
+  def history_case_from_params
+    raw = params[:caso].to_s
+    return nil unless raw.match?(/\A\d+\z/)
+
+    FieldCase.find_by(id: raw, account_id: current_account.id, user_id: current_user.id)
+  end
 
   # Same session key as ConversationSession.find_or_create_for:
   # account_id + identifier + channel, and the shared identifier when ENABLED.

@@ -423,6 +423,49 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     assert_select '#chat-usage-metrics-container', count: 0
   end
 
+  test "history entry paints no session pins and a caso paints that case" do
+    ENV["FIELD_CASE_HISTORY_ENABLED"] = "true"
+    pinned = KbDocument.create!(s3_key: "uploads/2026/session_pin.pdf", display_name: "SessionPin", aliases: [])
+    case_doc = KbDocument.create!(s3_key: "uploads/2026/case_pin.pdf", display_name: "CasePin", aliases: [])
+    session = ConversationSession.find_or_create_for(
+      identifier: users(:one).id.to_s, channel: "web", account_id: accounts(:legacy).id
+    )
+    session.pin_kb_document!(pinned)
+
+    assert_no_difference("FieldCase.count") { get root_path }
+    assert_response :ok
+    assert_select '[data-rag-chat-case-history-value="true"]'
+    assert_match(/data-doc-id="#{pinned.id}"[^>]*data-selected="false"/, response.body)
+    assert_no_match(/data-doc-id="#{pinned.id}"[^>]*data-selected="true"/, response.body)
+    assert_includes response.body, %(data-focus-ids="[]")
+
+    kase = FieldCases::Create.call(
+      account: accounts(:legacy), user: users(:one), creation_key: SecureRandom.uuid
+    ).field_case
+    kase.update!(document_focus: [ { "kb_document_id" => case_doc.id, "document_uid" => case_doc.document_uid } ])
+    get root_path, params: { caso: kase.id }
+    assert_match(/data-doc-id="#{case_doc.id}"[^>]*data-selected="true"/, response.body)
+    assert_match(/data-doc-id="#{pinned.id}"[^>]*data-selected="false"/, response.body)
+    assert_includes response.body, %(data-focus-ids="[#{case_doc.id}]")
+
+    other = User.create!(
+      email: "other-#{SecureRandom.hex(4)}@example.com", password: "password123", account: accounts(:legacy)
+    )
+    foreign = FieldCases::Create.call(
+      account: accounts(:legacy), user: other, creation_key: SecureRandom.uuid
+    ).field_case
+    foreign.update!(document_focus: [ { "kb_document_id" => pinned.id, "document_uid" => pinned.document_uid } ])
+    get root_path, params: { caso: foreign.id }
+    assert_no_match(/data-selected="true"/, response.body)
+
+    get "/home/documents"
+    assert_no_match(/data-doc-id="#{pinned.id}"[^>]*data-selected="true"/, response.body)
+    get "/home/documents", params: { caso: kase.id }
+    assert_match(/data-doc-id="#{case_doc.id}"[^>]*data-selected="true"/, response.body)
+  ensure
+    ENV.delete("FIELD_CASE_HISTORY_ENABLED")
+  end
+
   private
 
   def with_usage_metrics

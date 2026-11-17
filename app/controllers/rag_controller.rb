@@ -16,7 +16,8 @@ class RagController < ApplicationController
     Rag::SemanticQueryAnalyzer.clear_observation!
     question  = params[:question].to_s.strip
     question_sha256 = question.present? ? Digest::SHA256.hexdigest(question) : nil
-    if params.key?(:field_case_id)
+    opening_text = !params.key?(:field_case_id) && params[:creation_key].present?
+    if params.key?(:field_case_id) || opening_text
       response.set_header("Cache-Control", "private, no-store")
       return head :not_found unless FieldCaseHistoryFlag.enabled?
       unless params[:question].is_a?(String)
@@ -26,10 +27,18 @@ class RagController < ApplicationController
         return render json: { status: "error", message: "Solo se admite texto en este envío." }, status: :unprocessable_entity
       end
 
-      admission = FieldCases::AdmitTurn.call(
-        account: current_account, user: current_user, field_case_id: params[:field_case_id],
-        client_submission_id: params[:client_submission_id], message: question
-      )
+      admission = if opening_text
+        FieldCases::OpenText.call(
+          account: current_account, user: current_user,
+          creation_key: params[:creation_key], client_submission_id: params[:client_submission_id],
+          message: question
+        )
+      else
+        FieldCases::AdmitTurn.call(
+          account: current_account, user: current_user, field_case_id: params[:field_case_id],
+          client_submission_id: params[:client_submission_id], message: question
+        )
+      end
       return render_case_admission(admission) unless admission.created?
 
       field_turn = FieldCases::TextTurn.new(admission, account: current_account, user: current_user)
@@ -275,7 +284,8 @@ class RagController < ApplicationController
     return render_case_result(result) if result.ok?
 
     body = { status: "error", error: result.error }
-    body[:field_turn] = FieldCases::Presenter.turn_hash(result.turn) if result.error == :case_busy
+    body[:field_case_id] = result.field_case.id if result.field_case
+    body[:field_turn] = FieldCases::Presenter.turn_hash(result.turn) if result.error == :case_busy && result.turn
     render json: body, status: result.invalid? ? :unprocessable_entity : :conflict
   end
 
@@ -284,7 +294,9 @@ class RagController < ApplicationController
 
     turn = result.turn
     if turn.status == "pending"
-      return render json: { status: "pending", field_turn: FieldCases::Presenter.turn_hash(turn) }, status: :accepted
+      return render json: {
+        status: "pending", field_case_id: turn.field_case_id, field_turn: FieldCases::Presenter.turn_hash(turn)
+      }, status: :accepted
     end
 
     render json: FieldCases::TextTurn.chat_response(turn)

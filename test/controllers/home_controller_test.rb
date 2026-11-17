@@ -267,7 +267,7 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     assert_select '[data-focus-count="desktop"]', text: /\A0\z/
   end
 
-  test 'home shows the selected document count on mobile and desktop' do
+  test 'an empty case does not count manuals pinned on the web session' do
     first = KbDocument.create!(s3_key: "uploads/2026/focus-one.pdf", display_name: "Focus One", aliases: [])
     second = KbDocument.create!(s3_key: "uploads/2026/focus-two.pdf", display_name: "Focus Two", aliases: [])
     session = ConversationSession.find_or_create_for(
@@ -281,11 +281,12 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     get root_path
 
     assert_response :success
-    assert_select '[data-focus-count="mobile"]', text: /\A2\z/
-    assert_select '[data-focus-count="desktop"]', text: /\A2\z/
+    assert_select '[data-focus-count="mobile"]', text: /\A0\z/
+    assert_select '[data-focus-count="desktop"]', text: /\A0\z/
+    assert_includes response.body, %(data-focus-ids="[]")
   end
 
-  test 'home keeps the selected count when the pinned manual is off the first page' do
+  test 'an empty case ignores a session pin that is off the first page' do
     pinned = KbDocument.create!(s3_key: "uploads/2026/off-page.pdf", display_name: "Off Page Manual", aliases: [])
     pinned.update_column(:created_at, 1.year.ago) # rubocop:disable Rails/SkipsModelValidations
     20.times { |i| KbDocument.create!(s3_key: "uploads/2026/newer-#{i}.pdf", display_name: "Newer #{i}", aliases: []) }
@@ -300,12 +301,12 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "#kb-docs-desktop-items [data-doc-id='#{pinned.id}']", count: 0
-    assert_select '[data-focus-count="mobile"]', text: /\A1\z/
-    assert_select '[data-focus-count="desktop"]', text: /\A1\z/
-    assert_includes response.body, %(data-focus-ids="[#{pinned.id}]")
+    assert_select '[data-focus-count="mobile"]', text: /\A0\z/
+    assert_select '[data-focus-count="desktop"]', text: /\A0\z/
+    assert_includes response.body, %(data-focus-ids="[]")
   end
 
-  test 'index passes pinned_uris and marks pinned cards with data-selected=true' do
+  test 'an empty case does not mark a manual pinned only on the web session' do
     pinned_doc = KbDocument.create!(s3_key: "uploads/2026/pinned.pdf", display_name: "Pinned", aliases: [])
     KbDocument.create!(s3_key: "uploads/2026/unpinned.pdf", display_name: "Unpinned", aliases: [])
 
@@ -318,8 +319,8 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
 
     get root_path
     assert_response :ok
-    assert_match(/data-doc-id="#{pinned_doc.id}"[^>]*data-selected="true"/, response.body)
-    assert_match(/data-selected="false"/, response.body)
+    assert_match(/data-doc-id="#{pinned_doc.id}"[^>]*data-selected="false"/, response.body)
+    assert_no_match(/data-doc-id="#{pinned_doc.id}"[^>]*data-selected="true"/, response.body)
   end
 
   test 'index marks pinned cards as checked in SharedSession mode on refresh' do
@@ -388,7 +389,8 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     get root_path
 
     assert_response :ok
-    assert_match(/data-doc-id="#{own_doc.id}"[^>]*data-selected="true"/, response.body)
+    assert_match(/data-doc-id="#{own_doc.id}"[^>]*data-selected="false"/, response.body)
+    assert_no_match(/data-doc-id="#{own_doc.id}"[^>]*data-selected="true"/, response.body)
     assert_match(/data-doc-id="#{other_doc.id}"[^>]*data-selected="false"/, response.body)
     assert_no_match(/data-doc-id="#{other_doc.id}"[^>]*data-selected="true"/, response.body)
     assert ConversationSession.exists?(other_session.id)
@@ -423,8 +425,19 @@ class HomeControllerTest < ActionDispatch::IntegrationTest
     assert_select '#chat-usage-metrics-container', count: 0
   end
 
+  test "history chrome stays on when the env is absent or false" do
+    [ nil, "false" ].each do |value|
+      isolate_env("FIELD_CASE_HISTORY_ENABLED", value) do
+        get root_path
+        assert_response :ok
+        assert_select '[data-rag-chat-case-history-value="true"]'
+        assert_select "button", text: "＋ Nuevo caso"
+      end
+    end
+  end
+
   test "history entry paints no session pins and a caso paints that case" do
-    ENV["FIELD_CASE_HISTORY_ENABLED"] = "true"
+    ENV["FIELD_CASE_HISTORY_ENABLED"] = "false"
     pinned = KbDocument.create!(s3_key: "uploads/2026/session_pin.pdf", display_name: "SessionPin", aliases: [])
     case_doc = KbDocument.create!(s3_key: "uploads/2026/case_pin.pdf", display_name: "CasePin", aliases: [])
     session = ConversationSession.find_or_create_for(

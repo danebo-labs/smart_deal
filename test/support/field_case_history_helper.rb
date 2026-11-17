@@ -1,12 +1,24 @@
 # frozen_string_literal: true
 
 module FieldCaseHistoryHelper
+  # The env no longer gates history. These helpers keep older tests from
+  # leaking a value into the next example.
   def enable_history!
-    ENV["FIELD_CASE_HISTORY_ENABLED"] = "true"
+    ENV.delete("FIELD_CASE_HISTORY_ENABLED")
   end
 
   def disable_history!
     ENV.delete("FIELD_CASE_HISTORY_ENABLED")
+  end
+
+  def with_shared_session(enabled)
+    original = SharedSession::ENABLED
+    SharedSession.send(:remove_const, :ENABLED)
+    SharedSession.const_set(:ENABLED, enabled)
+    yield
+  ensure
+    SharedSession.send(:remove_const, :ENABLED)
+    SharedSession.const_set(:ENABLED, original)
   end
 
   def open_case(account: accounts(:legacy), user: users(:one), creation_key: nil)

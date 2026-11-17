@@ -10,19 +10,12 @@ class FieldCases::PersistenceTest < ActiveSupport::TestCase
   setup { enable_history! }
   teardown { disable_history! }
 
-  test "the flag is off unless the env value is the exact string true" do
-    isolate_env("FIELD_CASE_HISTORY_ENABLED", nil) do
-      assert_not FieldCaseHistoryFlag.enabled?(shared_session: false)
-    end
-    isolate_env("FIELD_CASE_HISTORY_ENABLED", "TRUE") do
-      assert_not FieldCaseHistoryFlag.enabled?(shared_session: false)
-    end
-    isolate_env("FIELD_CASE_HISTORY_ENABLED", "1") do
-      assert_not FieldCaseHistoryFlag.enabled?(shared_session: false)
-    end
-    isolate_env("FIELD_CASE_HISTORY_ENABLED", "true") do
-      assert FieldCaseHistoryFlag.enabled?(shared_session: false)
-      assert_not FieldCaseHistoryFlag.enabled?(shared_session: true)
+  test "history stays on for a personal session when the env is absent or false" do
+    [ nil, "false", "FALSE", "TRUE", "1", "true" ].each do |value|
+      isolate_env("FIELD_CASE_HISTORY_ENABLED", value) do
+        assert FieldCaseHistoryFlag.enabled?(shared_session: false), value.inspect
+        assert_not FieldCaseHistoryFlag.enabled?(shared_session: true), value.inspect
+      end
     end
   end
 
@@ -328,20 +321,22 @@ class FieldCases::PersistenceTest < ActiveSupport::TestCase
     end
   end
 
-  test "the flag off refuses create, read, admit, close and pins without writing" do
+  test "a shared session refuses create, read, admit, close and pins without writing" do
     kase = open_case
     turn = admit(kase, client_submission_id: "sub-flag").turn
-    disable_history!
     account = accounts(:legacy)
     user = users(:one)
     before = FieldCase.count
 
-    created = FieldCases::Create.call(account:, user:)
-    listed = FieldCases::Read.list(account:, user:)
-    fetched = FieldCases::Read.fetch(account:, user:, field_case_id: kase.id)
-    admitted = admit(kase, message: "apagado", client_submission_id: "sub-off")
-    closed = close_turn(kase, turn, published_text: "apagado")
-    pinned = FieldCases::Pins.call(account:, user:, field_case_id: kase.id, pins: [ pin(1, "No") ])
+    created = listed = fetched = admitted = closed = pinned = nil
+    with_shared_session(true) do
+      created = FieldCases::Create.call(account:, user:)
+      listed = FieldCases::Read.list(account:, user:)
+      fetched = FieldCases::Read.fetch(account:, user:, field_case_id: kase.id)
+      admitted = admit(kase, message: "apagado", client_submission_id: "sub-off")
+      closed = close_turn(kase, turn, published_text: "apagado")
+      pinned = FieldCases::Pins.call(account:, user:, field_case_id: kase.id, pins: [ pin(1, "No") ])
+    end
 
     assert created.disabled?
     assert listed.disabled?

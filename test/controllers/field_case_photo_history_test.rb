@@ -121,6 +121,43 @@ class FieldCasePhotoHistoryTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "the worker keeps the original turn when history env is absent or false" do
+    assert FieldPhoto.connection.column_exists?(:field_photos, :storage_scope)
+    versions = ActiveRecord::SchemaMigration.new(ActiveRecord::Base.connection_pool).integer_versions
+    assert_includes versions, 2026_11_17_190000
+
+    [ nil, "false" ].each do |value|
+      isolate_env("FIELD_CASE_HISTORY_ENABLED", value) do
+        question = value == "false" ? "¿Qué se lee en la placa?" : nil
+        with_external_doubles do
+          assert_difference("FieldCase.count", 1) do
+            assert_difference("FieldTurn.count", 1) do
+              post rag_ask_path, params: {
+                creation_key: SecureRandom.uuid, client_submission_id: SecureRandom.uuid,
+                image: @image, question:
+              }.compact, as: :json
+            end
+          end
+          assert_response :accepted
+          case_id = response.parsed_body.fetch("field_case_id")
+          turn_id = response.parsed_body.dig("field_turn", "id")
+          queued = enqueued_jobs.select { |job| job["job_class"] == "FieldPhotoAnalysisJob" }.last
+          args = queued.fetch("arguments").first
+          assert_equal case_id, args.fetch("field_case_id")
+          assert_equal turn_id, args.fetch("field_turn_id")
+
+          perform_enqueued_jobs(only: FieldPhotoAnalysisJob)
+          turn = FieldTurn.find(turn_id)
+          assert_equal case_id, turn.field_case_id
+          assert_equal "completed", turn.status
+          assert_equal question.to_s, turn.message
+          assert_match(/P1/, turn.response.fetch("published_text"))
+          assert_equal(value == "false" ? [ 8 ] : [], turn.response.fetch("citations").pluck("page"))
+        end
+      end
+    end
+  end
+
   test "another technician and another account cannot use the history attachment" do
     with_external_doubles do
       post rag_ask_path, params: { creation_key: SecureRandom.uuid, client_submission_id: SecureRandom.uuid, image: @image }, as: :json

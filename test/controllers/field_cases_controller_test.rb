@@ -20,21 +20,34 @@ class FieldCasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :redirect
   end
 
-  test "index, show and create respond 404 when the flag is off" do
+  test "index, show and create respond 404 for a shared session" do
     sign_in @user
     kase = open_case
-    disable_history!
 
-    get field_cases_path
-    assert_response :not_found
+    with_shared_session(true) do
+      get field_cases_path
+      assert_response :not_found
 
-    get field_case_path(kase)
-    assert_response :not_found
+      get field_case_path(kase)
+      assert_response :not_found
 
-    assert_no_difference("FieldCase.count") do
-      post field_cases_path, params: { creation_key: SecureRandom.uuid }, as: :json
+      assert_no_difference("FieldCase.count") do
+        post field_cases_path, params: { creation_key: SecureRandom.uuid }, as: :json
+      end
+      assert_response :not_found
     end
-    assert_response :not_found
+  end
+
+  test "index stays open when the env is absent or false" do
+    sign_in @user
+    open_case
+
+    [ nil, "false" ].each do |value|
+      isolate_env("FIELD_CASE_HISTORY_ENABLED", value) do
+        get field_cases_path
+        assert_response :success
+      end
+    end
   end
 
   test "create starts without pins and a repeated key returns the same case" do

@@ -84,12 +84,24 @@ class FieldCases::OpenTextTest < ActiveSupport::TestCase
     assert_equal 0, FieldCase.count
   end
 
-  test "the flag off does not open a case" do
-    disable_history!
-    result = open_text(accounts(:legacy), users(:one), SecureRandom.uuid, "sub-off", "hola")
+  test "a shared session does not open a case" do
+    result = nil
+    with_shared_session(true) do
+      result = open_text(accounts(:legacy), users(:one), SecureRandom.uuid, "sub-shared", "hola")
+    end
 
     assert result.disabled?
     assert_equal 0, FieldCase.count
+  end
+
+  test "an absent or false env still opens a case" do
+    [ nil, "false" ].each do |value|
+      isolate_env("FIELD_CASE_HISTORY_ENABLED", value) do
+        result = open_text(accounts(:legacy), users(:one), SecureRandom.uuid, "sub-#{value}", "hola")
+        assert result.created?, result.error.inspect
+      end
+    end
+    assert_equal 2, FieldCase.count
   end
 
   private

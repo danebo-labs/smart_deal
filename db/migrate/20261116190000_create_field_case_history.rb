@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-# Durable field-case history. Additive and unused until
-# FIELD_CASE_HISTORY_ENABLED is the exact string "true".
+# Durable field-case history. Additive. A personal workspace uses these
+# tables without FIELD_CASE_HISTORY_ENABLED. A shared session does not.
 # field_cases keeps the technical state. field_turns keeps each submission
 # and its one definitive result. ConversationSession stays the live workspace.
 # Traces stay the audit log. No foreign key to conversation_sessions: a case

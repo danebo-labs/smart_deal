@@ -67,8 +67,8 @@ class HomeController < ApplicationController
 
   private
 
-  # Case history paints no manuals until a case is open. The web session's
-  # pins stay on the flag-off screen.
+  # Case history paints no manuals until a case is open. A shared session
+  # keeps the web session's pins.
   def focus_for_page
     return [ pinned_uris_for_current_session, focus_document_ids_for_current_session ] unless FieldCaseHistoryFlag.enabled?
 

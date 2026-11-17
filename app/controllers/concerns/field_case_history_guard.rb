@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-# 404 while FIELD_CASE_HISTORY_ENABLED is off, same switch as the certifier
-# module: the tables can ship and the routes stay dark.
+# 404 for a shared session. A personal workspace keeps the history routes
+# open without FIELD_CASE_HISTORY_ENABLED.
 module FieldCaseHistoryGuard
   extend ActiveSupport::Concern
 

@@ -83,7 +83,7 @@ class OpeningChatTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
-  test "a blank message, a file, and the flag off leave no case" do
+  test "a blank message and a file leave no case" do
     key = SecureRandom.uuid
     assert_no_difference("FieldCase.count") do
       post_opening("  ", key, SecureRandom.uuid)
@@ -96,13 +96,32 @@ class OpeningChatTest < ActionDispatch::IntegrationTest
       assert_response :unprocessable_entity
     end
     assert_equal 0, OpeningChatDouble.calls
+  end
 
-    disable_history!
+  test "a shared session does not open a case" do
     assert_no_difference("FieldCase.count") do
-      post_opening("hola", SecureRandom.uuid, SecureRandom.uuid)
+      with_shared_session(true) do
+        post_opening("hola", SecureRandom.uuid, SecureRandom.uuid)
+      end
     end
     assert_response :not_found
     assert_equal 0, OpeningChatDouble.calls
+  end
+
+  test "an absent or false env opens a case and keeps the next text on it" do
+    [ nil, "false" ].each do |value|
+      isolate_env("FIELD_CASE_HISTORY_ENABLED", value) do
+        label = value.nil? ? "ausente" : "false"
+        post_opening("primer #{label}", SecureRandom.uuid, SecureRandom.uuid)
+        assert_response :ok
+        case_id = response.parsed_body.fetch("field_case_id")
+        post rag_ask_path, params: {
+          question: "segundo #{label}", field_case_id: case_id, client_submission_id: SecureRandom.uuid
+        }, as: :json
+        assert_response :ok
+        assert_equal [ "primer #{label}", "segundo #{label}" ], FieldCase.find(case_id).field_turns.order(:sequence).pluck(:message)
+      end
+    end
   end
 
   private

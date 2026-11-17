@@ -2331,11 +2331,15 @@ class BedrockRagService
       if result[:applicability_violation] || result[:citations].empty?
         result[:route_outcome] = :abstained
       else
-        result[:answer] = [
-          result[:answer], I18n.t("rag.controller_reference_boundary", locale: locale),
-          reference_pending&.dig("question")
-        ].compact.join("\n\n")
-        result[:pending_question] = reference_pending
+        notice = I18n.t("rag.controller_reference_boundary", locale: locale)
+        followup = Rag::PendingQuestion.followup_line(result[:answer], locale: locale)
+        plate = reference_pending&.dig("question")
+        if followup.present? && plate.present? && followup != plate
+          result[:answer] = [ result[:answer], notice ].join("\n\n")
+        else
+          result[:answer] = [ result[:answer], notice, plate ].compact.join("\n\n")
+          result[:pending_question] = reference_pending
+        end
       end
     end
     capture_cited_sources(result[:citations])

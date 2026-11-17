@@ -193,6 +193,19 @@ class Rag::PendingQuestionTest < ActiveSupport::TestCase
     assert_nil host.send(:companion_published_pending, held_question, abstained, session)
   end
 
+  test "a technical question stays the follow-up when the plate notice comes after it" do
+    noise = "¿El ruido es muy elevado en su evaluación?"
+    kpvs = "¿Qué valor de KP-VS midió Ingeniería?"
+    notice = I18n.t("rag.controller_reference_boundary", locale: :es)
+    plate = I18n.t("rag.controller_label_question", locale: :es)
+    published = "La fuente lo condiciona a «En caso de ruido audible muy elevado» [1].\n\n#{noise}\n\n#{notice}"
+
+    assert_equal noise, Rag::PendingQuestion.followup_line(published, locale: :es)
+    assert_equal kpvs, Rag::PendingQuestion.followup_line("#{kpvs}\n\n#{notice}", locale: :es)
+    assert_equal noise, Rag::PendingQuestion.followup_line("#{published}\n\n#{plate}", locale: :es)
+    assert_nil Rag::PendingQuestion.followup_line("#{notice}\n\n#{plate}", locale: :es)
+  end
+
   private
 
   def entry_question

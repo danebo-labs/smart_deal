@@ -38,21 +38,29 @@ module FieldCases
       active_episode.merge("case_evidence" => case_evidence)
     end
 
-    # Direct generation returns prose. Keep a standalone final question from
-    # the guarded answer, using the same reply contract as planned questions.
+    # Direct generation returns prose. Keep the technical question that was
+    # published, including when a manual notice follows it. A documented
+    # question already open on this case stays open. A controller plate
+    # question does not replace it, and does not replace a different
+    # technical question in the same answer.
     def capture_pending!(result)
-      return if result.pending_question || result.case_outcome != "published"
-
-      line = result.answer.to_s.rstrip.lines.last.to_s.strip
-      question = line[/¿[^¿?]{1,158}\?\z/]
-      question ||= line[/\A[^¿?]{1,159}\?\z/] if result.response_locale.to_s.start_with?("en")
-      return unless question
-
       current = Rag::ActiveEpisode.parse(active_episode).pending_question
-      candidate = { "type" => "documented_context", "question" => question, "targets" => [ { "item" => question } ] }
+      if open_documented_question?(current)
+        result.pending_question = nil if controller_plate?(result.pending_question)
+        return
+      end
+
+      followup = Rag::PendingQuestion.followup_line(result.answer.to_s, locale: result.response_locale)
+      if controller_plate?(result.pending_question) && followup.present? && followup != result.pending_question["question"]
+        result.pending_question = nil
+      end
+      return if result.pending_question || result.case_outcome != "published"
+      return if followup.blank?
+
+      candidate = { "type" => "documented_context", "question" => followup, "targets" => [ { "item" => followup } ] }
       result.pending_question = if current&.dig("type") != "documented_context"
         Rag::PendingQuestion.coerce(candidate)
-      elsif current["question"] == question
+      elsif current["question"] == followup
         current
       else
         Rag::PendingQuestion.coerce(current.merge("shown" => candidate))
@@ -83,6 +91,14 @@ module FieldCases
 
     def open_owner_episode(...)
       super.tap { |episode| episode.episode_id = @case_episode_id }
+    end
+
+    def open_documented_question?(pending)
+      pending.is_a?(Hash) && pending["type"] == "documented_context" && pending["question"].present?
+    end
+
+    def controller_plate?(pending)
+      pending.is_a?(Hash) && pending["type"] == "controller"
     end
   end
 end

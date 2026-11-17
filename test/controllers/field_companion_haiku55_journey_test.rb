@@ -653,7 +653,139 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "production Thyssen sequence keeps the noise report and leaves that question open" do
+    isolate_env("FIELD_CASE_HISTORY_ENABLED", "true") do
+      @account = accounts(:pilot)
+      host! "piloto.danebo.ai"
+      @user.update!(account: @account)
+      data = JSON.parse(Rails.root.join(REVISION_FIXTURES, "thyssen_kpvs.json").read)
+      spec = data.fetch("document")
+      manual = KbDocument.create!(account: @account, s3_key: spec.fetch("key"),
+        document_uid: spec.fetch("uid"), display_name: spec.fetch("name"), aliases: [])
+      page = data.fetch("passages").fetch("9a2cad2e366f0641cc5150205c697d3d63484892b2c4cb9871c674bfd77a31f1")
+      noise = "¿El ruido es muy elevado en su evaluación?"
+      opening = "Tenemos un Thyssen con controlador MCINV4. Se escucha fuerte el motor de tracción durante el viaje. Ingeniería me puede confirmar el valor de KP\u2011VS. ¿Qué dato te falta para revisar el caso?"
+      model = "Para decidir si aplica el ajuste falta saber si el ruido es muy elevado. La fuente lo condiciona a «En caso de ruido audible muy elevado» [1], y \"se escucha fuerte\" no permite confirmarlo.\n\nSi se cumple, la fuente indica «disminuya el valor del parámetro» [1] hasta «el mínimo de [3,0]» [1]. Hoy no sé el valor actual de KP-VS. Ingeniería debe confirmarlo, porque define si hay margen para bajar.\n\n#{noise}"
+      first = thyssen_turn(opening, model, page, manual, {
+        "move" => "meta",
+        "assertions" => [
+          { "span" => "Thyssen", "act" => "assert", "slot_hint" => "manufacturer" },
+          { "span" => "MCINV4", "act" => "assert", "slot_hint" => "controller" }
+        ],
+        "observations" => [ "Se escucha fuerte el motor de tracción durante el viaje" ],
+        "pending_resolution" => nil,
+        "clarification_target" => nil
+      })
+
+      case_a = create_text_case
+      post pinned_documents_path, params: { field_case_id: case_a.fetch("id"), kb_document_id: manual.id }, as: :json
+      assert_response :ok
+      published, = ask_text_case(case_a, first, manual, "t1")
+      assert_includes published.fetch("answer"), noise
+      assert_includes published.fetch("answer"), I18n.t("rag.controller_reference_boundary", locale: :es)
+      assert_not_includes published.fetch("answer"), I18n.t("rag.controller_label_question", locale: :es)
+      saved = read_text_case(case_a)
+      state = saved.dig("case", "technical_state")
+      assert_equal case_a.fetch("episode_id"), saved.dig("case", "episode_id")
+      assert_equal [ manual.id ], saved.dig("case", "document_focus").pluck("kb_document_id")
+      assert_equal opening, state.dig("goal", "text")
+      assert_equal noise, state.dig("pending_question", "question")
+      assert_nil state.dig("facts", "manufacturer")
+      assert_nil state.dig("facts", "controller")
+      assert_equal opening, saved.fetch("turns").sole.dig("checkpoint", "goal", "text")
+      assert_equal noise, saved.fetch("turns").sole.dig("checkpoint", "pending_question", "question")
+
+      case_b = create_text_case
+      b_manual = revision_document(:cea)
+      b_turn = cea_turn("El rótulo del controlador dice CEA15+. #{CEA_QUESTION}", b_manual)
+      b_turn.tool_input["assertions"] = [ { "span" => "CEA15+", "act" => "assert", "slot_hint" => "controller" } ]
+      b_result, = ask_text_case(case_b, b_turn, b_manual, "b-open")
+      state_b = read_text_case(case_b)
+
+      reopened = read_text_case(case_a)
+      assert_equal saved.dig("case", "episode_id"), reopened.dig("case", "episode_id")
+      assert_equal [ manual.id ], reopened.dig("case", "document_focus").pluck("kb_document_id")
+      assert_equal opening, reopened.dig("case", "technical_state", "goal", "text")
+      assert_equal noise, reopened.dig("case", "technical_state", "pending_question", "question")
+
+      typo = thyssen_turn("El valor de kp-cs es 2,5",
+        "Los documentos cargados no mencionan kp-cs.\n\n¿El kp-cs que leyó está en el \"menu PID\"?",
+        page, manual, {
+          "move" => "report", "assertions" => [ { "span" => "kp-cs es 2,5", "act" => "assert", "slot_hint" => nil } ],
+          "observations" => [], "pending_resolution" => nil, "clarification_target" => nil
+        })
+      _typo_body, typo_cassette = ask_text_case(case_a, typo, manual, "t2")
+      typo_input = interpreter_context(typo_cassette)
+      assert_equal "El valor de kp-cs es 2,5", typo_input.fetch("turn")
+      assert_equal opening, typo_input.dig("work_context", "goal")
+      assert_includes typo_input.dig("work_context", "goal"), "MCINV4"
+      assert_includes typo_input.dig("work_context", "goal"), "motor de tracción"
+      assert_equal noise, typo_input.dig("work_context", "pending", "question")
+      assert_nil typo_input.dig("work_context", "facts", "manufacturer")
+      assert_nil typo_input.dig("work_context", "facts", "controller")
+      assert typo_input.dig("work_context", "recent_turns").any? { |row| row["text"].include?("MCINV4") }
+      assert typo_input.dig("work_context", "recent_turns").any? { |row| row["role"] == "assistant" && row["text"].include?(noise) }
+      assert typo_input.dig("work_context", "recent_turns").none? { |row| row["text"].include?("CEA15") }
+      assert_includes typo_cassette.queries.join(" "), "MCINV4"
+      after_typo = read_text_case(case_a)
+      assert_equal opening, after_typo.dig("case", "technical_state", "goal", "text")
+      assert_equal noise, after_typo.dig("case", "technical_state", "pending_question", "question")
+      assert after_typo.dig("case", "technical_state", "observations").any? { |item| item["text"] == "kp-cs es 2,5" && item["answers"].nil? }
+
+      correction = thyssen_turn("El valor de KP-VS es 2,5",
+        "El técnico reporta KP-VS = 2,5. La fuente [1] indica, para ruido audible muy elevado, disminuir \"KP-VS\" hasta el mínimo de [3,0]. Con 2,5 el valor queda por debajo de ese mínimo documentado.",
+        page, manual, {
+          "move" => "report", "assertions" => [ { "span" => "KP-VS es 2,5", "act" => "assert", "slot_hint" => nil } ],
+          "observations" => [], "pending_resolution" => nil, "clarification_target" => nil
+        })
+      # The comparison paraphrases page 18 without quoting it, so the citation
+      # guard drops it and the reference route abstains. The noise question stays open.
+      _final, correction_cassette = ask_text_case(case_a, correction, manual, "t3")
+      assert_equal I18n.t("rag.focus_evidence_insufficient", locale: :es), _final.fetch("answer")
+      correction_input = interpreter_context(correction_cassette)
+      assert_equal "El valor de KP-VS es 2,5", correction_input.fetch("turn")
+      assert_equal after_typo.dig("case", "technical_state", "goal", "text"), correction_input.dig("work_context", "goal")
+      assert_equal noise, correction_input.dig("work_context", "pending", "question")
+      assert correction_input.dig("work_context", "recent_turns").any? { |row| row["text"] == "El valor de kp-cs es 2,5" }
+      assert correction_input.dig("work_context", "recent_turns").none? { |row| row["text"].include?("CEA15") }
+      finished = read_text_case(case_a)
+      assert_equal opening, finished.dig("case", "technical_state", "goal", "text")
+      assert_equal noise, finished.dig("case", "technical_state", "pending_question", "question")
+      reading = finished.dig("case", "technical_state", "observations").find { |item| item["text"] == "KP-VS es 2,5" }
+      assert reading, finished.dig("case", "technical_state", "observations").pluck("text").inspect
+      assert_nil reading["answers"]
+      assert_equal [ 1, 2, 3 ], finished.fetch("turns").pluck("sequence")
+      assert_equal state_b.fetch("turns").sole.dig("response", "published_text"), b_result.fetch("answer")
+      assert_equal state_b.dig("case", "episode_id"), read_text_case(case_b).dig("case", "episode_id")
+    end
+  end
+
   private
+
+  def thyssen_turn(question, generator, page, manual, tool_input)
+    TurnCapture.new({
+      "question" => question,
+      "retrieve_query" => question,
+      "tool_input" => tool_input,
+      "generator_text" => generator,
+      "rows" => [ {
+        "content" => page,
+        "uri" => manual.canonical_uri,
+        "original_source_uri" => manual.canonical_uri,
+        "document" => manual.display_name,
+        "page" => 18,
+        "score" => 0.9
+      } ]
+    })
+  end
+
+  def interpreter_context(cassette)
+    payload = cassette.sent.reverse.find { |body| body[:tool_choice] || body["tool_choice"] }
+    content = payload[:messages] || payload["messages"]
+    block = Array(content.first[:content] || content.first["content"]).first
+    text = block.is_a?(Hash) ? (block[:text] || block["text"]) : block.to_s
+    JSON.parse(text)
+  end
 
   def create_text_case
     post field_cases_path, params: { creation_key: SecureRandom.uuid }, as: :json

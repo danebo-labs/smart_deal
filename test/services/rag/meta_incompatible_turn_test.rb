@@ -108,7 +108,7 @@ class Rag::MetaIncompatibleTurnTest < ActiveSupport::TestCase
       assert_equal 1, client.calls, row.inspect
       assert_equal "meta_incompatible", events.find { |event| event["kind"] == "perception_applied" }["invalid_reason"], row.inspect
       assert_equal "ready", route["route"], row.inspect
-      expected_condition = row[:pin] || row[:goal] ? "fallback_ready" : "fallback_searchable_symptom"
+      expected_condition = "fallback_ready"
       assert_equal expected_condition, route["condition"], row.inspect
       assert_equal true, route["retrieval"], row.inspect
       assert_includes query["effective"], "seguridad de esa puerta", row.inspect
@@ -122,9 +122,9 @@ class Rag::MetaIncompatibleTurnTest < ActiveSupport::TestCase
       if row[:goal]
         assert_equal row[:goal], result.state.dig("goal", "text"), row.inspect
       else
-        assert_nil result.state["goal"], row.inspect
+        assert_equal PHASE1.squish, result.state.dig("goal", "text"), row.inspect
       end
-      assert_equal [], Array(result.state["observations"]), row.inspect
+      assert_equal [ PHASE1.squish.first(180) ], Array(result.state["observations"]).pluck("text"), row.inspect
       assert events.none? { |event| event["kind"] == "retrieve" }, row.inspect
     end
   end
@@ -141,7 +141,7 @@ class Rag::MetaIncompatibleTurnTest < ActiveSupport::TestCase
       route = events.find { |event| event["kind"] == "route_decision" }
 
       assert_equal "meta_incompatible", events.find { |event| event["kind"] == "perception_applied" }["invalid_reason"], turn
-      assert_equal "fallback_searchable_symptom", route["condition"], turn
+      assert_equal "fallback_ready", route["condition"], turn
       assert_equal true, route["retrieval"], turn
       assert_includes query["effective"], fragment, turn
       assert_equal [], result.understanding.focus_uris, turn
@@ -219,7 +219,7 @@ class Rag::MetaIncompatibleTurnTest < ActiveSupport::TestCase
     assert_equal "", events.find { |event| event["kind"] == "effective_query" }["effective"]
     assert_equal "work_relation", result.state.dig("pending_question", "type")
     assert_equal "ajustar frenos", result.state.dig("goal", "text")
-    assert_equal [], Array(result.state["observations"])
+    assert_equal [ PHASE1.squish.first(180) ], Array(result.state["observations"]).pluck("text")
     assert_equal [ document.id ], result.understanding.focus_document_ids
     assert_equal document.id, session.document_focus_entries.sole["kb_document_id"]
     assert_nil session.active_episode.dig("facts", "manufacturer")
@@ -265,14 +265,14 @@ class Rag::MetaIncompatibleTurnTest < ActiveSupport::TestCase
       )
       assert_searched_without_facts(session, result, events, turn, fragment, document)
       assert_equal "ajustar frenos", result.state.dig("goal", "text"), turn
-      assert_equal [ "el freno queda abierto" ], result.state["observations"].pluck("text"), turn
+      assert_equal [ "el freno queda abierto", turn.squish ], result.state["observations"].pluck("text"), turn
       assert_equal "ep_seed", result.state["episode_id"], turn
       assert_equal turn, session.conversation_history.last["content"], turn
       assert_equal document.id, session.document_focus_entries.sole["kb_document_id"], turn
     end
   end
 
-  test "an uncertain meta searches the technical question and does not store it" do
+  test "an uncertain meta searches the technical question and keeps the literal report" do
     {
       "Según el esquema, ¿cómo funciona el freno?" => "cómo funciona el freno",
       "¿Cómo selecciono en el plano la seguridad del contactor?" => "seguridad del contactor",
@@ -286,7 +286,7 @@ class Rag::MetaIncompatibleTurnTest < ActiveSupport::TestCase
       )
       assert_searched_without_facts(session, result, events, turn, fragment, document)
       assert_equal "ajustar frenos", result.state.dig("goal", "text"), turn
-      assert_equal [ "el freno queda abierto" ], result.state["observations"].pluck("text"), turn
+      assert_equal [ "el freno queda abierto", turn.squish ], result.state["observations"].pluck("text"), turn
       assert_equal "ep_seed", result.state["episode_id"], turn
       assert_equal turn, session.conversation_history.last["content"], turn
     end
@@ -377,8 +377,9 @@ class Rag::MetaIncompatibleTurnTest < ActiveSupport::TestCase
     assert_nil episode.dig("facts", "model"), turn
     assert_nil episode.dig("facts", "controller"), turn
     assert_equal [], Array(episode["identifiers"]), turn
-    assert_nil episode["goal"], turn
-    assert_equal [], Array(episode["observations"]), turn
+    literal = turn.to_s.squish
+    assert_equal literal.first(300), episode.dig("goal", "text"), turn
+    assert_includes Array(episode["observations"]).pluck("text"), literal.first(180), turn
   end
 
   def web_session

@@ -159,8 +159,28 @@ module Rag
         "unindexed" => unindexed_texts,
         "rejected" => @episode.rejected.presence,
         "pending" => pending_payload,
-        "active_photo_context" => @active_photo_context&.to_prompt
+        "active_photo_context" => @active_photo_context&.to_prompt,
+        "recent_turns" => recent_turns
       }.compact
+    end
+
+    # Completed turns of this case, already loaded from the field case.
+    # The current message is "turn", not a row here.
+    def recent_turns
+      return nil unless @session.respond_to?(:conversation_history)
+
+      rows = Array(@session.conversation_history).filter_map { |message|
+        next unless message.is_a?(Hash)
+
+        role = message["role"].to_s
+        next unless role == "user" || role == "assistant"
+
+        text = message["content"].to_s.squish
+        next if text.blank?
+
+        { "role" => role, "text" => text }
+      }
+      rows.last(ConversationSession::EPISODE_MAX_USER_MESSAGES * 2).presence
     end
 
     def unindexed_texts

@@ -79,6 +79,30 @@ module Rag
       question
     end
 
+    # The technical question the published answer actually asks. A trailing
+    # manual notice, an insufficient-evidence line, or the controller plate
+    # question is not that question. A plate question that is the only
+    # question stays with the structured pending that published it.
+    def followup_line(text, locale: I18n.locale)
+      lines = text.to_s.rstrip.lines.map(&:strip).reject(&:empty?)
+      skipped = trailing_notice_lines(locale)
+      lines.pop while lines.last && skipped.include?(lines.last.squish)
+      line = lines.reverse.find { |candidate| candidate.match?(/[?？]\z/) }
+      return nil unless line
+
+      question = line[/¿[^¿?]{1,158}\?\z/]
+      question ||= line[/\A[^¿?]{1,159}\?\z/] if locale.to_s.start_with?("en")
+      question
+    end
+
+    def trailing_notice_lines(locale)
+      %w[
+        controller_reference_boundary focus_evidence_insufficient
+        open_evidence_insufficient controller_label_question
+      ].filter_map { |key| I18n.t("rag.#{key}", locale: locale, default: nil).presence }
+        .map(&:squish)
+    end
+
     # What this turn may store. A question counts when this text contains it,
     # or when it is the open question already stored. A clarification counts
     # as shown only when this text contains it, or when that same clarification

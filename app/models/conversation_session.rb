@@ -1249,12 +1249,13 @@ class ConversationSession < ApplicationRecord
     )
     note_owner_exit("fallback", status.to_s, correlation_id)
     before_episode = episode.fork
-    if retain_failed_report?(status) && episode.pending_question&.dig("type") != "referent"
-      episode = Rag::WorkContextReducer.retain_uninterpreted_report!(
+    if status.to_s == "meta_incompatible" && Rag::WorkContextReducer.unknown_limit?(turn)
+      episode = Rag::WorkContextReducer.remember_unknown_clarification!(
         episode: episode, turn: turn, correlation_id: correlation_id, now: now
       )
-    elsif status.to_s == "meta_incompatible"
-      episode = Rag::WorkContextReducer.remember_unknown_clarification!(
+    elsif retain_failed_report?(status) && episode.pending_question&.dig("type") != "referent" &&
+        !(status.to_s == "meta_incompatible" && Rag::WorkContextReducer.assistant_need_without_report?(turn))
+      episode = Rag::WorkContextReducer.retain_uninterpreted_report!(
         episode: episode, turn: turn, correlation_id: correlation_id, now: now
       )
     end
@@ -1288,13 +1289,12 @@ class ConversationSession < ApplicationRecord
     result
   end
 
-  # A rejected meta is searched from the literal turn. The turn stays in the
-  # history and in the audit. It is not stored as a goal or an identity.
-  # A limit declared on a question already published is kept on that question.
-  # Other failed interpretations still keep the literal report.
+  # A rejected meta is searched from the literal turn. It is not a validated
+  # identity: manufacturer, model, and controller stay unwritten. An unknown
+  # limit still answers the question already published. Every other rejected
+  # meta keeps the literal report, as a failed interpretation does. A referent
+  # pending does not absorb that report.
   def retain_failed_report?(status)
-    return false if status.to_s == "meta_incompatible"
-
     %w[snapshot_changed episode_budget_refused].exclude?(status.to_s)
   end
 

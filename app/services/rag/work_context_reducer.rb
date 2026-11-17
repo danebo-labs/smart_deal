@@ -54,6 +54,19 @@ module Rag
       FollowupQueryRewriter.normalize_label(turn).match?(PendingQuestion::UNKNOWN_CLARIFICATION)
     end
 
+    # A rejected meta that names the published limit answers that limit.
+    # The rest of a rejected meta is the literal report.
+    def self.unknown_limit?(turn)
+      unknown_clarification?(turn)
+    end
+
+    # "¿Necesitas controlador?" asks Danebo for a datum. It is searched and
+    # is not the technician's report. A longer turn that also states the job
+    # is the report.
+    def self.assistant_need_without_report?(turn)
+      FollowupQueryRewriter.normalize_label(turn).match?(SHORT_ASSISTANT_NEED)
+    end
+
     def self.published_documented_question(episode)
       pending = episode.pending_question
       if open_documented_question?(pending)
@@ -369,6 +382,7 @@ module Rag
     REFERENT_PLACEHOLDERS = %w[parte].to_set
     CONTINUATION = %w[sigue seguir seguimos siguiente ahora luego entonces despues proximo hago hacemos].to_set
     CONTINUATION_FILLER = %w[que como cual cuando donde y o a el la lo los las un una me te se por para con del].to_set
+    SHORT_ASSISTANT_NEED = /\A(?:que\s+)?necesitas(?:\s+[\p{L}\d-]+){0,2}\z/
     private_class_method :unknown_clarification?, :published_documented_question,
       :open_documented_question?, :open_answer?, :clear_matching_pending!,
       :closable_documented_question?,
@@ -426,6 +440,7 @@ module Rag
       write_replacement_fault_code
       write_absent_fault_code
       write_observations unless @decision&.decision == "clarify_first"
+      record_stated_reading!
       assign_goal_if_needed
       record_part_replies
       retain_turn_excerpts
@@ -681,6 +696,23 @@ module Rag
         @episode.append_observation!(text, correlation_id: @correlation_id)
       end
       supersede_retracted_observations
+    end
+
+    # A measurement stated while another documented question is open is a
+    # reading of this case. It does not answer that question and it does not
+    # become the goal. The span stays an identifier only when it is also an
+    # equipment token; the reading itself is the observation.
+    def record_stated_reading!
+      return unless open_documented_pending?
+      return if self.class.same_published_datum?(@episode.pending_question, @turn)
+
+      @perception.identifiers.each do |item|
+        value = item.value.to_s.squish
+        value = item.span.to_s.squish if value.blank?
+        next unless value.match?(/\d/) && value.match?(/[[:alpha:]]/)
+
+        @episode.append_observation!(value, correlation_id: @correlation_id)
+      end
     end
 
     def write_checks

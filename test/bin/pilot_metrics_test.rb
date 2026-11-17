@@ -478,11 +478,11 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
           end
         when "bbb222"
           unless ENV["FAKE_EMPTY_ROLE"] == "web"
-            puts %(2026-07-21T09:00:00-04:00 [PILOT_USAGE] {"event":"interaction_completed","ts":"2026-07-21T09:00:00-04:00","correlation_id":"query:web-exited"})
+            puts %(2026-07-22T00:00:00-04:00 [PILOT_USAGE] {"event":"interaction_completed","ts":"2026-07-22T00:00:00-04:00","account_id":7,"correlation_id":"query:web-exited"})
           end
         when "def456"
           unless ENV["FAKE_EMPTY_ROLE"] == "worker"
-            puts %(2026-07-22T23:59:59-04:00 [RAG_QUALITY] {"ts":"2026-07-22T23:59:59-04:00","correlation_id":"query:worker","evidence_present":true})
+            puts %(2026-07-22T23:59:59-04:00 [RAG_QUALITY] {"ts":"2026-07-22T23:59:59-04:00","account_id":7,"correlation_id":"query:worker","evidence_present":true})
           end
         end
       when /validation_captures/
@@ -531,6 +531,7 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
             by_correlation: [
               {
                 correlation_id: "query:web",
+                account_id: 7,
                 correct_answer: nil,
                 resolved: nil,
                 technician_helpfulness: nil
@@ -576,6 +577,8 @@ class PilotMetricsCommandTest < ActiveSupport::TestCase
         {
           "kind" => "published_answer",
           "correlation_id" => "turn:local",
+          "account_id" => 7,
+          "ts" => "2026-07-22T12:00:00-04:00",
           "answer" => {
             "evidence" => "external",
             "path" => "bodies/b0001.txt",

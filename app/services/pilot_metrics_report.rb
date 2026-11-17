@@ -25,13 +25,14 @@ class PilotMetricsReport
   RECENT_QUESTIONS_LIMIT = 50
 
   def initialize(date: nil, from: nil, to: nil, usage_log_path: nil, user_ids: nil,
-                 roles: nil, include_raw_questions: false)
+                 roles: nil, include_raw_questions: false, account_id: nil)
     from_date = from&.to_date
     to_date   = (to || from)&.to_date || date&.to_date
     @date     = to_date
     @range    = from_date ? from_date.in_time_zone.beginning_of_day..to_date.in_time_zone.end_of_day : @date.in_time_zone.all_day
     @usage_log_path = usage_log_path.presence
     @user_ids = Array(user_ids).filter_map { |value| Integer(value, exception: false) }.uniq
+    @account_id = account_id
     @roles = Array(roles).filter_map { |role| role.to_s.presence }.uniq
     @include_raw_questions = include_raw_questions
   end
@@ -40,16 +41,18 @@ class PilotMetricsReport
     rows = bedrock_rows
     log_data = read_log_data
     @usage_logs_loaded = %w[loaded partial].include?(log_data[:status])
-    @durable_package = Rag::DurableTrace.export(range: @range, user_ids: @user_ids)
+    @durable_package = Rag::DurableTrace.export(range: @range, user_ids: @user_ids, account_id: @account_id)
     dialogue = Rag::FieldCaseDialogue.new(
       range: @range,
       user_ids: @user_ids,
+      account_id: @account_id,
       traces: Array(@durable_package && @durable_package[:turns])
     )
     @field_case_threads = dialogue.call
     @field_turn_correlations = dialogue.correlation_ids
+    attach_field_publication_to_traces!
     messages, sessions = daily_messages_and_sessions
-    merge_durable_archive!(Rag::DurableTrace.archive_rows(range: @range, user_ids: @user_ids))
+    merge_durable_archive!(Rag::DurableTrace.archive_rows(range: @range, user_ids: @user_ids, account_id: @account_id))
     interaction_report = interactions(rows, log_data[:pilot], log_data[:quality], log_data[:audit])
     attach_durable_dialogue!(interaction_report)
     attach_field_answers!(interaction_report)
@@ -62,6 +65,7 @@ class PilotMetricsReport
       date: @date.to_s,
       timezone: Time.zone.name,
       generated_at: Time.current.iso8601,
+      export_window: { from: @range.begin.iso8601, until: (@range.end.to_date + 1).in_time_zone.iso8601 },
       technical_and_cost: {
         totals: totals(rows, log_data[:pilot]),
         cost_authority: cost_authority(rows),
@@ -120,6 +124,7 @@ class PilotMetricsReport
 
   def bedrock_rows
     scope = BedrockQuery.where(created_at: @range)
+    scope = scope.where(account_id: @account_id) if @account_id
     scope = scope.where(user_id: @user_ids) if @user_ids.any?
     scope.pluck(*BEDROCK_COLUMNS).map do |values|
       BEDROCK_COLUMNS.zip(values).to_h
@@ -132,8 +137,9 @@ class PilotMetricsReport
     @session_archive = []
     @messages_without_timestamp = 0
 
-    ConversationSession.where(updated_at: @range)
-      .where("jsonb_array_length(conversation_history) > 0")
+    scope = ConversationSession.where(updated_at: @range)
+    scope = scope.where(account_id: @account_id) if @account_id
+    scope.where("jsonb_array_length(conversation_history) > 0")
       .find_each do |session|
         daily = []
         Array(session.conversation_history).each do |raw|
@@ -296,6 +302,26 @@ class PilotMetricsReport
     end
   end
 
+  def attach_field_publication_to_traces!
+    by_correlation = Array(@field_case_threads).each_with_object({}) do |thread, index|
+      thread[:turns].each { |turn| index[[ thread[:account_id], turn[:correlation_id] ]] = turn }
+    end
+    Array(@durable_package[:turns]).each do |trace|
+      turn = by_correlation[[ trace[:account_id], trace[:correlation_id] ]]
+      next unless turn
+
+      trace[:field_case_id] = turn[:field_case_id]
+      trace[:field_turn_id] = turn[:field_turn_id]
+      trace[:publication] = trace.fetch(:publication, {}).merge(
+        published_to_history: turn[:status] == "completed", provenance: "field_turn"
+      )
+      trace[:technical_response] = trace.fetch(:technical_response, {}).merge(
+        text: turn[:published_text], citations: turn[:citations], provenance: "field_turn",
+        published_to_history: turn[:status] == "completed"
+      )
+    end
+  end
+
   # field_turns is the published dialogue. A durable assistant row must not
   # replace that text when both exist for the same correlation.
   def attach_field_answers!(interactions)
@@ -308,9 +334,10 @@ class PilotMetricsReport
       turn = indexed[row[:correlation_id].to_s]
       next unless turn
 
-      row[:question] = turn[:message] if turn[:message].present?
+      row[:question] = turn[:message]
       row[:answer] = turn[:published_text]
       row[:citations] = turn[:citations]
+      row[:attachment] = turn[:attachment] if turn[:attachment].present?
       row[:field_case_id] = turn[:field_case_id]
       row[:field_turn_id] = turn[:field_turn_id]
       row[:attempt] = turn[:attempt]
@@ -329,7 +356,8 @@ class PilotMetricsReport
       source: @usage_log_path,
       range: @range,
       user_ids: @user_ids,
-      roles_declared: @roles
+      roles_declared: @roles,
+      account_id: @account_id
     ).read
   end
 
@@ -1260,7 +1288,8 @@ class PilotMetricsReport
   end
 
   def manual_batches
-    WebManualBatch.order(:id).pluck(:id, :account_id, :status, :chunks_count, :filename).map do |values|
+    scope = @account_id ? WebManualBatch.where(account_id: @account_id) : WebManualBatch.all
+    scope.order(:id).pluck(:id, :account_id, :status, :chunks_count, :filename).map do |values|
       %i[id account_id status chunks_count filename].zip(values).to_h
     end
   end

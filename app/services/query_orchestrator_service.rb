@@ -123,7 +123,7 @@ class QueryOrchestratorService
       image_sha256 = Digest::SHA256.hexdigest(binary)
       locale = (@response_locale || @locale || I18n.locale).to_s
       correlation_id = @correlation_id.presence || "photo:#{SecureRandom.uuid}"
-      existing_photo_id = @account && FieldPhoto.where(account_id: @account.id, sha256: image_sha256).pick(:id)
+      existing_photo_id = @account && FieldPhoto.where(account_id: @account.id, sha256: image_sha256, storage_scope: "").pick(:id)
       image_token = FieldPhotoPendingImageStore.write(
         binary: binary, content_type: content_type, filename: filename,
         account_id: @account&.id,

@@ -28,8 +28,19 @@ module Rag
         ordered = ordered_turns(session, raw_question, now, correlation_id)
         return Retrieval.new(text: "", included: [], omitted: [], current_truncated: false) if ordered.empty?
 
+        omitted = []
+        if session.is_a?(FieldCases::TurnContext)
+          state_order = current_case_state(ordered, episode)
+          unless state_order.equal?(ordered)
+            omitted = ordered.drop(1).map do |row|
+              { "correlation_id" => row["correlation_id"], "chars" => row["text"].length, "reason" => "current_state_projection" }
+            end
+            ordered = state_order
+          end
+        end
         ordered = omit_rejected_context(ordered, episode)
-        compose_retrieval(ordered)
+        result = compose_retrieval(ordered)
+        result.with(omitted: result.omitted + omitted)
       end
 
       def retrieval_trace(retrieval)
@@ -139,6 +150,29 @@ module Rag
 
       private
 
+      def current_case_state(turns, episode)
+        parsed = episode.is_a?(ActiveEpisode) ? episode : ActiveEpisode.parse(episode)
+        return turns if parsed.blank?
+
+        current = turns.first
+        current_text = current["text"]
+        units = [ parsed.goal&.dig("text"), SessionContextBuilder.companion_identity(parsed) ]
+        units.concat(parsed.observations.pluck("text"))
+        units.compact_blank!
+        return turns if units.empty?
+
+        # Past raw reports are preserved in field_turns. Only the current
+        # state and the current question participate in the case search.
+        seen = [ current_text ]
+        state = units.filter_map do |unit|
+          next if seen.any? { |text| ObservationText.covered_by?(text, unit) }
+
+          seen << unit
+          { "text" => unit, "correlation_id" => parsed.observations.find { |row| row["text"] == unit }&.dig("correlation_id") }
+        end
+        [ current, *state ]
+      end
+
       # The technician's literal message stays in history. Only the search
       # drops clauses with a rejected referent, keeping unrelated observations.
       def omit_rejected_context(turns, episode)
@@ -147,7 +181,7 @@ module Rag
         referent = CompanionSequence.referent_context(current["text"], parsed)
         rejected = Array(parsed&.rejected).filter_map { |row| row["value"].presence }
         if rejected.empty?
-          return turns if referent.blank?
+          return turns if referent.blank? || turns.any? { |row| ObservationText.covered_by?(row["text"], referent) }
 
           return [ current.merge("text" => [ current["text"], referent ].join(SEPARATOR)), *history ]
         end

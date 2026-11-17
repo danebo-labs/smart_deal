@@ -3,6 +3,7 @@
 require "digest"
 require "json"
 require "pathname"
+require_relative "capture_layers"
 
 module Rag
   # Reads ValidationCapture files already written for a run. It does not open
@@ -14,6 +15,7 @@ module Rag
       interpreter
       perception
       companion_plan
+      companion_direct
       checker_reasons
       published_text
       antecedent
@@ -89,6 +91,8 @@ module Rag
         "account_id" => first_value(mine, "account_id"),
         "user_id" => first_value(mine, "user_id"),
         "session_id" => first_value(mine, "session_id"),
+        "field_case_id" => first_value(mine, "field_case_id"),
+        "field_turn_id" => first_value(mine, "field_turn_id"),
         "episode_id" => episode_label(mine),
         "kamal_version" => contract_value(mine, "kamal_version"),
         "capture_scope" => contract_value(mine, "capture_scope"),
@@ -96,7 +100,7 @@ module Rag
         "truncated_fields" => truncated,
         "markers" => markers(mine),
         "unresolved_bodies" => unresolved,
-        "status" => (components.value?("uncaptured") || unresolved.any?) ? "partial" : "complete"
+        "status" => ((components.values & %w[uncaptured unobserved]).any? || unresolved.any?) ? "partial" : "complete"
       }
     end
 
@@ -164,8 +168,8 @@ module Rag
         events.any? { |event| %w[interpreter_raw interpreter_failure].include?(event["kind"]) } ? "present" : "uncaptured"
       when "perception"
         events.any? { |event| event["kind"] == "perception_applied" } ? "present" : "uncaptured"
-      when "companion_plan"
-        events.any? { |event| event["kind"] == "companion_plan" && event["tool_input"].is_a?(Hash) } ? "present" : "uncaptured"
+      when "companion_plan", "companion_direct"
+        CaptureLayers.companion_status(events, name)
       when "checker_reasons"
         checker_reasons?(events) ? "present" : "uncaptured"
       when "published_text"

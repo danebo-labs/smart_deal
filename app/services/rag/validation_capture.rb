@@ -16,7 +16,7 @@ module Rag
     ].freeze
     SECRET_TEXT = /AKIA[A-Z0-9]{8,}/
     SIGNED_URL = %r{https?://[^\s"']+}i
-    SCOPE_KEYS = %w[sha session_id episode_id account_id user_id correlation_root turn run_id].freeze
+    SCOPE_KEYS = %w[sha session_id episode_id account_id user_id correlation_root turn run_id field_case_id field_turn_id].freeze
     TEMPLATE_MARKERS = [ "$search_results$", "$output_format_instructions$", "$query$" ].freeze
     SCHEMA_VERSION = "danebo.audit.v1"
     # Inline text above this length is replaced, at export, by a body file.

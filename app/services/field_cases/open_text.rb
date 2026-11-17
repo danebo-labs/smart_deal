@@ -1,15 +1,15 @@
 # frozen_string_literal: true
 
 module FieldCases
-  # Opens a case and admits its first text turn together. A failed admission
+  # Opens a case and admits its first turn together. A failed admission
   # leaves no empty case. The same creation key and submission return the turn
   # already stored.
   class OpenText
-    def self.call(account:, user:, creation_key:, client_submission_id:, message:, document_ids: [], now: Time.current)
-      new(account:, user:, creation_key:, client_submission_id:, message:, document_ids:, now:).call
+    def self.call(account:, user:, creation_key:, client_submission_id:, message:, document_ids: [], photo: nil, locale: nil, now: Time.current)
+      new(account:, user:, creation_key:, client_submission_id:, message:, document_ids:, photo:, locale:, now:).call
     end
 
-    def initialize(account:, user:, creation_key:, client_submission_id:, message:, document_ids:, now:)
+    def initialize(account:, user:, creation_key:, client_submission_id:, message:, document_ids:, photo:, locale:, now:)
       @account = account
       @user = user
       @creation_key = creation_key
@@ -17,6 +17,8 @@ module FieldCases
       @message = message
       @document_ids = document_ids
       @now = now
+      @photo = photo
+      @locale = locale
     end
 
     def call
@@ -27,7 +29,7 @@ module FieldCases
       text = @message.is_a?(String) ? @message.strip : nil
       return invalid(:creation_key) unless Payload.key?(key)
       return invalid(:submission_id) unless Payload.key?(@client_submission_id)
-      return invalid(:message) if text.blank? || text.length > Payload::MESSAGE_MAX
+      return invalid(:message) if text.nil? || (!@photo && text.blank?) || text.length > Payload::MESSAGE_MAX
 
       ids = normalized_document_ids
       return invalid(:pins) if ids.nil?
@@ -66,7 +68,7 @@ module FieldCases
         end
         admission = AdmitTurn.call(
           account: @account, user: @user, field_case_id: kase.id,
-          client_submission_id: @client_submission_id, message: text, now: @now
+          client_submission_id: @client_submission_id, message: text, now: @now, **attachment
         )
         if created_now && !admission.ok?
           rolled_back = true
@@ -85,11 +87,15 @@ module FieldCases
 
       AdmitTurn.call(
         account: @account, user: @user, field_case_id: kase.id,
-        client_submission_id: @client_submission_id, message: text, now: @now
+        client_submission_id: @client_submission_id, message: text, now: @now, **attachment
       )
     end
 
     private
+
+    def attachment
+      @photo ? { kind: "photo", field_photo_id: @photo.id, locale: @locale } : {}
+    end
 
     def invalid(error)
       Result.new(:invalid, error:)

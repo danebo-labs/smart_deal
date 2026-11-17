@@ -35,6 +35,17 @@ class FieldCasesController < ApplicationController
     )
   end
 
+  def retry_photo
+    result = FieldCases::PhotoTurn.retry(
+      account: current_account, user: current_user, field_case_id: params[:id], turn_id: params[:turn_id]
+    )
+    if result.ok? || result.lost?
+      render json: { turn: FieldCases::Presenter.turn_hash(result.turn) }
+    else
+      render_result(result)
+    end
+  end
+
   def create
     if params.key?(:document_focus) || params.key?(:pins)
       return render json: { "error" => "pins_not_accepted" }, status: :unprocessable_entity

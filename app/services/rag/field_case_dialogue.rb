@@ -12,9 +12,10 @@ module Rag
       new(range: range, user_ids: user_ids, traces: traces).call
     end
 
-    def initialize(range:, user_ids:, traces:)
+    def initialize(range:, user_ids:, traces:, account_id: nil)
       @range = range
       @user_ids = Array(user_ids).filter_map { |value| Integer(value, exception: false) }.uniq
+      @account_id = account_id
       @traces = Array(traces).index_by { |turn| turn[:correlation_id].to_s }
     end
 
@@ -43,6 +44,7 @@ module Rag
     def load_turns
       @turns ||= begin
         scope = FieldTurn.joins(:field_case).includes(:field_case).where(admitted_at: @range)
+        scope = scope.where(field_cases: { account_id: @account_id }) if @account_id
         scope = scope.where(field_cases: { user_id: @user_ids }) if @user_ids.any?
         scope.order(:field_case_id, :sequence).to_a
       end
@@ -57,6 +59,10 @@ module Rag
         sequence: turn.sequence,
         correlation_id: turn.correlation_id,
         status: turn.status,
+        kind: turn.kind,
+        attachment: turn.field_photo_id ? turn.attachment.merge("href" => "/field_photos/#{turn.field_photo_id}") : turn.attachment,
+        provenance: Array(response["provenance"]),
+        admitted_at: turn.admitted_at.iso8601,
         attempt: turn.attempt,
         message: turn.message,
         published_text: response["published_text"],
@@ -76,8 +82,8 @@ module Rag
     end
 
     def linked_trace(trace, turn)
-      events = events_for(turn.correlation_id)
-      attempts = (capture_attempts(turn.correlation_id) + events.filter_map { |event| event["attempt"] } + [ turn.attempt ]).uniq
+      events = events_for(turn)
+      attempts = (capture_attempts(turn) + events.filter_map { |event| event["attempt"] } + [ turn.attempt ]).uniq
       if events.empty? && trace.nil?
         return missing_trace
       end
@@ -89,31 +95,41 @@ module Rag
         interpretation: interpretation_layer(events, turn),
         query: query_layer(events),
         evidence: evidence_layer(events),
-        publication: publication_layer(events, turn)
+        publication: publication_layer(events, turn),
+        by_attempt: events.group_by { |event| event["attempt"] }.map do |attempt, steps|
+          { attempt: attempt, query: query_layer(steps), evidence: evidence_layer(steps), publication: publication_layer(steps, turn) }
+        end
       }
     end
 
-    def events_for(correlation_id)
-      matching_captures(correlation_id).flat_map { |row|
+    def events_for(turn)
+      correlation_id = turn.correlation_id
+      matching_captures(correlation_id, turn.field_case.account_id).flat_map { |row|
         Array(row.payload["events"]).filter_map { |event|
           next unless event.is_a?(Hash)
-          next if event["correlation_id"].present? && event["correlation_id"] != correlation_id
+          next if event["correlation_id"].present? && event["correlation_id"] != correlation_id &&
+            event["correlation_root"] != correlation_id
+          next if event["account_id"].present? && event["account_id"].to_s != row.account_id.to_s
+          next if event["field_case_id"].present? && event["field_case_id"].to_s != turn.field_case_id.to_s
+          next if event["field_turn_id"].present? && event["field_turn_id"].to_s != turn.id.to_s
 
           event.merge("attempt" => event["attempt"] || row.attempt)
         }
       }.sort_by { |event| [ event["attempt"].to_i, event["sequence"].to_i ] }
     end
 
-    def matching_captures(correlation_id)
+    def matching_captures(correlation_id, account_id)
       captures.select { |row|
+        next false unless row.account_id == account_id
+
         row.correlation_id == correlation_id || Array(row.payload["events"]).any? { |event|
           event.is_a?(Hash) && event["correlation_id"] == correlation_id
         }
       }
     end
 
-    def capture_attempts(correlation_id)
-      matching_captures(correlation_id).filter_map(&:attempt)
+    def capture_attempts(turn)
+      matching_captures(turn.correlation_id, turn.field_case.account_id).filter_map(&:attempt)
     end
 
     def captures
@@ -126,6 +142,7 @@ module Rag
     end
 
     def account_ids
+      return [ @account_id ] if @account_id
       return [] if @user_ids.empty?
 
       User.where(id: @user_ids).distinct.pluck(:account_id)
@@ -166,7 +183,7 @@ module Rag
     end
 
     def query_layer(events)
-      steps = events.select { |event| %w[effective_query retrieve companion_turn_retrieve].include?(event["kind"]) }
+      steps = events.select { |event| CaptureLayers::QUERY_KINDS.include?(event["kind"]) }
       rewrites = events.select { |event| event["kind"] == "query_rewrite" }
       {
         steps: steps.map { |event| query_step(event) },
@@ -185,6 +202,9 @@ module Rag
         composed: event["composed"],
         effective: event["effective"] || event["retrieval_query_text"] || retrieval_text(event) || event["query"],
         filter: query_filter(event),
+        input: event["interpreter_query"],
+        modifications: event.slice("included", "omitted", "current_truncated", "retrieve_question"),
+        transport_attempt: event["transport_attempt"],
         components: event["components"]
       }.compact
     end
@@ -206,7 +226,8 @@ module Rag
     def evidence_layer(events)
       retrieved = events.select { |event| event["kind"] == "retrieval_results" }
       rerank = events.select { |event| event["kind"] == "companion_rerank" }
-      delivered = events.select { |event| %w[companion_sources generator_evidence].include?(event["kind"]) }
+      delivered = CaptureLayers.evidence(events)
+      delivered = events.select { |event| event["kind"] == "companion_sources" } if delivered.empty?
       missing = []
       missing << "retrieved_chunks" if retrieved.empty?
       missing << "rerank" if rerank.empty?
@@ -216,20 +237,25 @@ module Rag
         rerank: rerank,
         delivered_to_generator: delivered,
         pages: pages_of(delivered),
+        source_origins: events.select { |event| event["kind"] == "case_record_sources" },
+        context_fit: events.select { |event| %w[context_fit companion_direct_history].include?(event["kind"]) },
+        photo: events.select { |event| %w[photo_attachment photo_observation].include?(event["kind"]) },
         provenance: missing.empty? ? "observed" : "partial",
         uncaptured: missing
       }
     end
 
     def publication_layer(events, turn)
-      model = events.find { |event| event["kind"] == "companion_direct" }
+      models = CaptureLayers.model_outputs(events)
       backing = events.select { |event| event["kind"] == "companion_claim_backing" }
       published = events.find { |event| event["kind"] == "companion_publication" }
       missing = []
-      missing << "model_output" unless model
+      missing << "model_output" if models.empty?
       missing << "citation_guard" if backing.empty? && published.nil?
       {
-        model_output: model&.dig("text"),
+        model_output: models.last,
+        companion_direct: CaptureLayers.companion_status(events, "companion_direct"),
+        companion_plan: CaptureLayers.companion_status(events, "companion_plan"),
         citation_guard: backing,
         publication_decision: published,
         published_text: turn.response.is_a?(Hash) ? turn.response["published_text"] : nil,
@@ -242,7 +268,7 @@ module Rag
     def pages_of(events)
       events.flat_map { |event|
         Array(event["kept"]).filter_map { |row| row["page"] if row.is_a?(Hash) } +
-          Array(event["passages"]).filter_map { |row| row["page"] if row.is_a?(Hash) }
+          [ *Array(event["passages"]), *Array(event["rows"]) ].filter_map { |row| row["page"] if row.is_a?(Hash) }
       }.uniq
     end
 

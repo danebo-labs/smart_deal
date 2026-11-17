@@ -70,7 +70,7 @@ module Rag
     # @return [Hash, nil] { answer:, citations:, generation_mode: } or nil when
     #   the flag is off, the question is blank, or the RAG call did not succeed.
     def call
-      return nil unless Rag::PhotoQuestionFlag.enabled?
+      return nil unless @session.is_a?(FieldCases::TurnContext) || Rag::PhotoQuestionFlag.enabled?
       return nil if @question.blank?
       return unavailable_photo_lookup(reason: :missing_identity_snapshot) if missing_required_identity_snapshot?
 

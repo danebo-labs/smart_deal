@@ -1,0 +1,226 @@
+{
+  "reopening": [
+    {
+      "question": "Estoy revisando un Fermator VF5+. La puerta se reabre sola durante el cierre. El LED está apagado y no veo obstrucción",
+      "tool_input": {
+        "move": "report",
+        "assertions": [
+          {
+            "span": "Fermator VF5+",
+            "act": "assert",
+            "slot_hint": "model"
+          },
+          {
+            "span": "Fermator",
+            "act": "assert",
+            "slot_hint": "manufacturer"
+          }
+        ],
+        "observations": [
+          "La puerta se reabre sola durante el cierre",
+          "El LED está apagado",
+          "no veo obstrucción"
+        ],
+        "pending_resolution": null,
+        "clarification_target": null
+      }
+    },
+    {
+      "question": "Corrijo un dato, el LED está encendido",
+      "tool_input": {
+        "move": "correct",
+        "assertions": [
+          {
+            "span": "encendido",
+            "act": "assert",
+            "slot_hint": null
+          },
+          {
+            "span": "apagado",
+            "act": "negate",
+            "slot_hint": null
+          }
+        ],
+        "checks": [],
+        "observations": [
+          "El LED está encendido"
+        ],
+        "pending_resolution": null,
+        "clarification_target": null
+      }
+    },
+    {
+      "question": "La fotocélula no está activada",
+      "tool_input": {
+        "move": "answer_pending",
+        "assertions": [],
+        "observations": [
+          "La fotocélula no está activada"
+        ],
+        "pending_resolution": "value",
+        "pending_resolution_placeholder": null,
+        "clarification_target": null,
+        "checks": [],
+        "part_replies": []
+      }
+    },
+    {
+      "question": "si la señal 21 esta actiavada",
+      "tool_input": {
+        "move": "answer_pending",
+        "assertions": [
+          {
+            "span": "la señal 21",
+            "act": "mention",
+            "slot_hint": "designator"
+          }
+        ],
+        "checks": [],
+        "observations": [],
+        "pending_resolution": "unknown",
+        "clarification_target": null
+      }
+    },
+    {
+      "question": "fotocelula",
+      "tool_input": {
+        "move": "answer_pending",
+        "assertions": [
+          {
+            "span": "fotocélula",
+            "act": "mention",
+            "slot_hint": null
+          }
+        ],
+        "checks": [],
+        "observations": [],
+        "pending_resolution": "unknown",
+        "clarification_target": null,
+        "part_replies": []
+      }
+    }
+  ],
+  "slow_open": [
+    {
+      "question": "Estoy con un Fermator VF5+. Después de un corte de alimentación, la puerta abre muy despacio",
+      "tool_input": {
+        "move": "report",
+        "assertions": [
+          {
+            "span": "Fermator",
+            "act": "assert",
+            "slot_hint": "manufacturer"
+          },
+          {
+            "span": "VF5+",
+            "act": "assert",
+            "slot_hint": "model"
+          }
+        ],
+        "checks": [],
+        "observations": [
+          "la puerta abre muy despacio",
+          "Después de un corte de alimentación"
+        ],
+        "pending_resolution": null,
+        "clarification_target": null
+      }
+    },
+    {
+      "question": "¿Es normal entonces?",
+      "tool_input": {
+        "move": "follow_up",
+        "assertions": [],
+        "observations": [],
+        "pending_resolution": null,
+        "clarification_target": null,
+        "checks": []
+      }
+    },
+    {
+      "question": "Fue solo la primera apertura. Después volvió a abrir y cerrar como antes",
+      "tool_input": {
+        "move": "answer_pending",
+        "assertions": [],
+        "observations": [
+          "Después volvió a abrir y cerrar como antes"
+        ],
+        "pending_resolution": "unknown",
+        "clarification_target": null,
+        "checks": [],
+        "part_replies": [
+          {
+            "question_id": "q1",
+            "part_id": "p1",
+            "state": "partial",
+            "quote": "Fue solo la primera apertura",
+            "supersedes": null
+          }
+        ],
+        "pending_resolution_note": "none"
+      }
+    },
+    {
+      "question": "¿Hace falta hacer un autoajuste?",
+      "tool_input": {
+        "move": "answer_pending",
+        "assertions": [],
+        "observations": [
+          "Fue solo la primera apertura",
+          "Después volvió a abrir y cerrar como antes"
+        ],
+        "pending_resolution": null,
+        "clarification_target": null,
+        "checks": [],
+        "part_replies": []
+      }
+    }
+  ],
+  "thyssen": [
+    {
+      "question": "Tenemos un Thyssen con controlador MCINV4. Se escucha fuerte el motor de tracción durante el viaje",
+      "tool_input": {
+        "move": "report",
+        "assertions": [
+          {
+            "span": "Thyssen",
+            "act": "assert",
+            "slot_hint": "manufacturer"
+          },
+          {
+            "span": "MCINV4",
+            "act": "assert",
+            "slot_hint": "controller"
+          }
+        ],
+        "checks": [],
+        "observations": [
+          "Se escucha fuerte el motor de tracción durante el viaje"
+        ],
+        "pending_resolution": null,
+        "clarification_target": null
+      }
+    },
+    {
+      "question": "El parámetro KP‑VS es de 2,5",
+      "tool_input": {
+        "move": "report",
+        "assertions": [
+          {
+            "span": "KP‑VS",
+            "act": "mention",
+            "slot_hint": "designator"
+          },
+          {
+            "span": "2,5",
+            "act": "assert",
+            "slot_hint": null
+          }
+        ],
+        "observations": [],
+        "pending_resolution": null,
+        "clarification_target": null
+      }
+    }
+  ]
+}

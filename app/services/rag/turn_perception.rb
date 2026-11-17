@@ -226,11 +226,22 @@ module Rag
       candidate = normalize_span_text(span).sub(/\A\p{P}+/u, "").sub(/\p{P}+\z/u, "")
       return false if candidate.empty?
 
-      normalize_span_text(turn).include?(candidate)
+      original = normalize_span_text(turn)
+      return true if original.include?(candidate)
+
+      # Accent and hyphen typography can differ from the keyboard input.
+      # Match a whole span so the fallback cannot invent a longer word,
+      # remove a negation, or conflate different designators.
+      folded = orthographic_fold(candidate)
+      orthographic_fold(original).match?(/(?<![[:alnum:]])#{Regexp.escape(folded)}(?![[:alnum:]+])/u)
     end
 
     def self.normalize_span_text(value)
       value.to_s.unicode_normalize(:nfc).downcase.gsub(/[[:space:]]+/, " ").strip
+    end
+
+    def self.orthographic_fold(value)
+      value.unicode_normalize(:nfd).delete("\u0301").unicode_normalize(:nfc).gsub(/\p{Pd}/u, "-")
     end
 
     # A JSON null is not a list of checks. It is safe as an empty list only
@@ -363,6 +374,10 @@ module Rag
 
       assertions = literal_assertions(data["assertions"])
       observations = literal_observations(data["observations"])
+      if observations.empty? && data["move"].in?(%w[report answer_pending follow_up])
+        report = stated_numbered_observation(assertions)
+        observations << report if report
+      end
       checks = literal_checks(data["checks"])
       replies = prepared.is_a?(Hash) ? Array(prepared["part_replies"]) : []
       observations = absorb_quote_observations(observations, replies)
@@ -721,6 +736,47 @@ module Rag
           nil
         end
       end
+    end
+
+    NUMBERED_READING_STATES = %w[
+      activado activada desactivado desactivada abierto abierta cerrado cerrada
+      encendido encendida apagado apagada
+    ].freeze
+
+    def stated_numbered_observation(assertions)
+      text = @turn.to_s.squish
+      return if text.length > ActiveEpisode::MAX_OBSERVATION_CHARS || text.match?(/[¿?]/)
+      label = self.class.orthographic_fold(normalize_span(text))
+      assertions.each do |assertion|
+        subject = self.class.orthographic_fold(normalize_span(assertion["span"]))
+        next unless subject.match?(/[[:alpha:]].*\d/)
+
+        # A closed, indicative reading of an explicitly named numbered
+        # subject can survive a mention-only tool output. The stored phrase
+        # stays literal, including any spelling errors.
+        pattern = /\A(?:si[, ]+)?#{Regexp.escape(subject)}\s+(no\s+)?esta\s+([[:alpha:]]+)[.!]?\z/
+        reading = label.match(pattern)
+        next unless reading
+
+        state = numbered_reading_state(reading[2])
+        return "#{assertion['span']} #{reading[1]}está #{state}" if state
+      end
+      nil
+    end
+
+    # Accept a single inserted letter or transposed pair when the resulting state is unique.
+    def numbered_reading_state(token)
+      return token if NUMBERED_READING_STATES.include?(token)
+
+      alternatives = token.chars.each_index.map { |index| "#{token[0...index]}#{token[(index + 1)..]}" }
+      alternatives.concat(token.chars.each_cons(2).with_index.filter_map do |(left, right), index|
+        next if left == right
+
+        candidate = "#{token[0...index]}#{right}#{left}#{token[(index + 2)..]}"
+        candidate
+      end)
+      alternatives = alternatives.uniq & NUMBERED_READING_STATES
+      alternatives.first if alternatives.one?
     end
 
     def literal_observations(observations)

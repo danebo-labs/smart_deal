@@ -9,25 +9,25 @@ class FieldPhotoStore
   def self.persist!(account_id:, sha256:, binary:, content_type:, filename:,
                     thumbnail_binary: nil, thumbnail_content_type: nil,
                     thumbnail_width: nil, thumbnail_height: nil,
-                    user_id: nil, conversation_session_id: nil)
+                    user_id: nil, conversation_session_id: nil, storage_scope: "")
     return nil if account_id.blank? || sha256.blank? || binary.blank?
 
-    existing = FieldPhoto.find_by(account_id: account_id, sha256: sha256)
+    existing = FieldPhoto.find_by(account_id: account_id, sha256: sha256, storage_scope: storage_scope)
     return existing if existing
 
     key = object_key(account_id: account_id, sha256: sha256,
-                     filename: filename, content_type: content_type)
+                     filename: filename, content_type: content_type, storage_scope: storage_scope)
     return nil unless S3DocumentsService.new.upload_binary(key, binary, content_type)
 
     FieldPhoto.create!(
-      account_id: account_id, sha256: sha256, s3_key_original: key,
+      account_id: account_id, sha256: sha256, storage_scope: storage_scope, s3_key_original: key,
       content_type: content_type, byte_size: binary.bytesize,
       thumbnail_data: thumbnail_binary, thumbnail_content_type: thumbnail_content_type,
       thumbnail_width: thumbnail_width, thumbnail_height: thumbnail_height,
       user_id: user_id, conversation_session_id: conversation_session_id
     )
   rescue ActiveRecord::RecordNotUnique
-    FieldPhoto.find_by(account_id: account_id, sha256: sha256)
+    FieldPhoto.find_by(account_id: account_id, sha256: sha256, storage_scope: storage_scope)
   end
 
   # Rehydrates the original bytes so a re-ask can be re-analyzed after the
@@ -38,10 +38,10 @@ class FieldPhotoStore
     S3DocumentsService.new.download(field_photo.s3_key_original)
   end
 
-  def self.object_key(account_id:, sha256:, filename:, content_type:)
+  def self.object_key(account_id:, sha256:, filename:, content_type:, storage_scope:)
     ext = File.extname(filename.to_s).delete_prefix(".").presence ||
       content_type.to_s.split("/").last.presence || "bin"
-    "#{PREFIX}/#{account_id}/#{sha256}/original.#{ext}"
+    [ PREFIX, account_id, storage_scope.presence, sha256, "original.#{ext}" ].compact.join("/")
   end
   private_class_method :object_key
 end

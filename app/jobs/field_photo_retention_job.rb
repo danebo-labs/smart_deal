@@ -52,10 +52,16 @@ class FieldPhotoRetentionJob < ApplicationJob
 
   def purgeable(cutoff)
     expired(cutoff).where.not(id: InspectionFinding.with_photo.select(:field_photo_id))
+      .where.not(id: attached_case_photos)
   end
 
   def evidence_past(cutoff)
     expired(cutoff).where(id: InspectionFinding.with_photo.select(:field_photo_id))
+      .or(expired(cutoff).where(id: attached_case_photos))
+  end
+
+  def attached_case_photos
+    FieldTurn.where.not(field_photo_id: nil).select(:field_photo_id)
   end
 
   def expired(cutoff)
@@ -63,6 +69,6 @@ class FieldPhotoRetentionJob < ApplicationJob
   end
 
   def s3_prefix_for(photo)
-    "field_photos/#{photo.account_id}/#{photo.sha256}/"
+    [ "field_photos", photo.account_id, photo.storage_scope.presence, photo.sha256, "" ].compact.join("/")
   end
 end

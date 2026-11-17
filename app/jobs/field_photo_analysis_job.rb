@@ -83,9 +83,44 @@ class FieldPhotoAnalysisJob < ApplicationJob
     )
   end
 
-  def perform(image_token:, image_sha256:, filename:, content_type:, account_id:, user_id: nil,
+  def perform(**args)
+    return perform_analysis(**args) unless args[:field_case_id]
+
+    @case_photo = FieldCases::PhotoTurn.claim(**args)
+    return unless @case_photo
+
+    turn = @case_photo.turn
+    photo = turn.field_photo
+    context = @case_photo.context
+    return @case_photo.fail("invalid_pins") unless context
+
+    context.start_photo_turn!(turn)
+    perform_analysis(
+      image_token: nil, image_sha256: photo.sha256, filename: File.basename(photo.s3_key_original),
+      content_type: photo.content_type, account_id: photo.account_id, user_id: turn.field_case.user_id,
+      locale: turn.locale, correlation_id: turn.correlation_id, field_photo_id: photo.id,
+      question: turn.message, raw_question: turn.message, expected_episode_id: context.live_episode_id,
+      case_context: context
+    )
+  rescue StandardError => error
+    raise unless @case_photo
+
+    Rails.logger.warn("Case photo analysis failed: #{error.class}")
+    failed = @case_photo.fail("analysis_failed")
+    if failed.ok?
+      turn = failed.turn
+      Rag::DurableTrace.record_failure!(
+        account_id: args[:account_id], user_id: args[:user_id], correlation_id: turn.correlation_id,
+        stage: "vision", error: error, job_id: job_id, attempt: turn.attempt, outcome: "failed"
+      )
+    end
+  end
+
+  private
+
+  def perform_analysis(image_token:, image_sha256:, filename:, content_type:, account_id:, user_id: nil,
               conversation_session_id: nil, locale: nil, correlation_id: nil, field_photo_id: nil, question: nil,
-              raw_question: nil, continuity: nil, expected_episode_id: nil)
+              raw_question: nil, continuity: nil, expected_episode_id: nil, case_context: nil)
     @technician_text = raw_question.nil? ? question.to_s : raw_question.to_s
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     locale = locale.to_s.presence || I18n.default_locale.to_s
@@ -96,9 +131,14 @@ class FieldPhotoAnalysisJob < ApplicationJob
       conversation_session_id: conversation_session_id,
       correlation_id: correlation_id,
       job_id: job_id,
-      attempt: [ executions.to_i, 1 ].max
+      attempt: @case_photo&.turn&.attempt || [ executions.to_i, 1 ].max
     )
-    session = conversation_session_id ? ConversationSession.find_by(id: conversation_session_id) : nil
+    if @case_photo
+      turn = @case_photo.turn
+      Rag::ValidationCapture.bind(field_case_id: turn.field_case_id, field_turn_id: turn.id)
+      Rag::ValidationCapture.record("photo_attachment", "field_photo_id" => turn.field_photo_id, "attachment" => turn.attachment)
+    end
+    session = case_context || (ConversationSession.find_by(id: conversation_session_id) if conversation_session_id)
     if session && account_id && session.account_id != account_id
       raise ArgumentError, "ConversationSession #{session.id} is not owned by account #{account_id}"
     end
@@ -123,7 +163,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
     image = FieldPhotoPendingImageStore.take(token: image_token, account_id: account_id)
     rehydrated = false
     if image.nil? && field_photo_id.present? && account_id
-      photo = FieldPhoto.where(account_id: account_id).find_by(id: field_photo_id)
+      photo = FieldPhoto.where(account_id: account_id, storage_scope: "").find_by(id: field_photo_id)
+      photo = @case_photo.turn.field_photo if @case_photo
       binary = photo && FieldPhotoStore.fetch_binary(photo)
       if binary.present?
         image = {
@@ -136,6 +177,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
     end
 
     unless image
+      return @case_photo.fail("photo_unavailable") if @case_photo
+
       broadcast_expired(
         filename: filename,
         locale: locale,
@@ -187,9 +230,13 @@ class FieldPhotoAnalysisJob < ApplicationJob
       visual_task_context: visual_context.to_h
     ).call
 
-    acceptance = store_visual_observation(
-      result, field_photo_id: field_photo_id, account_id: account_id, correlation_id: correlation_id
-    )
+    accept = -> {
+      store_visual_observation(
+        result, field_photo_id: field_photo_id, account_id: account_id, correlation_id: correlation_id
+      )
+    }
+    acceptance = @case_photo ? @case_photo.with_running_turn(&accept) : accept.call
+    return unless acceptance
     if continuity.to_s == "reread"
       log_observation_reread(
         account_id: account_id,
@@ -200,6 +247,13 @@ class FieldPhotoAnalysisJob < ApplicationJob
       )
     end
 
+    if @case_photo
+      Rag::ValidationCapture.record(
+        "photo_observation",
+        "status" => acceptance.status, "reason" => acceptance.reason,
+        "observation" => acceptance.observation, "visual_analysis" => result[:analysis]
+      )
+    end
     display_value = photo_value(result)
     evidence_value = evidence_from(acceptance)
     delivered = deliver(
@@ -218,6 +272,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
       visual_task: visual_context.visual_task,
       expected_episode_id: expected_episode_id
     )
+    return unless delivered
+
     PilotUsageLog.log(
       "photo_completed",
       **usage_fields(
@@ -254,11 +310,9 @@ class FieldPhotoAnalysisJob < ApplicationJob
     FieldPhotoPendingImageStore.delete(token: image_token, account_id: account_id)
   end
 
-  private
-
   def reuse_stored_observation(field_photo_id:, account_id:, user_id:, conversation_session_id:, session:,
                                filename:, locale:, correlation_id:, question:, started_at:, expected_episode_id: nil)
-    photo = account_id && FieldPhoto.where(account_id: account_id).find_by(id: field_photo_id)
+    photo = account_id && FieldPhoto.where(account_id: account_id, storage_scope: "").find_by(id: field_photo_id)
     observation = photo && FieldPhotoObservation.sanitize(photo.visual_observation)
     if observation.nil?
       broadcast_missing_observation(
@@ -454,9 +508,10 @@ class FieldPhotoAnalysisJob < ApplicationJob
     # :stale is the only photo-history result that stops the question path.
     # :not_recording still continues. The history write captures the generation
     # context before the lock is released. Bedrock uses that snapshot.
-    photo_question = consequences && history_state != :stale && Rag::PhotoQuestionFlag.enabled? && question.present?
+    photo_question = consequences && history_state != :stale &&
+      (@case_photo || Rag::PhotoQuestionFlag.enabled?) && question.present?
 
-    thumbnail_url = field_photo_thumbnail_url(field_photo_id)
+    thumbnail_url = field_photo_thumbnail_url(field_photo_id) unless @case_photo
     rag_answer = if photo_question
       answer_photo_question(question: question, evidence_value: evidence_value, session: session,
                             account_id: account_id, user_id: user_id,
@@ -466,6 +521,11 @@ class FieldPhotoAnalysisJob < ApplicationJob
                             entity_s3_uris_snapshot: turn_context&.entity_s3_uris,
                             retrieval_question: turn_context&.retrieval_question,
                             equipment_identity: turn_context&.equipment_identity)
+    end
+    if @case_photo
+      summary = published_analysis(display_value, question: question, visual_task: visual_task, locale: locale)
+      answer = rag_answer&.fetch(:answer) || summary
+      return publish_case_photo(session, answer, rag_answer, summary, accepted_observation)
     end
     # nil when there is no question, or the flag flipped off between the check and the call
     if rag_answer.nil?
@@ -511,6 +571,30 @@ class FieldPhotoAnalysisJob < ApplicationJob
       generation_context: rag_answer[:generation_context],
       generation_prompt_chars: rag_answer[:generation_prompt_chars],
       context_truncated: rag_answer[:context_truncated]
+    }
+  end
+
+  def publish_case_photo(context, answer, rag_answer, summary, observation)
+    if rag_answer&.dig(:failed)
+      @case_photo.fail("photo_question_failed")
+      return nil
+    end
+
+    citations = rag_answer&.dig(:citations) || []
+    provenance = rag_answer&.dig(:provenance_segments) ||
+      Rag::ProvenanceSegmenter.call(answer: answer, citations: citations, visual_observation: observation)
+    saved = @case_photo.publish(answer:, citations:, provenance:, context:, visual_summary: summary)
+    if saved.invalid?
+      @case_photo.fail("invalid_photo_result")
+      return nil
+    end
+    return unless saved.ok?
+
+    Rag::ValidationCapture.record("published_answer", "answer" => answer, "citations" => citations)
+    {
+      outcome: photo_outcome(answer), answer:, citations: rag_answer&.dig(:retrieved_citations),
+      effective_query: rag_answer&.dig(:effective_query) || @technician_text,
+      **(rag_answer || {}).slice(:generation_mode, :generation_context, :generation_prompt_chars, :context_truncated)
     }
   end
 

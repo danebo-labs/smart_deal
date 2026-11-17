@@ -43,6 +43,7 @@ Rails.application.routes.draw do
   resources :field_cases, only: %i[index create show] do
     member do
       get "turns/:turn_id", action: :turn, as: :turn
+      post "turns/:turn_id/retry_photo", action: :retry_photo
     end
   end
   # resources :bulk_uploads, only: %i[new create show]  # T-31: disabled for pilot

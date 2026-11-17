@@ -66,6 +66,39 @@ class PilotExportTrace
     probes = rows.select { |row| row[:tag] == "R1A_PROBE" }.pluck(:payload)
 
     audit = interaction["audit"].is_a?(Hash) ? interaction["audit"] : {}
+    if interaction["field_turn_id"]
+      # The stored dialogue is canonical even for photo-only and failed turns.
+      audit["question"] = interaction["question"]
+      audit["answer"] = interaction["answer"]
+      audit["citations"] = interaction["citations"]
+    else
+      merge_dialogue(interaction, audit, logged, quality, turn)
+    end
+    if Array(audit["chunks"]).empty?
+      chunks = audit_rows.select { |row| row[:payload]["type"] == "chunk" }.map do |row|
+        row[:payload].slice("document", "page", "section_identity", "chunk_sha256", "text", "truncated")
+      end
+      audit["chunks"] = chunks if chunks.any?
+    end
+    interaction["audit"] = audit if audit.any?
+
+    citation_count = Array(audit["citations"]).size
+    if interaction["citations_count"].to_i.zero? && citation_count.positive?
+      interaction["citations_count"] = citation_count
+    end
+    chunk_count = Array(audit["chunks"]).size
+    chunk_count = citation_count if chunk_count.zero?
+    if interaction["retrieved_chunks"].to_i.zero? && chunk_count.positive?
+      interaction["retrieved_chunks"] = chunk_count
+    end
+
+    scope = retrieval_scope(probes)
+    interaction["retrieval_scope"] = scope if scope.any?
+    consulted = consulted_sources(turn, probes)
+    interaction["consulted_sources"] = consulted if consulted.any?
+  end
+
+  def merge_dialogue(interaction, audit, logged, quality, turn)
     question = present_text(
       audit["question"], interaction["question"], logged&.[]("question"),
       turn&.[]("original_query"), quality&.[]("question")
@@ -90,28 +123,6 @@ class PilotExportTrace
       citations = Array(logged&.[]("citations")).presence || turn_citations(turn)
       audit["citations"] = citations if citations.any?
     end
-    if Array(audit["chunks"]).empty?
-      chunks = audit_rows.select { |row| row[:payload]["type"] == "chunk" }.map do |row|
-        row[:payload].slice("document", "page", "section_identity", "chunk_sha256", "text", "truncated")
-      end
-      audit["chunks"] = chunks if chunks.any?
-    end
-    interaction["audit"] = audit if audit.any?
-
-    citation_count = Array(audit["citations"]).size
-    if interaction["citations_count"].to_i.zero? && citation_count.positive?
-      interaction["citations_count"] = citation_count
-    end
-    chunk_count = Array(audit["chunks"]).size
-    chunk_count = citation_count if chunk_count.zero?
-    if interaction["retrieved_chunks"].to_i.zero? && chunk_count.positive?
-      interaction["retrieved_chunks"] = chunk_count
-    end
-
-    scope = retrieval_scope(probes)
-    interaction["retrieval_scope"] = scope if scope.any?
-    consulted = consulted_sources(turn, probes)
-    interaction["consulted_sources"] = consulted if consulted.any?
   end
 
   def turn_citations(turn)

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_16_190000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_17_190000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -250,7 +250,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_190000) do
     t.datetime "updated_at", null: false
     t.bigint "user_id"
     t.jsonb "visual_observation"
-    t.index [ "account_id", "sha256" ], name: "index_field_photos_on_account_id_and_sha256", unique: true
+    t.string "storage_scope", default: "", null: false
+    t.index [ "account_id", "sha256", "storage_scope" ], name: "index_field_photos_on_account_id_and_sha256_and_storage_scope", unique: true
     t.index [ "account_id" ], name: "index_field_photos_on_account_id"
     t.index [ "created_at" ], name: "index_field_photos_on_created_at"
   end

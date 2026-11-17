@@ -8,10 +8,11 @@ class PilotTelemetryReader
   }.freeze
   EMPTY_STATUSES = %w[logs_not_provided logs_missing logs_unreadable].freeze
 
-  def initialize(source:, range:, user_ids: nil, roles_declared: nil)
+  def initialize(source:, range:, user_ids: nil, roles_declared: nil, account_id: nil)
     @source = source
     @range = range
     @user_ids = Array(user_ids).filter_map { |value| Integer(value, exception: false) }.uniq
+    @account_id = account_id
     @roles_declared = Array(roles_declared).filter_map { |role| role.to_s.presence }.uniq
   end
 
@@ -75,7 +76,7 @@ class PilotTelemetryReader
   end
 
   def read_from_db
-    rows = PilotEvent.hot_path_rows(range: range, user_ids: user_ids)
+    rows = PilotEvent.hot_path_rows(range: range, user_ids: user_ids, account_id: @account_id)
     return result(status: "db_empty") if rows.empty?
 
     pilot = []
@@ -205,6 +206,8 @@ class PilotTelemetryReader
   end
 
   def cohort_payload?(payload)
+    return false if @account_id && payload[:account_id].to_s != @account_id.to_s
+
     user_ids.empty? || user_ids.include?(Integer(payload[:user_id], exception: false))
   end
 

@@ -146,7 +146,10 @@ module FieldCases
     def load_photo
       return nil if @field_photo_id.blank?
 
-      FieldPhoto.find_by(id: @field_photo_id, account_id: @account.id) || :missing
+      photo = FieldPhoto.find_by(id: @field_photo_id, account_id: @account.id)
+      return :missing unless photo && (photo.storage_scope.blank? || photo.user_id == @user.id)
+
+      photo
     end
 
     def reconcile

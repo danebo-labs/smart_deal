@@ -136,7 +136,7 @@ class PilotMetricsPackage
   def interaction_html(interaction)
     audit = interaction["audit"] || {}
     question = audit["question"] || interaction["question"] || "n/a"
-    answer = audit["answer"] || interaction["answer_snippet"] || "n/a"
+    answer = audit["answer"] || interaction["answer"] || interaction["answer_snippet"] || "n/a"
     citations = Array(audit["citations"])
     sources = if citations.any?
       citations.map do |citation|
@@ -152,13 +152,15 @@ class PilotMetricsPackage
       Array(interaction["citation_titles"]).presence || Array(interaction["documents"])
     end
     chunks = Array(audit["chunks"])
+    attachment = interaction.dig("attachment", "href")
 
     <<~HTML
       <article class="interaction">
         <div class="status">#{escape(interaction["outcome"] || "sin resultado")}</div>
         <h3>#{escape(interaction["correlation_id"] || "sin correlation_id")}</h3>
         <div class="interaction-grid">
-          <section><strong>Pregunta</strong><div class="content">#{escape(question)}</div></section>
+          <section><strong>Pregunta</strong><div class="content">#{escape(question)}</div>
+          #{attachment_reference(attachment)}</section>
           <section><strong>Respuesta</strong><div class="content">#{escape(answer)}</div></section>
         </div>
         <section>
@@ -174,6 +176,12 @@ class PilotMetricsPackage
         </div>
       </article>
     HTML
+  end
+
+  def attachment_reference(path)
+    return "" unless path.to_s.match?(%r{\A/field_photos/\d+\z})
+
+    %(<p class="muted">Foto en Danebo <code>#{escape(path)}</code></p>)
   end
 
   def dossier_cost_trace_html(interaction)

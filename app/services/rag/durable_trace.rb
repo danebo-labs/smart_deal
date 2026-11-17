@@ -368,22 +368,23 @@ module Rag
       end
     end
 
-    def export(range:, user_ids: [])
-      rows = relation_for(range: range, user_ids: user_ids).order(:occurred_at, :id).to_a
+    def export(range:, user_ids: [], account_id: nil)
+      rows = relation_for(range: range, user_ids: user_ids, account_id: account_id).order(:occurred_at, :id).to_a
       photos = photos_for(rows)
       turns = build_turns(rows, photos)
       { turns: turns }
     end
 
-    def archive_rows(range:, user_ids: [])
-      relation_for(range: range, user_ids: user_ids)
+    def archive_rows(range:, user_ids: [], account_id: nil)
+      relation_for(range: range, user_ids: user_ids, account_id: account_id)
         .where(kind: MESSAGE_KINDS)
         .order(:occurred_at, :id)
         .map { |row| archive_row(row) }
     end
 
-    def relation_for(range:, user_ids: [])
+    def relation_for(range:, user_ids: [], account_id: nil)
       scope = FieldCompanionTrace.occurred_within(range)
+      scope = scope.where(account_id:) if account_id
       ids = Array(user_ids).filter_map { |value| Integer(value, exception: false) }.uniq
       return scope if ids.empty?
 
@@ -662,6 +663,8 @@ module Rag
         user_id: rows.filter_map(&:user_id).first,
         conversation_session_id: rows.filter_map(&:conversation_session_id).first,
         episode_id: rows.filter_map { |row| row.episode_id.presence }.last,
+        field_case_id: events.filter_map { |event| event["field_case_id"] }.first,
+        field_turn_id: events.filter_map { |event| event["field_turn_id"] }.first,
         correlation_id: correlation_id,
         request_id: rows.filter_map { |row| row.request_id.presence }.first,
         job_id: rows.filter_map { |row| row.job_id.presence }.first,
@@ -671,7 +674,7 @@ module Rag
         versions: versions,
         technician_message: technician,
         attachments: attachment_export(messages, photo),
-        visual_observation: observation_export(photo, card_row),
+        visual_observation: captured_photo_observation(events) || observation_export(photo, card_row),
         visual_card: visual_card,
         technical_response: technical,
         attempts: attempt_export(failures, terminals),
@@ -701,7 +704,11 @@ module Rag
           next unless event.is_a?(Hash)
 
           cid = event["correlation_id"].presence
-          selected << event if cid.blank? || cid == correlation_id
+          next if event["account_id"].present? && event["account_id"].to_s != capture.account_id.to_s
+
+          if cid.blank? || cid == correlation_id || event["correlation_root"] == correlation_id
+            selected << event.merge("attempt" => event["attempt"] || capture.attempt)
+          end
         end
       end
       selected
@@ -792,13 +799,19 @@ module Rag
       }
     end
 
+    def captured_photo_observation(events)
+      event = events.reverse.find { |row| row["kind"] == "photo_observation" }
+      return unless event
+
+      { provenance: "observed", observation: event["observation"], analysis: event["visual_analysis"],
+        status: event["status"], reason: event["reason"] }
+    end
+
     def retrieval_section(events)
-      queries = events.select { |event| %w[effective_query retrieve companion_turn_retrieve].include?(event["kind"]) }
+      queries = events.select { |event| CaptureLayers::QUERY_KINDS.include?(event["kind"]) }
       candidates = events.select { |event| event["kind"] == "retrieval_results" }
       rerank = events.select { |event| event["kind"] == "companion_rerank" }
-      evidence = events.select { |event|
-        event["kind"] == "generator_evidence" || event["delivered_to_generator"] == true
-      }
+      evidence = CaptureLayers.evidence(events)
       {
         queries: queries,
         candidates: candidates,
@@ -813,14 +826,16 @@ module Rag
 
     def model_section(events)
       matched = events.select { |event|
-        %w[model_call interpreter_request interpreter_raw converse retrieve_and_generate].include?(event["kind"])
+        %w[model_call interpreter_request interpreter_raw converse retrieve_and_generate companion_direct companion_plan].include?(event["kind"])
       }
       return { input_provenance: "uncaptured", output_provenance: "uncaptured", provenance: "uncaptured" } if matched.empty?
 
       input = matched.filter_map { |event| event["input"].presence || event["prompt"].presence || event["system"].presence }.join("\n")
-      output = matched.filter_map { |event| event["output"].presence || event["raw"].presence || event["completion"].presence }.join("\n")
+      output = CaptureLayers.model_outputs(matched).map { |value| value.is_a?(String) ? value : JSON.generate(value) }.join("\n")
       {
         events: matched,
+        companion_direct: CaptureLayers.companion_status(matched, "companion_direct"),
+        companion_plan: CaptureLayers.companion_status(matched, "companion_plan"),
         input: input.presence,
         input_sha256: (digest(input) if input.present?),
         input_provenance: input.present? ? "observed" : "uncaptured",

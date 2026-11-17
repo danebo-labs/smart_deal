@@ -129,7 +129,8 @@ class Rag::WebTurnCaptureExportTest < ActiveSupport::TestCase
       assert_equal @user.id, turn["user_id"]
       assert turn["episode_id"].present?
       Rag::ValidationCaptureIndex::COMPONENTS.each do |name|
-        assert_equal "present", turn.dig("components", name), name
+        expected = name == "companion_direct" ? "not_executed" : "present"
+        assert_equal expected, turn.dig("components", name), name
       end
     end
 

@@ -860,7 +860,124 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "November 17 reopening keeps the corrected LED and binds the published indicator question" do
+    isolate_env("FIELD_CASE_HISTORY_ENABLED", "true") do
+      manual = revision_document(:guion1)
+      page = "Indicador LED y relé activado cuando la fotocélula o la entrada de re-apertura está activada."
+      replies = [
+        "¿Ya revisaste la fotocélula y el potenciómetro #54?",
+        "¿Qué LED está encendido: FOTOCÉLULA, OBSTRUCCIÓN u otro?",
+        "La señal de reapertura también puede activar el indicador. ¿Qué LED está encendido: FOTOCÉLULA, OBSTRUCCIÓN u otro?",
+        "Con la señal #21 activa, aún falta identificar el LED.",
+        "El LED de FOTOCÉLULA está encendido. La fotocélula está inactiva y reportaste la señal #21 activa."
+      ]
+      replies.map! { |reply| "La fuente dice «#{page}» [1].\n\n#{reply}" }
+      kase, turns = history_nov17("reopening", manual, page: 7, passage: page, replies:)
+      assert_includes turns[1][:query], "encendido"
+      assert_no_match(/LED está apagado/i, turns[1][:query])
+      assert_match(/qué LED/i, turns[2][:stored].dig("checkpoint", "pending_question", "question"))
+      assert_match(/LED de FOTOCÉLULA/i, turns.last[:answer])
+      assert_no_match(/falta identificar (?:qué indicador|el LED)/i, turns.last[:answer])
+      observations = turns.last[:stored].dig("checkpoint", "observations")
+      assert observations.any? { |row| row["text"].match?(/led de fotocelula.*encendido/i) }
+      assert observations.any? { |row| row["text"].match?(/fotocélula no está activada/i) }
+      signal = observations.find { |row| row["text"].match?(/señal 21.*activada/i) }
+      assert_equal turns[3][:stored]["correlation_id"], signal&.dig("correlation_id")
+      assert observations.any? { |row| row["text"].match?(/no veo obstrucción/i) }
+      assert_nil turns.last[:stored].dig("checkpoint", "pending_question")
+      assert_equal 5, kase.field_turns.count
+      assert_equal "fotocelula", turns.last[:stored]["message"]
+    end
+  end
+
+  test "November 17 slow opening preserves the power cut in Retrieve and generation" do
+    isolate_env("FIELD_CASE_HISTORY_ENABLED", "true") do
+      manual = revision_document(:guion2)
+      first_open = "Las puertas se abrirán lentamente en la primera operación después de un fallo de alimentación"
+      adjustment = "Solo es necesario realizar otra vez el autoajuste para la configuración de los parámetros por defecto o cuando se realicen cambios como la conexión o desconexión de la fotocélula Fermator"
+      replies = [
+        "La fuente dice «#{first_open}» [1]. ¿En las maniobras siguientes volvió a la velocidad normal?",
+        "La primera apertura lenta está prevista tras el corte. Si solo cierra 35 cm, sería otro caso.",
+        "El retorno a la operación habitual coincide con «#{first_open}» [1].",
+        "Para lo descrito no hace falta autoajuste. «#{adjustment}» [1]."
+      ]
+      _kase, turns = history_nov17("slow_open", manual, page: 8, passage: "#{first_open}. #{adjustment}.", replies:)
+      turns.drop(1).each do |turn|
+        assert_match(/corte de alimentación/i, turn[:query])
+        assert_match(/corte de alimentación/i, turn[:prompt])
+        assert_no_match(/35 cm/i, turn[:query])
+      end
+      assert_no_match(/volvió/i, turns[1][:stored].dig("checkpoint", "observations").pluck("text").join)
+      assert_match(/volvió/i, turns[2][:stored].dig("checkpoint", "observations").pluck("text").join)
+      assert_no_match(/35 cm/i, turns.last[:stored].dig("checkpoint", "observations").pluck("text").join)
+      assert_match(/autoajuste/i, turns.last[:answer])
+      assert turns.last[:stored].dig("response", "citations").any?
+      trace = Rag::DurableTrace.export(range: Time.zone.today.all_day, account_id: @account.id).fetch(:turns)
+        .find { |row| row[:correlation_id] == turns.last[:stored]["correlation_id"] }
+      assert_equal "present", trace.dig(:model, :companion_direct)
+      assert_equal "not_executed", trace.dig(:model, :companion_plan)
+      assert_match(/autoajuste/i, trace.dig(:model, :output))
+      evidence = trace.dig(:retrieval, :generator_evidence).flat_map { |event| event["rows"] }
+      assert evidence.any? { |row| row["page"].to_i == 8 && row["text"].include?(first_open) }
+    end
+  end
+
+  test "November 17 Thyssen associates the raw parameter value and keeps the noise condition open" do
+    isolate_env("FIELD_CASE_HISTORY_ENABLED", "true") do
+      manual = KbDocument.create!(account: @account, s3_key: "manuals/MCINV4.pdf",
+        display_name: "Thyssen MCINV4", aliases: [])
+      page = "En caso de ruido audible muy elevado: disminuya el valor del parámetro \"KP-VS\", hasta el mínimo de [3,0]"
+      replies = [
+        "La fuente pone la condición «En caso de ruido audible muy elevado» [1]. ¿El ruido es muy elevado?",
+        "Reportaste KP-VS en 2,5. Sigue por confirmar «En caso de ruido audible muy elevado» [1]."
+      ]
+      _kase, turns = history_nov17("thyssen", manual, page: 18, passage: page, replies:)
+      saved = turns.last[:stored]
+      checkpoint = saved["checkpoint"]
+      assert_match(/MCINV4/i, turns.last[:query])
+      assert_match(/KP.VS.*2,5/i, turns.last[:query])
+      assert_match(/ruido|motor.*fuerte|fuerte.*motor/i, checkpoint["observations"].pluck("text").join)
+      reading = checkpoint["observations"].find { |row| row["text"].match?(/KP.VS.*2,5/) }
+      assert_equal saved["correlation_id"], reading&.dig("correlation_id")
+      assert_not_includes checkpoint.fetch("identifiers", []).pluck("value"), "2,5"
+      assert_match(/ruido.*muy elevado/i, checkpoint.dig("pending_question", "question"))
+      assert_includes saved.dig("response", "citations").map { |citation| citation["page"].to_i }, 18
+    end
+  end
+
   private
+
+  def history_nov17(script, manual, page:, passage:, replies:)
+    rows = [ {
+      "content" => passage, "uri" => manual.canonical_uri.sub(/\.pdf\z/, "-p#{page}.txt"),
+      "original_source_uri" => manual.canonical_uri,
+      "document" => manual.display_name, "page" => page, "score" => 0.99
+    } ]
+    data = JSON.parse(Rails.root.join("test/fixtures/files/field_companion/history_nov17_turns.json").read)
+    kase = nil
+    turns = data.fetch(script).zip(replies).map do |entry, reply|
+      turn = TurnCapture.new(entry.merge("generator_text" => reply, "rows" => rows, "retrieve_query" => nil))
+      cassette = JourneyCassette.new([ turn ], viewer_id: @account.id, focus_uri: manual.canonical_uri)
+      destination = if kase
+        { field_case_id: kase.id }
+      else
+        { creation_key: SecureRandom.uuid, kb_document_ids: [ manual.id ] }
+      end
+      with_doubles(cassette) do
+        post rag_ask_path, params: { question: turn.question, client_submission_id: SecureRandom.uuid, **destination }, as: :json
+      end
+      assert_response :ok
+      published = response.parsed_body
+      assert_equal "success", published["status"], published.inspect
+      kase ||= FieldCase.find(published.fetch("field_case_id"))
+      stored = published.fetch("field_turn")
+      assert_equal turn.question, stored["message"]
+      assert_equal published["answer"], stored.dig("response", "published_text")
+      prompt = cassette.sent.reject { |body| body[:tool_choice] }.map { |body| body[:messages].to_json }.join
+      { query: cassette.queries.join("\n"), prompt:, answer: published["answer"], stored: }
+    end
+    [ kase, turns ]
+  end
 
   def thyssen_turn(question, generator, page, manual, tool_input)
     TurnCapture.new({

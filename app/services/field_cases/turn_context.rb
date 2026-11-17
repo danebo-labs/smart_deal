@@ -28,47 +28,58 @@ module FieldCases
             history_message("user", turn.message, user_id: user_id, correlation_id: turn.correlation_id)
               .merge("ts" => turn.admitted_at.iso8601),
             history_message("assistant", turn.response.fetch("published_text"),
-              user_id: user_id, correlation_id: turn.correlation_id, prompt_reply: turn.prompt_reply)
+              user_id: user_id, correlation_id: turn.correlation_id, prompt_reply: restored_reply(turn))
               .merge("ts" => turn.completed_at.iso8601)
           ]
         end
+    end
+
+    def start_photo_turn!(turn)
+      if active_episode.blank?
+        episode = open_owner_episode(turn.correlation_id, turn.admitted_at, Rag::AnswerContract::VERSION)
+        update!(active_episode: episode.to_h)
+      end
+      return if turn.message.blank?
+
+      history = conversation_history.last(MAX_HISTORY - 1)
+      history << history_message("user", turn.message, user_id: user_id, correlation_id: turn.correlation_id)
+      update!(conversation_history: history)
+    end
+
+    def case_photo_context
+      Rag::ActivePhotoContext.resolve(episode: Rag::ActiveEpisode.parse(active_episode), viewer_account: account)
     end
 
     def technical_state
       active_episode.merge("case_evidence" => case_evidence)
     end
 
-    # Direct generation returns prose. Keep the technical question that was
-    # published, including when a manual notice follows it. A documented
-    # question already open on this case stays open. A controller plate
-    # question does not replace it, and does not replace a different
-    # technical question in the same answer.
+    # The next turn interprets short replies against the question the
+    # technician actually saw. Preserve structured targets when they match.
     def capture_pending!(result)
-      current = Rag::ActiveEpisode.parse(active_episode).pending_question
-      if open_documented_question?(current)
-        result.pending_question = nil if controller_plate?(result.pending_question)
-        return
-      end
+      return unless result.case_outcome == "published"
 
       followup = Rag::PendingQuestion.followup_line(result.answer.to_s, locale: result.response_locale)
-      if controller_plate?(result.pending_question) && followup.present? && followup != result.pending_question["question"]
-        result.pending_question = nil
-      end
-      return if result.pending_question || result.case_outcome != "published"
       return if followup.blank?
 
-      candidate = { "type" => "documented_context", "question" => followup, "targets" => [ { "item" => followup } ] }
-      result.pending_question = if current&.dig("type") != "documented_context"
-        Rag::PendingQuestion.coerce(candidate)
-      elsif current["question"] == followup
-        current
+      proposed = result.pending_question
+      return if proposed&.dig("question") == followup
+
+      current = Rag::ActiveEpisode.parse(active_episode).pending_question
+      shown = current&.dig("shown")
+      candidate = if current&.dig("question") == followup
+        current.except("shown")
       else
-        Rag::PendingQuestion.coerce(current.merge("shown" => candidate))
+        { "type" => "documented_context", "question" => followup,
+          "targets" => (shown["targets"].presence if shown&.dig("question") == followup) || [ { "item" => followup } ] }
       end
+      result.pending_question = Rag::PendingQuestion.coerce(candidate)
     end
 
     def episode_history_cutoff(_now = Time.current)
-      parse_history_ts(active_episode["opened_at"]) || @case_opened_at
+      # The opening turn can be admitted in the second before its interpreter
+      # opens the episode. Its timestamp is still part of this case.
+      @case_opened_at
     end
 
     def with_lock
@@ -89,16 +100,19 @@ module FieldCases
 
     private
 
+    def restored_reply(turn)
+      return turn.prompt_reply unless turn.kind == "photo"
+
+      summary = turn.response.dig("render", "visual_summary")
+      [ ("[FOTO] #{summary}" if summary.present?), turn.prompt_reply ].compact.uniq.join("\n")
+    end
+
+    def episode_recording?
+      true
+    end
+
     def open_owner_episode(...)
       super.tap { |episode| episode.episode_id = @case_episode_id }
-    end
-
-    def open_documented_question?(pending)
-      pending.is_a?(Hash) && pending["type"] == "documented_context" && pending["question"].present?
-    end
-
-    def controller_plate?(pending)
-      pending.is_a?(Hash) && pending["type"] == "controller"
     end
   end
 end

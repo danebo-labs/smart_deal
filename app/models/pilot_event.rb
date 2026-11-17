@@ -10,8 +10,9 @@ class PilotEvent < ApplicationRecord
 
   scope :occurred_within, ->(range) { where(occurred_at: range) }
 
-  def self.hot_path_rows(range:, user_ids: [])
+  def self.hot_path_rows(range:, user_ids: [], account_id: nil)
     scope = occurred_within(range)
+    scope = scope.where(account_id:) if account_id
     scope = scope.where(user_id: user_ids) if user_ids.any?
     scope.order(:occurred_at).pluck(
       :event, :correlation_id, :account_id, :user_id,

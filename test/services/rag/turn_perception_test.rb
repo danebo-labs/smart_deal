@@ -94,6 +94,15 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_empty result.identities
   end
 
+  test "orthographic equivalents have whole-span evidence" do
+    assert Rag::TurnPerception.literal_fragment?("fotocélula", "fotocelula")
+    assert Rag::TurnPerception.literal_fragment?("KP-VS", "El parámetro KP‑VS es de 2,5")
+    assert_not Rag::TurnPerception.literal_fragment?("fotocélula", "dos fotocelulas")
+    assert_not Rag::TurnPerception.literal_fragment?("LED de fotocélula", "fotocelula")
+    assert_not Rag::TurnPerception.literal_fragment?("señal 21", "señal 121")
+    assert_not Rag::TurnPerception.literal_fragment?("señal 21 está activada", "señal 21 no esta activada")
+  end
+
   test "a span that is not in the turn is rejected and is not a fact" do
     result = perceive(report([ assert_span("NICE3000") ]), "hola")
 

@@ -103,10 +103,14 @@ module Rag
         merged = CompanionCaseRecord.sources(session, episode_id, kept, scope_uris: scope_uris, viewer_account: viewer_account)
         allowed = scope_uris.nil? ? nil : merged.each_index.filter_map { |index| index + 1 unless CompanionCaseRecord.gap?(merged[index]) }
         turns = history_turns(session, correlation_id, episode, allowed_numbers: allowed)
-        history, omitted = fit_history(turns)
         technician_turn = turns.count { |turn| turn[:role] == "user" } + 1
         referent = CompanionSequence.referent_context(raw_question, episode)
-        current = current_text(raw_question, merged, technician_turn, context: [ reference_context, referent ].compact.join("\n"))
+        case_context = if session.is_a?(FieldCases::TurnContext)
+          SessionContextBuilder.companion_case(SessionContextBuilder.companion_episode(session, episode), {}, session: session)
+        end
+        history, omitted = fit_history(turns, budget: HISTORY_MAX_CHARS - case_context.to_s.length)
+        current = current_text(raw_question, merged, technician_turn,
+                               context: [ reference_context, referent, case_context ].compact.join("\n"))
         messages = converse_messages(history, current)
         system = SYSTEM_PROMPT
         Prepared.new(
@@ -317,6 +321,7 @@ module Rag
 
       def sources_block(chunks)
         lines = [ "Fuentes de este turno:" ]
+        delivered = [] if ValidationCapture.active?
         Array(chunks).each_with_index do |chunk, index|
           next if CompanionCaseRecord.gap?(chunk)
 
@@ -325,7 +330,17 @@ module Rag
           # passage's citation.
           lines << "" if lines.size > 1
           lines << CompanionPlan.source_heading(chunk, number)
-          lines << DocumentIdentityScope.omit_terminal_evidence_records(chunk_body(chunk)).strip
+          body = DocumentIdentityScope.omit_terminal_evidence_records(chunk_body(chunk)).strip
+          lines << body
+          delivered&.push(
+            "n" => number, "text" => body,
+            "origin" => chunk[:case_origin] || chunk["case_origin"] || "fresh",
+            "page" => (chunk[:metadata] || chunk["metadata"] || {}).with_indifferent_access["page_number"],
+            "uri" => chunk[:location_uri] || chunk["location_uri"]
+          )
+        end
+        if delivered
+          ValidationCapture.record("generator_evidence", "stage" => "companion_direct", "result" => "prepared", "rows" => delivered)
         end
         lines.join("\n")
       end
@@ -397,10 +412,10 @@ module Rag
         "[procedencia: #{message['text_provenance']}] #{text}"
       end
 
-      def fit_history(turns)
+      def fit_history(turns, budget: HISTORY_MAX_CHARS)
         kept = turns.dup
         omitted = []
-        while packed_length(kept) > HISTORY_MAX_CHARS
+        while packed_length(kept) > budget
           index = kept.index { |turn| turn[:role] == "assistant" }
           if index
             omitted << kept.delete_at(index)
@@ -465,7 +480,8 @@ module Rag
             {
               "role" => turn[:role],
               "correlation_id" => turn[:correlation_id],
-              "chars" => turn[:chars]
+              "chars" => turn[:chars],
+              "reason" => "history_budget"
             }
           }
         )

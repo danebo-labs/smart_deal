@@ -127,8 +127,8 @@ module Rag
       terms
     end
 
-    def generation_block
-      return nil unless relevant?
+    def generation_block(include_unconfirmed: false)
+      return nil unless relevant? || (include_unconfirmed && loaded?)
 
       lines = [ HEADER ]
       lines << "Component: #{projection['component']}" if projection["component"].present?
@@ -139,6 +139,7 @@ module Rag
       end
       lines << "Condition: #{projection['condition']}" if projection["condition"].present?
       lines << "Read from the active episode photo. Not stated by the technician."
+      lines << "Relevance to the current fault is unconfirmed. Use these details only for visual follow-up." unless relevant?
       lines.join("\n")
     end
   end

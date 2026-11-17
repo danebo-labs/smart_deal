@@ -426,10 +426,8 @@ export default class extends Controller {
     const hasFile = this.pendingFile !== null
 
     if (!question && !hasFile) return
-    // Text opens the case. A photo or a document still uses ask(): that request
-    // does not create a case and does not attach the file to the open thread.
-    if (this.caseHistoryValue && !hasFile && !this.pendingFieldPhotoId) {
-      await this.sendCaseText(question)
+    if (this.caseHistoryValue && (!hasFile || this.pendingFile.type === "image")) {
+      await this.sendCaseTurn(question, this.pendingFile)
       return
     }
     if (!await this.awaitDocumentFocus()) return
@@ -535,7 +533,7 @@ export default class extends Controller {
     this.caseId = null
     this.casePending = null
     this.caseCreationKey = null
-    this.caseSubmissionId = null
+    this.unsentCaseTurn = null
     this.caseNoticeTarget.textContent = ""
     this.caseTitleTarget.textContent = ""
     this.inputTarget.value = ""
@@ -636,7 +634,11 @@ export default class extends Controller {
 
   renderCaseTurn(turn) {
     const saved = turn.response || {}
-    this.addMessage(turn.message, "user")
+    if (turn.kind === "photo" && turn.field_photo_id) {
+      this.addImageMessage(`/field_photos/${encodeURIComponent(turn.field_photo_id)}`, turn.message)
+    } else {
+      this.addMessage(turn.message, "user")
+    }
     if (turn.status === "completed") {
       this._setLocale(saved.render?.response_locale)
       this.renderAssistantAnswer({
@@ -647,6 +649,28 @@ export default class extends Controller {
       this.addLoadingMessage()
     } else {
       this.addMessage(saved.render?.message || "El envío quedó sin respuesta. Puedes intentarlo de nuevo.", "error")
+      if (turn.kind === "photo" && turn.field_photo_id) {
+        const button = document.createElement("button")
+        button.type = "button"
+        button.className = "text-sm underline"
+        button.textContent = "Reintentar análisis"
+        button.addEventListener("click", () => this.retryCasePhoto(turn.id, button))
+        this.messagesTarget.appendChild(button)
+      }
+    }
+  }
+
+  async retryCasePhoto(turnId, button) {
+    const id = this.caseId
+    const view = this.caseView
+    button.disabled = true
+    try {
+      await this.caseRequest(`/field_cases/${id}/turns/${turnId}/retry_photo`, {})
+      if (view === this.caseView) await this.openCase(id)
+    } catch {
+      if (view === this.caseView) this.caseNoticeTarget.textContent = "No se pudo reintentar el análisis."
+    } finally {
+      button.disabled = false
     }
   }
 
@@ -666,7 +690,7 @@ export default class extends Controller {
     }, 2000)
   }
 
-  async sendCaseText(question) {
+  async sendCaseTurn(question, file = null) {
     if (this.caseLoading || this.casePending || this.openingSend) return
     if (this.caseId && this.caseSends.has(this.caseId)) return
 
@@ -674,7 +698,6 @@ export default class extends Controller {
     if (opening) {
       this.openingSend = true
       this.caseCreationKey ||= crypto.randomUUID()
-      this.caseSubmissionId ||= crypto.randomUUID()
     }
     const id = this.caseId
     const view = this.caseView
@@ -687,27 +710,33 @@ export default class extends Controller {
       this.caseSends.add(id)
       this.updateCaseComposer()
       this.inputTarget.value = ""
-      this.addMessage(question, "user")
+      if (file) this.addImageMessage(this.imageThumbTarget.src, question)
+      else this.addMessage(question, "user")
       this.addLoadingMessage()
     }
+    const previous = this.unsentCaseTurn
+    const submissionId = previous && previous.id === id && previous.question === question && previous.file === file
+      ? previous.submissionId : crypto.randomUUID()
+    this.unsentCaseTurn = { id, question, file, submissionId }
     const submission = opening
       ? {
           question,
           creation_key: this.caseCreationKey,
-          client_submission_id: this.caseSubmissionId,
+          client_submission_id: submissionId,
           kb_document_ids: [ ...(this.caseFocusIds || []) ]
         }
-      : { question, field_case_id: id, client_submission_id: crypto.randomUUID() }
+      : { question, field_case_id: id, client_submission_id: submissionId }
+    if (file) submission.image = { data: file.data, media_type: file.media_type, filename: file.filename }
     let error
     let openedId = null
     try {
       const data = await this.caseRequest("/rag/ask", submission)
       if (data.field_case_id) openedId = String(data.field_case_id)
-      else error = "No se pudo enviar. El texto sigue en el campo."
+      else error = "No se pudo enviar. Puedes intentarlo de nuevo."
     } catch (failure) {
       const stored = failure.payload && failure.payload.field_case_id
       if (stored) openedId = String(stored)
-      else error = "No se pudo enviar. El texto sigue en el campo."
+      else error = "No se pudo enviar. Puedes intentarlo de nuevo."
     } finally {
       if (opening) this.openingSend = false
       else this.caseSends.delete(id)
@@ -716,7 +745,8 @@ export default class extends Controller {
         await this.openCase(openedId)
         if (this.caseId === openedId) {
           this.caseCreationKey = null
-          this.caseSubmissionId = null
+          this.unsentCaseTurn = null
+          this.removeFile()
           error = null
         }
       }

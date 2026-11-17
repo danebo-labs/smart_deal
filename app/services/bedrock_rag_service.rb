@@ -1662,12 +1662,12 @@ class BedrockRagService
     )
     effective = retrieval.text.presence || question.to_s
     @companion_case_retrieve_question = effective
-    record_case_retrieval(retrieval, effective)
+    record_case_retrieval(retrieval, effective, question)
     effective
   end
 
-  def record_case_retrieval(retrieval, effective)
-    trace = Rag::CompanionCaseRecord.retrieval_trace(retrieval).merge("retrieve_question" => effective.to_s)
+  def record_case_retrieval(retrieval, effective, input)
+    trace = Rag::CompanionCaseRecord.retrieval_trace(retrieval).merge("retrieve_question" => effective.to_s, "interpreter_query" => input.to_s)
     @companion_case_retrieval_trace = trace
     Rails.logger.info(
       "[CASE_RECORD_RETRIEVAL] included=#{retrieval.included.size} omitted=#{retrieval.omitted.size} truncated=#{retrieval.current_truncated}"
@@ -3015,6 +3015,9 @@ class BedrockRagService
         transport_attempt += 1
         limit.before_physical! if limit&.armed?
         Rag::InferencePolicy.check!(operation: "agent_runtime.retrieve")
+        Rag::ValidationCapture.record(
+          "retrieve_attempt", "transport_attempt" => transport_attempt, "result" => "attempt_started"
+        ) if Rag::ValidationCapture.active?
         @client.retrieve(params)
       end
     rescue StandardError => error

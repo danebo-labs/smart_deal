@@ -20,10 +20,13 @@ class RagController < ApplicationController
     if params.key?(:field_case_id) || opening_text
       response.set_header("Cache-Control", "private, no-store")
       return head :not_found unless FieldCaseHistoryFlag.enabled?
-      unless params[:question].is_a?(String)
+      unless params[:question].is_a?(String) || (params[:question].nil? && params[:image].present?)
         return render json: { status: "error", error: "message" }, status: :unprocessable_entity
       end
-      if %i[image images document documents field_photo_id replay_correlation_id].any? { |key| params[key].present? }
+      if params[:image].present?
+        return submit_case_photo(question)
+      end
+      if %i[images document documents field_photo_id replay_correlation_id].any? { |key| params[key].present? }
         return render json: { status: "error", message: "Solo se admite texto en este envío." }, status: :unprocessable_entity
       end
 
@@ -43,6 +46,7 @@ class RagController < ApplicationController
       end
       return render_case_admission(admission) unless admission.created?
 
+      Rag::ValidationCapture.bind(field_case_id: admission.turn.field_case_id, field_turn_id: admission.turn.id)
       field_turn = FieldCases::TextTurn.new(admission, account: current_account, user: current_user)
       correlation_id = admission.turn.correlation_id
       conv_session = field_turn.context
@@ -118,6 +122,7 @@ class RagController < ApplicationController
       user_id:         current_user.id,
       correlation_id:  correlation_id,
       field_photo_id:  params[:field_photo_id].presence,
+      apply_photo_continuity: field_turn.nil?,
       episode_turn:    episode_turn,
       conversational_turn_analysis: shadow_analysis
     )
@@ -288,6 +293,22 @@ class RagController < ApplicationController
     return nil unless raw.is_a?(Array)
 
     raw
+  end
+
+  def submit_case_photo(question)
+    if %i[images document documents field_photo_id replay_correlation_id].any? { |key| params[key].present? }
+      return render json: { status: "error", error: "attachment" }, status: :unprocessable_entity
+    end
+
+    images = extract_images_from_params
+    return render json: { status: "error", error: "attachment" }, status: :unprocessable_entity unless images.one?
+
+    result = FieldCases::PhotoTurn.submit(
+      account: current_account, user: current_user, field_case_id: params[:field_case_id],
+      creation_key: params[:creation_key], submission_id: params[:client_submission_id],
+      message: question, image: images.first, locale: I18n.locale.to_s
+    )
+    render_case_admission(result)
   end
 
   def render_case_admission(result)
@@ -712,7 +733,7 @@ class RagController < ApplicationController
     photo_id = params[:field_photo_id].presence
     return nil if photo_id.blank?
 
-    photo = FieldPhoto.where(account_id: current_account.id).find_by(id: photo_id)
+    photo = FieldPhoto.where(account_id: current_account.id, storage_scope: "").find_by(id: photo_id)
     photo&.visual_observation
   end
 

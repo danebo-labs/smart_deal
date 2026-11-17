@@ -231,7 +231,7 @@ WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/pilot_metrics.XXXXXX")
 # under `set -e`), so the lock never outlives this process except on SIGKILL —
 # the same residual risk any lock has, not something rmdir can fix.
 trap 'rm -rf "$WORK_DIR"; rmdir "$LOCK_DIR" 2>/dev/null' EXIT
-SOURCE_EVENTS="${OUTPUT_DIR}/source_events.jsonl"
+SOURCE_EVENTS="${WORK_DIR}/source_events.jsonl"
 : > "$SOURCE_EVENTS"
 
 ROLES_DOWNLOADED=()
@@ -301,7 +301,7 @@ RUNNER_USER_IDS="$USER_IDS"
 [[ -n "$RUNNER_USER_IDS" ]] || RUNNER_USER_IDS="0"
 QUESTION_FLAG=""
 [[ "$WITH_QUESTIONS" == false ]] || QUESTION_FLAG=" --with-questions"
-REMOTE_EXPORT="docker exec -i '${WEB_CONTAINER}' bin/rails runner script/pilot_metrics_export.rb --from '${FROM}' --to '${TO}' --user-ids '${RUNNER_USER_IDS}' --roles 'web,worker' --stdin-logs --format raw${QUESTION_FLAG}"
+REMOTE_EXPORT="docker exec -i '${WEB_CONTAINER}' bin/rails runner script/pilot_metrics_export.rb --from '${FROM}' --to '${TO}' --account '${ACCOUNT_SLUG}' --user-ids '${RUNNER_USER_IDS}' --roles 'web,worker' --stdin-logs --format raw${QUESTION_FLAG}"
 REPORT_TMP="${WORK_DIR}/report.json"
 if ! remote "$REMOTE_EXPORT" < "$SOURCE_EVENTS" > "$REPORT_TMP"; then
   fail "remote pilot export failed"
@@ -330,8 +330,8 @@ if remote "docker exec '${WEB_CONTAINER}' tar -c -C /rails/tmp/field_companion/v
       exit(unsafe ? 1 : 0)
     ' "${WORK_DIR}/validation_capture_names.txt"
   then
-    mkdir -p "$PACKAGE_CAPTURES"
-    if tar -x -C "$PACKAGE_CAPTURES" -f "${WORK_DIR}/validation_captures.tar"; then
+    mkdir -p "${WORK_DIR}/validation_captures"
+    if tar -x -C "${WORK_DIR}/validation_captures" -f "${WORK_DIR}/validation_captures.tar"; then
       ARCHIVE_STATE="present"
     else
       echo "pilot_metrics: warning: validation capture archive did not unpack" >&2
@@ -347,6 +347,8 @@ if remote "docker exec '${WEB_CONTAINER}' tar -c -C /rails/tmp/field_companion/v
 else
   echo "pilot_metrics: validation captures absent on the web container" >&2
 fi
+"$RUBY_BIN" script/pilot_metrics_scope.rb "${OUTPUT_DIR}/report.json" "$ACCOUNT_ID" "$FROM" "$TO" \
+  "$SOURCE_EVENTS" "${WORK_DIR}/validation_captures" "$OUTPUT_DIR"
 "$RUBY_BIN" script/pilot_metrics_validation_index.rb "$PACKAGE_CAPTURES" "${OUTPUT_DIR}/validation_capture_index.json" "$ARCHIVE_STATE"
 
 # Local packaging boots Rails. The project gems live in vendor/bundle.

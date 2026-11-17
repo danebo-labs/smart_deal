@@ -58,8 +58,9 @@ if options[:from] && options[:to] && options[:from] > options[:to]
 end
 
 user_ids = options[:user_ids]
-if options[:account]
-  account_user_ids = Account.find_by!(slug: options[:account]).users.pluck(:id).map(&:to_s)
+account = Account.find_by!(slug: options[:account]) if options[:account]
+if account
+  account_user_ids = account.users.pluck(:id).map(&:to_s)
   user_ids = user_ids.any? ? user_ids & account_user_ids : account_user_ids
 end
 
@@ -69,6 +70,7 @@ report = PilotMetricsReport.new(
   to: options[:to],
   usage_log_path: options[:stdin_logs] ? $stdin : options[:usage_log],
   user_ids: user_ids,
+  account_id: account&.id,
   roles: options[:roles],
   include_raw_questions: options[:include_raw_questions]
 ).as_json

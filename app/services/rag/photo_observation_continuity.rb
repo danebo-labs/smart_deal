@@ -61,7 +61,7 @@ module Rag
       def owned_photo(account, id)
         return nil if account.nil? || id.blank?
 
-        FieldPhoto.where(account_id: account.id).find_by(id: id)
+        FieldPhoto.where(account_id: account.id, storage_scope: "").find_by(id: id)
       end
 
       def session_matches_account?(session, account)

@@ -105,8 +105,15 @@ class SessionContextBuilder
         units << companion_unit(line, protect: companion_protected_text?(line))
       end
     end
+    photo = active_photo_block(session, nil)
+    units << companion_unit(photo, protect: true) if photo.present?
     text = fit_companion_units(units, companion_case_budget, trace, "companion_case").join("\n")
-    finish_problem_fit(text, trace)
+    if Rag::ValidationCapture.active?
+      Rag::ValidationCapture.record("context_fit", "part" => "companion_case",
+                                   "chars" => text.length, "cap" => companion_case_budget,
+                                   "omitted" => Array(trace[:omitted]))
+    end
+    text
   end
 
   def self.companion_observations(episode)
@@ -602,9 +609,14 @@ class SessionContextBuilder
   def self.active_photo_block(session, explicit)
     context = explicit
     context = session.turn_active_photo_context if context.nil? && session.respond_to?(:turn_active_photo_context)
+    context ||= session&.case_photo_context if session.is_a?(FieldCases::TurnContext)
     return "" if context.nil? || !context.respond_to?(:generation_block)
 
-    block = context.generation_block.to_s
+    block = if session.is_a?(FieldCases::TurnContext)
+      context.generation_block(include_unconfirmed: true)
+    else
+      context.generation_block
+    end.to_s
     return "" if block.empty?
 
     episode = Rag::ActiveEpisode.parse(session.active_episode)

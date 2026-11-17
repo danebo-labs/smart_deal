@@ -441,7 +441,7 @@ module Rag
 
       write_checks unless @perception.move == "unclear"
       @contract_at_entry = AnswerContract.active?(@episode)
-      bind_documented_answer unless @contract_at_entry
+      bind_documented_answer unless resolve_indicator_reply! || @contract_at_entry
       remember_referent_choice if remember_referent_choice?
       promote_carry if promote_existing_carry?
 
@@ -476,6 +476,35 @@ module Rag
     end
 
     private
+
+    def resolve_indicator_reply!
+      question = @episode.pending_question
+      return false unless question&.dig("type") == "documented_context"
+
+      published = question["question"].to_s
+      return false unless published.match?(/\bled\b/i) && published.match?(/\b(?:o|u)\b/i)
+
+      choices = published.split(":").last.to_s.split(/,|\b(?:o|u)\b/i)
+
+      label = FollowupQueryRewriter.normalize_label(@turn)
+      return false unless label.match?(/\A[[:alpha:]]+(?: [[:alpha:]]+)?\z/)
+      options = choices.map do |option|
+        FollowupQueryRewriter.normalize_label(option).sub(/.*\b(?:led|de|del)\s+/, "").strip
+      end
+      return false unless options.include?(label) && %w[otro otra].exclude?(label)
+
+      indicator = @episode.observations.select { |item| item["text"].to_s.match?(GENERIC_LED_STATE) }
+      return false unless indicator.one?
+
+      state = indicator.first["text"][GENERIC_LED_STATE, 1]
+      @episode.observations.delete(indicator.first)
+      @episode.append_observation!(
+        "LED de #{@turn.to_s.strip} está #{state}", correlation_id: @correlation_id,
+        answers: { "q" => question["question"], "t" => question["targets"], "r" => "value" }
+      )
+      self.class.settle_answered_pending!(@episode, question["question"])
+      true
+    end
 
     def answer_promotes_carry?
       @perception.move == "answer_pending" && %w[value unknown seek].include?(@perception.pending_resolution)
@@ -729,6 +758,16 @@ module Rag
     # become the goal. The span stays an identifier only when it is also an
     # equipment token; the reading itself is the observation.
     def record_stated_reading!
+      if (reading = parameter_reading(@turn)) && !@turn.match?(/[¿?]/)
+        @episode.append_observation!(reading[:text], correlation_id: @correlation_id)
+        @episode.identifiers.reject! do |row|
+          row["correlation_id"] == @correlation_id.to_s &&
+            row["value"].to_s.tr(".", ",") == reading[:number]
+        end
+        supersede_corrected_parameter!(reading[:text])
+        return
+      end
+
       return unless open_documented_pending?
       return if self.class.same_published_datum?(@episode.pending_question, @turn)
 
@@ -768,6 +807,7 @@ module Rag
       return unless match
 
       {
+        text: match[0],
         token: match[1],
         key: match[1].downcase.gsub(PARAMETER_HYPHEN, ""),
         number: match[2].tr(".", ",")

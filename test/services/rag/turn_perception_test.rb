@@ -1788,6 +1788,80 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_equal "new_work", changed.move
   end
 
+  test "a display code answers the stored code question and another component does not" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    episode.pending_question = {
+      "type" => "documented_context",
+      "question" => "Pregunta: ¿qué código o estado muestra la MCINV4?",
+      "targets" => [ { "item" => "Manual de maniobra.", "document_key" => "doc", "filename" => "p24.txt", "page" => "24" } ]
+    }
+    Rag::AnswerContract.stamp!(episode)
+    turn = "El display marca EA."
+    result = perceive(
+      {
+        "move" => "answer_pending",
+        "assertions" => [ { "span" => "EA", "act" => "assert", "slot_hint" => "fault_code" } ],
+        "observations" => [ turn ],
+        "pending_resolution" => "value",
+        "clarification_target" => nil
+      },
+      turn,
+      episode: episode
+    )
+    settle(episode, result, turn)
+
+    assert_equal "answer_pending", result.move
+    assert_nil episode.pending_question
+
+    screen = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    screen.pending_question = code_question
+    Rag::AnswerContract.stamp!(screen)
+    paraphrase = "En pantalla marca EA."
+    accepted = perceive(code_payload(paraphrase), paraphrase, episode: screen)
+    settle(screen, accepted, paraphrase)
+
+    assert_equal "answer_pending", accepted.move
+    assert_nil screen.pending_question
+
+    other = Rag::ActiveEpisode.open(correlation_id: "seed", now: Time.current)
+    other.pending_question = code_question
+    Rag::AnswerContract.stamp!(other)
+    brake = "El freno marca EA."
+    blocked = perceive(
+      {
+        "move" => "answer_pending",
+        "assertions" => [ { "span" => "EA", "act" => "assert", "slot_hint" => "fault_code" } ],
+        "observations" => [ brake ],
+        "pending_resolution" => "value",
+        "clarification_target" => nil
+      },
+      brake,
+      episode: other
+    )
+    settle(other, blocked, brake)
+
+    assert_equal "report", blocked.move
+    assert_equal "Pregunta: ¿qué código o estado muestra la MCINV4?", other.pending_question["question"]
+  end
+
+  def code_question
+    {
+      "type" => "documented_context",
+      "question" => "Pregunta: ¿qué código o estado muestra la MCINV4?",
+      "targets" => [ { "item" => "Manual de maniobra.", "document_key" => "doc", "filename" => "p24.txt", "page" => "24" } ]
+    }
+  end
+
+  def code_payload(turn)
+    {
+      "move" => "answer_pending",
+      "assertions" => [ { "span" => "EA", "act" => "assert", "slot_hint" => "fault_code" } ],
+      "observations" => [ turn ],
+      "pending_resolution" => "value",
+      "clarification_target" => nil
+    }
+  end
+
   def settle(episode, result, turn)
     decision = Rag::RoutePolicy.call(previous: episode, perception: result, focus_count: 0)
     Rag::WorkContextReducer.apply!(

@@ -494,6 +494,7 @@ class BedrockRagService
     @companion_plan_stop_reason = nil
     @companion_direct_stop_reason = nil
     @companion_direct_turn = false
+    @companion_direct_sources = nil
     @companion_case_before = nil
     @companion_case_revision = nil
     @companion_case_episode_id = nil
@@ -522,25 +523,24 @@ class BedrockRagService
       )
     end
 
-    profile = RagRetrievalProfile.new(entity_sources: entity_sources, question: question)
-    profile_count = profile.number_of_results.clamp(1, ContractualLimits::QUERY[:max_top_k])
     companion_focus = companion_pinned_focus?(
       entity_s3_uris: entity_s3_uris,
       entity_sources: entity_sources,
       episode: episode,
       raw_question: raw_question
     )
-    number_of_results = if companion_focus && profile_count == RagRetrievalProfile::PINNED_DOCUMENT_RESULTS
-      RagRetrievalProfile::COMPANION_PINNED_CANDIDATES.clamp(1, ContractualLimits::QUERY[:max_top_k])
-    else
-      profile_count
-    end
+    # The case text is what Retrieve sends. A fault that survives in that text
+    # stays on the safety budget and is not widened to sixteen candidates.
     retrieve_question = direct_case_retrieve_question(
       question,
       raw_question: raw_question,
       conv_session: conv_session,
       correlation_id: correlation_id,
-      companion_focus: companion_focus, episode: episode
+      companion_focus: companion_focus, episode: episode, scope_uris: entity_s3_uris
+    )
+    profile_count = self.class.companion_profile_count(retrieve_question, entity_sources)
+    number_of_results = self.class.companion_retrieve_count(
+      profile_count, companion_focus: companion_focus
     )
     retrieval = retrieve_chunks(
       retrieve_question,
@@ -610,6 +610,7 @@ class BedrockRagService
       episode: episode,
       raw_question: raw_question
     )
+    photo_evidence = Rag::ActivePhotoContext.generation_evidence(session_context)
     evidence_chunks = companion_evidence_chunks(
       applied.chunks,
       focus: companion_focus && profile_count == RagRetrievalProfile::PINNED_DOCUMENT_RESULTS,
@@ -623,14 +624,15 @@ class BedrockRagService
     companion_plan = if companion_turn && !direct_turn
       Rag::CompanionPlan.prepare(
         raw_question: raw_question, chunks: companion_chunks, episode: episode,
-        session: conv_session, correlation_id: correlation_id
+        session: conv_session, correlation_id: correlation_id, photo_evidence: photo_evidence
       )
     end
     companion_direct = if direct_turn
       Rag::CompanionDirectAnswer.prepare(
         raw_question: raw_question, chunks: companion_chunks, episode: episode,
         session: conv_session, correlation_id: correlation_id,
-        scope_uris: entity_s3_uris, viewer_account: @account
+        scope_uris: entity_s3_uris, viewer_account: @account, photo_evidence: photo_evidence,
+        unresolved_question: same_work_question(conv_session, raw_question, correlation_id)
       )
     end
     prompt = if companion
@@ -660,7 +662,7 @@ class BedrockRagService
           retrieval: retrieval,
           model_invoked: false
         ),
-        question, raw_turn: raw_question, sent_question: question, truncated: generation_truncated
+        nil, raw_turn: raw_question, sent_question: question, truncated: generation_truncated
       )
     end
     raw_answer = begin
@@ -756,6 +758,7 @@ class BedrockRagService
       manufacturer: companion_turn ? companion_manufacturer(episode) : nil,
       raw_question: raw_question,
       conv_session: conv_session,
+      parameter_review: companion_direct&.parameter_review,
       correlation_id: correlation_id,
       episode: episode
     )
@@ -782,6 +785,7 @@ class BedrockRagService
     identity_closed_result(
       status: :unavailable,
       reason: identity_failure_reason(e, stage: :retrieval),
+      error: e,
       question: question,
       response_locale: response_locale
     )
@@ -791,6 +795,7 @@ class BedrockRagService
     identity_closed_result(
       status: :unavailable,
       reason: :retrieval_error,
+      error: e,
       question: question,
       response_locale: response_locale
     )
@@ -927,7 +932,8 @@ class BedrockRagService
         return direct_reference_result(
           question: question, raw_question: raw_turn, chunks: chunks, retrieval: retrieval,
           response_locale: response_locale, episode: episode, conv_session: conv_session,
-          scope_uris: attempt_uris, correlation_id: query_correlation_id, attribution: attribution
+          scope_uris: attempt_uris, correlation_id: query_correlation_id, attribution: attribution,
+          photo_evidence: Rag::ActivePhotoContext.generation_evidence(session_context)
         )
       end
       if chunks.empty?
@@ -1230,7 +1236,7 @@ class BedrockRagService
   # Reference text uses the same numbered pack as publication, while field
   # applicability stays separate from the document's own facts.
   def direct_reference_result(question:, raw_question:, chunks:, retrieval:, response_locale:, episode:,
-                              conv_session:, scope_uris:, correlation_id:, attribution:, incompatible: false)
+                              conv_session:, scope_uris:, correlation_id:, attribution:, incompatible: false, photo_evidence: nil)
     locale = effective_response_locale(question, response_locale: response_locale)
     active = episode.is_a?(Rag::ActiveEpisode) ? episode : Rag::ActiveEpisode.parse(episode)
     controller = active&.fact("controller")
@@ -1267,17 +1273,18 @@ class BedrockRagService
       ].compact.join(" ")
       prepared = Rag::CompanionDirectAnswer.prepare(
         raw_question: raw_question, chunks: chunks, episode: episode, session: conv_session,
-        correlation_id: correlation_id, reference_context: context, scope_uris: scope_uris, viewer_account: @account
+        correlation_id: correlation_id, reference_context: context, photo_evidence: photo_evidence,
+        scope_uris: scope_uris, viewer_account: @account
       )
       raw = companion_direct_answer(prepared, attribution.merge(correlation_id: correlation_id, user_query: raw_question))
       result = finish_companion_turn_generation(
-        question: question, raw_answer: raw, chunks: prepared.chunks,
+        question: raw_question.presence || question, raw_answer: raw, chunks: prepared.chunks,
         response_locale: response_locale, retrieval: retrieval, stop_reason: @companion_direct_stop_reason,
         technician_texts: companion_technician_texts(conv_session, episode, raw_question), manufacturer: nil,
         correlation_id: correlation_id, reference_pending: pending, reference_mode: true,
-        reference_confirmed: confirmed, episode: episode
+        reference_confirmed: confirmed, episode: episode, parameter_review: prepared.parameter_review
       )
-      return result if result[:route_outcome] == :answered
+      return attach_generation_trace!(result, prepared.user, raw_turn: raw_question, sent_question: question, truncated: prepared.omitted.any?) if result[:route_outcome] == :answered
     end
 
     withheld = result[:answer] if result&.dig(:applicability_violation)
@@ -1475,6 +1482,20 @@ class BedrockRagService
     Rag::DirectInferenceBoot.direct_generation?
   end
 
+  def self.companion_profile_count(question, entity_sources)
+    RagRetrievalProfile.new(entity_sources: entity_sources, question: question)
+      .number_of_results
+      .clamp(1, ContractualLimits::QUERY[:max_top_k])
+  end
+
+  # Sixteen candidates replace the plain pinned-document budget only.
+  # A safety, photo, or open count is returned unchanged.
+  def self.companion_retrieve_count(profile_count, companion_focus:)
+    return profile_count unless companion_focus && profile_count == RagRetrievalProfile::PINNED_DOCUMENT_RESULTS
+
+    RagRetrievalProfile::COMPANION_PINNED_CANDIDATES.clamp(1, ContractualLimits::QUERY[:max_top_k])
+  end
+
   def companion_pinned_focus?(entity_s3_uris:, entity_sources:, episode:, raw_question:)
     Rag::CompanionPinnedFocus.focus?(
       entity_sources: entity_sources,
@@ -1652,18 +1673,38 @@ class BedrockRagService
     composed.text
   end
 
-  def direct_case_retrieve_question(question, raw_question:, conv_session:, correlation_id:, companion_focus:, episode: nil)
+  def same_work_question(session, raw_question, correlation_id)
+    return unless Rag::TurnPerception.same_equipment_reply?(raw_question) && session
+
+    session.same_work_question_for(correlation_id)
+  end
+
+  def direct_case_retrieve_question(question, raw_question:, conv_session:, correlation_id:, companion_focus:, episode: nil, scope_uris: nil)
     return question unless companion_focus && companion_generation_direct? && conv_session
 
     retrieval = Rag::CompanionCaseRecord.retrieval_text(
       conv_session,
       raw_question.presence || question,
-      correlation_id: correlation_id, episode: episode
+      correlation_id: correlation_id, episode: episode,
+      resumed_question: same_work_question(conv_session, raw_question, correlation_id),
+      photo_labels: direct_case_photo_labels(conv_session, episode),
+      scope_uris: scope_uris
     )
     effective = retrieval.text.presence || question.to_s
     @companion_case_retrieve_question = effective
     record_case_retrieval(retrieval, effective, question)
     effective
+  end
+
+  # Same reading and the same photo check as the generation block.
+  def direct_case_photo_labels(conv_session, episode)
+    context = conv_session.turn_active_photo_context if conv_session.respond_to?(:turn_active_photo_context)
+    return [] unless context.respond_to?(:observed_labels)
+
+    parsed = episode.is_a?(Rag::ActiveEpisode) ? episode : Rag::ActiveEpisode.parse(episode)
+    return [] unless context.matches?(parsed&.active_photo&.dig("field_photo_id"))
+
+    context.observed_labels
   end
 
   def record_case_retrieval(retrieval, effective, input)
@@ -1696,7 +1737,8 @@ class BedrockRagService
       chunks: chunks,
       published_text: published,
       correlation_id: correlation_id || @companion_case_correlation_id,
-      outcome: outcome
+      outcome: outcome,
+      quotes: result.dig(:companion_publication, "quotes")
     )
     result[:case_outcome] = outcome
     result[:case_evidence] = recorded.state
@@ -1867,11 +1909,13 @@ class BedrockRagService
 
   def companion_publication_sources(chunks)
     Array(chunks).each_with_index.map do |chunk, index|
+      metadata = chunk[:metadata] || chunk["metadata"] || {}
+      metadata = metadata.to_h.stringify_keys if metadata.respond_to?(:to_h)
       applicability = (chunk[:identity_applicability] || chunk["identity_applicability"]).to_s
       {
         "index" => index + 1,
-        "content" => chunk[:content].to_s,
-        "document" => chunk[:metadata].to_h.stringify_keys["canonical_name"],
+        "content" => (chunk[:content] || chunk["content"]).to_s,
+        "document" => metadata["canonical_name"].presence || metadata["original_filename"].presence,
         "applicability" => applicability,
         "reference_only" => Rag::DocumentIdentityScope.reference_only_chunk?(chunk)
       }
@@ -2170,7 +2214,7 @@ class BedrockRagService
   def finish_document_identity_generation(question:, raw_answer:, chunks:, response_locale:, retrieval:,
                                            companion: false, safety_evidence: nil, companion_turn: false,
                                            stop_reason: nil, technician_texts: nil, manufacturer: nil,
-                                           raw_question: nil, conv_session: nil, correlation_id: nil, episode: nil)
+                                           raw_question: nil, conv_session: nil, correlation_id: nil, episode: nil, parameter_review: nil)
     if companion_turn
       return finish_companion_turn_generation(
         question: raw_question.presence || question,
@@ -2181,7 +2225,7 @@ class BedrockRagService
         stop_reason: stop_reason,
         technician_texts: technician_texts,
         manufacturer: manufacturer,
-        correlation_id: correlation_id, episode: episode
+        correlation_id: correlation_id, episode: episode, parameter_review: parameter_review
       )
     end
 
@@ -2247,11 +2291,28 @@ class BedrockRagService
   def finish_companion_turn_generation(question:, raw_answer:, chunks:, response_locale:, retrieval:,
                                        stop_reason:, technician_texts:, manufacturer:, correlation_id: nil,
                                        reference_pending: nil, reference_mode: false, reference_confirmed: false,
-                                       episode: nil)
+                                       episode: nil, parameter_review: nil)
     locale = effective_response_locale(question, response_locale: response_locale)
     extracted = extract_doc_refs(raw_answer.to_s)[:clean_answer]
     sources = companion_publication_sources(chunks)
     sequence = nil
+    if parameter_review
+      # The case comparison and referral are rendered from the bound data.
+      # Only the independent documentary question uses Haiku's prose.
+      supplement = parameter_review.supplemental_text(extracted)
+      extracted = [ parameter_review.answer, supplement ].compact.join("\n\n")
+      Rag::ValidationCapture.record("companion_parameter_review",
+        "kind_of_review" => parameter_review.kind.to_s, "parameter" => parameter_review.limit.parameter,
+        "reading" => parameter_review.reading, "limit" => parameter_review.limit.display,
+        "condition" => parameter_review.limit.condition, "source" => parameter_review.limit.source)
+    end
+    if @companion_direct_turn && reference_mode && !parameter_review && stop_reason == "end_turn"
+      reference = Rag::CompanionSignalReference.resolve(question: question, sources: sources, technician_texts: technician_texts)
+      if reference
+        Rag::ValidationCapture.record("companion_signal_reference", "text" => reference)
+        extracted = reference
+      end
+    end
     if @companion_direct_turn
       unless reference_mode
         sequence = Rag::CompanionSequence.resolve(question: question, episode: episode, sources: sources)
@@ -2278,12 +2339,17 @@ class BedrockRagService
           extracted = restored
         end
       end
-      floor = Rag::CompanionCitedFloor.call(
-        text: extracted, sources: sources, technician_texts: technician_texts,
-        observations: companion_episode_observations(episode)
-      )
-      record_companion_cited_floor(floor)
-      extracted = floor.text
+      unless parameter_review
+        floor = Rag::CompanionCitedFloor.call(
+          text: extracted, sources: sources, technician_texts: technician_texts,
+          observations: companion_episode_observations(episode)
+        )
+        record_companion_cited_floor(floor)
+        extracted = floor.text
+      end
+      if sequence.nil? && !parameter_review && !reference_mode
+        extracted = Rag::ProcedureContinuation.carry(extracted, episode: episode, question: question, sources: sources)
+      end
     end
     citations = document_identity_citation_records(chunks)
     safety = Rag::AnswerSafetyProcessor.new(locale: locale).call(
@@ -2317,6 +2383,7 @@ class BedrockRagService
         publication.quotes.group_by { |row| row["source"] }.transform_values { |rows| rows.pluck("text").uniq }
       end
     end
+    @companion_direct_sources = sources if @companion_direct_turn
     result = {
       answer: answer_text,
       correlation_id: correlation_id,
@@ -2333,7 +2400,7 @@ class BedrockRagService
       companion_reason: accepted ? nil : "companion_contract_invalid",
       companion_publication: publication.to_h,
       document_identity: Thread.current[:document_identity_scope],
-      pending_question: companion_turn_pending(accepted, answer_text)
+      pending_question: (parameter_review&.pending if accepted) || companion_turn_pending(accepted, answer_text)
     }
     if reference_mode && accepted
       unless reference_confirmed
@@ -2344,13 +2411,20 @@ class BedrockRagService
         result[:route_outcome] = :abstained
       else
         notice = I18n.t("rag.controller_reference_boundary", locale: locale)
-        followup = Rag::PendingQuestion.followup_line(result[:answer], locale: locale)
-        plate = reference_pending&.dig("question")
-        if followup.present? && plate.present? && followup != plate
+        if parameter_review
           result[:answer] = [ result[:answer], notice ].join("\n\n")
+        elsif result[:answer].to_s.include?("?")
+          result[:answer] = [ result[:answer], notice ].join("\n\n")
+          result[:pending_question] = nil
         else
-          result[:answer] = [ result[:answer], notice, plate ].compact.join("\n\n")
-          result[:pending_question] = reference_pending
+          followup = Rag::PendingQuestion.followup_line(result[:answer], locale: locale)
+          plate = reference_pending&.dig("question")
+          if followup.present? && plate.present? && followup != plate
+            result[:answer] = [ result[:answer], notice ].join("\n\n")
+          else
+            result[:answer] = [ result[:answer], notice, plate ].compact.join("\n\n")
+            result[:pending_question] = reference_pending
+          end
         end
       end
     end
@@ -2372,10 +2446,48 @@ class BedrockRagService
   end
 
   def companion_turn_pending(accepted, answer_text)
-    return nil if @companion_direct_turn
     return nil unless accepted
+    return direct_documented_question(answer_text) if @companion_direct_turn
 
     Rag::PendingQuestion.presented(@companion_plan_pending, answer_text, retained: @companion_plan_retained)
+  end
+
+  # The one question the direct answer already published. The text is that
+  # sentence. Targets are the cited sources already on the answer. A second
+  # question, or none, stores nothing.
+  def direct_documented_question(answer_text)
+    body = answer_text.to_s
+    questions = Rag::CompanionTurnPublication.claim_fragments(body).select { |fragment|
+      Rag::CompanionTurnPublication.question_sentence?(fragment)
+    }
+    return nil unless questions.one?
+
+    numbers = body.scan(/\[(\d+)\]/).flatten.map(&:to_i).uniq
+    sources = Array(@companion_direct_sources)
+    cited = numbers.filter_map { |number| sources[number - 1] }
+    cited.select! { |source|
+      source.is_a?(Hash) && source["reference_only"] != true && source["applicability"].to_s != "reference_only"
+    }
+    return nil unless cited.size.between?(1, 2)
+
+    targets = cited.filter_map { |source|
+      item = source["document"].to_s.squish.presence
+      next if item.blank?
+
+      {
+        "item" => item.first(160),
+        "document_key" => source["document_key"].to_s,
+        "filename" => source["filename"].to_s,
+        "page" => source["page"].to_s
+      }
+    }
+    return nil unless targets.size == cited.size
+
+    question = questions.first.squish
+    question = "#{question}?" if body.include?("#{question}?")
+    Rag::PendingQuestion.coerce(
+      "type" => "documented_context", "question" => question, "targets" => targets
+    )
   end
 
   def record_companion_claim_backing(backing)
@@ -3530,6 +3642,7 @@ class BedrockRagService
   # either: "no necesito el plano" matched the old alternation and would have
   # taken the turn off the companion.
   PLAN_REQUEST = /plano|esquema|\betiquetas?\b(?!\s+del\s+equipo)|schematic|diagram|\blabels?\b/i
+  PLAN_ATTACHMENT = /\b(?:adjunt\p{L}*|env[íi]\p{L}*|compart\p{L}*|te\s+mando|attach\w*|send\w*|shar\w*)\b[^.!?]*\z/i
   PLAN_NEGATION = /\A(?:no|ni|nunca|sin|tampoco|ningun[oa]?)\z/i
   DIAGRAM_SECTION = /(?:^|\n)\s*(?:#+\s*)?(?:diagrama|plano|esquema|tabla de etiquetas|schematic|label table)\b/i
   TOPOLOGY_EDGE_MARK = "The one exception is a RECORD_TYPE: TOPOLOGY_EDGE record:"
@@ -3538,7 +3651,9 @@ class BedrockRagService
     text = "#{question}\n#{session_context}"
     offset = 0
     while (match = text.match(PLAN_REQUEST, offset))
-      return true unless plan_term_negated?(text, match.begin(0))
+      offset_in_text = match.begin(0)
+      lead = text[0...offset_in_text].split(/[.!?\n]/, -1).last.to_s
+      return true unless plan_term_negated?(text, offset_in_text) || lead.match?(PLAN_ATTACHMENT)
 
       offset = match.end(0)
       offset += 1 if offset <= match.begin(0)

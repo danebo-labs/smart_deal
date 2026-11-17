@@ -55,6 +55,7 @@ module Rag
       Every span is the shortest literal substring of turn, not the sentence. observations holds up to three facts of the case stated in this turn, one contiguous literal phrase each, or is empty. The reported fault and what the technician sees or does not see are observations, not identifiers and not checks. So are when it happens, how often, under which condition, and how it changed, also when the phrase refers to a fault already in work_context without repeating it. Keep every word between its ends. Do not drop words. Do not paraphrase. Do not invent an observation. Do not describe the photo. A correction of manufacturer, model, controller, or fault code still negates the stored value and asserts the replacement. Keep every other symptom in that same turn as an observation. A correction of an observation keeps the replacement phrase as the observation and does not need a slot negate or an assert span.
 
       checks:
+      A parameter reading reported by the technician or another person on the open job is an observation. Copy the parameter and its measured value together. A proposed setting is a question, never a reading. A reply that supplies a pending reading stays with the open job, even if it also asks how a manual example relates to the equipment.
       A check is a verification the technician states as done or not done. It is not an observation. subject is a literal substring of the turn. status is done or not_done. result is the outcome the technician states for that verification, copied literally from the turn, or null; that outcome stays the result even when it also reads as an observation. Omit checks when the turn states no verification. Do not turn an observation into a check.
     PROMPT
 
@@ -205,6 +206,9 @@ module Rag
         return payload
       end
       if type == "documented_context"
+        if question["aspect"] == "parameter_reading"
+          return { "clarification_target" => "documented_context", "question" => question["question"], "parameter" => question["about"] }
+        end
         if question["id"].present? && question["parts"].is_a?(Array) && question["parts"].any?
           questions = AnswerContract.payload_questions(@episode)
           corrections = AnswerContract.correction_refs(@episode, @session)

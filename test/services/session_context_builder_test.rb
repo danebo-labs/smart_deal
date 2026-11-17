@@ -943,7 +943,7 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
     end
   end
 
-  test "an uncertain photo stays out of generation and a remembered photo fact stays in" do
+  test "an uncertain photo supplies labels and keeps a remembered photo fact distinct" do
     uncertain = photo_context("uncertain", "OTIS2000")
     session = episode_session(
       goal: "el freno no suelta",
@@ -959,13 +959,15 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
         text = SessionContextBuilder.build(session, active_photo_context: uncertain)
         assert_includes problem, "Read from the photo, not stated by the technician: model NICE3000"
         assert_includes text, "model NICE3000"
-        assert_not_includes text, "Photo Evidence"
+        assert_includes text, "Photo Evidence"
+        assert_includes text, "Visible text: E51"
+        assert_includes text, "unsure how it relates"
         assert_not_includes text, "OTIS2000"
       end
     end
   end
 
-  test "only a relevant active photo is photo evidence and it stays inside the context cap" do
+  test "active photo evidence stays within the context cap and respects its relevance" do
     session = episode_session(goal: "Nice300 e51")
     relevant = photo_context("relevant", "NICE3000")
     uncertain = photo_context("uncertain", "OTIS2000")
@@ -985,7 +987,9 @@ class SessionContextBuilderTest < ActiveSupport::TestCase
       uncertain_session.update!(active_episode: uncertain_session.active_episode.merge(
         "active_photo" => { "field_photo_id" => uncertain.field_photo_id, "sha256" => "ab", "correlation_id" => "photo" }
       ))
-      assert_not_includes SessionContextBuilder.build(uncertain_session, active_photo_context: uncertain), "Photo Evidence"
+      uncertain_text = SessionContextBuilder.build(uncertain_session, active_photo_context: uncertain)
+      assert_includes uncertain_text, "Visible text: E51"
+      assert_not_includes uncertain_text, "OTIS2000"
       assert_not_includes SessionContextBuilder.build(session, active_photo_context: unrelated), "ZZ9MODEL"
       blank = photo_context(nil, "HIDDEN3000")
       blank_session = episode_session(goal: "Nice300 e51")

@@ -610,6 +610,7 @@ class RagController < ApplicationController
       abstained: result.present? && interaction_outcome(result) == "abstained",
       discovery_query: understanding&.retrieval_query.presence || result&.effective_question.presence || question,
       allow_outside: allow_outside && result&.generation_mode != "direct_reference" &&
+        result&.equipment_identity_status != "scoped" &&
         (understanding.nil? || understanding.outside_discovery),
       retriever: lambda { |text, top_k|
         BedrockRagService.new(account: current_account).retrieve_chunks(

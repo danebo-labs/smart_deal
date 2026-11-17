@@ -1,0 +1,52 @@
+{
+  "photo": [
+    "Estoy con un Thyssen FDN Universal con MCINV4. Está detenido y la puerta no cierra. Te adjunto el esquema de la bornera.",
+    "El display marca EA.",
+    "Con la orden de cierre, P28 marca 0 Vcc y P27 marca 110 Vcc. P26 no lo pude medir.",
+    "Sigue marcando EA. No puedo medir P26 con el acceso que tengo. ¿Tiene sentido entrar al TLS y cambiar algún parámetro?"
+  ],
+  "engineering": [
+    "Estoy con un Thyssen FDN Universal con MCINV4. En viaje se oye fuerte el motor de tracción.",
+    "No tengo acceso al TLS para ver ese valor.",
+    "Ingeniería leyó KP-VS en 2,5.",
+    "No hemos cambiado nada y el ruido sigue. ¿Le digo a Ingeniería que lo deje en 3,5?"
+  ],
+  "engineering_variant": [
+    "Ingeniería leyó KP-VS en 2,5. La placa del motor dice 5,5 kW, 380 V y 1.175 rpm. La corriente no se alcanza a leer. ¿Sirven los datos del motor Eberle del manual?",
+    "Sí, el mismo equipo."
+  ],
+  "elemont": [
+    "Estoy con un montacargas Elemont MH que no responde a las llamadas. No veo un código de falla.",
+    "H4 está encendida.",
+    "En el plano, ¿el trazo de Chapa nivel 2 se une a PasCom 24 V o solo lo cruza?",
+    "Me equivoqué de referencia: es Chapa nivel 3, no Chapa nivel 2. ¿Cómo sigue ese trazo?"
+  ],
+  "reopening": [
+    "Estoy revisando un operador de puerta Fermator VF5+. La puerta se reabre sola durante el cierre. El LED está apagado y no veo obstrucción.",
+    "Corrijo: el LED está encendido, no apagado.",
+    "Es el LED de la fotocélula. Revisé y no se activa durante el cierre.",
+    "No puedo comprobar la entrada #21 ni el contacto entre #21 y #23 con el acceso que tengo."
+  ],
+  "cea": [
+    "La puerta de piso no traba y hay patín retráctil.",
+    "La puerta de cabina y la puerta de piso son manuales. La de piso tiene doble contacto y traba por patín. ¿Qué contactos van en SM y cuáles en SA?",
+    "No puedo confirmar si hay un contacto que cierre por la acción del patín.",
+    "En el controlador leo S1. ¿Se refiere a SA?"
+  ],
+  "other_equipment": "Ahora estoy en otro ascensor: un KONE. La cabina no nivela.",
+  "photo_ea": [
+    "Estoy con un Thyssen FDN Universal con MCINV4. Está detenido y la puerta de piso no cierra. Te mando el esquema de la bornera.",
+    "El display marca EA.",
+    "Sí, está firme.",
+    "No engancha.",
+    "Sí, está desalineado.",
+    "Ya lo alineé. Ahora cierra y traba bien, pero sigue marcando EA.",
+    "Sí, marca 0 Vcc.",
+    "¿Cómo reviso eso?"
+  ],
+  "kone_lwi": [
+    "Estoy en la puesta en marcha de un KONE MonoSpace con KDL16 y pesacargas LWI. La cabina está vacía y no logro terminar el ajuste del pesacargas.",
+    "Ingeniería me dice que marca 0.",
+    "Estaba desconectado. Lo conecté y ahora marca 7 mA."
+  ]
+}

@@ -6,6 +6,8 @@
 #
 #   HTTP55_ITERATION=live1 HTTP55_PLAN=guion2,guion1,elemont \
 #     bin/rails runner script/field_companion/run_haiku55_http.rb          # preflight only
+#   HTTP55_RESUME_CAPTURE=/path/to/audit_thyssen_photo_ea \
+#     /bin/zsh "$wrapper" preflight run-id  # captured T5 -> reading and how
 #   HTTP55_EXECUTE=1 ...                                                   # admit and call
 #
 # Each script gets a new user (so a new web session and episode), a Puma
@@ -27,11 +29,61 @@ load Rails.root.join("script/field_companion/run_haiku55_companion.rb") unless d
 require Rails.root.join("test/support/haiku55_journey_rubric").to_s
 
 module Haiku55Http
-  EXECUTION_ID = "haiku55-http-a200991-20261112"
-  FROM_ATTEMPTS = 1014
-  NEXT_CAP = 1034
-  GRANT_CALLS = 22
-  GRANT_USD = "0.100000"
+  PHASE = ENV.fetch("HTTP55_PHASE", "acceptance")
+  SPEND = Rag::AssignmentSpend
+  AUDIT_PLAN = %w[audit_thyssen_photo audit_thyssen_engineering].freeze
+  CONTINUATION_PLAN = %w[audit_thyssen_photo_ea audit_kone_lwi audit_thyssen_engineering].freeze
+  PHOTO_EA_TURNS = 8
+  PHOTO_RESUME_AFTER = 5
+  PHOTO_LABEL_LINE_REPLY = "Sí, el cable de los trincos llega a ese borne."
+  PHOTO_OPERATOR_REPLY = "Sí, tiene motor de operador."
+  PHOTO_OPEN_READING_REPLY = "Marca 0 Vcc."
+  PHOTO_NOMINAL_READING_REPLY = "No, marca 0 Vcc."
+  CONTINUATION = PHASE == "field_continuation"
+  CONTINUATION_RETRY = CONTINUATION && ENV["HTTP55_CONTINUATION_RETRY"] == "1"
+  AUDIT_APPROVAL = "HTTP55_THYSSEN_AUTHORIZED_SHA"
+  AUDIT_KB_BUCKET = "multimodal-source-destination"
+  # Same ids, call counts, and dollar ceilings the spend guard recognizes.
+  # Acceptance stays inside the standing cap of 1158. Regression is the step
+  # to 1190. CEA completion keeps its own one-shot grant.
+  FIELD_GRANTS = {
+    "acceptance" => {
+      "id" => Rag::AssignmentSpend::FIELD_ACCEPTANCE_ID,
+      "calls" => Rag::AssignmentSpend::FIELD_ACCEPTANCE_CALLS,
+      "usd" => Rag::AssignmentSpend::FIELD_ACCEPTANCE_USD,
+      "next_cap" => 1158,
+      "bump" => false
+    }.freeze,
+    "thyssen_audit" => {
+      "id" => SPEND::THYSSEN_AUDIT_ID, "calls" => SPEND::THYSSEN_AUDIT_CALLS,
+      "usd" => SPEND::THYSSEN_AUDIT_USD, "next_cap" => SPEND::THYSSEN_AUDIT_CAP
+    }.freeze,
+    "thyssen_recheck" => {
+      "id" => SPEND::THYSSEN_RECHECK_ID, "calls" => SPEND::THYSSEN_AUDIT_CALLS,
+      "usd" => SPEND::THYSSEN_AUDIT_USD, "next_cap" => SPEND::THYSSEN_RECHECK_CAP
+    }.freeze,
+    "field_continuation" => {
+      "id" => SPEND::FIELD_CONTINUATION_ID, "calls" => SPEND::FIELD_CONTINUATION_CALLS,
+      "usd" => SPEND::FIELD_CONTINUATION_USD, "next_cap" => SPEND::FIELD_CONTINUATION_CAP
+    }.freeze,
+    "regression" => {
+      "id" => Rag::AssignmentSpend::FIELD_REGRESSION_ID,
+      "calls" => Rag::AssignmentSpend::FIELD_REGRESSION_CALLS,
+      "usd" => Rag::AssignmentSpend::FIELD_REGRESSION_USD,
+      "next_cap" => Rag::AssignmentSpend::FIELD_VALIDATION_CALL_CAP,
+      "bump" => true
+    }.freeze
+  }.freeze
+  CEA_COMPLETION = PHASE == "regression" && ENV["HTTP55_CEA_COMPLETION"] == "1"
+  RECHECK = PHASE == "thyssen_recheck"
+  AUDIT = PHASE == "thyssen_audit" || RECHECK || CONTINUATION
+  SPEC = FIELD_GRANTS.fetch(PHASE)
+  GRANT_CALLS = CEA_COMPLETION ? Rag::AssignmentSpend::CEA_COMPLETION_CALLS : SPEC["calls"]
+  NEXT_CAP = CEA_COMPLETION ? 1158 : SPEC["next_cap"]
+  GRANT_USD = CEA_COMPLETION ? Rag::AssignmentSpend::CEA_COMPLETION_USD : SPEC["usd"]
+  EXECUTION_ID = CEA_COMPLETION ? Rag::AssignmentSpend::CEA_COMPLETION_ID : SPEC["id"]
+  ACCEPTANCE_PLAN = %w[kpvs guion3].freeze
+  REGRESSION_PLAN = %w[guion2 guion1 elemont cea cea_label_known cea_label_unseen].freeze
   KB_ID = "Y7RZWMFJSR"
   MODEL_ID = "claude-haiku-5-5"
   TRACKING_MODEL_ID = "claude-haiku-5-5-direct"
@@ -99,9 +151,21 @@ module Haiku55Http
       ]
     }
   }.freeze
+  KONE_LWI_DOCUMENT_UID = "6b37e94e-1d4c-4d59-a33a-66e894116c9a"
+  AUDIT_JOURNEYS = JSON.parse(Rails.root.join("test/fixtures/field_companion/audit_20261113/journeys.json").read).freeze
+  AUDIT_SCRIPTS = {
+    "audit_thyssen_photo" => { "document_uid" => FDN_DOCUMENT_UID, "turns" => AUDIT_JOURNEYS.fetch("photo"), "photo" => true },
+    "audit_thyssen_photo_ea" => { "document_uid" => FDN_DOCUMENT_UID, "turns" => AUDIT_JOURNEYS.fetch("photo_ea"), "photo" => true },
+    "audit_kone_lwi" => { "document_uid" => KONE_LWI_DOCUMENT_UID, "turns" => AUDIT_JOURNEYS.fetch("kone_lwi") },
+    "audit_thyssen_engineering" => { "document_uid" => FDN_DOCUMENT_UID, "turns" => AUDIT_JOURNEYS.fetch("engineering") },
+    "audit_thyssen_engineering_plate" => {
+      "document_uid" => FDN_DOCUMENT_UID,
+      "turns" => AUDIT_JOURNEYS.fetch("engineering").dup.tap { |turns| turns[2] = AUDIT_JOURNEYS.fetch("engineering_variant").first }
+    }
+  }.freeze
   # Revision journeys: after turn N, the card for one of the listed manuals
   # is confirmed with its own action, and the same question is replayed.
-  EXTRA_SCRIPTS = KPVS_SCRIPTS.merge(
+  EXTRA_SCRIPTS = KPVS_SCRIPTS.merge(AUDIT_SCRIPTS).merge(
     "cea" => { "document_uid" => CEA_DOCUMENT_UID, "turns" => CEA_TURNS },
     "cea_label_known" => { "document_uid" => CEA_DOCUMENT_UID, "turns" => [ CEA_TURNS.first, "Leo CEA15+ en el rótulo de la placa." ] },
     "cea_label_unseen" => { "document_uid" => CEA_DOCUMENT_UID, "turns" => [ CEA_TURNS.first, "No puedo ver el rótulo." ] },
@@ -126,6 +190,7 @@ module Haiku55Http
     "BEDROCK_INFERENCE" => "blocked",
     "BEDROCK_KNOWLEDGE_BASE_ID" => KB_ID,
     "SHOW_RAG_SOURCES" => "true",
+    "SHARED_SESSION_ENABLED" => "false",
     "AWS_MAX_ATTEMPTS" => "1",
     "AWS_RETRY_MODE" => "standard",
     "AWS_HTTP_OPEN_TIMEOUT" => "15",
@@ -134,9 +199,11 @@ module Haiku55Http
     "RAG_LOCAL_PASS_ALLOWED_CALLS" => "converse@#{TRACKING_MODEL_ID},converse_message@#{TRACKING_MODEL_ID}"
   }.freeze
   CLEARED_ENV = %w[
+    RAG_ASSIGNMENT_EXECUTION_ID RAG_ASSIGNMENT_RUN_SCOPE RAG_PHOTO_WORKER_QUEUE RAG_PHOTO_LOCAL_STORE
+    RAG_PHOTO_VISION_SPEND_PATH PHOTO_QUESTION_RAG_ENABLED
     COMPANION_DIRECT_PROVIDER COMPANION_DIRECT_MODEL_ID COMPANION_DIRECT_MAX_TOKENS COMPANION_DIRECT_EFFORT
     COMPANION_DIRECT_THINKING INTERPRETER_MAX_TOKENS SOLID_QUEUE_IN_PUMA SHARED_SESSION_ENABLED
-    PHASE4_WEB_CHECK
+    RAG_VALIDATION_CAPTURE_ACCOUNT_IDS PHASE4_WEB_CHECK
     FIELD_COMPANION_EPISODE_ENABLED FIELD_COMPANION_TURN_ENABLED DOCUMENT_IDENTITY_SCOPE_ENABLED
     HAIKU_QUERY_ANALYSIS_MODE RAG_EPISODE_SCOPE_ENABLED RAG_COMPANION_TURN RAG_COMPANION_GENERATION
   ].freeze
@@ -145,15 +212,21 @@ module Haiku55Http
 
   def run(io: $stdout)
     iteration = ENV["HTTP55_ITERATION"].presence || "live0"
-    plan = (ENV["HTTP55_PLAN"].presence || "guion2,guion1,elemont").split(",").map(&:strip)
+    plan = (ENV["HTTP55_PLAN"].presence || authorized_plan.join(",")).split(",").map(&:strip)
     directory = ROOT.join(iteration)
+    if AUDIT && (directory.join("manifest.json").exist? || directory.join("summary.json").exist?)
+      return refuse(io, "audit_artifacts_already_exist")
+    end
     FileUtils.mkdir_p(directory)
     preflight = preflight_document(plan)
     File.write(directory.join("preflight.json"), JSON.pretty_generate(preflight))
-    io.puts JSON.generate(preflight.except("scripts"))
+    io.puts JSON.generate(preflight.except("scripts", "vision_preflight"))
+    io.puts JSON.generate(preflight["vision_preflight"]) if preflight["vision_preflight"]
     return 0 unless ENV["HTTP55_EXECUTE"] == "1"
     return refuse(io, preflight["decision"]) unless preflight["decision"] == "execute"
-    return 2 unless admit!(io)
+    vision_decision = preflight.dig("vision_preflight", "decision")
+    return refuse(io, vision_decision) if vision_decision && vision_decision != "not_requested" && vision_decision != "execute"
+    return 2 unless admit!(io, directory: directory)
 
     File.write(directory.join("manifest.json"), JSON.pretty_generate(manifest))
     if ENV["HTTP55_GUI"] == "1"
@@ -166,12 +239,43 @@ module Haiku55Http
     plan.each do |name|
       result = run_script(io, directory, name)
       results << result
-      break unless result["status"] == "executed"
+      break if !AUDIT && result["status"] != "executed"
     end
     File.write(directory.join("summary.json"), JSON.pretty_generate(
       "head" => head, "results" => results, "ledger" => ledger_view
     ))
     results.size == plan.size && results.all? { |row| row["status"] == "executed" && row["rubric_ok"] } ? 0 : 2
+  end
+
+  def authorized_plan
+    return [ "audit_thyssen_photo_ea" ] if photo_continuation?
+    return [ "audit_kone_lwi" ] if CONTINUATION_RETRY
+    return CONTINUATION_PLAN if CONTINUATION
+    return AUDIT_PLAN if AUDIT
+
+    PHASE == "acceptance" ? ACCEPTANCE_PLAN : REGRESSION_PLAN
+  end
+
+  def photo_continuation?
+    CONTINUATION && ENV["HTTP55_PLAN"].to_s.split(",").map(&:strip) == [ "audit_thyssen_photo_ea" ]
+  end
+
+  def audit_photo_path
+    ENV["AUDIT_THYSSEN_PHOTO_PATH"].presence
+  end
+
+  def audit_photo_input
+    path = audit_photo_path
+    return unless path && File.file?(path)
+
+    image = Vips::Image.new_from_file(path)
+    return unless [ image.width, image.height ] == [ Rag::GuardedPhotoVision::WIDTH, Rag::GuardedPhotoVision::HEIGHT ]
+    return unless image.get("vips-loader") == "jpegload"
+
+    { "bytes" => File.size(path), "sha256" => Digest::SHA256.file(path).hexdigest,
+      "width" => image.width, "height" => image.height }
+  rescue Vips::Error
+    nil
   end
 
   # ---- preflight and grant ------------------------------------------------
@@ -181,6 +285,8 @@ module Haiku55Http
     turn = Haiku55Companion.per_turn_ceiling
     scripts = plan.index_with { |name| reservation(name, turn) }
     room = grant_room(ledger)
+    cap = ledger.dig("authorization", "call_cap").to_i
+    remaining = cap - ledger["attempts"].to_i
     worst = scripts.values.sum(BigDecimal("0")) { |row| BigDecimal(row["ceiling_usd"]) }
     calls = scripts.values.sum { |row| row["calls"] }
     pins = plan.index_with { |name| document_for(name)&.display_s3_uri(KbDocument::KB_BUCKET) }
@@ -191,12 +297,42 @@ module Haiku55Http
       "dirty_tree"
     elsif ENV["ANTHROPIC_API_KEY"].blank?
       "anthropic_api_key_missing"
+    elsif CEA_COMPLETION && (plan != [ "cea" ] || ENV["HTTP55_GUI"] == "1")
+      "outside_cea_completion_plan"
+    elsif CEA_COMPLETION && ledger["seq"] != Rag::AssignmentSpend::CEA_COMPLETION_SEQUENCE
+      "cea_completion_already_started"
+    elsif CEA_COMPLETION && ledger.fetch("executions").any? { |row| row["id"] == EXECUTION_ID }
+      "cea_completion_already_admitted"
+    elsif resume_path && (!photo_continuation? || plan != [ CONTINUATION_PLAN.first ])
+      "outside_thyssen_resume_plan"
+    elsif AUDIT && (plan != authorized_plan || ENV["HTTP55_GUI"] == "1")
+      "outside_thyssen_audit_plan"
+    elsif !plan.all? { |name| authorized_plan.include?(name) }
+      "outside_authorized_plan"
+    elsif PHASE == "regression" && !acceptance_passed?
+      "acceptance_missing_for_head"
     elsif pins.values.any?(&:blank?)
       "pin_missing"
-    elsif accounts.size != 1 || AccountHostResolver.host_map.key?(request_host(document_for(plan.first).account))
+    elsif accounts.any? { |id| id.nil? } || plan.any? { |name| AccountHostResolver.host_map.key?(request_host(document_for(name).account)) }
       "host_account_mismatch"
-    elsif worst > room["usd"] || calls > room["calls"]
+    elsif resume_path && !(resume = resume_capture(document_for(plan.sole)))
+      "invalid_resume_capture"
+    elsif (photo_choice = photo_decision(ledger, calls, worst, room))
+      photo_choice
+    elsif kone_lwi_admission?(ledger, calls, worst, scripts, room)
+      "execute"
+    elsif scripts.values.any? { |row| BigDecimal(row["ceiling_usd"]) > room["usd"] } || calls > room["calls"]
       "grant_does_not_cover_plan"
+    elsif AUDIT && KbDocument::KB_BUCKET != AUDIT_KB_BUCKET
+      "audit_kb_bucket_mismatch"
+    elsif AUDIT && !CONTINUATION_RETRY && !resume_path && !audit_photo_input
+      "audit_jpeg_missing_or_invalid"
+    elsif AUDIT && !audit_baseline?(ledger)
+      "thyssen_ledger_baseline_changed"
+    elsif AUDIT && !CONTINUATION_RETRY && !photo_continuation? && worst != BigDecimal(GRANT_USD)
+      "thyssen_price_changed"
+    elsif AUDIT && ENV[AUDIT_APPROVAL] != head
+      "thyssen_grants_pending"
     else
       "execute"
     end
@@ -207,52 +343,322 @@ module Haiku55Http
       "dirty" => dirty_tree?,
       "execution_id" => EXECUTION_ID,
       "plan" => plan,
+      "resume" => resume && { "after_turn" => PHOTO_RESUME_AFTER, "episode_id" => resume[:episode]["episode_id"],
+        "questions" => resume_questions, "capture_sha256" => resume[:digest] },
       "scripts" => scripts,
       "plan_ceiling_usd" => money(worst),
       "plan_calls" => calls,
       "room_usd" => money(room["usd"]),
       "room_calls" => room["calls"],
+      "assignment_call_cap" => cap,
+      "assignment_remaining_calls" => remaining,
+      "regression_window_usd" => CEA_COMPLETION ? "0.143121" : (GRANT_USD if PHASE == "regression"),
+      "cea_completion_admitted" => CEA_COMPLETION && ledger.fetch("executions").any? { |row| row["id"] == EXECUTION_ID },
+      "assignment_cap_usd" => ledger["cost_cap_usd"],
+      "thyssen_approval_required" => (AUDIT ? {
+        "haiku_execution_usd" => money(worst), "haiku_execution_calls" => calls,
+        "haiku_required_cumulative_cap" => ledger["attempts"].to_i + calls,
+        "haiku_cap_increase" => [ calls - remaining, 0 ].max,
+        "vision" => scripts.dig(authorized_plan.first, "vision")
+      } : nil),
+      "photo_input" => (audit_photo_input if AUDIT && !resume_path),
+      "bedrock" => (AUDIT ? { "mode" => "read_only", "rerank_model" => "cohere.rerank-v3-5:0",
+        "rerank_estimate_usd" => money(Haiku55Companion::RERANK_USD * scripts.values.sum { |row| row["turns"] }) } : nil),
       "attempts" => ledger["attempts"],
       "committed" => ledger["committed"],
       "unknown" => ledger["unknown"],
       "pins" => pins,
       "knowledge_base_id" => KB_ID,
+      "model_id" => MODEL_ID,
+      "kb_bucket" => KbDocument::KB_BUCKET,
       "system_sha256" => Digest::SHA256.hexdigest(Rag::CompanionDirectAnswer::SYSTEM_PROMPT),
       "interpreter_prompt_sha256" => Digest::SHA256.hexdigest(Rag::TurnInterpreter::PROMPT),
-      "anthropic_key_present" => ENV["ANTHROPIC_API_KEY"].present?
+      "anthropic_key_present" => ENV["ANTHROPIC_API_KEY"].present?,
+      "kone_lwi_admission" => (kone_lwi_admission?(ledger, calls, worst, scripts, room) ? "pending" : nil),
+      "vision_preflight" => vision_preflight_document(plan)
     }
+  end
+
+  # Sonnet has its own one-call ledger. This decision does not spend Haiku
+  # room and does not move the US$4 assignment cap.
+  def vision_preflight_document(plan)
+    return { "status" => "preflight", "lane" => "vision", "decision" => "not_requested" } unless plan.any? { |name| scripts_photo?(name) }
+
+    input = audit_photo_input
+    {
+      "status" => "preflight", "lane" => "vision",
+      "decision" => (input ? "execute" : "audit_jpeg_missing_or_invalid"),
+      "model_id" => Rag::GuardedPhotoVision::MODEL_ID, "calls" => 1,
+      "ceiling_usd" => money(Rag::GuardedPhotoVision.ceiling),
+      "photo_input" => input, "ledger" => "separate", "counts_toward_haiku_cap" => false
+    }
+  end
+
+  # nil lets the shared checks continue. A short window returns execute only
+  # when the photo admission can open its own 17-call grant.
+  def photo_decision(ledger, calls, worst, room)
+    return nil unless photo_continuation? && !resume_path
+    return "audit_jpeg_missing_or_invalid" unless audit_photo_input
+    return "thyssen_grants_pending" unless ENV[AUDIT_APPROVAL] == head
+    return "audit_kb_bucket_mismatch" unless KbDocument::KB_BUCKET == AUDIT_KB_BUCKET
+
+    short = calls > room["calls"] || BigDecimal(worst.to_s) > room["usd"]
+    return nil unless short
+
+    "historical_photo_grant_excluded"
   end
 
   # One script, complete: two calls per turn plus one, priced at the ceiling.
   def reservation(name, turn)
-    turns = script(name)["turns"].size + script(name).fetch("accept", {}).size
+    if resume_path && name == CONTINUATION_PLAN.first
+      turns = resume_questions.size
+      return { "turns" => turns, "calls" => turns * 2,
+        "ceiling_usd" => money((turn["interpreter"] + turn["generation"]) * turns) }
+    end
+
+    turns = name == CONTINUATION_PLAN.first ? PHOTO_EA_TURNS : script(name)["turns"].size + script(name).fetch("accept", {}).size
     ceiling = (turn["interpreter"] + turn["generation"]) * turns
-    { "turns" => turns, "calls" => turns * 2 + 1, "ceiling_usd" => money(ceiling + turn["interpreter"]) }
+    reservation = { "turns" => turns, "calls" => turns * 2 + 1, "ceiling_usd" => money(ceiling + turn["interpreter"]) }
+    if scripts_photo?(name)
+      reservation["vision"] = {
+        "calls" => 1, "model_id" => Rag::GuardedPhotoVision::MODEL_ID,
+        "ceiling_usd" => money(Rag::GuardedPhotoVision.ceiling), "route" => "field_photo",
+        "input_text_bytes_cap" => Rag::GuardedPhotoVision::TEXT_BYTES,
+        "image_tokens" => Rag::GuardedPhotoVision::IMAGE_TOKENS,
+        "output_tokens" => Rag::GuardedPhotoVision::OUTPUT_TOKENS
+      }
+    end
+    reservation
   end
 
-  def grant_room(ledger)
-    granted = Array(ledger["executions"]).find { |row| row.is_a?(Hash) && row["id"] == EXECUTION_ID }
-    after = granted ? granted["after_attempt"].to_i : FROM_ATTEMPTS
+  def grant_room(ledger, phase: PHASE)
+    spec = FIELD_GRANTS.fetch(phase)
+    cea = phase == "regression" && ENV["HTTP55_CEA_COMPLETION"] == "1"
+    execution_id = cea ? Rag::AssignmentSpend::CEA_COMPLETION_ID : spec["id"]
+    granted = Array(ledger["executions"]).find { |row| row.is_a?(Hash) && row["id"] == execution_id }
+    after = granted ? granted["after_attempt"].to_i : ledger["seq"].to_i
     rows = Array(ledger["entries"]).select { |entry| entry.is_a?(Hash) && entry["id"].to_i > after && entry["status"] != "released" }
     exposure = rows.sum(BigDecimal("0")) { |entry| Haiku55Companion.exposure(entry) }
-    { "usd" => BigDecimal(GRANT_USD) - exposure, "calls" => GRANT_CALLS - rows.size, "exposure" => exposure, "entries" => rows.size }
+    assignment_room = BigDecimal(ledger["cost_cap_usd"]) - BigDecimal(ledger["committed"]) -
+      BigDecimal(ledger["unknown"]) - ledger.fetch("open").values.sum(BigDecimal("0")) { |amount| BigDecimal(amount) }
+    cap_usd = cea ? Rag::AssignmentSpend::CEA_COMPLETION_USD : spec["usd"]
+    cap_calls = cea ? Rag::AssignmentSpend::CEA_COMPLETION_CALLS : spec["calls"]
+    next_cap = cea ? 1158 : spec["next_cap"]
+    { "usd" => [ BigDecimal(cap_usd) - exposure, assignment_room ].min,
+      "calls" => [ cap_calls - rows.size, next_cap - ledger["attempts"].to_i ].min,
+      "exposure" => exposure, "entries" => rows.size, "execution_id" => execution_id,
+      "after_attempt" => after, "next_cap" => next_cap }
   end
 
-  def admit!(io)
-    spend = assignment_spend
-    granted = spend.admit_execution!(
-      id: EXECUTION_ID, cost_usd: GRANT_USD, calls: GRANT_CALLS,
-      bump_call_cap_to: NEXT_CAP, bump_only_if_attempts: FROM_ATTEMPTS
-    )
-    snap = spend.snapshot
-    unless snap["call_cap"].to_i == NEXT_CAP && granted["after_attempt"].to_i == FROM_ATTEMPTS
-      io.puts JSON.generate("status" => "refused", "reason" => "bump_not_applied", "authorization" => snap["authorization"])
-      return false
+  # The historical KONE live admission stays out of this integration.
+  def kone_lwi_admission?(_ledger, _calls, _worst, _scripts, _room)
+    false
+  end
+
+  def acceptance_passed?
+    directory = ROOT.join(ENV["HTTP55_ACCEPTANCE"].to_s)
+    summary = Haiku55Companion.read_json(directory.join("summary.json"))
+    manifest = Haiku55Companion.read_json(directory.join("manifest.json"))
+    return false unless summary && manifest
+    accepted_head = summary["head"]
+    return false unless accepted_head == head || (CEA_COMPLETION &&
+      accepted_head == "3217057e7bebd75acae93ef2ff16d6c580e5e9f2" &&
+      system("git", "-C", Rails.root.to_s, "merge-base", "--is-ancestor", accepted_head, head))
+    return false unless manifest.values_at("system_sha256", "interpreter_prompt_sha256") ==
+      self.manifest.values_at("system_sha256", "interpreter_prompt_sha256")
+
+    ACCEPTANCE_PLAN.all? { |name| summary["results"].any? { |row| row["script"] == name && row["rubric_ok"] } }
+  end
+
+  def audit_baseline?(ledger)
+    # The historical KONE and Thyssen photo admissions stay out of this integration.
+    return false if photo_continuation? || CONTINUATION_RETRY
+    return SPEND.field_continuation_baseline?(ledger) if CONTINUATION
+
+    SPEND.thyssen_baseline?(ledger, recheck: RECHECK)
+  end
+
+  def admit!(io, directory: nil)
+    if AUDIT
+      return false unless directory && ENV[AUDIT_APPROVAL] == head
+      if photo_continuation?
+        reserved = reservation("audit_thyssen_photo_ea", Haiku55Companion.per_turn_ceiling)
+        if resume_path
+          ledger = read_ledger
+          room = grant_room(ledger)
+          return audit_baseline?(ledger) && reserved["calls"] <= room["calls"] &&
+            BigDecimal(reserved["ceiling_usd"]) <= room["usd"]
+        end
+        return false unless audit_photo_input
+
+        room = grant_room(read_ledger)
+        covered = BigDecimal(reserved["ceiling_usd"]) <= room["usd"] && reserved["calls"] <= room["calls"]
+        return false unless covered
+        Rag::GuardedPhotoVision.assignment(directory.join("vision-spend.json")).admit_execution!(
+          id: Rag::GuardedPhotoVision::GRANT_ID, calls: 1, cost_usd: Rag::GuardedPhotoVision.ceiling
+        )
+        refreshed = grant_room(read_ledger)
+        return BigDecimal(reserved["ceiling_usd"]) <= refreshed["usd"] && reserved["calls"] <= refreshed["calls"]
+      end
+      if CONTINUATION_RETRY
+        return false
+      end
+
+      if CONTINUATION
+        assignment_spend.admit_field_continuation!
+      else
+        assignment_spend.admit_thyssen_audit!(recheck: RECHECK)
+      end
+      Rag::GuardedPhotoVision.assignment(directory.join("vision-spend.json")).admit_execution!(
+        id: Rag::GuardedPhotoVision::GRANT_ID, calls: 1, cost_usd: Rag::GuardedPhotoVision.ceiling
+      )
+      return true
     end
-    true
+
+    return assignment_spend.admit_cea_completion!.present? if CEA_COMPLETION
+
+    admit_field_grant!(io, PHASE)
   rescue Rag::AssignmentSpend::Stop => error
     io.puts JSON.generate("status" => "refused", "reason" => error.message)
     false
+  end
+
+  # Writes the phase grant once. Acceptance keeps call cap 1158 and cuts the
+  # window at the current sequence. Regression bumps 1158 to 1190 only while
+  # the file is still at the attempt count read here.
+  def admit_field_grant!(io, phase)
+    ledger = read_ledger
+    spec = FIELD_GRANTS.fetch(phase)
+    existing = Array(ledger["executions"]).find { |row| row.is_a?(Hash) && row["id"] == spec["id"] }
+    unless existing || field_baseline?(ledger, phase)
+      io.puts JSON.generate("status" => "refused", "reason" => "ledger_baseline_changed")
+      return false
+    end
+
+    spend = Rag::AssignmentSpend.new(
+      path: Guion2Direct.spend_path, call_cap: spec["next_cap"],
+      cost_cap_usd: Rag::LocalPassLedger::ASSIGNMENT_COST_CAP_USD
+    )
+    spend.admit_execution!(
+      id: spec["id"], cost_usd: spec["usd"], calls: spec["calls"],
+      bump_call_cap_to: (spec["bump"] ? spec["next_cap"] : nil),
+      bump_only_if_attempts: (spec["bump"] ? ledger["attempts"] : nil),
+      start_after_sequence: true
+    )
+    spend.snapshot.dig("authorization", "call_cap") == spec["next_cap"]
+  end
+
+  def field_baseline?(ledger, phase)
+    return false unless BigDecimal(ledger["cost_cap_usd"].to_s) == BigDecimal("4.0")
+    return false unless ledger.dig("authorization", "call_cap").to_i == 1158
+
+    executions = Array(ledger["executions"])
+    if phase == "acceptance"
+      ledger["attempts"].to_i == 1143 && ledger["seq"].to_i == 1145 &&
+        executions.last.is_a?(Hash) && executions.last["id"] == Rag::AssignmentSpend::FIELD_ACCEPTANCE_PREVIOUS_ID
+    else
+      row = executions.find { |item| item.is_a?(Hash) && item["id"] == Rag::AssignmentSpend::FIELD_ACCEPTANCE_ID }
+      return false unless row && row["after_attempt"].to_i == Rag::AssignmentSpend::FIELD_ACCEPTANCE_SEQUENCE &&
+        row["calls"].to_i == Rag::AssignmentSpend::FIELD_ACCEPTANCE_CALLS &&
+        BigDecimal(row["cost_usd"].to_s) == BigDecimal(Rag::AssignmentSpend::FIELD_ACCEPTANCE_USD)
+
+      used = Array(ledger["entries"]).count { |entry|
+        entry.is_a?(Hash) && entry["id"].to_i > row["after_attempt"].to_i && entry["status"] != "released"
+      }
+      used <= row["calls"].to_i
+    end
+  end
+
+  def resume_path
+    ENV["HTTP55_RESUME_CAPTURE"].presence
+  end
+
+  def scripts_photo?(name)
+    !resume_path && script(name)["photo"]
+  end
+
+  def resume_questions
+    [ PHOTO_NOMINAL_READING_REPLY, AUDIT_JOURNEYS.fetch("photo_ea").last ]
+  end
+
+  def resume_capture(document)
+    root = Pathname.new(resume_path)
+    files = []
+    read = ->(relative) do
+      content = root.join(relative).read
+      files << [ relative, Digest::SHA256.hexdigest(content) ]
+      content
+    end
+    pin = JSON.parse(read.call("pin.json"))
+    return unless pin["document_uid"] == document.document_uid &&
+      pin["indexed_uri"] == document.display_s3_uri(KbDocument::KB_BUCKET)
+
+    snapshots = (1..PHOTO_RESUME_AFTER).map do |number|
+      [ read.call("turn-#{number}/question.txt"), JSON.parse(read.call("turn-#{number}/episode.json")) ]
+    end
+    last = snapshots.last.last
+    episode = last.fetch("stored_active_episode")
+    id = episode.fetch("episode_id")
+    return unless id.present? && last.fetch("case_evidence").fetch("episode_id") == id &&
+      last.fetch("focus_document_ids").size == 1
+    return unless snapshots.all? { |text, row| text.present? && row["episode_id"] == id &&
+      row.dig("last_assistant", "correlation_id").present? && row.dig("last_assistant", "content").present? }
+
+    pending = episode.fetch("pending_question")
+    parsed = Rag::ActiveEpisode.parse(episode, now: Time.iso8601(episode.fetch("updated_at")))
+    question = pending.fetch("question")
+    return unless Rag::AnswerContract.active?(parsed) && pending["type"] == "documented_context" &&
+      Rag::AnswerContract.open_parts(parsed).any? { |part| part["text"] == question } &&
+      last.dig("last_assistant", "content").include?(question) &&
+      photo_case_reading(pending, I18n.transliterate(question).downcase) == PHOTO_NOMINAL_READING_REPLY
+
+    marker = episode.fetch("active_photo")
+    worker = JSON.parse(read.call("turn-1/worker/capture.json")).fetch("events")
+    input = worker.find { |event| event["kind"] == "photo_worker_input" }
+    vision = worker.find { |event| event["kind"] == "photo_vision_raw" }
+    reading = JSON.parse(read.call("turn-1/vision-reading.json"))
+    return unless input && vision && input["correlation_id"] == marker["correlation_id"] &&
+      input["sha256"] == marker["sha256"] && input.fetch("bytes").positive?
+
+    observation = FieldPhotoObservation.from_analysis(parsed: reading, model_id: vision.fetch("model"),
+      target_visible: reading.fetch("target_visible"), relevance_to_goal: reading.fetch("relevance_to_goal"))
+    visual = FieldPhotoObservation.sanitize(observation)
+    return unless visual
+
+    { episode: episode, history: snapshots.map { |text, row| [ text, row.fetch("last_assistant") ] },
+      case_evidence: last.fetch("case_evidence"), visual: visual, bytes: input["bytes"],
+      digest: Digest::SHA256.hexdigest(JSON.generate(files)) }
+  rescue SystemCallError, JSON::ParserError, KeyError, ArgumentError, TypeError, NoMethodError
+    nil
+  end
+
+  def restore_photo_case!(session, user, document, capture)
+    raise "resume pin missing" unless session&.focus_document_ids == [ document.id ]
+
+    state = capture.fetch(:episode).deep_dup
+    marker = state.fetch("active_photo")
+    session.with_lock do
+      raise "resume session is not empty" if session.active_episode.present? || session.conversation_history.present?
+
+      sha256 = marker.fetch("sha256")
+      photo = FieldPhoto.find_or_create_by!(account: document.account, sha256: sha256) do |row|
+        row.assign_attributes(s3_key_original: "capture-fixture/#{sha256}", content_type: "image/jpeg",
+          byte_size: capture.fetch(:bytes), visual_observation: capture.fetch(:visual))
+      end
+      unless FieldPhotoObservation.sanitize(photo.visual_observation) == capture.fetch(:visual)
+        raise "resume photo differs from the captured visual reading"
+      end
+
+      marker["field_photo_id"] = photo.id
+      state["updated_at"] = Time.current.iso8601
+      capture.fetch(:history).each do |text, last|
+        correlation = last.fetch("correlation_id")
+        session.add_to_history("user", text, user_id: user.id, correlation_id: correlation)
+        session.add_to_history("assistant", last.fetch("content"), user_id: user.id, correlation_id: correlation,
+          prompt_reply: last["prompt_reply"], focus_ids: [ document.id ])
+      end
+      session.update!(active_episode: state, case_evidence: capture.fetch(:case_evidence))
+    end
   end
 
   # ---- one script ---------------------------------------------------------
@@ -271,9 +677,14 @@ module Haiku55Http
     before = ledger_view
     File.write(directory.join("reservation.json"), JSON.pretty_generate(reserved.merge("room_before" => money(room["usd"]), "ledger_before" => before)))
     document = document_for(name)
+    resume = resume_capture(document) if resume_path
+    return { "script" => name, "status" => "refused", "reason" => "invalid_resume_capture" } if resume_path && !resume
+
     user = new_user(document.account, name)
     run_id = "#{root.basename}-#{name}"
     server = start_server(directory, run_id, reserved, document.account)
+    photo = scripts_photo?(name)
+    browser = nil
     rows = []
     begin
       client = Client.new(PORT, request_host(document.account))
@@ -285,15 +696,39 @@ module Haiku55Http
       ))
       raise "pin failed #{pin[:status]}" unless [ 200, 204 ].include?(pin[:status])
 
-      questions = script(name)["turns"]
+      if photo
+        require_relative "haiku55_photo_browser"
+        browser = PhotoBrowser.new(PORT, request_host(document.account), user, user_password(user))
+      end
+      questions = script(name)["turns"].dup
       focus = [ document ]
-      questions.each_with_index do |question, index|
+      index = 0
+      if resume
+        restore_photo_case!(fresh_session(user), user, document, resume)
+        index = PHOTO_RESUME_AFTER
+        questions[index..] = resume_questions
+      end
+      while index < questions.size
+        question = questions[index]
         number = index + 1
         unless Haiku55Companion.network_ready?(io)
           rows << { "turn" => number, "status" => "network_unreachable" }
           break
         end
-        row = one_turn(directory, run_id, client, user, focus.first, name, number, question, questions, focus: focus)
+        row = one_turn(directory, run_id, client, user, focus.first, name, number, question, questions,
+          focus: focus, browser: browser, reserved: reserved)
+        if resume
+          row["block_reason"] ||= "resume_episode_changed" if row["episode_id"] != resume[:episode]["episode_id"]
+          row["block_reason"] ||= "resume_focus_changed" if row["focus"] != [ document.id ]
+        elsif name == AUDIT_PLAN.last
+          row["block_reason"] ||= engineering_stop(number, row, rows.first&.dig("episode_id"))
+        elsif name == AUDIT_PLAN.first
+          row["block_reason"] ||= photo_followup_stop(number, row["answer"])
+        elsif name == CONTINUATION_PLAN.first
+          place_photo_reply!(questions, index, row, limit: reserved.fetch("turns"))
+        elsif name == "audit_kone_lwi"
+          row["block_reason"] ||= Haiku55JourneyRubric.kone_lwi_followup_stop(number, row["answer"])
+        end
         accept = script(name).dig("accept", number)
         if row["block_reason"] == "generator_not_sent" && planned_card?(row["manual_suggestion"], accept)
           row["block_reason"] = nil
@@ -302,6 +737,7 @@ module Haiku55Http
         rows << row
         io.puts JSON.generate(row.slice("script", "turn", "status", "block_reason", "abstained_with_card", "rubric", "wall_ms"))
         break if row["block_reason"]
+        index += 1
 
         card = row.delete("manual_suggestion")
         if accept
@@ -310,22 +746,39 @@ module Haiku55Http
           break if rows.last["block_reason"]
 
           focus = KbDocument.where(id: rows.last["focus"]).to_a
-        elsif card
+        elsif card && !resume
           confirm_card!(client, directory, number, card, document)
         end
       end
+    rescue StandardError => error
+      raise unless AUDIT
+
+      rows << { "turn" => (resume ? PHOTO_RESUME_AFTER : 0) + rows.length + 1, "status" => "runner_error",
+        "block_reason" => error.class.name, "rubric" => [] }
+      File.write(directory.join("runner_error.txt"), error.full_message)
     ensure
+      browser&.close
       stop_server(server)
     end
-    session = ConversationSession.find_by(identifier: user.id.to_s, channel: "web")
-    episodes = rows.filter_map { |row| row["episode_id"] }.uniq
+    session = fresh_session(user)
+    episode_ids = rows.pluck("episode_id")
+    episodes = episode_ids.compact.uniq
+    single_episode = episode_ids.none?(&:nil?) && episodes.one?
+    episode_ok = !(ACCEPTANCE_PLAN.include?(name) || CEA_COMPLETION || AUDIT) || single_episode
     expected = script(name)["turns"].size + script(name).fetch("accept", {}).size
-    status = rows.size == expected && rows.all? { |row| row["block_reason"].nil? } ? "executed" : "stopped"
+    complete = if resume
+      rows.pluck("question") == resume_questions
+    elsif name == CONTINUATION_PLAN.first
+      rows.pluck("question").last(2) == AUDIT_JOURNEYS.fetch("photo_ea").last(2)
+    else
+      rows.size == expected
+    end
+    status = complete && rows.all? { |row| row["block_reason"].nil? } ? "executed" : "stopped"
     payload = {
       "script" => name, "status" => status, "user_id" => user.id, "session_id" => session&.id,
-      "episodes" => episodes, "single_episode" => episodes.size == 1,
-      "rubric_ok" => status == "executed" && rows.all? { |row| row["rubric"].empty? && row.fetch("scope", {}).fetch("ok", true) },
-      "turns" => rows.map { |row| row.slice("turn", "label", "status", "block_reason", "abstained_with_card", "rubric", "wall_ms", "route_outcome", "focus", "scope", "replayed") },
+      "episodes" => episodes, "single_episode" => single_episode,
+      "rubric_ok" => status == "executed" && episode_ok && rows.all? { |row| row["rubric"].empty? && row.fetch("scope", {}).fetch("ok", true) },
+      "turns" => rows.map { |row| row.slice("turn", "label", "question", "answer", "status", "block_reason", "abstained_with_card", "rubric", "wall_ms", "route_outcome", "episode_id", "focus", "scope", "replayed", "pending_question") },
       "ledger_before" => before, "ledger_after" => ledger_view
     }
     File.write(directory.join("summary.json"), JSON.pretty_generate(payload))
@@ -333,33 +786,48 @@ module Haiku55Http
   end
 
   def one_turn(directory, run_id, client, user, document, name, number, question, questions,
-               payload: { question: question }, label: format("turn-%d", number), focus: [ document ])
+               payload: { question: question }, label: format("turn-%d", number), focus: [ document ], browser: nil, reserved: nil)
     turn_dir = directory.join(label)
     FileUtils.mkdir_p(turn_dir)
     File.write(turn_dir.join("question.txt"), question)
-    session = ConversationSession.find_by(identifier: user.id.to_s, channel: "web")
+    session = fresh_session(user)
     File.write(turn_dir.join("before.json"), JSON.pretty_generate(
       "episode_id" => stored_episode_id(session), "case_evidence" => session&.case_evidence,
       "focus_document_ids" => session&.focus_document_ids
     ))
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    response = client.post_json("/rag/ask", payload)
+    photo_upload = browser && number == 1
+    response = if browser
+      browser.send_turn(question, photo: (audit_photo_path if photo_upload))
+    else
+      client.post_json("/rag/ask", payload)
+    end
     wall_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
     body = response[:json] || {}
     File.write(turn_dir.join("response.json"), JSON.pretty_generate(
       "status" => response[:status], "request_id" => response[:request_id], "body" => body
     ))
     copy_capture(run_id, response[:request_id], turn_dir)
+    events = Array((Haiku55Companion.read_json(turn_dir.join("capture.json")) || {})["events"])
+    evidence_dir = turn_dir
+    if photo_upload && response[:status] == 200 && body["images_uploaded"].present?
+      evidence_dir, delivery = await_photo_worker(browser, directory, turn_dir, run_id, reserved, document.account, body.fetch("correlation_id"))
+      events += Array((Haiku55Companion.read_json(evidence_dir.join("capture.json")) || {})["events"])
+      body = body.merge("answer" => delivery["answer"] || delivery["message"] || delivery["summary"],
+        "citations" => delivery["citations"], "photo_status" => delivery["status"])
+    end
+    browser&.save_turn(turn_dir)
+    wall_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round if photo_upload
     answer = body["answer"].to_s
     File.write(turn_dir.join("published.txt"), answer)
-    events = Array((Haiku55Companion.read_json(turn_dir.join("capture.json")) || {})["events"])
     direct = events.reverse.find { |event| event["kind"] == "companion_direct" }
-    File.write(turn_dir.join("raw.txt"), Haiku55JourneyFixtures.text(turn_dir.to_s, direct&.fetch("text", nil)))
-    session = ConversationSession.find_by(identifier: user.id.to_s, channel: "web")
+    File.write(turn_dir.join("raw.txt"), Haiku55JourneyFixtures.text(evidence_dir.to_s, direct&.fetch("text", nil)))
+    session = fresh_session(user)
     reply = Array(session&.conversation_history).reverse.find { |message| message["role"] == "assistant" }
     delta = events.reverse.find { |event| event["kind"] == "episode_delta" }
+    episode_id = stored_episode_id(session) || delta&.dig("episode_after", "episode_id") || delta&.dig("episode_id")
     File.write(turn_dir.join("episode.json"), JSON.pretty_generate(
-      "episode_id" => stored_episode_id(session),
+      "episode_id" => episode_id,
       "active_episode" => delta&.dig("episode_after"),
       "stored_active_episode" => session&.active_episode,
       "focus_document_ids" => session&.focus_document_ids,
@@ -371,23 +839,324 @@ module Haiku55Http
     trace["http"] = { "status" => response[:status], "request_id" => response[:request_id], "wall_ms" => wall_ms }
     trace["effective_config"] = effective_config(events)
     trace["interpreter"] = interpreter_view(events)
+    if photo_upload
+      trace["answer"] = answer
+      trace["worker_capture"] = "worker/capture.json" if evidence_dir != turn_dir
+    end
     trace["gates"] = events.select { |event| %w[companion_turn route_decision route_exit companion_claim_backing companion_publication].include?(event["kind"]) }
       .map { |event| event.except("run_id", "account_id", "user_id", "linkage") }
     trace["case_write"] = events.select { |event| event["kind"].to_s.start_with?("case_") || event["kind"] == "assistant_history" }
       .map { |event| event.except("run_id", "account_id", "user_id") }
     File.write(turn_dir.join("trace.json"), JSON.pretty_generate(trace))
     rubric = Haiku55JourneyRubric.reasons(name, number, answer, questions)
+    if CEA_COMPLETION
+      rubric += Haiku55JourneyRubric.cea_completion_reasons(number, answer, body.fetch("citations", []))
+    end
     reason = block_reason(name, response, body, events, focus, replay: payload.key?(:replay_correlation_id))
+    if photo_upload
+      delivery_event = events.reverse.find { |event| event["kind"] == "photo_answer_delivery" }
+      reason = "photo_#{body["photo_status"] || "missing_ack"}" if body["photo_status"] != "photo_question_answered"
+      reason ||= "photo_worker_capture_missing" unless delivery_event && delivery_event["correlation_id"] == body["correlation_id"]
+      reason ||= "photo_rag_failed" if delivery_event&.dig("outcome") == "failed"
+    end
+    if name == AUDIT_PLAN.last
+      rubric += engineering_checks(number, answer, session)
+    elsif script(name)["photo"]
+      rubric += photo_checks(number, answer, events, session, evidence_dir, question, persistent_ea: name == CONTINUATION_PLAN.first)
+    end
     scope = scope_view(events, body, focus)
     File.write(turn_dir.join("scope.json"), JSON.pretty_generate(scope))
     {
       "script" => name, "turn" => number, "label" => label, "status" => body["status"] || response[:status].to_s,
+      "answer" => answer,
+      "question" => question,
       "block_reason" => reason, "rubric" => rubric, "wall_ms" => wall_ms,
       "route_outcome" => events.reverse.find { |event| event["kind"] == "published_answer" }&.dig("route_outcome"),
-      "episode_id" => stored_episode_id(session), "focus" => session&.focus_document_ids, "scope" => scope,
+      "episode_id" => episode_id, "focus" => session&.focus_document_ids, "scope" => scope,
       "replayed" => body["replayed"],
-      "manual_suggestion" => body["manual_suggestion"]
+      "manual_suggestion" => body["manual_suggestion"],
+      "pending_question" => (session&.active_episode.is_a?(Hash) ? session.active_episode["pending_question"] : nil)
     }
+  end
+
+  # The next technician line has to answer the question the episode stored.
+  # A line that names another component stays where it is. With no stored
+  # question, the prepared line still has to match the published request.
+  def place_photo_reply!(questions, index, row, limit: PHOTO_EA_TURNS)
+    rest = questions[(index + 1)..].to_a
+    return if rest.empty?
+
+    if index + 1 >= limit
+      row["block_reason"] ||= "photo_turn_reservation_exhausted"
+      return
+    end
+
+    opening, display, firm, latch, misaligned, aligned, reading, how = AUDIT_JOURNEYS.fetch("photo_ea")
+    sent = questions.first(index + 1)
+    repaired = sent.include?(aligned)
+    misalignment_reported = sent.include?(misaligned)
+    latch_reported = sent.include?(latch)
+    request = Haiku55JourneyRubric.requested_observation(row["answer"].to_s)
+    pending = row["pending_question"]
+    # Match the question that reached the technician. The persisted question
+    # can still be the previous one when Danebo published a field instruction.
+    visible = published_pending(row["answer"])
+    if visible
+      pending = visible unless pending&.dig("question")&.include?(visible["question"])
+      row["pending_question"] = pending
+    end
+    pending = nil unless visible
+
+    reply = if sent.last == opening
+      display if request.match?(/codigo|display|pantalla|visor/)
+    elsif photo_reading_turn?(sent.last) && request.match?(/operador/) && request.match?(/motor|tiene|cuenta|equipad/)
+      # The documented reading applies to doors with an operator motor; the
+      # simulated installation has one.
+      PHOTO_OPERATOR_REPLY
+    elsif photo_reading_turn?(sent.last) || sent.last == PHOTO_OPERATOR_REPLY
+      how if request.present? || row["answer"].to_s.present?
+    elsif misalignment_reported && !repaired && photo_repair_requested?(I18n.transliterate(row["answer"].to_s).downcase)
+      aligned
+    elsif pending
+      asked = pending["question"]
+      if (code = display_followup_reply(asked, sent, repaired: repaired))
+        code
+      elsif repaired
+        # A visual check of the line's connection is a valid field question
+        # after the repair; the technician reports it firm once.
+        if request.match?(/firme|suelt|floj|apretad|conexion/) && sent.exclude?(firm)
+          firm
+        elsif (line = photo_case_reading(pending, request))
+          line
+        end
+      elsif latch_reported && request.match?(/alin|descentr|desplaz|fuera de posicion|no coincide/)
+        misaligned
+      elsif !latch_reported && photo_label_line_check?(request)
+        # Confirming in the field that the photographed terminal is the latch
+        # line is valid; the simulated installation is wired that way.
+        PHOTO_LABEL_LINE_REPLY
+      else
+        candidates = [ firm, latch ].select { |line| rest.include?(line) }
+        candidates.find { |line| Rag::WorkContextReducer.open_reply?(pending, line) } || door_closure_reply(pending)
+      end
+    elsif repaired && (line = photo_case_reading(nil, request))
+      line
+    elsif latch_reported && !misalignment_reported && request.match?(/alin|descentr|desplaz|fuera de posicion|no coincide/)
+      misaligned
+    elsif !latch_reported && request.match?(/trinco|cerrojo|pestillo|enclavamiento/) && request.match?(/engancha|enganchar|traba|enclava|encaja/)
+      latch
+    end
+
+    if reply.nil? || sent.include?(reply)
+      row["block_reason"] ||= "pending_question_unanswered"
+      return
+    end
+
+    rest.delete(reply)
+    rest.delete(reading) if [ PHOTO_OPEN_READING_REPLY, PHOTO_NOMINAL_READING_REPLY ].include?(reply)
+    # A firm connection is optional, and the question after the electrical
+    # reading ends the script regardless of any earlier optional checks.
+    rest.delete(firm) if [ latch, misaligned, aligned, reading, PHOTO_OPEN_READING_REPLY, PHOTO_NOMINAL_READING_REPLY ].include?(reply)
+    rest.clear if reply == how
+    questions[(index + 1)..] = [ reply, *rest ]
+  end
+
+  # The fixture reading affirms 0 Vcc. open_reply? rejects that affirmation
+  # when the question asks whether the reading is +110 Vcc, and accepts an
+  # open request for the reading. The nominal question gets the negation.
+  def photo_case_reading(pending, request)
+    return nil unless request.match?(/ra\s*-?53|\bp28\b/)
+
+    if nominal_voltage_check?(pending&.dig("question"))
+      PHOTO_NOMINAL_READING_REPLY
+    elsif pending.nil?
+      PHOTO_OPEN_READING_REPLY if request.match?(/lectura|tension|voltaje|mide|medir|valor|vcc/)
+    elsif Rag::WorkContextReducer.open_reply?(pending, PHOTO_OPEN_READING_REPLY)
+      PHOTO_OPEN_READING_REPLY
+    end
+  end
+
+  def nominal_voltage_check?(question)
+    text = I18n.transliterate(question.to_s).downcase
+    return false if text.match?(/\b(?:que|cuanto|cual)\b/)
+
+    text.match?(/\bmides?\b/) && text.match?(/\b110\b/) && text.match?(/\bvcc\b|\bvdc\b|\bvolt/)
+  end
+
+  def photo_reading_turn?(line)
+    [ AUDIT_JOURNEYS.fetch("photo_ea")[6], PHOTO_OPEN_READING_REPLY, PHOTO_NOMINAL_READING_REPLY ].include?(line)
+  end
+
+  def photo_label_line_check?(request)
+    request.match?(/trinco|cerrojo|pestillo/) && request.match?(/borne|cable|linea|rotul/) &&
+      request.match?(/llega|viene|corresponde|conecta/) && !request.match?(/engancha|traba|enclava|encaja/)
+  end
+
+  def photo_repair_requested?(request)
+    request.match?(/alin/) && request.match?(/corrig|correg|ajust|realin|aline[ae]/) &&
+      request.match?(/cierr|cerr|trab|engan|ea/)
+  end
+
+  # The episode did not keep the one question the answer published.
+  def published_pending(answer)
+    body = Haiku55JourneyRubric.kpvs_without_quotes(answer)
+    questions = body.scan(/(?:^|[.!?\n]\s*)([^?\n]+\?)/).flatten
+    return nil unless questions.one?
+
+    {
+      "type" => "documented_context",
+      "question" => questions.first.squish.delete_prefix("**").delete_suffix("**"),
+      "targets" => [ { "item" => "manual", "document_key" => "", "filename" => "", "page" => "" } ]
+    }
+  end
+
+  # The reported symptom is that the floor door does not close. A brake
+  # question is not that door.
+  def door_closure_reply(pending)
+    question = pending["question"].to_s
+    return nil if question.match?(/freno|motor|variador|contactor/i)
+    return nil unless question.match?(/puerta/i)
+
+    parts = question.split(/\s+o\s+/i)
+    return nil unless parts.size == 2
+    return nil unless parts.any? { |part| part.match?(/abiert/i) }
+    return nil unless parts.any? { |part| part.match?(/cierr|cerrar/i) }
+
+    "La puerta de piso no cierra del todo."
+  end
+
+  # The simulation can report only the code already read by the technician
+  # and the mechanical state reached in this run.
+  def display_followup_reply(question, sent, repaired:)
+    return nil if question.match?(/freno|motor|variador|contactor/i)
+
+    code = sent.filter_map { |line| line[/\b(?:display|pantalla|visor) (?:marca|muestra) ([A-Z]{2,3}|\d{2})\b/, 1] }.last
+    return nil unless code
+
+    if question.match?(/solo aparece|solo muestra|solamente|[uú]nicamente|c[oó]digo de estado/i)
+      "Solo aparece #{code}."
+    elsif question.match?(/sigue|continu|permanec/i) && question.match?(/display|pantalla|visor|c[oó]digo/i)
+      if question.match?(/a mano|cerrad|trabada|trincada/i)
+        repaired ? "Sí, cierra y traba bien. El display sigue marcando #{code}." :
+          "Todavía no cierra ni traba. Solo aparece #{code}."
+      else
+        "Sí, el display sigue marcando #{code}."
+      end
+    end
+  end
+
+  def await_photo_worker(browser, directory, turn_dir, run_id, reserved, account, correlation)
+    raise "invalid photo acknowledgment" unless correlation.match?(/\Aphoto:[a-f0-9-]+\z/)
+
+    browser.photo_acknowledged?(correlation)
+    key = "worker-#{correlation.tr(':', '-')}"
+    env = server_env(directory, run_id, reserved, account)
+    config = directory.join("photo-queue.yml")
+    File.write(config, { "development" => { "workers" => [
+      { "queues" => [ env.fetch("RAG_PHOTO_WORKER_QUEUE") ], "threads" => 1, "polling_interval" => 0.1 }
+    ] } }.to_yaml)
+    log = directory.join("worker.log").to_s
+    worker = Process.spawn(env, "bundle", "exec", "bin/jobs", "--config-file=#{config}", "--skip-recurring",
+      chdir: Rails.root.to_s, out: log, err: log, pgroup: true)
+    delivery = browser.photo_delivery
+    File.write(turn_dir.join("delivery.json"), JSON.pretty_generate(delivery))
+    [ turn_dir.join("worker"), delivery ]
+  rescue Selenium::WebDriver::Error::TimeoutError
+    browser.save_timeout(turn_dir)
+    raise
+  ensure
+    stop_server(worker)
+    if key
+      worker_dir = turn_dir.join("worker")
+      FileUtils.mkdir_p(worker_dir)
+      copy_capture(run_id, key, worker_dir)
+      events = Array((Haiku55Companion.read_json(worker_dir.join("capture.json")) || {})["events"])
+      if (vision = events.find { |event| event["kind"] == "photo_vision_raw" })
+        File.write(turn_dir.join("vision-raw.txt"), body_text(worker_dir, vision["text"]))
+      end
+      if (reading = events.find { |event| event["kind"] == "photo_vision_reading" })
+        File.write(turn_dir.join("vision-reading.json"), JSON.pretty_generate(reading["reading"]))
+        findings = %w[P26 P27 P28].index_with { |terminal| reading["reading"].to_json.match?(/\b#{terminal}\b/i) }
+        File.write(turn_dir.join("vision-terminals.json"), JSON.pretty_generate(findings))
+      end
+    end
+  end
+
+  def engineering_checks(number, answer, session)
+    folded = answer.unicode_normalize(:nfd).gsub(/\p{Mn}/, "").downcase
+    case number
+    when 1
+      questions = folded.scan(/(?:¿|^|[.!]\s+)[^?¿]*\?/)
+      return [ "did_not_ask_kp_vs" ] unless questions.any? { |part| part.match?(/kp[ -]vs/) && part.match?(/valor|lectura|cuanto|marca|indica|leer|medir|reporta/) }
+    when 2
+      return [ "did_not_defer_kp_vs_to_engineering" ] unless folded.match?(/kp[ -]vs/) && folded.include?("ingenieria") &&
+        folded.match?(/pendiente|que lo (?:lea|revise|verifique)|debe (?:leer|verificar)|verificacion|lectura por/)
+    when 3
+      episode = session&.active_episode.to_h
+      reported = Array(episode["observations"]).pluck("text")
+      return [ "engineering_reading_not_incorporated" ] unless (reported.any? { |text| text.to_s.match?(/(?:kp[ -]vs).*2[,.]5/i) } ||
+        Array(episode["checks"]).any? { |check| check["subject"].to_s.match?(/kp[ -]vs/i) && check["result"].to_s.match?(/2[,.]5/) }) &&
+        folded.match?(/2[,.]5/) && folded.match?(/3[,.]0/) && folded.match?(/debajo|inferior|menor/)
+    when 4
+      prose = Haiku55JourneyRubric.kpvs_without_quotes(answer)
+      if Haiku55JourneyRubric.kpvs_set_order?(prose) ||
+          Haiku55JourneyRubric.kpvs_order?(prose, Haiku55JourneyRubric::RESOLVES_NOISE)
+        return [ "proposed_adjustment_as_noise_fix" ]
+      end
+      return [ "commissioning_value_not_distinguished" ] unless folded.match?(/3[,.]5/) &&
+        folded.match?(/puesta en marcha|instalacion|comisionamiento/) && folded.match?(/2[,.]5/) &&
+        folded.match?(/no (?:le |lo |se )?(?:pidas|dejes|ajustes|subas|justifica|indica|recomiendo|recomienda|es)|no (?:hay|da) (?:base|motivo|indicacion)/)
+    end
+    []
+  end
+
+  def engineering_stop(number, row, first_episode)
+    return "engineering_episode_changed" if number > 1 && (first_episode.blank? || first_episode != row["episode_id"])
+
+    row["rubric"].first
+  end
+
+  def photo_followup_stop(number, answer)
+    body = Haiku55JourneyRubric.kpvs_without_quotes(answer).unicode_normalize(:nfd).gsub(/\p{Mn}/, "").downcase
+    case number
+    when 1
+      return "photo_code_not_requested" unless body.match?(/(?:codigo|display)[^?¿]*\?/)
+    when 2
+      checks = body.split(/[.!?\n]+/)
+      asked_reading = checks.any? do |line|
+        line.match?(/\bp2[678]\b|trinco|enclavamiento/) && line.match?(/lectura|tension|voltaje|mide|medir|comprueba|verifica/)
+      end
+      return "photo_readings_not_requested" unless asked_reading
+    end
+    nil
+  end
+
+  def photo_checks(number, answer, events, session, evidence_dir, question, persistent_ea:)
+    reasons = []
+    ask = events.reverse.find { |event| event["kind"] == "converse" && event["provider"] == "anthropic" }
+    prompt = Array(ask&.dig("messages", -1, "content")).filter_map { |block| body_text(evidence_dir, block["text"]) }.join
+    visual = Rag::ActivePhotoContext.generation_evidence(prompt)
+    reasons << "photo_evidence_missing_from_generation" if (number <= 2 || !persistent_ea) && !visual
+    reasons << "literal_question_missing_from_generation" unless prompt.start_with?("Mensaje de este turno:\n#{question}")
+    if persistent_ea && visual
+      reasons << "visual_labels_missing_from_generation" unless visual.match?(/\bP2[678]\b/)
+    end
+    if number == 1
+      input = events.find { |event| event["kind"] == "photo_worker_input" }
+      reasons << "worker_jpeg_digest_missing_or_different" unless input && input["sha256"] == input["declared_sha256"]
+      reasons << "vision_reading_missing" unless events.any? { |event| event["kind"] == "photo_vision_reading" }
+    end
+    reasons << "active_photo_missing" if session&.active_episode.to_h.dig("active_photo", "field_photo_id").blank?
+    return reasons if persistent_ea
+
+    expected = case number
+    when 1 then /display|codigo|p28|trincos|cerradur|enclavamiento/
+    when 2 then /trincos|p28/
+    when 3 then /p28|trincos/
+    when 4 then /tls|parametro/
+    end
+    reasons << "technical_question_unanswered" unless I18n.transliterate(answer).downcase.match?(expected)
+    reasons
   end
 
   # Retrieve filter and published citations against the focus of this turn.
@@ -435,7 +1204,7 @@ module Haiku55Http
     blocked = { "script" => name, "turn" => number, "label" => label, "rubric" => [] }
     return blocked.merge("block_reason" => "card_missing", "cards" => Array(suggestion && suggestion["cards"]).map { |item| item.slice("document_uid", "action") }) unless card
 
-    session = ConversationSession.find_by(identifier: user.id.to_s, channel: "web")
+    session = fresh_session(user)
     before = session.focus_document_ids
     pin = client.post_json("/pinned_documents", {
       kb_document_id: card["kb_document_id"], document_uid: card["document_uid"], focus_mode: card["action"] || "add",
@@ -532,7 +1301,7 @@ module Haiku55Http
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + GUI_TIMEOUT_SECONDS
       last = nil
       until stop.exist? || Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
-        session = ConversationSession.find_by(identifier: user.id.to_s, channel: "web")
+        session = fresh_session(user)
         state = { "focus" => session&.focus_document_ids, "episode_id" => stored_episode_id(session) }
         timeline << state.merge("at" => Time.now.utc.iso8601(3)) unless state == last
         last = state
@@ -728,11 +1497,13 @@ module Haiku55Http
   def copy_capture(run_id, request_id, turn_dir)
     key = request_id.to_s.gsub(/[^A-Za-z0-9_-]/, "")
     base = Rails.root.join(Rag::WebRequestCapture::ROOT, run_id)
+    return if key.blank?
+
     source = base.join(key)
     source = base.glob("#{key}*").max_by { |path| path.mtime } unless source.directory?
     return unless source&.directory?
 
-    FileUtils.cp_r("#{source}/.", turn_dir)
+    FileUtils.cp_r("#{source}/.", turn_dir, preserve: true)
   end
 
   # ---- server --------------------------------------------------------------
@@ -744,7 +1515,11 @@ module Haiku55Http
     "#{account.slug}.haiku55.test"
   end
 
-  def start_server(directory, run_id, reserved, account)
+  def server_execution_id
+    EXECUTION_ID
+  end
+
+  def server_env(directory, run_id, reserved, account)
     env = SERVER_ENV.merge(
       "DEV_TUNNEL_FALLBACK_ACCOUNT_SLUG" => account.slug,
       "RAG_VALIDATION_CAPTURE_RUN" => run_id,
@@ -754,6 +1529,26 @@ module Haiku55Http
       "PORT" => PORT.to_s
     )
     CLEARED_ENV.each { |key| env[key] = nil }
+    if AUDIT
+      env["KNOWLEDGE_BASE_S3_BUCKET"] = AUDIT_KB_BUCKET
+      scope = CONTINUATION ? run_id : directory.basename
+      execution_id = server_execution_id
+      env.merge!("RAG_ASSIGNMENT_EXECUTION_ID" => execution_id, "RAG_ASSIGNMENT_RUN_SCOPE" => "#{execution_id}/#{scope}")
+    end
+    if reserved["vision"]
+      env.merge!(
+        "PHOTO_QUESTION_RAG_ENABLED" => "true",
+        "RAG_PHOTO_WORKER_QUEUE" => "audit_photo_#{Digest::SHA256.hexdigest(run_id).first(16)}",
+        "RAG_PHOTO_VISION_SPEND_PATH" => directory.parent.join("vision-spend.json").to_s,
+        "RAG_PHOTO_LOCAL_STORE" => Rails.root.join("tmp/field_companion/local_field_photos").to_s
+      )
+      env["RAG_LOCAL_PASS_ALLOWED_CALLS"] += ",#{Rag::GuardedPhotoVision::OPERATION}@#{Rag::GuardedPhotoVision::TRACKING_MODEL}"
+    end
+    env
+  end
+
+  def start_server(directory, run_id, reserved, account)
+    env = server_env(directory, run_id, reserved, account)
     log = directory.join("server.log").to_s
     pid = Process.spawn(env, "bundle", "exec", "puma", "-b", "tcp://127.0.0.1:#{PORT}", "-t", "1:1", "-w", "0",
       "-e", "development", chdir: Rails.root.to_s, out: log, err: log, pgroup: true)
@@ -768,6 +1563,9 @@ module Haiku55Http
 
       sleep 1
     end
+  rescue StandardError
+    stop_server(pid)
+    raise
   end
 
   def stop_server(pid)
@@ -781,11 +1579,18 @@ module Haiku55Http
 
   # ---- helpers -------------------------------------------------------------
 
+  def fresh_session(user)
+    ConversationSession.uncached do
+      ConversationSession.find_by(identifier: user.id.to_s, channel: "web", account_id: user.account_id)
+    end
+  end
+
   # The runner process does not carry the server's episode settings, so it
   # reads the persisted id instead of parsing the live window.
   def stored_episode_id(session)
     episode = session&.active_episode
-    episode.is_a?(Hash) ? episode["episode_id"] : nil
+    episode = JSON.parse(episode) if episode.is_a?(String)
+    episode["episode_id"] if episode.is_a?(Hash)
   end
 
   def new_user(account, name)

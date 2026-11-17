@@ -473,7 +473,9 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
       assert_equal analysis_result[:analysis], answer_message["visual_summary"]
 
       history = @session.reload.conversation_history
-      assert_not_includes history.pluck("content"), I18n.t("rag.photo_question_unavailable", locale: :es)
+      assert_equal answer_message["answer"], history.last["content"]
+      assert_equal "failed", history.last["outcome"]
+      assert_equal "", history.last["prompt_reply"]
     end
   ensure
     Rag::PhotoQuestionAnswerService.define_method(:call, orig_call) if orig_call
@@ -1841,7 +1843,8 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
           assert_includes composed, "KONE"
           assert_not_includes composed, "OTIS"
           assert_not_includes composed, "no nivela"
-          assert_nil captured[:conv_session]
+          assert captured[:conv_session].readonly?
+          assert_equal owner, captured[:conv_session].live_episode_id
           assert_not_equal owner, kept["episode_id"]
           assert_equal "no nivela", kept.dig("goal", "text")
           assert_equal "OTIS", kept.dig("facts", "manufacturer", "value")
@@ -1851,6 +1854,7 @@ class FieldPhotoAnalysisJobTest < ActiveJob::TestCase
           assert history.any? { |line| line.to_s.include?("[FOTO]") }
           assert_not_includes history, messages.last["answer"]
           assert_equal "photo_question_answered", messages.last["status"]
+          assert_equal Rag::CompanionCaseWrite.conflict_answer(:es), messages.last["answer"]
         end
       end
     end

@@ -25,12 +25,8 @@ module Rag
   #     mismatch first and not apply that brand, or another manufacturer, to
   #     the photographed part. "# NO MATCH" in generation.txt still applies.
   #
-  # entity_sources is deliberately left empty (conv_session is NOT passed to
-  # execute_rag_query) so RagRetrievalProfile falls back to OPEN_RESULTS — the
-  # photo itself is never pinned as an active_entity, so this is an open
-  # catalog search, not a narrow pinned-document lookup. conversation_session_id
-  # IS passed (see #call), purely for trace attribution — it does not affect
-  # retrieval scoping.
+  # The job supplies a read-only session snapshot with the accepted photo and
+  # the pin. Calls without a snapshot retain their explicit retrieval scope.
   class PhotoQuestionAnswerService
     include RagQueryConcern
 
@@ -47,10 +43,11 @@ module Rag
     ].freeze
     PLANT_IDENTIFIER_PATTERN = /\b[A-Z]{4,}\s+\d{2,}\b/
 
-    def initialize(question:, evidence_value:, session:, account:, user_id:, correlation_id:, locale:, field_photo_id: nil, accepted_observation: nil, session_context_snapshot: nil, entity_s3_uris_snapshot: nil, retrieval_question: nil, equipment_identity: nil, raw_question: nil)
+    def initialize(question:, evidence_value:, session:, account:, user_id:, correlation_id:, locale:, field_photo_id: nil, accepted_observation: nil, session_context_snapshot: nil, entity_s3_uris_snapshot: nil, retrieval_question: nil, equipment_identity: nil, raw_question: nil, session_snapshot: nil)
       @question = question.to_s.strip
       @evidence = evidence_value.to_h.deep_symbolize_keys
       @session = session
+      @session_snapshot = session_snapshot
       @account = account
       @user_id = user_id
       @correlation_id = correlation_id
@@ -67,8 +64,8 @@ module Rag
 
     attr_reader :equipment_identity, :retrieval_question
 
-    # @return [Hash, nil] { answer:, citations:, generation_mode: } or nil when
-    #   the flag is off, the question is blank, or the RAG call did not succeed.
+    # @return [Hash, nil] the published result or the correlated failure.
+    # nil means the photo does not have a question for this route.
     def call
       return nil unless @session.is_a?(FieldCases::TurnContext) || Rag::PhotoQuestionFlag.enabled?
       return nil if @question.blank?
@@ -89,11 +86,11 @@ module Rag
         correlation_id:  @correlation_id,
         conversation_session_id: @session&.id,
         # The visual decision already ran. This retrieve must not open another one.
-        # The N2 snapshot is the identity for this turn. Do not pass conv_session.
+        conv_session: @session_snapshot,
         apply_photo_continuity: false,
         equipment_identity: @equipment_identity
       )
-      return nil unless result.success?
+      return unavailable_photo_lookup(result, reason: result.error_type) unless result.success?
       return unavailable_photo_lookup(result) if result.equipment_identity_status.to_s == "unavailable"
 
       processor       = Bedrock::CitationProcessor.new
@@ -118,7 +115,14 @@ module Rag
         generation_mode: result.generation_mode,
         generation_context: result.generation_context,
         generation_prompt_chars: result.generation_prompt_chars,
-        context_truncated: result.context_truncated
+        context_truncated: result.context_truncated,
+        pending_question: result.pending_question,
+        history_answer: result.history_answer,
+        route_outcome: result.route_outcome,
+        case_outcome: result.case_outcome,
+        case_evidence: result.case_evidence,
+        expected_case_revision: result.expected_case_revision,
+        focus_ids: @session_snapshot&.focus_document_ids
       }
     end
 
@@ -136,6 +140,10 @@ module Rag
         provenance_segments: Rag::ProvenanceSegmenter.call(answer: unavailable, citations: []),
         retrieved_citations: [],
         generation_mode: result&.generation_mode,
+        generation_context: result&.generation_context,
+        generation_prompt_chars: result&.generation_prompt_chars,
+        context_truncated: result&.context_truncated,
+        error_class: result&.provider_error_class || result&.error_class,
         failed: true,
         equipment_identity_status: "unavailable",
         equipment_identity_reason: resolved_reason&.to_s
@@ -242,10 +250,10 @@ module Rag
     end
 
     def photo_evidence_block
-      visible_codes = Array(@evidence[:visible_codes]).presence&.join(", ") || UNKNOWN
+      visible_codes = ActivePhotoContext.generation_labels(@evidence[:visible_codes]).presence&.join(", ") || UNKNOWN
       lines = [
         "## Photo Evidence (this turn)",
-        "The technician attached a photo in this same turn and the question refers to it. The fields below were read from the image, not from the knowledge base; UNKNOWN means the photo does not show it and is never printed. Open the answer with one or two sentences on what the photo shows, then answer the question. Procedures and values come only from the retrieved manuals."
+        "These fields are read from the attached photo. Do not print UNKNOWN. Lead with the next documented check. Keep reported identity, visible labels and measured values distinct. A diagram does not supply measurements."
       ]
       lines << hidden_target_line if @evidence[:target_visible] == false
       lines << brand_component_mismatch_line if brand_component_mismatch?

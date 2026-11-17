@@ -25,6 +25,14 @@ class Rag::CompanionClaimBackingTest < ActiveSupport::TestCase
     assert_empty result.removed
   end
 
+  test "keeps the marker that introduces the next cited sentence" do
+    quote = "Las puertas se abrirán lentamente en la primera operación"
+    result = call("Fue la primera. [1] la describe así: «#{quote}».", VF5_58)
+
+    assert_equal "Fue la primera. [1] la describe así: «#{quote}».", result.text
+    assert_empty result.removed
+  end
+
   test "drops a cited paraphrase that adds a condition and keeps the rest" do
     text = "Si sigue abriendo despacio, lo documentado es repetir el autoajuste [1]. Mi lectura: la primera apertura lenta es esperable.\n\n¿Fue solo la primera?"
     result = call(text, VF5_58)
@@ -83,6 +91,14 @@ class Rag::CompanionClaimBackingTest < ActiveSupport::TestCase
     assert_equal "uncited_attribution", result.removed.first["reason"]
   end
 
+  test "keeps a referral to the company's authorized procedure and drops one credited to the manufacturer" do
+    referral = "Ese ajuste debe hacerse según el procedimiento autorizado de la empresa."
+    credited = "Ese ajuste debe hacerse según el procedimiento autorizado del fabricante."
+
+    assert_equal referral, call(referral, VF5_58).text
+    assert_equal [ "uncited_attribution" ], call(credited, VF5_58).removed.pluck("reason")
+  end
+
   test "keeps a literal bold quote and ignores a bold heading" do
     text = "**Qué revisar:**\n- **cruza PasCom 24V con un puente semicircular** [1]."
     result = call(text, ELEMONT)
@@ -132,6 +148,38 @@ class Rag::CompanionClaimBackingTest < ActiveSupport::TestCase
 
     assert_equal "unverified_quote", dropped.removed.first["reason"]
     assert_empty carried.removed
+  end
+
+  test "the captured reading requires the full condition from the cited table" do
+    source = Rails.root.join("test/fixtures/field_companion/audit_20261113/kone_lwi_p38.txt").read
+    technician = [ "Ingeniería me dice que marca 0." ]
+    partial = "Un 0 en el paso 2 (6_75, carga cero) cae en la condición documentada: " \
+      "«El sensor no está conectado o hay un espacio demasiado grande.» [1]"
+    complete = "Ingeniería reportó un 0. «Si el valor es 0 => El sensor no está conectado o hay un espacio demasiado grande.» [1]"
+    invented = "«Si el valor es 0 => El sensor no está conectado o tiene un cortocircuito.» [1]"
+
+    assert_equal [ "unverified_quote" ], call(partial, source, technician: technician).removed.pluck("reason")
+    assert_equal complete, call(complete, source, technician: technician).text
+    assert_equal [ "unverified_quote" ], call(invented, source, technician: technician).removed.pluck("reason")
+  end
+
+  test "a bold question stays when the cited instruction after it has no quote" do
+    latch = "Para decidir, necesito saber: **¿el contacto del cerrojo queda cerrado cuando la puerta está cerrada?** Si no cierra, revisa esa línea, como indica la fuente [1]."
+    screen = "Para decidir, necesito saber: **¿el trinco queda cerrado?** Revisa el circuito, como indica la fuente [1]."
+    brake = "¿El manual indica que el freno mide 12 V [1]?"
+
+    kept = call(latch, "linha dos trincos")
+    assert_includes kept.text, "¿el contacto del cerrojo queda cerrado cuando la puerta está cerrada?"
+    assert_not_includes kept.text, "como indica la fuente"
+    assert_equal [ "unbacked_citation" ], kept.removed.pluck("reason")
+
+    paraphrased = call(screen, "linha dos trincos")
+    assert_includes paraphrased.text, "¿el trinco queda cerrado?"
+    assert_not_includes paraphrased.text, "como indica la fuente"
+
+    dropped = call(brake, "linha dos trincos")
+    assert_empty dropped.text
+    assert_equal [ "unbacked_citation" ], dropped.removed.pluck("reason")
   end
 
   test "a period inside a quote and a decimal do not split sentences" do
@@ -369,6 +417,39 @@ class Rag::CompanionClaimBackingTest < ActiveSupport::TestCase
     result = call("Tu valor, 2,5, está por debajo de ese mínimo documentado.", KPVS_CHUNK, technician: KPVS_TECHNICIAN)
 
     assert_equal [ "uncited_attribution" ], result.removed.pluck("reason")
+  end
+
+  test "a measured reading keeps its range when the citation is inside the same clause" do
+    sentence = "Mi lectura: 7 mA cae en el rango 6-8 que la fuente indica para carga cero [1], así que la condición queda cumplida."
+    source = "Compruebe que LOP-CB muestre el valor entre 6-8."
+    kept = call(sentence, source, technician: [ "ahora marca 7 mA" ])
+    heading = call("Apartado en curso: «Carga cero» [1].", "Carga cero\n#{source}", technician: [ "ahora marca 7 mA" ])
+
+    invented = call(
+      "Mi lectura: 7 mA y el umbral 99 bar que la fuente indica [1].",
+      source, technician: [ "ahora marca 7 mA" ]
+    )
+
+    assert_includes kept.text, "rango 6-8"
+    assert_includes kept.text, "carga cero"
+    assert_not_includes kept.text, "[1]"
+    assert_equal [ "unbacked_citation" ], kept.removed.pluck("reason")
+    assert_not_includes heading.text, "Carga cero"
+    assert_not_includes invented.text, "99"
+  end
+
+  test "a reported measurement stays when its sentence cites without a literal quote" do
+    sentence = "Buena noticia: al conectar el sensor, 6_75 pasó de 0 a 7 mA, y el rango pedido en el paso 2 es 6-8 mA [1]."
+    source = "Compruebe que el valor esté entre 6-8. Si el valor es 0 => el sensor no está conectado."
+    kept = call(sentence, source, technician: [ "Lo conecté y ahora marca 7 mA." ])
+    dropped = call(sentence, source)
+
+    assert_includes kept.text, "al conectar el sensor"
+    assert_includes kept.text, "7 mA"
+    assert_not_includes kept.text, "[1]"
+    assert_equal [ "unbacked_citation" ], kept.removed.pluck("reason")
+    assert_equal [ "unbacked_citation" ], dropped.removed.pluck("reason")
+    assert_not_includes dropped.text, "conectar"
   end
 
   test "a quote that leaves out the condition of the passage is still dropped" do

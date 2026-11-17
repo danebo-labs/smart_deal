@@ -14,6 +14,13 @@ module Haiku55JourneyRubric
     |no[[:space:]]+te[[:space:]]+lo[[:space:]]+(?:pido|pedir[eé]|voy[[:space:]]+a[[:space:]]+pedir)
     |no[[:space:]]+puedo[[:space:]]+darte[[:space:]]+(?:ese[[:space:]]+paso|un[[:space:]]+m[eé]todo|otra[[:space:]]+forma)
   /ix
+  # "No necesitas identificar" only says the case can move on without the
+  # reading. It does not record that the technician cannot identify the
+  # terminal. puede/sabe, in either person, has to name #21 or #23.
+  T5_TERMINAL_LIMIT = /
+    \bno[[:space:]]+(?:puede(?:s)?|sabe(?:s)?)[[:space:]]+
+    (?:identificar|comprobar|verificar)[[:space:]]+[^.!?\n]*\b(?:21|23)\b
+  /ix
   T5_REASKS_CONTACT = /
     confirmar[[:space:]]+si[[:space:]]+hay[[:space:]]+un[[:space:]]+contacto
     |conexi[oó]n[[:space:]]+f[ií]sica[[:space:]]+entre
@@ -30,6 +37,10 @@ module Haiku55JourneyRubric
     no[[:space:]]+(?:puedes|sabes)[[:space:]]+(?:identificar|comprobar|verificar|medir)
     |no[[:space:]]+te[[:space:]]+(?:pido|vuelvo[[:space:]]+a[[:space:]]+pedir)
   /ix
+  PHOTO_EA_TURNS = JSON.parse(Rails.root.join("test/fixtures/field_companion/audit_20261113/journeys.json").read).fetch("photo_ea").freeze
+  PHOTO_DOOR_LABELS = %w[p26 p27 p28].freeze
+  # Labels verified on the original JPEG for the opening door check.
+  PHOTO_OPENING_LABELS = %w[p26 p27 p28 pv-1 mq-5 t2+].freeze
 
   module_function
 
@@ -62,6 +73,10 @@ module Haiku55JourneyRubric
     reasons = case name
     when "guion2" then judge.send(:judge_guion2, number, answer)
     when "guion1" then judge.send(:judge_guion1, number, answer, technician_texts: questions.first(number))
+    when "audit_thyssen_photo_ea"
+      milestone = photo_ea_milestone(questions[number - 1])
+      milestone ? photo_ea_reasons(milestone + 1, answer) : []
+    when "audit_kone_lwi" then kone_lwi_reasons(number, answer)
     when /\Acea/ then cea_reasons(number, answer)
     when /\A(?:kpvs|guion3)/ then kpvs_reasons(name, number, answer)
     else []
@@ -80,7 +95,8 @@ module Haiku55JourneyRubric
       reasons << "t5:reasks_identification" if reading.dig("identification_request", "present")
       reasons.delete("t5:misses_unknown")
       limited = reading.dig("technician_limitation", "recognized") || reading.dig("method_limit", "present") ||
-        answer.match?(T5_LIMIT)
+        answer.match?(T5_LIMIT) ||
+        answer.gsub(Rag::CompanionTurnPublication::QUOTE_PATTERN, " ").match?(T5_TERMINAL_LIMIT)
       reasons << "t5:limit_not_acknowledged" unless limited
     end
     reasons.concat(elemont_reasons(number, answer)) if name == "elemont"
@@ -102,6 +118,26 @@ module Haiku55JourneyRubric
     # puerta automática».
     reasons << "cea:t7_operator_in_sm" if number == 7 && answer.match?(/\A[\s*_]*s[ií]\b/i)
     reasons
+  end
+
+  def cea_completion_reasons(number, answer, citations)
+    pages = Array(citations).map { |row| row["page"].to_i }
+    case number
+    when 2
+      definitions = [ /seguridad manual/i, /seguridad de puertas cerradas/i, /seguridad autom[aá]tica/i ]
+      pages.include?(22) && definitions.all? { |label| answer.match?(label) } ? [] : [ "cea:t2_no_terminal_definitions" ]
+    when 3
+      pages.include?(22) ? [] : [ "cea:t3_missing_reference" ]
+    when 5
+      reasons = []
+      reasons << "cea:t5_no_documented_assignment" unless pages.include?(25) &&
+        answer.match?(/precierre.*SM/i) && answer.match?(/traba.*SA/i)
+      reasons << "cea:t5_contact_not_pending" unless answer.match?(/confirmar el contacto de traba/i) &&
+        answer.match?(/¿[^?]*contacto de traba[^?]*pat[ií]n retr[aá]ctil[^?]*\?/i)
+      reasons
+    else
+      []
+    end
   end
 
   # CEA-T3 asks which voltage is a 1 and which a 0. Manual p. 22: 24 Vcc is
@@ -134,9 +170,11 @@ module Haiku55JourneyRubric
       b[aá]jalo|baja|bajar(?:lo)?|bajes?|(?:sigue|seguir|siga)[[:space:]]+(?:bajando|reduciendo))(?![[:alpha:]])
   /ix
   KPVS_SET = /
-    (?<![[:alpha:]])(?:pon(?:lo|erlo)?|d[eé]jalo|dejarlo|c[aá]rgalo|cargarlo|configura(?:lo)?|ajusta(?:lo)?|
+    (?<![[:alpha:]])(?:pon(?:lo|erlo)?|d[eé]jalo|dejarlo|c[aá]rgalo|cargarlo|carg[aá](?=[[:space:]]+(?:el[[:space:]]+)?KP-VS\b)|configura(?:lo)?|ajusta(?:lo)?|
       cambia(?:lo)?|modifica(?:lo)?|teclea(?:lo)?|ingresa(?:lo)?)(?![[:alpha:]])
   /ix
+  TEMPORAL_INFINITIVE_LEAD = /\b(?:antes|despu[eé]s)\s+de\s*\z/i
+  INFINITIVE = /(?:ar|er|ir)(?:l[oa]s?)?\z/i
   KPVS_NEGATOR = /(?<![[:alpha:]])(?:no|nunca|evita|evitar|sin|tampoco)(?![[:alpha:]])(?:[[:space:]]+[[:alpha:]]+){0,7}[[:space:]]*\z/i
   # «La fuente indica disminuir KP-VS «hasta el mínimo de [3,0]»»: what the manual says, not an order.
   SOURCE_RESTATEMENT = /\A[[:space:]]*(?:seg[uú]n\b|la[[:space:]]+fuente[[:space:]]+(?:indica|dice|establece|pide)|el[[:space:]]+manual[[:space:]]+(?:indica|dice|establece|pide))/i
@@ -152,7 +190,7 @@ module Haiku55JourneyRubric
     reasons = []
     reasons << "kpvs:no_answer" if kpvs_abstained?(answer)
     reasons << "kpvs:decrease_order" if kpvs_order?(body, KPVS_DECREASE)
-    reasons << "kpvs:set_order" if name == "guion3" ? kpvs_order?(body, KPVS_SET) : false
+    reasons << "kpvs:set_order" if name == "guion3" && kpvs_set_order?(body)
     if name == "guion3"
       reasons.concat(guion3_reasons(number, body, answer))
     else
@@ -198,6 +236,129 @@ module Haiku55JourneyRubric
     reasons
   end
 
+  # The runner reports the same reading with or without the nominal yes/no.
+  # Both lines are the fixture reading step.
+  PHOTO_READING_VARIANTS = [ "Marca 0 Vcc.", "No, marca 0 Vcc." ].freeze
+
+  def photo_ea_milestone(question)
+    index = PHOTO_EA_TURNS.index(question)
+    return index unless index.nil?
+
+    text = question.to_s.strip.sub(/\.\z/, "")
+    reading = PHOTO_EA_TURNS.index("Sí, marca 0 Vcc.")
+    reading if PHOTO_READING_VARIANTS.map { |line| line.sub(/\.\z/, "") }.include?(text)
+  end
+
+  def photo_ea_reasons(number, answer)
+    text = I18n.transliterate(answer).downcase
+    reasons = []
+    reasons << "case_recap_repeated" if text.scan(/^condicion ya reportada:/).size > 1
+    case number
+    when 1
+      reasons.concat(photo_opening_reasons(text))
+    when 2
+      request = requested_observation(answer)
+      reasons << "display_state_reasked" if request.match?(/que codigo de estado|cual es el codigo de estado/)
+      reasons << "ea_signals_or_latch_line_missing" unless text.match?(/\bea\b/) && text.match?(/fall[ao]\s+de\s+se[ñn]al|falha de sinais/) &&
+        text.include?("p28") && text.match?(/trinc|enclav|cerradur/) && text.match?(/\[\d+\]/)
+      if text.match?(/(?:correccion|rectific|no (?:lo |los )?(?:uses|tomes en cuenta)|descarta lo (?:dicho|anterior))[^.!?]*(?:p26|p27|p28)|(?:p26|p27|p28)[^.!?]*(?:no (?:lo |los )?uses|no aparece\w* en (?:la foto|el esquema))/)
+        reasons << "undue_photo_retraction"
+      end
+    when 3
+      reasons << "confirmed_connection_not_carried" unless text.match?(/firm|conect|fij|apret|descart/)
+    when 4
+      reasons << "misalignment_not_checked" unless text.match?(/alin[eé]|descentr|fuera de posicion|no coincide/)
+    when 5
+      reasons << "alignment_and_postcheck_missing" unless text.match?(/alin/) && text.match?(/procedimiento|autorizad/) &&
+        text.match?(/cierr|cerr/) && text.match?(/trab|engan|enclav/) && text.match?(/\bea\b/)
+    when 6
+      reasons << "recovered_engagement_and_persistent_ea_missing" unless text.match?(/trab|engan|enclav/) &&
+        text.match?(/\bea\b/) && text.match?(/cerrad|cierra/)
+      request = requested_observation(answer)
+      reasons << "closed_door_reading_not_requested" unless request.match?(/ra\s*-?53|p28/) &&
+        request.match?(/lectura|tension|voltaje|mide|medir|valor|vcc/) && text.match?(/cerrad|cierra/) && text.match?(/trab|engan|enclav/)
+    when 7
+      reasons << "voltage_comparison_missing" unless text.match?(/\b0\s*v(?:cc|dc)?\b/) &&
+        text.match?(/\b110\s*v(?:cc|dc)?\b/) && text.match?(/ra\s*-?53|p28/) && text.match?(/\[\d+\]/)
+      reasons << "contact_or_wiring_not_addressed" unless text.match?(/contact|conexion|cablead/) && text.match?(/trinc|enclav|cerradur/)
+    when 8
+      reasons << "electrical_reference_points_missing" unless text.match?(/\b0\s*v(?:cc|dc)?\b/) &&
+        text.match?(/\bra\s*-?30\b/) && text.include?("a4+") && text.match?(/alimenta/) &&
+        text.match?(/\bra\s*-?53\b/) && text.include?("p28") && text.match?(/confirm|senal/) &&
+        text.match?(/plano|esquema/) && text.match?(/procedimiento/)
+      body = kpvs_without_quotes(text)
+      reasons << "bridge_proposed" if body.match?(/(?:haz|coloca|instala|usa)\s+(?:un\s+)?puente|puentea\s+(?:el|la|entre)/)
+    end
+    reasons
+  end
+
+  def photo_opening_reasons(text)
+    reasons = []
+    visual = text.split(/(?<=[.!?])\s+|\n+/).select { |sentence| sentence.match?(/\bfoto\b|\bimagen\b|\besquema\b/) }
+    labels = visual.flat_map { |sentence| sentence.scan(/\b(?:ra\s*-?\d+|[a-z]{1,4}-?\d+\+?|a\d+\+)(?![\w+])/) }
+    reasons << "observed_labels_missing" if (labels & PHOTO_DOOR_LABELS).empty?
+    reasons << "unsupported_photo_label" if (labels - PHOTO_OPENING_LABELS).any?
+    reasons << "photo_used_as_measurement" if visual.any? { |sentence|
+      sentence.match?(/\b\d+\s*v(?:cc|dc|ca)?\b|\b(?:p26|p27|p28)\s+(?:esta|queda|se ve)\s+(?:activ|energiz)|\b(?:mide|marca|indica|confirma)\b[^.?!]*(?:tension|voltaje|activ|energiz)/) &&
+        !sentence.match?(/\b(?:no|sin)\b.{0,35}(?:mid|med|tension|voltaje|confirm|indic)|\bni\b/)
+    }
+    reasons
+  end
+
+  # Send the prepared field reply only when it answers the published question
+  # or requested observation. A mismatch leaves the actual answer in the trace.
+  def photo_ea_followup_stop(number, answer)
+    request = requested_observation(answer)
+    matches = case number
+    when 1 then request.match?(/codigo|display/)
+    when 2 then request.match?(/p28/) && request.match?(/conexion|conect|borne|bornera/) &&
+      request.match?(/firme|floja|apretad|ajustad|suelta|bien conect|estado de la conexion/) &&
+      !request.match?(/lectura|tension|voltaje|mide|midas|midir|medir/)
+    when 3 then request.match?(/trinco|traba|enclav|pestillo|enganche/) &&
+      request.match?(/engancha|enganchar|traba|acciona|enclava|entra|encaja/)
+    when 4 then request.match?(/alin|descentr|posicion|coincide|encaja/)
+    when 5 then request.match?(/alin|corrig|correg|ajust/) && request.match?(/cierr|cerr|trab|engan|ea/)
+    when 6 then request.match?(/ra\s*-?53|p28/) && request.match?(/lectura|tension|voltaje|mide|medir|valor|vcc/)
+    else true
+    end
+    "field_reply_does_not_answer_photo_t#{number}" unless matches
+  end
+
+  def kone_lwi_reasons(number, answer)
+    text = I18n.transliterate(answer).downcase
+    reasons = []
+    case number
+    when 1
+      reasons << "lwi_monitor_missing" unless text.match?(/lop[ -]?cb/) && text.match?(/6[_.,-]75/) && text.match?(/\b65\b/)
+    when 2
+      reasons << "engineering_reading_not_linked" unless text.match?(/\b0\b/) && text.match?(/sensor|lop[ -]?cb|6[_.,-]75|monitor/)
+      reasons << "zero_reading_alternatives_missing" unless text.match?(/desconect|no esta conect/) &&
+        text.match?(/separaci|espacio|distancia|holgura/)
+    when 3
+      reasons << "lwi_field_result_missing" unless text.match?(/desconect|reconect|conect/) &&
+        text.match?(/\b7\s*ma\b/) && text.match?(/\b6\s*(?:a|y|[-–])\s*8\b/) && text.match?(/vacia|sin carga/)
+      reasons << "lwi_zero_load_step_missing" unless text.match?(/6[_.,-]74/) && text.match?(/carga cero|cero de carga/) && text.match?(/\[\d+\]/)
+    end
+    reasons
+  end
+
+  def kone_lwi_followup_stop(number, answer)
+    request = requested_observation(answer)
+    matches = case number
+    when 1 then request.match?(/lectura|valor|cuanto|marca|indica|muestra|reporta|dime/) && request.match?(/sensor|lop[ -]?cb|6[_.,-]75|monitor/)
+    when 2 then request.match?(/sensor/) && request.match?(/conect|conexion/)
+    else true
+    end
+    "field_reply_does_not_answer_kone_t#{number}" unless matches
+  end
+
+  def requested_observation(answer)
+    text = kpvs_without_quotes(answer)
+    questions = text.scan(/¿([^?]+)\?/).flatten
+    questions = text.scan(/(?:^|[.!\n]\s*)([^?¿.!\n]+)\?/).flatten if questions.empty?
+    I18n.transliterate(questions.any? ? questions.join(" ") : text).downcase
+  end
+
   # A quotation of the manual is evidence, not the answer's own order.
   def kpvs_without_quotes(text)
     text.to_s.gsub(/«[^»]*»|“[^”]*”|"[^"]*"/) { |quote| quote.split.size >= 4 ? " " : quote }.gsub("\u2011", "-")
@@ -208,6 +369,14 @@ module Haiku55JourneyRubric
       I18n.t("rag.data_not_available", locale: :es) ].any? { |text| answer.start_with?(text) }
   end
 
+  def kpvs_set_order?(body)
+    kpvs_order?(body, KPVS_SET) do |action|
+      # The directive is the main verb. An infinitive introduced by a
+      # temporal preposition only sets the timing of that directive.
+      action.pre_match.match?(TEMPORAL_INFINITIVE_LEAD) && action[0].match?(INFINITIVE)
+    end
+  end
+
   # An unnegated match. A negation reaches back at most seven words inside
   # the same clause, so «No reinicies y baja KP-VS» is one order, not none.
   def kpvs_order?(body, pattern)
@@ -216,7 +385,10 @@ module Haiku55JourneyRubric
 
       sentence.split(/(?<!\d),|,(?!\d)|;|:|[[:space:]](?:y|e|o|pero)[[:space:]]/i).any? do |clause|
         clause.to_enum(:scan, pattern).any? do
-          !clause[0...Regexp.last_match.begin(0)].match?(KPVS_NEGATOR)
+          action = Regexp.last_match
+          next false if action.pre_match.match?(KPVS_NEGATOR)
+
+          !block_given? || !yield(action)
         end
       end
     end

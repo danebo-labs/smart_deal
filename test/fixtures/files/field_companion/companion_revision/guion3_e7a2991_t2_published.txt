@@ -1,0 +1,7 @@
+KP-VS: la lectura reportada de 2,5 está por debajo del mínimo de 3,0. §19.13: «En caso de ruido audible muy elevado: disminuya el valor del parámetro "KP-VS", hasta el mínimo de [3,0]» [2]. No lo reduzcas más. La evaluación de Ingeniería queda pendiente.
+
+No.
+
+Use los datos de su placa (5,5 kW, 380 V, 1.175 rpm), no los del ejemplo (1660 rpm, 12 A, 220 V).
+
+Pendiente: la corriente nominal de placa, que no pudo leer. El manual pide «ver corrente nominal de placa do motor» [4]. Ingeniería debe obtener ese dato antes de cargarlo.

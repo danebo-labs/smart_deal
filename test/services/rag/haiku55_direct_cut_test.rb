@@ -65,12 +65,13 @@ class Rag::Haiku55DirectCutTest < ActiveSupport::TestCase
     BedrockClient.define_singleton_method(:new) { |*args, **kwargs, &block| original.call(*args, **kwargs, &block) } if original
   end
 
-  test "the referral note starts at turn 4 and keeps discarded conditions out of what is missing" do
+  test "the referral note supports another check while the technician can advance" do
     assert_nil Rag::CompanionDirectAnswer.send(:referral_note, 3)
     note = Rag::CompanionDirectAnswer.send(:referral_note, 4)
 
-    assert_includes note, "resumen para derivar"
-    assert_includes note, "Lo que falta no incluye un componente, ajuste o modo cuya condición o ejemplo documentado depende de algo que el técnico ya descartó."
+    assert_includes note, "la siguiente comprobación respaldada"
+    assert_includes note, "Si el técnico no puede seguir"
+    assert_includes note, "lo que queda pendiente para derivar"
   end
 
   test "a truncated interpreter response and a missing tool fail closed" do
@@ -190,7 +191,7 @@ class Rag::Haiku55DirectCutTest < ActiveSupport::TestCase
       add.call(327, "0.004093")
       add.call(328, "0.001998")
       File.write(path, JSON.generate(
-        "call_cap" => 328, "cost_cap_usd" => "4.0", "attempts" => 326, "blocked" => 0, "priced" => 194,
+        "call_cap" => 328, "cost_cap_usd" => "5.024677", "attempts" => 326, "blocked" => 0, "priced" => 194,
         "seq" => 328, "committed" => "2.351603", "unknown" => "0.383074", "open" => {}, "entries" => entries,
         "authorization" => { "id" => "f2f3-joint-after-134", "after_attempt" => 134, "cost_usd" => "0.750000", "call_cap" => 328 },
         "executions" => [
@@ -212,6 +213,22 @@ class Rag::Haiku55DirectCutTest < ActiveSupport::TestCase
       book.settle!(id, actual_usd: "2.285000")
       assert_raises(Rag::AssignmentSpend::Stop) { book.reserve!(ceiling_usd: "0.010000", model_id: "claude-haiku-5-5-direct") }
       assert book.reserve!(ceiling_usd: "0.005000", model_id: "claude-haiku-5-5-direct")
+    end
+  end
+
+  test "a persisted four-dollar cap still limits the larger constructor ceiling" do
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "spend.json")
+      File.write(path, JSON.generate(
+        "cost_cap_usd" => "4.0", "attempts" => 1, "seq" => 1,
+        "committed" => "3.950000", "unknown" => "0.040000"
+      ))
+      book = Rag::AssignmentSpend.new(path: path, call_cap: 1000, cost_cap_usd: "5.024677")
+
+      assert book.reserve!(ceiling_usd: "0.010000")
+      assert_raises(Rag::AssignmentSpend::Stop) { book.reserve!(ceiling_usd: "0.000001") }
+      assert_equal 2, book.snapshot.fetch("attempts")
+      assert_equal "4.0", JSON.parse(File.read(path)).fetch("cost_cap_usd")
     end
   end
 

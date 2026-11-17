@@ -87,7 +87,7 @@ module Rag
     Composed = Data.define(:text, :check, :input, :stop_reason, :pending)
 
     class << self
-      def prepare(raw_question:, chunks:, episode:, session:, correlation_id: nil)
+      def prepare(raw_question:, chunks:, episode:, session:, correlation_id: nil, photo_evidence: nil)
         kept = limit_statement_chunks(chunks)
         facts = CompanionCaseFacts.build(episode, session: session)
         statements = CompanionStatements.parse(kept)
@@ -96,6 +96,7 @@ module Rag
         )
         user = [
           "Mensaje de este turno:\n#{raw_question.to_s.strip}",
+          photo_evidence,
           facts.prompt_block,
           turns_block,
           SessionContextBuilder.companion_prior_answer(session),

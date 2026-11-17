@@ -17,7 +17,14 @@ class FieldPhotoStore
 
     key = object_key(account_id: account_id, sha256: sha256,
                      filename: filename, content_type: content_type, storage_scope: storage_scope)
-    return nil unless S3DocumentsService.new.upload_binary(key, binary, content_type)
+    if (path = local_path(key))
+      FileUtils.mkdir_p(path.dirname, mode: 0o700)
+      File.binwrite(path, binary)
+      path.chmod(0o600)
+    else
+      return nil if Rag::LocalPassLedger.guard_requested?
+      return nil unless S3DocumentsService.new.upload_binary(key, binary, content_type)
+    end
 
     FieldPhoto.create!(
       account_id: account_id, sha256: sha256, storage_scope: storage_scope, s3_key_original: key,
@@ -35,8 +42,23 @@ class FieldPhotoStore
   def self.fetch_binary(field_photo)
     return nil if field_photo&.s3_key_original.blank?
 
+    if (path = local_path(field_photo.s3_key_original))
+      return path.file? ? File.binread(path) : nil
+    end
+    return nil if Rag::LocalPassLedger.guard_requested?
+
     S3DocumentsService.new.download(field_photo.s3_key_original)
   end
+
+  def self.local_path(key)
+    return unless Rag::LocalPassLedger.armed?
+
+    root = ENV["RAG_PHOTO_LOCAL_STORE"].presence
+    return unless root && key.match?(/\Afield_photos\/\d+\/[a-f0-9]{64}\/original\.[a-zA-Z0-9]+\z/)
+
+    Pathname(root).join(key)
+  end
+  private_class_method :local_path
 
   def self.object_key(account_id:, sha256:, filename:, content_type:, storage_scope:)
     ext = File.extname(filename.to_s).delete_prefix(".").presence ||

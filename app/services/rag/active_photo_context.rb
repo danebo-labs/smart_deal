@@ -7,6 +7,7 @@ module Rag
     MAX_BYTES = 640
     MAX_LABEL = 60
     MAX_VISIBLE = 4
+    GENERATION_VISIBLE_BYTES = 360
     MAX_VISIBLE_CHARS = 40
     HEADER = "Photo Evidence for the active episode"
     STATUSES = %w[absent loaded unavailable invalid stale].freeze
@@ -27,7 +28,16 @@ module Rag
         return new(status: "invalid", field_photo_id: row.first, projection: nil)
       end
 
-      new(status: "loaded", field_photo_id: row.first, projection: projection)
+      new(status: "loaded", field_photo_id: row.first, projection: projection,
+        generation_codes: observation.fetch("visible_text"))
+    end
+
+    # Both builders emit a bounded, blank-line-delimited observation block.
+    # Keep it independent of the history budget on the generation path.
+    def self.generation_evidence(context)
+      context.to_s.split(/\n\n+/).find do |block|
+        block.start_with?("#{HEADER}\n", "## Photo Evidence (this turn)\n")
+      end
     end
 
     def self.project(observation)
@@ -95,10 +105,11 @@ module Rag
 
     private_class_method :project, :label, :visible_text, :fit
 
-    def initialize(status:, field_photo_id:, projection:)
+    def initialize(status:, field_photo_id:, projection:, generation_codes: nil)
       @status = status
       @field_photo_id = field_photo_id
       @projection = projection
+      @generation_codes = generation_codes
     end
 
     def loaded?
@@ -127,20 +138,49 @@ module Rag
       terms
     end
 
+    def self.generation_labels(values)
+      labels = Array(values).reject { |text| text.casecmp?("unknown") }
+      labels.pop while labels.join(", ").bytesize > GENERATION_VISIBLE_BYTES
+      labels
+    end
+
+    # The labels the generator receives as read from the photo. Empty when the
+    # reading is not shown to generation.
+    def observed_labels
+      return [] unless presented?
+
+      self.class.generation_labels(@generation_codes || projection["visible_text"])
+    end
+
     def generation_block(include_unconfirmed: false)
-      return nil unless relevant? || (include_unconfirmed && loaded?)
+      return nil unless presented? || (include_unconfirmed && loaded?)
 
       lines = [ HEADER ]
       lines << "Component: #{projection['component']}" if projection["component"].present?
-      lines << "Manufacturer: #{projection['manufacturer']}" if projection["manufacturer"].present?
-      lines << "Model: #{projection['model']}" if projection["model"].present?
-      if Array(projection["visible_text"]).any?
-        lines << "Visible text: #{projection['visible_text'].join(', ')}"
+      show_identity = relevant? || (include_unconfirmed && !visible_despite_uncertainty?)
+      if show_identity
+        lines << "Manufacturer: #{projection['manufacturer']}" if projection["manufacturer"].present?
+        lines << "Model: #{projection['model']}" if projection["model"].present?
       end
-      lines << "Condition: #{projection['condition']}" if projection["condition"].present?
+      codes = presented? ? observed_labels : self.class.generation_labels(projection["visible_text"])
+      lines << "Visible text: #{codes.join(', ')}" if codes.any?
+      if visible_despite_uncertainty?
+        lines << "Vision saw the target but was unsure how it relates to this fault. Use labels as observations only."
+      end
+      lines << "Condition: #{projection['condition']}" if show_identity && projection["condition"].present?
       lines << "Read from the active episode photo. Not stated by the technician."
       lines << "Relevance to the current fault is unconfirmed. Use these details only for visual follow-up." unless relevant?
       lines.join("\n")
+    end
+
+    private
+
+    def presented?
+      relevant? || visible_despite_uncertainty?
+    end
+
+    def visible_despite_uncertainty?
+      loaded? && projection["relevance_to_goal"] == "uncertain" && projection["target_visible"] == true
     end
   end
 end

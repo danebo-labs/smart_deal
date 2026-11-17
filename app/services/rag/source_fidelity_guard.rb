@@ -4,7 +4,6 @@ module Rag
   # Drops unit-bearing values the retrieved chunks, the question, and this
   # turn's photo block do not contain. One pass. No second model call.
   class SourceFidelityGuard
-    PHOTO_EVIDENCE_HEADING = "## Photo Evidence (this turn)"
     LIST_ITEM = /\A\s*(?:[-*•]|\d{1,2}[.)])\s+\S/.freeze
     # A period ends a sentence only before a new sentence or the end of the text.
     # "p. 4" and "aprox. 12" stay inside the sentence that contains them.
@@ -59,7 +58,7 @@ module Rag
     end
 
     def self.allowed_texts(question:, effective_question:, session_context:)
-      [ question, effective_question, photo_evidence_block(session_context) ].compact_blank
+      [ question, effective_question, ActivePhotoContext.generation_evidence(session_context) ].compact_blank
     end
 
     def self.citation_body(citation)
@@ -67,16 +66,6 @@ module Rag
       return nil unless citation.respond_to?(:[])
 
       citation[:content] || citation["content"] || citation[:text] || citation["text"]
-    end
-
-    def self.photo_evidence_block(session_context)
-      source = session_context.to_s
-      start = source.index(PHOTO_EVIDENCE_HEADING)
-      return nil unless start
-
-      rest = source[start..]
-      finish = rest.index(/\n## /, 1)
-      finish ? rest[0...finish] : rest
     end
 
     def initialize(answer:, evidence_texts:, allowed_texts:, locale:, correlation_id:)

@@ -39,7 +39,7 @@ class Rag::ActivePhotoContextTest < ActiveSupport::TestCase
     assert_nil invalid.to_prompt
   end
 
-  test "only a relevant photo produces query terms and a generation block" do
+  test "uncertain visible target goes to generation without expanding retrieval" do
     %w[relevant uncertain unrelated].each do |relevance|
       photo = create_photo(@account, observation(relevance: relevance, model: "NICE3000", manufacturer: "NICE", codes: [ "E51" ]))
       context = Rag::ActivePhotoContext.resolve(episode: episode_with(photo.id), viewer_account: @account)
@@ -54,6 +54,10 @@ class Rag::ActivePhotoContextTest < ActiveSupport::TestCase
         assert_includes context.query_terms, "E51"
         assert_includes context.generation_block, "Photo Evidence for the active episode"
         assert_includes context.generation_block, "Not stated by the technician."
+      elsif relevance == "uncertain"
+        assert_empty context.query_terms
+        assert_includes context.generation_block, "Visible text: E51"
+        assert_includes context.generation_block, "unsure how it relates"
       else
         assert_empty context.query_terms
         assert_nil context.generation_block
@@ -96,6 +100,7 @@ class Rag::ActivePhotoContextTest < ActiveSupport::TestCase
     assert_equal 60, prompt["component"].length
     assert_not prompt.key?("manufacturer")
     assert_equal [ "E51", "A2", "B3", "C4" ], prompt["visible_text"]
+    assert_includes context.generation_block, "E51, A2, B3, C4, D5"
     assert_operator JSON.generate(prompt).bytesize, :<=, Rag::ActivePhotoContext::MAX_BYTES
     assert_not_includes JSON.generate(prompt), "field_photos"
     assert_not_includes JSON.generate(prompt), photo.s3_key_original

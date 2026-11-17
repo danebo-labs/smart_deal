@@ -1,0 +1,360 @@
+[DOCUMENT: Montacargas 2N Temporizado-1 (1).pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/1/2026-08-31/Montacargas 2N Temporizado-1 (1).pdf]
+[SEARCH_ALIASES: tablero de control, borneras, Modelo MH, ELEMONT, K1 K2 K3 K4 K5 K6 K7 K8, RLP RLS, T1 T2 temporizador, Q1 Q2 Q3 partidor motor, Q4 10A iluminación foso, Q5 16A iluminación cabina, Q6 6A control, K2 relé 11 pines 24VCA BAJA, K4 relé 11 pines 24VCA PRESOSTATO, K8 contactor 220VAC BAJA, borne 10 iluminación foso, borne 14 cabina 220VAC, borne 23 Seguridad OUT, F1 F2 F3 fusible 2A, presostato 25 OUT 26 IN, PET parada emergencia]
+
+S6 — ELECTRICAL
+
+DESCRIPCIÓN TABLERO DE CONTROL — Montacargas Hidráulico Modelo MH
+Fabricante: ELEMONT (Sociedad Comercial e Industrial Elemont Limitada)
+Fecha: 02/03/2023 | Plano N°: ELEMONT-N/A | Rev: A | Certificación ROL 2740
+Ubicación: Santa Adela N° 9540 - Maipú
+
+## Componentes del Tablero (Tabla de Designaciones)
+
+| Designación | Descripción |
+|---|---|
+| F1, F2, F3 | Fusible seccionador 2amp |
+| H1, H2, H3 | Luz piloto, presencia de fase |
+| H4 | Luz piloto, falla seguridad |
+| K1 | Contactor 24VAC SUBE |
+| K2 | Relé 11 pines 24VCA BAJA |
+| K3 | Relé plano 24VDC BLOQUEO PRESOSTATO |
+| K4 | Relé 11 pines 24VCA PRESOSTATO |
+| K5 | Relé plano 24VDC INDICADOR SEGURIDAD |
+| K6 | Relé 11 pines 24VCA INSPECCION |
+| K7 | Contactor 220vac Seguridad |
+| K8 | Contactor 220vac BAJA |
+| PET | Parada de emergencia |
+| Q1 | Interruptor automático 3 polos 25A |
+| Q2 | Partidor de motor 11–17A |
+| Q3 | Interruptor diferencial 25A 30ma |
+| Q4 | Interruptor automático 1 polo 10A, Iluminación Foso |
+| Q5 | Interruptor automático 1 polo 16A, Iluminación Cabina |
+| Q6 | Interruptor automático 1 polo 6A, Control |
+| R1 | Relé de asimetría |
+| RLP | Relé 11 pines 24VDC SEGURIDAD |
+| RLS | Relé 24Vac Límite Superior |
+| T1 | Relé Temporizador (Modo E y t<3 Minutos) |
+| T2 | Relé Temporizador (Modo Wu y t<1 Seg) |
+
+## Borneras (Terminal Block Assignment)
+
+| N° Terminal | Designación | N° Terminal | Designación |
+|---|---|---|---|
+| 1 | R | 26 | Presostato IN |
+| 2 | S | 27 | Indicador sobre carga |
+| 3 | T | 28 | Sube |
+| 4 | N | 29 | Baja |
+| 5 | GND | 30 | Micro nivel inferior |
+| 6 | U | 31 | Micro nivel superior |
+| 7 | V | 32 | RLP OUT |
+| 8 | W | 33 | Llamada nivel 1 |
+| 9 | Tierra motor | 34 | Llamada nivel 2 |
+| 10 | L Iluminación foso | 35 | Inspeccion |
+| 11 | N Iluminación foso | 36 | (sin designación en fuente) |
+| 12 | L Electrovalvula Bajando | 37 | (sin designación en fuente) |
+| 13 | N Electrovalvula | 38 | (sin designación en fuente) |
+| 14 | L220vac Cabina | 39 | (sin designación en fuente) |
+| 15 | N220vac Cabina | 40 | (sin designación en fuente) |
+| 16 | Tierra foso | 41 | (sin designación en fuente) |
+| 17 | L 24vac | 42 | (sin designación en fuente) |
+| 18 | N 24vac | 43 | (sin designación en fuente) |
+| 19 | +24vdc | 44 | (sin designación en fuente) |
+| 20 | -24vdc | 45 | (sin designación en fuente) |
+| 21 | +18vdc | 46 | (sin designación en fuente) |
+| 22 | -18vdc | 47 | (sin designación en fuente) |
+| 23 | Seguridad OUT | 48 | (sin designación en fuente) |
+| 24 | Seguridad IN | 49 | (sin designación en fuente) |
+| 25 | Presostato OUT | | |
+
+Nota: Los terminales 36–49 aparecen listados en el lado derecho de la tabla de borneras del plano pero sin designación impresa para los números 36–49 en el documento fuente visible. Los valores específicos REQUIRES_FIELD_VERIFICATION en campo.
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-419F23A25212D945
+SOURCE_SECTION_OR_PAGE: Descripción Tablero de Control
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: F1, F2, F3 — Fusible seccionador 2amp
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: F1, F2, F3 Fusible seccionador 2amp
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-126DBF9B7782B71D
+SOURCE_SECTION_OR_PAGE: Descripción Tablero de Control
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: H1, H2, H3 — Luz piloto, presencia de fase
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: H1, H2, H3 Luz piloto, presencia de fase
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-3D1EF2298CDDD432
+SOURCE_SECTION_OR_PAGE: Descripción Tablero de Control
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: H4 — Luz piloto, falla seguridad
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: H4 Luz piloto, falla seguridad
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-DCE32B1AAE0641AF
+SOURCE_SECTION_OR_PAGE: Descripción Tablero de Control
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: K1 — Contactor 24VAC SUBE
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: K1 Contactor 24VAC SUBE
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-0332E514BCC85E56
+SOURCE_SECTION_OR_PAGE: Descripción Tablero de Control
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: K2 — Relé 11 pines 24VCA BAJA
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: K2 Rele 11pines 24VCA BAJA
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-7CE119DDF6A63B65
+SOURCE_SECTION_OR_PAGE: Descripción Tablero de Control
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: K3 — Relé plano 24VDC BLOQUEO PRESOSTATO
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: K3 Rele plano 24VDC BLOQUEO PRESOSTATO
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-61EEAD058B440621
+SOURCE_SECTION_OR_PAGE: Descripción Tablero de Control
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: K4 — Relé 11 pines 24VCA PRESOSTATO
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: K4 Rele 11pines 24VCA PRESOSTATO
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-882265AF5C0296A7
+SOURCE_SECTION_OR_PAGE: Descripción Tablero de Control
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: K5 — Relé plano 24VDC INDICADOR SEGURIDAD
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: K5 Rele plano 24VDC INDICADOR SEGURIDAD
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-930F9BF3A60D5124
+SOURCE_SECTION_OR_PAGE: Descripción Tablero de Control
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: K6 — Relé 11 pines 24VCA INSPECCION
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: K6 Rele 11pines 24VCA INSPECCION
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-CA35A53CD9507D8F
+SOURCE_SECTION_OR_PAGE: Descripción Tablero de Control
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: K7 — Contactor 220vac Seguridad
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: K7 Contactor 220vac Seguridad
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-4AE6028B6F5198D9
+SOURCE_SECTION_OR_PAGE: Descripción Tablero de Control
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: K8 — Contactor 220vac BAJA
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: K8 Contactor 220vac BAJA
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-9439DC50D46B4EBC
+SOURCE_SECTION_OR_PAGE: Descripción Tablero de Control
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: PET — Parada de emergencia
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: PET Parada de emergencia
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-C74C5A27EA50DD7E
+SOURCE_SECTION_OR_PAGE: Descripción Tablero de Control
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Q1 — Interruptor automático 3 polos 25A
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Q1 Interruptor automatico 3 polos 25A
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-10E3BC435F9FEA76
+SOURCE_SECTION_OR_PAGE: Descripción Tablero de Control
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Q2 — Partidor de motor 11–17A
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Q2 Partidor de motor 11-17A
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-21C08C6AD45E8792
+SOURCE_SECTION_OR_PAGE: Descripción Tablero de Control
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Q3 — Interruptor diferencial 25A 30ma
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Q3 Interruptor diferencial 25A 30ma
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-1F1B5424EEFBCE1E
+SOURCE_SECTION_OR_PAGE: Descripción Tablero de Control
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Q4 — Interruptor automático 1 polo 10A, Iluminación Foso
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Q4 Interruptor automatico 1 polo 10A, Iluminacion Foso
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-67C711F407903151
+SOURCE_SECTION_OR_PAGE: Descripción Tablero de Control
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Q5 — Interruptor automático 1 polo 16A, Iluminación Cabina
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Q5 Interruptor automatico 1 polo 16A, Iluminacion Cabina
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-E52CDA3753780A82
+SOURCE_SECTION_OR_PAGE: Descripción Tablero de Control
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Q6 — Interruptor automático 1 polo 6A, Control
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Q6 Interruptor automatico 1 polo 6A, Control
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-0CE0F9C88018BBC2
+SOURCE_SECTION_OR_PAGE: Descripción Tablero de Control
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: R1 — Relé de asimetría
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: R1 Relé de asimetria
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-5226E6A88121E45C
+SOURCE_SECTION_OR_PAGE: Descripción Tablero de Control
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RLP — Relé 11 pines 24VDC SEGURIDAD
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: RLP Rele 11pines 24VDC SEGURIDAD
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-A88C0FBE59CD7E55
+SOURCE_SECTION_OR_PAGE: Descripción Tablero de Control
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RLS — Relé 24Vac Límite Superior
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: RLS Relé 24Vac Limite Superior
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-5C28B29D225C205A
+SOURCE_SECTION_OR_PAGE: Descripción Tablero de Control
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: T1 — Relé Temporizador (Modo E y t<3 Minutos)
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: T1 Relé Temporizador (Modo E y t<3 Minutos)
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-3A99C101A743D3BE
+SOURCE_SECTION_OR_PAGE: Descripción Tablero de Control
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: T2 — Relé Temporizador (Modo Wu y t<1 Seg)
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: T2 Relé Temporizador (Modo Wu y t<1 Seg)
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-C17615008FC82EE5
+SOURCE_SECTION_OR_PAGE: Borneras
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Terminal 1: R | Terminal 2: S | Terminal 3: T | Terminal 4: N | Terminal 5: GND — alimentación trifásica entrada
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Borneras R S T N GND
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-A1FCFF7262BADBCE
+SOURCE_SECTION_OR_PAGE: Borneras
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Terminal 6: U | Terminal 7: V | Terminal 8: W | Terminal 9: Tierra motor — salida al motor
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Borneras U V W Tierra motor
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-32364A8858F3FD06
+SOURCE_SECTION_OR_PAGE: Borneras
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Terminal 10: L Iluminación foso | Terminal 11: N Iluminación foso | Terminal 16: Tierra foso
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: L Iluminacion foso N Iluminacion foso Tierra foso
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-DF5483BD36C9D819
+SOURCE_SECTION_OR_PAGE: Borneras
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Terminal 12: L Electrovalvula Bajando | Terminal 13: N Electrovalvula
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: L Electrovalvula Bajando N Electrovalvula
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-D5E9B963339B9B98
+SOURCE_SECTION_OR_PAGE: Borneras
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Terminal 14: L220vac Cabina | Terminal 15: N220vac Cabina
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: L220vac Cabina N220vac Cabina
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-70ABD5E5BE0E27E3
+SOURCE_SECTION_OR_PAGE: Borneras
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Terminal 17: L 24vac | Terminal 18: N 24vac | Terminal 19: +24vdc | Terminal 20: -24vdc | Terminal 21: +18vdc | Terminal 22: -18vdc
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: L 24vac N 24vac +24vdc -24vdc +18vdc -18vdc
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-C94DEA80C70B5CAD
+SOURCE_SECTION_OR_PAGE: Borneras
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Terminal 23: Seguridad OUT | Terminal 24: Seguridad IN | Terminal 25: Presostato OUT | Terminal 26: Presostato IN
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Seguridad OUT Seguridad IN Presostato OUT Presostato IN
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-B479674B0CE18AA6
+SOURCE_SECTION_OR_PAGE: Borneras
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Terminal 27: Indicador sobre carga | Terminal 28: Sube | Terminal 29: Baja | Terminal 30: Micro nivel inferior | Terminal 31: Micro nivel superior | Terminal 32: RLP OUT
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Indicador sobre carga Sube Baja Micro nivel inferior Micro nivel superior RLP OUT
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-B69748D29DE0DB3C
+SOURCE_SECTION_OR_PAGE: Borneras
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: Terminal 33: Llamada nivel 1 | Terminal 34: Llamada nivel 2 | Terminal 35: Inspeccion
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Llamada nivel 1 Llamada nivel 2 Inspeccion
+END_FIELD_RECORD

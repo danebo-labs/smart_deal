@@ -1923,7 +1923,8 @@ documents:
   brands:
   - KONE
   designators:
-  - KDL16
+  - value: KDL16
+    type: model
   generic: false
   confirmed: true
   role: component

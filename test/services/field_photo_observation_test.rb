@@ -81,7 +81,7 @@ class FieldPhotoObservationTest < ActiveSupport::TestCase
       valid_raw("model" => "m" * 81),
       valid_raw("subsystem" => "ELEVATOR"),
       valid_raw("condition" => "good"),
-      valid_raw("visible_text" => Array.new(9) { "R1" }),
+      valid_raw("visible_text" => Array.new(FieldPhotoObservation::MAX_VISIBLE_TEXT + 1) { "R1" }),
       valid_raw("visible_text" => [ "v" * 81 ]),
       valid_raw("visible_text" => "R1"),
       valid_raw("target_visible" => "true"),
@@ -147,7 +147,7 @@ class FieldPhotoObservationTest < ActiveSupport::TestCase
     assert_equal "UNKNOWN", payload["canonical_component"]
     assert_equal "UNKNOWN", payload["manufacturer"]
     assert_equal "MX 20", payload["model"]
-    assert_equal [ "R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8" ], payload["visible_text"]
+    assert_equal (1..9).map { |number| "R#{number}" }, payload["visible_text"]
     assert_equal "claude-sonnet-5-5", payload["model_id"]
     assert_equal false, payload["target_visible"]
     assert_equal "unrelated", payload["relevance_to_goal"]

@@ -27,8 +27,10 @@ class Rag::CheckResultContractTest < ActiveSupport::TestCase
     "Record the technician's words as an observation. A partial answer stays an observation and does not fill the missing part."
   FAILED_DOCUMENTED_CONTEXT_PARAGRAPH = "When pending.clarification_target is documented_context, the turn may answer that question, " \
     "add other facts of the case, or both. Record each fact the technician states as its own observation, whether or not it answers."
+  PARAMETER_READING_RULE = "A parameter reading reported by the technician or another person on the open job is an observation. " \
+    "Copy the parameter and its measured value together. A proposed setting is a question, never a reading."
   PREVIOUS_OBSERVATION_SENTENCE = "An observation is one contiguous symptom phrase copied from the turn, or empty."
-  PROMPT_SHA256 = "1a82607a14b9fc0426ac69a6fb63f1df40a266ad4a6c4de36b4106e00f3745ec"
+  PROMPT_SHA256 = "65f4c7a16a01e71e3ffda0479a8f02e96c62fb5e0ae7c5f36945d894802a3b8a"
 
   setup do
     @now = Time.zone.parse("2026-10-21 18:00:00 UTC")
@@ -47,6 +49,7 @@ class Rag::CheckResultContractTest < ActiveSupport::TestCase
     assert_not_includes Rag::TurnInterpreter::PROMPT, PREVIOUS_DOCUMENTED_CONTEXT_PARAGRAPH
     assert_not_includes Rag::TurnInterpreter::PROMPT, FAILED_DOCUMENTED_CONTEXT_PARAGRAPH
     assert_not_includes Rag::TurnInterpreter::PROMPT, PREVIOUS_OBSERVATION_SENTENCE
+    assert_includes Rag::TurnInterpreter::PROMPT, PARAMETER_READING_RULE
     assert_equal PROMPT_SHA256, Digest::SHA256.hexdigest(Rag::TurnInterpreter::PROMPT)
   end
 

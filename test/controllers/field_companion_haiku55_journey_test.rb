@@ -9,6 +9,8 @@ require Rails.root.join("test/support/haiku55_journey_rubric")
 # answer are the product path.
 class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
   include Devise::Test::IntegrationHelpers
+  include ActiveJob::TestHelper
+  include ActionCable::TestHelper
 
   FIXTURES = "test/fixtures/files/field_companion/haiku55_journeys"
   SCRIPTS = {
@@ -142,6 +144,31 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     fallas: [ "85590ab2-d2b2-49b2-a36d-0c8c50f9bd76", "Monarch nice 3000 fallas-1.pdf", "Monarch nice 3000 fallas-1" ],
     monarch: [ "6e578b57-0f5e-42f0-91d6-4dd908e0eba2", "Manual_monarch_Español_3000+.pdf", "Manual_monarch_Español_3000+" ]
   }.freeze
+  test "guion 1 turn 5 credits the limit in the full published answer" do
+    questions = load_turns(SCRIPTS.fetch("guion1")["capture"]).map(&:question)
+    published = Rails.root.join(REVISION_FIXTURES, "guion1_c8e9cbf_t5_published.txt").read
+    clauses = published.split(/(?<=\.)[ \t]+|\n+/)
+    dispensations, rest = clauses.partition { |clause| clause.start_with?("No necesitas identificar") }
+    reports, omitted = rest.partition { |clause| clause.start_with?("No puede identificar") }
+
+    assert_equal 1, dispensations.size
+    assert_equal 1, reports.size
+    dispensed = (dispensations + omitted).join("\n")
+    recognized = (reports + omitted).join("\n")
+    # T5_LIMIT, technician_limitation, and method_limit do not read the
+    # dispensation as the technician's limit. The final reasons stay on
+    # the terminal clause.
+
+    assert_empty Haiku55JourneyRubric.reasons("guion1", 5, published, questions)
+    assert_empty Haiku55JourneyRubric.reasons("guion1", 5, recognized, questions)
+    assert_equal [ "t5:limit_not_acknowledged" ],
+      Haiku55JourneyRubric.reasons("guion1", 5, dispensed, questions)
+    assert_equal [ "t5:limit_not_acknowledged" ],
+      Haiku55JourneyRubric.reasons("guion1", 5, omitted.join("\n"), questions)
+    assert_equal [ "t5:limit_not_acknowledged" ],
+      Haiku55JourneyRubric.reasons("guion1", 5, "No puede identificar el LED. #{omitted.join("\n")}", questions)
+  end
+
   CEA_QUESTION = "La puerta de piso no traba. Hay patín retráctil. ¿Qué tiene que cumplirse para que la seguridad automática SA quede en 1?"
   # Manual DD549-R05, PDF p. 24. Production exited before Retrieve, so
   # the SDK row and the generation here are synthetic, not captured traffic.
@@ -414,6 +441,40 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       body.fetch("answer").include?(I18n.t("rag.controller_label_question", locale: :es))
     end
     assert_equal [ true, false, false, false, false, false, false ], asked
+  end
+
+  test "CEA captured T2 T3 and T5 publish documentary evidence through HTTP" do
+    document = revision_pin(:cea)
+    fixture = JSON.parse(Rails.root.join(REVISION_FIXTURES, "cea_reference_failures.json").read)
+    revision_ask("cea-captured-repair", 1, cea_turn(CEA_QUESTION, document), document)
+    episode = reloaded_session.live_episode_id
+
+    [ 2, 3, 5 ].each do |number|
+      captured = fixture.fetch(number.to_s)
+      question = captured.fetch("question")
+      rows = captured.fetch("rows").map do |row|
+        row.merge("uri" => "s3://#{KbDocument::KB_BUCKET}/bulk_chunks/1/cea/chunk_p#{row.fetch('page')}_1.txt",
+          "original_source_uri" => document.canonical_uri, "document" => "CEA15+", "score" => 0.9)
+      end
+      turn = TurnCapture.new("question" => question, "retrieve_query" => question,
+        "tool_input" => cea_turn(question, document, move: "follow_up").tool_input,
+        "rows" => rows, "generator_text" => captured.fetch("raw"))
+      body, cassette = revision_ask("cea-captured-repair", number, turn, document)
+      answer = body.fetch("answer")
+      assert_revision_scope(cassette, document)
+      assert_equal episode, reloaded_session.live_episode_id
+      assert_empty Haiku55JourneyRubric.reasons("cea", number, answer, CEA_SCRIPT)
+      assert_empty Haiku55JourneyRubric.cea_completion_reasons(number, answer, body.fetch("citations"))
+      assert_includes answer, "terminal SPC" if number == 2
+      assert_includes answer, "0 Vcc" if number == 3
+      next unless number == 5
+
+      assert_includes body.fetch("citations").pluck("page"), 25
+      assert_includes answer, "Los contactos de traba de las puertas de piso se incluyen en SA"
+      assert_match(/condicionada a confirmar el contacto de traba/i, answer)
+      assert_includes answer, "¿El contacto de traba de la puerta de piso cierra por acción del patín retráctil?"
+      assert_not_includes answer, "SA no iría a SPC"
+    end
   end
 
   %w[elemont_first elemont_second].each do |name|
@@ -1030,12 +1091,909 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     [ body, cassette ]
   end
 
+  AUDIT_ROOT = Rails.root.join("test/fixtures/field_companion/audit_20261113")
+  AUDIT_JOURNEYS = JSON.parse(AUDIT_ROOT.join("journeys.json").read).freeze
+  AUDIT_PRODUCTION = JSON.parse(AUDIT_ROOT.join("production.json").read).freeze
+  EA_LINE = "Quando falha de P28 - porta aberta - revisar linha dos trincos"
+  P28_LINE = "Ponto para ligar sinal do contato de engate do trinco, confirmando portas de pavimento fechada"
+  NOISE_LINE = 'En caso de ruido audible muy elevado: disminuya el valor del parámetro "KP-VS", hasta el mínimo de [3,0]'
+
+  test "audit Thyssen photo carries the accepted reading and current question through the worker and follow-ups" do
+    play_audit_photo("photo", AUDIT_JOURNEYS.fetch("photo"))
+  end
+
+  test "audit Thyssen photo caps real worker and HTTP provider boundaries offline" do
+    with_guarded_thyssen_photo do |haiku_spend, vision_spend|
+      play_audit_photo("photo", AUDIT_JOURNEYS.fetch("photo"))
+      assert_equal 8, haiku_spend.snapshot.fetch("attempts")
+      assert_equal 1, vision_spend.snapshot.fetch("attempts")
+      assert_equal "settled", vision_spend.snapshot.fetch("entries").sole.fetch("status")
+    end
+  end
+
+  test "photo codes from the real uncertain reading reach generation without suggesting a diagnosis" do
+    @audit_photo_reading = JSON.parse(AUDIT_ROOT.join("photo_sonnet_live.json").read)
+    play_audit_photo("photo-live-reading", AUDIT_JOURNEYS.fetch("photo"))
+  end
+
+  test "photo keeps its observed labels and the manually sourced passage on the EA follow-up" do
+    document = audit_thyssen_pin
+    @audit_photo_reading = JSON.parse(AUDIT_ROOT.join("photo_sonnet_live.json").read)
+    opening = "Estoy con un Thyssen FDN Universal con MCINV4. Está detenido y la puerta no cierra. Te adjunto el esquema de la bornera."
+    opening_reply = "Si el código es EA, «#{EA_LINE}» [p24]. En el esquema se ven P26, P27 y P28. El manual describe P28 como «sinal do contato de engate do trinco» [p9]. ¿Qué código aparece?"
+    turn = audit_thyssen_turn(document, opening, opening_reply, pages: %w[24_1 9_3],
+      observations: [ "Está detenido", "la puerta no cierra" ], opening: true)
+    opening_body, = audit_photo_post("photo-source-carry", turn, document)
+    original_episode = reloaded_session.live_episode_id
+    assert_includes opening_body.fetch("answer"), "sinal do contato de engate do trinco"
+
+    question = "El display marca EA."
+    followup = audit_thyssen_turn(document, question,
+      "EA es falla de señales. «#{EA_LINE}» [p24]. ¿La conexión de P28 en la bornera está firme?",
+      pages: %w[24_1], observations: [ question.delete_suffix(".") ], move: "follow_up")
+    body, cassette = revision_ask("audit-photo-source-carry", 2, followup, document)
+    prompt = audit_generator_prompt(cassette)
+    assert_includes prompt, question
+    visual = Rag::ActivePhotoContext.generation_evidence(prompt)
+    %w[P26 P27 P28].each { |label| assert_match(/\b#{label}\b/, visual) }
+    assert_includes prompt, "RA-53 / P28 = +110 Vcc"
+    assert_includes prompt, EA_LINE
+    assert_equal original_episode, reloaded_session.live_episode_id
+    assert_includes body.fetch("answer"), "¿La conexión de P28 en la bornera está firme?"
+
+    correction = "Me corrijo: el rótulo es P29, no P28."
+    correction_turn = audit_thyssen_turn(document, correction,
+      "Tomo P29 como el rótulo que ves. La correspondencia con el borne del manual queda por confirmar. «#{EA_LINE}» [p24].",
+      pages: %w[24_1], observations: [ "el rótulo es P29" ], move: "follow_up")
+    corrected, correction_capture = revision_ask("audit-photo-source-carry", 3, correction_turn, document)
+    assert_includes audit_generator_prompt(correction_capture), correction
+    assert_includes corrected.fetch("answer"), "Tomo P29 como el rótulo que ves."
+    assert_equal original_episode, reloaded_session.live_episode_id
+  end
+
+  test "EA journey follows the requested observations through the persistent electrical fault" do
+    unless defined?(Haiku55Http)
+      previous = ENV["HTTP55_REQUIRE"]
+      begin
+        ENV["HTTP55_REQUIRE"] = "1"
+        load Rails.root.join("script/field_companion/run_haiku55_http.rb")
+      ensure
+        ENV["HTTP55_REQUIRE"] = previous
+      end
+    end
+    document = audit_thyssen_pin
+    @audit_photo_reading = JSON.parse(AUDIT_ROOT.join("photo_sonnet_live.json").read)
+    questions = AUDIT_JOURNEYS.fetch("photo_ea").dup
+    replies = [
+      "En el esquema se lee P28. La imagen identifica el rótulo. «#{EA_LINE}» [p24]. ¿Qué código muestra el display?",
+      "EA es falla de señales. «#{EA_LINE}» [p24]. La puerta de piso orienta a esa línea. ¿La conexión de P28 en la bornera está firme?",
+      "Con la conexión de P28 firme queda por comprobar el enganche. «#{EA_LINE}» [p24]. Cuando intenta cerrar, ¿el trinco llega a enganchar?",
+      "Si el trinco no engancha, fíjate si queda desalineado. «#{EA_LINE}» [p24]. ¿El trinco queda desalineado?",
+      "Con el trinco desalineado, corrige la alineación según el procedimiento autorizado de tu empresa. Luego comprueba si la puerta cierra, traba y sigue marcando EA. «#{EA_LINE}» [p24].",
+      "La puerta ya cierra y traba, pero EA sigue activo. El manual documenta «Ponto para ligar sinal do contato de engate do trinco, confirmando portas de pavimento fechada» [p9]. Con la puerta cerrada y trabada, ¿qué tensión lees en RA-53/P28?",
+      "La tabla identifica «RA-53 / P28 = +110 Vcc» para el «sinal do contato de engate do trinco» [p9]. Los 0 Vcc que reportas en RA-53/P28 están por debajo de los +110 Vcc. Revisa el contacto y las conexiones de la línea de trincos; falta localizar la pérdida.",
+      "Reportaste 0 Vcc en RA-53/P28. El manual identifica ese punto como confirmación de enganche: «Ponto para ligar sinal do contato de engate do trinco, confirmando portas de pavimento fechada» [p9]. RA-30/A4+ alimenta el circuito: «Ponto para ligar alimentação do circuito de trinco e palhetas das portas de pavimento» [p10]. Para localizar la pérdida hace falta el plano y el procedimiento de la instalación."
+    ]
+    original_episode = nil
+    pending = nil
+    questions.each_with_index do |question, index|
+      number = index + 1
+      rows = number == 8 ? %w[24_1 9_3 10_1] : %w[24_1 9_3]
+      observations = number == 1 ? [ "Está detenido", "la puerta de piso no cierra" ] : [ question ]
+      turn = audit_thyssen_turn(document, question, replies.fetch(index), pages: rows,
+        observations: observations, opening: number == 1, move: number == 1 ? "report" : "follow_up")
+      if pending && number < 8
+        turn.tool_input = turn.tool_input.merge("part_replies" => [
+          { "question_id" => pending.fetch("id"), "part_id" => pending.fetch("parts").sole.fetch("id"),
+            "state" => "complete", "quote" => question, "supersedes" => nil }
+        ])
+      end
+      body, cassette = if number == 1
+        audit_photo_post("photo-ea", turn, document)
+      else
+        revision_ask("audit-photo-ea", number, turn, document)
+      end
+      assert_revision_scope(cassette, document)
+      prompt = audit_generator_prompt(cassette)
+      assert_includes prompt, question
+      assert_match(/\bP28\b/, Rag::ActivePhotoContext.generation_evidence(prompt))
+      answer = body.fetch("answer")
+      assert_empty Haiku55JourneyRubric.photo_ea_reasons(number, answer), answer
+      session = reloaded_session
+      pending = session.active_episode["pending_question"]
+      row = { "answer" => answer, "pending_question" => pending }
+      Haiku55Http.place_photo_reply!(questions, index, row)
+      assert_nil row["block_reason"], answer
+      original_episode ||= session.live_episode_id
+      assert_equal original_episode, session.live_episode_id
+    end
+    expected = AUDIT_JOURNEYS.fetch("photo_ea").dup
+    expected[6] = Haiku55Http::PHOTO_OPEN_READING_REPLY
+    assert_equal expected, questions
+  end
+
+  test "KONE uses the Engineering reading and advances after the sensor is reconnected" do
+    @account = accounts(:pilot)
+    host! "piloto.danebo.ai"
+    @user.update!(account: @account)
+    sign_in @user
+    document = KbDocument.create!(account: @account, document_uid: "6b37e94e-1d4c-4d59-a33a-66e894116c9a",
+      display_name: "puesta en marcha de ascensores sin sala de maquina",
+      s3_key: "bulk_uploads/3/2026-08-24/puesta en marcha de ascensores sin sala de maquina.pdf",
+      aliases: %w[KONE MonoSpace KDL16 AM-11.65.031])
+    post pinned_documents_path, params: { kb_document_id: document.id }, as: :json
+    assert_response :no_content
+    questions = AUDIT_JOURNEYS.fetch("kone_lwi")
+    replies = [
+      "Con la cabina vacía, el paso 2 pide «Ajuste Selección de monitor del display en tiempo real (6_75) a 65 (valor de entrada del pesacargas)» [p38]. ¿Qué valor de entrada ves en el panel LOP-CB?",
+      "El 0 que reporta Ingeniería corresponde a la entrada del sensor con cabina vacía. El paso 2 dice «Si el valor es 0 => El sensor no está conectado o hay un espacio demasiado grande» [p38]. ¿El sensor está conectado?",
+      "Estaba desconectado y, después de conectarlo, mediste 7 mA con cabina vacía. El paso 2 dice «Compruebe que LOP-CB muestre el valor entre 6-8» [p38]. Los 7 mA quedan dentro de ese rango. Con la cabina aún vacía y si ya completaste el reinicio del paso 1, el paso 3 registra la carga cero: «Seleccione el parámetro de Ajuste del pesacargas (6_74)» [p38]. Los 7 mA son la señal del sensor; el ajuste sigue en curso."
+    ]
+    episode = nil
+    questions.each_with_index do |question, index|
+      row = audit_manual_row(document, AUDIT_ROOT.join("kone_lwi_p38.txt").read, 38)
+      # The live interpreter emits the drive separately from the brand/platform.
+      assertions = if index.zero?
+        [
+          { "span" => "KONE MonoSpace", "act" => "assert", "slot_hint" => "model" },
+          { "span" => "KDL16", "act" => "assert", "slot_hint" => "controller" },
+          { "span" => "pesacargas LWI", "act" => "assert", "slot_hint" => nil }
+        ]
+      else
+        []
+      end
+      observations = index.zero? ? [ "no logro terminar el ajuste del pesacargas" ] : [ question ]
+      turn = audit_turn(question, replies.fetch(index), rows: [ row ], move: index.zero? ? "report" : "follow_up",
+        observations: observations, assertions: assertions)
+      body, cassette = revision_ask("audit-kone-lwi", index + 1, turn, document)
+      assert_revision_scope(cassette, document)
+      prompt = audit_generator_prompt(cassette)
+      assert_includes prompt, question
+      assert_not_includes prompt, "Un documento seleccionado no identifica la instalación"
+      assert_equal "KDL16", reloaded_session.active_episode.dig("facts", "model", "value")
+      answer = body.fetch("answer")
+      assert_empty Haiku55JourneyRubric.kone_lwi_reasons(index + 1, answer), answer
+      if index == 1
+        assert_match(/0 que reporta Ingeniería/, answer)
+        assert_match(/Si el valor es 0 => El sensor no está conectado o hay un espacio demasiado grande/, answer)
+      elsif index == 2
+        payload = cassette.sent.reject { |request| request[:tool_choice] }.sole
+        user_messages = payload.fetch(:messages).select { |message| message[:role] == "user" }
+        assert_includes user_messages.flat_map { |message| message[:content].pluck(:text) }.join("\n"), "La cabina está vacía"
+        assert_match(/desconectado.*conectarlo.*7 mA con cabina vacía/, answer)
+        assert_match(/si ya completaste el reinicio del paso 1.*paso 3 registra la carga cero.*6_74/, answer)
+      end
+      assert_nil Haiku55JourneyRubric.kone_lwi_followup_stop(index + 1, answer), answer
+      episode ||= reloaded_session.live_episode_id
+      assert_equal episode, reloaded_session.live_episode_id
+    end
+  end
+
+  test "KONE checks that the field reply answers the question instead of incidental prose" do
+    unrelated = "Pendiente: revisar la conexión del sensor y el espacio. ¿Tu sistema tiene placa LCEVTC?"
+    assert_equal "field_reply_does_not_answer_kone_t2", Haiku55JourneyRubric.kone_lwi_followup_stop(2, unrelated)
+    assert_nil Haiku55JourneyRubric.kone_lwi_followup_stop(2, "El sensor está conectado?")
+  end
+
+  test "captured EA answer passes the connection branch and independently fails provenance" do
+    answer = <<~TEXT
+      EA es falla de señales. [1] indica: «#{EA_LINE}».
+      Corrección: lo que dije antes sobre P26, P27 y P28 no está en las fuentes de este turno, así que no lo uses.
+      ¿Ya revisaste la conexión de P28 en la bornera y está firme?
+    TEXT
+
+    assert_equal [ "undue_photo_retraction" ], Haiku55JourneyRubric.photo_ea_reasons(2, answer)
+    assert_nil Haiku55JourneyRubric.photo_ea_followup_stop(2, answer)
+    assert_equal "field_reply_does_not_answer_photo_t2",
+      Haiku55JourneyRubric.photo_ea_followup_stop(2, "¿Cuánto mide la tensión en P28?")
+  end
+
+  test "real Engineering opening asks the current parameter before continuing" do
+    document = audit_thyssen_pin
+    question = AUDIT_JOURNEYS.fetch("engineering").first
+    turn = audit_thyssen_turn(document, question,
+      'Antes de tocar el parámetro, ¿el equipo muestra algún código de falla (E, F o EA/EC)?',
+      pages: %w[18_3], observations: [ "se oye fuerte el motor de tracción" ], opening: true)
+    turn.rows.first["content"] = AUDIT_ROOT.join("kpvs_live_passage.txt").read
+
+    body, _ = revision_ask("audit-engineering-live-opening", 1, turn, document)
+    assert_match(/¿Cuál es la lectura actual de KP-VS en el menú PID\?/i, body.fetch("answer"))
+    assert_includes body.fetch("answer"), NOISE_LINE
+    assert_equal "parameter_reading", reloaded_session.active_episode.dig("pending_question", "aspect")
+  end
+
+  test "audit 18:36 caption and its original follow-ups replay independently of the corrected conversation" do
+    turns = AUDIT_PRODUCTION.dig("photo", "history").select { |row| row["role"] == "user" }
+    play_audit_photo("photo-original", turns.map { |row| row["full_content"] || row.fetch("content") })
+  end
+
+  test "audit photo provider failure reaches Action Cable and survives reload with the paid reading" do
+    document = audit_thyssen_pin
+    question = AUDIT_JOURNEYS.fetch("photo").first
+    turn = audit_thyssen_turn(document, question, :timeout,
+      pages: %w[9_3 24_1], observations: [ "Está detenido", "la puerta no cierra" ], opening: true)
+    message, = audit_photo_post("photo-failure", turn, document)
+    assert_equal I18n.t("rag.photo_question_unavailable", locale: :es), message.fetch("answer")
+    assert_match(/bornera/, message.fetch("visual_summary"))
+    trace_path = Rails.root.join("tmp/field_companion/haiku55_offline/revision-audit-photo-failure/turn-1/trace.json")
+    failure = JSON.parse(trace_path.read).fetch("events").find { |event| event["kind"] == "photo_answer_delivery" }
+    assert_equal "Anthropic::Errors::APITimeoutError", failure.fetch("error_class")
+    assert_equal "generation_error", failure.fetch("outcome_reason")
+    assert_equal "failed", reloaded_session.conversation_history.last["outcome"]
+    assert_equal "", reloaded_session.conversation_history.last["prompt_reply"]
+    assert_equal [ document.id ], reloaded_session.focus_document_ids
+  end
+
+  test "audit Engineering supplies the requested reading and the live episode keeps it" do
+    play_audit_engineering("engineering", variant: false)
+  end
+
+  test "audit Engineering variant keeps the nameplate and resumes the question after same-equipment confirmation" do
+    play_audit_engineering("engineering-variant", variant: true)
+  end
+
+  test "audit Elemont starts from calls, uses the visible pilot light and keeps the corrected level" do
+    document = revision_pin(:elemont)
+    questions = AUDIT_JOURNEYS.fetch("elemont")
+    captures = load_turns(SCRIPTS.dig("elemont", "capture"))
+    diagram = captures.flat_map(&:rows).find { |row| row["content"].to_s.include?("Chapa nivel 3") && row["content"].include?("puente semicircular") }
+    rows = [ audit_manual_row(document, AUDIT_ROOT.join("elemont_h4.txt").read, 5), diagram ]
+    replies = [
+      "¿Está encendido H4? El plano lo rotula «Luz piloto, falla seguridad» [p5].",
+      "Con H4 encendida, revisa qué seguridad quedó indicada. El plano identifica H4 como «Luz piloto, falla seguridad» [p5]. El plano no establece la causa de la falta de respuesta a las llamadas.",
+      "En el plano, «cruza PasCom 24V con un puente semicircular sin punto de unión y termina en el terminal rotulado Chapa nivel 2» [p#{diagram.fetch('page').to_i}].",
+      "En el plano, «cruza PasCom 24V con un puente semicircular sin punto de unión y termina en el terminal rotulado Chapa nivel 3» [p#{diagram.fetch('page').to_i}]."
+    ]
+    episode = nil
+    questions.each_with_index do |question, index|
+      turn = audit_turn(question, replies[index], rows: rows,
+        move: index == 3 ? "correct" : (index.zero? ? "report" : "follow_up"),
+        observations: index.zero? ? [ "no responde a las llamadas", "No veo un código de falla" ] : [],
+        assertions: case index
+                    when 2 then [ { "span" => "Chapa nivel 2", "act" => "assert", "slot_hint" => "designator" } ]
+                    when 3 then [ { "span" => "Chapa nivel 3", "act" => "assert", "slot_hint" => "designator" },
+                      { "span" => "Chapa nivel 2", "act" => "negate", "slot_hint" => "designator" } ]
+                    else []
+                    end)
+      body, = revision_ask("audit-elemont", index + 1, turn, document)
+      assert_includes body.fetch("answer"), [ "H4", "H4", "nivel 2", "nivel 3" ][index]
+      assert_equal 1, body.fetch("answer").count("?") if index.zero?
+      session = reloaded_session
+      episode ||= session.live_episode_id
+      assert_equal episode, session.live_episode_id
+      assert_includes session.active_episode.dig("goal", "text"), "no responde a las llamadas"
+      assert_equal [ document.id ], session.focus_document_ids
+    end
+    assert_includes reloaded_session.active_episode.fetch("identifiers").pluck("value"), "Chapa nivel 3"
+  end
+
+  test "audit manual doors replay the abstaining CEA branch and keep the patin condition and S1 open" do
+    document = revision_pin(:cea)
+    questions = AUDIT_JOURNEYS.fetch("cea")
+    rows = [ audit_manual_row(document, CEA_PASSAGE, 24) ]
+    rows += [ 26, 27 ].map { |page| audit_manual_row(document, AUDIT_ROOT.join("cea_p#{page}.txt").read, page) }
+    captured = JSON.parse(AUDIT_ROOT.join("production_legacy.json").read).fetch("cea_t2")
+    raw = captured.fetch("events").find { |event| event["kind"] == "companion_direct" }.fetch("text")
+    assert_includes raw, "Según la fuente, con puerta de cabina manual"
+    assert_not captured.fetch("events").find { |event| event["kind"] == "companion_publication" }.fetch("accepted")
+    # Replay the actual rejected lead against the publication filter, with
+    # the new scoped, conditional completion instead of the unsupported body.
+    answers = [
+      "Para acotar la traba, verifica si hay un contacto que cierre por la acción del patín. La fuente indica «#{CEA_PASSAGE.delete_suffix('.')}» [p24]. ¿Hay un contacto que cierre por acción del patín?",
+      raw.lines.first.strip + "\n\n" +
+        "Si la traba actúa por el contacto del patín, el ejemplo de ambas puertas manuales dice:\n" +
+        "- SM: «El contacto de puerta de cabina cerrada se incluye en SM» [p26].\n" +
+        "- SM: «Los contactos de precierre de las puertas de piso se incluyen en SM» [p26].\n" +
+        "- SA: «Los contactos de traba de las puertas de piso se incluyen en SA» [p26].",
+      "Queda pendiente identificar el contacto del patín para las dos puertas manuales. «Los contactos de traba de las puertas de piso se incluyen en SA» [p26] en el ejemplo condicionado a ese contacto.",
+      "La correspondencia de S1 queda pendiente. La fuente identifica SA: «#{CEA_PASSAGE.delete_suffix('.')}» [p24]. Conserva ambas puertas manuales y el contacto del patín pendiente."
+    ]
+    id = nil
+    questions.each_with_index do |question, index|
+      observations = case index
+      when 0 then [ "La puerta de piso no traba", "hay patín retráctil" ]
+      when 1 then [ "La puerta de cabina y la puerta de piso son manuales", "La de piso tiene doble contacto y traba por patín" ]
+      when 2 then [ question.delete_suffix(".") ]
+      else []
+      end
+      turn = audit_turn(question, answers[index], rows: rows, move: index.zero? ? "report" : "follow_up", observations: observations)
+      body, cassette = revision_ask("audit-cea", index + 1, turn, document)
+      assert_revision_scope(cassette, document)
+      assert_includes body.fetch("answer"), [ "contacto", "precierre", "pendiente", "S1" ][index]
+      assert_equal 1, body.fetch("answer").count("?") if index.zero?
+      assert_not_includes body.fetch("answer"), raw.lines.first.strip if index == 1
+      assert_includes audit_generator_prompt(cassette), "son manuales" if index == 1
+      session = reloaded_session
+      id ||= session.live_episode_id
+      assert_equal id, session.live_episode_id
+      assert_equal [ document.id ], session.focus_document_ids
+      assert_includes session.active_episode.fetch("observations").pluck("text"), "La puerta de cabina y la puerta de piso son manuales" if index >= 1
+    end
+  end
+
+  test "audit VF5 asks for the reopening check before the technician names its input" do
+    document = revision_pin(:guion1)
+    questions = AUDIT_JOURNEYS.fetch("reopening")
+    captures = load_turns(SCRIPTS.dig("guion1", "capture"))
+    capture = captures.first
+    reopening = capture.rows.find { |row| row["content"].to_s.include?("Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)") }
+    signal = "Indicador LED y relé activado cuando la fotocélula o la entrada de re-apertura está activada"
+    input = captures[2].rows.find { |row| row["content"].to_s.include?(signal) }
+    rows = [ reopening, input ]
+    answers = [
+      "Comprueba la sensibilidad de reapertura. Para la puerta que se reabre sola, el manual dice «Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)» [p12].",
+      "Para ubicar el siguiente paso, dime cuál LED está encendido. ¿Es el de la fotocélula? El manual indica «Comprobar que la fotocélula no esté activada» [p12].",
+      "Con la fotocélula ya observada, queda por distinguir la entrada de reapertura. La fuente indica «#{signal}» [p#{input.fetch('page').to_i}]. ¿Puedes confirmar si la entrada #21 está activa?",
+      "Deja #21 y #23 pendientes para quien tenga acceso al operador. Con lo revisado, sigue abierta la causa de la reapertura. La comprobación del manual es «Comprobar la sensibilidad del potenciómetro de regulación de fuerza de re-apertura (#54)» [p12]."
+    ]
+    id = nil
+    questions.each_with_index do |question, index|
+      observations = [
+        [ "La puerta se reabre sola durante el cierre", "El LED está apagado", "no veo obstrucción" ],
+        [ "el LED está encendido" ], [ "no se activa durante el cierre" ], [ questions.last.delete_suffix(".") ]
+      ][index]
+      assertions = index.zero? ? capture.tool_input.fetch("assertions") : []
+      turn = audit_turn(question, answers[index], rows: rows, move: index == 1 ? "correct" : (index.zero? ? "report" : "follow_up"),
+        observations: observations, assertions: assertions)
+      body, = revision_ask("audit-vf5", index + 1, turn, document)
+      assert_includes body.fetch("answer"), [ "#54", "LED", "#21", "pendientes" ][index]
+      session = reloaded_session
+      id ||= session.live_episode_id
+      assert_equal id, session.live_episode_id
+      assert_includes session.active_episode.dig("goal", "text"), "se reabre sola"
+      assert_equal [ document.id ], session.focus_document_ids
+    end
+  end
+
+  test "Thyssen guion 3 replays w2 and keeps the engineering reading in the open job" do
+    data, document = pin_thyssen_guion3
+    turns = revision_turns("thyssen_guion3", data: data)
+    first, cassette = revision_ask("thyssen-guion3-w2", 1, turns[0], document)
+    assert_revision_scope(cassette, document)
+    assert_equal [ 16 ], cassette.sizes
+    assert_includes cassette.sent.last.fetch(:messages).last.to_json, "hasta el mínimo de [3,0]"
+    episode = reloaded_session.live_episode_id
+    assert episode
+
+    second, = revision_ask("thyssen-guion3-w2", 2, turns[1], document)
+    assert_equal episode, reloaded_session.live_episode_id
+    third, = revision_ask("thyssen-guion3-w2", 3, turns[2], document)
+    assert_equal episode, reloaded_session.live_episode_id
+
+    assert_match(/Ingeniería/i, first.fetch("answer"))
+    assert_match(/lectura actual de KP-VS.*pendiente/i, first.fetch("answer"))
+    assert_match(/2,5.*por debajo.*3,0/i, second.fetch("answer"))
+    assert_match(/3,5.*(?:instalación|comisionamiento|puesta en marcha)/i, third.fetch("answer"))
+  end
+
+  test "Thyssen guion 3 w1 preserves the complete noise condition when referring the reading" do
+    data, document = pin_thyssen_guion3
+    data["turns"] = [ data.fetch("alternates").fetch("w1_guion3") ]
+    turn = revision_turns("thyssen_guion3", data: data).sole
+    body, = revision_ask("thyssen-guion3-w1", 1, turn, document)
+
+    assert_match(/Ingeniería/i, body.fetch("answer"))
+    assert_match(/ruido audible muy elevado.*mínimo de \[3,0\]/i, body.fetch("answer"))
+  end
+
+  test "Thyssen isolated w2 keeps the comparison without a decrease order" do
+    data, document = pin_thyssen_guion3
+    data["turns"] = [ data.fetch("alternates").fetch("w2_kpvs") ]
+    turn = revision_turns("thyssen_guion3", data: data).sole
+    body, = revision_ask("thyssen-kpvs-w2", 1, turn, document)
+
+    assert_empty Haiku55JourneyRubric.reasons("kpvs", 1, body.fetch("answer"), [ turn.question ])
+  end
+
+  private
+
+  def with_guarded_thyssen_photo
+    skip "Set AUDIT_THYSSEN_PHOTO_PATH to use the technician's JPEG" unless ENV["AUDIT_THYSSEN_PHOTO_PATH"]
+    ledger = Rag::LocalPassLedger
+    guard = Rag::GuardedPhotoVision
+    Dir.mktmpdir do |directory|
+      haiku_path = File.join(directory, "haiku.json")
+      vision_path = File.join(directory, "vision.json")
+      spend = Rag::AssignmentSpend.new(path: haiku_path, call_cap: 150, cost_cap_usd: "0.1")
+      spend.admit_execution!(id: "offline-replay", calls: 8, cost_usd: "0.1")
+      vision = guard.assignment(vision_path)
+      vision.admit_execution!(id: guard::GRANT_ID, calls: 1, cost_usd: guard.ceiling)
+      config = {
+        ledger::GUARD_ENV => "1", ledger::CALL_CAP_ENV => "8", ledger::COST_CAP_ENV => "0.1",
+        ledger::ATTEMPTS_ENV => "1", ledger::ASSIGNMENT_PATH_ENV => haiku_path, guard::PATH_ENV => vision_path,
+        ledger::ALLOWED_CALLS_ENV => "converse@claude-haiku-5-5-direct,converse_message@claude-haiku-5-5-direct,photo_vision@claude-sonnet-5-5-direct",
+        ledger::EXECUTION_ENV => "offline-replay", ledger::SCOPE_ENV => "offline-replay/photo",
+        "RAG_PHOTO_LOCAL_STORE" => directory
+      }
+      previous = config.keys.index_with { |key| ENV[key] }
+      config.each { |key, value| ENV[key] = value }
+      @guarded_photo = true
+      ledger.reset!
+      ledger.reset_local_process!
+      yield spend, vision
+    ensure
+      previous&.each { |key, value| ENV[key] = value }
+      ledger.reset!
+      ledger.reset_local_process!
+      @guarded_photo = false
+    end
+  end
+
+  test "Thyssen resume restores the captured case before posting only T6 and T7" do
+    previous = ENV.slice("HTTP55_RESUME_CAPTURE", "HTTP55_REQUIRE", "OPUS55_REQUIRE")
+    ENV["HTTP55_REQUIRE"] = "1"
+    load Rails.root.join("script/field_companion/run_haiku55_http.rb") unless defined?(Haiku55Http)
+    runner = Haiku55Http
+    name = "audit_thyssen_photo_ea"
+    document = audit_thyssen_pin
+    expected_questions = [ "No, marca 0 Vcc.", "¿Cómo reviso eso?" ]
+    requests = []
+    Dir.mktmpdir("thyssen-resume") do |directory|
+      root = Pathname.new(directory)
+      capture_path = ENV["HTTP55_TEST_LIVE19_CAPTURE"].presence ||
+        write_thyssen_resume_fixture(root.join("capture"), runner, document).to_s
+      ENV["HTTP55_RESUME_CAPTURE"] = capture_path
+      capture = runner.resume_capture(document)
+      assert capture, capture_path
+      id = capture[:episode].fetch("episode_id")
+      pending = capture[:episode].fetch("pending_question")
+      part = pending.fetch("parts").sole.fetch("id")
+      question_id = pending.fetch("id")
+      reserve = runner.reservation(name, Haiku55Companion.per_turn_ceiling)
+      assert_equal [ 2, 4 ], reserve.values_at("turns", "calls")
+      assert_not reserve.key?("vision")
+      assert_equal "not_requested", runner.vision_preflight_document([ name ])["decision"]
+
+      test_case = self
+      user = @user
+      client = Object.new
+      client.define_singleton_method(:sign_in!) { |*| }
+      client.define_singleton_method(:post_json) do |path, payload|
+        raise "Unexpected request #{path}" unless path == "/pinned_documents"
+
+        test_case.post(path, params: payload, as: :json)
+        { status: test_case.response.status }
+      end
+      room = { "calls" => 4, "usd" => BigDecimal(reserve["ceiling_usd"]) }
+      send_turn = lambda do |_directory, _run_id, _client, _user, _doc, _name, number, question, _questions, **options|
+        requests << [ number, question ]
+        assert_nil options[:browser]
+        session = reloaded_session
+        assert_equal id, session.live_episode_id
+        assert_equal [ document.id ], session.focus_document_ids
+        if number == 6
+          assert_equal pending, session.active_episode.fetch("pending_question")
+          assert_equal capture[:case_evidence], session.case_evidence
+          assert_equal 10, session.conversation_history.size
+        else
+          episode = Rag::ActiveEpisode.parse(session.active_episode)
+          reply = Rag::AnswerContract.current_replies(episode, part).sole
+          assert_equal "complete", reply["state"]
+          assert_equal "No, marca 0 Vcc", Rag::AnswerContract.reconstruct(reply, session)
+        end
+        turn = audit_thyssen_turn(document, question, "Recibido.", pages: %w[9_3 24_1],
+          move: "follow_up", observations: number == 6 ? [ "No, marca 0 Vcc" ] : [])
+        if number == 6
+          turn.tool_input["part_replies"] = [
+            { "question_id" => question_id, "part_id" => part, "state" => "complete", "quote" => "No, marca 0 Vcc" }
+          ]
+        end
+        _, cassette = revision_ask("resume-t5-test", number, turn, document)
+        request = cassette.sent.find { |payload| payload[:tool_choice] }
+        context = JSON.parse(request.fetch(:messages).last.fetch(:content).sole.fetch(:text)).fetch("work_context")
+        assert_equal capture[:visual]["canonical_component"], context.dig("active_photo_context", "component")
+        if number == 6
+          assert_equal pending["question"], context.dig("pending", "question")
+        else
+          assert_includes context.fetch("observations"), "No, marca 0 Vcc"
+        end
+        { "turn" => number, "question" => question, "episode_id" => reloaded_session.live_episode_id,
+          "focus" => reloaded_session.focus_document_ids, "rubric" => [] }
+      end
+
+      swaps = {
+        runner => {
+          read_ledger: -> { {} }, grant_room: ->(*) { room }, ledger_view: -> { {} },
+          document_for: ->(*) { document }, new_user: ->(*) { user }, user_password: ->(*) { "offline" },
+          start_server: ->(*) { nil }, one_turn: send_turn
+        },
+        Haiku55Companion => { network_ready?: ->(*) { true } },
+        runner::Client => { new: ->(*) { client } }
+      }
+      originals = swaps.flat_map do |owner, methods|
+        methods.map do |method, replacement|
+          original = owner.method(method)
+          owner.define_singleton_method(method) { |*args, **kwargs| replacement.call(*args, **kwargs) }
+          [ owner, method, original ]
+        end
+      end
+      begin
+        result = runner.run_script(StringIO.new, root, name)
+        assert_equal "executed", result.fetch("status")
+        assert_equal [ id ], result.fetch("episodes")
+        assert_equal [ [ 6, expected_questions[0] ], [ 7, expected_questions[1] ] ], requests
+      ensure
+        originals.reverse_each { |owner, method, original| owner.define_singleton_method(method, original) }
+      end
+    end
+  ensure
+    %w[HTTP55_RESUME_CAPTURE HTTP55_REQUIRE OPUS55_REQUIRE].each { |key| ENV[key] = previous[key] }
+  end
+
+  test "Thyssen measurement replay carries the reading and relates the two documented points" do
+    previous = ENV.slice("HTTP55_REQUIRE", "HTTP55_RESUME_CAPTURE", "OPUS55_REQUIRE")
+    ENV["HTTP55_REQUIRE"] = "1"
+    load Rails.root.join("script/field_companion/run_haiku55_http.rb") unless defined?(Haiku55Http)
+    runner = Haiku55Http
+    document = audit_thyssen_pin
+    signal = "Ponto para ligar sinal do contato de engate do trinco, confirmando portas de pavimento fechada"
+    supply = "Ponto para ligar alimentação do circuito de trinco e palhetas das portas de pavimento."
+    # Stub candidates exercise publication. The generator request is tested
+    # separately because replay cannot predict the model's new answer.
+    candidates = [
+      "Mediste 0 Vcc en RA-53/P28 con la puerta cerrada y trabada. «RA-53 / P28 = +110 Vcc» [p9].\n\n" \
+      "La diferencia orienta a revisar el contacto de enganche del trinco y su cableado.\n\n" \
+      "RA-30/A4+ es alimentación del circuito: «#{supply}» [p10].\n\n" \
+      "Su lectura ayudaría a distinguir si falta alimentación al circuito o si la pérdida está en el recorrido hacia el contacto. " \
+      "¿Puedes ubicar A4+ en el plano del tablero?",
+      "Reportaste 0 Vcc en RA-53/P28 con la puerta cerrada y trabada. El punto lleva la señal de enganche: «#{signal}» [p9].\n\n" \
+      "RA-30/A4+ es la alimentación: «#{supply}» [p10].\n\n" \
+      "La pérdida queda pendiente de ubicar. Hace falta el plano del tablero para identificar A4+, el procedimiento autorizado " \
+      "y una lectura en ese punto para saber si la alimentación llega al circuito. ¿Tienes el plano del tablero?"
+    ]
+
+    Dir.mktmpdir("thyssen-measurement") do |directory|
+      ENV["HTTP55_RESUME_CAPTURE"] = ENV["HTTP55_TEST_LIVE19_CAPTURE"].presence ||
+        write_thyssen_resume_fixture(Pathname.new(directory), runner, document).to_s
+      state = runner.resume_capture(document)
+      assert state
+      runner.restore_photo_case!(reloaded_session, @user, document, state)
+      questions = state.fetch(:history).map(&:first) + runner.resume_questions
+      id = state[:episode].fetch("episode_id")
+      pending = state[:episode].fetch("pending_question")
+      part_id = pending.fetch("parts").sole.fetch("id")
+      candidates.each_with_index do |candidate, index|
+        number = index + 6
+        question = questions[number - 1]
+        turn = audit_thyssen_turn(document, question, candidate, pages: %w[9_3 10_1 24_1],
+          move: index.zero? ? "answer_pending" : "follow_up", observations: index.zero? ? [ "marca 0 Vcc" ] : [])
+        if index.zero?
+          turn.tool_input["pending_resolution"] = "value"
+          turn.tool_input["part_replies"] = [
+            { "question_id" => pending.fetch("id"), "part_id" => part_id, "state" => "complete", "quote" => "marca 0 Vcc" }
+          ]
+        end
+        body, cassette = revision_ask("thyssen-measurement", number, turn, document)
+        generator = cassette.sent.reject { |payload| payload[:tool_choice] }.sole
+        system = generator.fetch(:system)
+        assert_includes system, "Vincula la discrepancia con el tramo o la función que orienta revisar."
+        assert_includes system, "distingue la función documentada de cada uno"
+        assert_includes system, "qué lectura, plano o procedimiento falta para ubicar la falla"
+        messages = generator.fetch(:messages).flat_map { |message| message.fetch(:content).pluck(:text) }.join("\n")
+        assert_includes messages, "No, marca 0 Vcc."
+        assert_includes messages, pending.fetch("question")
+        assert_includes messages, "RA-53 / P28 = +110 Vcc"
+        assert_includes messages, "RA-30/ A4+ = 110 Vcc"
+        answer = body.fetch("answer")
+        assert_empty Haiku55JourneyRubric.reasons("audit_thyssen_photo_ea", number, answer, questions), answer
+        assert_includes answer, supply
+        assert_revision_scope(cassette, document)
+        assert_equal id, reloaded_session.live_episode_id
+        episode = Rag::ActiveEpisode.parse(reloaded_session.active_episode)
+        reading = Rag::AnswerContract.current_replies(episode, part_id).sole
+        assert_equal "marca 0 Vcc", Rag::AnswerContract.reconstruct(reading, reloaded_session)
+        assert_equal "complete", reading.fetch("state")
+        if index.positive?
+          assert_includes answer, signal
+          assert_includes answer, "La pérdida queda pendiente de ubicar."
+          assert_equal "¿Tienes el plano del tablero?", episode.pending_question.fetch("question")
+        else
+          assert_includes answer, "Su lectura ayudaría a distinguir si falta alimentación al circuito"
+        end
+      end
+    end
+  ensure
+    %w[HTTP55_REQUIRE HTTP55_RESUME_CAPTURE OPUS55_REQUIRE].each { |key| ENV[key] = previous[key] }
+  end
+
+  def write_thyssen_resume_fixture(root, runner, document)
+    photo_correlation = "photo:resume-fixture"
+    sha256 = Digest::SHA256.hexdigest(photo_correlation)
+    episode = Rag::ActiveEpisode.open(correlation_id: photo_correlation, now: 1.day.ago)
+    episode.assign_goal!("La puerta de piso no cierra", correlation_id: photo_correlation)
+    episode.write_fact!("manufacturer", status: "known", value: "Thyssen", correlation_id: photo_correlation, at: episode.opened_at)
+    episode.append_identifier!("MCINV4", correlation_id: photo_correlation)
+    episode.active_photo = { "sha256" => sha256, "correlation_id" => photo_correlation, "field_photo_id" => 100 }
+    question = "Con la puerta cerrada y trabada, ¿mides +110 Vcc en el borne P28?"
+    episode.pending_question = { "type" => "documented_context", "question" => question,
+      "targets" => [ { "item" => document.display_name } ] }
+    Rag::AnswerContract.stamp!(episode)
+
+    FileUtils.mkdir_p(root.join("turn-1/worker"))
+    root.join("pin.json").write(JSON.generate("document_uid" => document.document_uid,
+      "indexed_uri" => document.display_s3_uri(KbDocument::KB_BUCKET)))
+    root.join("turn-1/worker/capture.json").write(JSON.generate("events" => [
+      { "kind" => "photo_worker_input", "correlation_id" => photo_correlation, "sha256" => sha256, "bytes" => 100 },
+      { "kind" => "photo_vision_raw", "model" => "claude-sonnet-5-5" }
+    ]))
+    root.join("turn-1/vision-reading.json").write(JSON.generate(
+      "canonical_component" => "Bornera de comando", "manufacturer" => "UNKNOWN", "model" => "UNKNOWN",
+      "subsystem" => "CONTROLLER_LOGIC", "condition" => "UNKNOWN", "visible_text" => [ "P28" ],
+      "relevance_to_goal" => "uncertain", "target_visible" => true))
+    runner::AUDIT_JOURNEYS.fetch("photo_ea").reject { |line| line == "Sí, está firme." }.first(5).each_with_index do |text, index|
+      turn = root.join("turn-#{index + 1}")
+      FileUtils.mkdir_p(turn)
+      turn.join("question.txt").write(text)
+      turn.join("episode.json").write(JSON.generate("episode_id" => episode.episode_id, "focus_document_ids" => [ document.id ],
+        "stored_active_episode" => episode.to_h, "case_evidence" => { "episode_id" => episode.episode_id, "revision" => 1, "sources" => [] },
+        "last_assistant" => { "correlation_id" => index.zero? ? photo_correlation : "query:fixture-#{index}",
+          "content" => index == 4 ? question : "Entendido." }))
+    end
+    root
+  end
+
+  def play_audit_photo(name, questions)
+    document = audit_thyssen_pin
+    replies = [
+      "Lee el código del display para orientar la comprobación. En la sección de señales del operador, P28 es «#{P28_LINE}» [p9]. En el esquema se distingue PV-1. El equipo Thyssen FDN Universal con MCINV4 es el que reportaste. ¿Qué código aparece?",
+      "Con EA, sigue por la línea de trincos: «#{EA_LINE}» [p24]. ¿Qué lecturas tienes de P28 y P27 con la orden de cierre?",
+      "Prioriza la línea de trincos: «#{EA_LINE}» [p24]. P28 dio 0 Vcc y P27 dio 110 Vcc en terreno. La tabla de señales del operador documenta «RA-53 / P28 = +110 Vcc» [p9]. P26 queda pendiente para quien tenga acceso. ¿El trinco de piso queda enganchado?",
+      "La fila de EA no respalda cambiar un parámetro con TLS. Orienta a los trincos: «#{EA_LINE}» [p24]. Con EA persistente, conserva P28 en 0 Vcc y P27 en 110 Vcc como lecturas de terreno. P26 queda pendiente para quien tenga acceso."
+    ]
+    if name == "photo-original"
+      replies[1] = "## Señal P28\nla describe así: «#{P28_LINE}» [p9]. ¿Qué código aparece?"
+    end
+    questions.each_with_index do |question, index|
+      observations = case index
+      when 0 then [ "Está detenido", "la puerta no cierra" ]
+      when 2 then question.split(/(?<=\.)\s+/).map(&:strip)
+      when 3 then question.split(/(?<=\.)\s+/).first(2).map(&:strip)
+      else []
+      end
+      turn = audit_thyssen_turn(document, question, replies[index],
+        pages: %w[9_3 24_1], observations: observations, opening: index.zero?)
+      body, cassette = if index.zero?
+        audit_photo_post(name, turn, document)
+      else
+        revision_ask("audit-#{name}", index + 1, turn, document)
+      end
+
+      assert_revision_scope(cassette, document)
+      answer = body.fetch("answer")
+      assert_includes answer, index < 2 && (index.zero? || name == "photo-original") ? P28_LINE : EA_LINE
+      assert_includes answer, "Señal P28" if name == "photo-original" && index == 1
+      assert_includes answer, "P26 queda pendiente" if index >= 2
+      assert_includes answer, "cambiar un parámetro con TLS" if index == 3
+      assert_nil body["manual_suggestion"]
+      prompt = audit_generator_prompt(cassette)
+      assert_includes prompt, question
+      assert_includes prompt, "PV-1"
+      assert_includes prompt, "Photo Evidence"
+      if @audit_photo_reading
+        evidence = Rag::ActivePhotoContext.generation_evidence(prompt.split("Fuentes de este turno:").first)
+        assert_includes evidence, "P26"
+        assert_includes evidence, "P27"
+        assert_includes evidence, "P28"
+      end
+      assert_includes cassette.sent.last.fetch(:messages).to_json, "P27 marca 110" if index == 3 && name == "photo"
+      episode = reloaded_session.active_episode
+      @audit_photo_episode ||= episode.fetch("episode_id")
+      assert_equal @audit_photo_episode, episode.fetch("episode_id")
+      assert episode.dig("active_photo", "field_photo_id")
+      assert_equal [ document.id ], reloaded_session.focus_document_ids
+    end
+  end
+
+  def play_audit_engineering(name, variant:)
+    document = audit_thyssen_pin
+    questions = AUDIT_JOURNEYS.fetch("engineering").dup
+    questions[2] = AUDIT_JOURNEYS.fetch("engineering_variant").first if variant
+    replies = [
+      "¿Qué valor indica KP-VS en el menú PID? La lectura permite ubicar el caso frente al límite de la rama «#{NOISE_LINE}» [1]. La causa del ruido sigue abierta.",
+      "Deja pendiente la lectura actual de KP-VS en el menú PID y deriva la verificación a Ingeniería. La rama se aplica «#{NOISE_LINE}» [1].",
+      "Con KP-VS en 2,5, que leyó Ingeniería, la lectura está por debajo del mínimo documentado. La condición y el límite son «#{NOISE_LINE}» [1]. La evaluación del ruido sigue pendiente.",
+      "No le pidas a Ingeniería que cambie KP-VS a 3,5 por el ruido. Esa es una referencia de puesta en marcha: «#{audit_installation_quote}» [2]. Sigue pendiente la evaluación del ruido con la lectura de 2,5."
+    ]
+    if variant
+      replies[2] += ' <respuesta_complementaria>El ejemplo Eberle no completa la placa de obra: «Os valores reais dependem do motor instalado na obra» [2]. La corriente nominal queda pendiente.</respuesta_complementaria>'
+    end
+
+    episode_id = nil
+    questions.each_with_index do |question, index|
+      if variant && index == 3
+        previous = reloaded_session
+        state = Rag::ActiveEpisode.parse(previous.active_episode)
+        state.pending_question = { "type" => "work_relation" }
+        previous.update!(active_episode: state.to_h)
+        previous.add_to_history("user", question, user_id: @user.id, correlation_id: "query:unanswered")
+        previous.add_to_history("assistant", I18n.t("rag.clarify_work_relation", locale: :es), correlation_id: "query:unanswered")
+        question = AUDIT_JOURNEYS.fetch("engineering_variant").last
+      end
+      observations = [
+        [ "En viaje se oye fuerte el motor de tracción" ],
+        [ questions[1].delete_suffix(".") ],
+        variant ? [ "La corriente no se alcanza a leer" ] : [ "Ingeniería leyó KP-VS en 2,5" ],
+        variant ? [] : [ "el ruido sigue" ]
+      ].fetch(index)
+      turn = audit_thyssen_turn(document, question, replies[index],
+        pages: %w[18_3 15_3], observations: observations, opening: index.zero?,
+        move: index >= 2 ? "new_work" : (index.zero? ? "report" : "follow_up"))
+      body, cassette = revision_ask("audit-#{name}", index + 1, turn, document)
+      assert_revision_scope(cassette, document)
+      answer = body.fetch("answer")
+      assert_includes answer, [ "¿Cuál es la lectura actual", "Ingeniería", "por debajo", "puesta en marcha" ].fetch(index)
+      assert_includes answer, "Eberle" if variant && index == 2
+      assert_includes audit_generator_prompt(cassette), questions[3] if variant && index == 3
+      assert_includes cassette.queries.first, questions[3] if variant && index == 3
+      session = reloaded_session
+      episode_id ||= session.live_episode_id
+      assert_equal episode_id, session.live_episode_id
+      assert_equal [ document.id ], session.focus_document_ids
+      assert_includes session.active_episode.fetch("observations").pluck("text"), "Ingeniería leyó KP-VS en 2,5" if index >= 2
+    end
+
+    turn = audit_thyssen_turn(document, AUDIT_JOURNEYS.fetch("other_equipment"), "",
+      pages: [], observations: [ "La cabina no nivela" ], move: "new_work",
+      assertions: [ { "span" => "KONE", "act" => "assert", "slot_hint" => "manufacturer" } ])
+    revision_ask("audit-#{name}", 5, turn, document)
+    assert_not_equal episode_id, reloaded_session.live_episode_id
+  end
+
+  def audit_installation_quote
+    data = JSON.parse(Rails.root.join(REVISION_FIXTURES, "thyssen_kpvs.json").read)
+    data.dig("quotes", "installation")
+  end
+
+  def audit_thyssen_pin
+    @account = accounts(:pilot)
+    host! "piloto.danebo.ai"
+    @user.update!(account: @account)
+    sign_in @user
+    data = JSON.parse(Rails.root.join(REVISION_FIXTURES, "thyssen_kpvs.json").read)
+    spec = data.fetch("document")
+    doc = KbDocument.create!(account: @account, s3_key: spec.fetch("key"),
+      document_uid: spec.fetch("uid"), display_name: spec.fetch("name"), aliases: [])
+    post pinned_documents_path, params: { kb_document_id: doc.id }, as: :json
+    assert_response :no_content
+    doc
+  end
+
+  def audit_manual_row(document, text, page)
+    { "content" => text, "uri" => "s3://#{KbDocument::KB_BUCKET}/audit/#{document.document_uid}/chunk_p#{page}_1.txt",
+      "original_source_uri" => document.canonical_uri, "document" => document.display_name, "page" => page, "score" => 0.9 }
+  end
+
+  def audit_turn(question, answer, rows:, move:, observations:, assertions: [])
+    TurnCapture.new({
+      "question" => question, "retrieve_query" => question, "generator_text" => answer, "rows" => rows,
+      "tool_input" => { "move" => move, "assertions" => assertions, "observations" => observations,
+                        "pending_resolution" => nil, "clarification_target" => nil }
+    })
+  end
+
+  def audit_thyssen_turn(doc, question, answer, pages:, observations:, move: "report", opening: false, assertions: [])
+    assertions = [ { "span" => "Thyssen", "act" => "assert", "slot_hint" => "manufacturer" } ] if opening
+    rows = pages.map do |page_key|
+      { "content" => AUDIT_ROOT.join("chunk_p#{page_key}.txt").read,
+        "uri" => "s3://#{KbDocument::KB_BUCKET}/audit/thyssen/chunk_p#{page_key}.txt",
+        "original_source_uri" => doc.canonical_uri, "document" => doc.display_name,
+        "page" => page_key.split("_").first.to_i, "score" => 0.9 }
+    end
+    audit_turn(question, answer, rows: rows, move: move, observations: observations, assertions: assertions)
+  end
+
+  def audit_generator_prompt(cassette)
+    cassette.sent.reject { |payload| payload[:tool_choice] }.sole.fetch(:messages).last.fetch(:content).pluck(:text).join
+  end
+
+  def audit_photo_post(name, turn, document)
+    cassette = JourneyCassette.new([ turn ], viewer_id: @account.id, focus_uri: document.canonical_uri)
+    original_compression = ImageCompressionService.method(:compress_with_thumbnail)
+    original_vision = FieldPhotoAnalysisService.instance_method(:call)
+    original_stream = ClaudeChunkingClient.instance_method(:build_client)
+    original_s3 = S3DocumentsService.method(:new)
+    photo_path = ENV["AUDIT_THYSSEN_PHOTO_PATH"].presence
+    binary = photo_path ? File.binread(photo_path) : "fixture transport bytes"
+    filename = photo_path ? File.basename(photo_path) : "bornera-fixture.jpg"
+    cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    if photo_path.nil?
+      ImageCompressionService.define_singleton_method(:compress_with_thumbnail) do |data, media, **|
+        { data: data, media_type: media, binary: Base64.decode64(data) }
+      end
+    end
+    observation = @audit_photo_reading || AUDIT_PRODUCTION.dig("photo", "observation").merge("subsystem" => "UNKNOWN")
+    if @guarded_photo
+      vision_text = JSON.generate(observation.merge("summary" => "Se distingue la bornera PV-1."))
+      vision_client = Object.new
+      vision_client.define_singleton_method(:messages) { self }
+      vision_client.define_singleton_method(:stream) do |**request|
+        raise "SDK retries enabled" unless request.dig(:request_options, :max_retries) == 0
+        image = request.fetch(:messages).sole.fetch(:content).find { |part| part[:type] == "image" }
+        raise "photo bytes differ from upload" unless Base64.strict_decode64(image.dig(:source, :data)) == binary
+
+        usage = Struct.new(:input_tokens, :output_tokens).new(300, 100)
+        text = Struct.new(:type, :text).new("text", vision_text)
+        response = Struct.new(:model, :usage, :content, :stop_reason).new("claude-sonnet-5-5", usage, [ text ], "end_turn")
+        Struct.new(:accumulated_message).new(response)
+      end
+      ClaudeChunkingClient.define_method(:build_client) { vision_client }
+    else
+      FieldPhotoAnalysisService.define_method(:call) do
+        component = observation.fetch("canonical_component")
+        raise "photo bytes differ from upload" unless @binary == binary
+
+        { parsed: observation, analysis: component, compact_context: "[FOTO] #{component}", usage: {},
+          model: "claude-sonnet-5-5", target_visible: true, relevance_to_goal: observation.fetch("relevance_to_goal", "relevant") }
+      end
+    end
+    store = Object.new
+    store.define_singleton_method(:upload_binary) { |key, _data, _media| key }
+    store.define_singleton_method(:list_keys) { |**| [] }
+    S3DocumentsService.define_singleton_method(:new) { |**| store }
+    previous = ENV.slice("PHOTO_QUESTION_RAG_ENABLED", "RAG_TRANSIENT_ATTEMPT_LIMIT")
+    ENV["PHOTO_QUESTION_RAG_ENABLED"] = "true"
+    ENV["RAG_TRANSIENT_ATTEMPT_LIMIT"] = "1"
+    message = nil
+
+    with_doubles(cassette) do
+      events = Rag::ValidationCapture.capture do
+        assert_enqueued_jobs 1, only: FieldPhotoAnalysisJob do
+          post rag_ask_path, params: {
+            question: turn.question,
+            image: { data: Base64.strict_encode64(binary), filename: filename, media_type: "image/jpeg" }
+          }, as: :json
+        end
+        assert_response :success
+        correlation = response.parsed_body.fetch("correlation_id")
+        messages = capture_broadcasts(KbSyncBroadcaster.channel_for(@account.id)) do
+          perform_enqueued_jobs(only: FieldPhotoAnalysisJob)
+        end
+        message = messages.sole
+        assert_equal correlation, message.fetch("correlation_id")
+        assert_equal "photo_question_answered", message.fetch("status")
+      end
+      events << { "kind" => "offline_vision_replay", "filename" => filename, "sha256" => Digest::SHA256.hexdigest(binary),
+                  "bytes" => binary.bytesize, "visual_observation" => observation, "vision_source" => "production_capture" }
+      write_trace("revision-audit-#{name}", 1, message, events, cassette, index: 0)
+    end
+    stored = FieldPhoto.find_by!(account: @account, sha256: Digest::SHA256.hexdigest(binary))
+    assert stored.thumbnail_data.present? if photo_path
+    assert_equal "UNKNOWN", stored.visual_observation["manufacturer"]
+    assert_includes stored.visual_observation["visible_text"], "MQ6"
+    assert_equal "Thyssen", reloaded_session.active_episode.dig("facts", "manufacturer", "value")
+    [ message, cassette ]
+  ensure
+    ImageCompressionService.define_singleton_method(:compress_with_thumbnail) { |*a, **kw| original_compression.call(*a, **kw) }
+    FieldPhotoAnalysisService.define_method(:call, original_vision)
+    ClaudeChunkingClient.define_method(:build_client, original_stream)
+    S3DocumentsService.define_singleton_method(:new) { |*a, **kw| original_s3.call(*a, **kw) }
+    Rails.cache = cache
+    %w[PHOTO_QUESTION_RAG_ENABLED RAG_TRANSIENT_ATTEMPT_LIMIT].each do |key|
+      previous[key] ? ENV[key] = previous[key] : ENV.delete(key)
+    end
+  end
+
+  def pin_thyssen_guion3
+    data = JSON.parse(Rails.root.join(REVISION_FIXTURES, "thyssen_guion3.json").read)
+    @account = accounts(:pilot)
+    host! "piloto.danebo.ai"
+    @user.update!(account: @account)
+    spec = data.fetch("document")
+    document = KbDocument.create!(account: @account, s3_key: spec.fetch("key"),
+      document_uid: spec.fetch("uid"), display_name: spec.fetch("name"), aliases: [])
+    post pinned_documents_path, params: { kb_document_id: document.id }, as: :json
+    assert_response :no_content
+    [ data, document ]
+  end
+
   def play_thyssen_kpvs(scenario)
     name = "thyssen_kpvs"
     data = JSON.parse(Rails.root.join(REVISION_FIXTURES, "#{name}.json").read)
     @account = accounts(:pilot)
     host! "piloto.danebo.ai"
     @user.update!(account: @account)
+    sign_in @user
     spec = data.fetch("document")
     document = KbDocument.create!(account: @account, s3_key: spec.fetch("key"),
       document_uid: spec.fetch("uid"), display_name: spec.fetch("name"), aliases: [])
@@ -1054,10 +2012,12 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     end
     entry["rows"][2] = contrasts.fetch("installation_row") if scenario == "installation"
     turn = revision_turns(name, data: data).sole
+    original_review = Rag::CompanionParameterReview.method(:build)
+    Rag::CompanionParameterReview.define_singleton_method(:build) { |**| nil }
     body, cassette = revision_ask("thyssen-kpvs-#{scenario}", 1, turn, document)
     assert_revision_scope(cassette, document)
-    assert_equal [ 16 ], cassette.sizes
-    assert_equal [ turn.retrieve_query ], cassette.queries
+    assert cassette.sizes.all? { |size| size == 16 }
+    assert_equal turn.question, cassette.queries.last
     assert_equal [ document.id ], reloaded_session.focus_document_ids
 
     generator = cassette.sent.reject { |payload| payload[:tool_choice] }.sole
@@ -1079,7 +2039,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     directory.join("layers.json").write(JSON.pretty_generate(
       "production_correlation" => data.dig("production", "correlation_id"),
       "indexed" => data.fetch("indexed"),
-      "retrieve_pages" => cassette.returned.sole.map(&:page),
+      "retrieve_pages" => cassette.returned.last.map(&:page),
       "generator_request" => generator,
       "generator_stub" => turn.raw,
       "noise_quote" => noise,
@@ -1151,6 +2111,8 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       assert_includes answer, "[3]"
       assert_not_includes Array(backing.fetch("removed")).pluck("reason"), "unbacked_citation"
     end
+  ensure
+    Rag::CompanionParameterReview.define_singleton_method(:build, original_review) if original_review
   end
 
   def assert_floor_sentence(answer, scenario = nil)
@@ -1352,8 +2314,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     assert_equal({ type: "adaptive", display: "summarized" }, generator[:thinking])
     assert_nil generator[:output_config]
     assert_nil generator[:tools]
-    assert_equal "b66a2da018be7ae7fb4075fa57e5896be01f0e6bb658541c299556e87f8bc096",
-      Digest::SHA256.hexdigest(generator[:system].to_s)
+    assert_equal Rag::CompanionDirectAnswer::SYSTEM_PROMPT, generator[:system]
   end
 
   def assert_cited(name, number, answer, body)
@@ -1428,6 +2389,8 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       "query" => cassette.queries[index],
       "filter" => cassette.filters[index],
       "http" => body,
+      "technician_message" => reloaded_session.conversation_history.reverse.find { |row| row["role"] == "user" },
+      "model_payloads" => cassette.sent,
       "episode" => reloaded_session.active_episode,
       "focus" => reloaded_session.document_focus_entries,
       "events" => events
@@ -1494,10 +2457,20 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
         @before_interpreter&.call
         reply(turn.tool_input, "tool_use", tool: true)
       else
-        @index += 1
         raise Anthropic::Errors::APITimeoutError.new(url: URI("https://api.anthropic.com/v1/messages")) if turn.raw == :timeout
 
-        reply(turn.raw, turn.stop_reason, tool: false)
+        @index += 1
+
+        answer = turn.raw
+        if answer.is_a?(String) && answer.match?(/\[p\d+\]/)
+          prompt = payload.fetch(:messages).last.fetch(:content).pluck(:text).join
+          answer = answer.gsub(/\[p(\d+)\]/) do
+            page = Regexp.last_match(1)
+            marker = prompt[/^\[(\d+)\] [^\n]+, página #{page}(?:\D|$)/, 1]
+            "[#{marker || raise("pinned page #{page} missing from generator")}]"
+          end
+        end
+        reply(answer, turn.stop_reason, tool: false)
       end
     end
 
@@ -1536,7 +2509,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       text = Array(payload[:messages]).map { |message|
         "#{message[:role]}:" + Array(message[:content]).map { |block| block[:text].to_s }.join
       }.join("\n---\n")
-      Digest::SHA256.hexdigest(text.sub(PENDING_SCOPE, ""))
+      Digest::SHA256.hexdigest(text.sub(PENDING_SCOPE, "").sub("Responde primero a la consulta actual. ", ""))
     end
 
     # The fixtures predate this sentence of the referral note. Everything

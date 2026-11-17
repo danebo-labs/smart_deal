@@ -195,17 +195,46 @@ module Rag
       datum_covers?(asked, said)
     end
 
+    # A prepared field reply answers the open question when it names one
+    # published part and no other component. A paraphrase keeps the same
+    # entities. A different component does not.
+    def self.open_reply?(question, turn)
+      return false unless question.is_a?(Hash)
+      return true if answered_part(question, turn)
+      return true if code_report?(question, turn)
+      return true if line_reading?(question, turn)
+      return true if connection_reply?(question, turn)
+      return true if latch_reply?(question, turn)
+      return false if question_parts(question["question"]).size > 1
+
+      said = datum_parts(turn)
+      asked = datum_parts(question_datum_text(question))
+      entities = said.entities - report_stems.to_a
+      # A later repair shares "sigue marcando" and also reports the alignment.
+      # Those extra entities are another step, not this question's answer.
+      return false if (entities - asked.entities).any?
+      return true if same_published_datum?(question, turn)
+      properties = said.properties | reading_properties(turn)
+      numbers = said.numbers - reading_numbers(turn)
+      return false if entities.empty? && properties.empty?
+      return false if (properties - asked.properties).any?
+      return false if numbers.any? && (numbers - asked.numbers).any?
+
+      (asked.entities & entities).any? || (asked.properties & properties).any?
+    end
+
     # One part that carries designators, inside a question split on "o".
     # The reply has to name those designators and a property of that part.
     # A shared number does not identify another component. Entrada, salida,
     # or contacto says how a numbered point is wired; two different ones
-    # still differ. A part without a designator is not recognized. This is
-    # not a general reading of compound questions.
+    # still differ. A compound question with no designator uses the part
+    # whose entities the reply fits inside.
     def self.answered_part(question, turn)
       return nil unless question.is_a?(Hash)
 
       parts = question_parts(question["question"])
       return nil if parts.size < 2
+      return undesignated_part(parts, turn) if parts.none? { |part| designators(part).any? }
 
       said = datum_parts(turn)
       return nil if said.numbers.empty?
@@ -218,6 +247,25 @@ module Rag
       return nil if (properties & said.properties).empty?
       return nil if other_connection?(asked, said)
       return nil if other_entity?(component_parts(asked), component_parts(said))
+
+      named.first
+    end
+
+    # A compound question with no terminal number. The reply's entities and
+    # properties have to fit inside exactly one part.
+    def self.undesignated_part(parts, turn)
+      said = datum_parts(turn)
+      return nil if designators(turn).any?
+      return nil if said.entities.empty? && said.properties.empty?
+
+      named = parts.select { |part|
+        asked = datum_parts(part)
+        next false if (said.entities - asked.entities).any?
+        next false if (said.properties - asked.properties).any?
+
+        (asked.entities & said.entities).any? || (asked.properties & said.properties).any?
+      }
+      return nil unless named.size == 1
 
       named.first
     end
@@ -394,6 +442,108 @@ module Rag
       text.to_s.scan(/#?\d+/).map { |token| token.delete("#") }.uniq
     end
 
+    # "¿El trinco queda abierto?" and "¿el cerrojo queda cerrado?" are answered
+    # by a latch that does not engage. A brake that does not engage is another component.
+    def self.latch_reply?(question, turn)
+      text = question["question"].to_s
+      return false if text.match?(CODE_TOKEN) && text.match?(/display|pantalla|visor/i)
+
+      said = datum_parts(turn)
+      engage = CompanionPlanCheck.stem("enganchar")
+      return false unless said.entities.include?(engage)
+
+      entities = said.entities - report_stems.to_a - [ engage ]
+      return false if (entities - latch_stems.to_a).any?
+
+      asked = datum_parts(question["question"])
+      return false if asked.entities.include?(CompanionPlanCheck.stem("lectura"))
+      return false if (asked.properties & reading_ask.to_a).any?
+
+      (asked.entities & latch_stems.to_a).any? && (asked.properties & latch_states.to_a).any?
+    end
+
+    def self.latch_stems
+      @latch_stems ||= %w[trinco cerrojo].map { |word| CompanionPlanCheck.stem(word) }.to_set
+    end
+
+    def self.latch_states
+      @latch_states ||= %w[abierto cerrado].map { |word| CompanionPlanCheck.stem(word) }.to_set
+    end
+
+    def self.reading_ask
+      @reading_ask ||= %w[activa tension].map { |word| CompanionPlanCheck.stem(word) }.to_set
+    end
+
+    # "¿Ya revisaste las conexiones?" is answered by a firm connection.
+    # A firm brake is another component.
+    def self.connection_reply?(question, turn)
+      asked = datum_parts(question["question"])
+      return false unless asked.entities.include?(CompanionPlanCheck.stem("conexion"))
+
+      said = datum_parts(turn)
+      firm = CompanionPlanCheck.stem("firme")
+      return false unless said.entities.include?(firm)
+
+      entities = said.entities - report_stems.to_a - [ firm ]
+      return false if (entities - asked.entities).any?
+
+      specific = asked.entities - connection_place_stems.to_a
+      specific.empty? || (specific - said.entities).empty?
+    end
+
+    def self.connection_place_stems
+      @connection_place_stems ||= %w[conexion revisar linea puerta piso bornera esas trinco]
+        .map { |word| CompanionPlanCheck.stem(word) }.to_set
+    end
+
+    # A voltage reading answers a request for that reading, or for whether
+    # the named line is active. Another component's reading does not.
+    def self.line_reading?(question, turn)
+      return false if reading_properties(turn).empty?
+
+      asked = datum_parts(question["question"])
+      said = datum_parts(turn)
+      entities = said.entities - report_stems.to_a
+      return false if (entities - asked.entities).any?
+
+      asked.entities.include?(CompanionPlanCheck.stem("lectura")) ||
+        asked.properties.include?(CompanionPlanCheck.stem("activa")) ||
+        asked.properties.include?(CompanionPlanCheck.stem("tension"))
+    end
+
+    # "código de falla o de estado" is one request. The reply names the
+    # code. A display, a screen, or the code itself fits. Another component
+    # does not, and a voltage reading is not that code.
+    def self.code_report?(question, turn)
+      asked = datum_parts(question["question"])
+      return false unless asked.entities.include?(CompanionPlanCheck.stem("codigo"))
+      return false unless turn.to_s.match?(CODE_TOKEN)
+      return false if reading_properties(turn).any?
+
+      said = datum_parts(turn)
+      (said.entities - asked.entities - code_places.to_a - report_stems.to_a).empty?
+    end
+
+    def self.code_places
+      @code_places ||= %w[display pantalla visor].map { |word| CompanionPlanCheck.stem(word) }.to_set
+    end
+
+    # A reported unit is a reading, not another component number.
+    def self.reading_numbers(text)
+      text.to_s.scan(READING_VALUE).map(&:first).uniq
+    end
+
+    def self.reading_properties(text)
+      text.to_s.scan(READING_VALUE).filter_map { |_number, unit|
+        stem = UNIT_PROPERTIES[unit.to_s.downcase]
+        CompanionPlanCheck.stem(stem) if stem
+      }.uniq
+    end
+
+    def self.report_stems
+      @report_stems ||= %w[marca mide medir valor lectura].map { |word| CompanionPlanCheck.stem(word) }.to_set
+    end
+
     def self.closed_reply?(turn)
       FollowupQueryRewriter.normalize_label(turn).match?(CLOSED_REPLY)
     end
@@ -409,14 +559,21 @@ module Rag
     SHORT_ASSISTANT_NEED = /\A(?:que\s+)?necesitas(?:\s+[\p{L}\d-]+){0,2}\z/
     PARAMETER_HYPHEN = /[-‐‑–]/
     PARAMETER_READING = /([A-Za-z]{2,}(?:[-‐‑–][A-Za-z0-9]+)+)\s*(?:=|es(?:\s+de)?|est[aá](?:\s+en)?)?\s*(\d+(?:[.,]\d+)?)/
+    READING_VALUE = /(?<![[:alnum:]])(\d+(?:[.,]\d+)?)[[:space:]]*([A-Za-zµ%]{1,6})/
+    CODE_TOKEN = /(?<![[:alnum:]])(?:[A-Z]{2,3}|\d{2})(?![[:alnum:]])/
+    UNIT_PROPERTIES = { "v" => "tension", "vcc" => "tension", "vdc" => "tension", "vac" => "tension", "ma" => "corriente" }.freeze
     private_class_method :unknown_clarification?, :published_documented_question,
       :open_documented_question?, :open_answer?, :clear_matching_pending!,
       :closable_documented_question?,
       :shown_documented_question, :chosen_unknown_datum, :same_question_text?, :clear_shown!,
       :question_datum_text, :datum_parts, :other_scope?, :other_property?, :other_entity?,
+      :undesignated_part,
       :datum_covers?, :unspecified_unknown?, :promote_shown_question, :generic_entity?,
       :referent_placeholder?, :record_reported_controller!,
-      :designators, :closed_reply?, :connection_stems, :question_parts, :component_parts,
+      :designators, :code_report?, :code_places, :line_reading?, :connection_reply?, :connection_place_stems,
+      :latch_reply?, :latch_stems, :latch_states, :reading_ask,
+      :reading_numbers, :reading_properties, :report_stems,
+      :closed_reply?, :connection_stems, :question_parts, :component_parts,
       :other_connection?
 
     def self.apply!(episode:, perception:, decision:, turn:, correlation_id:, now:)
@@ -1156,6 +1313,15 @@ module Rag
     def clear_pending_unless_meta
       return if @decision&.decision == "meta"
       return if @perception.move == "meta"
+      if (parameter = CompanionParameterReview.pending_parameter(@episode))
+        @episode.clear_pending! if @perception.observations.any? { |text| CompanionParameterReview.readings(text, parameter).any? }
+        return
+      end
+      if open_documented_pending? && @perception.move == "answer_pending" &&
+          self.class.open_reply?(@episode.pending_question, @turn)
+        self.class.settle_answered_pending!(@episode, @episode.pending_question["question"])
+        return
+      end
       return if open_documented_pending?
 
       @episode.clear_pending!
@@ -1428,7 +1594,10 @@ module Rag
       normalized = FollowupQueryRewriter.normalize_label(text)
       return false if normalized.blank?
 
-      TechnicalUnderstanding::SIGNAL_RE.match?(normalized)
+      return false if normalized.match?(/\b(?:no (?:veo|hay|muestra|aparece|indica)|sin)\s+(?:un\s+)?(?:codigos?|alarmas?)\b/)
+
+      TechnicalUnderstanding::SIGNAL_RE.match?(normalized) ||
+        normalized.match?(/\b(?:no (?:respond\w*|trab\w*)|se reabr\w*|ruido|se oye fuerte)\b/)
     end
   end
 end

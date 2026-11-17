@@ -25,15 +25,17 @@ module Rag
     ALLOWED_CALLS_ENV = "RAG_LOCAL_PASS_ALLOWED_CALLS"
     TICKETS = :rag_local_pass_tickets
     ASSIGNMENT_PATH_ENV = "RAG_ASSIGNMENT_SPEND_PATH"
+    EXECUTION_ENV = "RAG_ASSIGNMENT_EXECUTION_ID"
+    SCOPE_ENV = "RAG_ASSIGNMENT_RUN_SCOPE"
     ASSIGNMENT_IDS = :rag_assignment_spend_ids
     # Lahiri, 2026-10-22: the joint F2/F3 validation adds at most sixteen
     # calls on top of the 134 already recorded. Cumulative 150. The dollar
     # cap stays US$4 and includes unknown exposure.
     ASSIGNMENT_CALL_CAP = 150
     # 150 is the standing cap. A file that recorded a bump to 152, 164, 166,
-    # 174, 175, 180, 185, 194, 196, 211, 213, 229, 245, 295, 311, 320, 328, 1000, 1015, or 1034 is read back.
-    # A larger number is not a grant.
-    ASSIGNMENT_CALL_CAPS = [ ASSIGNMENT_CALL_CAP, 152, 164, 166, 174, 175, 180, 185, 194, 196, 211, 213, 229, 245, 295, 311, 320, 328, 1000, 1015, 1034 ].freeze
+    # 174, 175, 180, 185, 194, 196, 211, 213, 229, 245, 295, 311, 320, 328, 1000, 1015, 1034, 1054, 1158, or 1190 is read back.
+    # 1190 is the field-validation step. A larger number is not a grant.
+    ASSIGNMENT_CALL_CAPS = [ ASSIGNMENT_CALL_CAP, 152, 164, 166, 174, 175, 180, 185, 194, 196, 211, 213, 229, 245, 295, 311, 320, 328, 1000, 1015, 1034, 1054, 1158, 1190 ].freeze
     # US$4 until attempt 326. Lahiri, 2026-11-10: US$2.29 of new spend on top
     # of the 2.734677 committed plus unknown at that point.
     ASSIGNMENT_COST_CAP_USD = "5.024677"
@@ -242,6 +244,7 @@ module Rag
       # stay held on the process ledger. The next request must not settle them.
       def release_thread!
         Thread.current[TICKETS] = nil
+        Thread.current[ASSIGNMENT_IDS] = nil
         nil
       end
 
@@ -352,7 +355,19 @@ module Rag
         data = JSON.parse(File.read(path))
         authorized = data.is_a?(Hash) ? data.dig("authorization", "call_cap").to_i : 0
         return authorized if ASSIGNMENT_CALL_CAPS.include?(authorized)
+        if ENV[EXECUTION_ENV] == AssignmentSpend::THYSSEN_AUDIT_ID &&
+            authorized == AssignmentSpend::THYSSEN_AUDIT_CAP
+          return authorized
+        end
+        if ENV[EXECUTION_ENV] == AssignmentSpend::THYSSEN_RECHECK_ID &&
+            authorized == AssignmentSpend::THYSSEN_RECHECK_CAP
+          return authorized
+        end
 
+        if ENV[EXECUTION_ENV] == AssignmentSpend::FIELD_CONTINUATION_ID &&
+            authorized == AssignmentSpend::FIELD_CONTINUATION_CAP
+          return authorized
+        end
         ASSIGNMENT_CALL_CAP
       rescue JSON::ParserError, SystemCallError
         ASSIGNMENT_CALL_CAP
@@ -360,9 +375,16 @@ module Rag
 
       def reserve_assignment!(operation, model_id, ceiling)
         ledger = assignment_ledger
+        raise Stop, "assignment_ledger_missing" if ENV[EXECUTION_ENV].present? && !ledger
         return nil unless ledger
 
-        ledger.reserve!(ceiling_usd: ceiling, model_id: model_id, turn: operation)
+        execution = ENV[EXECUTION_ENV].presence
+        scope_id = ENV[SCOPE_ENV].presence
+        if execution && !scope_id
+          raise Stop, "assignment_scope_missing"
+        end
+        scope = { id: scope_id, calls: call_cap, cost: cost_cap } if scope_id
+        ledger.reserve!(ceiling_usd: ceiling, model_id: model_id, turn: operation, required_execution: execution, scope: scope)
       rescue AssignmentSpend::Stop
         raise Stop, operation.to_s
       end

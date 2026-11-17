@@ -19,7 +19,7 @@ module Rag
     HISTORICAL_MARKER = /\[\d+\]/
     ASLEEP_STATUS = [ 500, 502, 503, 504, 529 ].freeze
 
-    Prepared = Data.define(:params, :system, :user, :chunks, :messages, :omitted, :history_chars)
+    Prepared = Data.define(:params, :system, :user, :chunks, :messages, :omitted, :history_chars, :parameter_review)
     Composed = Data.define(:text, :stop_reason, :rejected)
 
     class AnthropicMessage
@@ -97,7 +97,7 @@ module Rag
 
     class << self
       def prepare(raw_question:, chunks:, episode:, session:, correlation_id: nil,
-                  reference_context: nil, scope_uris: nil, viewer_account: nil)
+                  reference_context: nil, photo_evidence: nil, unresolved_question: nil, scope_uris: nil, viewer_account: nil)
         kept = CompanionPlan.limit_statement_chunks(chunks)
         episode_id = CompanionCaseRecord.episode_id_of(episode)
         merged = CompanionCaseRecord.sources(session, episode_id, kept, scope_uris: scope_uris, viewer_account: viewer_account)
@@ -108,9 +108,14 @@ module Rag
         case_context = if session.is_a?(FieldCases::TurnContext)
           SessionContextBuilder.companion_case(SessionContextBuilder.companion_episode(session, episode), {}, session: session)
         end
+        parameter_review = CompanionParameterReview.build(question: raw_question, episode: episode, chunks: merged)
+        carry = "Pregunta del mismo caso que quedó sin responder: #{unresolved_question}" if unresolved_question.present?
         history, omitted = fit_history(turns, budget: HISTORY_MAX_CHARS - case_context.to_s.length)
-        current = current_text(raw_question, merged, technician_turn,
-                               context: [ reference_context, referent, case_context ].compact.join("\n"))
+        continuation = ProcedureContinuation.prompt(history: history, chunks: merged, question: raw_question, episode: episode)
+        context = [
+          continuation, carry, reference_context, referent, case_context, parameter_review&.prompt, photo_evidence
+        ].compact_blank.join("\n\n")
+        current = current_text(raw_question, merged, technician_turn, context: context)
         messages = converse_messages(history, current)
         system = SYSTEM_PROMPT
         Prepared.new(
@@ -120,7 +125,8 @@ module Rag
           chunks: merged,
           messages: messages,
           omitted: omitted,
-          history_chars: packed_length(history)
+          history_chars: packed_length(history),
+          parameter_review: parameter_review
         ).tap { |prepared|
           record_history(prepared)
           record_case_sources(merged)
@@ -308,15 +314,14 @@ module Rag
         ].compact_blank.join("\n\n")
       end
 
-      # Past the third exchange a manual rarely adds more; an open case is
-      # handed over instead of extended.
+      # Offer a handoff when the next check requires someone else or cannot
+      # proceed with the available information.
       def referral_note(technician_turn)
         return nil if technician_turn < REFERRAL_TURN
 
-        "Turno #{technician_turn} del técnico en este caso. Si la consulta sigue abierta, termina con un resumen " \
-          "para derivar: lo que contó el técnico, lo que ya comprobó, lo que respalda la fuente con [n] y lo que falta. " \
-          "Lo que falta no incluye un componente, ajuste o modo cuya condición o ejemplo documentado depende de algo " \
-          "que el técnico ya descartó. Sin pregunta nueva salvo que su respuesta cierre el caso."
+        "Turno #{technician_turn} del técnico en este caso. Responde primero a la consulta actual. Si el último resultado permite avanzar, " \
+          "indica la siguiente comprobación respaldada o pide la observación que permite decidirla. Si el técnico no puede seguir, resume " \
+          "lo que contó, lo que comprobó, el respaldo y lo que queda pendiente para derivar."
       end
 
       def sources_block(chunks)
@@ -359,7 +364,8 @@ module Rag
           next unless message.is_a?(Hash)
           role = message["role"].to_s
           next unless role == "user" || role == "assistant"
-          next if role == "assistant" && message["outcome"].to_s == "abstained"
+          next if role == "assistant" && %w[abstained failed].include?(message["outcome"].to_s)
+          next if role == "assistant" && message["content"].to_s.start_with?("[FOTO]")
           next if correlation_id.present? && message["correlation_id"].to_s == correlation_id.to_s
           next if cutoff && !inside_cutoff?(message, cutoff)
 

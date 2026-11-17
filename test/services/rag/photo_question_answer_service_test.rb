@@ -309,7 +309,8 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
     context = captured[:session_context]
     assert_includes context, "## Photo Evidence (this turn)"
     assert_includes context, "Component: GECB"
-    assert_includes context, "Visible text/codes: System=1, Tools=2, UNKNOWN"
+    assert_includes context, "Visible text/codes: System=1, Tools=2"
+    assert_not_includes context, "Visible text/codes: System=1, Tools=2, UNKNOWN"
     assert_not_includes context, "- Subsystem:"
     assert_not_includes context, "substituting"
     assert_not_includes context, "Never infer"
@@ -564,14 +565,16 @@ class Rag::PhotoQuestionAnswerServiceTest < ActiveSupport::TestCase
     QueryOrchestratorService.define_singleton_method(:new) { |question, **kwargs| original_new.call(question, **kwargs) } if original_new
   end
 
-  test "returns nil when the RAG call does not succeed" do
+  test "reports when the RAG call does not succeed" do
     BedrockRagService.define_method(:query) do |*|
       raise BedrockRagService::BedrockServiceError, "boom"
     end
 
     result = build_service(question: "Que es esto?").call
 
-    assert_nil result
+    assert result[:failed]
+    assert_equal "service_error", result[:equipment_identity_reason]
+    assert_equal "BedrockRagService::BedrockServiceError", result[:error_class]
   end
 
   test "H9 names a screen document when grounded synthesis is on and sheet titles are visible" do

@@ -28,6 +28,10 @@ module Rag
     # «ese mínimo»: points at a limit that an earlier sentence quoted.
     DANGLING_LIMIT = /(?<![[:alnum:]])(?:ese|dicho|este)\s+(?:m[ií]nimo|l[ií]mite)/i.freeze
     STATED_LIMIT = /\bno\s+(?:puedes|puede|sabes|es\s+posible)\b|\bsin\s+poder\b|\bcannot\b|\bcan't\b/i.freeze
+    # A reported reading stays when it shares its sentence with an unquoted
+    # citation. Only the clause that carries [n] leaves.
+    SOURCE_CUE = /\A\s*(?:y\s+)?(?:el\s+|la\s+|los\s+|las\s+)?(?:rango|fuente|manual|paso|criterio|seg[uú]n|documentad)/i.freeze
+    MEASUREMENT = /(\d+(?:[.,]\d+)?)\s*([A-Za-zµ%]{1,6})/
 
     Result = Struct.new(:text, :removed, :reattributed, keyword_init: true) do
       def changed?
@@ -51,12 +55,14 @@ module Rag
       @removed = []
       @reattributed = []
       @context = []
+      @list_intros = cited_list_intros(@text)
     end
 
     def call
       lines = filter_lines
       lines = carry_quotes(lines)
       lines = drop_dangling_limits(lines)
+      lines = drop_uncited_list_attributions(lines)
       lines = drop_orphan_labels(lines) if changed?
       body = lines.join("\n").gsub(/\n{3,}/, "\n\n").strip
       Result.new(text: body, removed: @removed, reattributed: @reattributed)
@@ -121,6 +127,21 @@ module Rag
       end.map(&:first)
     end
 
+    # An attributed introduction can assert a condition or an instruction.
+    # Discard it independently of the following items, each of which already
+    # passed its own backing check.
+    def drop_uncited_list_attributions(lines)
+      lines.each_with_index.reject do |line, index|
+        next false unless label?(line) && line.match?(CompanionTurnPublication::CLAIM_VERBS)
+        next false if line.match?(CITATION_PATTERN)
+
+        following = lines[(index + 1)..].find(&:present?)
+        next false unless following&.match?(LIST_PREFIX) && following.match?(CITATION_PATTERN)
+
+        @removed << { "sentence" => line.strip, "reason" => "uncited_attribution" }
+      end.map(&:first)
+    end
+
     def label?(line)
       line.strip.gsub("**", "").end_with?(":")
     end
@@ -141,9 +162,57 @@ module Rag
 
       moved = reattributed(sentence) if reason == "unverified_quote"
       return moved if moved
+      if reason == "unbacked_citation" && (kept = salvage_report(sentence))
+        return kept
+      end
 
       @removed << { "sentence" => sentence, "reason" => reason }
       nil
+    end
+
+    # «al conectar el sensor, pasó a 7 mA, y el rango pedido es 6-8 [1]»
+    # keeps the reported measurement and drops the clause that cites without
+    # a literal quote. When the citation sits in that same clause, the marker
+    # leaves and the reading stays, unless the remainder names a value the
+    # sources and the technician did not. A sentence without that measurement
+    # is unchanged.
+    def salvage_report(sentence)
+      return nil if documentary_quotes(sentence, QUOTE_PATTERN).any? { |quoted, _lead| backing?(quoted) }
+
+      measurement = reported_measurement
+      return nil if measurement.nil? || !sentence.match?(measurement)
+
+      body, cited = split_cited_clause(sentence)
+      if body.present? && cited.present? && !body.match?(CITATION_PATTERN) &&
+          body.match?(measurement) && drop_reason(body).nil?
+        @removed << { "sentence" => cited, "reason" => "unbacked_citation" }
+        return body
+      end
+
+      stripped = sentence.gsub(CITATION_PATTERN, "").gsub(/[[:space:]]+/, " ").gsub(/\s+([,.;])/, "\\1").strip
+      return nil if stripped.blank? || stripped == sentence.strip || !stripped.match?(measurement)
+      return nil unless drop_reason(stripped).nil?
+
+      pool = @sources.select { |source| CompanionTurnPublication.citable_source?(source) }
+      return nil if pool.empty? || foreign_tokens?(stripped, pool)
+
+      @removed << { "sentence" => sentence, "reason" => "unbacked_citation" }
+      stripped
+    end
+
+    def reported_measurement
+      pairs = @technician_texts.flat_map { |text| text.to_s.scan(MEASUREMENT) }.uniq
+      return nil if pairs.empty?
+
+      Regexp.union(pairs.map { |number, unit| /#{Regexp.escape(number)}\s*#{Regexp.escape(unit)}/i })
+    end
+
+    def split_cited_clause(sentence)
+      parts = sentence.split(/,\s+/)
+      cited_at = parts.rindex { |part| part.match?(CITATION_PATTERN) || part.match?(SOURCE_CUE) }
+      return nil unless cited_at&.positive?
+
+      [ parts[0...cited_at].join(", "), parts[cited_at..].join(", ") ]
     end
 
     # Only a single [n], and only when one other citable source holds every
@@ -236,10 +305,24 @@ module Rag
       return nil unless CompanionTurnPublication.source_attribution?(sentence, @manufacturer)
       return nil if CompanionTurnPublication.source_absence?(sentence)
       return nil if CompanionTurnPublication.question_sentence?(sentence)
+      return "uncited_attribution" if @list_intros.include?(sentence)
       return nil if sentence.strip.end_with?(":")
       return nil if bound_comparison?(sentence)
 
       "uncited_attribution"
+    end
+
+    # A redundant source introduction is discarded only when the following
+    # list already supplies backed excerpts. The list takes its own claims.
+    def cited_list_intros(text)
+      lines = text.lines.map(&:strip).reject(&:empty?)
+      lines.each_with_index.filter_map do |line, index|
+        next unless line.end_with?(":") && line.match?(/\bseg[uú]n (?:la fuente|el manual|el plano)\b/i)
+        next unless line.match?(/\b(?:es esta|siguiente|as[ií]):\z/i)
+
+        following = lines[index + 1, 2].to_a
+        line if following.any? { |item| item.match?(LIST_PREFIX) && item.match?(CITATION_PATTERN) }
+      end
     end
 
     def bound_comparison?(sentence)
@@ -292,8 +375,10 @@ module Rag
           next
         end
         run = line[index..].to_s[/\A(?:[[:space:]]*\[\d+\])+/].to_s
-        current << run
-        index += run.length
+        unless citation_leads_next_sentence?(line, index, run)
+          current << run
+          index += run.length
+        end
         parts << current.strip
         current = +""
       end
@@ -301,9 +386,15 @@ module Rag
       parts.reject(&:empty?)
     end
 
+    # A source marker may be the subject of the next sentence. Do not
+    # attach it to the preceding sentence and then cut it during validation.
+    def citation_leads_next_sentence?(line, index, markers)
+      markers.present? && line[(index + markers.length)..].match?(/\A[ \t]+[[:lower:]][^.!?]*[«“"]/)
+    end
+
     def boundary?(line, index)
       nxt = line[index]
-      nxt.nil? || nxt.match?(/[[:space:]\[]/)
+      nxt.nil? || nxt.match?(/[[:space:]\[*]/)
     end
 
     def abbreviation?(current)

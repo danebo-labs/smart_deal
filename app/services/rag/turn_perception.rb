@@ -24,6 +24,9 @@ module Rag
     /x.freeze
     # «el ruido sigue»: the state of the open job continues. Normalised text.
     PERSISTENCE = /\b(?:sigue|siguen|persiste|persisten|continua|continuan)\b/.freeze
+    SAME_EQUIPMENT_REPLY = /\A(?:si\s+)?(?:(?:es|sigue siendo)\s+)?(?:el|la)?\s*mism[oa]\s+(?:equipo|ascensor|elevador|controlador)\z/
+    FIELD_READING = /\b(?:le[yíi]\p{L}*|midi[óo]\p{L}*|med[ií]\p{L}*|registr[óo]\p{L}*|marca|indica)\b[^.!?]{0,60}\b\d+(?:[.,]\d+)?\b/i
+    REFERENCE_CORRECTION = /\b(?:me equivoque de referencia|corrijo la referencia|corrijo el nivel)\b/
     COMPONENT_STOPWORDS = %w[a al con de del el en es esa ese esta este hay la las lo los no o para por que se si su sus un una y and of the to].freeze
     IDENTITY_HEDGE = /
       \b(?:creo|me\s+parece|puede\s+ser|podria(?:\s+ser)?|quizas|tal\s+vez|
@@ -107,6 +110,10 @@ module Rag
 
     def self.build(raw, turn:, episode:, catalog:, viewer_account:)
       new(raw: raw, turn: turn, episode: episode, catalog: catalog, viewer_account: viewer_account).build
+    end
+
+    def self.same_equipment_reply?(turn)
+      FollowupQueryRewriter.normalize_label(turn).match?(SAME_EQUIPMENT_REPLY)
     end
 
     def self.tool_schema
@@ -377,6 +384,14 @@ module Rag
       if observations.empty? && data["move"].in?(%w[report answer_pending follow_up])
         report = stated_numbered_observation(assertions)
         observations << report if report
+      end
+      if data["move"] == "new_work" && open_job?
+        reading = @turn.split(/(?<=[.!?])\s+/).find do |sentence|
+          !sentence.match?(/[?¿]/) && sentence.match?(FIELD_READING)
+        end
+        if reading && !ObservationText.covered_by?(observations.join(" "), reading.delete_suffix("."))
+          observations = literal_observations([ *observations, reading.delete_suffix(".").strip ])
+        end
       end
       checks = literal_checks(data["checks"])
       replies = prepared.is_a?(Hash) ? Array(prepared["part_replies"]) : []
@@ -1029,6 +1044,11 @@ module Rag
       @catalog.resolve_brand(span, viewer_account: @viewer_account)
     end
 
+    def documented_context_pending?
+      question = @episode.respond_to?(:pending_question) ? @episode.pending_question : nil
+      question.is_a?(Hash) && question["type"] == "documented_context"
+    end
+
     def pending_slot
       question = @episode.respond_to?(:pending_question) ? @episode.pending_question : nil
       if question.is_a?(Hash) && ActiveEpisode::PENDING_SUBJECTS.include?(question["type"].to_s)
@@ -1345,7 +1365,12 @@ module Rag
         note_rule("adjust_move", move, "new_work_without_open_job", { "to" => "report" })
         move = "report"
       end
-      if move == "meta" && technical_recap?(@turn)
+      if continued_work?(move, target, identities)
+        reason = open_job_persistence?(identities) ? "new_work_on_open_job_persistence" : "explicit_continuity"
+        note_rule("adjust_move", move, reason, { "to" => "follow_up" })
+        move = "follow_up"
+      end
+      if move == "meta" && (technical_recap?(@turn) || open_job_persistence?(identities))
         note_rule("adjust_move", "meta", "technical_recap", { "to" => "follow_up" })
         move = "follow_up"
       end
@@ -1370,12 +1395,27 @@ module Rag
       elsif move == "new_work" && open_job_component?(identities)
         note_rule("adjust_move", move, "new_work_on_open_job_component", { "to" => "follow_up" })
         move = "follow_up"
-      elsif move == "new_work" && open_job_persistence?(identities)
-        note_rule("adjust_move", move, "new_work_on_open_job_persistence", { "to" => "follow_up" })
+      end
+      if (reading = open_job_parameter_reading(identities))
+        observations = (observations + [ reading ]).uniq.last(ActiveEpisode::MAX_OBSERVATIONS)
+      end
+      if move == "new_work" && reading
+        note_rule("adjust_move", move, "new_work_answers_pending_parameter", { "to" => "follow_up" })
         move = "follow_up"
       end
       target = nil unless move == "unclear"
       [ move, resolution, identities, observations, ambiguities, target ]
+    end
+
+    def continued_work?(move, target, identities)
+      return false unless move == "new_work" || (move == "unclear" && target == "work_relation")
+      return false unless open_job?
+
+      turn = FollowupQueryRewriter.normalize_label(@turn)
+      return true if self.class.same_equipment_reply?(@turn)
+      return false if turn.match?(OTHER_EQUIPMENT) || identities.any? { |item| item.act == "assert" && IDENTITY_HINTS.include?(item.slot) }
+
+      open_job_persistence?(identities) || @turn.match?(FIELD_READING) || turn.match?(REFERENCE_CORRECTION)
     end
 
     # An observation correction has no slot to negate. A fragment of the
@@ -1448,6 +1488,17 @@ module Rag
       !turn.match?(OTHER_EQUIPMENT) && turn.match?(PERSISTENCE)
     end
 
+    def open_job_parameter_reading(identities)
+      return nil unless prior_context? && !work_relation_pending?
+      return nil if FollowupQueryRewriter.normalize_label(@turn).match?(OTHER_EQUIPMENT)
+      return nil if identities.any? { |item| item.act == "assert" && IDENTITY_HINTS.include?(item.slot) }
+
+      parameter = CompanionParameterReview.pending_parameter(@episode)
+      return nil if parameter.nil?
+
+      CompanionParameterReview.readings(@turn, parameter).last&.first
+    end
+
     def component_pairs(text)
       text.split.reject { |word| word.length < 3 || COMPONENT_STOPWORDS.include?(word) }.each_cons(2).map { |pair| pair.join(" ") }
     end
@@ -1457,6 +1508,10 @@ module Rag
     end
 
     def pending_answer?(resolution, identities)
+      if documented_context_pending?
+        return resolution == "value" && WorkContextReducer.open_reply?(@episode.pending_question, @turn)
+      end
+
       slot = pending_slot
       return false if slot.nil? || resolution.nil?
       return value_matches?(identities, slot) if resolution == "value"
@@ -1596,6 +1651,7 @@ module Rag
 
     def type_pending_value(identities)
       slot = pending_slot
+      return identities if slot.nil?
       return identities if identities.any? { |item| item.kind == "fact" && item.slot == slot }
 
       typed = false

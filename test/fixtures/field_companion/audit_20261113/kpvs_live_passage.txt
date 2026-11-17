@@ -1,0 +1,3 @@
+19.13 Ajuste del ruido en el motor de tracción — parámetro "KP-VS" en "MENU PID"
+
+- En caso de ruido audible muy elevado: disminuya el valor del parámetro **"KP-VS"**, hasta el mínimo de [3,0].

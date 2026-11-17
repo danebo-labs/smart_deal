@@ -1,0 +1,16 @@
+{
+  "parameter": "TR-REF",
+  "other_parameter": "TR-AUX",
+  "condition": "Si el ventilador vibra de forma intensa",
+  "observation": "El ventilador vibra de forma intensa",
+  "limit": "7,5",
+  "foreign_limit": "9,5",
+  "reported": "6,2",
+  "proposal": "8,0",
+  "first": "El ventilador vibra de forma intensa. No puedo consultar el panel.",
+  "second": "El panel marcaba TR REF en 6,2. ¿Cómo se interpreta el dato?",
+  "third": "La vibración persiste. ¿Conviene dejarlo en 8,0?",
+  "new_work": "En otro elevador el panel marcaba TR REF en 6,2.",
+  "document": "s3://fixture-bucket/manual-a.pdf",
+  "other_document": "s3://fixture-bucket/manual-b.pdf"
+}

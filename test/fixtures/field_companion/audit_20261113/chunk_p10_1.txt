@@ -1,0 +1,235 @@
+[DOCUMENT: THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]
+[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf]
+[SEARCH_ALIASES: bobina freio tração, MACB, inversor de porta, RA-73 B10, RA-74 B20, L72, L61, RA-92 L60]
+
+S6 — ELECTRICAL
+
+11.7 Sinais da bobina do freio da máquina de tração e alimentação do inversor para a cabina
+
+| SINAL | FUNÇÃO |
+|---|---|
+| L72 | Alimentação do módulo MACB sempre em 220 Vca (OBS.2) |
+| L61 | Alimentação do módulo MACB sempre em 220 Vca (OBS.2) |
+| RA-73/ B10 | Ponto para ligar bobina do freio da maquina de tração (MACB) |
+| RA-74/ B20 | Ponto para ligar bobina do freio da maquina de tração (MACB) |
+| RA-92/ L60 (220Vca) | Alimentação do Inversor de Porta (OBS.3) |
+| RA-93/ L70 (220Vca) | Alimentação do Inversor de Porta (OBS.3) |
+
+Obs.2: módulo MACB alimentado por 220 Vca, para acionamento do freio Padrão ThyssenKrupp, Sûr, e outras marcas dentro das características de acionamento entre 60, 90, 110 e 135, configurar os Jump's no próprio módulo e acrescentar o filtro conforme tabela abaixo:
+
+| Máquina | Peça | Código | Qtd |
+|---|---|---|---|
+| EM-25/ 33/ 62/ 71 | 27139.1 | X08.012.346 | 1 peça para cada bobina |
+| EM-81 | 27354.2 | X08.012.351 | 1 peça para cada bobina |
+
+Obs.3: esta alimentação esta disponível na régua de bornes para futura utilização.
+
+11.8 Porta Manual (Pantográfica)
+
+| SINAIS | FUNÇÃO |
+|---|---|
+| RA-95/ L50 e RA-96/ RC1 | Pontos para ligar rampa magnética sinal 110 Vca. |
+
+11.9 Pontos de Chamadas e auto-iluminado
+
+| SINAIS | FUNÇÃO |
+|---|---|
+| RB-1 a RB-8 e RC-1 a RC-8 e RD-1 a RD-8 = 24 Vcc | Entrada do sinal de chamada e saída do sinal de auto-ilumina da cabina, de 2 a 24 Paradas. |
+| RB-17 a RB-24 e RC-17 a RC-24 e RD-17 a RD-24 = 24 Vcc | Entrada do sinal de chamada de descida e saída do sinal de auto iluminado dos pavimentos, de 2 a 24 Paradas. |
+| RB-9 a RB-16 e RC-9 a RC-16 = 24 Vcc | Entrada do sinal de chamada de subida e saída do sinal de auto iluminado dos pavimentos, de 2 a 16 Paradas. |
+
+11.10 Pontos para ligar o circuito de tensões variadas
+
+| SINAIS | FUNÇÃO |
+|---|---|
+| RA-87/ RM2 = +110Vcc | Ponto para ligar alimentação da redução magnética do operador de porta. |
+| RA-98/ T4+ = +24 Vcc | Ponto para ligar tensão de alimentação na botoeira de cabina. |
+| RA-99/ T5+ = +24 Vcc | Ponto para ligar tensão de alimentação nas botoeiras de pavimento. |
+| RA-27/ A2+ = +110Vcc | Ponto para ligar alimentação dos circuitos de segurança e sinalizadores de poço. |
+| RA-94/ A- = 0 VOLT | Ponto para ligar referencia das tensões de alimentação. |
+| RA-64 E RA-65/ RX = 110 ou 220 Vca | Ponto para ligar uma das linhas de alimentação de tensão corrente alternada (Iluminação). |
+| RA-66 E RA-67/ SX = 110 ou 220 Vca | Ponto para ligar uma das linhas de alimentação de tensão corrente alternada (Iluminação). |
+| RA-29/ A3+ = 110 Vcc | Ponto para ligar alimentação do painel de manutenção. |
+| RA-30/ A4+ = 110 Vcc | Ponto para ligar alimentação do circuito de trinco e palhetas das portas de pavimento. |
+
+# FIELD-SAFETY EVIDENCE RECORDS
+
+FIELD_RECORD:
+RECORD_ID: FR-C42CB3531EBBDBFD
+SOURCE_SECTION_OR_PAGE: 11.7 Sinais da bobina do freio da máquina de tração e alimentação do inversor para a cabina
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: L72 — Alimentação do módulo MACB sempre em 220 Vca
+EXPECTED_RESULT: Alimentação contínua 220 Vca ao módulo MACB
+EVIDENCE: Alimentação do módulo MACB sempre em 220 Vca (OBS.2)
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-1F83EBE91A652B35
+SOURCE_SECTION_OR_PAGE: 11.7 Sinais da bobina do freio da máquina de tração e alimentação do inversor para a cabina
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: L61 — Alimentação do módulo MACB sempre em 220 Vca
+EXPECTED_RESULT: Alimentação contínua 220 Vca ao módulo MACB
+EVIDENCE: Alimentação do módulo MACB sempre em 220 Vca (OBS.2)
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-3C6155E6D77CCE0F
+SOURCE_SECTION_OR_PAGE: 11.7 Sinais da bobina do freio da máquina de tração e alimentação do inversor para a cabina
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RA-73/ B10 — Ponto para ligar bobina do freio da maquina de tração (MACB)
+EXPECTED_RESULT: Conexão da bobina do freio de tração ao módulo MACB via terminal RA-73/B10
+EVIDENCE: Ponto para ligar bobina do freio da maquina de tração (MACB)
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-CBABF27D3E0A62FF
+SOURCE_SECTION_OR_PAGE: 11.7 Sinais da bobina do freio da máquina de tração e alimentação do inversor para a cabina
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RA-74/ B20 — Ponto para ligar bobina do freio da maquina de tração (MACB)
+EXPECTED_RESULT: Conexão da bobina do freio de tração ao módulo MACB via terminal RA-74/B20
+EVIDENCE: Ponto para ligar bobina do freio da maquina de tração (MACB)
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-978DAFACE2269FC3
+SOURCE_SECTION_OR_PAGE: 11.7 Sinais da bobina do freio da máquina de tração e alimentação do inversor para a cabina
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RA-92/ L60 (220Vca) — Alimentação do Inversor de Porta
+EXPECTED_RESULT: Alimentação 220 Vca disponível na régua de bornes para futura utilização (OBS.3)
+EVIDENCE: esta alimentação esta disponível na régua de bornes para futura utilização
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-C87388ADE1C99583
+SOURCE_SECTION_OR_PAGE: 11.7 Sinais da bobina do freio da máquina de tração e alimentação do inversor para a cabina
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RA-93/ L70 (220Vca) — Alimentação do Inversor de Porta
+EXPECTED_RESULT: Alimentação 220 Vca disponível na régua de bornes para futura utilização (OBS.3)
+EVIDENCE: esta alimentação esta disponível na régua de bornes para futura utilização
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-13B19AFFDD57326C
+SOURCE_SECTION_OR_PAGE: Obs.2 — módulo MACB / configuração de filtros
+RECORD_TYPE: INSTALLATION_STEP
+ACTION: Para freios com acionamento entre 60, 90, 110 e 135 (ThyssenKrupp, Sûr e outras marcas): configurar os Jump's no próprio módulo MACB e acrescentar o filtro conforme tabela — EM-25/33/62/71: Peça 27139.1, Código X08.012.346; EM-81: Peça 27354.2, Código X08.012.351 (1 peça para cada bobina).
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: configurar os Jump's no próprio módulo e acrescentar o filtro conforme tabela abaixo
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-9F3E477920166DBA
+SOURCE_SECTION_OR_PAGE: 11.8 Porta Manual (Pantográfica)
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RA-95/ L50 e RA-96/ RC1 — Pontos para ligar rampa magnética sinal 110 Vca
+EXPECTED_RESULT: Conexão da rampa magnética (110 Vca) nos terminais RA-95/L50 e RA-96/RC1
+EVIDENCE: Pontos para ligar rampa magnética sinal 110 Vca
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-AAC19F4876EAFA75
+SOURCE_SECTION_OR_PAGE: 11.9 Pontos de Chamadas e auto-iluminado
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RB-1 a RB-8, RC-1 a RC-8, RD-1 a RD-8 = 24 Vcc — Entrada do sinal de chamada e saída do sinal de auto-ilumina da cabina, de 2 a 24 Paradas
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Entrada do sinal de chamada e saída do sinal de auto-ilumina da cabina, de 2 a 24 Paradas
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-54D4B3A4EC1EC9CF
+SOURCE_SECTION_OR_PAGE: 11.9 Pontos de Chamadas e auto-iluminado
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RB-17 a RB-24, RC-17 a RC-24, RD-17 a RD-24 = 24 Vcc — Entrada do sinal de chamada de descida e saída do sinal de auto iluminado dos pavimentos, de 2 a 24 Paradas
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Entrada do sinal de chamada de descida e saída do sinal de auto iluminado dos pavimentos
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-ABB45001CE3D422C
+SOURCE_SECTION_OR_PAGE: 11.9 Pontos de Chamadas e auto-iluminado
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RB-9 a RB-16, RC-9 a RC-16 = 24 Vcc — Entrada do sinal de chamada de subida e saída do sinal de auto iluminado dos pavimentos, de 2 a 16 Paradas
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Entrada do sinal de chamada de subida e saída do sinal de auto iluminado dos pavimentos, de 2 a 16 Paradas
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-CDA99A0B0407F67E
+SOURCE_SECTION_OR_PAGE: 11.10 Pontos para ligar o circuito de tensões variadas
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RA-87/ RM2 = +110Vcc — Ponto para ligar alimentação da redução magnética do operador de porta
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Ponto para ligar alimentação da redução magnética do operador de porta
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-85778E99AD8EFD62
+SOURCE_SECTION_OR_PAGE: 11.10 Pontos para ligar o circuito de tensões variadas
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RA-98/ T4+ = +24 Vcc — Ponto para ligar tensão de alimentação na botoeira de cabina
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Ponto para ligar tensão de alimentação na botoeira de cabina
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-DC147B70C7F35C14
+SOURCE_SECTION_OR_PAGE: 11.10 Pontos para ligar o circuito de tensões variadas
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RA-99/ T5+ = +24 Vcc — Ponto para ligar tensão de alimentação nas botoeiras de pavimento
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Ponto para ligar tensão de alimentação nas botoeiras de pavimento
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-E477840EA634ED2D
+SOURCE_SECTION_OR_PAGE: 11.10 Pontos para ligar o circuito de tensões variadas
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RA-27/ A2+ = +110Vcc — Ponto para ligar alimentação dos circuitos de segurança e sinalizadores de poço
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Ponto para ligar alimentação dos circuitos de segurança e sinalizadores de poço
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-D1E57A6A1AEB248F
+SOURCE_SECTION_OR_PAGE: 11.10 Pontos para ligar o circuito de tensões variadas
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RA-94/ A- = 0 VOLT — Ponto para ligar referencia das tensões de alimentação
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Ponto para ligar referencia das tensões de alimentação
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-5D7FB6039AE51385
+SOURCE_SECTION_OR_PAGE: 11.10 Pontos para ligar o circuito de tensões variadas
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RA-64 E RA-65/ RX = 110 ou 220 Vca — Ponto para ligar uma das linhas de alimentação de tensão corrente alternada (Iluminação)
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Ponto para ligar uma das linhas de alimentação de tensão corrente alternada (Iluminação)
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-1C3F1A4D2B2F49C5
+SOURCE_SECTION_OR_PAGE: 11.10 Pontos para ligar o circuito de tensões variadas
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RA-66 E RA-67/ SX = 110 ou 220 Vca — Ponto para ligar uma das linhas de alimentação de tensão corrente alternada (Iluminação)
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Ponto para ligar uma das linhas de alimentação de tensão corrente alternada (Iluminação)
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-C3EF5125C2B1B6D9
+SOURCE_SECTION_OR_PAGE: 11.10 Pontos para ligar o circuito de tensões variadas
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RA-29/ A3+ = 110 Vcc — Ponto para ligar alimentação do painel de manutenção
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Ponto para ligar alimentação do painel de manutenção
+END_FIELD_RECORD
+
+FIELD_RECORD:
+RECORD_ID: FR-EBD3948420F7FD2A
+SOURCE_SECTION_OR_PAGE: 11.10 Pontos para ligar o circuito de tensões variadas
+RECORD_TYPE: SCHEMATIC_LABEL
+ACTION: RA-30/ A4+ = 110 Vcc — Ponto para ligar alimentação do circuito de trinco e palhetas das portas de pavimento
+EXPECTED_RESULT: DATA_NOT_AVAILABLE
+EVIDENCE: Ponto para ligar alimentação do circuito de trinco e palhetas das portas de pavimento
+END_FIELD_RECORD

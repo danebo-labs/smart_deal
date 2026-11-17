@@ -506,10 +506,15 @@ class Rag::Phase1PinnedTurnTest < ActiveSupport::TestCase
     assert_equal 1, contract["qc"]
     assert_operator contract["sequence"], :<, memory["sequence"]
     assert_equal contract["episode_id"], memory["episode_id"]
-    # This stub is meta on a technical turn, so the interpretation is rejected
-    # and the unchanged shell is not stored. The request still saw that shell.
-    assert_nil later["episode_id"]
-    assert_nil ConversationSession.find(result.session_id).live_episode_id
+    # The rejected meta keeps the technician's literal report. It does not
+    # store a manufacturer or a model from the empty tool.
+    stored = ConversationSession.find(result.session_id)
+    episode = stored.active_episode
+    assert_equal stored.live_episode_id, later["episode_id"]
+    assert_equal MESSAGE, episode.dig("goal", "text")
+    assert episode["observations"].any? { |row| MESSAGE.start_with?(row["text"].to_s) }
+    assert_nil episode.dig("facts", "manufacturer")
+    assert_nil episode.dig("facts", "model")
     assert_operator memory["sequence"], :<, later["sequence"]
     assert_equal result.session_id, later["session_id"]
     assert_exported(result, MESSAGE)

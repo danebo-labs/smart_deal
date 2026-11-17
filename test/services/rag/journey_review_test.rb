@@ -112,6 +112,12 @@ class Rag::JourneyReviewTest < ActiveSupport::TestCase
       assert_not_includes summary["identifiers_after"], SYMPTOM, spec[:key]
       assert_nil summary["model_after"], spec[:key]
       assert_nil summary["fault_code_after"], spec[:key]
+      assert_equal 1, summary["query"].to_s.scan("Estoy revisando un Elemont").size, summary["query"]
+      next unless spec[:unconfirmed]
+
+      assert_equal TURN, summary["goal_after"], spec[:key]
+      assert summary["observations_after"].any? { |text| TURN.start_with?(text) }, spec[:key]
+      assert_nil summary["manufacturer_after"], spec[:key]
     end
   end
 
@@ -124,6 +130,7 @@ class Rag::JourneyReviewTest < ActiveSupport::TestCase
       assert_equal [ @document.id ], summary["focus_before"], spec[:key]
       assert_equal summary["focus_before"], summary["focus_after"], spec[:key]
       assert_includes summary["query"], "seguridad de esa puerta", spec[:key]
+      assert_equal 1, summary["query"].to_s.scan("Estoy revisando un Elemont").size, summary["query"]
       assert_equal "ep_active_job", summary["episode_before_id"], spec[:key]
       assert_equal BRAKE_GOAL, summary["goal_before"], spec[:key]
       # The captured new_work was produced with an empty context. Replaying it
@@ -147,6 +154,7 @@ class Rag::JourneyReviewTest < ActiveSupport::TestCase
       assert_equal [ @document.id ], summary["focus_before"], spec[:key]
       assert_equal summary["focus_before"], summary["focus_after"], spec[:key]
       assert_includes summary["query"], "seguridad de esa puerta", spec[:key]
+      assert_equal 1, summary["query"].to_s.scan("Estoy revisando un Elemont").size, summary["query"]
       assert_equal DOOR_EPISODE, summary["episode_before_id"], spec[:key]
       assert_equal DOOR_GOAL, summary["goal_before"], spec[:key]
       assert_includes summary["observations_before"], DOOR_OBSERVATION, spec[:key]
@@ -215,7 +223,6 @@ class Rag::JourneyReviewTest < ActiveSupport::TestCase
       audited_turn: TURN
     }
     if spec[:unconfirmed]
-      checks[:no_unconfirmed_writes] = true
       checks[:manufacturer_blank] = scenario.nil?
     else
       checks[:manufacturer] = "Elemont"

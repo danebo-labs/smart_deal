@@ -16,6 +16,23 @@ class Rag::WebRequestCaptureTest < ActiveSupport::TestCase
     Thread.current[:rag_validation_capture] = nil
   end
 
+  test "an already open capture keeps the publication recorded in this request" do
+    outer = Rag::ValidationCapture.capture do
+      Rag::WebRequestCapture.wrap(controller: fake_controller("abierto")) do
+        Rag::ValidationCapture.record(
+          "companion_publication",
+          "accepted" => true,
+          "answer" => "publicado"
+        )
+      end
+    end
+
+    publication = outer.find { |event| event["kind"] == "companion_publication" }
+    assert_equal true, publication["accepted"]
+    exported = capture_for("abierto")
+    assert exported["events"].any? { |event| event["kind"] == "companion_publication" }
+  end
+
   test "an error still exports the request and a later wrap does not keep it" do
     assert Rag::WebRequestCapture.enabled?
 

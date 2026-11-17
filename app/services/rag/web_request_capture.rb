@@ -45,6 +45,14 @@ module Rag
       end
 
       request_key = file_export ? request_key_for(controller) : request_token(controller)
+      if ValidationCapture.active?
+        keep_open_capture(
+          controller, request_key,
+          account_id: account_id, user: user, durable: durable, file_export: file_export
+        ) { yield }
+        return
+      end
+
       failure = nil
       events = nil
       Rag::DurableTrace.with_context(
@@ -103,6 +111,58 @@ module Rag
       nil
     ensure
       LocalPassLedger.release_thread!
+    end
+
+    # A caller already opened the bucket. A second capture would hide
+    # companion_publication and the rest of this request from that caller.
+    # Events stay in the open bucket. The durable row and the file keep only
+    # the events this request added.
+    def keep_open_capture(controller, request_key, account_id:, user:, durable:, file_export:)
+      bucket = Thread.current[:rag_validation_capture]
+      start = bucket.size
+      ValidationCapture.record("web_request", request_meta(controller, request_key))
+      ValidationCapture.record("process_contract", process_contract)
+      failure = nil
+      begin
+        yield
+      rescue Exception => error # rubocop:disable Lint/RescueException
+        failure = error
+        if durable
+          Rag::DurableTrace.record_failure!(
+            account_id: account_id,
+            user_id: user&.id,
+            correlation_id: controller.params[:correlation_id].presence || request_key,
+            stage: "request",
+            error: error
+          )
+        end
+      end
+      if LocalPassLedger.guard_requested?
+        ValidationCapture.record("local_pass_ledger", LocalPassLedger.snapshot)
+      end
+      added = bucket.drop(start)
+      if durable
+        begin
+          Rag::DurableTrace.persist_capture!(
+            added,
+            account_id: account_id,
+            user_id: user&.id,
+            request_id: request_key
+          )
+        rescue StandardError => error
+          Rails.logger.error("web_request_capture durable_failed #{error.class}")
+        end
+      end
+      if file_export
+        begin
+          export!(added, request_key)
+        rescue StandardError => error
+          Rails.logger.error("web_request_capture export_failed #{error.class}")
+          failure ||= error
+        end
+      end
+      raise failure if failure
+      nil
     end
 
     def request_token(controller)

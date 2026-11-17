@@ -45,5 +45,16 @@ module Rag
 
       holder.match?(/(?<![[:alnum:]])#{Regexp.escape(phrase)}(?![[:alnum:]])/)
     end
+
+    # append_observation! cuts at 180 characters and can stop inside a word.
+    # That fragment is the same report, not a second fact for Retrieve.
+    def cut_prefix?(container, text)
+      phrase = normalize(text)
+      holder = normalize(container)
+      return false if phrase.blank? || holder.blank? || phrase.length >= holder.length
+      return false unless holder.start_with?(phrase)
+
+      holder[phrase.length].to_s.match?(/[[:alnum:]]/)
+    end
   end
 end

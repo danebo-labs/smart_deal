@@ -182,7 +182,8 @@ module Rag
     end
 
     def covered_by_goal_or_turn?(text)
-      ObservationText.covered_by?(goal_source, text) || ObservationText.covered_by?(cleaned_turn, text)
+      ObservationText.covered_by?(goal_source, text) || ObservationText.covered_by?(cleaned_turn, text) ||
+        ObservationText.cut_prefix?(goal_source, text) || ObservationText.cut_prefix?(cleaned_turn, text)
     end
 
     def goal_source
@@ -238,6 +239,7 @@ module Rag
 
       joined = FollowupQueryRewriter.normalize_label(parts.join(" "))
       return if joined.match?(/(?<![[:alnum:]])#{Regexp.escape(label)}(?![[:alnum:]])/)
+      return if ObservationText.cut_prefix?(joined, text)
 
       parts << text.to_s.squish
     end

@@ -250,6 +250,22 @@ class Rag::QueryComposerTest < ActiveSupport::TestCase
     kept.each { |text| assert_includes query, text }
   end
 
+  test "a mid-word cut of the current turn is not repeated in the composed query" do
+    turn = "Estoy revisando un Elemont MH por un problema de puerta en el nivel 2. Según el plano seleccionado, ¿dónde aparece la seguridad de esa puerta y cómo se relaciona con las demás seguridades?"
+    episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: @now)
+    episode.assign_goal!(turn, correlation_id: "seed")
+    episode.append_observation!(turn, correlation_id: "seed")
+    cut = turn.squish.first(Rag::ActiveEpisode::MAX_OBSERVATION_CHARS)
+    query = Rag::QueryComposer.call(
+      state: episode, turn: turn, perception: report, decision: decision_for("ready")
+    )
+
+    assert_operator cut.length, :<, turn.length
+    assert turn.start_with?(cut)
+    assert_equal 1, query.scan("Estoy revisando un Elemont").size, query
+    assert_equal 1, query.scan(cut).size, query
+  end
+
   test "meta and clarify_first compose no query and mark the turn dropped" do
     episode = Rag::ActiveEpisode.open(correlation_id: "seed", now: @now)
     explained = Rag::QueryComposer.explain(

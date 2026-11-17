@@ -40,11 +40,19 @@ class PilotMetricsReport
     rows = bedrock_rows
     log_data = read_log_data
     @usage_logs_loaded = %w[loaded partial].include?(log_data[:status])
-    messages, sessions = daily_messages_and_sessions
     @durable_package = Rag::DurableTrace.export(range: @range, user_ids: @user_ids)
+    dialogue = Rag::FieldCaseDialogue.new(
+      range: @range,
+      user_ids: @user_ids,
+      traces: Array(@durable_package && @durable_package[:turns])
+    )
+    @field_case_threads = dialogue.call
+    @field_turn_correlations = dialogue.correlation_ids
+    messages, sessions = daily_messages_and_sessions
     merge_durable_archive!(Rag::DurableTrace.archive_rows(range: @range, user_ids: @user_ids))
     interaction_report = interactions(rows, log_data[:pilot], log_data[:quality], log_data[:audit])
     attach_durable_dialogue!(interaction_report)
+    attach_field_answers!(interaction_report)
     attach_session_turns!(interaction_report, @session_archive)
     users = user_reports(rows, log_data[:pilot], log_data[:quality], messages)
     accounts = account_reports(rows, log_data[:pilot], log_data[:quality], messages)
@@ -70,6 +78,7 @@ class PilotMetricsReport
       },
       interactions: interaction_report,
       session_archive: session_archive_export,
+      field_case_threads: Array(@field_case_threads),
       durable_traces: Array(@durable_package && @durable_package[:turns]),
       adoption_signals: adoption_signals(rows, log_data[:pilot], messages, sessions),
       repeat_usage: repeat_usage(log_data[:pilot]),
@@ -99,7 +108,8 @@ class PilotMetricsReport
         limits: [
           "Commercial outcomes require a field survey and are never inferred from LLM activity.",
           "RAG sources come from per-interaction quality telemetry, not the session's current document snapshot.",
-          "RAG token counts may be estimated where Bedrock RetrieveAndGenerate omits provider usage."
+          "RAG token counts may be estimated where Bedrock RetrieveAndGenerate omits provider usage.",
+          "Device capture only records the web channel, so desktop and mobile cannot be distinguished."
         ]
       },
       manual_batches: manual_batches
@@ -135,7 +145,9 @@ class PilotMetricsReport
           next unless @range.cover?(ts)
 
           archived = history_archive_row(session, raw, ts)
-          @session_archive << archived if archive_visible?(session, raw)
+          unless field_turn_correlation?(raw["correlation_id"])
+            @session_archive << archived if archive_visible?(session, raw)
+          end
           next if @user_ids.any? && @user_ids.exclude?(integer_or_nil(raw["user_id"]))
 
           daily << archived
@@ -228,6 +240,7 @@ class PilotMetricsReport
 
   def merge_durable_archive!(rows)
     Array(rows).each do |row|
+      next if field_turn_correlation?(row[:correlation_id])
       next unless archive_account_visible?(row)
 
       match = @session_archive.find { |existing| same_archive_message?(existing, row) }
@@ -281,6 +294,34 @@ class PilotMetricsReport
       row[:durable_trace] = turn
       row[:uncaptured_fields] = turn[:uncaptured_fields]
     end
+  end
+
+  # field_turns is the published dialogue. A durable assistant row must not
+  # replace that text when both exist for the same correlation.
+  def attach_field_answers!(interactions)
+    rows = interactions.is_a?(Hash) ? interactions[:by_correlation] : nil
+    return unless rows.is_a?(Array)
+
+    indexed = Array(@field_case_threads).flat_map { |thread| thread[:turns] }
+      .index_by { |turn| turn[:correlation_id].to_s }
+    rows.each do |row|
+      turn = indexed[row[:correlation_id].to_s]
+      next unless turn
+
+      row[:question] = turn[:message] if turn[:message].present?
+      row[:answer] = turn[:published_text]
+      row[:citations] = turn[:citations]
+      row[:field_case_id] = turn[:field_case_id]
+      row[:field_turn_id] = turn[:field_turn_id]
+      row[:attempt] = turn[:attempt]
+    end
+  end
+
+  def field_turn_correlation?(value)
+    token = value.to_s
+    return false if token.blank?
+
+    @field_turn_correlations&.include?(token)
   end
 
   def read_log_data

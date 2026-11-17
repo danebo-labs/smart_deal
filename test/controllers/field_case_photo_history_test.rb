@@ -214,6 +214,7 @@ class FieldCasePhotoHistoryTest < ActionDispatch::IntegrationTest
         assert_match(%r{\A/field_photos/\d+\z}, photo.dig("attachment", "href"))
         assert photo.dig("trace", "evidence", "photo").any? { |event| event["kind"] == "photo_observation" }
         assert_equal [ 8 ], photo.fetch("citations").pluck("page")
+        assert_equal [ account.id ], report.fetch("durable_traces").pluck("account_id").uniq
         photo_trace = report.fetch("durable_traces").find { |row| row["correlation_id"] == photo["correlation_id"] }
         assert_equal "P1", photo_trace.dig("visual_observation", "observation", "model")
         assert_equal account.id, photo_trace["account_id"]

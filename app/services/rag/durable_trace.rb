@@ -372,6 +372,7 @@ module Rag
       rows = relation_for(range: range, user_ids: user_ids, account_id: account_id).order(:occurred_at, :id).to_a
       photos = photos_for(rows)
       turns = build_turns(rows, photos)
+      turns.select! { |turn| turn[:account_id] == account_id } if account_id
       { turns: turns }
     end
 

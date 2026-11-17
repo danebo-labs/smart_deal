@@ -22,7 +22,31 @@ module Rag
       literal = turn.to_s.squish
       working.assign_goal!(literal, correlation_id: correlation_id) if working.goal.blank?
       working.append_observation!(literal, correlation_id: correlation_id)
+      record_reported_controller!(working, literal, correlation_id: correlation_id, now: now)
       working
+    end
+
+    # The technician named the controller in the report. That is their datum.
+    # It is not an identity the rejected interpreter call validated.
+    def self.record_reported_controller!(episode, turn, correlation_id:, now:)
+      return if episode.fact("controller")&.dig("status") == "known"
+
+      catalog = DocumentIdentityCatalog.current
+      turn.to_s.scan(/(?:controlador|controladora)\s+([A-Za-z0-9][A-Za-z0-9+\-]{2,})/i) do |token|
+        resolution = catalog.resolve_designator(token.first)
+        next unless resolution.respond_to?(:status) && resolution.status == :exact
+        next if resolution.value.blank?
+
+        episode.write_fact!(
+          "controller",
+          status: "known",
+          value: resolution.value,
+          source: "user",
+          correlation_id: correlation_id,
+          at: now.iso8601
+        )
+        break
+      end
     end
 
     # The interpreter rejected the turn as meta. A "no sé cómo…" answers the
@@ -383,13 +407,15 @@ module Rag
     CONTINUATION = %w[sigue seguir seguimos siguiente ahora luego entonces despues proximo hago hacemos].to_set
     CONTINUATION_FILLER = %w[que como cual cuando donde y o a el la lo los las un una me te se por para con del].to_set
     SHORT_ASSISTANT_NEED = /\A(?:que\s+)?necesitas(?:\s+[\p{L}\d-]+){0,2}\z/
+    PARAMETER_HYPHEN = /[-‐‑–]/
+    PARAMETER_READING = /([A-Za-z]{2,}(?:[-‐‑–][A-Za-z0-9]+)+)\s*(?:=|es|est[aá])?\s*(\d+(?:[.,]\d+)?)/
     private_class_method :unknown_clarification?, :published_documented_question,
       :open_documented_question?, :open_answer?, :clear_matching_pending!,
       :closable_documented_question?,
       :shown_documented_question, :chosen_unknown_datum, :same_question_text?, :clear_shown!,
       :question_datum_text, :datum_parts, :other_scope?, :other_property?, :other_entity?,
       :datum_covers?, :unspecified_unknown?, :promote_shown_question, :generic_entity?,
-      :referent_placeholder?,
+      :referent_placeholder?, :record_reported_controller!,
       :designators, :closed_reply?, :connection_stems, :question_parts, :component_parts,
       :other_connection?
 
@@ -712,7 +738,53 @@ module Rag
         next unless value.match?(/\d/) && value.match?(/[[:alpha:]]/)
 
         @episode.append_observation!(value, correlation_id: @correlation_id)
+        supersede_corrected_parameter!(value)
       end
+    end
+
+    # "kp-cs es 2,5" then "KP-VS es 2,5" corrects the parameter. Both messages
+    # stay in the case history. The state used for Retrieve keeps the corrected
+    # parameter and drops the earlier token. A different parameter, or another
+    # number, stays.
+    def supersede_corrected_parameter!(value)
+      current = parameter_reading(value)
+      return unless current
+
+      @episode.observations.reject! { |item|
+        next false if item["text"] == value
+
+        prior = parameter_reading(item["text"])
+        next false unless prior && prior[:number] == current[:number]
+        next false if prior[:key] == current[:key]
+        next false if self.class.edit_distance(prior[:key], current[:key]) > 2
+
+        remove_identifier(item["text"])
+        true
+      }
+    end
+
+    def parameter_reading(text)
+      match = text.to_s.match(PARAMETER_READING)
+      return unless match
+
+      {
+        token: match[1],
+        key: match[1].downcase.gsub(PARAMETER_HYPHEN, ""),
+        number: match[2].tr(".", ",")
+      }
+    end
+
+    def self.edit_distance(left, right)
+      row = (0..right.length).to_a
+      left.each_char.with_index do |char, index|
+        next_row = [ index + 1 ]
+        right.each_char.with_index do |other, other_index|
+          cost = char == other ? 0 : 1
+          next_row << [ next_row[other_index] + 1, row[other_index + 1] + 1, row[other_index] + cost ].min
+        end
+        row = next_row
+      end
+      row.last
     end
 
     def write_checks

@@ -629,10 +629,19 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
           assert_response :accepted
         end
         assert_revision_scope(resumed_cassette, manual)
-        interpreter = resumed_cassette.sent.find { |payload| payload[:tool_choice] }.to_json
-        assert_includes interpreter, question
-        assert_includes interpreter, "MCINV4"
-        assert_includes resumed_cassette.queries.join(" "), "MCINV4"
+        heard = interpreter_context(resumed_cassette)
+        assert_equal "Ingeniería midió 2,5", heard.fetch("turn")
+        heard_turns = heard.dig("work_context", "recent_turns")
+        assert_equal "técnico", heard_turns.first["role"]
+        assert_equal "Danebo", heard_turns.last["role"]
+        assert_includes heard_turns.first["text"], "MCINV4"
+        assert_includes heard_turns.first["text"], "ruido fuerte"
+        assert_includes heard_turns.last["text"], question
+        assert heard_turns.none? { |row| row["role"] == "técnico" && row["text"].include?("[3,0]") }
+        resume_query = resumed_cassette.queries.join("\n")
+        assert_includes resume_query, "MCINV4"
+        assert_includes resume_query, "2,5"
+        assert_not_includes resume_query, "disminuya el valor"
         assert_match(/2,5.*KP-VS/m, final.fetch("answer"))
         assert final.fetch("citations").any?
 
@@ -691,7 +700,8 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       assert_equal opening, state.dig("goal", "text")
       assert_equal noise, state.dig("pending_question", "question")
       assert_nil state.dig("facts", "manufacturer")
-      assert_nil state.dig("facts", "controller")
+      assert_equal "MCINV4", state.dig("facts", "controller", "value")
+      assert_equal "user", state.dig("facts", "controller", "source")
       assert_equal opening, saved.fetch("turns").sole.dig("checkpoint", "goal", "text")
       assert_equal noise, saved.fetch("turns").sole.dig("checkpoint", "pending_question", "question")
 
@@ -722,10 +732,15 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       assert_includes typo_input.dig("work_context", "goal"), "motor de tracción"
       assert_equal noise, typo_input.dig("work_context", "pending", "question")
       assert_nil typo_input.dig("work_context", "facts", "manufacturer")
-      assert_nil typo_input.dig("work_context", "facts", "controller")
-      assert typo_input.dig("work_context", "recent_turns").any? { |row| row["text"].include?("MCINV4") }
-      assert typo_input.dig("work_context", "recent_turns").any? { |row| row["role"] == "assistant" && row["text"].include?(noise) }
+      assert_equal "MCINV4", typo_input.dig("work_context", "facts", "controller", "value")
+      assert_equal "user", typo_input.dig("work_context", "facts", "controller", "source")
+      assert_equal [ "técnico", "Danebo" ], typo_input.dig("work_context", "recent_turns").pluck("role")
+      assert_includes typo_input.dig("work_context", "recent_turns").first["text"], "MCINV4"
+      assert_includes typo_input.dig("work_context", "recent_turns").last["text"], noise
       assert typo_input.dig("work_context", "recent_turns").none? { |row| row["text"].include?("CEA15") }
+      assert_not_includes typo_input.fetch("turn"), "MCINV4"
+      assert_includes _typo_body.fetch("answer"), noise
+      assert_not_includes _typo_body.fetch("answer"), I18n.t("rag.controller_label_question", locale: :es)
       assert_includes typo_cassette.queries.join(" "), "MCINV4"
       after_typo = read_text_case(case_a)
       assert_equal opening, after_typo.dig("case", "technical_state", "goal", "text")
@@ -738,21 +753,34 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
           "move" => "report", "assertions" => [ { "span" => "KP-VS es 2,5", "act" => "assert", "slot_hint" => nil } ],
           "observations" => [], "pending_resolution" => nil, "clarification_target" => nil
         })
-      # The comparison paraphrases page 18 without quoting it, so the citation
-      # guard drops it and the reference route abstains. The noise question stays open.
       _final, correction_cassette = ask_text_case(case_a, correction, manual, "t3")
-      assert_equal I18n.t("rag.focus_evidence_insufficient", locale: :es), _final.fetch("answer")
+      assert_includes _final.fetch("answer"), "El técnico reporta KP-VS = 2,5"
+      assert_includes _final.fetch("answer"), "En caso de ruido audible muy elevado"
+      assert_includes _final.fetch("answer"), "[1]"
+      assert_not_includes _final.fetch("answer"), "disminuir \"KP-VS\""
+      assert_not_includes _final.fetch("answer"), I18n.t("rag.focus_evidence_insufficient", locale: :es)
       correction_input = interpreter_context(correction_cassette)
       assert_equal "El valor de KP-VS es 2,5", correction_input.fetch("turn")
       assert_equal after_typo.dig("case", "technical_state", "goal", "text"), correction_input.dig("work_context", "goal")
       assert_equal noise, correction_input.dig("work_context", "pending", "question")
-      assert correction_input.dig("work_context", "recent_turns").any? { |row| row["text"] == "El valor de kp-cs es 2,5" }
-      assert correction_input.dig("work_context", "recent_turns").none? { |row| row["text"].include?("CEA15") }
+      dialogue = correction_input.dig("work_context", "recent_turns")
+      assert_equal [ "técnico", "Danebo", "técnico", "Danebo" ], dialogue.pluck("role")
+      assert_equal "El valor de kp-cs es 2,5", dialogue[2]["text"]
+      assert_includes dialogue[1]["text"], noise
+      assert dialogue.none? { |row| row["text"].include?("CEA15") }
+      assert_not_includes dialogue.pluck("text"), correction_input.fetch("turn")
+      query = correction_cassette.queries.join("\n")
+      assert_includes query, "KP-VS"
+      assert_includes query, "MCINV4"
+      assert_includes query, "motor de tracción"
+      assert_not_includes query, "kp-cs"
       finished = read_text_case(case_a)
       assert_equal opening, finished.dig("case", "technical_state", "goal", "text")
       assert_equal noise, finished.dig("case", "technical_state", "pending_question", "question")
+      texts = finished.dig("case", "technical_state", "observations").pluck("text")
+      assert_includes texts, "KP-VS es 2,5"
+      assert_not_includes texts, "kp-cs es 2,5"
       reading = finished.dig("case", "technical_state", "observations").find { |item| item["text"] == "KP-VS es 2,5" }
-      assert reading, finished.dig("case", "technical_state", "observations").pluck("text").inspect
       assert_nil reading["answers"]
       assert_equal [ 1, 2, 3 ], finished.fetch("turns").pluck("sequence")
       assert_equal state_b.fetch("turns").sole.dig("response", "published_text"), b_result.fetch("answer")

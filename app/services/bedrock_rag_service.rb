@@ -1237,7 +1237,10 @@ class BedrockRagService
     resolved = controller&.dig("status")
     chunks, mismatched, confirmed = direct_reference_chunks(chunks, scope_uris, controller)
     plate = { reported: controller["value"], documented: mismatched } if chunks.empty? && mismatched.any?
-    pending = if active&.episode_id.present? && !incompatible &&
+    documented_question = active&.pending_question&.dig("question") if active&.pending_question&.dig("type") == "documented_context"
+    pending = if documented_question.present?
+      nil
+    elsif active&.episode_id.present? && !incompatible &&
         (resolved.nil? || (resolved == "known" && controller["source"] == "catalog")) &&
         active.pending_question&.dig("type") != "controller" && !controller_question_shown?(conv_session)
       { "type" => "controller", "question" => I18n.t("rag.controller_label_question", locale: locale) }
@@ -1278,7 +1281,7 @@ class BedrockRagService
     end
 
     withheld = result[:answer] if result&.dig(:applicability_violation)
-    reference_fallback(locale, retrieval, pending, scope_uris, incompatible, model_invoked: !result.nil?, plate: plate, withheld: withheld)
+    reference_fallback(locale, retrieval, pending, scope_uris, incompatible, model_invoked: !result.nil?, plate: plate, withheld: withheld, shown_question: documented_question)
   rescue Timeout::Error, Net::ReadTimeout, Net::OpenTimeout, BedrockServiceError, Anthropic::Errors::APIError => error
     Rag::ValidationCapture.record("direct_reference", "condition" => "generation_failed", "error_class" => error.class.name)
     reference_fallback(locale, retrieval, pending, scope_uris, incompatible, model_invoked: true)
@@ -1332,7 +1335,7 @@ class BedrockRagService
     [ kept, mismatched.uniq, matched ]
   end
 
-  def reference_fallback(locale, retrieval, pending, scope_uris, incompatible, model_invoked:, plate: nil, withheld: nil)
+  def reference_fallback(locale, retrieval, pending, scope_uris, incompatible, model_invoked:, plate: nil, withheld: nil, shown_question: nil)
     answer = if withheld
       withheld
     elsif plate
@@ -1340,9 +1343,10 @@ class BedrockRagService
     else
       I18n.t(Array(scope_uris).any? ? "rag.focus_evidence_insufficient" : "rag.open_evidence_insufficient", locale: locale)
     end
+    question = shown_question.presence || pending&.dig("question")
     {
-      answer: [ answer, pending&.dig("question") ].compact.join("\n\n"),
-      pending_question: pending, citations: [], retrieved_citations: [], doc_refs: [],
+      answer: [ answer, question ].compact.join("\n\n"),
+      pending_question: shown_question.present? ? nil : pending, citations: [], retrieved_citations: [], doc_refs: [],
       retrieval_trace: retrieval[:retrieval_trace], model_invoked: model_invoked,
       generation_mode: "direct_reference", route_outcome: :abstained,
       evidence_gap: incompatible ? "incompatible" : plate ? "plate_mismatch" : withheld ? "withheld" : "insufficient"
@@ -2266,6 +2270,13 @@ class BedrockRagService
       )
       record_companion_claim_backing(backing)
       extracted = backing.text
+      if reference_mode
+        restored = Rag::CitedConditionRestore.call(text: extracted, sources: sources, removed: backing.removed)
+        if restored
+          Rag::ValidationCapture.record("companion_cited_condition", "text" => restored)
+          extracted = restored
+        end
+      end
       floor = Rag::CompanionCitedFloor.call(
         text: extracted, sources: sources, technician_texts: technician_texts,
         observations: companion_episode_observations(episode)

@@ -2265,6 +2265,7 @@ class BedrockRagService
           Rag::ValidationCapture.record("companion_applicability", "removed" => applicability.removed, "text" => extracted)
         end
       end
+      extracted = restore_conditional_procedure(extracted, sources, technician_texts)
       backing = Rag::CompanionClaimBacking.call(
         text: extracted, sources: sources, technician_texts: technician_texts, manufacturer: manufacturer
       )
@@ -2356,6 +2357,18 @@ class BedrockRagService
     capture_cited_sources(result[:citations])
     attach_direct_case!(result, chunks, correlation_id)
     result
+  end
+
+  # Completes a cited conditional line before the citation guard, and replaces
+  # an adjustment the model gave as already applicable when the report does
+  # not establish that condition.
+  def restore_conditional_procedure(text, sources, technician_texts)
+    completed = Rag::ConditionalQuote.complete(text: text, sources: sources)
+    held = Rag::UnconfirmedProcedure.hold(text: completed, sources: sources, technician_texts: technician_texts)
+    return completed unless held
+
+    Rag::ValidationCapture.record("companion_unconfirmed_procedure", "text" => held) if Rag::ValidationCapture.active?
+    held
   end
 
   def companion_turn_pending(accepted, answer_text)

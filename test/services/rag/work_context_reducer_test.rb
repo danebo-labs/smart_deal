@@ -567,6 +567,36 @@ class Rag::WorkContextReducerTest < ActiveSupport::TestCase
     assert texts.none? { |text| text.include?("por arriba") }
   end
 
+  test "a KP-VS reading does not close a pending question about noise intensity" do
+    episode = open_episode
+    episode.assign_goal!("Se escucha fuerte el motor de tracción durante el viaje", correlation_id: "seed")
+    episode.append_observation!("kp-cs es de 2,5", correlation_id: "seed")
+    question = "¿El ruido audible es muy elevado?"
+    episode.pending_question = Rag::PendingQuestion.coerce(
+      "type" => "documented_context",
+      "question" => question,
+      "targets" => [ { "item" => question } ]
+    )
+    turn = "El parámetro KP-VS es de 2,5"
+
+    with_owner do
+      settle(episode, {
+        "move" => "answer_pending",
+        "assertions" => [ { "span" => "KP-VS es de 2,5", "act" => "assert", "slot_hint" => "designator" } ],
+        "observations" => [],
+        "pending_resolution" => "value",
+        "clarification_target" => nil
+      }, turn)
+    end
+
+    assert_equal question, episode.pending_question["question"]
+    reading = episode.observations.find { |item| item["text"] == "KP-VS es de 2,5" }
+    assert reading, episode.observations.pluck("text").inspect
+    assert_nil reading["answers"]
+    assert_equal "seed", reading["correlation_id"]
+    assert_not_includes episode.observations.pluck("text"), "kp-cs es de 2,5"
+  end
+
   private
 
   def settle(episode, raw, turn)

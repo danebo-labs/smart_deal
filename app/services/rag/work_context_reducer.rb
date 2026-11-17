@@ -408,7 +408,7 @@ module Rag
     CONTINUATION_FILLER = %w[que como cual cuando donde y o a el la lo los las un una me te se por para con del].to_set
     SHORT_ASSISTANT_NEED = /\A(?:que\s+)?necesitas(?:\s+[\p{L}\d-]+){0,2}\z/
     PARAMETER_HYPHEN = /[-‐‑–]/
-    PARAMETER_READING = /([A-Za-z]{2,}(?:[-‐‑–][A-Za-z0-9]+)+)\s*(?:=|es|est[aá])?\s*(\d+(?:[.,]\d+)?)/
+    PARAMETER_READING = /([A-Za-z]{2,}(?:[-‐‑–][A-Za-z0-9]+)+)\s*(?:=|es(?:\s+de)?|est[aá](?:\s+en)?)?\s*(\d+(?:[.,]\d+)?)/
     private_class_method :unknown_clarification?, :published_documented_question,
       :open_documented_question?, :open_answer?, :clear_matching_pending!,
       :closable_documented_question?,

@@ -788,6 +788,78 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "natural Thyssen noise turns keep the condition pending and the reported KP-VS reading" do
+    isolate_env("FIELD_CASE_HISTORY_ENABLED", "true") do
+      @account = accounts(:pilot)
+      host! "piloto.danebo.ai"
+      @user.update!(account: @account)
+      data = JSON.parse(Rails.root.join(REVISION_FIXTURES, "thyssen_kpvs.json").read)
+      spec = data.fetch("document")
+      manual = KbDocument.create!(account: @account, s3_key: spec.fetch("key"),
+        document_uid: spec.fetch("uid"), display_name: spec.fetch("name"), aliases: [])
+      page = data.fetch("passages").fetch("9a2cad2e366f0641cc5150205c697d3d63484892b2c4cb9871c674bfd77a31f1")
+      condition = "En caso de ruido audible muy elevado: disminuya el valor del parámetro \"KP-VS\", hasta el mínimo de [3,0]"
+      symptom = "Se escucha fuerte el motor de tracción durante el viaje"
+      opening = "Tenemos un Thyssen con controlador MCINV4. #{symptom}"
+      applied = "Lo que describes coincide con la condición de la fuente [1]: «#{condition}».\n\n" \
+        "Según eso, el ajuste aplicable es bajar KP-VS en MENU PID, sin pasar de 3,0.\n\n" \
+        "La fuente no indica la causa del ruido, así que el ajuste no confirma que el motor esté bien. Después de ajustarlo, revisa de nuevo el ruido durante el viaje.\n\n" \
+        "No reportaste código de falla, así que no aplico la tabla de códigos."
+      first = thyssen_turn(opening, applied, page, manual, {
+        "move" => "report",
+        "assertions" => [
+          { "span" => "Thyssen", "act" => "assert", "slot_hint" => "manufacturer" },
+          { "span" => "MCINV4", "act" => "assert", "slot_hint" => "controller" }
+        ],
+        "observations" => [ symptom ],
+        "pending_resolution" => nil,
+        "clarification_target" => nil
+      })
+
+      case_a = create_text_case
+      post pinned_documents_path, params: { field_case_id: case_a.fetch("id"), kb_document_id: manual.id }, as: :json
+      assert_response :ok
+      published, = ask_text_case(case_a, first, manual, "noise-1")
+      assert_includes published.fetch("answer"), "«#{condition}»"
+      assert_includes published.fetch("answer"), "[1]"
+      assert_includes published.fetch("answer"), "¿El ruido audible es muy elevado?"
+      assert_not_includes published.fetch("answer"), "ajuste aplicable"
+      assert_not_includes published.fetch("answer"), "coincide con la condición"
+      saved = read_text_case(case_a)
+      question = "¿El ruido audible es muy elevado?"
+      assert_equal question, saved.dig("case", "technical_state", "pending_question", "question")
+      assert_equal question, saved.fetch("turns").sole.dig("checkpoint", "pending_question", "question")
+      assert_includes saved.dig("case", "technical_state", "observations").pluck("text"), symptom
+
+      reading_text = "El parámetro KP-VS es de 2,5"
+      model = "Con KP-VS en 2,5 ya estás por debajo del mínimo documentado, que es 3,0. " \
+        "La fuente indica «disminuya el valor del parámetro \"KP-VS\", hasta el mínimo de [3,0]» [1], así que no conviene bajarlo más.\n\n" \
+        "Corrijo mi respuesta anterior: no sabía el valor con que llegabas y di el ajuste como si aún hubiera que bajarlo.\n\n" \
+        "La fuente no establece la causa del ruido, así que esto no confirma que el equipo esté bien. Revisa si el ruido sigue durante el viaje."
+      second = thyssen_turn(reading_text, model, page, manual, {
+        "move" => "answer_pending",
+        "assertions" => [ { "span" => "KP-VS es de 2,5", "act" => "assert", "slot_hint" => "designator" } ],
+        "observations" => [],
+        "pending_resolution" => "value",
+        "clarification_target" => nil
+      })
+      final, = ask_text_case(case_a, second, manual, "noise-2")
+      assert_includes final.fetch("answer"), "2,5"
+      assert_includes final.fetch("answer"), condition
+      assert_includes final.fetch("answer"), "[1]"
+      assert_not_includes final.fetch("answer"), "«disminuya el valor del parámetro \"KP-VS\", hasta el mínimo de [3,0]»"
+      finished = read_text_case(case_a)
+      assert_equal question, finished.dig("case", "technical_state", "pending_question", "question")
+      assert_equal question, finished.fetch("turns").last.dig("checkpoint", "pending_question", "question")
+      reading = finished.dig("case", "technical_state", "observations").find { |item| item["text"] == "KP-VS es de 2,5" }
+      assert reading, finished.dig("case", "technical_state", "observations").pluck("text").inspect
+      assert_nil reading["answers"]
+      assert_equal final.fetch("correlation_id"), reading["correlation_id"]
+      assert_equal final.fetch("correlation_id"), finished.fetch("turns").last.dig("checkpoint", "observations")
+        .find { |item| item["text"] == "KP-VS es de 2,5" }["correlation_id"]
+    end
+  end
+
   private
 
   def thyssen_turn(question, generator, page, manual, tool_input)

@@ -556,7 +556,130 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "reopens a text case after four hours and binds the first reading to its published question" do
+    isolate_env("FIELD_CASE_HISTORY_ENABLED", "true") do
+      @account = accounts(:pilot)
+      host! "piloto.danebo.ai"
+      @user.update!(account: @account)
+      data = JSON.parse(Rails.root.join(REVISION_FIXTURES, "thyssen_kpvs.json").read)
+      spec = data.fetch("document")
+      manual = KbDocument.create!(account: @account, s3_key: spec.fetch("key"),
+        document_uid: spec.fetch("uid"), display_name: spec.fetch("name"), aliases: [])
+      original = data.fetch("turns").sole
+      quote = data.dig("quotes", "noise")
+      original["question"] = "El rótulo del controlador dice MCINV4. Es un Thyssen FDN Universal. En viaje hay ruido fuerte en el motor de tracción."
+      original["tool_input"]["assertions"] = [
+        { "span" => "Thyssen", "act" => "assert", "slot_hint" => "manufacturer" },
+        { "span" => "MCINV4", "act" => "assert", "slot_hint" => "controller" }
+      ]
+      original["tool_input"]["observations"] = [ "ruido fuerte en el motor de tracción" ]
+      question = "¿Qué valor de KP-VS midió Ingeniería?"
+      original["generator_text"] = "Para el ruido de tracción, el manual indica: «#{quote}» [1].\n\n#{question}"
+      first = revision_turns("thyssen_kpvs", data: data).sole
+      case_a = create_text_case
+      assert_empty case_a.fetch("document_focus")
+      post pinned_documents_path, params: { field_case_id: case_a.fetch("id"), kb_document_id: manual.id }, as: :json
+      assert_response :ok
+
+      opening, cassette = ask_text_case(case_a, first, manual, "a-open")
+      assert_revision_scope(cassette, manual)
+      assert_includes opening.fetch("answer"), question
+      assert opening.fetch("citations").any?
+      pending = read_text_case(case_a).dig("case", "technical_state", "pending_question")
+      assert_equal question, pending&.fetch("question")
+      part = pending.fetch("parts").sole
+
+      case_b = create_text_case
+      assert_empty case_b.fetch("document_focus")
+      b_manual = revision_document(:cea)
+      b_turn = cea_turn("El rótulo del controlador dice CEA15+. #{CEA_QUESTION}", b_manual)
+      b_turn.tool_input["assertions"] = [ { "span" => "CEA15+", "act" => "assert", "slot_hint" => "controller" } ]
+      b_result, b_cassette = ask_text_case(case_b, b_turn, b_manual, "b-open")
+      assert b_cassette.filters.any?, b_result.fetch("answer")
+      assert_not_includes b_cassette.filters.to_json, manual.canonical_uri
+      state_b = read_text_case(case_b)
+      assert_equal b_result.fetch("answer"), state_b.fetch("turns").sole.dig("response", "published_text")
+
+      travel 4.hours + 1.second do
+        reloaded = read_text_case(case_a)
+        assert_equal case_a.fetch("episode_id"), reloaded.dig("case", "episode_id")
+        assert_equal [ manual.id ], reloaded.dig("case", "document_focus").pluck("kb_document_id")
+        assert_equal pending, reloaded.dig("case", "technical_state", "pending_question")
+        saved = reloaded.fetch("turns").sole
+        assert_equal first.question, saved.fetch("message")
+        assert_equal opening.fetch("answer"), saved.dig("response", "published_text")
+        assert_equal opening.fetch("citations"), saved.dig("response", "citations")
+        assert_equal opening.fetch("correlation_id"), saved.fetch("correlation_id")
+        assert_equal pending, saved.dig("checkpoint", "pending_question")
+
+        resumed = original.deep_dup
+        resumed["question"] = "Ingeniería midió 2,5"
+        resumed["generator_text"] = "Ingeniería midió 2,5 en KP-VS del MCINV4. Es inferior al mínimo documentado: «#{quote}» [1]."
+        resumed["tool_input"] = {
+          "move" => "answer_pending", "assertions" => [], "observations" => [],
+          "pending_resolution" => "value", "clarification_target" => nil,
+          "part_replies" => [ { "question_id" => pending.fetch("id"), "part_id" => part.fetch("id"),
+            "state" => "complete", "quote" => "2,5" } ]
+        }
+        turn = TurnCapture.new(resumed)
+        final, resumed_cassette = ask_text_case(case_a, turn, manual, "a-resume") do
+          assert_equal "pending", read_text_case(case_a).fetch("turns").last.fetch("status")
+          assert_equal state_b, read_text_case(case_b)
+          post rag_ask_path, params: text_case_params(case_a, turn.question, "a-resume"), as: :json
+          assert_response :accepted
+        end
+        assert_revision_scope(resumed_cassette, manual)
+        interpreter = resumed_cassette.sent.find { |payload| payload[:tool_choice] }.to_json
+        assert_includes interpreter, question
+        assert_includes interpreter, "MCINV4"
+        assert_includes resumed_cassette.queries.join(" "), "MCINV4"
+        assert_match(/2,5.*KP-VS/m, final.fetch("answer"))
+        assert final.fetch("citations").any?
+
+        updated = read_text_case(case_a)
+        assert_equal [ 1, 2 ], updated.fetch("turns").pluck("sequence")
+        assert_equal [ first.question, turn.question ], updated.fetch("turns").pluck("message")
+        assert_equal saved, updated.fetch("turns").first
+        assert_equal final.fetch("field_turn"), updated.fetch("turns").last
+        episode = Rag::ActiveEpisode.parse(updated.dig("case", "technical_state"))
+        reply = Rag::AnswerContract.current_replies(episode, part.fetch("id")).sole
+        assert_equal "complete", reply.fetch("state")
+        assert_equal final.fetch("correlation_id"), reply.fetch("cid")
+        assert_equal state_b, read_text_case(case_b)
+        post rag_ask_path, params: text_case_params(case_a, turn.question, "a-resume"), as: :json
+        assert_response :ok
+        assert_equal final, response.parsed_body
+      end
+    end
+  end
+
   private
+
+  def create_text_case
+    post field_cases_path, params: { creation_key: SecureRandom.uuid }, as: :json
+    assert_response :created
+    response.parsed_body
+  end
+
+  def read_text_case(kase)
+    get field_case_path(kase.fetch("id")), as: :json
+    assert_response :ok
+    response.parsed_body
+  end
+
+  def text_case_params(kase, question, submission)
+    { question: question, field_case_id: kase.fetch("id"), client_submission_id: submission }
+  end
+
+  def ask_text_case(kase, turn, manual, submission, &while_pending)
+    cassette = JourneyCassette.new([ turn ], viewer_id: @account.id, focus_uri: manual.canonical_uri)
+    cassette.before_interpreter = while_pending
+    with_doubles(cassette) { post rag_ask_path, params: text_case_params(kase, turn.question, submission), as: :json }
+    assert_response :ok
+    body = response.parsed_body
+    assert_equal "success", body.fetch("status"), body.inspect
+    [ body, cassette ]
+  end
 
   def play_thyssen_kpvs(scenario)
     name = "thyssen_kpvs"
@@ -1009,6 +1132,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     end
 
     attr_reader :sent, :queries, :filters, :sizes, :returned
+    attr_writer :before_interpreter
 
     def messages
       self
@@ -1018,6 +1142,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       @sent << payload
       turn = @turns[@index] or raise "model call without a turn"
       if payload[:tool_choice] || payload["tool_choice"]
+        @before_interpreter&.call
         reply(turn.tool_input, "tool_use", tool: true)
       else
         @index += 1

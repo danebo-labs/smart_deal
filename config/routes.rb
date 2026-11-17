@@ -38,6 +38,13 @@ Rails.application.routes.draw do
 
   resources :pinned_documents, only: %i[create destroy]
   resources :field_photos, only: %i[show]
+  # Case history. FieldCaseHistoryGuard returns 404 unless
+  # FIELD_CASE_HISTORY_ENABLED is the exact string "true".
+  resources :field_cases, only: %i[index create show] do
+    member do
+      get "turns/:turn_id", action: :turn, as: :turn
+    end
+  end
   # resources :bulk_uploads, only: %i[new create show]  # T-31: disabled for pilot
 
   # Certifier module (Fase 2) — guarded by ENV["CERTIFIER_MODULE_ENABLED"]

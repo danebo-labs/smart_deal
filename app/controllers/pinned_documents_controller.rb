@@ -19,6 +19,8 @@ class PinnedDocumentsController < ApplicationController
   rescue_from ActiveRecord::RecordNotFound, with: :not_found
 
   def create
+    return change_case_focus if params.key?(:field_case_id)
+
     kb_doc = focus_document
     return if performed?
 
@@ -49,6 +51,8 @@ class PinnedDocumentsController < ApplicationController
   end
 
   def destroy
+    return change_case_focus(remove: true) if params.key?(:field_case_id)
+
     id = params[:id].to_i
     session = current_conv_session
     return head :not_found if id.zero? || session.find_entity_by_kb_document_id(id).nil?
@@ -67,6 +71,24 @@ class PinnedDocumentsController < ApplicationController
   end
 
   private
+
+  def change_case_focus(remove: false)
+    result = FieldCases::Pins.change(
+      account: current_account, user: current_user, field_case_id: params[:field_case_id],
+      document_id: remove ? params[:id] : create_params[:kb_document_id],
+      document_uid: params[:document_uid], remove:, replace: replace_focus?
+    )
+    return head :not_found if result.disabled? || result.not_found?
+    if result.conflict? || result.invalid?
+      return render json: { error: result.error }, status: result.conflict? ? :conflict : :unprocessable_entity
+    end
+
+    render json: {
+      status: remove ? "unfocused" : "focused",
+      message: I18n.t(remove ? "rag.manual_focus_removed" : "rag.manual_focus_confirmed"),
+      focus_ids: result.field_case.document_focus.pluck("kb_document_id")
+    }
+  end
 
   def create_params
     params.permit(:kb_document_id, :document_uid, :correlation_id, :focus_mode, :episode_id)

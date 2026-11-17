@@ -32,6 +32,7 @@
   <div class="grid grid-cols-1 gap-0 md:gap-6 lg:grid-cols-3"
        data-controller="rag-chat"
        data-rag-chat-show-sources-value="<%= Rag::SourcesVisibility.enabled? %>"
+       data-rag-chat-case-history-value="<%= FieldCaseHistoryFlag.enabled? %>"
        data-rag-chat-evidence-cards-value="<%= Rag::EvidenceCardsFlag.enabled? %>"
        data-rag-chat-resolution-copy-value="<%= resolution_copy.to_json %>"
        data-focus-ids="<%= (@focus_document_ids || []).to_json %>">

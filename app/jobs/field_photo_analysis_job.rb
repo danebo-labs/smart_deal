@@ -333,8 +333,13 @@ class FieldPhotoAnalysisJob < ApplicationJob
     end
 
     args = arguments.first.to_h.symbolize_keys
-    correlation = args.fetch(:correlation_id)
-    unless correlation.match?(/\A(?:photo|query):[a-f0-9-]+\z/)
+    correlation = args[:correlation_id]
+    if args[:field_case_id]
+      kase = FieldCase.find_by(id: args[:field_case_id], account_id: args[:account_id], user_id: args[:user_id])
+      correlation = kase&.field_turns&.where(id: args[:field_turn_id])&.pick(:correlation_id)
+      return yield unless correlation
+    end
+    unless correlation.to_s.match?(/\A(?:photo|query):[a-f0-9-]+\z/)
       raise Rag::LocalPassLedger::Stop, "invalid_photo_correlation"
     end
     key = "worker-#{correlation.tr(':', '-')}"

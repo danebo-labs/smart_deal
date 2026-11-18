@@ -86,6 +86,39 @@ class FieldCasePhotoHistoryTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "the guarded worker captures a scoped case upload under its stored correlation" do
+    Dir.mktmpdir("guarded-case-photo") do |store|
+      run_id = "offline-case-photo-#{SecureRandom.hex(4)}"
+      env = {
+        "RAG_LOCAL_PASS_GUARD" => "1", "RAG_LOCAL_PASS_CALL_CAP" => "1",
+        "RAG_LOCAL_PASS_COST_CAP_USD" => "0.1", "AWS_MAX_ATTEMPTS" => "1",
+        "RAG_VALIDATION_CAPTURE_RUN" => run_id, "RAG_PHOTO_LOCAL_STORE" => store
+      }
+      previous = ENV.to_h.slice(*env.keys)
+      capture_root = Rails.root.join(Rag::WebRequestCapture::ROOT, run_id)
+      ENV.update(env)
+      with_external_doubles do
+        post rag_ask_path, params: { creation_key: SecureRandom.uuid, client_submission_id: SecureRandom.uuid,
+                                     image: @image }, as: :json
+        assert_response :accepted
+        turn = FieldTurn.find(response.parsed_body.dig("field_turn", "id"))
+        assert_empty @objects
+        assert_equal "offline image", FieldPhotoStore.fetch_binary(turn.field_photo)
+
+        perform_enqueued_jobs(only: FieldPhotoAnalysisJob)
+        assert_equal "completed", turn.reload.status
+        capture = capture_root.join("worker-#{turn.correlation_id.tr(':', '-')}", "capture.json")
+        event = JSON.parse(capture.read).fetch("events").find { |row| row["kind"] == "photo_worker_input" }
+        assert_equal turn.correlation_id, event.fetch("correlation_id")
+        assert_equal turn.id, event.fetch("field_turn_id")
+        assert_equal turn.field_photo.sha256, event.fetch("sha256")
+      end
+    ensure
+      env.each_key { |key| assign_env(key, previous[key]) }
+      FileUtils.rm_rf(capture_root)
+    end
+  end
+
   [ false, true ].product([ false, true ]).each do |existing, with_question|
     test "photo #{with_question ? 'with question' : 'alone'} in #{existing ? 'existing' : 'new'} case" do
       kase = open_case if existing

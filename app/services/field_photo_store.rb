@@ -54,7 +54,7 @@ class FieldPhotoStore
     return unless Rag::LocalPassLedger.armed?
 
     root = ENV["RAG_PHOTO_LOCAL_STORE"].presence
-    return unless root && key.match?(/\Afield_photos\/\d+\/[a-f0-9]{64}\/original\.[a-zA-Z0-9]+\z/)
+    return unless root && key.match?(/\Afield_photos\/\d+\/(?:[a-f0-9]{64}\/)?[a-f0-9]{64}\/original\.[a-zA-Z0-9]+\z/)
 
     Pathname(root).join(key)
   end

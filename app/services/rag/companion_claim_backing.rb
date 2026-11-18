@@ -23,6 +23,7 @@ module Rag
     # «no sé si…», which is doubt the technician can still check.
     INABILITY = /(?<![[:alnum:]])(?:no\s+(?:s[ée]|sabr[ií]a|puedo|podr[ií]a|consigo|logro)(?:\s+(?:c[oó]mo|bien))?|can(?:'|no)?t|(?:do\s+not|don't)\s+know\s+how\s+to)\s+(?:identificar|comprobar|verificar|medir|ver|saber|revisar|localizar|ubicar|encontrar|distinguir|identify|check|verify|measure|tell|find|locate)(?![[:alnum:]])[^.!?]*/i.freeze
     ACTION_LEAD = /\A[[:space:]*_]*(?:¿\s*)?(?:(?:puedes|podr[ií]as|necesito\s+que)\s+)?((?:confirm|comprob|comprueb|verific|revis|identific|ubic|localiz|med[ií]r|mid[ae]|chequ|inspeccion|check|verify|measure|inspect|identify|locate)[[:alpha:]]*)(?![[:alpha:]]*:)/i.freeze
+    DEPENDENT_LEAD = /\A(?:esto|eso|ello|esta indicaci[oó]n|esa indicaci[oó]n|this|that)\b/i.freeze
     INLINE_LABEL = /\A\s*\*\*[^*]+:\*\*\s*/.freeze
     REPORTED_FORM = /(?:aste|asteis|aron|ieron|ado|ada|ados|adas|ido|ida|ed)\z/i.freeze
     MAX_CARRY_PASSES = 3
@@ -32,7 +33,6 @@ module Rag
     # A reported reading stays when it shares its sentence with an unquoted
     # citation. Only the clause that carries [n] leaves.
     SOURCE_CUE = /\A\s*(?:y\s+)?(?:el\s+|la\s+|los\s+|las\s+)?(?:rango|fuente|manual|paso|criterio|seg[uú]n|documentad)/i.freeze
-    MEASUREMENT = /(\d+(?:[.,]\d+)?)\s*([A-Za-zµ%]{1,6})/
 
     Result = Struct.new(:text, :removed, :reattributed, keyword_init: true) do
       def changed?
@@ -56,6 +56,8 @@ module Rag
       @removed = []
       @reattributed = []
       @context = []
+      @text = without_internal_claims(@text)
+      @internal_removals = @removed.dup
       @list_intros = cited_list_intros(@text)
     end
 
@@ -70,6 +72,51 @@ module Rag
     end
 
     private
+
+    # A marker is an extraction annotation, even when a retrieved chunk
+    # contains it verbatim. Remove the passage and its local elaboration
+    # before citation recovery can turn it into documentary backing.
+    def without_internal_claims(text)
+      removed_topics = []
+      text.split(/(\n[ \t]*\n)/).filter_map do |block|
+        if block.match?(AnswerSafetyProcessor::INTERNAL_MARKER_PATTERN)
+          cleaned, removed_topics = strip_marker_passage(block)
+          next cleaned
+        end
+        next block if block.blank?
+
+        topics = CompanionTurnPublication.claim_tokens(block)
+        dependent = topics.any? && (topics - removed_topics).empty? &&
+          CompanionTurnPublication.claim_fragments(block).all? { |row| CompanionTurnPublication.question_sentence?(row) }
+        removed_topics = []
+        if dependent
+          @removed << { "sentence" => block, "reason" => "internal_marker_followup" }
+          next
+        end
+
+        block
+      end.join
+    end
+
+    def strip_marker_passage(block)
+      after_marker = false
+      topics = []
+      lines = block.split("\n").filter_map do |line|
+        prefix = line[LIST_PREFIX, 1].to_s
+        kept = sentences(line.delete_prefix(prefix)).reject do |sentence|
+          internal = sentence.match?(AnswerSafetyProcessor::INTERNAL_MARKER_PATTERN)
+          dependent = after_marker && sentence.sub(INLINE_LABEL, "").match?(DEPENDENT_LEAD)
+          after_marker = internal || dependent
+          if after_marker
+            topics.concat(CompanionTurnPublication.claim_tokens(sentence.gsub(QUOTE_PATTERN, " ")))
+            @removed << { "sentence" => sentence, "reason" => "internal_marker" }
+          end
+          after_marker
+        end
+        "#{prefix}#{kept.join(' ')}" if kept.any?
+      end
+      [ lines.join("\n").presence, topics.uniq ]
+    end
 
     def filter_lines
       @text.split("\n", -1).filter_map { |line| filter_line(line) }
@@ -88,7 +135,7 @@ module Rag
         kept = lines.join("\n").scan(QUOTE_PATTERN).flatten.compact
         break if kept.empty? || kept.sort == @context.sort
 
-        @removed = []
+        @removed = @internal_removals.dup
         @reattributed = []
         @context = kept
         lines = filter_lines
@@ -180,18 +227,15 @@ module Rag
     def salvage_report(sentence)
       return nil if documentary_quotes(sentence, QUOTE_PATTERN).any? { |quoted, _lead| backing?(quoted) }
 
-      measurement = reported_measurement
-      return nil if measurement.nil? || !sentence.match?(measurement)
-
       body, cited = split_cited_clause(sentence)
       if body.present? && cited.present? && !body.match?(CITATION_PATTERN) &&
-          body.match?(measurement) && drop_reason(body).nil?
+          reported_measurement?(body) && drop_reason(body).nil?
         @removed << { "sentence" => cited, "reason" => "unbacked_citation" }
         return body
       end
 
       stripped = sentence.gsub(CITATION_PATTERN, "").gsub(/[[:space:]]+/, " ").gsub(/\s+([,.;])/, "\\1").strip
-      return nil if stripped.blank? || stripped == sentence.strip || !stripped.match?(measurement)
+      return nil if stripped.blank? || stripped == sentence.strip || !reported_measurement?(stripped)
       return nil unless drop_reason(stripped).nil?
 
       pool = @sources.select { |source| CompanionTurnPublication.citable_source?(source) }
@@ -201,11 +245,12 @@ module Rag
       stripped
     end
 
-    def reported_measurement
-      pairs = @technician_texts.flat_map { |text| text.to_s.scan(MEASUREMENT) }.uniq
-      return nil if pairs.empty?
+    def reported_measurement?(text)
+      pairs = CitedParaphrase.quantities(text)
+      return false if pairs.empty?
 
-      Regexp.union(pairs.map { |number, unit| /#{Regexp.escape(number)}\s*#{Regexp.escape(unit)}/i })
+      @reported_measurements ||= @technician_texts.flat_map { |report| CitedParaphrase.quantities(report.to_s) }.uniq
+      (pairs - @reported_measurements).empty?
     end
 
     def split_cited_clause(sentence)
@@ -295,8 +340,10 @@ module Rag
       residue = sentence.gsub(QUOTE_PATTERN, " ").gsub(BOLD_PATTERN, " ").gsub(CITATION_PATTERN, " ")
       bodies = pool.flat_map { |source| [ CompanionTurnPublication.content_of(source), source["document"].to_s ] } +
         @technician_texts.map(&:to_s)
+      bodies.map! { |body| CitedParaphrase.normalize_units(body) }
       labels = residue.scan(CompanionPlanEvidence::LABEL_TOKEN).select { |token| token.length >= CompanionPlanEvidence::MIN_LABEL_CHARS }
-      (CompanionTurnPublication.claim_tokens(residue) + labels).uniq.any? do |token|
+      tokens = CompanionTurnPublication.claim_tokens(CitedParaphrase.normalize_units(residue))
+      (tokens + labels).uniq.any? do |token|
         bodies.none? { |body| body.include?(token) }
       end
     end

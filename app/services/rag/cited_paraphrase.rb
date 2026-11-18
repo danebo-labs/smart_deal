@@ -15,7 +15,7 @@ module Rag
     RHETORIC = %w[
       segun indica indican abarca incluye incluyen comprende comprenden cubre
       corresponden corresponde destaca destacan senala caso casos fuente manual
-      siguiente tambien donde dentro entre
+      siguiente tambien donde dentro entre cuando quando
     ].freeze
     PAIRS = [
       %w[fiacao cableado], %w[sinais senales], %w[sinal senal], %w[porta puerta]
@@ -24,6 +24,17 @@ module Rag
     CONDITION = /(?<![[:alnum:]])(?:quando|cuando|si|if|when|unless|salvo|excepto|solo|sólo)(?![[:alnum:]])|\ben caso\b|\ba menos\b/i
     CONFIRMATION = /\b(?:causa confirmada|la causa|es la causa|cualquier|qualquer|siempre|sempre|se debe a|confirma que)\b/i
     ACTION = /(?<![[:alpha:]])(?:revis|comprob|comprueb|verific|desconect|testar|trocar)[[:alpha:]]*/i
+
+    QUANTITY = /(?<![[:alnum:].,+−-])([+−-]?\d+(?:[.,]\d+)?)\s*(V(?:AC|CA|DC|CC)?|mV|[mµ]A|(?-i:A)|Hz|Nm|bar|mm|cm|°C|rpm|kW|%)(?![[:alnum:]])/i
+    UNIT_EQUIVALENTS = { "vcc" => "vdc", "vca" => "vac" }.freeze
+
+    def self.normalize_units(text)
+      text.gsub(QUANTITY) do
+        match = Regexp.last_match
+        unit = match[2].downcase
+        match[0].sub(/#{Regexp.escape(match[2])}\z/, UNIT_EQUIVALENTS.fetch(unit, unit).upcase)
+      end
+    end
 
     def self.faithful?(sentence, sources)
       new(sentence, sources).faithful?
@@ -38,6 +49,10 @@ module Rag
       return false if clauses.empty?
       return false if confirms_branch?
       return false if added_condition?
+      values = self.class.quantities(residue)
+      return false if values.any? && clauses.none? do |clause|
+        (values - self.class.quantities(clause)).empty? && anchors.all? { |anchor| anchor_in?(clause, anchor) }
+      end
       return false if anchors.empty? && required.empty? && literal_quotes.none? { |quote| quote.split.size >= 2 }
       return false if uncovered?
 
@@ -45,6 +60,12 @@ module Rag
     end
 
     private
+
+    def self.quantities(text)
+      text.scan(QUANTITY).map do |value, unit|
+        [ BigDecimal(value.tr(",−", ".-")), UNIT_EQUIVALENTS.fetch(unit.downcase, unit.downcase) ]
+      end
+    end
 
     def confirms_branch?
       residue.match?(CONFIRMATION) && clauses.any? do |clause|

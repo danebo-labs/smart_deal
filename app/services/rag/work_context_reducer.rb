@@ -1349,12 +1349,15 @@ module Rag
         @episode.clear_pending! if @perception.observations.any? { |text| CompanionParameterReview.readings(text, parameter).any? }
         return
       end
-      if open_documented_pending? && @perception.move == "answer_pending" &&
-          self.class.open_reply?(@episode.pending_question, @turn)
-        self.class.settle_answered_pending!(@episode, @episode.pending_question["question"])
+      if open_documented_pending?
+        # Contract replies already settle their parts and promote any open
+        # clarification. Keep their ids available for later corrections.
+        if !(@contract_at_entry && part_reply_field == "present") &&
+            @perception.move == "answer_pending" && self.class.open_reply?(@episode.pending_question, @turn)
+          self.class.settle_answered_pending!(@episode, @episode.pending_question["question"])
+        end
         return
       end
-      return if open_documented_pending?
 
       @episode.clear_pending!
     end

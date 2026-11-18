@@ -413,7 +413,7 @@ module Rag
         move, resolution, identities, observations, ambiguities, data["clarification_target"]
       )
       move, resolution, identities, observations, ambiguities, target = adjust_move(
-        move, resolution, identities, observations, ambiguities, target
+        move, resolution, identities, observations, ambiguities, target, replies
       )
       if move == "new_work" && @require_work_change_evidence && open_job? && !work_change_evidence?(data, observations)
         note_rule("adjust_move", move, "new_work_without_distinct_evidence", { "to" => "follow_up" })
@@ -1387,7 +1387,7 @@ module Rag
       [ old_code, new_code ]
     end
 
-    def adjust_move(move, resolution, identities, observations, ambiguities, target)
+    def adjust_move(move, resolution, identities, observations, ambiguities, target, replies)
       if move == "new_work" && !open_job?
         note_rule("adjust_move", move, "new_work_without_open_job", { "to" => "report" })
         move = "report"
@@ -1401,7 +1401,7 @@ module Rag
         note_rule("adjust_move", "meta", "technical_recap", { "to" => "follow_up" })
         move = "follow_up"
       end
-      if move == "answer_pending" && !pending_answer?(resolution, identities)
+      if move == "answer_pending" && !pending_answer?(resolution, identities, replies)
         note_rule("adjust_move", move, "pending_answer_incomplete")
         move = identities.any? || observations.any? || ambiguities.any? ? "report" : "follow_up"
         resolution = nil
@@ -1542,8 +1542,12 @@ module Rag
       @episode.respond_to?(:pending_question) && @episode.pending_question&.dig("type") == "work_relation"
     end
 
-    def pending_answer?(resolution, identities)
+    def pending_answer?(resolution, identities, replies)
       if documented_context_pending?
+        if AnswerContract.active?(@episode) && @part_replies_field == "present"
+          return AnswerContract.open_reply_proposed?(@episode, @turn, replies)
+        end
+
         return resolution == "value" && WorkContextReducer.open_reply?(@episode.pending_question, @turn)
       end
 

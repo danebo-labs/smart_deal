@@ -38,8 +38,8 @@ class Rag::CompanionDirectCaptureReplayTest < ActiveSupport::TestCase
     text = Rails.root.join("app/prompts/bedrock/companion_direct.txt").read
 
     assert_equal 1, text.scan(NOTICE).size
-    assert_includes text, "Lo que atribuyes a una fuente va como cita literal entre «»"
-    assert_includes text, "Antes de publicar se elimina toda oración con [n] que no tenga una cita literal de esa fuente."
+    assert_includes text, "Puedes expresar su sentido en español si conservas las condiciones, los valores y las unidades."
+    assert_includes text, "Si usas «», copia al menos cuatro palabras del original tal como aparecen en esa fuente"
     assert_includes text, "Da los pasos de un procedimiento solo si consta que se cumple su condición documentada. Si falta confirmarla, cita la condición y omite los pasos."
     assert_includes text, "limítala a lo que el técnico negó"
     assert_includes text, "Distingue lo observado por el técnico, lo que dice la fuente y tu inferencia."

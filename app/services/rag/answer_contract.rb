@@ -83,6 +83,22 @@ module Rag
       text == question["question"].to_s || text == question.dig("shown", "question").to_s
     end
 
+    def open_reply_proposed?(episode, turn, proposals)
+      return false unless active?(episode)
+
+      parts = open_parts(episode).pluck("id")
+      question_id = episode.pending_question&.dig("id")
+      admitted = admitted_text(turn)
+      proposals.any? do |reply|
+        part_id = reply["part_id"]
+        state = reply["state"]
+        question_id.present? && reply["question_id"] == question_id &&
+          parts.include?(part_id) && STATES.include?(state) &&
+          span_for(admitted, reply).is_a?(Hash) &&
+          !reply_block(episode, part_id, state, supersedes_ids(reply))
+      end
+    end
+
     def part_state(episode, part_id)
       state_of(current_replies(episode, part_id))
     end
@@ -445,7 +461,17 @@ module Rag
       # An unindexed sentence does not crowd out a reply. The save drops
       # excerpts before it drops a check or an observation.
       payload.delete("excerpts")
-      JSON.generate(payload).bytesize <= ActiveEpisode::MAX_BYTES
+      return true unless ActiveEpisode.budget_refused?(payload)
+
+      # A complete answer to an open part may displace older bounded context
+      # in the same order as serialization. Other proposals keep the existing
+      # reservation rule so a partial or unrelated reply cannot evict it.
+      return false unless reply["state"] == "complete" && open_parts(episode).any? { |part| part["id"] == reply["p"] }
+
+      candidate = episode.fork
+      candidate.id_seq = seq
+      candidate.replies = payload["replies"]
+      !ActiveEpisode.budget_refused?(candidate.to_h)
     end
 
     def cut_note(session, reply)

@@ -22,6 +22,30 @@ class ThyssenEaMeasurementCaseTest < ActionDispatch::IntegrationTest
   MEASUREMENT = "Ya lo alinearon. Ahora la puerta cierra y traba bien, pero sigue marcando EA. Tiene motor de operador. " \
     "Con la puerta cerrada y trabada, medí 0 Vcc en RA\u201153/P28. ¿Qué me dice esa lectura?"
   CLARIFICATION = "Ya, ¿por qué partirías por los trincos?"
+  SUPPLY_QUESTION = "¿Por qué comprobarías A4+?"
+  SUPPLY_FUNCTION = "Ponto para ligar alimentação do circuito de trinco e palhetas das portas de pavimento"
+  LATCH_FUNCTION = "Ponto para ligar sinal do contato de engate do trinco, confirmando portas de pavimento fechada"
+  PUBLISHED_T4 = "0 Vcc en RA-53/P28 no coincide con lo documentado. La fuente indica «#{NOMINAL}» [p9], " \
+    "con la función «#{LATCH_FUNCTION}» [p9]. Con la puerta cerrada y trabada, esa confirmación no llega a P28. " \
+    "Esto no identifica la causa: puede estar en el contacto de engate, su cableado o la alimentación del circuito.\n\n" \
+    "Siguiente comprobación: mide RA-30/A4+ con la puerta cerrada y trabada. La fuente lo describe como «#{SUPPLY_FUNCTION}» [p10].\n\n" \
+    "¿Qué tensión lees en RA-30/A4+?"
+  SUPPLY_EXPLANATION = "Los 0 Vcc que reportaste en RA-53/P28 dejan la causa abierta. " \
+    "El manual documenta «#{SUPPLY_FUNCTION}» [p10] para RA-30/A4+. " \
+    "Comprobar ese punto ayudaría a acotar si esa alimentación está presente. La lectura en ese punto sigue pendiente."
+  T4_CAPTURED = {
+    "move" => "answer_pending",
+    "assertions" => [ { "span" => "Tiene motor de operador", "act" => "mention", "slot_hint" => nil } ],
+    "observations" => [ "La puerta cierra y traba bien", "sigue marcando EA", "medí 0 Vcc en RA\u201153/P28" ],
+    "pending_resolution" => "value",
+    "clarification_target" => nil,
+    "checks" => [ { "subject" => "medí 0 Vcc en RA\u201153/P28", "status" => "done", "result" => "0 Vcc" } ],
+    "part_replies" => []
+  }.freeze
+  EXPLANATION = {
+    "move" => "follow_up", "assertions" => [], "observations" => [],
+    "pending_resolution" => nil, "clarification_target" => nil, "checks" => [], "part_replies" => []
+  }.freeze
   T4_FACTS = [
     "la puerta cierra y traba bien", "sigue marcando EA", "Tiene motor de operador", "medí 0 Vcc en RA\u201153/P28"
   ].freeze
@@ -129,7 +153,82 @@ class ThyssenEaMeasurementCaseTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "an explanation of the supply check keeps the reported reading and the open door state" do
+    manual = KbDocument.create!(account: @account, s3_key: MANUAL_KEY, display_name: MANUAL_NAME,
+      document_uid: SecureRandom.uuid, aliases: [])
+    chunks = JSON.parse(FIXTURES.join("chunks.json").read).fetch("rows")
+    pack = chunks.select { |row| [ 24, 19, 10, 9 ].include?(row["page"]) }
+    turns = [
+      turn(OPENING, perception("report", assertions: opening_assertions, observations: [ "El ascensor quedó detenido", "el display marca EA" ]),
+        "Con EA, «#{EA_LINE}» [p24]. ¿La puerta del piso cierra por completo?", chunks.select { |row| row["page"] == 24 }),
+      turn(SYMPTOM, perception("follow_up", observations: [ SYMPTOM ]),
+        "Con EA y la puerta sin cerrar, «#{EA_LINE}» [p24]. P28 es la hipótesis. ¿El trinco engancha?",
+        chunks.select { |row| row["page"] == 24 }),
+      turn(OBSERVATION, perception("follow_up", observations: [ "El trinco no engancha", "Se ve desalineado" ]),
+        "Anotado: es tu observación. «#{EA_LINE}» [p24]. Luego comprueba si la puerta cierra, traba y EA persiste.",
+        chunks.select { |row| row["page"] == 24 }),
+      turn(MEASUREMENT, T4_CAPTURED, PUBLISHED_T4, pack, rank_by_page: true),
+      turn(SUPPLY_QUESTION, EXPLANATION, SUPPLY_EXPLANATION, chunks.select { |row| row["page"] == 16 }, rank_by_page: true)
+    ]
+    cassette = Cassette.new(turns, viewer_id: @account.id, focus_uri: manual.canonical_uri)
+
+    with_doubles(cassette) do
+      kase = open_case(manual, cassette)
+      ask(kase, SYMPTOM)
+      ask(kase, OBSERVATION)
+      _events, body = ask(kase, MEASUREMENT)
+      assert_equal "success", body.fetch("status"), body.inspect
+      assert_includes body.fetch("answer"), SUPPLY_FUNCTION
+      before = case_snapshot(kase)
+      assert_equal "EA", before.dig(:facts, "fault_code", "value")
+      assert_equal "user", before.dig(:facts, "fault_code", "source")
+      assert_includes before[:observations], "La puerta cierra y traba bien"
+      assert_includes before[:observations], "medí 0 Vcc en RA\u201153/P28"
+      assert_equal [ "0 Vcc" ], before[:checks].pluck("result")
+      assert_includes before[:pending].to_s, "RA-30/A4+"
+      assert_equal [ manual.id ], kase.document_focus.pluck("kb_document_id")
+
+      events, body = ask(kase, SUPPLY_QUESTION)
+      assert_equal "success", body.fetch("status"), body.inspect
+      delivered = events.find { |event| event["kind"] == "generator_evidence" }.fetch("rows")
+      supply = delivered.find { |row| row["page"].to_i == 10 }
+      assert_equal "ledger", supply.fetch("origin")
+      assert_includes supply.fetch("text"), SUPPLY_FUNCTION
+      prompt = cassette.generator_prompt
+      assert_includes prompt, SUPPLY_QUESTION
+      assert_includes prompt, SUPPLY_FUNCTION
+      assert_includes prompt, "medí 0 Vcc en RA\u201153/P28"
+      assert_includes prompt, "La puerta cierra y traba bien"
+      publication = events.find { |event| event["kind"] == "companion_publication" }
+      assert_equal true, publication["accepted"], publication.inspect
+      answer = body.fetch("answer")
+      assert_includes answer, SUPPLY_FUNCTION
+      assert_includes answer, "ayudaría a acotar"
+      assert_includes answer, "reportaste"
+      assert_not_includes answer, "medí"
+
+      after = case_snapshot(kase)
+      assert_equal before[:observations], after[:observations]
+      assert_equal before[:checks], after[:checks]
+      assert_includes after[:pending].to_s, "RA-30/A4+"
+      assert_equal "EA", after.dig(:facts, "fault_code", "value")
+      assert_operator after[:observations].index("La puerta cierra y traba bien"),
+        :>, after[:observations].index("La puerta del piso no termina de cerrar")
+      assert_equal [ manual.id ], kase.reload.document_focus.pluck("kb_document_id")
+    end
+  end
+
   private
+
+  def case_snapshot(kase)
+    state = kase.reload.technical_state
+    {
+      observations: Array(state["observations"]).pluck("text"),
+      checks: Array(state["checks"]).map { |row| row.slice("subject", "result", "status") },
+      pending: state.dig("pending_question", "question"),
+      facts: state["facts"]
+    }
+  end
 
   def perception(move, assertions: [], observations: [])
     { "move" => move, "assertions" => assertions, "observations" => observations,

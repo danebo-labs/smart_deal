@@ -2410,7 +2410,7 @@ class BedrockRagService
     if reference_mode && accepted
       unless reference_confirmed
         filter_unconfirmed_reference!(result, citations: citations, passages: passages, chunks: chunks,
-          question: question, locale: locale)
+          question: question, locale: locale, technician_texts: technician_texts)
       end
       if result[:applicability_violation] || result[:citations].empty?
         result[:route_outcome] = :abstained
@@ -2552,8 +2552,10 @@ class BedrockRagService
     result
   end
 
-  def filter_unconfirmed_reference!(result, citations:, passages:, chunks:, question:, locale:)
-    filtered = Rag::DocumentIdentityScope.unconfirmed_reference_filter(result[:answer], chunks, question)
+  def filter_unconfirmed_reference!(result, citations:, passages:, chunks:, question:, locale:, technician_texts: [])
+    filtered = Rag::DocumentIdentityScope.unconfirmed_reference_filter(
+      result[:answer], chunks, question, technician_texts: technician_texts
+    )
     kind = :identity_assertion if filtered.identity
     if filtered.removed.any?
       Rag::ValidationCapture.record("companion_reference_filter", "removed" => filtered.removed, "text" => filtered.text)

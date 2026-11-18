@@ -419,6 +419,31 @@ class Rag::UnconfirmedApplicabilityTest < ActiveSupport::TestCase
     assert_equal [ line ], wrong.removed
   end
 
+  test "a reference filter keeps a reading the technician already stated" do
+    chunk = { content: "El punto AB-1 figura en la tabla con +24 Vcc.", metadata: { "page_number" => 3 } }
+    question = "¿Por qué ese punto?"
+    reported = "Los 0 Vcc que reportaste en AB-1 dejan la causa abierta."
+    texts = [ "medí 0 Vcc en AB\u20111" ]
+
+    filtered = Rag::DocumentIdentityScope.unconfirmed_reference_filter(
+      reported, [ chunk ], question, technician_texts: texts
+    )
+    assert_equal reported, filtered.text
+    assert_empty filtered.removed
+
+    invented = "AB-1 está en 24 Vcc."
+    dropped = Rag::DocumentIdentityScope.unconfirmed_reference_filter(
+      invented, [ chunk ], question, technician_texts: texts
+    )
+    assert_equal [ invented ], dropped.removed
+
+    assigned = "AB-1 es la alimentación del circuito."
+    function = Rag::DocumentIdentityScope.unconfirmed_reference_filter(
+      assigned, [ chunk ], question, technician_texts: texts
+    )
+    assert_equal [ assigned ], function.removed
+  end
+
   private
 
   def assert_family(expected, row, chunks: [ @up ])

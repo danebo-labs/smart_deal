@@ -311,8 +311,9 @@ module Rag
     # boundary line, so a sentence that cites a retrieved passage and quotes
     # or attributes it is documentary. Uncited operation or value sentences,
     # and instructions aimed at the technician, are removed. An identity
-    # assertion still withholds the whole answer.
-    def self.unconfirmed_reference_filter(answer, chunks, question)
+    # assertion still withholds the whole answer. A designator or value the
+    # technician already stated is not taken from the manual.
+    def self.unconfirmed_reference_filter(answer, chunks, question, technician_texts: [])
       text = answer.to_s
       patterns = identity_phrase_patterns(chunks)
       units = applicability_units(text)
@@ -320,7 +321,9 @@ module Rag
         return ReferenceFilter.new(text: text, removed: [], identity: true)
       end
 
-      removed = units.select { |unit| reference_unit_removed?(unit, units, patterns, chunks, question) }.map(&:text).uniq
+      removed = units.select { |unit|
+        reference_unit_removed?(unit, units, patterns, chunks, question, technician_texts)
+      }.map(&:text).uniq
       return ReferenceFilter.new(text: text, removed: [], identity: false) if removed.empty?
 
       lines = text.split("\n").filter_map do |line|
@@ -333,7 +336,7 @@ module Rag
       ReferenceFilter.new(text: lines.join("\n").gsub(/\n{3,}/, "\n\n").strip, removed: removed, identity: false)
     end
 
-    def self.reference_unit_removed?(unit, units, patterns, chunks, question)
+    def self.reference_unit_removed?(unit, units, patterns, chunks, question, technician_texts = [])
       normalized = applicability_normalize(unit.text)
       return true if directed_measurement?(normalized, unit.text) || control_actuation?(normalized, unit.text)
       return false if documentary_reference?(unit, chunks.size, patterns)
@@ -343,10 +346,10 @@ module Rag
       # sentence is not an instruction to change the parameter. A command in
       # the same sentence, or a value the chunk did not give the technician,
       # still leaves.
-      return false if engineering_review_referral?(normalized) && !foreign_value_unit?(unit.text, chunks, question)
+      return false if engineering_review_referral?(normalized) && !foreign_value_unit?(unit.text, chunks, question, technician_texts)
 
       (operation_unit?(normalized, question, unit.text) && !negated_frame?(unit)) ||
-        foreign_value_unit?(unit.text, chunks, question)
+        foreign_value_unit?(unit.text, chunks, question, technician_texts)
     end
     private_class_method :reference_unit_removed?
 
@@ -875,12 +878,12 @@ module Rag
     end
     private_class_method :attribution_text?
 
-    def self.foreign_value_unit?(original, chunks, question)
+    def self.foreign_value_unit?(original, chunks, question, technician_texts = [])
       return false if echo_of_question?(original, question)
 
       body = Array(chunks).map { |chunk| chunk[:content].to_s }.join("\n")
       return false if body.blank?
-      return true if foreign_tokens(original, body, question, chunks).any?
+      return true if foreign_tokens(original, body, question, chunks, technician_texts).any?
       return true if promoted_code_meaning?(original, body, question)
       return true if promoted_connection?(original, body, question, chunks)
       return true if promoted_function?(original, body, question, chunks)
@@ -889,7 +892,7 @@ module Rag
     end
     private_class_method :foreign_value_unit?
 
-    def self.foreign_tokens(original, body, question, chunks)
+    def self.foreign_tokens(original, body, question, chunks, technician_texts = [])
       phrases = identity_phrases(chunks).to_set
       tokens = []
       tokens.concat(original.to_s.scan(AnswerSafetyProcessor::IDENTIFIER_PATTERN))
@@ -900,11 +903,24 @@ module Rag
         next false if identity_phrase_token?(token, phrases)
         next false unless body.match?(/#{Regexp.escape(token)}/i)
         next false if question.to_s.match?(/#{Regexp.escape(token)}/i)
+        next false if stated_by_technician?(token, technician_texts)
 
         true
       }
     end
     private_class_method :foreign_tokens
+
+    # The same label the technician already wrote. A hyphen they did not type
+    # is still that label, so the sentence is not borrowing it from the manual.
+    def self.stated_by_technician?(token, texts)
+      label = normalize_label(token)
+      return false if label.blank?
+
+      texts.any? do |text|
+        normalize_label(text).match?(/(?<!\S)#{Regexp.escape(label)}(?!\S)/)
+      end
+    end
+    private_class_method :stated_by_technician?
 
     def self.identity_phrase_token?(token, phrases)
       label = normalize_label(token)

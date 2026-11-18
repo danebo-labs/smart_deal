@@ -12,6 +12,7 @@ module Rag
     IDENTITY_HINTS = %w[manufacturer model controller].freeze
     CLARIFICATION_TARGETS = %w[work_relation referent correction_target].freeze
     ROOT_KEYS = %w[move assertions observations pending_resolution clarification_target].freeze
+    OPTIONAL_KEYS = %w[checks part_replies new_work_evidence].freeze
     CHECK_KEYS = %w[subject status result].freeze
     ASSERTION_KEYS = %w[span act slot_hint].freeze
     MAX_ASSERTIONS = 8
@@ -108,8 +109,8 @@ module Rag
       end
     end
 
-    def self.build(raw, turn:, episode:, catalog:, viewer_account:)
-      new(raw: raw, turn: turn, episode: episode, catalog: catalog, viewer_account: viewer_account).build
+    def self.build(raw, turn:, episode:, catalog:, viewer_account:, require_work_change_evidence: false)
+      new(raw:, turn:, episode:, catalog:, viewer_account:, require_work_change_evidence:).build
     end
 
     def self.same_equipment_reply?(turn)
@@ -144,6 +145,7 @@ module Rag
           },
           pending_resolution: { type: %w[string null] },
           clarification_target: { type: %w[string null] },
+          new_work_evidence: { type: %w[string null], maxLength: ActiveEpisode::MAX_OBSERVATION_CHARS },
           checks: {
             type: "array",
             maxItems: ActiveEpisode::MAX_CHECKS,
@@ -184,7 +186,7 @@ module Rag
       return "not_a_hash" unless raw.is_a?(Hash)
 
       data = raw.deep_stringify_keys
-      return "extra_keys" if (data.keys - ROOT_KEYS - [ "checks", "part_replies" ]).any?
+      return "extra_keys" if (data.keys - ROOT_KEYS - OPTIONAL_KEYS).any?
       return "invalid_move" unless MOVES.include?(data["move"])
       return "invalid_assertions" unless data["assertions"].is_a?(Array)
       return "invalid_observations" unless data["observations"].is_a?(Array)
@@ -264,7 +266,7 @@ module Rag
 
       data = raw.deep_stringify_keys
       notes = []
-      known = ROOT_KEYS + %w[checks part_replies]
+      known = ROOT_KEYS + OPTIONAL_KEYS
       inert = (data.keys - known).select do |key|
         value = data[key]
         value.nil? || (!value.is_a?(Hash) && !value.is_a?(Array) && known.any? { |root| key.start_with?("#{root}_") })
@@ -359,12 +361,13 @@ module Rag
         }
     end
 
-    def initialize(raw:, turn:, episode:, catalog:, viewer_account:)
+    def initialize(raw:, turn:, episode:, catalog:, viewer_account:, require_work_change_evidence:)
       @raw = raw
       @turn = TurnText.truncate(turn)
       @episode = episode || ActiveEpisode.new
       @catalog = catalog
       @viewer_account = viewer_account
+      @require_work_change_evidence = require_work_change_evidence
       @field_rejections = []
       @catalog_disagreements = []
       @adjustments = []
@@ -408,6 +411,10 @@ module Rag
       move, resolution, identities, observations, ambiguities, target = adjust_move(
         move, resolution, identities, observations, ambiguities, target
       )
+      if move == "new_work" && @require_work_change_evidence && open_job? && !work_change_evidence?(data, observations)
+        note_rule("adjust_move", move, "new_work_without_distinct_evidence", { "to" => "follow_up" })
+        move = "follow_up"
+      end
       if move == "meta" && meta_incompatible?(@turn)
         note_rule("reject_meta", "meta", "meta_incompatible", { "from" => "meta", "to" => "fallback" })
         return invalid("meta_incompatible", original_move: "meta")
@@ -1421,6 +1428,14 @@ module Rag
       return false if turn.match?(OTHER_EQUIPMENT) || identities.any? { |item| item.act == "assert" && IDENTITY_HINTS.include?(item.slot) }
 
       open_job_persistence?(identities) || @turn.match?(FIELD_READING) || turn.match?(REFERENCE_CORRECTION)
+    end
+
+    def work_change_evidence?(data, observations)
+      quote = data["new_work_evidence"]
+      return false unless quote.is_a?(String) && quote.length <= ActiveEpisode::MAX_OBSERVATION_CHARS
+
+      found = self.class.locate(quote, @turn)
+      found["status"] == "located" && observations.none? { |text| ObservationText.covered_by?(text, found["fragment"]) }
     end
 
     # An observation correction has no slot to negate. A fragment of the

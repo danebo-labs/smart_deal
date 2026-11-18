@@ -26,29 +26,46 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     assert_includes result.composed, "la puerta no cierra"
   end
 
-  test "the interpreter receives the current job when a symptom does not answer the last question" do
+  test "a symptom cannot replace an explicit field case without literal evidence of a separate job" do
     [
-      [ "MCINV4", "EA", "La puerta del piso no termina de cerrar" ],
-      [ "MCINV4", "EA", "La hoja de planta se queda corta al cerrar" ],
-      [ "NICE1000", "BF", "La cabina vibra al iniciar el viaje" ]
-    ].each do |controller, code, symptom|
-      session = web_session
+      [ "MCINV4", "EA", "La puerta del piso no termina de cerrar", nil ],
+      [ "MCINV4", "EA", "La hoja de planta se queda corta al cerrar", "La hoja de planta se queda corta al cerrar" ],
+      [ "NICE1000", "BF", "La cabina vibra al iniciar el viaje", "Me cambié a otro equipo" ]
+    ].each do |controller, code, symptom, unsupported_evidence|
+      kase = FieldCases::Create.call(account: @account, user: @user).field_case
+      session = FieldCases::TurnContext.build(kase, focus: [])
       seed_episode(session, facts: { "controller" => known(controller), "fault_code" => known(code) },
         goal: "El equipo quedó detenido", pending_question: { "type" => "documented_context",
           "question" => "¿Qué otro dato aparece en la pantalla?", "targets" => [ { "item" => "pantalla" } ] })
-      interpreter = ScriptedInterpreterClient.new([ perception("follow_up", observations: [ symptom ]) ])
+      tool = perception("new_work", observations: [ symptom ]).merge("new_work_evidence" => unsupported_evidence)
+      interpreter = ScriptedInterpreterClient.new([ tool ])
 
       with_owner { ask(session, symptom, interpreter) }
 
       request = interpreter.payloads.sole
-      assert_includes request.dig(:system, 0, :text), "even if it does not answer Danebo's last question"
+      assert_includes request.dig(:system, 0, :text), "new_work requires new_work_evidence"
+      assert_equal true, work_context(request).fetch("explicit_field_case")
       assert_equal code, work_context(request).dig("facts", "fault_code", "value")
-      episode = session.reload.active_episode
-      assert_equal "ep_seed", episode.fetch("episode_id")
+      episode = session.active_episode
+      assert_equal kase.episode_id, episode.fetch("episode_id")
       assert_equal controller, episode.dig("facts", "controller", "value")
       assert_equal code, episode.dig("facts", "fault_code", "value")
       assert_includes episode.fetch("observations").pluck("text"), symptom
     end
+  end
+
+  test "an explicit equipment change with separate literal evidence can start new work" do
+    kase = FieldCases::Create.call(account: @account, user: @user).field_case
+    session = FieldCases::TurnContext.build(kase, focus: [])
+    seed_episode(session, facts: { "fault_code" => known("EA") }, goal: "El equipo quedó detenido")
+    transition = "Ahora estoy con otro equipo"
+    symptom = "La cabina se desnivela al parar"
+    tool = perception("new_work", observations: [ symptom ]).merge("new_work_evidence" => transition)
+
+    with_owner { ask(session, "#{transition}. #{symptom}.", client(tool)) }
+
+    assert_nil session.active_episode.dig("facts", "fault_code")
+    assert_equal symptom, session.active_episode.dig("goal", "text")
   end
 
   test "an unclear mention of Q2 still stores the carry" do

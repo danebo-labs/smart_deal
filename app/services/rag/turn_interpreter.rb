@@ -32,6 +32,7 @@ module Rag
       answer_pending = the turn answers work_context.pending. A name, a code, or "no sé" while a pending slot is open is answer_pending, not unclear.
       correct = denies one stored value that appears in the turn. Same job. One negate span of that exact stored value and one assert span of the replacement. Both spans are required for manufacturer, model, and controller. A turn shaped like "no es OLD, es NEW" still needs negate OLD and assert NEW. slot_hint on the new value does not replace the negate span. Sending only the replacement is not correct. clarification_target stays null. "No, no es NICE3000. Es NICE1000." and "El controlador no es NICE3000, es NICE1000." both negate NICE3000 and assert NICE1000. "No, ese era el otro" is not correct.
       new_work = the technician explicitly starts a separate job or switches to another piece of equipment. Do not carry the previous job. A new symptom, observation, or measurement can belong to the open job even if it does not answer Danebo's last question. In an open case, keep the same job for these reports unless the technician signals a separate job or a different piece of equipment. Use follow_up and keep the new report in observations or checks. Going back to the open job is follow_up.
+      When work_context.explicit_field_case is true, new_work requires new_work_evidence: copy the shortest literal phrase explicitly declaring a different job or equipment. A symptom, observation, or check is not this declaration. If there is no such phrase, keep the current case.
       meta = asks what Danebo needs from the technician. A question about the equipment is not meta.
       A turn that only offers to send a photo, image, code, display reading, or other evidence, and states no fault, symptom, value, or code, is meta, not follow_up or new_work. It does not replace the active technical goal and has no observations. A fault, symptom, value, or code in that same turn is classified normally: the move is not meta, a verbatim symptom substring stays an observation, and the code stays an assertion. Do not paraphrase an observation. The offer does not erase them and does not become the goal. A greeting with no technical content is meta.
       unclear = two plausible readings would change the episode, the stored state, or the route, and neither is dominant. A stated name or code is report, not unclear. Missing technical detail is not unclear.
@@ -156,6 +157,7 @@ module Rag
 
       {
         "goal" => @episode.goal&.dig("text"),
+        "explicit_field_case" => (true if @session.is_a?(FieldCases::TurnContext)),
         "facts" => @episode.facts.presence,
         "identifiers" => @episode.identifiers.pluck("value").presence,
         "observations" => @episode.observations.pluck("text").presence,
@@ -273,7 +275,8 @@ module Rag
       end
       stage = STAGE_PERCEPTION
       perception = TurnPerception.build(
-        raw, turn: @turn, episode: @episode, catalog: @catalog, viewer_account: @viewer_account
+        raw, turn: @turn, episode: @episode, catalog: @catalog, viewer_account: @viewer_account,
+        require_work_change_evidence: @session.is_a?(FieldCases::TurnContext)
       )
       Result.new(
         perception: perception,

@@ -124,6 +124,22 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_equal "mention", focused.identities.first.act
   end
 
+  test "a literal alphabetic fault assertion keeps user provenance across different phrasing and equipment" do
+    first = "Tras detenerse el equipo quedó EA en el visor"
+    paraphrase = perceive(report([ assert_span("EA", "fault_code") ]).merge("observations" => [ first ]), first)
+    assert_equal [ "EA", "user" ], paraphrase.facts.find { |fact| fact.slot == "fault_code" }.then { |fact| [ fact.value, fact.source ] }
+
+    symptom = "al intentar partir quedó BF en la pantalla"
+    other_equipment = perceive(report([ assert_span("NICE1000", "controller"), assert_span("BF", "fault_code") ])
+      .merge("observations" => [ symptom ]), "Estoy con un Monarch NICE1000 y #{symptom}")
+    assert_equal [ "NICE1000", "BF" ], other_equipment.facts.map(&:value)
+    assert_equal %w[user user], other_equipment.facts.map(&:source)
+
+    mention = perceive(report([ { "span" => "BF", "act" => "mention", "slot_hint" => "fault_code" } ])
+      .merge("observations" => [ "El equipo se detuvo" ]), "El equipo se detuvo. ¿Qué significa BF?")
+    assert_empty mention.facts
+  end
+
   test "a generic literal stays an untyped identifier" do
     result = perceive(report([ assert_span("ABC900", "controller") ]), "El controlador es ABC900")
 

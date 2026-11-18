@@ -100,6 +100,16 @@ class Rag::CompanionDirectRouteTest < ActiveSupport::TestCase
     assert_equal "companion_direct", route
   end
 
+  test "the direct generator receives attribution and separate outcome checks after an intervention" do
+    direct { ask("El mecanismo no engancha. Se ve desalineado.") }
+    sent = request_hash(@requests.sole)
+    system = sent.fetch(:system)
+
+    assert_includes system, "Presenta el impedimento como observación del técnico"
+    assert_includes system, "si la maniobra se completa, si actúa el enclavamiento o la confirmación asociada cuando corresponda y si persiste la falla"
+    assert_includes request_text(@requests.sole), "Se ve desalineado."
+  end
+
   test "an altered citation, a missing marker, an uncited claim, and a cut answer abstain" do
     direct do
       @reply = ->(_params) { text_reply(ALTERED) }

@@ -306,8 +306,8 @@ module Rag
         "action" => "unset",
         "source" => SOURCES["migration"],
         "impact" => "Adaptive thinking is on by default. A forced named tool_choice " \
-                    "returns the tool call and no thinking block, so max_tokens stays " \
-                    "#{TurnInterpreter::MAX_TOKENS}. The limit is not raised. effort is not set. " \
+                    "returns the tool call and no thinking block, so max_tokens is " \
+                    "the interpreter limit, #{TurnInterpreter::MAX_TOKENS}. effort is not set. " \
                     "A max_tokens stop is recorded and is not a pass."
       }
     end

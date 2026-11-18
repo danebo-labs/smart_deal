@@ -55,7 +55,7 @@ class Rag::Haiku55DirectCutTest < ActiveSupport::TestCase
     assert_equal false, result.fallback
     assert_equal "claude-haiku-5-5", sent[:model]
     assert_equal({ effort: "high" }, sent[:output_config])
-    assert_equal 512, sent[:max_tokens]
+    assert_equal 1024, sent[:max_tokens]
     assert_nil sent[:temperature]
     assert_nil sent[:thinking]
     assert_equal "high", request["effort"]

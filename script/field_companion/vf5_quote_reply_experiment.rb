@@ -283,7 +283,7 @@ cases = build_cases(prompt, schema)
 block!("cases", cases.pluck("turn")) unless cases.pluck("turn").uniq.size == 5
 cases.each do |row|
   config = row["params"][:inference_config]
-  block!("parameters", row["id"]) unless config[:temperature] == 0 && config[:max_tokens] == 512
+  block!("parameters", row["id"]) unless config[:temperature] == 0 && config[:max_tokens] == Rag::TurnInterpreter::MAX_TOKENS
   block!("model_case", row["id"]) unless row["params"][:model_id] == MODEL_ID
 end
 

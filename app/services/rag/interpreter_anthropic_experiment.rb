@@ -69,7 +69,7 @@ module Rag
       }.freeze
       OUTPUT_RESERVATION = TurnInterpreter::MAX_TOKENS
       ATTEMPT_CAP = 50
-      MONEY_CAP = BigDecimal("0.141650")
+      MONEY_CAP = BigDecimal("0.212050")
 
       class Ledger
         attr_reader :attempts, :spent, :close_reason, :undetermined_attempts

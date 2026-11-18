@@ -236,6 +236,34 @@ class Rag::TurnInterpreterFailureTest < ActiveSupport::TestCase
     job.send(:remove_method, :perform_later) if original && job.instance_methods(false).include?(:perform_later)
   end
 
+  test "the interpreter asks for room for a turn that states several facts" do
+    client = ToolClient.new(valid_tool, input_tokens: 6, output_tokens: 2)
+    sent = nil
+    client.define_singleton_method(:converse) { |params| sent = params; super(params) }
+
+    interpret("la puerta no cierra", client: client)
+
+    assert_equal 1024, sent.dig(:inference_config, :max_tokens)
+    assert_equal Rag::TurnInterpreter::MAX_TOKENS, sent.dig(:inference_config, :max_tokens)
+  end
+
+  test "a max_tokens stop is never accepted even when the tool input looks complete" do
+    client = ToolClient.new(valid_tool, input_tokens: 6, output_tokens: Rag::TurnInterpreter::MAX_TOKENS)
+    base = client.method(:converse)
+    client.define_singleton_method(:converse) do |params|
+      base.call(params).tap { |response| response.define_singleton_method(:stop_reason) { "max_tokens" } }
+    end
+    result = nil
+    events = Rag::ValidationCapture.capture { result = interpret("la puerta no cierra", client: client) }
+
+    assert result.fallback
+    assert_nil result.perception
+    assert_equal "service_failure", result.status
+    assert_equal "max_tokens", result.error_reason
+    assert_equal Rag::TurnInterpreter::MAX_TOKENS, result.output_tokens
+    assert events.none? { |event| event["kind"] == "perception_applied" }
+  end
+
   private
 
   def interpret(turn, client:, correlation_id: "cid-timeout", sleeper: nil, rng: nil)

@@ -45,7 +45,7 @@ class Rag::QuoteReplyExperimentTest < ActiveSupport::TestCase
 
     assert_equal message, params.dig(:messages, 0, :content, 0, :text)
     assert_equal 0, params.dig(:inference_config, :temperature)
-    assert_equal 512, params.dig(:inference_config, :max_tokens)
+    assert_equal 1024, params.dig(:inference_config, :max_tokens)
     assert_equal Rag::TurnInterpreter::MODEL_ID, params[:model_id]
     assert_equal Rag::TurnPerception.tool_schema, schema
     assert_includes params.dig(:system, 0, :text), Rag::QuoteReplyExperiment::QUOTE_RULE

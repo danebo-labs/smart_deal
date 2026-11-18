@@ -2308,7 +2308,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     generator = cassette.sent.reject { |body| body[:tool_choice] || body["tool_choice"] }[index]
     assert interpreter, "missing interpreter payload #{index + 1}"
     assert_equal "claude-haiku-5-5", interpreter[:model]
-    assert_equal 512, interpreter[:max_tokens]
+    assert_equal Rag::TurnInterpreter::MAX_TOKENS, interpreter[:max_tokens]
     assert_equal({ effort: "high" }, interpreter[:output_config])
     assert_equal "turn_perception", interpreter.dig(:tool_choice, :name)
     assert_nil interpreter[:temperature]

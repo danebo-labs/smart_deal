@@ -7,7 +7,7 @@ module Rag
     MODEL_ID = "claude-haiku-5-5"
     TRACKING_MODEL_ID = "claude-haiku-5-5-direct"
     TOOL_NAME = "turn_perception"
-    MAX_TOKENS = 512
+    MAX_TOKENS = 1024
     EFFORT = "high"
     # One initial converse plus retries from TransientBackoff. The SDK client
     # stays at one HTTP try. This class does not add a second retry loop.

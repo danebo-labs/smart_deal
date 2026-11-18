@@ -13,13 +13,13 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
 
     assert_equal 25, matrix.size
     assert_equal 50, Rag::InterpreterAnthropicExperiment::Budget.attempt_cap
-    assert_equal "0.141650", format("%.6f", Rag::InterpreterAnthropicExperiment::Budget.money_cap)
+    assert_equal "0.212050", format("%.6f", Rag::InterpreterAnthropicExperiment::Budget.money_cap)
     assert_equal Rag::InterpreterAnthropicExperiment::Budget.money_cap,
       Rag::InterpreterAnthropicExperiment::Budget.estimate_usd
     assert_equal Rag::InterpreterAnthropicExperiment.matrix_sha256,
       Rag::InterpreterAnthropicExperiment::APPROVED_MATRIX_SHA256
     assert_equal [ HAIKU_55, HAIKU_45 ], Rag::InterpreterAnthropicExperiment::MODELS
-    assert_equal 512, Rag::TurnInterpreter::MAX_TOKENS
+    assert_equal 1024, Rag::TurnInterpreter::MAX_TOKENS
     assert_equal 0, Rag::Stage2RunBudget::PASS_CALL_CAP
     assert_equal false, Rag::InterpreterAnthropicExperiment::LIVE_CALLS_ENABLED
     assert_equal "absent", Rag::InterpreterAnthropicExperiment.credential_status(nil)
@@ -34,8 +34,8 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
 
     assert_equal Rag::TurnInterpreter::PROMPT, haiku55.dig("body", "system", 0, "text")
     assert_equal message_text(params), haiku55.dig("body", "messages", 0, "content", 0, "text")
-    assert_equal 512, haiku55.dig("body", "max_tokens")
-    assert_equal 512, haiku45.dig("body", "max_tokens")
+    assert_equal 1024, haiku55.dig("body", "max_tokens")
+    assert_equal 1024, haiku45.dig("body", "max_tokens")
     assert_equal params.dig(:tool_config, :tools, 0, :tool_spec, :input_schema, :json),
       haiku55.dig("body", "tools", 0, "input_schema")
     assert_equal({ "type" => "tool", "name" => "turn_perception" }, haiku55.dig("body", "tool_choice"))
@@ -177,7 +177,7 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
 
   test "a higher max token limit is rejected" do
     params = converse_params(matrix_row("variador"))
-    params[:inference_config] = params[:inference_config].merge(max_tokens: 513)
+    params[:inference_config] = params[:inference_config].merge(max_tokens: 1025)
 
     error = assert_raises(Rag::InterpreterAnthropicAdapter::Error) {
       Rag::InterpreterAnthropicAdapter.translate(params, model_id: HAIKU_55)
@@ -212,7 +212,7 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
       assert_equal false, payload["provider_call"]
       assert_equal false, payload.dig("context", "persisted")
       assert_equal({}, payload.dig("context", "work_context"))
-      assert_equal 512, client.dig("body", "max_tokens")
+      assert_equal 1024, client.dig("body", "max_tokens")
       assert_nil client.dig("body", "temperature")
       capture = JSON.parse(root.join("prepared", "local", "capture.json").read)
       assert_equal "danebo.audit.v1", capture["schema_version"]
@@ -1000,7 +1000,7 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
       assert_nil rows[1]["temperature"]
       assert_equal 0, rows[2]["temperature"]
       assert_nil rows[3]["temperature"]
-      assert_equal 512, rows.map { |row| row["max_tokens"] }.uniq.first
+      assert_equal 1024, rows.map { |row| row["max_tokens"] }.uniq.first
       assert_empty transport.calls
       refused = assert_raises(Rag::InterpreterAnthropicExperiment::Error) {
         experiment.execute(
@@ -1251,7 +1251,7 @@ class Rag::InterpreterAnthropicExperimentTest < ActiveSupport::TestCase
         assert_equal catalog.sha256(version), Digest::SHA256.hexdigest(prompt)
         assert_equal catalog.sha256(version), case_file["prompt_sha256"]
         assert_equal version, case_file["prompt_version"]
-        assert_equal 512, body["max_tokens"]
+        assert_equal 1024, body["max_tokens"]
         assert_nil body["thinking"]
         assert_nil body["top_p"]
         assert_nil body["top_k"]

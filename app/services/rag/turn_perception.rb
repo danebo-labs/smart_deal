@@ -975,7 +975,7 @@ module Rag
 
       span = item["span"]
       hint = item["slot_hint"]
-      if fault_shaped?(span) && (hint == "fault_code" || pending_slot == "fault_code") && context
+      if (fault_shaped?(span) || stated_display_code?(span)) && (hint == "fault_code" || pending_slot == "fault_code") && context
         disagree(span, hint, "fault_code")
         return fact(span, "assert", "fault_code", span, "user", nil)
       end
@@ -1030,6 +1030,12 @@ module Rag
 
     def fault_shaped?(span)
       FollowupQueryRewriter.normalize_label(span).match?(FAULT_RE)
+    end
+
+    def stated_display_code?(span)
+      return false unless span.match?(/\A[A-Z]{2,3}\z/)
+
+      @turn.match?(/\b(?:(?:display|pantalla|visor)\s+(?:marca|indica|muestra)|c[oó]digo|sigue\s+marcando)\s*:?\s+#{Regexp.escape(span)}\b/i)
     end
 
     def lookup_designator(span)

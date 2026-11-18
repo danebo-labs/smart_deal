@@ -25,7 +25,7 @@ class FieldCasePhotoHistoryTest < ActionDispatch::IntegrationTest
                                 display_name: "THYSSEN (Manual de Maniobra Universal con MCINV4)",
                                 s3_key: "bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf",
                                 aliases: [])
-    question = "Estoy con un Thyssen FDN Universal con MCINV4. El ascensor quedó detenido y el display marca EA"
+    question = "El ascensor quedó detenido y el display marca EA"
     request = { creation_key: SecureRandom.uuid, client_submission_id: SecureRandom.uuid,
                 image: @image.merge(filename: "thyssen MCP7 bornera comando.jpg"), question:,
                 kb_document_ids: [ manual.id.to_s ] }
@@ -83,6 +83,55 @@ class FieldCasePhotoHistoryTest < ActionDispatch::IntegrationTest
       assert_response :unprocessable_entity
       assert_equal "pins", response.parsed_body.fetch("error")
       assert_no_enqueued_jobs only: FieldPhotoAnalysisJob
+    end
+  end
+
+  test "reported identity and display code in a photo message reach the next text turn" do
+    question = "Estoy con un Thyssen FDN Universal con MCINV4. El ascensor quedó detenido y el display marca EA"
+    account = accounts(:legacy)
+    manual = KbDocument.create!(account:, s3_key: "uploads/thyssen-mcinv4.pdf", display_name: "Thyssen FDN Universal", aliases: [])
+    catalog = Rag::DocumentIdentityCatalog.new({ "documents" => [ {
+      "account_id" => account.id.to_s, "document_id" => manual.document_uid,
+      "s3_key" => manual.s3_key, "display_name" => manual.display_name,
+      "brands" => [ "Thyssen" ], "designators" => [ "FDN", "MCINV4" ], "confirmed" => true
+    } ] })
+    contexts = []
+    interpreter = lambda do |turn:, episode:, viewer_account:, **|
+      contexts << episode.to_h
+      assertions = if turn == question
+        [ [ "Thyssen", "manufacturer" ], [ "FDN", "model" ], [ "MCINV4", "controller" ], [ "EA", "fault_code" ] ].map do |span, hint|
+          { "span" => span, "act" => "assert", "slot_hint" => hint }
+        end
+      else
+        []
+      end
+      raw = { "move" => "report", "assertions" => assertions, "observations" => [ turn ],
+              "pending_resolution" => nil, "clarification_target" => nil }
+      perception = Rag::TurnPerception.build(raw, turn:, episode:, catalog:, viewer_account:)
+      Rag::TurnInterpreter::Result.new(perception:, fallback: false, status: "interpreted", latency_ms: 0,
+        input_tokens: 0, output_tokens: 0, model_id: nil, error_class: nil, error_reason: nil, stage: nil)
+    end
+
+    isolate_env("HAIKU_QUERY_ANALYSIS_MODE", "owner") do
+      replace_method(Rag::TurnInterpreter, :call, interpreter) do
+        with_external_doubles(photo_model: "UNKNOWN") do
+          post rag_ask_path, params: { creation_key: SecureRandom.uuid, client_submission_id: SecureRandom.uuid,
+                                       image: @image, question: }, as: :json
+          assert_response :accepted
+          turn = FieldTurn.find(response.parsed_body.dig("field_turn", "id"))
+          perform_enqueued_jobs(only: FieldPhotoAnalysisJob)
+          assert_equal "completed", turn.reload.status
+          checkpoint = turn.checkpoint
+          assert_equal %w[EA user], checkpoint.fetch("facts").fetch("fault_code").values_at("value", "source")
+          assert_equal "user", checkpoint.dig("facts", "manufacturer", "source")
+          assert_includes checkpoint.slice("facts", "identifiers").to_json, "MCINV4"
+
+          run_text_followup(turn.field_case_id, turn.field_photo_id)
+          assert_equal checkpoint["facts"], contexts.last["facts"]
+          assert_equal checkpoint["identifiers"], contexts.last["identifiers"]
+          assert_equal 2, contexts.size
+        end
+      end
     end
   end
 

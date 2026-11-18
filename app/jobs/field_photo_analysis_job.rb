@@ -101,12 +101,11 @@ class FieldPhotoAnalysisJob < ApplicationJob
     context = @case_photo.context
     return @case_photo.fail("invalid_pins") unless context
 
-    context.start_photo_turn!(turn)
     perform_analysis(
       image_token: nil, image_sha256: photo.sha256, filename: File.basename(photo.s3_key_original),
       content_type: photo.content_type, account_id: photo.account_id, user_id: turn.field_case.user_id,
       locale: turn.locale, correlation_id: turn.correlation_id, field_photo_id: photo.id,
-      question: turn.message, raw_question: turn.message, expected_episode_id: context.live_episode_id,
+      question: turn.message, raw_question: turn.message,
       case_context: context
     )
   rescue StandardError => error
@@ -144,6 +143,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
       turn = @case_photo.turn
       Rag::ValidationCapture.bind(field_case_id: turn.field_case_id, field_turn_id: turn.id)
       Rag::ValidationCapture.record("photo_attachment", "field_photo_id" => turn.field_photo_id, "attachment" => turn.attachment)
+      case_context.start_photo_turn!(turn)
+      expected_episode_id = case_context.live_episode_id
     end
     session = case_context || (ConversationSession.find_by(id: conversation_session_id) if conversation_session_id)
     if session && account_id && session.account_id != account_id

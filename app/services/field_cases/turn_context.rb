@@ -41,9 +41,8 @@ module FieldCases
       end
       return if turn.message.blank?
 
-      history = conversation_history.last(MAX_HISTORY - 1)
-      history << history_message("user", turn.message, user_id: user_id, correlation_id: turn.correlation_id)
-      update!(conversation_history: history)
+      record_user_turn!(turn.message, user_id: user_id, correlation_id: turn.correlation_id,
+                        now: turn.admitted_at, locale: turn.locale)
     end
 
     def case_photo_context

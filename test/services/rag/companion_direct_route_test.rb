@@ -106,6 +106,7 @@ class Rag::CompanionDirectRouteTest < ActiveSupport::TestCase
     system = sent.fetch(:system)
 
     assert_includes system, "Presenta el impedimento como observación del técnico"
+    assert_includes system, "Cuando el técnico ya reportó el impedimento, orienta la comprobación del resultado después de corregirlo."
     assert_includes system, "si la maniobra se completa, si actúa el enclavamiento o la confirmación asociada cuando corresponda y si persiste la falla"
     assert_includes request_text(@requests.sole), "Se ve desalineado."
   end

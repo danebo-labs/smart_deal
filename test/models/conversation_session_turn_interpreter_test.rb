@@ -26,6 +26,31 @@ class ConversationSessionTurnInterpreterTest < ActiveSupport::TestCase
     assert_includes result.composed, "la puerta no cierra"
   end
 
+  test "the interpreter receives the current job when a symptom does not answer the last question" do
+    [
+      [ "MCINV4", "EA", "La puerta del piso no termina de cerrar" ],
+      [ "MCINV4", "EA", "La hoja de planta se queda corta al cerrar" ],
+      [ "NICE1000", "BF", "La cabina vibra al iniciar el viaje" ]
+    ].each do |controller, code, symptom|
+      session = web_session
+      seed_episode(session, facts: { "controller" => known(controller), "fault_code" => known(code) },
+        goal: "El equipo quedó detenido", pending_question: { "type" => "documented_context",
+          "question" => "¿Qué otro dato aparece en la pantalla?", "targets" => [ { "item" => "pantalla" } ] })
+      interpreter = ScriptedInterpreterClient.new([ perception("follow_up", observations: [ symptom ]) ])
+
+      with_owner { ask(session, symptom, interpreter) }
+
+      request = interpreter.payloads.sole
+      assert_includes request.dig(:system, 0, :text), "even if it does not answer Danebo's last question"
+      assert_equal code, work_context(request).dig("facts", "fault_code", "value")
+      episode = session.reload.active_episode
+      assert_equal "ep_seed", episode.fetch("episode_id")
+      assert_equal controller, episode.dig("facts", "controller", "value")
+      assert_equal code, episode.dig("facts", "fault_code", "value")
+      assert_includes episode.fetch("observations").pluck("text"), symptom
+    end
+  end
+
   test "an unclear mention of Q2 still stores the carry" do
     session = web_session
     result = with_owner do

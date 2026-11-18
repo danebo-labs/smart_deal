@@ -4,7 +4,7 @@ module FieldCases
   # A durable photo is written before admission. The submission key scopes
   # that object and its reading independently of identical bytes in other cases.
   class PhotoTurn < TextTurn
-    def self.submit(account:, user:, field_case_id:, creation_key:, submission_id:, message:, image:, locale:)
+    def self.submit(account:, user:, field_case_id:, creation_key:, submission_id:, message:, image:, locale:, document_ids: [])
       refusal = Guard.gate(account:, user:)
       return refusal if refusal
       return Result.new(:invalid, error: :submission_id) unless Payload.key?(submission_id)
@@ -25,7 +25,7 @@ module FieldCases
       admission = if kase
         AdmitTurn.call(**attributes, field_case_id: kase.id, kind: "photo", field_photo_id: photo.id)
       else
-        OpenText.call(**attributes, creation_key:, photo:)
+        OpenText.call(**attributes, creation_key:, photo:, document_ids:)
       end
       return admission unless admission.created?
 

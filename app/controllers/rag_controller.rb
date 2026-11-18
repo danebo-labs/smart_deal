@@ -300,13 +300,16 @@ class RagController < ApplicationController
       return render json: { status: "error", error: "attachment" }, status: :unprocessable_entity
     end
 
+    document_ids = params.key?(:field_case_id) ? [] : opening_pins
+    return render json: { status: "error", error: "pins" }, status: :unprocessable_entity if document_ids.nil?
+
     images = extract_images_from_params
     return render json: { status: "error", error: "attachment" }, status: :unprocessable_entity unless images.one?
 
     result = FieldCases::PhotoTurn.submit(
       account: current_account, user: current_user, field_case_id: params[:field_case_id],
       creation_key: params[:creation_key], submission_id: params[:client_submission_id],
-      message: question, image: images.first, locale: I18n.locale.to_s
+      message: question, image: images.first, locale: I18n.locale.to_s, document_ids:
     )
     render_case_admission(result)
   end

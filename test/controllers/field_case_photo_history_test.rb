@@ -20,6 +20,72 @@ class FieldCasePhotoHistoryTest < ActionDispatch::IntegrationTest
 
   teardown { disable_history! }
 
+  test "the first photo and text turn retrieves within the pinned manual after reopening" do
+    manual = KbDocument.create!(account: accounts(:legacy),
+                                display_name: "THYSSEN (Manual de Maniobra Universal con MCINV4)",
+                                s3_key: "bulk_uploads/3/2026-08-20/THYSSEN (Manual de Maniobra Universal con MCINV4).pdf",
+                                aliases: [])
+    question = "Estoy con un Thyssen FDN Universal con MCINV4. El ascensor quedó detenido y el display marca EA"
+    request = { creation_key: SecureRandom.uuid, client_submission_id: SecureRandom.uuid,
+                image: @image.merge(filename: "thyssen MCP7 bornera comando.jpg"), question:,
+                kb_document_ids: [ manual.id.to_s ] }
+    filters = []
+    build_answer = Rag::PhotoQuestionAnswerService.method(:new)
+    answer_service = lambda do |**kwargs|
+      @answer_requests << kwargs
+      build_answer.call(**kwargs)
+    end
+
+    with_bedrock_doubles(filters) do
+      with_external_doubles(answer_service:, photo_model: "UNKNOWN") do
+        post rag_ask_path, params: request, as: :json
+        assert_response :accepted
+        kase = FieldCase.find(response.parsed_body.fetch("field_case_id"))
+        turn = kase.field_turns.sole
+        assert_equal [ manual.id ], kase.document_focus.pluck("kb_document_id")
+
+        post rag_ask_path, params: request.except(:kb_document_ids), as: :json
+        assert_response :accepted
+        assert_equal turn.id, response.parsed_body.dig("field_turn", "id")
+        assert_enqueued_jobs 1, only: FieldPhotoAnalysisJob
+
+        perform_enqueued_jobs(only: FieldPhotoAnalysisJob)
+        assert_equal [ manual.id ], @answer_requests.sole.fetch(:session_snapshot).focus_document_ids
+        assert_equal [ manual.canonical_uri ], @answer_requests.sole.fetch(:entity_s3_uris_snapshot)
+        assert_equal "completed", turn.reload.status
+        assert_equal question, turn.message
+        assert_equal turn.correlation_id, @answer_requests.sole.fetch(:correlation_id)
+        assert_pin_filter(filters, manual)
+
+        get field_case_path(kase), as: :json
+        assert_response :ok
+        focus = response.parsed_body.dig("case", "document_focus").sole
+        assert_equal manual.id, focus.fetch("kb_document_id")
+        assert_equal manual.document_uid, focus.fetch("document_uid")
+
+        filters.clear
+        post rag_ask_path, params: { field_case_id: kase.id, client_submission_id: SecureRandom.uuid,
+                                     question: "La puerta del piso no termina de cerrar" }, as: :json
+        assert_response :ok
+        assert_equal "completed", response.parsed_body.dig("field_turn", "status")
+        assert_equal [ manual.id ], kase.reload.document_focus.pluck("kb_document_id")
+        assert_pin_filter(filters, manual)
+      end
+    end
+  end
+
+  test "a malformed opening photo pin list is rejected before uploading" do
+    with_external_doubles do
+      assert_no_difference([ "FieldCase.count", "FieldTurn.count", "FieldPhoto.count" ]) do
+        post rag_ask_path, params: { creation_key: SecureRandom.uuid, client_submission_id: SecureRandom.uuid,
+                                     image: @image, kb_document_ids: "1" }, as: :json
+      end
+      assert_response :unprocessable_entity
+      assert_equal "pins", response.parsed_body.fetch("error")
+      assert_no_enqueued_jobs only: FieldPhotoAnalysisJob
+    end
+  end
+
   [ false, true ].product([ false, true ]).each do |existing, with_question|
     test "photo #{with_question ? 'with question' : 'alone'} in #{existing ? 'existing' : 'new'} case" do
       kase = open_case if existing
@@ -302,7 +368,32 @@ class FieldCasePhotoHistoryTest < ActionDispatch::IntegrationTest
     double&.remove_method(:execute_rag_query)
   end
 
-  def with_external_doubles
+  def assert_pin_filter(filters, manual)
+    assert_not_empty filters
+    expected = { or_all: %w[x-amz-bedrock-kb-source-uri original_source_uri].map do |key|
+      { equals: { key:, value: manual.canonical_uri } }
+    end }
+    filters.each { |filter| assert_equal expected, filter }
+  end
+
+  def with_bedrock_doubles(filters)
+    client = Object.new
+    client.define_singleton_method(:retrieve) do |params|
+      filters << params.dig(:retrieval_configuration, :vector_search_configuration, :filter)
+      OpenStruct.new(retrieval_results: [])
+    end
+    client.define_singleton_method(:invoke_model) do |**|
+      body = { content: [ { text: "Revisa el manual fijado." } ], stop_reason: "end_turn" }
+      OpenStruct.new(body: StringIO.new(body.to_json))
+    end
+    isolate_env("BEDROCK_KNOWLEDGE_BASE_ID", "offline-kb") do
+      replace_method(Aws::BedrockAgentRuntime::Client, :new, ->(*) { client }) do
+        replace_method(Aws::BedrockRuntime::Client, :new, ->(*) { client }) { yield }
+      end
+    end
+  end
+
+  def with_external_doubles(answer_service: nil, photo_model: "P1")
     storage = Object.new
     objects = @objects
     storage.define_singleton_method(:upload_binary) { |key, data, _type| objects[key] = data }
@@ -318,13 +409,13 @@ class FieldCasePhotoHistoryTest < ActionDispatch::IntegrationTest
         analysis: "En la imagen se ve P1.", compact_context: "En la placa se lee P1.",
         model: "claude-sonnet-5-5", usage: { input_tokens: 12, output_tokens: 8 },
         parsed: {
-          "canonical_component" => "Panel", "model" => "P1", "condition" => "GOOD", "subsystem" => "CONTROLLER_LOGIC",
+          "canonical_component" => "Panel", "model" => photo_model, "condition" => "GOOD", "subsystem" => "CONTROLLER_LOGIC",
           "visible_text" => [ "P1" ], "relevance_to_goal" => "relevant"
         },
         relevance_to_goal: "relevant"
       })
     end
-    question_service = lambda do |**kwargs|
+    answer_service ||= lambda do |**kwargs|
       @answer_requests << kwargs
       OpenStruct.new(call: { answer: "La placa dice P1. La guía identifica el panel [1].",
                              citations: [ { "page" => 8, "number" => 1 } ] })
@@ -332,7 +423,7 @@ class FieldCasePhotoHistoryTest < ActionDispatch::IntegrationTest
     replace_method(S3DocumentsService, :new, ->(*) { storage }) do
       replace_method(ImageCompressionService, :compress_with_thumbnail, compression) do
         replace_method(FieldPhotoAnalysisService, :new, vision) do
-          replace_method(Rag::PhotoQuestionAnswerService, :new, question_service) { yield }
+          replace_method(Rag::PhotoQuestionAnswerService, :new, answer_service) { yield }
         end
       end
     end

@@ -16,6 +16,10 @@ module Rag
     CHECK_KEYS = %w[subject status result].freeze
     ASSERTION_KEYS = %w[span act slot_hint].freeze
     MAX_ASSERTIONS = 8
+    # Facts one turn may state: an intervention, its outcome, a trait of the
+    # equipment and a reading are four already. ActiveEpisode::MAX_OBSERVATIONS
+    # stays the size of the context window, not of what one message can say.
+    MAX_TURN_OBSERVATIONS = 6
     MAX_TOOL_BYTES = 4096
     MIN_OBSERVATION_CHARS = 13
     FAULT_RE = /\A[a-z]?\d{1,4}[a-z]?\z/
@@ -140,7 +144,7 @@ module Rag
           },
           observations: {
             type: "array",
-            maxItems: ActiveEpisode::MAX_OBSERVATIONS,
+            maxItems: MAX_TURN_OBSERVATIONS,
             items: { type: "string", maxLength: ActiveEpisode::MAX_OBSERVATION_CHARS }
           },
           pending_resolution: { type: %w[string null] },
@@ -191,7 +195,6 @@ module Rag
       return "invalid_assertions" unless data["assertions"].is_a?(Array)
       return "invalid_observations" unless data["observations"].is_a?(Array)
       return "too_many_assertions" if data["assertions"].size > MAX_ASSERTIONS
-      return "too_many_observations" if data["observations"].size > ActiveEpisode::MAX_OBSERVATIONS
       unless data["pending_resolution"].nil? || RESOLUTIONS.include?(data["pending_resolution"])
         return "invalid_pending_resolution"
       end
@@ -399,6 +402,7 @@ module Rag
       checks = literal_checks(data["checks"])
       replies = prepared.is_a?(Hash) ? Array(prepared["part_replies"]) : []
       observations = absorb_quote_observations(observations, replies)
+      observations = cap_observations(observations)
       @correction = ObservationCorrection.resolve(
         turn: @turn, observations: observations, assertions: assertions
       )
@@ -442,6 +446,17 @@ module Rag
       )
       record_perception(result)
       result
+    end
+
+    # Past the per-turn cap the valid facts stay in the order stated and each
+    # one left out is traced. The rest of the perception is not invalidated.
+    def cap_observations(observations)
+      return observations if observations.size <= MAX_TURN_OBSERVATIONS
+
+      observations.each_with_index do |_text, index|
+        reject_field("observations[#{index}]", "over_cap") if index >= MAX_TURN_OBSERVATIONS
+      end
+      observations.first(MAX_TURN_OBSERVATIONS)
     end
 
     # A located quote that already passes the observation filters is copied
@@ -1409,7 +1424,7 @@ module Rag
         move = "follow_up"
       end
       if (reading = open_job_parameter_reading(identities))
-        observations = (observations + [ reading ]).uniq.last(ActiveEpisode::MAX_OBSERVATIONS)
+        observations = (observations + [ reading ]).uniq.last(MAX_TURN_OBSERVATIONS)
       end
       if move == "new_work" && reading
         note_rule("adjust_move", move, "new_work_answers_pending_parameter", { "to" => "follow_up" })

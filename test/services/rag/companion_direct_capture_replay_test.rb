@@ -43,7 +43,7 @@ class Rag::CompanionDirectCaptureReplayTest < ActiveSupport::TestCase
     assert_includes text, "Da los pasos de un procedimiento solo si consta que se cumple su condición documentada. Si falta confirmarla, cita la condición y omite los pasos."
     assert_includes text, "limítala a lo que el técnico negó"
     assert_includes text, "Distingue lo observado por el técnico, lo que dice la fuente y tu inferencia."
-    assert_includes text, "no digas que el caso está resuelto ni que el equipo está bien."
+    assert_includes text, "Evita dar por resuelto el caso o por bueno el equipo."
     %w[VF5 Fermator fotocélula fotocelula autoajuste S1.9].each do |token|
       assert_not_includes text.downcase, token.downcase
     end

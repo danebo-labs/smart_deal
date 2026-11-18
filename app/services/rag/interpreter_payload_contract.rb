@@ -23,6 +23,7 @@ module Rag
 
       missing = TurnPerception::ROOT_KEYS - data.keys
       return invalid("missing_#{missing.first}") if missing.any?
+      return invalid("too_many_observations") if data["observations"].size > TurnPerception::MAX_TURN_OBSERVATIONS
       return invalid("over_length") if TurnPerception.over_length?(data)
 
       hint = slot_hint_failure(data)

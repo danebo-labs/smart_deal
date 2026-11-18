@@ -98,8 +98,10 @@ module Rag
     class << self
       def prepare(raw_question:, chunks:, episode:, session:, correlation_id: nil,
                   reference_context: nil, photo_evidence: nil, unresolved_question: nil, scope_uris: nil, viewer_account: nil)
-        kept = CompanionPlan.limit_statement_chunks(chunks)
         episode_id = CompanionCaseRecord.episode_id_of(episode)
+        kept = CompanionPlan.limit_statement_chunks(
+          chunks, delivered: CompanionCaseRecord.ledger_identities(session, episode_id)
+        )
         merged = CompanionCaseRecord.sources(session, episode_id, kept, scope_uris: scope_uris, viewer_account: viewer_account)
         allowed = scope_uris.nil? ? nil : merged.each_index.filter_map { |index| index + 1 unless CompanionCaseRecord.gap?(merged[index]) }
         turns = history_turns(session, correlation_id, episode, allowed_numbers: allowed)

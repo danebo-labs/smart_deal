@@ -77,6 +77,29 @@ module Rag
         align(state, fresh, scope_uris: scope_uris, viewer_account: viewer_account)
       end
 
+      # Identities of the passages the ledger delivers on every turn of this
+      # episode. A fresh chunk with the same identity is not a second copy:
+      # align() gives it the ledger number.
+      def ledger_identities(session, episode_id)
+        episode_state(read_state(session), episode_id)["sources"].map { |row|
+          [ row["location_uri"].to_s, row["sha256"].to_s ]
+        }.to_set
+      end
+
+      # The first `size` reranked chunks the case has not delivered yet. A
+      # passage the ledger already sends takes no slot: cutting at the count
+      # let it displace the next passage, which is the one this turn adds.
+      def fresh_window(chunks, size, delivered)
+        return chunks.first(size) if delivered.blank?
+
+        fresh = 0
+        chunks.select { |chunk| delivered.include?(identity_of(chunk)) || (fresh += 1) <= size }
+      end
+
+      def identity_of(chunk)
+        [ uri_of(chunk), digest(text_of(chunk)) ]
+      end
+
       def marker_numbers(session, episode_id)
         episode_state(read_state(session), episode_id)["sources"].map { |row| row["n"].to_i }
       end

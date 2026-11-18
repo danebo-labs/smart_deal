@@ -119,25 +119,46 @@ module Rag
       # is removed: that appendix is not part of the planner text. The original
       # body stays on the chunk and remains the citation source. Chunks without
       # a score stay when none of the set has a score. The capture lists both sides.
-      def limit_statement_chunks(chunks)
+      #
+      # delivered holds the identities of passages the case ledger already
+      # sends on this turn. A fresh chunk with one of those identities is the
+      # same passage: it takes no window space a second time, and dropping it
+      # would free nothing. Counting it twice let a passage cited on an earlier
+      # turn push out the next ranked chunk that was not delivered yet.
+      def limit_statement_chunks(chunks, delivered: nil)
         kept = Array(chunks).dup
         omitted = []
+        covered = Set.new
+        if delivered.present?
+          kept.each { |chunk| covered << chunk.object_id if delivered.include?(CompanionCaseRecord.identity_of(chunk)) }
+        end
         # Without a score there is no lowest chunk to drop. A replay that
         # does not carry scores keeps every chunk.
-        while scored?(kept) && kept.sum { |chunk| chunk_chars(chunk) } > STATEMENTS_MAX_CHARS && kept.any?
-          index = kept.each_with_index.min_by { |chunk, position| [ chunk_score(chunk), -position ] }.last
+        while scored?(kept) && window_chars(kept, covered) > STATEMENTS_MAX_CHARS
+          droppable = kept.each_with_index.reject { |chunk, _| covered.include?(chunk.object_id) }
+          break if droppable.empty?
+
+          index = droppable.min_by { |chunk, position| [ chunk_score(chunk), -position ] }.last
           omitted << kept.delete_at(index)
         end
-        record_companion_sources(kept, omitted)
+        record_companion_sources(kept, omitted, covered)
         kept
       end
 
-      def record_companion_sources(kept, omitted)
+      def window_chars(kept, covered)
+        kept.sum { |chunk| covered.include?(chunk.object_id) ? 0 : chunk_chars(chunk) }
+      end
+
+      def record_companion_sources(kept, omitted, covered = Set.new)
         return unless ValidationCapture.active?
 
         ValidationCapture.record(
           "companion_sources",
-          "kept" => kept.map { |chunk| source_row(chunk) },
+          "kept" => kept.map { |chunk|
+            row = source_row(chunk)
+            row["case_ledger"] = true if covered.include?(chunk.object_id)
+            row
+          },
           "omitted" => omitted.map { |chunk| source_row(chunk) }
         )
       end

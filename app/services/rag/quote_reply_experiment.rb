@@ -5,7 +5,7 @@ module Rag
   # prepare_params, fingerprint, and case_reading stay here. Location and
   # observation copy are TurnPerception.
   class QuoteReplyExperiment
-    PRODUCT_PROMPT_SHA256 = "65f4c7a16a01e71e3ffda0479a8f02e96c62fb5e0ae7c5f36945d894802a3b8a"
+    PRODUCT_PROMPT_SHA256 = "08ac32d062bc2fde8b8af459cc10d93c8b840858fe024e7056e448761fd9bab4"
     OFFSET_INSTRUCTION = "start is the first character and end is the index after the last character of that slice of the turn you were given; omit both to cite that whole turn for that one part. Do not send a paraphrase."
     DECLARED_OFFSET = "both start and end on that exact slice"
     DECLARED_QUOTE = "that same literal quote"

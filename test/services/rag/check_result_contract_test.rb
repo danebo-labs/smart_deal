@@ -16,7 +16,7 @@ class Rag::CheckResultContractTest < ActiveSupport::TestCase
     "An answer that states what the technician sees is also an observation. A partial answer does not fill the missing part. " \
     "Example: the part asks \"¿El manómetro marca más o menos de 2 bar, y la aguja oscila?\". \"Marca 1,5.\" is partial. " \
     "\"Marca 1,5 y no oscila.\" is complete. \"Desde ayer la bomba arranca cada diez minutos.\" answers no part: it is an observation with no part_reply."
-  OBSERVATIONS_PARAGRAPH = "Every span is the shortest literal substring of turn, not the sentence. observations holds up to three facts " \
+  OBSERVATIONS_PARAGRAPH = "Every span is the shortest literal substring of turn, not the sentence. observations holds up to 6 facts " \
     "of the case stated in this turn, one contiguous literal phrase each, or is empty. The reported fault and what the technician sees " \
     "or does not see are observations, not identifiers and not checks. So are when it happens, how often, under which condition, and how it changed, " \
     "also when the phrase refers to a fault already in work_context without repeating it. Keep every word between its ends. Do not drop words. " \
@@ -30,7 +30,7 @@ class Rag::CheckResultContractTest < ActiveSupport::TestCase
   PARAMETER_READING_RULE = "A parameter reading reported by the technician or another person on the open job is an observation. " \
     "Copy the parameter and its measured value together. A proposed setting is a question, never a reading."
   PREVIOUS_OBSERVATION_SENTENCE = "An observation is one contiguous symptom phrase copied from the turn, or empty."
-  PROMPT_SHA256 = "65f4c7a16a01e71e3ffda0479a8f02e96c62fb5e0ae7c5f36945d894802a3b8a"
+  PROMPT_SHA256 = "08ac32d062bc2fde8b8af459cc10d93c8b840858fe024e7056e448761fd9bab4"
 
   setup do
     @now = Time.zone.parse("2026-10-21 18:00:00 UTC")

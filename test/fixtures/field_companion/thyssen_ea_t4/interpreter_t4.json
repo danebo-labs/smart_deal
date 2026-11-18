@@ -1,0 +1,36 @@
+{
+ "move": "answer_pending",
+ "assertions": [
+  {
+   "span": "Ya lo alinearon",
+   "act": "assert",
+   "slot_hint": null
+  },
+  {
+   "span": "sigue marcando EA",
+   "act": "assert",
+   "slot_hint": null
+  }
+ ],
+ "checks": [
+  {
+   "subject": "Ya lo alinearon",
+   "status": "done",
+   "result": "Ya lo alinearon"
+  },
+  {
+   "subject": "medí 0 Vcc en RA‑53/P28",
+   "status": "done",
+   "result": "0 Vcc en RA‑53/P28"
+  }
+ ],
+ "observations": [
+  "la puerta cierra y traba bien",
+  "sigue marcando EA",
+  "Tiene motor de operador",
+  "medí 0 Vcc en RA‑53/P28"
+ ],
+ "pending_resolution": null,
+ "clarification_target": null,
+ "observations_note": "unused"
+}

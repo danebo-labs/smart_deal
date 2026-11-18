@@ -926,7 +926,12 @@ class BedrockRagService
           force_entity_filter: force_entity_filter && index.zero?, vector: vector, attribution: attribution,
           correlation_id: query_correlation_id
         )
-        chunks = companion_candidate_order(chunks, question: raw_turn).first(window) if chunks.any?
+        if chunks.any?
+          chunks = Rag::CompanionCaseRecord.fresh_window(
+            companion_candidate_order(chunks, question: raw_turn), window,
+            Rag::CompanionCaseRecord.ledger_identities(conv_session, Rag::CompanionCaseRecord.episode_id_of(episode))
+          )
+        end
       end
       if direct
         return direct_reference_result(

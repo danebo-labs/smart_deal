@@ -46,6 +46,36 @@ class Rag::PilotElevatorClosureTest < Minitest::Test
     assert_equal [ "p9" ], Rag::AnswerContract.open_parts(episode).pluck("id")
   end
 
+  def test_compound_check_requires_the_complete_unambiguous_report
+    previous = TURNS[-2].fetch("checkpoint")
+    original = TURNS.last
+    tool = JSON.parse(Rails.root.join("test/fixtures/files/field_companion/pilot_elevator_t12_unlinked_check.json").read).fetch("tool")
+    variants = [
+      original.fetch("message").sub("confirmó que", "cree que"),
+      original.fetch("message").split(", el enclavamiento").first,
+      original.fetch("message").sub("la maniobra se completa", "la maniobra no se completa"),
+      original.fetch("message") + " Sin embargo, después volvió a fallar."
+    ]
+    variants.each do |message|
+      turn = original.merge("tool" => tool, "message" => message)
+      episode = replay_perception(previous, turn)
+      assert_equal [ "p9" ], Rag::AnswerContract.open_parts(episode).pluck("id"), message
+      assert_nil Rag::AnswerContract.part_state(episode, "p9"), message
+    end
+
+    explicit = original.fetch("message").sub(" y el display", ". El display")
+    episode = replay_perception(previous, original.merge("tool" => tool, "message" => explicit))
+    assert_equal "complete", Rag::AnswerContract.part_state(episode, "p9")
+  end
+
+  def test_completed_compound_check_does_not_suppress_a_different_diagnostic_question
+    turn = TURNS.last
+    episode = replay_perception(TURNS[-2].fetch("checkpoint"), turn)
+    text = "El técnico confirmó el resultado. ¿Apareció una falla nueva al reiniciar?"
+    assert_equal text, Rag::CompoundCheckReply.without_intervention_followup(text, episode: episode,
+      turn: turn.fetch("message"), correlation_id: turn.fetch("correlation_id"), locale: :es)
+  end
+
   def test_independent_sentence_survives_an_internal_marker_in_its_paragraph
     marker = "REQUIRES_FIELD_VERIFICATION: confirmar a tensão do motor"
     turn = TURNS.last.merge("sources" => [

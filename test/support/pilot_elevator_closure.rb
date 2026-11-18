@@ -21,7 +21,7 @@ module PilotElevatorClosure
       code_cleared: /\bea\b[^.!?]*(?:desaparec|ya no|no reaparec)|(?:sin|no (?:muestra|aparece|marca|volvio a mostrar))[^.!?]*\bea\b/,
       completed_maneuver: /maniobra[^.!?]*(?:complet|satisfactori|termin|exito)|complet[^.!?]*maniobra/,
       interlock: /enclavamiento[^.!?]*(?:actu|funcion|oper|respond)/,
-      unspecified_repair: /(?:sin (?:detalle|especificar)|no (?:se (?:especific|detall|report|indic|inform|document)|quedo (?:especific|detall|document)|sabemos|indicaste)|queda sin)[^.!?]*(?:repar|intervenc|hicieron)|(?:repar|intervenc)[^.!?]*(?:sin (?:especificar|detalle)|no (?:quedo|se (?:detall|especific|indic|document)))/
+      unspecified_repair: /(?:sin (?:detalle|especificar)|no (?:se (?:especific|detall|report|indic|inform|document)|quedo (?:especific|detall|document)|sabemos|indicaste)|queda sin)[^.!?]*(?:repar|intervenc|hicieron)|(?:repar|intervenc)[^.!?]*(?:sin (?:especificar|detalle)|no (?:especifico|quedo|se (?:detall|especific|indic|document)))/
     }
     checks.reject { |_fact, pattern| body.match?(pattern) }.keys
   end

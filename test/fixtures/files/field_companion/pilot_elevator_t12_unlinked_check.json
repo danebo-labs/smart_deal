@@ -1,0 +1,37 @@
+{
+  "correlation_id": "query:ec530cd8-5a1d-4696-83c5-e1f012232a6e",
+  "interpreter_sequence": 6,
+  "generator_sequence": 32,
+  "tool": {
+    "move": "answer_pending",
+    "assertions": [],
+    "observations": [
+      "la maniobra se completa",
+      "el enclavamiento de puerta actúa cuando corresponde",
+      "el display sigue sin mostrar EA ni otra falla"
+    ],
+    "pending_resolution": "value",
+    "clarification_target": null,
+    "checks": [
+      {
+        "subject": "la maniobra se completa",
+        "status": "done",
+        "result": "se completa"
+      },
+      {
+        "subject": "el enclavamiento de puerta actúa cuando corresponde",
+        "status": "done",
+        "result": "actúa cuando corresponde"
+      },
+      {
+        "subject": "el display sigue sin mostrar EA ni otra falla",
+        "status": "done",
+        "result": "sigue sin mostrar EA ni otra falla"
+      }
+    ],
+    "pending_resolution_hint": "value",
+    "pending_resolution_note": "placeholder",
+    "part_replies": []
+  },
+  "draft": "**Cierre de la comprobación**\n\n**Hallazgo:** Según el técnico, al revisar el esquema del cuadro, el contacto de enganche no cerraba eléctricamente aunque el trinco trababa. Antes, con A4+ a ~110 Vcc, P28 no tenía señal y el display marcaba EA. La fuente describe P28 como «Ponto para ligar sinal do contato de engate do trinco, confirmando portas de pavimento fechada» [4].\n\n**Intervención:** El técnico reportó una reparación, pero no especificó qué se hizo en el contacto ni en su cableado. Antes había reportado que alinearon el trinco mecánico. Ese detalle queda sin especificar.\n\n**Resultado:** Con la puerta cerrada y trabada, P28 mide +110 Vcc, que coincide con el valor nominal indicado para P28 en [4]. EA desapareció. El técnico confirmó que la maniobra se completa, que el enclavamiento de puerta actúa cuando corresponde y que el display no muestra EA ni otra falla.\n\n**Relación causal:** Que la reparación del contacto de enganche haya corregido la falla es una hipótesis. La fuente no lo confirma, y esta comprobación no certifica la puesta en servicio.\n\n**Pendiente:** Falta el detalle de la reparación. ¿Qué se reparó o ajustó en el contacto de enganche o en su cableado?"
+}

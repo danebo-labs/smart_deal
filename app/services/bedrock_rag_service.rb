@@ -2300,6 +2300,11 @@ class BedrockRagService
     locale = effective_response_locale(question, response_locale: response_locale)
     extracted = extract_doc_refs(raw_answer.to_s)[:clean_answer]
     sources = companion_publication_sources(chunks)
+    if @companion_direct_turn && !reference_mode && !parameter_review
+      extracted = Rag::CompoundCheckReply.without_intervention_followup(
+        extracted, episode: episode, turn: question, correlation_id: correlation_id, locale: locale
+      )
+    end
     sequence = nil
     if parameter_review
       # The case comparison and referral are rendered from the bound data.

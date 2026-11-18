@@ -401,6 +401,13 @@ module Rag
       end
       checks = literal_checks(data["checks"])
       replies = prepared.is_a?(Hash) ? Array(prepared["part_replies"]) : []
+      if @part_replies_field == "empty" && data["move"] == "answer_pending" &&
+          data["pending_resolution"] == "value" && AnswerContract.active?(@episode) &&
+          documented_context_pending? && (reply = CompoundCheckReply.recover(@episode, @turn, checks: checks, observations: observations))
+        replies = [ reply ]
+        @part_replies_field = "present"
+        note_rule("bind_compound_check", reply["part_id"], "literal_results_cover_question")
+      end
       observations = absorb_quote_observations(observations, replies)
       observations = cap_observations(observations)
       @correction = ObservationCorrection.resolve(

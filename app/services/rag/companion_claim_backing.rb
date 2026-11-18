@@ -2,11 +2,12 @@
 
 module Rag
   # Sentence-level filter for a companion-direct answer, before
-  # CompanionTurnPublication. A sentence that cites [n] must carry a literal
-  # quote of that source; otherwise only the sentence is dropped and the rest
-  # of the orientation survives. It never adds text. The only rewrite is the
-  # [n] of a sentence whose quotes are literal in exactly one other source of
-  # the turn, and that sentence passes every check again under the new [n].
+  # CompanionTurnPublication. A sentence that cites [n] needs a literal quote
+  # of that source, or a translation that keeps the same entities, scope, and
+  # conditions. Otherwise only that sentence is dropped. It never adds text.
+  # The only rewrite is the [n] of a sentence whose quotes are literal in
+  # exactly one other source of the turn, and that sentence passes every
+  # check again under the new [n].
   class CompanionClaimBacking
     # A label such as «PasCom 24V» or «+» names a thing; it does not back
     # what the sentence says about it.
@@ -255,7 +256,8 @@ module Rag
       return "unverified_quote" if checks.any? { |_quoted, ok| !ok }
 
       bold = documentary_quotes(sentence, BOLD_PATTERN).select { |quoted, lead| verified?(quoted, pool, lead) }
-      return "unbacked_citation" unless (checks.map(&:first) + bold.map(&:first)).any? { |quoted| backing?(quoted) }
+      backed = (checks.map(&:first) + bold.map(&:first)).any? { |quoted| backing?(quoted) }
+      return "unbacked_citation" unless backed || CitedParaphrase.faithful?(sentence, pool)
       return "unbacked_residue" if foreign_tokens?(sentence, pool)
 
       nil

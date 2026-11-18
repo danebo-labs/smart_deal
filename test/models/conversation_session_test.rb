@@ -995,6 +995,64 @@ class ConversationSessionTest < ActiveSupport::TestCase
     assert_equal [ "ok" ], session.episode_user_messages(now: now)
   end
 
+  test 'episode_user_messages keeps dated turns when the cutoff is missing' do
+    now = Time.zone.parse("2026-09-16T14:00:00-03:00")
+    session = episode_session([
+      { "role" => "user", "content" => "no-ts" },
+      { "role" => "assistant", "content" => "lectura", "ts" => (now - 1.minute).iso8601 },
+      { "role" => "user", "content" => "pregunta", "ts" => now.iso8601 }
+    ])
+    session.define_singleton_method(:episode_history_cutoff) { |*| nil }
+
+    assert_equal [ "pregunta" ], session.episode_user_messages(now: now)
+    assert_equal "pregunta", session.recent_user_turns(now).last["content"]
+    assert_equal "lectura", session.last_assistant_message(now: now)
+    assert_equal [ "pregunta" ], SessionContextBuilder.companion_episode_user_messages(session, now: now).pluck("content")
+  end
+
+  test 'a photo snapshot keeps the case window when the opening turn precedes the episode' do
+    now = Time.zone.parse("2026-11-17T21:10:00-03:00")
+    case_opened = now - 6.hours
+    question = "Estoy con un Thyssen FDN Con MCINV4. El equipo está detenido"
+    context = FieldCases::TurnContext.new(
+      account: accounts(:legacy),
+      user_id: users(:one).id,
+      channel: "web",
+      active_episode: {
+        "v" => 1,
+        "episode_id" => "ep-photo",
+        "status" => "active",
+        "opened_at" => (now - 5.hours).iso8601,
+        "updated_at" => now.iso8601
+      },
+      conversation_history: [
+        {
+          "role" => "user",
+          "content" => question,
+          "ts" => (case_opened + 1.second).iso8601,
+          "correlation_id" => "photo:case"
+        }
+      ]
+    )
+    context.instance_variable_set(:@case_opened_at, case_opened)
+    context.instance_variable_set(:@case_episode_id, "ep-photo")
+
+    travel_to(now) do
+      captured = context.record_photo_assistant_context!(
+        "[FOTO] bornera",
+        user_id: users(:one).id,
+        correlation_id: "photo:case",
+        expected_episode_id: "ep-photo",
+        question: question
+      )
+      snapshot = captured.session_snapshot
+
+      assert_instance_of FieldCases::TurnContext, snapshot
+      assert_equal case_opened, snapshot.episode_history_cutoff(now)
+      assert_equal [ question ], snapshot.episode_user_messages(now: now)
+    end
+  end
+
   test 'episode_user_messages drops August turns outside the window' do
     now = Time.zone.parse("2026-09-16T10:50:55-03:00")
     session = episode_session([

@@ -382,7 +382,7 @@ module Rag
           next unless message.is_a?(Hash) && message["role"].to_s == "user"
 
           ts = parse_time(message["ts"])
-          next if ts.nil? || (cutoff && ts < cutoff) || ts > now
+          next unless ConversationSession.history_time_in_window?(ts, cutoff, now)
 
           text = technician_text(message)
           next if text.strip.empty?

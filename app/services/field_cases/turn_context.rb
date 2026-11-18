@@ -76,10 +76,28 @@ module FieldCases
       result.pending_question = Rag::PendingQuestion.coerce(candidate)
     end
 
-    def episode_history_cutoff(_now = Time.current)
+    def case_opened_at
+      @case_opened_at
+    end
+
+    # ActiveRecord instantiate copies columns, not this window. The photo
+    # answer reads a frozen snapshot, so the case open time has to travel
+    # with it. Without that time the floor is the episode open time, then
+    # the four-hour window. It is never nil.
+    def copy_case_window_from(source)
+      opened = source.case_opened_at if source.respond_to?(:case_opened_at)
+      @case_opened_at = opened if opened
+    end
+
+    def episode_history_cutoff(now = Time.current)
       # The opening turn can be admitted in the second before its interpreter
       # opens the episode. Its timestamp is still part of this case.
-      @case_opened_at
+      return @case_opened_at if @case_opened_at
+
+      now = Time.current if now.nil?
+      parsed = Rag::ActiveEpisode.parse(active_episode, now: now)
+      opened = parsed.blank? ? nil : parse_history_ts(parsed.opened_at)
+      opened || super
     end
 
     def with_lock

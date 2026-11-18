@@ -78,7 +78,7 @@ module Rag
       Array(@conversation_session.conversation_history).each_with_index do |message, index|
         row = stringify_message(message)
         ts = parse_ts(row["ts"])
-        next if ts.nil? || ts < cutoff || ts > @now
+        next unless ConversationSession.history_time_in_window?(ts, cutoff, @now)
 
         rows << row.merge("ts" => ts, "index" => index)
       end

@@ -366,7 +366,7 @@ class SessionContextBuilder
       next false unless message.is_a?(Hash) && message["role"] == "user"
 
       ts = companion_message_ts(message["ts"])
-      ts && ts >= cutoff && ts <= now
+      ConversationSession.history_time_in_window?(ts, cutoff, now)
     end
   end
 
@@ -412,7 +412,7 @@ class SessionContextBuilder
       rescue StandardError
         nil
       end
-      next if ts.nil? || ts < cutoff || ts > now
+      next unless ConversationSession.history_time_in_window?(ts, cutoff, now)
 
       chosen = message
     end

@@ -575,9 +575,22 @@ class ConversationSession < ApplicationRecord
     conversation_history.last(turns).map { |message| { role: message["role"], content: prompt_history_text(message) } }
   end
 
+  # A missing bound is not a comparison. Dated rows stay; a row without a
+  # parseable timestamp stays out. A timestamp equal to the cutoff stays,
+  # because the lower test is `ts < cutoff`.
+  def self.history_time_in_window?(timestamp, cutoff, now)
+    return false if timestamp.nil?
+    return false if cutoff && timestamp < cutoff
+    return false if now && timestamp > now
+
+    true
+  end
+
   # Mensajes del usuario dentro de la ventana del episodio, en orden cronológico.
   # Un mensaje sin `ts` parseable queda fuera. `exclude` descarta la pregunta actual.
+  # Un corte ausente no descarta la fila ni levanta ArgumentError.
   def episode_history_cutoff(now = Time.current)
+    now = Time.current if now.nil?
     window_start = now - EPISODE_WINDOW
     episode = Rag::ActiveEpisode.parse(active_episode, now: now)
     return window_start if episode.blank?
@@ -592,7 +605,7 @@ class ConversationSession < ApplicationRecord
     cutoff = episode_history_cutoff(now)
     conversation_history.select { |message| message["role"] == "user" }.filter_map { |message|
       ts = parse_history_ts(message["ts"])
-      next if ts.nil? || ts < cutoff || ts > now
+      next unless self.class.history_time_in_window?(ts, cutoff, now)
 
       {
         "content" => message["content"].to_s,
@@ -610,7 +623,7 @@ class ConversationSession < ApplicationRecord
       .select { |message| message["role"] == "user" }
       .filter_map do |message|
         ts = parse_history_ts(message["ts"])
-        next if ts.nil? || ts < cutoff || ts > now
+        next unless self.class.history_time_in_window?(ts, cutoff, now)
 
         content = message["content"].to_s
         next if excluded.present? && content.strip == excluded
@@ -626,7 +639,7 @@ class ConversationSession < ApplicationRecord
       next unless message["role"] == "assistant"
 
       ts = parse_history_ts(message["ts"])
-      next if ts.nil? || ts < cutoff || ts > now
+      next unless self.class.history_time_in_window?(ts, cutoff, now)
 
       return message["content"].to_s.presence
     end
@@ -643,7 +656,7 @@ class ConversationSession < ApplicationRecord
 
     conversation_history.each_with_index do |message, index|
       ts = parse_history_ts(message["ts"])
-      next if ts.nil? || ts < cutoff || ts > now
+      next unless self.class.history_time_in_window?(ts, cutoff, now)
 
       case message["role"]
       when "user"
@@ -1020,6 +1033,13 @@ class ConversationSession < ApplicationRecord
     snapshot
   end
 
+  def photo_session_snapshot
+    self.class.instantiate(attributes).tap do |snapshot|
+      snapshot.copy_case_window_from(self) if snapshot.respond_to?(:copy_case_window_from)
+      snapshot.readonly!
+    end
+  end
+
   def capture_photo_turn_context(status, question: nil, accepted_observation: nil, correlation_id: nil)
     if status == :stale
       return PhotoTurnContext.new(
@@ -1042,7 +1062,7 @@ class ConversationSession < ApplicationRecord
       entity_s3_uris: SessionContextBuilder.entity_s3_uris(self),
       equipment_identity: derived.equipment_identity,
       retrieval_question: derived.retrieval_question,
-      session_snapshot: (self.class.instantiate(attributes).tap(&:readonly!) if status == :applied)
+      session_snapshot: (photo_session_snapshot if status == :applied)
     )
   end
 

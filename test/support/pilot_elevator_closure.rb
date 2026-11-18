@@ -15,13 +15,13 @@ module PilotElevatorClosure
     body = I18n.transliterate(answer.to_s).downcase
     checks = {
       attribution: /tecnico|segun tu|reportaste|informaste|confirmaste|mediste/,
-      electrical_finding: /contacto[^.!?]*(?:no cerraba|no hacia contacto|no daba continuidad|no establecia continuidad|no estaba cerrando)[^.!?]*(?:electric|continuidad)/,
+      electrical_finding: /contacto[^.!?]*(?:no (?:cerraba|cerro|cierra|cerrase|hacia cierre|hizo cierre|estaba cerrando)[^.!?]*electric|no (?:tenia|daba|daba paso|establecia|presentaba) continuidad|sin continuidad)[^.!?]*/,
       recovered_reading: /\bp28\b[^.!?]*(?:\+\s*110\s*v(?:cc|dc)\b|110\s*voltios de corriente continua)/,
       reading_condition: /puerta[^.!?]*cerrada[^.!?]*(?:trabada|enclavada)/,
       code_cleared: /\bea\b[^.!?]*(?:desaparec|ya no|no reaparec)|(?:sin|no (?:muestra|aparece|marca|volvio a mostrar))[^.!?]*\bea\b/,
       completed_maneuver: /maniobra[^.!?]*(?:complet|satisfactori|termin|exito)|complet[^.!?]*maniobra/,
       interlock: /enclavamiento[^.!?]*(?:actu|funcion|oper|respond)/,
-      unspecified_repair: /(?:sin (?:detalle|especificar)|no (?:se (?:especific|detall|report|indic|inform|document)|sabemos|indicaste)|queda sin)[^.!?]*(?:repar|intervenc|hicieron)|(?:repar|intervenc)[^.!?]*(?:sin (?:especificar|detalle)|no (?:quedo|se (?:detall|especific|indic|document)))/
+      unspecified_repair: /(?:sin (?:detalle|especificar)|no (?:se (?:especific|detall|report|indic|inform|document)|quedo (?:especific|detall|document)|sabemos|indicaste)|queda sin)[^.!?]*(?:repar|intervenc|hicieron)|(?:repar|intervenc)[^.!?]*(?:sin (?:especificar|detalle)|no (?:quedo|se (?:detall|especific|indic|document)))/
     }
     checks.reject { |_fact, pattern| body.match?(pattern) }.keys
   end

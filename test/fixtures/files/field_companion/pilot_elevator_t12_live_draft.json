@@ -1,0 +1,7 @@
+{
+  "correlation_id": "query:feb37c5c-ee3e-4408-a1a4-e447a4af0cee",
+  "generator_request_sequence": 33,
+  "technician_report_in_request": "El técnico del turno revisó el esquema del cuadro y confirmó que el contacto de enganche no cerraba eléctricamente aunque el trinco trababa. Después de la reparación, con la puerta cerrada y trabada, P28 volvió a marcar +110 Vcc y EA desapareció.",
+  "generator_response_sequence": 35,
+  "draft": "**Resultado:** con la puerta cerrada y trabada, la maniobra se completa, el enclavamiento de puerta actúa cuando corresponde y el display no muestra EA ni otra falla.\n\n**Hallazgo previo:** P28 no tenía +110 Vcc y el display marcaba EA. La fuente indica para P28 «Ponto para ligar sinal do contato de engate do trinco, confirmando portas de pavimento fechada» [4]. Para EA indica «Quando falha de P28 - porta aberta - revisar linha dos trincos» [1].\n\n**Resultado posterior:** según el técnico, tras la reparación P28 volvió a +110 Vcc con la puerta cerrada y trabada, y EA desapareció.\n\n**Pendiente:** no quedó especificado qué se reparó en el contacto de enganche ni en su cableado. Tampoco hay evidencia de la relación exacta entre el contacto y la falla. Esto no cambia el resultado observado hoy.\n\n**Cierre:** la comprobación confirma el funcionamiento observado después de la intervención. No certifica la puesta en servicio ni da el equipo por bueno."
+}

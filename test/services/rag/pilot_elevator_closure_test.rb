@@ -11,6 +11,7 @@ LiveAwsBlock.install!
 class Rag::PilotElevatorClosureTest < Minitest::Test
   CAPTURE = PilotElevatorClosure.load_capture
   TURNS = CAPTURE.fetch("turns")
+  LIVE_DRAFT = JSON.parse(Rails.root.join("test/fixtures/files/field_companion/pilot_elevator_t12_live_draft.json").read)
 
   def test_valid_functional_reply_survives_episode_budget
     turn = TURNS.last
@@ -89,13 +90,44 @@ class Rag::PilotElevatorClosureTest < Minitest::Test
     generation_double = <<~ANSWER
       El técnico constató que el contacto de enganche no cerraba eléctricamente aunque el trinco trababa. Después de la intervención, con la puerta cerrada y trabada, P28 recuperó +110 Vcc y EA desapareció.
 
-      El técnico confirmó que la maniobra terminó correctamente y que el enclavamiento actuó cuando correspondía. El display sigue sin EA ni otra falla. El detalle de la reparación quedó sin especificar.
+      El técnico confirmó que la maniobra terminó correctamente y que el enclavamiento actuó cuando correspondía. El display sigue sin EA ni otra falla. El detalle de la reparación quedó sin especificar. La relación causal entre el contacto y la falla sigue siendo una hipótesis.
     ANSWER
     result = finish(generation_double, TURNS.last)
     assert_equal :answered, result[:route_outcome], result[:companion_publication].inspect
     assert_empty PilotElevatorClosure.missing_closure_facts(result[:answer]), result[:answer]
     assert_empty result.dig(:companion_publication, "quotes")
+    assert_match(/relación causal[^.]*hipótesis/i, result[:answer])
     assert_nil result[:pending_question]
+  end
+
+  def test_captured_draft_reproduces_the_missing_finding_before_publication
+    turn = TURNS.last
+    assert_equal TURNS[-2].fetch("message"), LIVE_DRAFT.fetch("technician_report_in_request")
+    result = finish(LIVE_DRAFT.fetch("draft"), turn)
+    assert_equal :answered, result[:route_outcome]
+    assert_equal [:electrical_finding], PilotElevatorClosure.missing_closure_facts(result[:answer])
+  end
+
+  def test_direct_closure_request_keeps_the_report_and_distinguishes_it_from_hypotheses
+    turn = TURNS.last
+    episode = replay_perception(TURNS[-2].fetch("checkpoint"), turn)
+    history = TURNS[-4, 3].map do |row|
+      { "role" => "user", "content" => row.fetch("message"), "ts" => row.fetch("admitted_at"),
+        "correlation_id" => row.fetch("correlation_id") }
+    end
+    session = Struct.new(:conversation_history).new(history)
+    prepared = Rag::CompanionDirectAnswer.prepare(raw_question: turn.fetch("message"),
+      chunks: [], episode: episode, session: session, correlation_id: turn.fetch("correlation_id"))
+
+    dispatched = prepared.messages.filter_map { |message| message.dig(:content, 0, :text) if message[:role] == "user" }.join("\n")
+    assert_includes dispatched, LIVE_DRAFT.fetch("technician_report_in_request")
+    assert_includes dispatched, turn.fetch("message")
+    closure = prepared.system.split("\n\n").find { |paragraph| paragraph.start_with?("Si el técnico confirma el funcionamiento") }
+    assert_match(/hallazgo[^.]*atribuye al técnico[^.]*qué comprobó/i, closure)
+    assert_match(/intervención[^.]*detalle[^.]*especificar/i, closure)
+    assert_match(/resultado[^.]*lecturas/i, closure)
+    assert_match(/hipótesis[^.]*sin confirmar/i, closure)
+    assert_empty Rag::AnswerContract.open_parts(episode)
   end
 
   def test_portuguese_passage_keeps_its_condition_and_literal_quote_contract

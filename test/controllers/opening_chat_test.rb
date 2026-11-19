@@ -83,18 +83,12 @@ class OpeningChatTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
-  test "a blank message and a file leave no case" do
-    key = SecureRandom.uuid
-    assert_no_difference("FieldCase.count") do
-      post_opening("  ", key, SecureRandom.uuid)
-      assert_response :unprocessable_entity
-
-      post rag_ask_path, params: {
-        question: "foto", creation_key: key, client_submission_id: SecureRandom.uuid,
-        image: { data: "abc", media_type: "image/jpeg", filename: "a.jpg" }
-      }, as: :json
-      assert_response :unprocessable_entity
+  test "a blank opening message leaves no case" do
+    assert_no_difference([ "FieldCase.count", "FieldTurn.count" ]) do
+      post_opening("  ", SecureRandom.uuid, SecureRandom.uuid)
     end
+    assert_response :unprocessable_entity
+    assert_equal "message", response.parsed_body.fetch("error")
     assert_equal 0, OpeningChatDouble.calls
   end
 

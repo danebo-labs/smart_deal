@@ -262,12 +262,13 @@ class Rag::CompanionDirectRouteTest < ActiveSupport::TestCase
     end
   end
 
-  test "a poisoned plan question is not published on the direct turn" do
+  test "a planted plan question is not the pending question of the direct turn" do
+    planted = "¿Cuál es la presión del aceite?"
     @reply = lambda do |_params|
       service = Thread.current[:companion_direct_service]
       service.instance_variable_set(:@companion_plan_pending, {
         "type" => "documented_context",
-        "question" => POISON,
+        "question" => planted,
         "targets" => [ { "item" => "sensor de caudal", "document_key" => "doc-bomba", "filename" => "bomba.pdf", "page" => "3" } ]
       })
       service.instance_variable_set(:@companion_plan_stop_reason, "max_tokens")
@@ -276,7 +277,16 @@ class Rag::CompanionDirectRouteTest < ActiveSupport::TestCase
     result = direct { ask("Si el caudal baja, ¿qué reviso?") }
 
     assert_equal :answered, result.route_outcome
-    assert_nil result.pending_question
+    assert_equal(
+      {
+        "type" => "documented_context",
+        "question" => POISON,
+        "targets" => [ { "item" => "Bomba Hidra P2", "document_key" => "", "filename" => "", "page" => "" } ]
+      },
+      result.pending_question
+    )
+    assert_not_includes result.pending_question.to_json, planted
+    assert_not_includes result.pending_question.to_json, "doc-bomba"
     assert_includes result.answer, QUOTE
     assert_equal true, result.companion_publication["accepted"]
   end

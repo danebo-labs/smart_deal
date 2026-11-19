@@ -1,7 +1,7 @@
 # Rediseño de Danebo Field Companion
 
 Fecha: 19 de noviembre de 2026.
-Estado: plan de diseño. No está implementado y no autoriza desplegar ni llamar a producción.
+Estado: documento vivo en fase de diseño. No está implementado y no autoriza desplegar ni llamar a producción. Ver [cómo mantener el plan vivo](#7-cómo-mantener-el-plan-vivo).
 Base: `32e56ee`. Evidencia: `test/fixtures/files/field_companion/pilot_2026_11_19.json` y `tmp/pilot_exports/2026-11-19_2026-11-19_danebo-pilot-elevator/validation_captures/`. El runner en vivo queda en pausa, incluidos `script/field_companion/run_pilot_elevator_t12.rb`, `stage2_journey_a.rb` y `run_haiku55_http.rb`.
 
 ## 1. Cómo viaja hoy un turno
@@ -143,3 +143,21 @@ Aceptación con dobles: casos sintéticos sin marca (ciclo con tres criterios: c
 **Etapa 5.** Dictado en el chat. Aceptación: transcripción editable antes de enviar, misma ruta `AdmitTurn`, y texto bruto y enviado trazados. Pruebas del controlador y del servicio con un STT simulado.
 
 **Fuera de alcance:** cambios de indexación, una segunda llamada al intérprete o a visión, listas de equipos por fabricante y el modo «cara a cara» sin pantalla.
+
+## 7. Cómo mantener el plan vivo
+
+Al iniciar cada etapa, leer este documento en su versión más reciente y contrastar sus supuestos y dependencias con el código y el registro de cierre. Distinguir la base histórica de diseño del SHA que se usa para medir la etapa.
+
+Al cerrar cada etapa, registrar aquí el estado, el SHA base y el de cierre cuando esté disponible, las pruebas ejecutadas y su resultado, los hallazgos relevantes y sus referencias. Si un hallazgo cambia un contrato, una dependencia, el orden o un criterio de aceptación, editar directamente cada etapa afectada, incluida la siguiente cuando corresponda, antes de iniciarla. Actualizar también el prompt si cambian las instrucciones de ejecución. Si el hallazgo no afecta etapas posteriores, basta con indicarlo en el registro. Cuando queden pruebas pendientes o una dependencia bloqueada, dejar explícito qué falta y qué etapa queda afectada.
+
+| Etapa y estado | SHA y evidencia | Hallazgo y efecto en etapas posteriores |
+| --- | --- | --- |
+| 1–5 · Diseño | Base histórica `32e56ee` | Los resultados de implementación se registrarán al cerrar cada etapa. |
+
+## 8. Prompt para ejecutar la etapa autorizada
+
+> Implementa la etapa autorizada del rediseño de Danebo Field Companion. Lee primero `docs/field_companion/DISENO_FIELD_COMPANION_20261119.md` en el HEAD de trabajo, el registro de cierre de las etapas previas y las instrucciones del repositorio. Identifica el SHA real de partida y contrasta el diseño con el código actual. Si el código ya resuelve un punto, reutiliza la solución y actualiza la etapa con evidencia.
+>
+> Establece la línea base offline de la red de regresión y ejecuta los criterios de aceptación de la etapa. Evalúa la respuesta por significado, procedencia y alcance. Verifica el estado persistido tras recargar donde corresponda. Si aparece una regresión, sigue la traza hasta la primera etapa del turno donde diverge, corrige esa causa y repite las pruebas. Distingue los fallos heredados de los introducidos y separa los resultados con dobles de cualquier validación real del modelo. Mantén las llamadas a servicios en vivo y los despliegues sujetos a autorización explícita.
+>
+> Antes de dar la etapa por cerrada, actualiza el plan con el estado, las pruebas, los resultados y los hallazgos verificables. Si un hallazgo cambia el trabajo pendiente, corrige en el mismo documento el alcance, las dependencias o la aceptación de las etapas afectadas. Deja el plan listo para continuar desde ese punto.

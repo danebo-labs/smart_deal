@@ -281,6 +281,41 @@ class Rag::CompanionDirectRouteTest < ActiveSupport::TestCase
     assert_equal true, result.companion_publication["accepted"]
   end
 
+  test "turn 10 with the word esquema, the active photo, and the identified Thyssen episode generates on anthropic" do
+    question = "Revise el esquema del cuadro y confirme que el enganche no cerraba eléctricamente, aunque el trinco trabajaba. " \
+               "Después con la puerta cerrada y trabada, P28 volvió a marcar +110v y EA desapareció."
+    quote = "Solo si el enganche no cierra eléctricamente, revisar el contacto del trinco."
+    write_thyssen_chunk(quote)
+    @document.update!(display_name: "THYSSEN Manual de Maniobra Universal con MCINV4")
+    @reply = ->(_params) { text_reply("Si el enganche no cierra, revisa el contacto: «#{quote}» [1]") }
+    bedrock_generation = []
+    %i[converse invoke_model invoke_model_with_response_stream converse_stream].each do |operation|
+      @runtime.define_singleton_method(operation) { |*, **| bedrock_generation << operation; raise "bedrock generation opened: #{operation}" }
+    end
+    session = thyssen_session_with_photo
+    args = ask_args(question).merge(
+      conv_session: session,
+      session_context: SessionContextBuilder.build(session, active_photo_context: session.turn_active_photo_context)
+    )
+
+    result = isolate_env("BEDROCK_INFERENCE", "blocked") { direct { @host.ask(question, **args) } }
+    unavailable = I18n.t("rag.service_unavailable", locale: :es)
+
+    assert BedrockRagService.plan_request?(question, nil), "the turn carries the word that used to cut it"
+    assert_empty bedrock_generation, "no Bedrock generation of any kind"
+    assert_equal 1, @requests.size, "one Anthropic generation, no cut"
+    assert_equal RagRetrievalProfile::COMPANION_PINNED_CANDIDATES, @kb.calls.first["number_of_results"]
+    assert result.success?, result.error_message
+    assert result.companion_turn
+    assert_not_equal :unavailable, result.route_outcome
+    assert_not_includes result.answer.to_s, unavailable
+    assert_includes result.answer, quote
+    text = request_text(@requests.sole)
+    assert_includes text, "P28"
+    assert_includes text, "Photo Evidence"
+    assert_equal "claude-haiku-5-5", request_hash(@requests.sole)[:model]
+  end
+
   test "the prompt has no script-specific example and the low score chunk stays out" do
     text = Rails.root.join("app/prompts/bedrock/companion_direct.txt").read
     %w[VF5 Fermator fotocélula fotocelula autoajuste S1.9].each do |token|
@@ -351,6 +386,53 @@ class Rag::CompanionDirectRouteTest < ActiveSupport::TestCase
       active_episode: hidra_episode.to_h
     )
     assert session.pin_kb_document!(@document)
+    session
+  end
+
+  def write_thyssen_chunk(quote)
+    key = "bulk_chunks/#{@account.id}/doc-bomba/chunk_p3_1.txt"
+    @store.upload_text(key, "[DOCUMENT: maniobra.pdf]\n[PDF_PAGE: 3]\n6.1 Enganche\nMCINV4 FDN Universal.\n#{quote}\n")
+    @store.upload_text("#{key}.metadata.json", JSON.generate("metadataAttributes" => {
+      "account_id" => @account.id.to_s,
+      "document_id" => "doc-bomba",
+      "original_source_uri" => @uri,
+      "original_filename" => "maniobra.pdf",
+      "canonical_name" => "THYSSEN Manual de Maniobra Universal con MCINV4",
+      "aliases" => [ "Thyssen", "FDN Universal", "MCINV4" ],
+      "ingestion_path" => "manual_batch_v1",
+      "manual_corpus" => "account",
+      "page_number" => 3
+    }))
+  end
+
+  def thyssen_session_with_photo
+    sha = SecureRandom.hex(32)
+    photo = FieldPhoto.create!(
+      account: @account, sha256: sha, s3_key_original: "field_photos/#{@account.id}/#{sha}/original.jpg",
+      content_type: "image/jpeg", byte_size: 52_308
+    )
+    FieldPhotoObservation.persist!(photo, {
+      "schema_version" => 1, "prompt_fingerprint" => "ef" * 32, "model_id" => "claude-sonnet-5-5",
+      "canonical_component" => "diagrama de plugueo", "manufacturer" => "unknown", "model" => "unknown",
+      "subsystem" => "CONTROLLER_LOGIC", "condition" => "UNKNOWN",
+      "visible_text" => [ "PLUGACAO DO Q. DE COMANDO", "PV-1", "PV-2", "PV-3", "P26", "P27", "P28" ],
+      "target_visible" => false, "relevance_to_goal" => "relevant"
+    })
+    value = Rag::ActiveEpisode.open(correlation_id: "query:setup", now: 10.minutes.ago)
+    value.write_fact!(
+      "manufacturer", status: "known", value: "Thyssen", source: "user",
+      correlation_id: "query:setup", at: Time.current.iso8601
+    )
+    value.append_identifier!("MCINV4", correlation_id: "query:setup", source: "user")
+    value.active_photo = { "field_photo_id" => photo.id, "sha256" => sha, "correlation_id" => "photo:setup" }
+    session = ConversationSession.create!(
+      identifier: "web:companion-direct-#{SecureRandom.hex(4)}", channel: "web", expires_at: 1.hour.from_now,
+      user: @user, account: @account, active_episode: value.to_h
+    )
+    assert session.pin_kb_document!(@document)
+    session.turn_active_photo_context = Rag::ActivePhotoContext.resolve(
+      episode: Rag::ActiveEpisode.parse(session.active_episode), viewer_account: @account
+    )
     session
   end
 

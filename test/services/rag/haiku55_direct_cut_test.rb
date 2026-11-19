@@ -124,7 +124,7 @@ class Rag::Haiku55DirectCutTest < ActiveSupport::TestCase
     assert_equal :unavailable, result[:route_outcome]
     assert_equal I18n.t("rag.service_unavailable", locale: :es), result[:answer]
     assert_not_includes result[:answer], "no aparece"
-    %i[plan field_records episode identity system_role provider_blocked].each do |reason|
+    %i[field_records episode identity system_role provider_blocked].each do |reason|
       closed = service.send(:identity_closed_result,
         status: :unavailable, reason: reason, question: "¿qué reviso?", response_locale: :es
       )

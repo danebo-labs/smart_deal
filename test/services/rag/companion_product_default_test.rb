@@ -37,7 +37,7 @@ class Rag::CompanionProductDefaultTest < ActiveSupport::TestCase
     end
   end
 
-  test "an explicit plan question skips companion generation and leaves the episode unchanged" do
+  test "an explicit plan question stays on companion generation and leaves the episode unchanged" do
     episode = Rag::ActiveEpisode.open(correlation_id: "plan", now: Time.current)
     episode.assign_goal!("la puerta vuelve a abrirse", correlation_id: "plan")
     before = episode.to_h.deep_dup
@@ -54,7 +54,7 @@ class Rag::CompanionProductDefaultTest < ActiveSupport::TestCase
       )
     end
 
-    assert_equal :plan, reason
+    assert_nil reason
     assert_equal before, episode.to_h
   end
 

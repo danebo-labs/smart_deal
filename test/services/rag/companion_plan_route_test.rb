@@ -81,7 +81,7 @@ class Rag::CompanionPlanRouteTest < ActiveSupport::TestCase
     assert_equal "calculated", consumption["cost_kind"]
   end
 
-  test "a diagram chunk does not leave the companion and an explicit plan request does" do
+  test "a diagram chunk and an explicit plan request do not leave the companion" do
     with_flags do
       [ 0, 7 ].each do |position|
         @plans.clear
@@ -99,7 +99,7 @@ class Rag::CompanionPlanRouteTest < ActiveSupport::TestCase
     before = stored.to_h
     chunks = diagram_chunks(7)
     with_flags do
-      assert_equal :plan, service.send(:companion_turn_skip_reason, applied: applied, chunks: chunks, episode: stored, raw_question: "muéstrame el plano de la fotocélula")
+      assert_nil service.send(:companion_turn_skip_reason, applied: applied, chunks: chunks, episode: stored, raw_question: "muéstrame el plano de la fotocélula")
       assert_nil service.send(:companion_turn_skip_reason, applied: applied, chunks: chunks, episode: stored, raw_question: "no necesito el plano")
       assert_nil service.send(:companion_turn_skip_reason, applied: applied, chunks: chunks, episode: stored, raw_question: "la etiqueta del equipo dice VF5+")
       assert_nil service.send(:companion_turn_skip_reason, applied: applied, chunks: chunks, episode: stored, raw_question: "¿qué sigue?")

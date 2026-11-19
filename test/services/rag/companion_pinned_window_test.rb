@@ -81,7 +81,7 @@ class Rag::CompanionPinnedWindowTest < ActiveSupport::TestCase
     assert_operator prompts.first.index(first), :<, prompts.first.index(second)
   end
 
-  test "a pinned plan question keeps the pinned retrieve count and does not rerank" do
+  test "a pinned question with a plan word keeps the sixteen candidate window" do
     retrieved = []
     reranks = []
 
@@ -96,8 +96,8 @@ class Rag::CompanionPinnedWindowTest < ActiveSupport::TestCase
       )
     end
 
-    assert_equal RagRetrievalProfile::PINNED_DOCUMENT_RESULTS, retrieved.first[:number_of_results]
-    assert_empty reranks
+    assert_equal RagRetrievalProfile::COMPANION_PINNED_CANDIDATES, retrieved.first[:number_of_results]
+    assert_empty reranks, "a single candidate has nothing to reorder"
   end
 
   private

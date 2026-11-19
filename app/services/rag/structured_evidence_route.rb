@@ -829,8 +829,7 @@ module Rag
         entity_sources: @entity_sources,
         entity_s3_uris: @entity_s3_uris,
         raw_question: @raw_question,
-        episode: @episode,
-        plan_request: BedrockRagService.plan_request?(@raw_question.to_s, nil)
+        episode: @episode
       )
     end
 

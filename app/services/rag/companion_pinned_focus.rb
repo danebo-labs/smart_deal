@@ -6,13 +6,13 @@ module Rag
   module CompanionPinnedFocus
     module_function
 
-    def focus?(entity_sources:, entity_s3_uris:, raw_question:, episode:, plan_request:)
+    # A word in the technician's text never narrows the retrieval focus.
+    def focus?(entity_sources:, entity_s3_uris:, raw_question:, episode:)
       return false unless plan_enabled?
       return false if ENV["RAG_DOCUMENT_IDENTITY_SYSTEM_ROLE"] == "1"
       return false unless Array(entity_sources).include?("document")
       return false if Array(entity_s3_uris).map(&:to_s).uniq.empty?
       return false if raw_question.blank?
-      return false if plan_request
 
       parsed = episode.is_a?(ActiveEpisode) ? episode : ActiveEpisode.parse(episode)
       parsed.present? && parsed.status == "active"

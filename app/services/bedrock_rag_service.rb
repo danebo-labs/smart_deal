@@ -1506,8 +1506,7 @@ class BedrockRagService
       entity_sources: entity_sources,
       entity_s3_uris: entity_s3_uris,
       raw_question: raw_question,
-      episode: episode,
-      plan_request: self.class.plan_request?(raw_question.to_s, nil)
+      episode: episode
     )
   end
 
@@ -1618,9 +1617,6 @@ class BedrockRagService
 
     parsed = episode.is_a?(Rag::ActiveEpisode) ? episode : Rag::ActiveEpisode.parse(episode)
     active = !(parsed.nil? || parsed.blank? || parsed.status != "active")
-    if self.class.plan_request?(raw_question.to_s, nil)
-      return :plan unless active && Rag::CompanionPlanEvidence.sufficient?(question: raw_question, chunks: chunks)
-    end
     return :episode unless active
     return :raw_question if raw_question.blank?
     return :field_records if companion_field_records?(chunks)
@@ -2162,7 +2158,7 @@ class BedrockRagService
   end
 
   def service_unavailable_reason?(reason)
-    %i[retrieval_timeout retrieval_error provider_blocked plan field_records episode identity system_role raw_question].include?(reason&.to_sym)
+    %i[retrieval_timeout retrieval_error provider_blocked field_records episode identity system_role raw_question].include?(reason&.to_sym)
   end
 
   def identity_failure_reason(error, stage:)

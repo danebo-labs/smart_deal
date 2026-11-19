@@ -60,11 +60,12 @@ class Rag::CompanionPlanSkipReasonTest < ActiveSupport::TestCase
     assert_nil reason(Rag::CompanionPlanEvidenceTest::ELEMONT_T1, active_episode, Rag::CompanionPlanEvidenceTest::ELEMONT)
   end
 
-  test "a standalone plan question keeps the plan route" do
-    assert_equal :plan, reason("En el esquema, ¿en qué bornes está RE-OPEN?", nil, Rag::CompanionPlanEvidenceTest::VF5)
+  test "a plan word never closes the turn as plan; only the missing episode does" do
+    assert_equal :episode, reason("En el esquema, ¿en qué bornes está RE-OPEN?", nil, Rag::CompanionPlanEvidenceTest::VF5)
   end
 
-  test "an active episode without the label in evidence keeps the plan route" do
-    assert_equal :plan, reason("En el esquema, ¿dónde está el relé K9?", active_episode, Rag::CompanionPlanEvidenceTest::VF5)
+  test "an active episode without the label in evidence stays on the companion" do
+    assert_nil reason("En el esquema, ¿dónde está el relé K9?", active_episode, Rag::CompanionPlanEvidenceTest::VF5)
+    assert_nil reason("En la foto del plano que te mandé, ¿qué borne es RE-OPEN?", active_episode, Rag::CompanionPlanEvidenceTest::VF5)
   end
 end

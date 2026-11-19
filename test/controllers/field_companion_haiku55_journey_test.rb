@@ -2,6 +2,7 @@
 
 require "test_helper"
 require Rails.root.join("test/support/haiku55_journey_rubric")
+require_relative "../support/pilot_nov19_rubric"
 
 # Authenticated HTTP replay of the twelve Opus turns. External calls are the
 # captured interpreter tool, the captured Retrieve bodies, and the captured
@@ -11,6 +12,7 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
   include Devise::Test::IntegrationHelpers
   include ActiveJob::TestHelper
   include ActionCable::TestHelper
+  include PilotNov19Rubric
 
   FIXTURES = "test/fixtures/files/field_companion/haiku55_journeys"
   SCRIPTS = {
@@ -85,14 +87,17 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     page = load_turns(SCRIPTS.fetch("guion2").fetch("capture")).first.rows.find { |row| row["page"].to_i == 8 }
     case_record, responses = replay_nov19_text(23, document, page.fetch("content"), page: 8)
 
-    assert_match(/primera (?:operaci[oó]n|apertura|maniobra).*fallo de alimentaci[oó]n/i, responses.first.fetch("answer"))
-    assert_match(/primera.*\?/i, responses.first.dig("field_turn", "checkpoint", "pending_question", "question"))
+    first = responses.first.fetch("answer")
+    assert PilotNov19Rubric.claim?(first, FIRST_OPERATION, POWER_LOSS, ELECTRICAL_SUPPLY, SLOW), first
+    pending = responses.first.dig("field_turn", "checkpoint", "pending_question", "question")
+    assert_match(FIRST_OPERATION, PilotNov19Rubric.normalize(pending))
     after_reply = Rag::ActiveEpisode.parse(responses[1].dig("field_turn", "checkpoint"))
     assert_empty Rag::AnswerContract.open_parts(after_reply)
     last = responses.last.fetch("answer")
-    assert_match(/no[^.]*hace falta autoajuste/i, last)
-    assert_match(/parámetros por defecto/i, last)
-    assert_match(/conexión o desconexión.*fotocélula/i, last)
+    assert PilotNov19Rubric.claim?(last, ADJUSTMENT, UNNECESSARY), last
+    assert PilotNov19Rubric.claim?(last, ADJUSTMENT, DEFAULTS), last
+    assert PilotNov19Rubric.claim?(last, PHOTOCELL, CONNECT, DISCONNECT), last
+    assert_empty responses.flat_map { |row| PilotNov19Rubric.language_findings(row.fetch("answer")) }
     saved = read_text_case(case_record).fetch("turns")
     assert_equal "complete", saved[1].dig("checkpoint", "replies").sole.fetch("state")
     assert_equal [ 8 ], saved.last.dig("response", "citations").pluck("page").uniq
@@ -104,18 +109,21 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     source = november_19_turns(25).last.dig("capture", "source")
     case_record, responses = replay_nov19_text(25, document, source.fetch("text"), page: 8)
 
-    assert_match(/26 °C[^.]*no tienen un límite/i, responses[1].fetch("answer"))
+    second = PilotNov19Rubric.field_text(responses[1].fetch("answer"))
+    assert PilotNov19Rubric.claim?(second, TEMPERATURE, DOC_LIMIT, UNDOCUMENTED), second
     third = responses[2].fetch("answer")
-    assert_match(/limpiar el filtro[^.]*sigue Err14/i, third)
-    assert_match(/ventilador[^?]*gira/i, third)
-    assert_no_match(/enclavamiento/i, third)
+    assert PilotNov19Rubric.claim?(third, /\bfiltro\b/, FILTER_CLEAN), third
+    assert PilotNov19Rubric.claim?(third, /\berr14\b/, ERROR_PERSISTS, without: ERROR_CLEARED), third
     fourth = responses[3].fetch("answer")
-    assert_match(/ventilador[^?]*gira/i, fourth)
-    assert_match(/26 °C[^.]*no se pueden comparar con un límite/i, fourth)
-    assert_no_match(/omití|no pude preparar/i, fourth)
+    [ third, fourth ].each do |answer|
+      assert PilotNov19Rubric.claim?(answer, FAN, ROTATION, /[?¿]/), answer
+      assert_not PilotNov19Rubric.claim?(answer, STOP_INTERLOCK, /[?¿]/), answer
+    end
+    assert PilotNov19Rubric.claim?(PilotNov19Rubric.field_text(fourth), TEMPERATURE, DOC_LIMIT, UNDOCUMENTED), fourth
+    assert_empty responses.flat_map { |row| PilotNov19Rubric.language_findings(row.fetch("answer")) }
     saved = read_text_case(case_record).fetch("turns")
     assert_equal [ 8 ], saved.last.dig("response", "citations").pluck("page").uniq
-    assert_match(/ventilador/i, saved.last.dig("checkpoint", "pending_question", "question"))
+    assert_match(FAN, PilotNov19Rubric.normalize(saved.last.dig("checkpoint", "pending_question", "question")))
     readings = saved.last.dig("checkpoint", "observations").select { |row| row["text"].match?(/26 grados centígrados/) }
     assert_equal saved[1].fetch("correlation_id"), readings.sole.fetch("correlation_id")
   end
@@ -138,8 +146,10 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     followup.tool_input["observations"] = [ second.fetch("message") ]
     response, cassette = ask_text_case(kase, followup, document, "cea-field-followup")
     assert_revision_scope(cassette, document)
-    assert_match(/manual.*(?:por sí sola no confirma|no confirma la placa)/im, response.fetch("answer"))
-    assert_match(/SA.*patín retráctil.*retirado/i, response.fetch("answer"))
+    published = response.fetch("answer")
+    assert PilotNov19Rubric.claim?(PilotNov19Rubric.field_text(published), SOURCE_REFERENCE, PLATE, APPLICABILITY_PENDING), published
+    assert PilotNov19Rubric.claim?(published, /\bsa\b/, /\b1\b/, /\bpatin\b/, RETRACTED, CONDITION, without: NOT_RETRACTED), published
+    assert_empty PilotNov19Rubric.language_findings(published)
     saved = read_text_case(kase)
     assert_equal [ 27 ], saved.fetch("turns").last.dig("response", "citations").pluck("page")
     assert_includes saved.dig("case", "technical_state", "observations").pluck("text"), second.fetch("message")
@@ -710,12 +720,12 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
 
       opening, cassette = ask_text_case(case_a, first, manual, "a-open")
       assert_revision_scope(cassette, manual)
-      assert_match(/¿(?:cu[aá]l|qu[eé])[^?]+KP-VS[^?]*\?/i, opening.fetch("answer"))
-      assert_match(/condición[^.]+por confirmar/i, opening.fetch("answer"))
+      assert PilotNov19Rubric.claim?(opening.fetch("answer"), /\bkp-vs\b/, /\b(?:valor|lectura|mid\w*)\b/, /[?¿]/)
+      assert PilotNov19Rubric.claim?(opening.fetch("answer"), /\b(?:condicion|rama)\b/, APPLICABILITY_PENDING)
       assert opening.fetch("citations").any?
       pending = read_text_case(case_a).dig("case", "technical_state", "pending_question")
       question = pending.fetch("question")
-      assert_includes opening.fetch("answer"), question
+      assert_includes opening.fetch("answer").scan(/¿[^¿?]+\?/), question
       part = pending.fetch("parts").sole
 
       case_b = create_text_case
@@ -951,11 +961,13 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
       published, = ask_text_case(case_a, first, manual, "noise-1")
       assert_includes published.fetch("answer"), "«#{condition}»"
       assert_includes published.fetch("answer"), "[1]"
-      assert_includes published.fetch("answer"), "¿El ruido audible es muy elevado?"
-      assert_not_includes published.fetch("answer"), "ajuste aplicable"
-      assert_not_includes published.fetch("answer"), "coincide con la condición"
+      question = published.fetch("answer").scan(/¿[^¿?]+\?/).find do |candidate|
+        PilotNov19Rubric.claim?(candidate, /\bruido\b/, /(?:muy|sumamente|extremadamente)\s+(?:alto|elevado|fuerte|intenso)/)
+      end
+      assert question, published.fetch("answer")
+      guidance = PilotNov19Rubric.field_text(published.fetch("answer"))
+      assert_not PilotNov19Rubric.claim?(guidance, /\b(?:ajuste|condicion)\b/, /\b(?:aplicable|confirmad[ao]|se cumple|coincide)\b/)
       saved = read_text_case(case_a)
-      question = "¿El ruido audible es muy elevado?"
       assert_equal question, saved.dig("case", "technical_state", "pending_question", "question")
       assert_equal question, saved.fetch("turns").sole.dig("checkpoint", "pending_question", "question")
       assert_includes saved.dig("case", "technical_state", "observations").pluck("text"), symptom

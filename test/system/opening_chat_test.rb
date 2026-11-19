@@ -158,7 +158,7 @@ class OpeningChatTest < ApplicationSystemTestCase
     assert_equal 0, FieldCase.count
 
     page.execute_script("window.releaseFirstSend()")
-    assert_text "Respuesta: primer aviso móvil"
+    assert_selector ".chat-message-assistant", text: "primer aviso móvil"
     assert_no_selector ".chat-typing-dot"
     assert_equal 1, FieldCase.count
   ensure

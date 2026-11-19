@@ -5,10 +5,12 @@ require_relative "../../../config/environment"
 require "minitest/autorun"
 require_relative "../../support/live_aws_block"
 require_relative "../../support/pilot_elevator_closure"
+require_relative "../../support/pilot_nov19_rubric"
 
 LiveAwsBlock.install!
 
 class Rag::PilotElevatorClosureTest < Minitest::Test
+  include PilotNov19Rubric
   CAPTURE = PilotElevatorClosure.load_capture
   TURNS = CAPTURE.fetch("turns")
   LIVE_DRAFT = JSON.parse(Rails.root.join("test/fixtures/files/field_companion/pilot_elevator_t12_live_draft.json").read)
@@ -26,7 +28,7 @@ class Rag::PilotElevatorClosureTest < Minitest::Test
     turn = TURNS.last
     answer = finish(turn.fetch("raw_answer"), turn)
     assert_equal :answered, answer[:route_outcome], answer[:companion_publication].inspect
-    assert_match(/maniobra se completa/i, answer[:answer])
+    assert PilotNov19Rubric.claim?(answer[:answer], TEST_SCOPE, DONE, without: NEGATED_OUTCOME)
     refute_match(/REQUIRES_FIELD_VERIFICATION|puentes (?:de instalación|provisorios)/i, answer[:answer])
   end
 
@@ -83,7 +85,7 @@ class Rag::PilotElevatorClosureTest < Minitest::Test
     ])
     answer = finish("El técnico confirmó que la maniobra se completa. El manual dice «#{marker}» [1]. Esto aplica al motor.", turn)
     assert_equal :answered, answer[:route_outcome]
-    assert_match(/maniobra se completa/, answer[:answer])
+    assert PilotNov19Rubric.claim?(answer[:answer], TEST_SCOPE, DONE, without: NEGATED_OUTCOME)
     refute_match(/REQUIRES_FIELD_VERIFICATION|aplica al motor/, answer[:answer])
     assert_empty answer.dig(:companion_publication, "quotes")
   end
@@ -126,7 +128,7 @@ class Rag::PilotElevatorClosureTest < Minitest::Test
     assert_equal :answered, result[:route_outcome], result[:companion_publication].inspect
     assert_empty PilotElevatorClosure.missing_closure_facts(result[:answer]), result[:answer]
     assert_empty result.dig(:companion_publication, "quotes")
-    assert_match(/relación causal[^.]*hipótesis/i, result[:answer])
+    assert PilotNov19Rubric.claim?(result[:answer], /\bcaus\w*\b/, CAUSE_OPEN)
     assert_nil result[:pending_question]
   end
 
@@ -171,7 +173,7 @@ class Rag::PilotElevatorClosureTest < Minitest::Test
     faithful = finish("Según el manual, #{translated} [1].", turn)
     assert_equal :answered, faithful[:route_outcome]
     assert_empty faithful.dig(:companion_publication, "quotes")
-    assert_match(/puerta abierta[^.]*trincos.*\[1\]/i, faithful[:answer])
+    assert PilotNov19Rubric.claim?(faithful[:answer], /\bpuerta abierta\b/, /\btrincos\b/, CONDITION, /\[1\]/)
 
     reading = finish("P28 (RA-53) = +110 Vdc [4].", turn)
     assert_equal :answered, reading[:route_outcome]

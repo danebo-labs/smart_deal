@@ -99,7 +99,8 @@ class Rag::ActivePhotoContextTest < ActiveSupport::TestCase
 
     assert_equal 60, prompt["component"].length
     assert_not prompt.key?("manufacturer")
-    assert_equal [ "E51", "A2", "B3", "C4" ], prompt["visible_text"]
+    assert_equal [ "E51", "A2", "B3", "C4", "D5" ], prompt["visible_text"]
+    assert_not_includes context.query_terms, "D5"
     assert_includes context.generation_block, "E51, A2, B3, C4, D5"
     assert_operator JSON.generate(prompt).bytesize, :<=, Rag::ActivePhotoContext::MAX_BYTES
     assert_not_includes JSON.generate(prompt), "field_photos"

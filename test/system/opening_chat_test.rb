@@ -131,6 +131,40 @@ class OpeningChatTest < ApplicationSystemTestCase
     assert_equal [ "borrador que queda" ], FieldTurn.order(:sequence).pluck(:message)
   end
 
+  test "mobile shows the first wait indicator and closes history on an outside tap" do
+    page.current_window.resize_to(390, 844)
+    sign_in_through_the_form
+    assert_selector "[role='tab']", text: "Manuales"
+    history = find("summary", text: "Historial")
+    history.click
+    assert_selector "details[open] [data-rag-chat-target='caseList']"
+    find("[role='tab']", text: "Chat").click
+    assert_no_selector "details[open] [data-rag-chat-target='caseList']"
+
+    page.execute_script(<<~JS)
+      const actualFetch = window.fetch
+      window.fetch = (url, options) => {
+        if (url === "/rag/ask") {
+          return new Promise(resolve => {
+            window.releaseFirstSend = () => resolve(actualFetch(url, options))
+          })
+        }
+        return actualFetch(url, options)
+      }
+    JS
+    find("[data-rag-chat-target='input']").set("primer aviso móvil")
+    find("[data-rag-chat-target='sendButton']").click
+    assert_selector ".chat-typing-dot", count: 3
+    assert_equal 0, FieldCase.count
+
+    page.execute_script("window.releaseFirstSend()")
+    assert_text "Respuesta: primer aviso móvil"
+    assert_no_selector ".chat-typing-dot"
+    assert_equal 1, FieldCase.count
+  ensure
+    page.current_window.resize_to(1400, 1400)
+  end
+
   test "history stays on when the env is absent" do
     ENV.delete("FIELD_CASE_HISTORY_ENABLED")
     sign_in_through_the_form

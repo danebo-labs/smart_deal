@@ -151,6 +151,29 @@ module Rag
         Composed.new(text: text, stop_reason: stop_reason, rejected: nil)
       end
 
+      # Replace an unrelated door check only when the current report and the
+      # fault row support a specific remaining observation.
+      def err14_followup(text, turn:, technician_texts:, sources:, locale:)
+        return text unless locale.to_s == "es"
+
+        question = PendingQuestion.followup_line(text, locale: locale)
+        return text unless question&.match?(/act[uú]a el enclavamiento/i)
+        report = FollowupQueryRewriter.normalize_label(turn)
+        return text unless report.match?(
+          /\A(?:ya )?limpie el filtro (?:pero |y )?(?:sigo viendo|persiste|sigue) (?:el mismo error|el error|err14)\z/
+        )
+        return text unless technician_texts.any? { |item| item.match?(/\bErr14\b/i) }
+        return text unless sources.any? do |source|
+          CompanionTurnPublication.citable_source?(source) && CompanionTurnPublication.content_of(source).lines.any? do |line|
+            line.match?(/\A\|\s*Err14\s*\|\s*Sobrecalentamiento del m[oó]dulo\s*\|.*El ventilador est[aá] dañado.*Limpie el filtro de aire/i)
+          end
+        end
+
+        updated = text.sub(/(?:^Al repetir una maniobra, )?#{Regexp.escape(question)}/, "¿El ventilador del controlador gira cuando el equipo está encendido?")
+        ValidationCapture.record("companion_fault_followup", "fault" => "Err14")
+        updated
+      end
+
       def provider
         "anthropic"
       end

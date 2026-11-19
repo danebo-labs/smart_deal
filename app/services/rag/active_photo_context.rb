@@ -6,7 +6,7 @@ module Rag
   class ActivePhotoContext
     MAX_BYTES = 640
     MAX_LABEL = 60
-    MAX_VISIBLE = 4
+    MAX_RETRIEVAL_LABELS = 4
     GENERATION_VISIBLE_BYTES = 360
     MAX_VISIBLE_CHARS = 40
     HEADER = "Photo Evidence for the active episode"
@@ -78,7 +78,7 @@ module Rag
         next if text.blank? || text.casecmp?("unknown")
 
         text.first(MAX_VISIBLE_CHARS)
-      }.uniq.first(MAX_VISIBLE)
+      }.uniq
     end
 
     def self.fit(payload)
@@ -134,7 +134,7 @@ module Rag
       return [] unless relevant?
 
       terms = %w[component manufacturer model].filter_map { |key| projection[key].presence }
-      terms.concat(Array(projection["visible_text"]))
+      terms.concat(Array(projection["visible_text"]).first(MAX_RETRIEVAL_LABELS))
       terms
     end
 
@@ -157,15 +157,18 @@ module Rag
 
       lines = [ HEADER ]
       lines << "Component: #{projection['component']}" if projection["component"].present?
-      show_identity = relevant? || (include_unconfirmed && !visible_despite_uncertainty?)
+      show_identity = relevant? || (include_unconfirmed && projection["relevance_to_goal"] != "uncertain")
       if show_identity
         lines << "Manufacturer: #{projection['manufacturer']}" if projection["manufacturer"].present?
         lines << "Model: #{projection['model']}" if projection["model"].present?
       end
       codes = presented? ? observed_labels : self.class.generation_labels(projection["visible_text"])
       lines << "Visible text: #{codes.join(', ')}" if codes.any?
-      if visible_despite_uncertainty?
+      if visible_despite_uncertainty? && projection["target_visible"] == true
         lines << "Vision saw the target but was unsure how it relates to this fault. Use labels as observations only."
+      end
+      if projection["target_visible"] == false
+        lines << "The diagnostic target is not visible in this photo. Use the legible labels as observations only."
       end
       lines << "Condition: #{projection['condition']}" if show_identity && projection["condition"].present?
       lines << "Read from the active episode photo. Not stated by the technician."
@@ -180,7 +183,12 @@ module Rag
     end
 
     def visible_despite_uncertainty?
-      loaded? && projection["relevance_to_goal"] == "uncertain" && projection["target_visible"] == true
+      loaded? && projection["relevance_to_goal"] == "uncertain" &&
+        (projection["target_visible"] == true || observed_context?)
+    end
+
+    def observed_context?
+      projection["component"].present? && projection["visible_text"].present?
     end
   end
 end

@@ -130,7 +130,13 @@ module Rag
       end
       payload = episode.serial_hash
       payload.compact!
-      return nil unless JSON.generate(payload).bytesize > ActiveEpisode::MAX_BYTES
+      return nil unless ActiveEpisode.budget_refused?(payload)
+
+      # A question already shown to the technician takes precedence over
+      # excerpts the normal serializer can reconstruct from message history.
+      if AnswerContract.active?(episode) && question["type"] == "documented_context"
+        return nil unless ActiveEpisode.budget_refused?(payload.except("excerpts"))
+      end
 
       episode.pending_question = previous_question
       episode.pending_fact = previous_fact

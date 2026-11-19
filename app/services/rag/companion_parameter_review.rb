@@ -35,7 +35,7 @@ module Rag
       def answer
         limit_note = "§#{limit.section}: «#{limit.quote}» [#{limit.source}]."
         if kind == :reading_requested
-          return "#{pending.fetch('question')} Esa lectura permite compararla con el mínimo de esta rama. La causa sigue abierta.\n\n#{limit_note}"
+          return "#{pending.fetch('question')} Esa lectura permite compararla con el mínimo de esta rama. La condición de la rama y la causa siguen por confirmar.\n\n#{limit_note}"
         end
         return "#{pending.fetch('question')} Esa lectura queda pendiente. Ingeniería debe verificarla.\n\n#{limit_note}" if kind == :reading_pending
 

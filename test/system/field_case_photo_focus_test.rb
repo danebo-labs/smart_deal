@@ -27,7 +27,7 @@ class FieldCasePhotoFocusTest < ApplicationSystemTestCase
     login_as user, scope: :user
     page.current_window.resize_to(430, 800)
     visit root_path
-    find("button[role='tab']", text: "Archivos").click
+    find("button[role='tab']", text: "Manuales").click
     find("#{card}[data-selected='false']").click
     assert_selector "#{card}[data-selected='true']"
     find("button[role='tab']", text: "Chat").click
@@ -38,12 +38,12 @@ class FieldCasePhotoFocusTest < ApplicationSystemTestCase
 
     assert_current_path(/\?caso=\d+/)
     assert_text question
-    find("button[role='tab']", text: "Archivos").click
+    find("button[role='tab']", text: "Manuales").click
     assert_selector "#{card}[data-selected='true']"
 
     visit current_url
     assert_text question
-    find("button[role='tab']", text: "Archivos").click
+    find("button[role='tab']", text: "Manuales").click
     assert_selector "#{card}[data-selected='true']"
   ensure
     S3DocumentsService.define_singleton_method(:new, original_storage) if original_storage

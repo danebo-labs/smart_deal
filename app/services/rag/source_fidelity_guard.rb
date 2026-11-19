@@ -10,7 +10,8 @@ module Rag
     SENTENCE_BOUNDARY = /[\n!?]|\.(?=\s+[[:upper:]¿¡]|\s*\z)/.freeze
     NUMBER_SRC = '\d+(?:[.,]\d+)?'
     # Ampere is only the capital A. A lowercase "a" is the Spanish preposition.
-    UNIT_SRC = '(?:V(?:AC|DC|CC|CA)?|N\u00B7M|NM|BAR|MM|CM|[°º]C|HZ|(?-i:A)|%|vueltas|turns)'
+    CELSIUS_WORDS = /grados[[:blank:]]+(?:cent[ií]grados|Celsius)/i
+    UNIT_SRC = "(?:V(?:AC|DC|CC|CA)?|N\u00B7M|NM|BAR|MM|CM|[°º]C|#{CELSIUS_WORDS.source}|HZ|(?-i:A)|%|vueltas|turns)"
     # Lowercase "a" is a range word ("3 a 5 mm"). Capital A stays the ampere unit.
     RANGE_SEPARATOR_SRC = '(?:–|-|/|±|(?-i:\ba\b)|\by\b|\bto\b|\band\b|\bhasta\b)'
     PAIR_PATTERN = /
@@ -126,7 +127,7 @@ module Rag
     end
 
     def normalize_pair(number, unit)
-      key = unit.to_s.upcase
+      key = unit.match?(CELSIUS_WORDS) ? "°C" : unit.upcase
       [ normalize_number(number), UNIT_ALIASES.fetch(key, key) ]
     end
 

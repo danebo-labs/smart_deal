@@ -9,6 +9,9 @@ module Rag
     CLAUSE_BREAK = /[.,;]\s+|\s+[ye]\s+/i
     INVERTED = /\A((?:se )?\p{L}+) ((?:el|la|los|las) .+)\z/
     DETERMINER = /\b(?:el|la|los|las)\b/
+    MANEUVER_CONFIRMED = /\b(?:la maniobra se completa|la puerta complet[oó] el cierre)\b/i
+    CURRENT_TEST_CLEAR = /\b(?:sigue sin mostrar|no volvi[oó] a aparecer durante la prueba)\b/i
+    FAULT_RECHECK = /\b(?:no vuelve a aparecer|sigue sin aparecer|vuelve a aparecer|persiste)\z/
     INTERVENTION_DETAIL = /
       \b(?:que|como)\s+(?:se\s+)?(?:repar|ajust|reemplaz|sustituy|corrig|intervin)(?:o|aron|aste|ieron|iste)\b |
       \A(?:que|cual)\s+(?:fue\s+)?(?:(?:el|la)\s+)?(?:intervencion|reparacion|ajuste)\b |
@@ -34,13 +37,26 @@ module Rag
         }
       end
 
-      def without_intervention_followup(text, episode:, turn:, correlation_id:, locale:)
+      def without_redundant_followup(text, episode:, turn:, correlation_id:, locale:)
         question = PendingQuestion.followup_line(text, locale: locale)
-        return text unless question && FollowupQueryRewriter.normalize_label(question).match?(INTERVENTION_DETAIL)
-        return text unless confirmed_now?(episode, turn, correlation_id)
+        return text unless question
+
+        parsed = episode.is_a?(ActiveEpisode) ? episode : ActiveEpisode.parse(episode)
+        part = completed_main_part(parsed, correlation_id)
+        return text unless part
+
+        normalized_question = FollowupQueryRewriter.normalize_label(question)
+        redundant = if normalized_question.match?(INTERVENTION_DETAIL)
+          report_clauses(part["text"], turn).present?
+        elsif turn.match?(MANEUVER_CONFIRMED) && turn.match?(CURRENT_TEST_CLEAR)
+          repeat_fault_check?(parsed, normalized_question, turn) || unavailable_check_repeated?(parsed, normalized_question, correlation_id)
+        end
+        return text unless redundant
 
         position = text.rindex(question)
-        before = text[...position].sub(/(?:\A|\n)[ \t]*(?:\*\*)?[^.!?:¿?\n]{1,45}(?::\*\*|\*\*:|:)[ \t]*\z/, "")
+        before = text[...position].sub(
+          /(?:\A|(?<=[.!?])\s+|\n)[ \t]*(?:\*\*)?(?:pregunta|comprobaci[oó]n)(?::\*\*|\*\*:|:)[^.!?¿\n]*\z/i, ""
+        )
         trimmed = "#{before.rstrip}#{text[(position + question.length)..]}".strip
         return text if trimmed.blank?
 
@@ -50,18 +66,40 @@ module Rag
 
       private
 
-      def confirmed_now?(episode, turn, correlation_id)
-        parsed = episode.is_a?(ActiveEpisode) ? episode : ActiveEpisode.parse(episode)
-        return false unless AnswerContract.active?(parsed) && correlation_id.present?
+      def completed_main_part(episode, correlation_id)
+        return unless AnswerContract.active?(episode) && correlation_id.present?
 
-        parts = Array(parsed.pending_question&.dig("parts"))
-        return false unless parts.one? && parts.first["role"] == "main"
+        parts = Array(episode.pending_question&.dig("parts"))
+        part = parts.first if parts.one?
+        return unless part && part["role"] == "main"
 
-        id = parts.first.fetch("id")
-        return false unless AnswerContract.part_state(parsed, id) == "complete"
+        id = part.fetch("id")
+        return unless AnswerContract.part_state(episode, id) == "complete"
+        return unless AnswerContract.current_replies(episode, id).any? { |reply| reply["cid"] == correlation_id }
 
-        AnswerContract.current_replies(parsed, id).any? { |reply| reply["cid"] == correlation_id } &&
-          report_clauses(parts.first["text"], turn).present?
+        part
+      end
+
+      def repeat_fault_check?(episode, question, turn)
+        fact = episode.fact("fault_code")
+        fault = fact&.dig("value")
+        if fact&.dig("status") == "absent_confirmed"
+          fault = turn[/\bsigue sin mostrar\s+([A-Z][A-Z\d-]{1,9})\b/, 1]
+        end
+        return false if fault.blank? || !question.match?(FAULT_RECHECK)
+
+        question.match?(/\A(?:el )?#{Regexp.escape(normalized(fault))}\b/)
+      end
+
+      def unavailable_check_repeated?(episode, question, correlation_id)
+        return false unless question.start_with?("puedes ver el estado de ", "puede ver el estado de ")
+
+        episode.checks.any? do |check|
+          next false unless check["status"] == "not_done" && check["correlation_id"] == correlation_id
+
+          subject = FollowupQueryRewriter.normalize_label(check["subject"])
+          subject.present? && question.match?(/\bestado de #{Regexp.escape(subject)}\b/)
+        end
       end
 
       def report_clauses(question, turn)

@@ -80,6 +80,72 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     play("guion2")
   end
 
+  test "November 19 VF5 first opening and readjustment keep their conditions after reload" do
+    document = revision_document(:guion2)
+    page = load_turns(SCRIPTS.fetch("guion2").fetch("capture")).first.rows.find { |row| row["page"].to_i == 8 }
+    case_record, responses = replay_nov19_text(23, document, page.fetch("content"), page: 8)
+
+    assert_match(/primera (?:operaci[oó]n|apertura|maniobra).*fallo de alimentaci[oó]n/i, responses.first.fetch("answer"))
+    assert_match(/primera.*\?/i, responses.first.dig("field_turn", "checkpoint", "pending_question", "question"))
+    after_reply = Rag::ActiveEpisode.parse(responses[1].dig("field_turn", "checkpoint"))
+    assert_empty Rag::AnswerContract.open_parts(after_reply)
+    last = responses.last.fetch("answer")
+    assert_match(/no[^.]*hace falta autoajuste/i, last)
+    assert_match(/parámetros por defecto/i, last)
+    assert_match(/conexión o desconexión.*fotocélula/i, last)
+    saved = read_text_case(case_record).fetch("turns")
+    assert_equal "complete", saved[1].dig("checkpoint", "replies").sole.fetch("state")
+    assert_equal [ 8 ], saved.last.dig("response", "citations").pluck("page").uniq
+    assert saved[1].dig("checkpoint", "observations").any? { |row| row["text"].match?(/solo la primera vez/i) }
+  end
+
+  test "November 19 Err14 advances to the fan and keeps the reported temperature in the reloaded case" do
+    document = revision_document(:monarch)
+    source = november_19_turns(25).last.dig("capture", "source")
+    case_record, responses = replay_nov19_text(25, document, source.fetch("text"), page: 8)
+
+    assert_match(/26 °C[^.]*no tienen un límite/i, responses[1].fetch("answer"))
+    third = responses[2].fetch("answer")
+    assert_match(/limpiar el filtro[^.]*sigue Err14/i, third)
+    assert_match(/ventilador[^?]*gira/i, third)
+    assert_no_match(/enclavamiento/i, third)
+    fourth = responses[3].fetch("answer")
+    assert_match(/ventilador[^?]*gira/i, fourth)
+    assert_match(/26 °C[^.]*no se pueden comparar con un límite/i, fourth)
+    assert_no_match(/omití|no pude preparar/i, fourth)
+    saved = read_text_case(case_record).fetch("turns")
+    assert_equal [ 8 ], saved.last.dig("response", "citations").pluck("page").uniq
+    assert_match(/ventilador/i, saved.last.dig("checkpoint", "pending_question", "question"))
+    readings = saved.last.dig("checkpoint", "observations").select { |row| row["text"].match?(/26 grados centígrados/) }
+    assert_equal saved[1].fetch("correlation_id"), readings.sole.fetch("correlation_id")
+  end
+
+  test "November 19 CEA retains the field reading without adopting the manual as the installed controller" do
+    document = revision_document(:cea)
+    kase = create_text_case
+    post pinned_documents_path, params: { field_case_id: kase.fetch("id"), kb_document_id: document.id }, as: :json
+    assert_response :ok
+    first, second = november_19_turns(26)
+    opening = cea_turn(first.fetch("message"), document,
+      raw: "Reportas que la puerta de piso no traba. ¿El patín retráctil está extendido o retraído?")
+    opening.tool_input["observations"] = [ "La puerta de piso no traba", "Hay patín retractil" ]
+    ask_text_case(kase, opening, document, "cea-field-first")
+
+    quote = second.fetch("sources").find { |source| source["page"] == 27 }.fetch("excerpt").split(" … ").last
+    answer = "Según la referencia CEA15+, «#{quote}» [1]. " \
+      "Eso describe la lógica del manual. ¿Tu instalación corresponde a la combinación de puertas con traba por patín?"
+    followup = cea_turn(second.fetch("message"), document, passage: quote, raw: answer, move: "follow_up", page: 27)
+    followup.tool_input["observations"] = [ second.fetch("message") ]
+    response, cassette = ask_text_case(kase, followup, document, "cea-field-followup")
+    assert_revision_scope(cassette, document)
+    assert_match(/manual.*(?:por sí sola no confirma|no confirma la placa)/im, response.fetch("answer"))
+    assert_match(/SA.*patín retráctil.*retirado/i, response.fetch("answer"))
+    saved = read_text_case(kase)
+    assert_equal [ 27 ], saved.fetch("turns").last.dig("response", "citations").pluck("page")
+    assert_includes saved.dig("case", "technical_state", "observations").pluck("text"), second.fetch("message")
+    assert_nil saved.dig("case", "technical_state", "facts", "controller")
+  end
+
   test "guion 1 replays five turns and does not ask again for the contact the technician cannot check" do
     play("guion1")
   end
@@ -644,10 +710,12 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
 
       opening, cassette = ask_text_case(case_a, first, manual, "a-open")
       assert_revision_scope(cassette, manual)
-      assert_includes opening.fetch("answer"), question
+      assert_match(/¿(?:cu[aá]l|qu[eé])[^?]+KP-VS[^?]*\?/i, opening.fetch("answer"))
+      assert_match(/condición[^.]+por confirmar/i, opening.fetch("answer"))
       assert opening.fetch("citations").any?
       pending = read_text_case(case_a).dig("case", "technical_state", "pending_question")
-      assert_equal question, pending&.fetch("question")
+      question = pending.fetch("question")
+      assert_includes opening.fetch("answer"), question
       part = pending.fetch("parts").sole
 
       case_b = create_text_case
@@ -1089,6 +1157,30 @@ class FieldCompanionHaiku55JourneyTest < ActionDispatch::IntegrationTest
     body = response.parsed_body
     assert_equal "success", body.fetch("status"), body.inspect
     [ body, cassette ]
+  end
+
+  def replay_nov19_text(id, document, content, page:)
+    kase = create_text_case
+    post pinned_documents_path, params: { field_case_id: kase.fetch("id"), kb_document_id: document.id }, as: :json
+    assert_response :ok
+    responses = november_19_turns(id).map.with_index do |row, index|
+      turn = TurnCapture.new(
+        "question" => row.fetch("message"), "retrieve_query" => row.fetch("message"),
+        "tool_input" => row.fetch("tool"), "generator_text" => row.dig("capture", "draft"),
+        "rows" => [ { "content" => content, "uri" => document.canonical_uri, "original_source_uri" => document.canonical_uri,
+          "document" => document.display_name, "page" => page, "score" => 0.9 } ]
+      )
+      body, cassette = ask_text_case(kase, turn, document, "nov19-#{id}-#{index}")
+      assert_revision_scope(cassette, document)
+      assert_equal row.fetch("message"), body.dig("field_turn", "message")
+      body
+    end
+    [ kase, responses ]
+  end
+
+  def november_19_turns(case_id)
+    @november_19 ||= JSON.parse(Rails.root.join(FIXTURES, "../pilot_2026_11_19.json").read)
+    @november_19.fetch("cases").fetch(case_id.to_s).fetch("turns")
   end
 
   AUDIT_ROOT = Rails.root.join("test/fixtures/field_companion/audit_20261113")

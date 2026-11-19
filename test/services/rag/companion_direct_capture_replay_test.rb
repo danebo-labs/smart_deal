@@ -38,12 +38,14 @@ class Rag::CompanionDirectCaptureReplayTest < ActiveSupport::TestCase
     text = Rails.root.join("app/prompts/bedrock/companion_direct.txt").read
 
     assert_equal 1, text.scan(NOTICE).size
-    assert_includes text, "Puedes expresar su sentido en español si conservas las condiciones, los valores y las unidades."
+    assert_match(/explica en español[^.]+condiciones[^.]+valores[^.]+unidades/i, text)
+    assert_match(/preguntas en español[^.]+idioma original para la cita/i, text)
     assert_includes text, "Si usas «», copia al menos cuatro palabras del original tal como aparecen en esa fuente"
     assert_includes text, "Da los pasos de un procedimiento solo si consta que se cumple su condición documentada. Si falta confirmarla, cita la condición y omite los pasos."
     assert_includes text, "limítala a lo que el técnico negó"
-    assert_includes text, "Distingue lo observado por el técnico, lo que dice la fuente y tu inferencia."
-    assert_includes text, "Evita dar por resuelto el caso o por bueno el equipo."
+    assert_match(/distingue[^.]+técnico[^.]+foto[^.]+fuente[^.]+inferencia/i, text)
+    assert_match(/acota el resultado a la maniobra informada/i, text)
+    assert_match(/no certifica la puesta en servicio/i, text)
     %w[VF5 Fermator fotocélula fotocelula autoajuste S1.9].each do |token|
       assert_not_includes text.downcase, token.downcase
     end

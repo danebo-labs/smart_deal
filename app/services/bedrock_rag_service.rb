@@ -1274,7 +1274,7 @@ class BedrockRagService
       end
       context = [
         declaration,
-        "Describe solo lo que documenta la fuente para la función consultada. Un documento seleccionado no identifica la instalación. No indiques una maniobra, medición ni conexión, ni preguntes de nuevo por el rótulo."
+        "Describe solo lo que documenta la fuente para la función consultada. Un documento seleccionado no identifica la instalación. Presenta la configuración y sus señales como una referencia condicional hasta que se confirmen. No indiques una maniobra, medición ni conexión, ni preguntes de nuevo por el rótulo."
       ].compact.join(" ")
       prepared = Rag::CompanionDirectAnswer.prepare(
         raw_question: raw_question, chunks: chunks, episode: episode, session: conv_session,
@@ -1708,6 +1708,7 @@ class BedrockRagService
 
     parsed = episode.is_a?(Rag::ActiveEpisode) ? episode : Rag::ActiveEpisode.parse(episode)
     return [] unless context.matches?(parsed&.active_photo&.dig("field_photo_id"))
+    return [] unless context.relevant? || context.to_prompt["target_visible"] == true
 
     context.observed_labels
   end
@@ -2300,8 +2301,20 @@ class BedrockRagService
     locale = effective_response_locale(question, response_locale: response_locale)
     extracted = extract_doc_refs(raw_answer.to_s)[:clean_answer]
     sources = companion_publication_sources(chunks)
+    if parameter_review&.kind == :reading_requested
+      held = Rag::UnconfirmedProcedure.hold(text: extracted, sources: sources, technician_texts: technician_texts)
+      if held
+        extracted = held
+        parameter_review = nil
+      end
+    end
+    if @companion_direct_turn && !parameter_review
+      extracted = Rag::CompanionDirectAnswer.err14_followup(
+        extracted, turn: question, technician_texts: technician_texts, sources: sources, locale: locale
+      )
+    end
     if @companion_direct_turn && !reference_mode && !parameter_review
-      extracted = Rag::CompoundCheckReply.without_intervention_followup(
+      extracted = Rag::CompoundCheckReply.without_redundant_followup(
         extracted, episode: episode, turn: question, correlation_id: correlation_id, locale: locale
       )
     end

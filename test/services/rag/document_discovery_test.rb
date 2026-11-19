@@ -261,12 +261,33 @@ class Rag::DocumentDiscoveryTest < ActiveSupport::TestCase
     assert_empty @session.reload.document_focus_entries
   end
 
+  test "a shared MCINV4 designator does not suggest the fault table beside the focused equipment manual" do
+    entries = Rag::DocumentIdentityCatalog.current.entries.select { |entry| entry.designators.include?("MCINV4") }
+    equipment = entries.find { |entry| entry.role == "equipment" }
+    table = entries.find { |entry| entry.display_name.start_with?("Códigos de Falha") }
+    manual = document_for_entry(equipment)
+    document_for_entry(table)
+    assert @session.pin_kb_document!(manual)
+
+    data = JSON.parse(Rails.root.join("test/fixtures/files/field_companion/pilot_2026_11_19.json").read)
+    opening = data.dig("cases", "27", "turns").first
+    assert_equal table.document_id, opening.fetch("cards").sole.fetch("document_uid")
+    result = Rag::DocumentDiscovery.call(question: opening.fetch("message"), viewer_account: @account, session: @session)
+
+    assert_empty result.cards
+    assert_equal [ manual.id ], @session.reload.document_focus_entries.pluck("kb_document_id")
+  end
+
   private
 
   def catalog_document(designator)
     entry = Rag::DocumentIdentityCatalog.current.entries.find { |row|
       Array(row.designators).include?(designator)
     }
+    document_for_entry(entry)
+  end
+
+  def document_for_entry(entry)
     KbDocument.create!(
       account: @account,
       s3_key: entry.s3_key,

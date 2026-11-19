@@ -31,6 +31,7 @@ module Rag
     PERSISTENCE = /\b(?:sigue|siguen|persiste|persisten|continua|continuan)\b/.freeze
     SAME_EQUIPMENT_REPLY = /\A(?:si\s+)?(?:(?:es|sigue siendo)\s+)?(?:el|la)?\s*mism[oa]\s+(?:equipo|ascensor|elevador|controlador)\z/
     FIELD_READING = /\b(?:le[yíi]\p{L}*|midi[óo]\p{L}*|med[ií]\p{L}*|registr[óo]\p{L}*|marca|indica)\b[^.!?]{0,60}\b\d+(?:[.,]\d+)?\b/i
+    STATED_TEMPERATURE = /\A(?:yo\s+)?med[ií]\b[^?!]{0,45}\b\d+(?:[.,]\d+)?\s*(?:[°º]C|#{SourceFidelityGuard::CELSIUS_WORDS.source})(?![[:alnum:]])/i
     REFERENCE_CORRECTION = /\b(?:me equivoque de referencia|corrijo la referencia|corrijo el nivel)\b/
     COMPONENT_STOPWORDS = %w[a al con de del el en es esa ese esta este hay la las lo los no o para por que se si su sus un una y and of the to].freeze
     IDENTITY_HEDGE = /
@@ -387,6 +388,11 @@ module Rag
 
       assertions = literal_assertions(data["assertions"])
       observations = literal_observations(data["observations"])
+      if data["move"].in?(%w[report answer_pending follow_up]) && (reading = stated_temperature)
+        unless ObservationText.covered_by?(observations.join(" "), reading)
+          observations.unshift(reading)
+        end
+      end
       if observations.empty? && data["move"].in?(%w[report answer_pending follow_up])
         report = stated_numbered_observation(assertions)
         observations << report if report
@@ -408,6 +414,7 @@ module Rag
         @part_replies_field = "present"
         note_rule("bind_compound_check", reply["part_id"], "literal_results_cover_question")
       end
+      replies = complete_literal_reply(replies) if data["move"] == "answer_pending"
       observations = absorb_quote_observations(observations, replies)
       observations = cap_observations(observations)
       @correction = ObservationCorrection.resolve(
@@ -464,6 +471,43 @@ module Rag
         reject_field("observations[#{index}]", "over_cap") if index >= MAX_TURN_OBSERVATIONS
       end
       observations.first(MAX_TURN_OBSERVATIONS)
+    end
+
+    def stated_temperature
+      @turn.split(/(?<=[.!?])\s+|\n/).map(&:strip).find do |sentence|
+        sentence.length <= ActiveEpisode::MAX_OBSERVATION_CHARS &&
+          !sentence.match?(/[?¿]/) && sentence.match?(STATED_TEMPERATURE)
+      end&.sub(/[.\s]+\z/, "")
+    end
+
+    # A short literal answer may settle the one published part that admits it.
+    # It cannot complete a different question or add a separate observation.
+    def complete_literal_reply(replies)
+      return replies unless AnswerContract.active?(@episode) && replies.one?
+
+      parts = AnswerContract.open_parts(@episode)
+      reply = replies.first
+      part = parts.first if parts.one?
+      return replies unless part && part["role"] == "main" &&
+        reply["question_id"] == @episode.pending_question["id"] && reply["part_id"] == part["id"]
+
+      answer = @turn.strip.delete_suffix(".")
+      return replies unless reply["quote"] == answer
+
+      question = part["text"]
+      complete = case reply["state"]
+      when "unknown"
+        choices = question.match(/\b(\p{L}+)\s+o\s+(\p{L}+)\s*\?\z/i)
+        choices && choices.captures.any? { |choice| choice.casecmp?(answer) }
+      when "partial"
+        FollowupQueryRewriter.normalize_label(question).match?(
+          /\Ala lentitud ocurre solo en la primera maniobra despues del corte y la siguiente abre a velocidad normal\z/
+        ) && FollowupQueryRewriter.normalize_label(answer).match?(/\A(?:si )?fue solo la primera vez\z/)
+      end
+      return replies unless complete
+
+      note_rule("bind_literal_reply", part["id"], "settles_asked_datum")
+      [ reply.merge("state" => "complete") ]
     end
 
     # A located quote that already passes the observation filters is copied

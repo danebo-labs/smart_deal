@@ -7,7 +7,7 @@ import { formatAnswerForWeb, renderVerificationNotice } from "rag/answer_present
 import { hasSelectableEvidenceCards, renderEvidenceResolution } from "rag/evidence_cards_renderer"
 
 export default class extends Controller {
-  static targets = ["input", "sendButton", "messages", "chatContainer", "fileInput", "filePreview", "imageThumb", "docIcon", "fileName", "inputStack", "archivosTabBtn", "chatTabBtn", "archivosPanel", "chatPanel", "sourcesBadge", "caseList", "caseMore", "caseTitle", "caseNotice"]
+  static targets = ["input", "sendButton", "messages", "chatContainer", "fileInput", "filePreview", "imageThumb", "docIcon", "fileName", "inputStack", "archivosTabBtn", "chatTabBtn", "archivosPanel", "chatPanel", "sourcesBadge", "caseHistoryMenu", "caseList", "caseMore", "caseTitle", "caseNotice"]
   // locale: chat chrome's own language state (notices/invites/nudges/errors).
   // Deliberately NOT derived from document.documentElement.lang — that reflects
   // the Devise auth-time locale switcher (session[:locale]), which must never
@@ -557,6 +557,11 @@ export default class extends Controller {
     return this.moreCases()
   }
 
+  closeCaseHistoryOutside(event) {
+    const menu = this.caseHistoryMenuTarget
+    if (menu.open && !event.composedPath().includes(menu)) menu.open = false
+  }
+
   async moreCases() {
     const params = new URLSearchParams()
     if (this.caseCursor) params.set("cursor", this.caseCursor)
@@ -704,8 +709,10 @@ export default class extends Controller {
     if (!opening && (!await this.awaitDocumentFocus() || view !== this.caseView || this.caseSends.has(id))) return
 
     this.switchToChatTab()
+    let openingLoadingId = null
     if (opening) {
       this.disableForm()
+      openingLoadingId = this.addLoadingMessage()
     } else {
       this.caseSends.add(id)
       this.updateCaseComposer()
@@ -750,6 +757,7 @@ export default class extends Controller {
           error = null
         }
       }
+      if (openingLoadingId) this.removeMessage(openingLoadingId)
       if (error && (opening ? this.caseView === view && !this.caseId : this.caseId === id)) {
         this.inputTarget.value = question
         this.caseNoticeTarget.textContent = error

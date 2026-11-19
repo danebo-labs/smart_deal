@@ -72,7 +72,7 @@ class Rag::PilotElevatorClosureTest < Minitest::Test
     turn = TURNS.last
     episode = replay_perception(TURNS[-2].fetch("checkpoint"), turn)
     text = "El técnico confirmó el resultado. ¿Apareció una falla nueva al reiniciar?"
-    assert_equal text, Rag::CompoundCheckReply.without_intervention_followup(text, episode: episode,
+    assert_equal text, Rag::CompoundCheckReply.without_redundant_followup(text, episode: episode,
       turn: turn.fetch("message"), correlation_id: turn.fetch("correlation_id"), locale: :es)
   end
 

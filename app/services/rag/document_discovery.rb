@@ -120,18 +120,21 @@ module Rag
       end
       pool.reject do |card|
         focus_ids.include?(card.kb_document_id.to_i) ||
-          (!complementary && !conflicting && duplicates_focus?(card))
+          (!conflicting && duplicates_focus?(card))
       end
     end
 
     def duplicates_focus?(card)
       candidate = @entries.find { |entry| entry_value(entry, :document_id).to_s == card.document_uid.to_s }
-      return false unless candidate && equipment_entry?(candidate)
+      return false unless candidate
+
+      mentioned = designator_labels(candidate) & designator_words(@question)
+      return false if mentioned.empty?
 
       keys = focus_uris.filter_map { |uri| KbDocument.canonical_source(uri)&.last }
       @entries.any? do |entry|
         keys.include?(entry_value(entry, :s3_key)) && equipment_entry?(entry) &&
-          designator_labels(entry).intersect?(designator_labels(candidate))
+          (mentioned - designator_labels(entry)).empty?
       end
     end
 

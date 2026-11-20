@@ -108,7 +108,8 @@ module Rag
         technician_turn = turns.count { |turn| turn[:role] == "user" } + 1
         referent = CompanionSequence.referent_context(raw_question, episode)
         case_context = if session.is_a?(FieldCases::TurnContext)
-          SessionContextBuilder.companion_case(SessionContextBuilder.companion_episode(session, episode), {}, session: session)
+          SessionContextBuilder.companion_case(SessionContextBuilder.companion_episode(session, episode), {}, session: session,
+                                                  correlation_id: correlation_id)
         end
         parameter_review = CompanionParameterReview.build(question: raw_question, episode: episode, chunks: merged)
         carry = "Pregunta del mismo caso que quedó sin responder: #{unresolved_question}" if unresolved_question.present?
@@ -117,7 +118,8 @@ module Rag
         context = [
           continuation, carry, reference_context, referent, case_context, parameter_review&.prompt, photo_evidence
         ].compact_blank.join("\n\n")
-        current = current_text(raw_question, merged, technician_turn, context: context)
+        outcome = (CheckOutcome.current(episode: episode, session: session, correlation_id: correlation_id) if CheckOutcomeFlag.enabled?)
+        current = current_text(raw_question, merged, technician_turn, context: context, outcome: outcome)
         messages = converse_messages(history, current)
         system = SYSTEM_PROMPT
         Prepared.new(
@@ -330,23 +332,67 @@ module Rag
         fields
       end
 
-      def current_text(raw_question, chunks, technician_turn = 1, context: nil)
+      def current_text(raw_question, chunks, technician_turn = 1, context: nil, outcome: nil)
         [
           "Mensaje de este turno:\n#{raw_question.to_s.strip}",
           context,
-          referral_note(technician_turn),
+          referral_note(technician_turn, outcome: outcome),
+          intervention_note(technician_turn, outcome),
           sources_block(chunks)
         ].compact_blank.join("\n\n")
       end
 
+      # Stage 1, flag on (an outcome exists only then). The base prompt leaves
+      # the link between a reported obstruction and the fault open. A reported
+      # fix followed by a clean test is named as the likeliest explanation,
+      # as the model's own reading, limited to that test. The exchange can then
+      # close: the note that asks for the next check on every other turn
+      # (live run 20261120T012019Z, T5 asked for repeated closings) does not
+      # apply to this one.
+      def intervention_note(technician_turn, outcome)
+        return nil if outcome.nil? || technician_turn < REFERRAL_TURN
+
+        "Si el técnico informó que retiró o corrigió algo y que después el síntoma no volvió en la prueba: nombra esa " \
+          "intervención como la explicación más probable del cambio, en una oración tuya sin [n], sin darla por causa " \
+          "confirmada. Di qué hizo y qué observó, acotado a esa prueba. Cierra el intercambio con lo que sigue sin " \
+          "verificar; esto prevalece sobre pedir la siguiente comprobación y sobre repetir la misma prueba. Pregunta solo " \
+          "si una fuente de este turno respalda una comprobación distinta que cambie la orientación, y cítala."
+      end
+
       # Offer a handoff when the next check requires someone else or cannot
       # proceed with the available information.
-      def referral_note(technician_turn)
+      def referral_note(technician_turn, outcome: nil)
         return nil if technician_turn < REFERRAL_TURN
 
-        "Turno #{technician_turn} del técnico en este caso. Responde primero a la consulta actual. Si el último resultado permite avanzar, " \
-          "indica la siguiente comprobación respaldada o pide la observación que permite decidirla. Si el técnico no puede seguir, resume " \
-          "lo que contó, lo que comprobó, el respaldo y lo que queda pendiente para derivar."
+        handoff = "Si el técnico no puede seguir, resume lo que contó, lo que comprobó, el respaldo y lo que queda pendiente para derivar."
+        head = "Turno #{technician_turn} del técnico en este caso. Responde primero a la consulta actual."
+        return open_checks_note(head, handoff, settled: outcome.settled_this_turn?) if outcome&.leaves_checks_open?
+
+        if outcome&.settled_this_turn?
+          return "#{head} La comprobación activa quedó contestada en este turno: no pidas la siguiente comprobación por inercia ni " \
+            "pidas de nuevo lo que el técnico declaró no verificado. Propón otra solo si una fuente de este turno la respalda y cítala. #{handoff}"
+        end
+
+        "#{head} Si el último resultado permite avanzar, indica la siguiente comprobación respaldada o pide la observación que " \
+          "permite decidirla. #{handoff}"
+      end
+
+      # Stage 1, flag on. The closing rule of the system prompt is for a case
+      # with nothing left to check. A part answered only in part is left to
+      # check, so this turn names it and asks for one supported check.
+      def open_checks_note(head, handoff, settled:)
+        if settled
+          return "#{head} La comprobación activa quedó contestada en este turno: no la repitas ni pidas de nuevo lo que el técnico declaró " \
+            "no verificado. Quedan comprobaciones respondidas solo en parte. No cierres el caso ni uses el formato de cierre: pide una " \
+            "sola comprobación siguiente, la que falta o la respaldada por una fuente de este turno, y cítala. #{handoff}"
+        end
+
+        # The technician already reported this turn's result. A partial reply
+        # is answered with the next check a source supports, not with the
+        # same result asked over again.
+        "#{head} La comprobación activa quedó contestada solo en parte. No cierres el caso ni uses el formato de cierre, y no pidas de " \
+          "nuevo lo que el técnico ya reportó en este turno: pide una sola comprobación siguiente que respalde una fuente de este " \
+          "turno y cita esa fuente [n]. #{handoff}"
       end
 
       def sources_block(chunks)

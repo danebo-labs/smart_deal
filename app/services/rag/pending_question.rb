@@ -21,12 +21,25 @@ module Rag
 
     module_function
 
+    # coerce_stored lets a documented check that cites no source keep an empty
+    # targets list. Only the readers of a stored or published pending use it
+    # (ActiveEpisode.parse, the assistant write, presented). A question built
+    # from a clarification still needs its targets (coerce).
     def coerce(raw)
+      coerce_with(raw, untargeted: false)
+    end
+
+    # Reader of a pending that Ruby already stored or published.
+    def coerce_stored(raw)
+      coerce_with(raw, untargeted: true)
+    end
+
+    def coerce_with(raw, untargeted:)
       return nil unless raw.is_a?(Hash)
 
       type = raw["type"].to_s
       return nil unless TYPES.include?(type)
-      return documented_context(raw) if type == "documented_context"
+      return documented_context(raw, untargeted: untargeted) if type == "documented_context"
 
       question = { "type" => type }
       text = raw["question"].to_s.squish.first(240)
@@ -59,12 +72,15 @@ module Rag
       nil
     end
 
-    def documented_context(raw)
+    def documented_context(raw, untargeted: false)
       text = raw["question"].to_s.squish.first(240)
       return nil if text.blank?
 
       targets = Array(raw["targets"]).filter_map { |item| documented_target(item) }
-      return nil unless (1..2).cover?(targets.size)
+      # A published check that cites no source has no documented target. Ruby
+      # does not invent one (from_publication). More than two is not a target list.
+      return nil if targets.size > 2
+      return nil if targets.empty? && !(untargeted && raw["targets"].is_a?(Array))
 
       question = { "type" => "documented_context", "question" => text, "targets" => targets }
       id = raw["id"].to_s
@@ -98,6 +114,127 @@ module Rag
       question
     end
 
+    # Fixed labels the publisher puts in front of the check. They are not
+    # part of the question the technician answers.
+    LABEL_WORDS = "(?:(?:pr[oó]xima|siguiente|next)\\s+)?(?:comprobaci[oó]n|pregunta|verificaci[oó]n|check|question|pergunta)"
+    PUBLICATION_LABEL = /\A(?:\*\*#{LABEL_WORDS}:\*\*|\*\*#{LABEL_WORDS}\*\*:|#{LABEL_WORDS}:)\s*/i
+    # A citation or a closing quote right before "¿" also ends the sentence.
+    SENTENCE_BREAK = /(?<=[.!?？])\s+(?=[¿¡A-ZÁÉÍÓÚÑ"«(\[*])|(?<=[\]»])\s+(?=¿)/
+    QUESTION_END = /[?？]\z/
+    MAX_QUESTION_CHARS = 240
+
+    # The one writer of the pending documented question. The text is the last
+    # interrogative line of the published answer, with the condition that
+    # opens its sentence and without the publisher's label. Targets are the
+    # sources cited with [n] in that line's paragraph. No citation, no target:
+    # Ruby does not turn the question itself into a documented item.
+    # sources is the numbered list the answer was generated from.
+    def from_publication(text, sources: [], locale: I18n.locale)
+      body = text.to_s.rstrip
+      line = last_question_line(body, locale)
+      return nil unless line
+
+      question = publication_question(line)
+      return nil if question.blank?
+
+      blocks = body.split(/\n{2,}/)
+      position = blocks.index { |block| block.include?(line) }
+      paragraph = position ? blocks[position].to_s : ""
+      targets = cited_targets(paragraph, sources)
+      targets = cited_targets(labeled_check_block(blocks, position), sources) if targets.empty? && paragraph.scan(/\[\d+\]/).empty?
+      coerce_stored("type" => "documented_context", "question" => question, "targets" => targets)
+    end
+
+    CHECK_LABEL_BLOCK = /\A(?:\*\*)?#{LABEL_WORDS}(?:\s*\([^)\n]{1,40}\))?(?:\*\*)?:/i
+
+    # Stage 1, flag on. The writer sometimes puts the manual's line in the
+    # check's own labelled paragraph and the question alone below it. That
+    # paragraph, and only that one, backs the question.
+    def labeled_check_block(blocks, position)
+      return "" unless Rag::CheckOutcomeFlag.enabled? && position&.positive?
+
+      previous = blocks[position - 1].to_s.strip
+      previous.match?(CHECK_LABEL_BLOCK) ? previous : ""
+    end
+
+    # The question of a published text, as from_publication would store it.
+    # The history keeps that text, so a closed check can be named again.
+    def question_in(text, locale: I18n.locale)
+      line = last_question_line(text.to_s.rstrip, locale)
+      line && publication_question(line)
+    end
+
+    def last_question_line(body, locale)
+      lines = body.lines.map(&:strip).reject(&:empty?)
+      skipped = trailing_notice_lines(locale)
+      lines.pop while lines.last && skipped.include?(lines.last.squish)
+      lines.reverse_each do |candidate|
+        return candidate if candidate.match?(QUESTION_END)
+
+        trimmed = without_citation_tail(candidate)
+        return trimmed if trimmed
+      end
+      nil
+    end
+
+    # "¿…? Según [21], DFC «…»." The sentences after the question only back it
+    # with a citation. The question is still the last thing asked.
+    def without_citation_tail(line)
+      sentences = line.split(SENTENCE_BREAK)
+      dropped = 0
+      while sentences.size > 1 && !sentences.last.match?(QUESTION_END) && (sentences.last.match?(/\[\d+\]/) || explanation_tail?)
+        sentences.pop
+        dropped += 1
+      end
+      sentences.join(" ") if dropped.positive? && sentences.last.match?(QUESTION_END)
+    end
+
+    # Stage 1, flag on. The reason a question is asked («La respuesta cambia
+    # si…», «Esa lectura decide…») may share its line. It does not stop the
+    # question from being the last thing asked.
+    def explanation_tail?
+      Rag::CheckOutcomeFlag.enabled?
+    end
+
+    def publication_question(line)
+      sentences = line.sub(/\A(?:[-•]|\*(?=\s))\s+/, "").split(SENTENCE_BREAK)
+      tail = []
+      sentences.reverse_each do |sentence|
+        break unless sentence.match?(QUESTION_END)
+
+        tail.unshift(sentence)
+      end
+      return nil if tail.empty?
+
+      full = tail.map(&:strip).join(" ")
+      [ full, tail.last.strip ].each do |candidate|
+        text = candidate.sub(PUBLICATION_LABEL, "").strip
+        return text if text.present? && text.length <= MAX_QUESTION_CHARS
+      end
+      nil
+    end
+
+    def cited_targets(paragraph, sources)
+      list = Array(sources)
+      numbers = paragraph.scan(/\[(\d+)\]/).flatten.map(&:to_i).uniq
+      numbered = list.any? { |entry| entry.is_a?(Hash) && entry.key?("number") }
+      numbers.filter_map { |number|
+        next unless number.positive?
+
+        # A reopened case numbers a passage by its case number, which need not
+        # be its position. Sources that carry that number are read by it.
+        source = numbered ? list.find { |entry| entry.is_a?(Hash) && entry["number"] == number } : list[number - 1]
+        next unless source.is_a?(Hash)
+        next if source["reference_only"] == true || source["applicability"].to_s == "reference_only"
+
+        item = source["document"].to_s.squish.presence
+        next if item.blank?
+
+        { "item" => item.first(160), "document_key" => source["document_key"].to_s,
+          "filename" => source["filename"].to_s, "page" => source["page"].to_s }
+      }.first(2)
+    end
+
     def trailing_notice_lines(locale)
       %w[
         controller_reference_boundary focus_evidence_insufficient
@@ -111,7 +248,7 @@ module Rag
     # as shown only when this text contains it, or when that same clarification
     # was already stored. A proposal that the final answer removed does not.
     def presented(pending, text, retained: nil)
-      question = coerce(pending)
+      question = coerce_stored(pending)
       return nil if question.nil? || question["question"].blank?
 
       body = text.to_s
@@ -243,6 +380,7 @@ module Rag
         item.span.to_s.squish.presence
       }.uniq
     end
-    private_class_method :referent_move?, :unknown_referent?, :declared_referent_spans
+    private_class_method :referent_move?, :unknown_referent?, :declared_referent_spans,
+      :last_question_line, :publication_question, :cited_targets
   end
 end

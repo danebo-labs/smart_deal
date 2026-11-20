@@ -70,4 +70,172 @@ class Rag::CitedParaphraseTest < ActiveSupport::TestCase
     assert_not_includes guarded, "causa confirmada"
     assert_equal [ "unbacked_citation" ], result.removed.pluck("reason")
   end
+
+  # Otis case 29, run 20261120T121417Z. The two rows are the passages the
+  # generator received in T2 (GeN2 Comfort table, p. 22 of the second volume)
+  # and T3 (GeN2 Premier TCBC, p. 85 of the second volume).
+  DIAGNOSTIC_TABLE = <<~TEXT.freeze
+    | Mensaje | Clase | Descripción | Parámetros relacionados |
+    |-|-|-|-|
+    | 0102 OpMode DTC | W | La puerta no cierra en el tiempo programado al desaparecer alguna de las señales DCL, DFC o DW | DCL (694), RDCL (695), DOOR, REAR DTC-T |
+    | 0103 OpMode DTO | F | La puerta no abre en el tiempo programado al desaparecer DOL | DOL (000), RDOL (544), DOOR, REAR DTO-T |
+  TEXT
+  EVENT_TABLE = <<~TEXT.freeze
+    | SUCESO | CAUSA | PROGRAMACION RELACIONADA |
+    |-|-|-|
+    | 0102 OpMode DTC | La puerta no fue capaz de cerrar (perdido DCL,DFC ó DW) dentro del tiempo permitido. | DCL (694) / RDCL (695) / DOOR,REAR / DTC-T |
+  TEXT
+
+  test "a paraphrase of the three signals of the 0102 row is kept with other words for the loss" do
+    result, guarded, publication = published("Según la tabla, ocurre al faltar DCL, DFC o DW [1].", DIAGNOSTIC_TABLE)
+
+    assert_empty result.removed
+    assert_includes guarded, "faltar DCL, DFC o DW"
+    assert publication.accepted?, publication.reasons.inspect
+  end
+
+  test "a faithful reading of the event row, with a verb and a connector the source does not use, is kept" do
+    text = "El 0102 indica que la puerta no cerró porque se perdió \"DCL,DFC ó DW\" [1]."
+    result, guarded, publication = published(text, EVENT_TABLE)
+
+    assert_empty result.removed
+    assert_includes guarded, "DCL,DFC ó DW"
+    assert publication.accepted?, publication.reasons.inspect
+  end
+
+  test "assigning DCL to the front door and RDCL to the rear door is removed: no row says it" do
+    text = "Los parámetros dependen de la puerta: DCL (694) para la delantera o RDCL (695) para la trasera, con su tiempo de cierre DTC-T [1]."
+    result, guarded, = published(text, DIAGNOSTIC_TABLE)
+
+    assert_not_includes guarded, "delantera"
+    assert_equal [ "unbacked_citation" ], result.removed.pluck("reason")
+  end
+
+  test "naming one of the three signals as the lost one is removed: the row lists alternatives" do
+    one = "El 0102 ocurre porque se perdió DCL [1]."
+    other = "Según la tabla, ocurre al faltar DOS, DFC o DW [1]."
+    result, guarded, = published("#{one} #{other}", DIAGNOSTIC_TABLE)
+
+    assert_not_includes guarded, "se perdió DCL"
+    assert_not_includes guarded, "DOS"
+    assert_equal [ "unbacked_citation", "unbacked_citation" ], result.removed.pluck("reason")
+  end
+
+  test "saying that any of the three may be the missing one keeps the alternatives" do
+    result, guarded, = published("El 0102 aparece cuando falta cualquiera de DCL, DFC o DW [1].", DIAGNOSTIC_TABLE)
+
+    assert_empty result.removed
+    assert_includes guarded, "DCL, DFC o DW"
+  end
+
+  PAX_GUIDE = <<~TEXT.freeze
+    GUÍA DE SOLUCIÓN DE AVERÍAS EN PUERTA PAX
+
+    2) PROBLEMAS EN LA APERTURA, CIERRE, REAPERTURAS.
+
+    - Comprobar señales del PAX (M-3-1-2 y M-3-1-3 en PAX).
+    - Comprobar señales de reapertura en LCB_II (M-1-1-3: DOB, LRD, etc).
+    - Comprobar ajustes mecánicos de la puerta.
+  TEXT
+  FRONT_DOOR = <<~TEXT.freeze
+    Grupo Puertas frontales (Front Door):
+    | Señal | Descripción | Se muestra cuando (I/O) |
+    | DOS | Señal de reapertura de puertas (SGS) | I/O - 605 |
+  TEXT
+
+  # Photo turn 6552143e of run 20261120T133511Z: the generator asked for the
+  # event and framed two cited lines. The guard removed both for words that
+  # only frame the sentence or name «comprobar» as «revisar». No cited claim
+  # was left and the publication replaced the request with a refusal.
+  test "a conditional frame and revisar for the manual's comprobar keep the cited guide line" do
+    text = "Como referencia condicional, la guía para problemas de apertura, cierre y reaperturas indica revisar las señales del PAX y las de reapertura en LCB_II [1]."
+    result, guarded, = published(text, PAX_GUIDE)
+
+    assert_empty result.removed
+    assert_includes guarded, "revisar las señales del PAX"
+  end
+
+  test "figura en el manual keeps the cited row" do
+    result, guarded, = published("La señal de reapertura de puertas (DOS) figura en el manual [1].", FRONT_DOOR)
+
+    assert_empty result.removed
+    assert_includes guarded, "DOS"
+  end
+
+  test "the frame and the check verb do not cover an entity, a part or a different action the line lacks" do
+    other = "Como referencia condicional, la guía indica revisar la remota y la señal DCL [1]."
+    replace = "La guía indica cambiar las señales del PAX [1]."
+    result, = published("#{other} #{replace}", PAX_GUIDE)
+
+    assert_equal [ "unbacked_citation", "unbacked_citation" ], result.removed.pluck("reason")
+  end
+
+  GEN2_ROW = "| 0102 OpMode DTC | W | La puerta no cierra en el tiempo programado al desaparecer alguna de las señales DCL, DFC o DW | DCL (694), RDCL (695), DOOR, REAR DTC-T |"
+  PREMIER_ROW = "| 0102 OpMode DTC | La puerta no fue capaz de cerrar (perdido DCL,DFC ó DW) dentro del tiempo permitido. | DCL (694) / RDCL (695) / DOOR,REAR / DTC-T |"
+  OTIS2000_ROW = "| 0102 OpMode DTC | La puerta no cierra en el tiempo programado (no aparecen las señales DCL, DFC ó DW) | DCL (694), RDCL (695), DOOR, REAR, DTC-T |"
+
+  # Replay 1 of run 20261120T133511Z, turns 2 and 4. The generator joined the
+  # wording of two rows of the same event and cited a third of them. The words
+  # that differ are the manual's own synonyms: «permitido» for «programado»,
+  # «alguna de» for the «ó» of a list, «significa» for «indica».
+  test "alguna de, permitido and código keep the 0102 reading cited to the rows that say it" do
+    text = "El código 0102 OpMode DTC indica que la puerta no cerró en el tiempo permitido porque faltó alguna de las señales DCL, DFC o DW [1][2]."
+    result = Rag::CompanionClaimBacking.call(text: text, sources: [
+      { "index" => 1, "content" => PREMIER_ROW, "applicability" => "compatible" },
+      { "index" => 2, "content" => OTIS2000_ROW, "applicability" => "compatible" }
+    ])
+
+    assert_empty result.removed
+    assert_includes result.text, "alguna de las señales DCL, DFC o DW"
+  end
+
+  # Live 20261120T200327Z T2. The draft cited only the Premier row, which lists
+  # «perdido DCL,DFC ó DW» and does not say the word «señales». That word names
+  # the items the row lists.
+  # Live 20261120T201126Z T2. «no aparecieron» is the row's «desaparecer» and
+  # «perdido». Without the negation the sentence says the opposite.
+  test "no aparecieron keeps the 0102 reading and a positive appearance does not" do
+    text = "El código indica que la puerta no cerró en el tiempo programado, porque no aparecieron las señales DCL, DFC o DW [1]."
+    kept = Rag::CompanionClaimBacking.call(text: text, sources: [
+      { "index" => 1, "content" => GEN2_ROW, "applicability" => "compatible" }
+    ])
+    premier = Rag::CompanionClaimBacking.call(text: text.sub("[1]", "[1]"), sources: [
+      { "index" => 1, "content" => PREMIER_ROW, "applicability" => "compatible" }
+    ])
+    opposite = Rag::CompanionClaimBacking.call(
+      text: "Aparecieron las señales DCL, DFC o DW [1].",
+      sources: [ { "index" => 1, "content" => GEN2_ROW, "applicability" => "compatible" } ]
+    )
+
+    assert_empty kept.removed
+    assert_empty premier.removed
+    assert_equal [ "unbacked_citation" ], opposite.removed.pluck("reason")
+  end
+
+  test "the premier row backs the 0102 reading that calls the listed items señales" do
+    text = "La puerta no cerró dentro del tiempo permitido porque faltó alguna de las señales DCL, DFC o DW [1]."
+    result = Rag::CompanionClaimBacking.call(text: text, sources: [
+      { "index" => 1, "content" => PREMIER_ROW, "applicability" => "compatible" }
+    ])
+
+    assert_empty result.removed
+  end
+
+  test "significa and no logra cerrar keep the 0102 reading cited to the row of the same event" do
+    text = "Según [1], el 0102 significa que la puerta no logra cerrar dentro del tiempo permitido cuando desaparece DCL, DFC o DW."
+    result, = published(text, GEN2_ROW)
+
+    assert_empty result.removed
+  end
+
+  test "alguna de does not cover a row that lists no alternatives, and a warning class the row does not state stays removed" do
+    single = "| 0102 OpMode DTC | La puerta no cierra en el tiempo programado al desaparecer DCL |"
+    text = "El 0102 ocurre al faltar alguna de las señales DCL, DFC o DW [1]. En la tabla aparece como clase W, es decir, advertencia [1]."
+    result, = published(text, single)
+
+    assert_equal [ "unbacked_citation", "unbacked_citation" ], result.removed.pluck("reason")
+    result, guarded, = published("En la tabla aparece como clase W, es decir, advertencia [1].", GEN2_ROW)
+
+    assert_equal [ "unbacked_citation" ], result.removed.pluck("reason"), guarded
+  end
 end

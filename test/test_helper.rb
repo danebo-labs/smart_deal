@@ -45,6 +45,15 @@ module ActiveSupport
       ENV["DOCUMENT_IDENTITY_SCOPE_ENABLED"] = "false"
     end
 
+    # FIELD_CHECK_OUTCOME for one block. nil removes it (the base behavior).
+    def with_check_outcome_flag(value)
+      previous = ENV["FIELD_CHECK_OUTCOME"]
+      value.nil? ? ENV.delete("FIELD_CHECK_OUTCOME") : ENV["FIELD_CHECK_OUTCOME"] = value
+      yield
+    ensure
+      previous.nil? ? ENV.delete("FIELD_CHECK_OUTCOME") : ENV["FIELD_CHECK_OUTCOME"] = previous
+    end
+
     def require_historical_capture(path)
       skip "Historical capture unavailable: #{path}" unless Rails.root.join(path).file?
     end

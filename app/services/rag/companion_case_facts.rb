@@ -22,11 +22,12 @@ module Rag
 
     attr_reader :facts, :open_question
 
-    def self.build(episode, session: nil)
-      new(episode, session)
+    def self.build(episode, session: nil, correlation_id: nil)
+      new(episode, session, correlation_id)
     end
 
-    def initialize(episode, session)
+    def initialize(episode, session, correlation_id = nil)
+      @correlation_id = correlation_id
       @facts = []
       @session = session
       @episode_record = episode.is_a?(ActiveEpisode) ? episode : ActiveEpisode.parse(episode)
@@ -70,7 +71,7 @@ module Rag
     end
 
     def prompt_block
-      lines = @episode_record ? AnswerContract.context_lines(@episode_record, @session) : []
+      lines = @episode_record ? CheckOutcome.context_lines(@episode_record, @session, correlation_id: @correlation_id) : []
       opened = open_question_lines
       declared = declared_lines
       unindexed = excerpt_lines

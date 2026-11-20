@@ -131,6 +131,216 @@ class Rag::PilotNov19RegressionTest < ActiveSupport::TestCase
     assert_equal different, close_followup(different, saved, turn)
   end
 
+  test "FIELD_CHECK_OUTCOME names the settled Otis check, the unverified DCL and the closed q1 text" do
+    turn = at(29, 6)
+    saved, = reduce_and_reload(turn)
+    session = history_session(29, 6)
+    previous = ENV["FIELD_CHECK_OUTCOME"]
+    ENV["FIELD_CHECK_OUTCOME"] = "true"
+    outcome = Rag::CheckOutcome.new(episode: saved, session: session, correlation_id: turn.fetch("correlation_id"))
+    lines = outcome.lines
+
+    assert outcome.settled_this_turn?
+    assert_equal [ [ "q3", "p3", "complete" ] ], outcome.active.map { |part| [ part.question_id, part.part_id, part.state ] }
+    dcl = outcome.unverified.select { |row| row.text.match?(/\bDCL\b/i) }
+    assert_equal [ 3, 5, 6 ], dcl.map(&:turn), lines.inspect
+    assert_equal CASES.fetch("29").fetch("turns").values_at(2, 4, 5).pluck("correlation_id"), dcl.map(&:correlation_id)
+    assert_not_empty outcome.closed
+    q1 = outcome.closed.find { |row| row.question_id == "q1" }
+    assert q1&.question.present?, lines.inspect
+    # Growth of the block, not a pass for the plan's 3 % criterion. That
+    # criterion is measured on the block itself, in the plan's stage 1 note.
+    # This only stops the block from growing without bound.
+    grown = lines.join("\n").bytesize - Rag::AnswerContract.context_lines(saved, session).join("\n").bytesize
+    assert_operator grown, :<, 1_200
+    assert lines.none? { |line| line.match?(/\ARespuesta r\d+ a q\d+\.p\d+/) }
+    assert_equal outcome.to_trace, Rag::CheckOutcome.new(episode: saved, session: session, correlation_id: turn.fetch("correlation_id")).to_trace
+  ensure
+    ENV["FIELD_CHECK_OUTCOME"] = previous
+  end
+
+  test "the generator block names the Otis check answered in this turn only when the correlation travels" do
+    turn = at(29, 6)
+    saved, = reduce_and_reload(turn)
+    history = history_session(29, 6).conversation_history
+    cid = turn.fetch("correlation_id")
+    previous = ENV["FIELD_CHECK_OUTCOME"]
+    ENV["FIELD_CHECK_OUTCOME"] = "true"
+    fresh = lambda do
+      FieldCases::TurnContext.new(channel: "web").tap { |context| context.conversation_history = history }
+    end
+    answered = /Comprobación activa q3\.p3 .*contestada en este turno \(complete, r\d+\)/
+
+    block = SessionContextBuilder.companion_case(saved, {}, session: fresh.call, correlation_id: cid)
+    assert_match answered, block
+    assert_no_match answered, SessionContextBuilder.companion_case(saved, {}, session: fresh.call)
+    assert_match answered, Rag::CompanionCaseFacts.build(saved, session: fresh.call, correlation_id: cid).prompt_block
+    assert_match answered, SessionContextBuilder.companion_context(
+      fresh.call, episode: saved, current_message: turn.fetch("message"), current_correlation_id: cid
+    )
+
+    prepared = Rag::CompanionDirectAnswer.prepare(
+      raw_question: turn.fetch("message"), chunks: [], episode: saved, session: fresh.call, correlation_id: cid
+    )
+    assert_match answered, prepared.user
+    assert_equal 1, prepared.user.scan("Comprobación activa q3.p3").size
+  ensure
+    ENV["FIELD_CHECK_OUTCOME"] = previous
+  end
+
+  # Live round 0 (20261119T215845Z): the generator closed T11 and T5 without a
+  # question. It had the closure rule and, for T11, "no pidas la siguiente por
+  # inercia", while q4.p4 / q7.p7 (T11) and q2.p2 (T5) were still partial.
+  test "FIELD_CHECK_OUTCOME tells the generator not to close Thyssen T11 while earlier checks are partial" do
+    turn = at(28, 11)
+    saved, = reduce_and_reload(turn)
+    user = with_check_outcome("true") { direct_user(turn, saved, 28, 11) }
+
+    assert_match(/contestada en este turno/, user)
+    assert_equal 1, user.scan("No cierres el caso").size, user
+    assert_no_match(/por inercia/, user)
+    assert_match(/no la repitas ni pidas de nuevo lo que el técnico declaró no verificado/i, user)
+    outcome = Rag::CheckOutcome.new(episode: saved, session: history_session(28, 11), correlation_id: turn.fetch("correlation_id"))
+    assert_equal %w[p4 p7], outcome.closed.select { |row| row.state == "partial" }.map(&:part_id)
+    assert outcome.leaves_checks_open?
+  end
+
+  test "FIELD_CHECK_OUTCOME tells the generator not to close Otis T5 while its active check is partial" do
+    turn = at(29, 5)
+    saved, = reduce_and_reload(turn)
+    user = with_check_outcome("true") { direct_user(turn, saved, 29, 5) }
+
+    assert_match(/contestada solo en parte/, user)
+    assert_equal 1, user.scan("No cierres el caso").size, user
+    assert_match(/no pidas de nuevo lo que el técnico ya reportó/, user)
+    assert_match(/cita esa fuente \[n\]/, user)
+    assert_no_match(/por inercia|la que falta/, user)
+  end
+
+  test "FIELD_CHECK_OUTCOME lets Otis T6 close with the declared unverified DCL" do
+    turn = at(29, 6)
+    saved, = reduce_and_reload(turn)
+    user = with_check_outcome("true") { direct_user(turn, saved, 29, 6) }
+
+    assert_match(/contestada en este turno/, user)
+    assert_no_match(/No cierres el caso/, user)
+    assert_match(/por inercia/, user)
+  end
+
+  test "without FIELD_CHECK_OUTCOME the generator note is the baseline one for T11, T5 and T6" do
+    [ [ 28, 11 ], [ 29, 5 ], [ 29, 6 ] ].each do |case_id, sequence|
+      turn = at(case_id, sequence)
+      saved, = reduce_and_reload(turn)
+      user = with_check_outcome(nil) { direct_user(turn, saved, case_id, sequence) }
+
+      assert_match(/Si el último resultado permite avanzar/, user)
+      assert_no_match(/No cierres el caso|por inercia/, user)
+    end
+  end
+
+  test "FIELD_CHECK_OUTCOME clears the settled pending when the publication asks nothing" do
+    turn = at(28, 11)
+    saved, = reduce_and_reload(turn)
+    assert_equal "q8", saved.pending_question.fetch("id")
+    assert_equal "complete", Rag::AnswerContract.part_state(saved, "p8")
+    closing = "Cierre de comprobación: EA no volvió a aparecer con la puerta cerrada y trabada."
+
+    kept = with_owner_and_check_outcome(nil) { publish_without_question(saved, turn, closing) }
+    assert_equal "q8", kept.state.dig("pending_question", "id"), "flag off keeps the stored pending"
+
+    cleared = with_owner_and_check_outcome("true") { publish_without_question(saved, turn, closing) }
+    assert_nil cleared.state["pending_question"]
+    assert_nil cleared.state["pending_fact"]
+    reloaded = Rag::ActiveEpisode.parse(cleared.state, now: Time.iso8601(turn.fetch("at")))
+    assert_equal "complete", Rag::AnswerContract.part_state(reloaded, "p8")
+    assert_equal %w[p4 p7], Rag::CheckOutcome.new(episode: reloaded, session: history_session(28, 11),
+      correlation_id: "query:next").closed.select { |row| row.state == "partial" }.map(&:part_id)
+  end
+
+  # Same input as live replay 2 (20261120T134952Z) T5: q was answered in part and
+  # the technician reported the maneuver result. Keeping it made the reload wait
+  # on a question the closing no longer asks. Without a test result in the turn
+  # the partial pending is still owed.
+  test "FIELD_CHECK_OUTCOME keeps a partial pending unless the turn reported a test result and the publication asks nothing" do
+    turn = at(29, 5)
+    saved, = reduce_and_reload(turn)
+    assert_equal "partial", Rag::AnswerContract.part_state(saved, "p2")
+    assert saved.checks.any? { |check| check["correlation_id"] == turn.fetch("correlation_id") }, "the turn reported a check"
+    closing = "Retiraste los residuos de la guía."
+
+    cleared = with_owner_and_check_outcome("true") { publish_without_question(saved, turn, closing) }
+    assert_nil cleared.state["pending_question"]
+    kept = with_owner_and_check_outcome(nil) { publish_without_question(saved, turn, closing) }
+    assert_equal "q2", kept.state.dig("pending_question", "id"), "flag off keeps it"
+
+    saved.checks.reject! { |check| check["correlation_id"] == turn.fetch("correlation_id") }
+    owed = with_owner_and_check_outcome("true") { publish_without_question(saved, turn, closing) }
+    assert_equal "q2", owed.state.dig("pending_question", "id"), "no test result this turn: still owed"
+  end
+
+  test "FIELD_CHECK_OUTCOME keeps a pending nobody answered when the turn reported no test result and the publication asks nothing" do
+    turn = at(28, 11)
+    saved, = reduce_and_reload(turn)
+    saved.replies.reject! { |reply| reply["p"] == "p8" }
+    saved.checks.reject! { |check| check["correlation_id"] == turn.fetch("correlation_id") }
+    assert_nil Rag::AnswerContract.part_state(saved, "p8")
+
+    kept = with_owner_and_check_outcome("true") { publish_without_question(saved, turn, "Respuesta sin pregunta.") }
+    assert_equal "q8", kept.state.dig("pending_question", "id")
+  end
+
+  # Live T4 → T5: nobody bound q4, T5 reported a test result and the publication
+  # closed it without a question. q4 must not wait for the next turn.
+  test "FIELD_CHECK_OUTCOME clears a pending nobody answered when the turn reported a test result and the publication asks nothing" do
+    turn = at(28, 11)
+    saved, = reduce_and_reload(turn)
+    saved.replies.reject! { |reply| reply["p"] == "p8" }
+    assert saved.checks.any? { |check| check["correlation_id"] == turn.fetch("correlation_id") }, "the turn reported a check"
+
+    cleared = with_owner_and_check_outcome("true") { publish_without_question(saved, turn, "Respuesta sin pregunta.") }
+    assert_nil cleared.state["pending_question"]
+    kept = with_owner_and_check_outcome(nil) { publish_without_question(saved, turn, "Respuesta sin pregunta.") }
+    assert_equal "q8", kept.state.dig("pending_question", "id"), "flag off keeps it"
+  end
+
+  # Live rounds 0, 1 and 2: the block listed the technician's words of this
+  # turn ("No llegamos a verificar DCL ni DFC") under "No lo pidas de nuevo",
+  # so the generator never asked DFC. Only what an earlier turn declared, and
+  # what the technician cannot provide, stays under that rule.
+  test "FIELD_CHECK_OUTCOME separates what this turn left undone from what earlier turns declared" do
+    turn = at(29, 6)
+    saved, = reduce_and_reload(turn)
+    session = history_session(29, 6)
+    outcome = with_check_outcome("true") do
+      Rag::CheckOutcome.new(episode: saved, session: session, correlation_id: turn.fetch("correlation_id"))
+    end
+    lines = outcome.lines
+    now = outcome.unverified.select { |row| row.kind == "not_done" && row.correlation_id == turn.fetch("correlation_id") }
+
+    assert_not_empty now, outcome.unverified.inspect
+    assert_equal [ 3, 5, 6 ], outcome.unverified.select { |row| row.text.match?(/\bDCL\b/i) }.map(&:turn)
+    earlier_at = lines.index { |line| line.start_with?("Declarado por el técnico como no verificado o inaccesible") }
+    now_at = lines.index { |line| line.start_with?("Declarado en este turno como no hecho todavía") }
+    assert earlier_at && now_at && earlier_at < now_at, lines.inspect
+    assert_match(/no figure arriba/, lines[now_at])
+    assert_match(/una fuente de este turno lo respalda y la citas/, lines[now_at])
+    now.each { |row| assert_includes lines[(now_at + 1)..], "- «#{row.text}» (turno #{row.turn})" }
+    assert_not_includes lines[(earlier_at + 1)...now_at].join("\n"), now.first.text
+  end
+
+  test "without FIELD_CHECK_OUTCOME the case block keeps the AnswerContract lines for T6" do
+    turn = at(29, 6)
+    saved, = reduce_and_reload(turn)
+    session = history_session(29, 6)
+
+    with_check_outcome(nil) do
+      lines = Rag::CheckOutcome.context_lines(saved, session, correlation_id: turn.fetch("correlation_id"))
+      assert_equal Rag::AnswerContract.context_lines(saved, session), lines
+      assert_none = lines.none? { |line| line.start_with?("Declarado en este turno") || line.start_with?("Estado de la comprobación") }
+      assert assert_none, lines.inspect
+    end
+  end
+
   test "photo context preserves the visible diagram and distinguishes its labels from the technician's EA" do
     turn = at(28, 1)
     context = photo_context(turn)
@@ -241,6 +451,48 @@ class Rag::PilotNov19RegressionTest < ActiveSupport::TestCase
       assert_equal checkpoint, kase.reload.technical_state
       return [ Rag::ActiveEpisode.parse(checkpoint, now: time), admitted.turn ]
     end
+  end
+
+  # The history a reload would give: each case turn and what was published.
+  def history_session(case_id, upto)
+    session = ConversationSession.new(account: accounts(:legacy), user: users(:one), channel: "web", identifier: "web:probe-#{case_id}")
+    session.conversation_history = CASES.fetch(case_id.to_s).fetch("turns").first(upto).flat_map do |row|
+      [
+        session.send(:history_message, "user", row.fetch("message"), user_id: users(:one).id, correlation_id: row.fetch("correlation_id")),
+        session.send(:history_message, "assistant", row["published"].to_s, user_id: users(:one).id, correlation_id: row.fetch("correlation_id"))
+      ]
+    end
+    session
+  end
+
+  def with_check_outcome(value)
+    previous = ENV["FIELD_CHECK_OUTCOME"]
+    value.nil? ? ENV.delete("FIELD_CHECK_OUTCOME") : ENV["FIELD_CHECK_OUTCOME"] = value
+    yield
+  ensure
+    previous.nil? ? ENV.delete("FIELD_CHECK_OUTCOME") : ENV["FIELD_CHECK_OUTCOME"] = previous
+  end
+
+  def with_owner_and_check_outcome(value, &block)
+    previous = ENV["HAIKU_QUERY_ANALYSIS_MODE"]
+    ENV["HAIKU_QUERY_ANALYSIS_MODE"] = "owner"
+    with_check_outcome(value, &block)
+  ensure
+    previous.nil? ? ENV.delete("HAIKU_QUERY_ANALYSIS_MODE") : ENV["HAIKU_QUERY_ANALYSIS_MODE"] = previous
+  end
+
+  def direct_user(turn, episode, case_id, sequence)
+    Rag::CompanionDirectAnswer.prepare(
+      raw_question: turn.fetch("message"), chunks: [], episode: episode,
+      session: history_session(case_id, sequence), correlation_id: turn.fetch("correlation_id")
+    ).user
+  end
+
+  def publish_without_question(episode, turn, text)
+    Rag::ActiveEpisodeTurn.apply_assistant(
+      state: Rag::ActiveEpisode.parse(episode.to_h, now: Time.iso8601(turn.fetch("at"))), text: text,
+      now: Time.iso8601(turn.fetch("at")), correlation_id: turn.fetch("correlation_id"), pending_question: nil
+    )
   end
 
   def close_followup(draft, episode, turn)

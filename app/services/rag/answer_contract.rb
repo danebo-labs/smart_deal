@@ -103,14 +103,47 @@ module Rag
       state_of(current_replies(episode, part_id))
     end
 
+    # The documented-context question is answered and settled in every part
+    # that is not a declared one. A publication that asks nothing leaves
+    # nothing waiting on it. A question nobody answered is not settled.
+    def settled_pending?(episode)
+      return false unless active?(episode)
+
+      question = episode.pending_question
+      return false unless question.is_a?(Hash) && question["type"] == "documented_context"
+
+      parts = Array(question["parts"]).select { |part| part.is_a?(Hash) && part["role"] != "declared" }
+      parts.any? && parts.all? { |part| settled?(part_state(episode, part["id"])) }
+    end
+
+    # The documented-context question is complete in every part that is not a
+    # declared one. A publication that asks nothing leaves nothing waiting on
+    # it. unknown and partial are not complete: an unknown keeps the
+    # technician's correction on the question, and a partial is still owed.
+    def completed_pending?(episode)
+      return false unless active?(episode)
+
+      question = episode.pending_question
+      return false unless question.is_a?(Hash) && question["type"] == "documented_context"
+
+      parts = Array(question["parts"]).select { |part| part.is_a?(Hash) && part["role"] != "declared" }
+      parts.any? && parts.all? { |part| part_state(episode, part["id"]) == "complete" }
+    end
+
     def settled?(state)
       SETTLED.include?(state)
     end
 
-    def current_replies(episode, part_id)
-      rows = Array(episode.replies).select { |reply| reply["p"] == part_id.to_s }
+    # except names reply ids to leave out. CheckOutcome uses it to read the
+    # state a part had before this turn's replies, with the same rules.
+    def current_replies(episode, part_id, except: [])
+      rows = Array(episode.replies).select { |reply| reply["p"] == part_id.to_s && except.exclude?(reply["id"]) }
       covered = rows.flat_map { |reply| Array(reply["of"]) }
       rows.reject { |reply| covered.include?(reply["id"]) }
+    end
+
+    def part_state_without(episode, part_id, reply_ids)
+      state_of(current_replies(episode, part_id, except: reply_ids))
     end
 
     def active?(episode)
@@ -164,7 +197,13 @@ module Rag
       message = SessionContextBuilder.companion_message_for(session, reply["cid"])
       return nil unless message.is_a?(Hash)
 
-      body = SessionContextBuilder.companion_message_text(message)
+      reply_slice(reply, SessionContextBuilder.companion_message_text(message))
+    end
+
+    # The technician's words a reply covers, cut out of the text of the turn
+    # that carried them. Nil when the stored offsets do not fit that text.
+    def reply_slice(reply, body)
+      return nil unless reply.is_a?(Hash) && body.is_a?(String)
       return body unless reply.key?("a") || reply.key?("b")
 
       start = reply["a"]
@@ -482,6 +521,6 @@ module Rag
     end
     private_class_method :store_one!, :store_declared!, :current_span, :spans_overlap?,
       :restore_declared, :span_for, :supersedes_ids, :reply_block, :refusal,
-      :conflict_lines, :state_of, :reply_targets, :fits?, :cut_note, :allocate_id!
+      :state_of, :reply_targets, :fits?, :allocate_id!
   end
 end

@@ -26,6 +26,28 @@ class Rag::SourceFidelityGuardTest < ActiveSupport::TestCase
     assert_no_match Rag::EvidenceSelectionTelemetry::ABSTENTION_PATTERN, result[:answer]
   end
 
+  # Thyssen T11, live round 2 (20261119T222949Z): the manual table says
+  # "RA-94/ A- = 0 VOLT" and the draft wrote "con 0 V [2]". The word unit is
+  # the same value. The guard dropped the sentence with the quote, and R5
+  # quote_removed then replaced the whole turn with the fallback text.
+  test "FIELD_CHECK_OUTCOME reads a VOLT word in the evidence as the V unit" do
+    table = "| RA-94/ A- = 0 VOLT | Ponto para ligar referencia das tensões de alimentação. |\n| RA-98/ T4+ = +24 Vcc | Botoeira. |"
+    answer = "Su referencia es RA-94/A-, con 0 V [2]. El borne de botonera marca 12 V."
+
+    with_check_outcome_flag("true") do
+      result = guard(answer, evidence: [ table ])
+      assert_includes result[:answer], "con 0 V [2]"
+      assert_not_includes result[:answer], "12 V"
+      assert_equal 1, result[:removed]
+      assert_equal 0, guard("Referencia 0 V.", evidence: [ "RA-94/ A- = 0 VOLTS" ])[:removed]
+      assert_equal 1, guard("Referencia 5 V.", evidence: [ table ])[:removed]
+      assert_equal 1, guard("Referencia 0 V.", evidence: [ "RA-94/ A- = 0 VOLTIMETRO" ])[:removed]
+    end
+    with_check_outcome_flag(nil) do
+      assert_equal 1, guard("Su referencia es RA-94/A-, con 0 V [2].", evidence: [ table ])[:removed], "flag off keeps the base reading"
+    end
+  end
+
   test "keeps Fuji 5 percent and KONE 3 mm and 20 mm" do
     answer = "La diferencia máxima es 5 %. El desvío es 3 mm. C = 20 mm."
 
@@ -186,6 +208,14 @@ class Rag::SourceFidelityGuardTest < ActiveSupport::TestCase
   end
 
   private
+
+  def with_check_outcome_flag(value)
+    previous = ENV["FIELD_CHECK_OUTCOME"]
+    value.nil? ? ENV.delete("FIELD_CHECK_OUTCOME") : ENV["FIELD_CHECK_OUTCOME"] = value
+    yield
+  ensure
+    previous.nil? ? ENV.delete("FIELD_CHECK_OUTCOME") : ENV["FIELD_CHECK_OUTCOME"] = previous
+  end
 
   def guard(answer, evidence:, allowed: [])
     Rag::SourceFidelityGuard.call(

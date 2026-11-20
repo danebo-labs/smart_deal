@@ -108,7 +108,7 @@ module Rag
 
         asked = asked.delete_prefix("¿").delete_suffix("?")
         reported = turn.to_s.strip.sub(AFFIRMATION, "").sub(ATTRIBUTION, "").delete_suffix(".")
-        return if [asked, reported].any? { |text| text.match?(/[¿?!«»“”"]/) }
+        return if [ asked, reported ].any? { |text| text.match?(/[¿?!«»“”"]/) }
 
         wanted = clauses(asked)
         supplied = clauses(reported)

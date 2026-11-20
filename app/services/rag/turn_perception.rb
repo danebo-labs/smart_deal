@@ -246,7 +246,20 @@ module Rag
       # Match a whole span so the fallback cannot invent a longer word,
       # remove a negation, or conflate different designators.
       folded = orthographic_fold(candidate)
-      orthographic_fold(original).match?(/(?<![[:alnum:]])#{Regexp.escape(folded)}(?![[:alnum:]+])/u)
+      haystack = orthographic_fold(original)
+      if CheckOutcomeFlag.enabled?
+        folded = spaced_typing_dots(folded)
+        haystack = spaced_typing_dots(haystack)
+      end
+      haystack.match?(/(?<![[:alnum:]])#{Regexp.escape(folded)}(?![[:alnum:]+])/u)
+    end
+
+    # Stage 1. A dot typed between two letters ("no.volvio", "la.prueba") is a
+    # missing space. The interpreter writes the words the technician meant, and
+    # that span was dropped as not literal, losing the observed result of the
+    # test. A dot between digits ("3.5") or at a word end is not touched.
+    def self.spaced_typing_dots(value)
+      value.gsub(/(?<=\p{L})\.(?=\p{L})/u, " ")
     end
 
     def self.normalize_span_text(value)
@@ -262,18 +275,26 @@ module Rag
     PART_REPLY_KEYS = %w[question_id part_id state quote supersedes].freeze
     MAX_PART_REPLIES = 4
 
-    # An extra root key stays a structural defect, except a null one and a
-    # scalar note on a schema key ("pending_resolution_note"): neither carries
-    # anything the contract reads.
+    # An extra root key stays a structural defect, except a null one, a
+    # scalar on a schema key ("pending_resolution_hint"), and any scalar
+    # "*_note" key ("pending_resolution_note", "pending_question_note"):
+    # none carries anything the contract reads. A note does not have to name
+    # a schema key, so a new free-text note cannot void a whole turn. A list
+    # or an object under such a key is not inert and stays a defect, except
+    # an empty one with FIELD_CHECK_OUTCOME on ("pending_questions_part_replies": []
+    # voided Thyssen T11 in live round 1): it holds nothing to read.
     def self.prepare_tool(raw)
       return [ raw, [] ] unless raw.is_a?(Hash)
 
       data = raw.deep_stringify_keys
       notes = []
       known = ROOT_KEYS + OPTIONAL_KEYS
+      empty_inert = CheckOutcomeFlag.enabled?
       inert = (data.keys - known).select do |key|
         value = data[key]
-        value.nil? || (!value.is_a?(Hash) && !value.is_a?(Array) && known.any? { |root| key.start_with?("#{root}_") })
+        scalar = !value.is_a?(Hash) && !value.is_a?(Array)
+        value.nil? || (scalar && (key.end_with?("_note") || known.any? { |root| key.start_with?("#{root}_") })) ||
+          (empty_inert && !scalar && value.empty?)
       end
       if inert.any?
         data = data.except(*inert)
@@ -406,6 +427,7 @@ module Rag
         end
       end
       checks = literal_checks(data["checks"])
+      checks = recover_stated_not_done(checks) if CheckOutcomeFlag.enabled?
       replies = prepared.is_a?(Hash) ? Array(prepared["part_replies"]) : []
       if @part_replies_field == "empty" && data["move"] == "answer_pending" &&
           data["pending_resolution"] == "value" && AnswerContract.active?(@episode) &&
@@ -882,6 +904,25 @@ module Rag
       end
     end
 
+    # «No llegamos a verificar DCL ni DFC» is the technician's own declaration.
+    # When the interpreter omits it, the span is still the check: one not-done
+    # row, copied from the turn, and only if no stored check already covers it.
+    NOT_DONE_SPAN = /
+      no\s+(?:lleg(?:amos|ue|u[eé])\s+a\s+|pude\s+|pudimos\s+|hemos\s+|he\s+)?verific\p{L}*
+      [^?.!\n]{0,80}
+    /ix
+
+    def recover_stated_not_done(checks)
+      span = @turn.to_s.match(NOT_DONE_SPAN)&.to_s&.squish
+      return checks if span.blank? || !literal_span?(span)
+      return checks if checks.any? { |row|
+        subject = row["subject"].to_s
+        subject.include?(span) || (span.include?(subject) && subject.match?(/verific/i))
+      }
+
+      checks + [ { "subject" => span.first(ActiveEpisode::MAX_CHECK_CHARS), "status" => "not_done", "result" => nil } ]
+    end
+
     # A check is a verification the technician stated. An observation never
     # becomes one. A subject or result that is not in the turn is dropped.
     def literal_checks(raw)
@@ -902,7 +943,12 @@ module Rag
           stored = result.squish.first(ActiveEpisode::MAX_CHECK_CHARS)
           unless literal_span?(stored)
             reject_field("checks[#{index}].result", "not_literal")
-            next
+            # Off: the whole check goes. On: only the invented result goes;
+            # the subject is a span of the turn and the status is the
+            # technician's own, so the declaration is kept.
+            next unless CheckOutcomeFlag.enabled?
+
+            stored = nil
           end
         end
         { "subject" => subject, "status" => status, "result" => stored }

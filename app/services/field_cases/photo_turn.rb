@@ -118,7 +118,10 @@ module FieldCases
       end
     end
 
-    def publish(answer:, citations:, provenance:, context:, visual_summary: nil)
+    def publish(answer:, citations:, provenance:, context:, visual_summary: nil, pending_question: nil)
+      if context.respond_to?(:install_published_pending!)
+        context.install_published_pending!(pending_question, correlation_id: turn.correlation_id)
+      end
       complete(
         { answer:, citations: Array(citations), provenance_segments: Array(provenance),
           response_locale: turn.locale, visual_summary: }.compact,

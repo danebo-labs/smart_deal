@@ -100,9 +100,18 @@ module Rag
     end
 
     def self.write_pending!(episode, text, correlation_id:, pending_question: nil)
-      question = PendingQuestion.coerce(pending_question)
+      question = PendingQuestion.coerce_stored(pending_question)
       return install_pending!(episode, question, correlation_id) if question
-      return nil if HaikuQueryAnalysisFlag.owner?
+      if HaikuQueryAnalysisFlag.owner?
+        # Stage 1: a pending already answered in full must not outlive a
+        # publication that asks nothing, or a reload would wait on it again.
+        # Nor must one nobody answered, when this turn's test report moved the
+        # case on and the publication no longer shows it.
+        if CheckOutcomeFlag.enabled? && (AnswerContract.completed_pending?(episode) || superseded_pending?(episode, text, correlation_id))
+          episode.clear_pending!
+        end
+        return nil
+      end
 
       episode.clear_pending!
       subjects = text.scan(/[^?]+\?/).filter_map { |sentence| pending_subject(FollowupQueryRewriter.normalize_label(sentence)) }
@@ -117,7 +126,35 @@ module Rag
       nil
     end
 
+    # Stage 1. A pending that no part of was answered, or only in part, that
+    # this publication does not show, while the technician reported a test
+    # result this turn. A part answered in full closes it elsewhere. A turn
+    # that only asked something leaves it alone: the technician may answer it next.
+    def self.superseded_pending?(episode, text, correlation_id)
+      return false unless AnswerContract.active?(episode) && correlation_id.present?
+
+      question = episode.pending_question
+      return false unless question.is_a?(Hash) && question["type"] == "documented_context"
+
+      parts = Array(question["parts"]).select { |part| part.is_a?(Hash) && part["role"] != "declared" }
+      return false unless parts.any? && parts.all? { |part| [ nil, "partial" ].include?(AnswerContract.part_state(episode, part["id"])) }
+      return false if [ question["question"], question.dig("shown", "question") ].compact_blank.any? { |shown| text.include?(shown) }
+
+      # Only a reported test result moves the case on. A plain reading or a
+      # clarification leaves the question owed.
+      cid = correlation_id.to_s
+      Array(episode.checks).any? { |row| row.is_a?(Hash) && row["correlation_id"] == cid }
+    end
+
     def self.install_pending!(episode, question, correlation_id)
+      # Stage 1. The question repeats a datum the technician declared
+      # unverified, and the case gave no new reason to ask it. It is not stored.
+      if CheckOutcomeFlag.enabled? && DeclaredUnverified.repeated_question?(question["question"], episode)
+        episode.clear_pending!
+        ValidationCapture.record("companion_declared_unverified", "question" => question["question"], "stage" => "persistence") if ValidationCapture.active?
+        return "pending_declared_unverified"
+      end
+
       previous_question = episode.pending_question
       previous_fact = episode.pending_fact
       previous_qc = episode.qc
@@ -134,7 +171,10 @@ module Rag
 
       # A question already shown to the technician takes precedence over
       # excerpts the normal serializer can reconstruct from message history.
-      if AnswerContract.active?(episode) && question["type"] == "documented_context"
+      # Off: only the documented one. On: any question the turn published,
+      # the controller label one included, so it is never shown and lost.
+      shown = question["type"] == "documented_context" || CheckOutcomeFlag.enabled?
+      if AnswerContract.active?(episode) && shown
         return nil unless ActiveEpisode.budget_refused?(payload.except("excerpts"))
       end
 

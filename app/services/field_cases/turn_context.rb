@@ -17,6 +17,7 @@ module FieldCases
     end
 
     def restore_history(kase)
+      @case_id = kase.id
       @case_episode_id = kase.episode_id
       @case_opened_at = kase.opened_at.change(usec: 0)
       if active_episode.present?
@@ -56,6 +57,9 @@ module FieldCases
     # The next turn interprets short replies against the question the
     # technician actually saw. Preserve structured targets when they match.
     def capture_pending!(result)
+      # With FIELD_CHECK_OUTCOME the generation already wrote the pending
+      # through Rag::PendingQuestion.from_publication, for text and photo.
+      return if Rag::CheckOutcomeFlag.enabled?
       return unless result.case_outcome == "published"
 
       followup = Rag::PendingQuestion.followup_line(result.answer.to_s, locale: result.response_locale)
@@ -75,17 +79,51 @@ module FieldCases
       result.pending_question = Rag::PendingQuestion.coerce(candidate)
     end
 
+    # A photo answer is not written through record_assistant_turn!. Its
+    # question becomes the pending the same way a text answer's does, so the
+    # next turn is interpreted against the question the technician saw.
+    # install_pending! restores the episode when the budget refuses it.
+    def install_published_pending!(question, correlation_id:)
+      return unless Rag::CheckOutcomeFlag.enabled? && question.is_a?(Hash)
+
+      episode = Rag::ActiveEpisode.parse(active_episode)
+      return if episode.blank?
+
+      Rag::ActiveEpisodeTurn.install_pending!(episode, question, correlation_id)
+      update!(active_episode: episode.to_h)
+    end
+
     def case_opened_at
       @case_opened_at
     end
 
+    attr_reader :case_id
+
+    # A completed turn of this case, found by the correlation id a stored
+    # reply carries, plus the text published by the completed turn before
+    # it. The ordinary history keeps three turns; a reopened case can hold
+    # replies to an older one. This reads FieldTurn only when asked, once per
+    # correlation id, and never widens conversation_history. Nil when the
+    # case or the completed turn is not there: the caller keeps the stored
+    # state and records which reference was missing.
+    def case_turn_reference(correlation_id)
+      return nil if @case_id.nil? || correlation_id.blank?
+
+      key = correlation_id.to_s
+      @case_turn_references ||= {}
+      return @case_turn_references[key] if @case_turn_references.key?(key)
+
+      @case_turn_references[key] = load_case_turn_reference(key)
+    end
+
     # ActiveRecord instantiate copies columns, not this window. The photo
-    # answer reads a frozen snapshot, so the case open time has to travel
-    # with it. Without that time the floor is the episode open time, then
-    # the four-hour window. It is never nil.
+    # answer reads a frozen snapshot, so the case open time and the case id
+    # have to travel with it. Without that time the floor is the episode
+    # open time, then the four-hour window. It is never nil.
     def copy_case_window_from(source)
       opened = source.case_opened_at if source.respond_to?(:case_opened_at)
       @case_opened_at = opened if opened
+      @case_id ||= source.case_id if source.respond_to?(:case_id)
     end
 
     def episode_history_cutoff(now = Time.current)
@@ -116,6 +154,16 @@ module FieldCases
     end
 
     private
+
+    def load_case_turn_reference(correlation_id)
+      completed = FieldTurn.where(field_case_id: @case_id, status: "completed")
+      sequence, message = completed.where(correlation_id: correlation_id).pick(:sequence, :message)
+      return nil if sequence.nil?
+
+      prior = completed.where(sequence: ...sequence).order(sequence: :desc)
+        .pick(Arel.sql("response->>'published_text'"))
+      { sequence: sequence, message: message.to_s, prior_published: prior }
+    end
 
     def restored_reply(turn)
       return turn.prompt_reply unless turn.kind == "photo"

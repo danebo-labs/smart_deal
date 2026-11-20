@@ -75,7 +75,7 @@ module Rag
       episode.facts = sanitize_facts(data["facts"])
       episode.identifiers = sanitize_identifiers(data["identifiers"])
       episode.pending_fact = sanitize_pending(data["pending_fact"])
-      episode.pending_question = PendingQuestion.coerce(data["pending_question"])
+      episode.pending_question = PendingQuestion.coerce_stored(data["pending_question"])
       episode.active_photo = sanitize_photo(data["active_photo"])
       episode.conflicts = sanitize_conflicts(data["conflicts"])
       episode.observations = sanitize_observations(data["observations"])

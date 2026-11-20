@@ -243,6 +243,7 @@ module Rag
     COMPLETED_CUT_QUESTION = /\bya\s+cort(?:e|aste|amos|aron|ado)\b|\bi\s+(?:already\s+)?(?:have\s+)?cut\b/i
     CUT_COMMAND = /\b(?:corta|corten|cortad|cut)\b/i
     RETROSPECTIVE_CUT_PREFIX = /(?:despues|tras|luego)\s+de(?:\s+haber)?\s+\z|despues\s+del\s+\z|after\s+(?:you\s+|having\s+)?\z|al\s+\z/
+    RETROSPECTIVE_FRAME = /(?:despues|tras|luego)\s+(?:de(?:\s+haber)?\s+|del\s+)?\z|after\s+(?:you\s+|having\s+)?\z|\bal\s+\z/
     OPERATION_NEGATOR_PATTERN = /
       \b(?:no|nunca|ni|evita|evite|evitar|eviten|do\s+not|never|avoid)\b
     /ix
@@ -348,7 +349,7 @@ module Rag
       # still leaves.
       return false if engineering_review_referral?(normalized) && !foreign_value_unit?(unit.text, chunks, question, technician_texts)
 
-      (operation_unit?(normalized, question, unit.text) && !negated_frame?(unit)) ||
+      (operation_unit?(normalized, question, unit.text, reported: technician_texts) && !negated_frame?(unit)) ||
         foreign_value_unit?(unit.text, chunks, question, technician_texts)
     end
     private_class_method :reference_unit_removed?
@@ -731,7 +732,7 @@ module Rag
     end
     private_class_method :combined_procedure_basis
 
-    def self.operation_unit?(normalized, question = nil, original = nil)
+    def self.operation_unit?(normalized, question = nil, original = nil, reported: [])
       return false if normalized.blank?
       return true if directed_measurement?(normalized, original)
       return true if control_actuation?(normalized, original)
@@ -742,6 +743,7 @@ module Rag
         next false if negated_before?(normalized, match.begin(0))
         next false if observational_press?(normalized, match, original)
         next false if completed_action_reference?(normalized, asked, match)
+        next false if reported_action_narration?(normalized, match, reported)
 
         true
       end
@@ -822,6 +824,36 @@ module Rag
       true
     end
     private_class_method :completed_action_reference?
+
+    # Stage 1. "Tras retirar los residuos, la puerta cerró…" narrates what the
+    # technician already reported doing, with its observed result. It is not an
+    # instruction. The frame has to be retrospective, the technician has to
+    # have reported the same operation without negating it, and any other
+    # operation in the sentence is still judged on its own.
+    def self.reported_action_narration?(normalized, match, reported)
+      return false unless CheckOutcomeFlag.enabled?
+
+      texts = Array(reported).filter_map { |text| applicability_normalize(text) if text.present? }
+      return false if texts.empty?
+
+      window = normalized[[ match.begin(0) - 40, 0 ].max...match.begin(0)]
+      # «Lo más probable es que retirar…» names the action the technician
+      # already reported. It is not an instruction. An order in the same
+      # sentence («debas retirar») stays an operation, and so does any other
+      # operation verb, which this method judges on its own match.
+      hypothesis = match[0].match?(/(?:ar|er|ir)\z/) && normalized.match?(/\bmas probable\b/) &&
+        !normalized.match?(/\b(?:debes|debas|deberias|hay que|tienes que|conviene)\b/)
+      return false unless window.match?(RETROSPECTIVE_FRAME) || hypothesis
+
+      stem = match[0].sub(/(?:ando|iendo|ar|er|ir|elo|ela|a|e|o)\z/, "")
+      return false if stem.length < 4
+
+      done = /(?<![[:alnum:]])#{Regexp.escape(stem)}(?:e|o|aste|amos|aron|ado|ada|ados|adas|i|io)(?![[:alnum:]])/
+      texts.any? do |text|
+        text.to_enum(:scan, done).any? { !negated_before?(text, Regexp.last_match.begin(0)) }
+      end
+    end
+    private_class_method :reported_action_narration?
 
     def self.retrospective_cut?(normalized, index)
       window = normalized[[ index - 40, 0 ].max...index]

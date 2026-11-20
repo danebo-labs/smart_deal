@@ -1,0 +1,396 @@
+{
+ "source": "live run 20261120T012019Z (Otis case 29, T5 and T6). Texts are the captured model draft, sources and technician messages; nothing is rewritten.",
+ "turns": {
+  "t5": {
+   "message": "La hoja se trababa antes de completar el cierre . Encontré residuos en la guía y los retire . Después la puerta cerró por completo y el 0102 no.volvio a registrarse durante la.prueba . No llegamos a verificar DCL ni DFC",
+   "raw_draft": "**Lectura:** Tras retirar los residuos de la guía, la puerta cerró por completo y el 0102 no volvió a aparecer en tu prueba. Lo más probable es que el cambio se deba a esa limpieza, porque reportaste que la hoja se trababa antes de completar el cierre.\n\nEso no confirma la causa. El 0102 significa \"La puerta no fue capaz de cerrar\" [2] y se asocia a \"al desaparecer alguna de las señales DCL, DFC o DW\" [1].\n\nSigue sin verificarse DCL ni DFC. La configuración de referencia para GECGB y el piso 3 no está confirmada.\n\n**Pregunta:** ¿Cuántos cierres seguidos hiciste en la prueba y en todos la puerta cerró completa?",
+   "sources": [
+    {
+     "n": 1,
+     "title": "MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245)",
+     "page": 22.0,
+     "uri": "s3://multimodal-source-destination/bulk_chunks/3/9abe0fe2f94ff98e6af27a4f0065549eed8c/chunk_p22_1.txt",
+     "text": "[DOCUMENT: MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-24/MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245).pdf]\n[SEARCH_ALIASES: OTIS — GeN2 Comfort, 0101 EPO shutd., 0102 OpMode DTC, 0103 OpMode DTO, 0109 Stuck DCB, 0110 Stuck RDCB, PDS active, DS bypass]\n\nTabla de mensajes de diagnóstico — GeN2 Comfort (Página 31/56, F.Edición Marzo 2010). Lista de códigos de mensaje con su Clase (W/F/I) y parámetros relacionados. Bloque de mensajes 01xx (maniobra / puertas) y comienzo del bloque 02xx (Control de Movimiento).\n\n| Mensaje | Clase | Descripción | Parámetros relacionados |\n|-|-|-|-|\n| 0101 EPO shutd. | W | La cabina no está disponible mientras esté en maniobra EPO. Otras cabinas del grupo pueden rescatar. | NU (017), NUSD (018), NUSG (019) |\n| 0102 OpMode DTC | W | La puerta no cierra en el tiempo programado al desaparecer alguna de las señales DCL, DFC o DW | DCL (694), RDCL (695), DOOR, REAR DTC-T |\n| 0103 OpMode DTO | F | La puerta no abre en el tiempo programado al desaparecer DOL | DOL (000), RDOL (544), DOOR, REAR DTO-T |\n| 0104 OpMode DCP | W | La cabina no ha atendido una llamada en el tiempo programado (ejemplo: la puerta se abrió manualmente) | DCP-T |\n| 0106 PDS active | I | El interruptor PDS está abierto | PDD (784) |\n| 0107 DS bypass | I | Para el servicio de Bomberos: Funcionamiento incorrecto de los relés DDSR | DDSRC (970) |\n| 0108 EEC bypass | F | Para el servicio de Bomberos: Funcionamiento incorrecto de del relé DEMERC | DEMERC (971) |\n| 0109 Stuck DCB | F | El botón de cerrar puertas en cabina (DCB) está permanentemente actuado | DCB (003) |\n| 0110 Stuck RDCB | F | El botón de cerrar puertas trasero en cabina (RDCB) está permanentemente actuado | RDCB (547) |"
+    },
+    {
+     "n": 2,
+     "title": "MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245)",
+     "page": 85.0,
+     "uri": "s3://multimodal-source-destination/bulk_chunks/3/9abe0fe2f94ff98e6af27a4f0065549eed8c/chunk_p85_2.txt",
+     "text": "[DOCUMENT: MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-24/MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245).pdf]\n[SEARCH_ALIASES: OTIS GeN2 Premier — TCBC, OpMode NAV, EPO shutd, OpMode DTC, OpMode DTO, OpMode DCP, PDS active, DS bypass]\n\nM-1-2-1 — MENSAJES DE SUCESOS / ERRORES (continuación)\n\nSubsistema de Control de Maniobra\n\n| SUCESO | CAUSA | PROGRAMACION RELACIONADA |\n|-|-|-|\n| 0100 OpMode NAV | OCSS no está disponible debido a un fallo del paquete (p. eje. drive-fault (NR)). Este modo también es activo después de inspección y antes de iniciar el viaje de corrección. | -- |\n| 0101 EPO shutd | La cabina está disponible para viajar durante EPO; la cabina siguiente está permitida para rescatar. | NU (017) / NUSD (018) / NUSG (019) |\n| 0102 OpMode DTC | La puerta no fue capaz de cerrar (perdido DCL,DFC ó DW) dentro del tiempo permitido. | DCL (694) / RDCL (695) / DOOR,REAR / DTC-T |\n| 0103 OpMode DTO | La puerta no fue capaz de abrir (perdido DOL) dentro del tiempo permitido. | DOL (000) / RDOL (544) / DOOR, REAR / DTO-T |\n| 0104 OpMode DCP | La cabina no fue capaz de responder a una llamada dentro del tiempo permitido (eje. la puerta fue mantenida abierta manualmente.) | DCP-T |\n| 0106 PDS active | El interruptor de partición de puertas está abierto | PDD (784) |\n| 0107 DS bypass | Mal funcionamiento o anulados los relés del interruptor de puerta (DDSR) para el servicio de bomberos genérico. | DDSRC (970) |\n| 0108 EEC bypass | Mal funcionamiento o anulados el contacto de salida de emergencia (DEMERC) para el servicio de bomberos genérico. | DEMERC (971) |"
+    },
+    {
+     "n": 3,
+     "title": "MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123)",
+     "page": 42.0,
+     "uri": "s3://multimodal-source-destination/bulk_chunks/3/9bad44ecb37f14434614a8d72e3cbd01a142/chunk_p42_2.txt",
+     "text": {
+      "evidence": "external",
+      "field": "rows-2-text",
+      "sequence": 32,
+      "path": "bodies/b0039.txt",
+      "sha256": "aa10d156a7de396407c9c41e1aae6c9e7eaf7055611de20edcc68a2a694fb411",
+      "media_type": "text/plain; charset=utf-8",
+      "bytes": 2116,
+      "truncated": false,
+      "redacted": false,
+      "absent": false,
+      "summary": "[DOCUMENT: MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-24/MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123).pdf]\n[SEARCH_ALIASES: OTIS 2000, Puertas f",
+      "summary_truncated": true
+     }
+    },
+    {
+     "n": 4,
+     "title": "MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123)",
+     "page": 44.0,
+     "uri": "s3://multimodal-source-destination/bulk_chunks/3/9bad44ecb37f14434614a8d72e3cbd01a142/chunk_p44_2.txt",
+     "text": "[DOCUMENT: MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-24/MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123).pdf]\n[SEARCH_ALIASES: OTIS 2000, OCSS, 0100 OpMode NAV, 0101 EPO suhtd, 0102 OpMode DTC, 0103 OPMode DTO, 0104 OpMode DCP]\n\nMENSAJES DE ERROR — OCSS (0100–0104)\n\nManual de Ayuda - OTIS 2000. Página 14/20.\n\n| Mensaje | Razón | Parámetros e I/O relacionados |\n|-|-|-|\n| 0100 OpMode NAV | La maniobra no está disponible debido a un fallo del control de movimiento; puede ser por: CR, 8L, BR, DP, EF, ES, EW, JR | - |\n| 0101 EPO suhtd. | La cabina no esta disponible mientras esté en maniobra EPO | NU (017), NUSD (018), NUSG (019) |\n| 0102 OpMode DTC | La puerta no cierra en el tiempo programado (no aparecen las señales DCL, DFC ó DW) | DCL (694), RDCL (695), DOOR, REAR, DTC-T |\n| 0103 OPMode DTO | La puerta no abre en el tiempo programado (no aparece la señal DOL) | DOL (000), RDOL (544), DOOR, REAR, DTO-T |\n| 0104 OpMode DCP | La cabina no responde a las llamadas en el tiempo programado (ej: la puerta se abrió manualmente) | DCP-T |"
+    },
+    {
+     "n": 5,
+     "title": "MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123)",
+     "page": 49.0,
+     "uri": "s3://multimodal-source-destination/bulk_chunks/3/9bad44ecb37f14434614a8d72e3cbd01a142/chunk_p49_1.txt",
+     "text": "[DOCUMENT: MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-24/MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123).pdf]\n[SEARCH_ALIASES: OTIS 2000, puerta PAX, LCB_II, M-3-4-1, DOL, DOS, operador PAX, TCB]\n\nGUÍA DE SOLUCIÓN DE AVERÍAS EN PUERTA PAX\n\n1) LA PUERTA NO FUNCIONA\n\nConectar corriente con TCI en inspección. Después de unos 20 segundos de autocomprobación (led DOL encendido en LCB_II), conectar el útil de pruebas al control del operador.\n\nDiagrama de flujo de diagnóstico:\n\n- Pulsar M-3-4-1 y dar ordenes de abrir (1) y cerrar (2).\n- ¿Funciona?\n   - SÍ → Chequear Interfase (M-3-2-4-1 en PAX). Si \"Finish no error\" → Comprobar salidas PAX (M-3-1-3 en PAX). Si OK → Comprobar señales de reapertura en LCB_II. → Problema Otis 2000.\n   - NO → Comprobar conectores PAX. Comprobar sucesos (M-3-2-1-1 en PAX).\n\nRamas según respuesta del interfase:\n- \"No responde\" → Comprobar 24Vdc en operador. Si OK → Comprobar si se activan DOL y DOS en PAX y LCB_II.\n- \"Error\" → Sacar hilo de la señal correspondiente del conector de la TCB y colocarla a masa comprobando que la señal cambia de estado (en M-3-1-2 del PAX). Con hilo a HL2, ST en mayúsculas. Si \"Mal\" → Hilo mal. Si OK →\n   - Comprobar I/O de remota (en LCB_II).\n   - Comprobar tetiguillos.\n   - Cambiar remota.\n   - Si OK → Problema Otis 2000 → Línea serie / Programación.\n   - Si la Z12 de la LCB_II es la versión de memoria CAB, comprobar que los comandos que envía la LCB_II (M-1-1-6-GOON) los recibe la PAX.\n\n2) PROBLEMAS EN LA APERTURA, CIERRE, REAPERTURAS.\n\n- Comprobar señales del PAX (M-3-1-2 y M-3-1-3 en PAX).\n- Comprobar señales de reapertura en LCB_II (M-1-1-3: DOB, LRD, etc).\n- Comprobar ajustes mecánicos de la puerta.\n- Si es necesario, reajustar parámetros de funcionamiento de la puerta (ver Manual de Consulta).\n\nPágina: 19/20. F.Emisión: Marzo 2010."
+    },
+    {
+     "n": 6,
+     "title": "MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245)",
+     "page": 24.0,
+     "uri": "s3://multimodal-source-destination/bulk_chunks/3/9abe0fe2f94ff98e6af27a4f0065549eed8c/chunk_p24_1.txt",
+     "text": {
+      "evidence": "external",
+      "field": "rows-5-text",
+      "sequence": 32,
+      "path": "bodies/b0040.txt",
+      "sha256": "914d5bd6f27a6f0bae818cbc38becc40ae5f69be98e5cc0a813e6e8e55e07bfe",
+      "media_type": "text/plain; charset=utf-8",
+      "bytes": 2816,
+      "truncated": false,
+      "redacted": false,
+      "absent": false,
+      "summary": "[DOCUMENT: MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-24/MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245).pdf]\n[SEARCH_ALIASES: OTIS — GeN2 Comf",
+      "summary_truncated": true
+     }
+    },
+    {
+     "n": 7,
+     "title": "MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245)",
+     "page": 87.0,
+     "uri": "s3://multimodal-source-destination/bulk_chunks/3/9abe0fe2f94ff98e6af27a4f0065549eed8c/chunk_p87_1.txt",
+     "text": "[DOCUMENT: MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-24/MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245).pdf]\n[SEARCH_ALIASES: OTIS GeN2 Premier — TCBC, Subsistema de Control de Puertas, 0300 DBP, 0301 DCL, 0302 DoorBridge, 0304 DOL alw.on, 0306 Hwy Access]\n\nSubsistema de Control de Puertas — Tabla de sucesos (SUCESO / CAUSA / PROGRAMACION RELACIONADO)\n\n| SUCESO | CAUSA | PROGRAMACION RELACIONADO |\n|-|-|-|\n| 0300 DBP: d'c_SE | Mientras la puerta estaba abriendo o completamente abierta, el puente de puertas fue encontrado inactivo (DFC en minúsculas o SE en mayúsculas). | EN-RLV, EN-ADO |\n| 0301 DCL in [ ] | (R) DCL estaba activo mientras que la puerta estaba completamente abierta. | DCL (694), RDCL (695) |\n| 0302 DoorBridge | La entrada DW o DFC no estaban a nivel bajo durante el último ciclo de puertas, eso significa que la cadena de seguridad está puenteada o hay un defecto en el circuito de Bypass de puertas. | -- |\n| 0304 DOL alw.on | (R) DOL estaba activado cuando la puerta estaba totalmente cerrada. Este suceso también aparece cuando se funden los fusibles de puertas. Este suceso no es registrado en los primeros 40 segundos después de poner corriente. | DCL (000), RDOL (544) |\n| 0306 Hwy Access | La puerta de piso fue abierta. -> Ver descripción del mensaje intermitente \"Switch INS\". | -- |"
+    },
+    {
+     "n": 8,
+     "title": "MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245)",
+     "page": 82.0,
+     "uri": "s3://multimodal-source-destination/bulk_chunks/3/9abe0fe2f94ff98e6af27a4f0065549eed8c/chunk_p82_1.txt",
+     "text": "[DOCUMENT: MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-24/MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245).pdf]\n[SEARCH_ALIASES: OTIS GeN2 Premier — TCBC, 1RT, 3RT, LVC, SFR, DFR, PDR, SAF]\n\nM-1-1-3 — SALIDAS DEL SISTEMA\n\nTabla de salidas del sistema agrupadas por función. Encabezados de la tabla: | Entrada | Grupo | Descripción |.\n\n**Grupo: Disparo**\n| Entrada | Descripción |\n|-|-|\n| 1RT | Disparo remoto para cabina. |\n| 1RT | Rearme remoto para cabina. |\n| 3RT | Disparo remoto para contrapeso. |\n\n**Grupo: Puente de puertas**\n| Entrada | Descripción |\n|-|-|\n| LVC | Relé LVC. |\n| SFR | Seguro para renivelar (activo el puente de puentes y sin demanda de viaje). |\n\n**Grupo: OCSS**\n| Entrada | Descripción |\n|-|-|\n| DFR | Relé DFC. |\n| PDR | Relé de falta de alimentación (Modo ahorro energía). |\n| LR | Relé de luz. |\n\n**Grupo: Emergencia**\n| Entrada | Descripción |\n|-|-|\n| NUD | DATA_NOT_AVAILABLE |\n| NUG | DATA_NOT_AVAILABLE |\n\n**Grupo: REM**\n| Entrada | Descripción |\n|-|-|\n| BUT | Botón activado (cualquier demanda de movimiento). |\n| DO | Puertas totalmente abiertas. |\n| NORM | Operación normal (sin fallos). |\n| CPR | Cabina aparcada, esperando demanda de viaje. |\n\n**Otras salidas (grupo no impreso en estas filas)**\n| Entrada | Descripción |\n|-|-|\n| MF | Piso principal (lobby). |\n| LND | Paso por piso. |\n| OOS | Fuera de servicio. |\n| LEV | Señal de nivel. |\n| DC | Comando de cierre de puertas. |\n| RFS | Requerimiento para servicio. |\n| SPB | Fallo de la placa del panel de servicio. |\n| SCS | Contacto del interruptor de aflojamiento de cintas. |\n| HTS | Sensor de temperatura de piso en la SPB. |\n| RDO | Señal de apertura de puerta trasera. |\n| RDC | Señal de cierre de puerta trasera. |\n| BRK | Señal de freno desde el paquete. |\n| SAF | Cadena de seguridad (ES). |\n| DS | Interruptor de puerta (con DBP:DW, sin DBP:DFC). |\n| CLM | Monitor de luz de cabina. |"
+    },
+    {
+     "n": 9,
+     "title": "MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245)",
+     "page": 86.0,
+     "uri": "s3://multimodal-source-destination/bulk_chunks/3/9abe0fe2f94ff98e6af27a4f0065549eed8c/chunk_p86_1.txt",
+     "text": {
+      "evidence": "external",
+      "field": "rows-8-text",
+      "sequence": 32,
+      "path": "bodies/b0041.txt",
+      "sha256": "b64aa33f16dd9bc2738bbf6c9accbc8fd83e0a286382d1dff1f63f5901311712",
+      "media_type": "text/plain; charset=utf-8",
+      "bytes": 2456,
+      "truncated": false,
+      "redacted": false,
+      "absent": false,
+      "summary": "[DOCUMENT: MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-24/MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245).pdf]\n[SEARCH_ALIASES: OTIS GeN2 Premie",
+      "summary_truncated": true
+     }
+    },
+    {
+     "n": 10,
+     "title": "MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245)",
+     "page": 121.0,
+     "uri": "s3://multimodal-source-destination/bulk_chunks/3/9abe0fe2f94ff98e6af27a4f0065549eed8c/chunk_p121_2.txt",
+     "text": "[DOCUMENT: MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-24/MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245).pdf]\n[SEARCH_ALIASES: OTIS — Cuadros NE300, Dirección 02, DFC, 1LS 2LS, SW1 SW2 LB, TOP BOT, D.D.P., botón azul]\n\nTABLA DE CAUSAS DE BLOQUEO — DIRECCIÓN 02 (DATO / EXPLICACION):\n\n| DATO | EXPLICACION |\n|-|-|\n| 00 | Sin bloqueo. |\n| 01 | Señal \"DFC\" cortada. (Comprobar seguridades y/o serie de puertas). |\n| 02 | Cabina moviéndose sin control. (Comprobar freno). |\n| 03 | Señal \"C\" actuada con asc. parado. (Comprobar SW1, SW2 y placa LB). |\n| 04 | Incorrecta inicialización del sistema(**). (Comprobar 1LS y 2LS). |\n| 05 | Señales \"TOP\" y \"BOT\" actuadas (Comprobar 1LS y 2LS). |\n| 06 | Error de sincronismo de fases. (Comprobar fases L1, L2, L3). |\n| 07 | Libre para usos futuros. |\n| 08 | Exceso de velocidad (*). (Comprobar datos de dirección 3). |\n| 09 | Diferencia de velocidad entre lo programado y lo real (*). |\n| 0A | Actuación del D.D.P. (*) (Comprobar impulsores, encoder y placa IOB). |\n| 0b | Exceso de tiempo renivelando (*). (Comprobar impulsores y encoder). |\n| 0C | Fallo en la medida de velocidad (*). (Comprobar encoder). |\n| 0d | Fallo en la medida de posición (*). (Comprobar impulsores y encoder). |\n| (*) | Cuando ocurre alguna de estas condiciones el \"GAMMA D\" se bloquea para impedir que se haga otro viaje. Sólo se puede desbloquear cortando y poniendo tensión o pulsando el botón azul. |\n| (**) | Ocurre cuando los parámetros programados para la curva de velocidad están fuera del programa de cálculo. |"
+    }
+   ],
+   "episode": {
+    "checks": [
+     {
+      "subject": "Todavía no he confirmado el.estado de DCL",
+      "status": "not_done",
+      "correlation_id": "photo:f886c8ec-648d-44a5-87cc-f5750e181f54",
+      "operation": [
+       "check"
+      ]
+     },
+     {
+      "subject": "No llegamos a verificar DCL ni DFC",
+      "status": "not_done",
+      "correlation_id": "query:5a699288-5fe4-4913-b9e4-eb12e3268019",
+      "operation": [
+       "check"
+      ]
+     }
+    ],
+    "observations": [
+     {
+      "text": "En el.piso 3 la puerta intenta cerrar y vuelve abrir",
+      "correlation_id": "photo:73e4e00d-7b1e-43d2-962d-85018075fd0d"
+     },
+     {
+      "text": "En el historial de eventos aparece 0102 0pMode DTC.",
+      "correlation_id": "query:aea5e995-82ad-4c82-81a2-bf91b3344ad9"
+     },
+     {
+      "text": "0102 0pMode DTC",
+      "correlation_id": "query:aea5e995-82ad-4c82-81a2-bf91b3344ad9"
+     },
+     {
+      "text": "Todavía no he confirmado el.estado de DCL",
+      "correlation_id": "photo:f886c8ec-648d-44a5-87cc-f5750e181f54"
+     },
+     {
+      "text": "Se detiene antes",
+      "correlation_id": "query:f188884b-4813-40a2-b688-7aa5c21d7fbe"
+     },
+     {
+      "text": "La hoja se trababa antes de completar el cierre",
+      "correlation_id": "query:5a699288-5fe4-4913-b9e4-eb12e3268019"
+     },
+     {
+      "text": "Encontré residuos en la guía y los retiré",
+      "correlation_id": "query:5a699288-5fe4-4913-b9e4-eb12e3268019"
+     },
+     {
+      "text": "Después la puerta cerró por completo",
+      "correlation_id": "query:5a699288-5fe4-4913-b9e4-eb12e3268019"
+     }
+    ],
+    "pending_question": {
+     "type": "documented_context",
+     "question": "¿Cuántos cierres seguidos hiciste en la prueba y en todos la puerta cerró completa?",
+     "targets": [],
+     "id": "q5",
+     "parts": [
+      {
+       "id": "p5",
+       "role": "main",
+       "text": "¿Cuántos cierres seguidos hiciste en la prueba y en todos la puerta cerró completa?"
+      }
+     ]
+    }
+   },
+   "published_live": "Lo más probable es que el cambio se deba a esa limpieza, porque reportaste que la hoja se trababa antes de completar el cierre.\n\nEso no confirma la causa. El 0102 significa \"La puerta no fue capaz de cerrar\" [2] y se asocia a \"al desaparecer alguna de las señales DCL, DFC o DW\" [1].\n\nSigue sin verificarse DCL ni DFC.\n\nPregunta: ¿Cuántos cierres seguidos hiciste en la prueba y en todos la puerta cerró completa?\n\nLa referencia describe el manual; por sí sola no confirma la placa ni la configuración instalada."
+  },
+  "t6": {
+   "message": "Confirmo en la maniobra del piso 3 , la puerta completo el cierre , el LED DFC se encendió y se mantuvo encendido al quedar cerrada , el 0102 no volvió a aparecer durante la prueba. No verifique DCL",
+   "raw_draft": "**Lectura:** Con la puerta cerrada por completo y el 0102 sin reaparecer, esta prueba coincide con lo que reportas.\n\n**Cambio más probable:** la limpieza de los residuos de la guía. Solo vale para esa prueba y no confirma la causa.\n\n**Fuentes:** el 0102 es \"La puerta no fue capaz de cerrar\" y se asocia a perder DCL, DFC o DW [2]. El LED DFC indica \"Puertas completamente cerradas\" [8], así que tu observación respalda DFC. DCL sigue sin verificarse. Es el \"Límite final de cierre de puertas\" [4].\n\n**Pregunta:** Con la puerta del piso 3 cerrada, ¿DCL aparece activo en la consola?\n\nLa referencia describe el manual; por sí sola no confirma la placa ni la configuración instalada.",
+   "sources": [
+    {
+     "n": 1,
+     "title": "MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245)",
+     "page": 22.0,
+     "uri": "s3://multimodal-source-destination/bulk_chunks/3/9abe0fe2f94ff98e6af27a4f0065549eed8c/chunk_p22_1.txt",
+     "text": "[DOCUMENT: MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-24/MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245).pdf]\n[SEARCH_ALIASES: OTIS — GeN2 Comfort, 0101 EPO shutd., 0102 OpMode DTC, 0103 OpMode DTO, 0109 Stuck DCB, 0110 Stuck RDCB, PDS active, DS bypass]\n\nTabla de mensajes de diagnóstico — GeN2 Comfort (Página 31/56, F.Edición Marzo 2010). Lista de códigos de mensaje con su Clase (W/F/I) y parámetros relacionados. Bloque de mensajes 01xx (maniobra / puertas) y comienzo del bloque 02xx (Control de Movimiento).\n\n| Mensaje | Clase | Descripción | Parámetros relacionados |\n|-|-|-|-|\n| 0101 EPO shutd. | W | La cabina no está disponible mientras esté en maniobra EPO. Otras cabinas del grupo pueden rescatar. | NU (017), NUSD (018), NUSG (019) |\n| 0102 OpMode DTC | W | La puerta no cierra en el tiempo programado al desaparecer alguna de las señales DCL, DFC o DW | DCL (694), RDCL (695), DOOR, REAR DTC-T |\n| 0103 OpMode DTO | F | La puerta no abre en el tiempo programado al desaparecer DOL | DOL (000), RDOL (544), DOOR, REAR DTO-T |\n| 0104 OpMode DCP | W | La cabina no ha atendido una llamada en el tiempo programado (ejemplo: la puerta se abrió manualmente) | DCP-T |\n| 0106 PDS active | I | El interruptor PDS está abierto | PDD (784) |\n| 0107 DS bypass | I | Para el servicio de Bomberos: Funcionamiento incorrecto de los relés DDSR | DDSRC (970) |\n| 0108 EEC bypass | F | Para el servicio de Bomberos: Funcionamiento incorrecto de del relé DEMERC | DEMERC (971) |\n| 0109 Stuck DCB | F | El botón de cerrar puertas en cabina (DCB) está permanentemente actuado | DCB (003) |\n| 0110 Stuck RDCB | F | El botón de cerrar puertas trasero en cabina (RDCB) está permanentemente actuado | RDCB (547) |"
+    },
+    {
+     "n": 2,
+     "title": "MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245)",
+     "page": 85.0,
+     "uri": "s3://multimodal-source-destination/bulk_chunks/3/9abe0fe2f94ff98e6af27a4f0065549eed8c/chunk_p85_2.txt",
+     "text": "[DOCUMENT: MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-24/MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245).pdf]\n[SEARCH_ALIASES: OTIS GeN2 Premier — TCBC, OpMode NAV, EPO shutd, OpMode DTC, OpMode DTO, OpMode DCP, PDS active, DS bypass]\n\nM-1-2-1 — MENSAJES DE SUCESOS / ERRORES (continuación)\n\nSubsistema de Control de Maniobra\n\n| SUCESO | CAUSA | PROGRAMACION RELACIONADA |\n|-|-|-|\n| 0100 OpMode NAV | OCSS no está disponible debido a un fallo del paquete (p. eje. drive-fault (NR)). Este modo también es activo después de inspección y antes de iniciar el viaje de corrección. | -- |\n| 0101 EPO shutd | La cabina está disponible para viajar durante EPO; la cabina siguiente está permitida para rescatar. | NU (017) / NUSD (018) / NUSG (019) |\n| 0102 OpMode DTC | La puerta no fue capaz de cerrar (perdido DCL,DFC ó DW) dentro del tiempo permitido. | DCL (694) / RDCL (695) / DOOR,REAR / DTC-T |\n| 0103 OpMode DTO | La puerta no fue capaz de abrir (perdido DOL) dentro del tiempo permitido. | DOL (000) / RDOL (544) / DOOR, REAR / DTO-T |\n| 0104 OpMode DCP | La cabina no fue capaz de responder a una llamada dentro del tiempo permitido (eje. la puerta fue mantenida abierta manualmente.) | DCP-T |\n| 0106 PDS active | El interruptor de partición de puertas está abierto | PDD (784) |\n| 0107 DS bypass | Mal funcionamiento o anulados los relés del interruptor de puerta (DDSR) para el servicio de bomberos genérico. | DDSRC (970) |\n| 0108 EEC bypass | Mal funcionamiento o anulados el contacto de salida de emergencia (DEMERC) para el servicio de bomberos genérico. | DEMERC (971) |"
+    },
+    {
+     "n": 3,
+     "title": "MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245)",
+     "page": 117.0,
+     "uri": "s3://multimodal-source-destination/bulk_chunks/3/9abe0fe2f94ff98e6af27a4f0065549eed8c/chunk_p117_2.txt",
+     "text": "[DOCUMENT: MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-24/MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245).pdf]\n[SEARCH_ALIASES: OTIS — Cuadros NE300, LED placa NE300, VLC DW DFC ES INS, bornas P3 P4 P10, condiciones mínimas NORMAL, pesacargas fotocélula]\n\n2. VERIFICAR LAS INDICACIONES DE LOS \"LED\" DE LA PLACA\n\nTabla de señales LED, borna (esquema), tensión y condición de iluminación:\n\n| SEÑAL (Led) | BORNA (Esquema) | TENSION | EL LED SE ILUMINA CUANDO |\n|-|-|-|-|\n| VLC | | | La alimentación de 8,5 V. existe |\n| DUP | | | Los cuadros \"A\" y \"B\" trabajan conjuntamente (DUPLEX) |\n| DW | P 3.11 | 110 Vca. | Todas las seguridades + Presencia de hoja correctas |\n| DFC | P 3.7 | 110 Vca. | DW+ enclavamiento de cerraduras+puerta de cabina correctas |\n| /ES | P 3.3 | 110 Vca. | Todas las seguridades correctas |\n| /INS | P 3.9 | 110 Vca. | Interruptor \"TCI\" en posición \"NORMAL\" |\n| /ISS | P 4.2 | 24 Vcc. | Llavín de cabina está en \"INDEPENDIENTE\" |\n| /DOL | P 4.1 | 24 Vcc. | Relé \"DO\" actuado |\n| LNS | P 4.3 | 24 Vcc. | Contacto de pesacargas cerrado |\n| RUN | P 4.4 | 24 Vcc. | Cabina en planta (Igual a D.Z.) |\n| DOB | P 4.5 | 24 Vcc. | Botón de abrir puertas, el Contacto de Reapertura o Fotocélula actuados |\n| DZ | P 4.6 | 24 Vcc. | Cabina en planta (Igual a RUN) |\n| IPD | P 4.7 | 24 Vcc. | Impulsor \"IPD\" actuado |\n| IPU | P 4.8 | 24 Vcc. | Impulsor \"IPU\" actuado |\n| /2LS | P 4.9 | 24 Vcc. | Cabina fuera del nivel extremo superior |\n| /1LS | P10.10 | 24 Vcc. | Cabina fuera del nivel extremo inferior |\n\nNOTA: LAS CONDICIONES MINIMAS DE FUNCIONAMIENTO EN \"NORMAL\" SON:\n- LED ILUMINADOS: VLC - DW - ES - RUN - DZ - /INS.\n- LED APAGADOS: DOL - LNS - DOB - IPD - IPU.\n- LED ILUMINADOS O APAGADOS: DUP - DFC - 2LS - 1LS - ISS."
+    },
+    {
+     "n": 4,
+     "title": "MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123)",
+     "page": 42.0,
+     "uri": "s3://multimodal-source-destination/bulk_chunks/3/9bad44ecb37f14434614a8d72e3cbd01a142/chunk_p42_2.txt",
+     "text": {
+      "evidence": "external",
+      "field": "rows-3-text",
+      "sequence": 32,
+      "path": "bodies/b0039.txt",
+      "sha256": "aa10d156a7de396407c9c41e1aae6c9e7eaf7055611de20edcc68a2a694fb411",
+      "media_type": "text/plain; charset=utf-8",
+      "bytes": 2116,
+      "truncated": false,
+      "redacted": false,
+      "absent": false,
+      "summary": "[DOCUMENT: MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-24/MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123).pdf]\n[SEARCH_ALIASES: OTIS 2000, Puertas f",
+      "summary_truncated": true
+     }
+    },
+    {
+     "n": 5,
+     "title": "MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123)",
+     "page": 75.0,
+     "uri": "s3://multimodal-source-destination/bulk_chunks/3/9bad44ecb37f14434614a8d72e3cbd01a142/chunk_p75_1.txt",
+     "text": {
+      "evidence": "external",
+      "field": "rows-4-text",
+      "sequence": 32,
+      "path": "bodies/b0040.txt",
+      "sha256": "945b3f44f788faeaa76dff0bfa09a2f4d28837828e61b93a76d9b6506ee292cc",
+      "media_type": "text/plain; charset=utf-8",
+      "bytes": 2278,
+      "truncated": false,
+      "redacted": false,
+      "absent": false,
+      "summary": "[DOCUMENT: MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-24/MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123).pdf]\n[SEARCH_ALIASES: OTIS OVF20, LCB_II, ",
+      "summary_truncated": true
+     }
+    },
+    {
+     "n": 6,
+     "title": "MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123)",
+     "page": 55.0,
+     "uri": "s3://multimodal-source-destination/bulk_chunks/3/9bad44ecb37f14434614a8d72e3cbd01a142/chunk_p55_1.txt",
+     "text": {
+      "evidence": "external",
+      "field": "rows-5-text",
+      "sequence": 32,
+      "path": "bodies/b0041.txt",
+      "sha256": "732c7829a13f2c4e57a0cd6fb52dfbd7730704b56ec84ad95bfee6221b77b03b",
+      "media_type": "text/plain; charset=utf-8",
+      "bytes": 2121,
+      "truncated": false,
+      "redacted": false,
+      "absent": false,
+      "summary": "[DOCUMENT: MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-24/MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123).pdf]\n[SEARCH_ALIASES: OTIS OVF10, LCB_II, ",
+      "summary_truncated": true
+     }
+    },
+    {
+     "n": 7,
+     "title": "MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123)",
+     "page": 34.0,
+     "uri": "s3://multimodal-source-destination/bulk_chunks/3/9bad44ecb37f14434614a8d72e3cbd01a142/chunk_p34_2.txt",
+     "text": "[DOCUMENT: MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-24/MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123).pdf]\n[SEARCH_ALIASES: OTIS 2000, LED LCB_II, BC, VLC, GRP/J, ES, DW, DFC]\n\n2. VERIFICAR LAS INDICACIONES DE LOS LED DE LA PLACA LCB_II\n\nTabla de señales LED de la placa LCB_II:\n\n| SEÑAL | CONECTOR DE LCB_II | TENSIÓN | EL LED SE ILUMINA CUANDO |\n|-|-|-|-|\n| BC | P12.1 / P12.2 | 135Vc.c. | El freno está alimentado (Ascensor eléctrico). Las válvulas están alimentadas (Ascensor Hidráulico) |\n| VLC | | | Los circuitos internos de la placa LCB_II están alimentados |\n| GRP/J | P11.1 / P11.4 / P11.7 | Alimentación | El GRUPO funciona correctamente (solo Duplex y Triplex). INTERMITENTE: Fallo en la alimentación trifásica (Relé J) |\n| NOR/DIAG | | | El ascensor está en NORMAL |\n| INS | | | El ascensor está en INSPECCIÓN. INTERMITENTE: Paso de INSPECCIÓN a NORMAL incorrecto. (\"TCI-Lock\": Mensaje en el Útil de Pruebas) |\n| ES | P7.5 | 110V.c.a. | La cadena de seguridad está abierta |\n| DW | P7.2 | 110V.c.a. | La cadena de seguridad y contactos de puertas de pisos están cerrados |\n| DFC | P7.8 | 110V.c.a. | La cadena de seguridad y contactos de puertas de pisos y cabina están cerrados |\n| DOL | | | La puerta de cabina está completamente abierta |\n| DOB | | | Se activa: El botón DOB o la célula fotoeléctrica o el contacto SGS de la biela o el detector electrónico |\n| LV | P1.11 | 30V.c.c. | La cabina está en zona de puertas |\n| RSL | | | INTERMITENTE: Línea de comunicación correcta |\n| MP | P2.1 / P2.2 | | Ascensor eléctrico: Siempre iluminado (si va incluido en la placa). No se conectan hilos en el conector P2. Ascensor hidráulico: las termorresistencias del motor no están correctas o con sobretemperatura |"
+    },
+    {
+     "n": 8,
+     "title": "MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123)",
+     "page": 121.0,
+     "uri": "s3://multimodal-source-destination/bulk_chunks/3/9bad44ecb37f14434614a8d72e3cbd01a142/chunk_p121_2.txt",
+     "text": "[DOCUMENT: MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-24/MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123).pdf]\n[SEARCH_ALIASES: OTIS GeN2 Comfort, GRP, NOR, INS, ES, DW, DFC, DOL]\n\nTabla de estados de LEDs — GRP / NOR / INS / ES / DW / DFC / DOL / DOB. Panel indicador de estados de funcionamiento y cadena de puertas/seguridades. Cada estado (○ apagado, ● encendido, ✳ intermitente) se describe según la tabla impresa.\n\n| LED | Estado | Descripción |\n|-|-|-|\n| GRP | ○ | No funciona en Grupo |\n| GRP | ● | Funcionamiento en Grupo correcto |\n| NOR | ● | Modo Normal |\n| NOR | ○ | NAV, DTO, DTC, ATT, CHC, EFO, EFS, ISC, fallo de Drive |\n| NOR | ✳ | La detección de acceso al Hueco (HAD) está activa. Desbloquear poniendo en ERO, TCI o con STOP en techo y foso |\n| INS | ● | Modo de Inspección (TCI o ERO actuado) |\n| INS | ✳ | Activada la función TCI-Lock (El procedimiento para salir del techo de cabina no seguido correctamente) |\n| ES | ○ | Cadena de seguridades de emergencia correctas |\n| DW | ● | Cableado de puertas (contactos de puertas de piso cerrados) |\n| DFC | ● | Puertas completamente cerradas (Cadena de seguridad cerrada) |\n| DOL | ● | Alcanzado el límite de apertura de puertas (frontal o trasera) |\n| DOB | ● | Actuado el botón de abrir puertas o cualquier otra entrada de reapertura |"
+    },
+    {
+     "n": 9,
+     "title": "MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245)",
+     "page": 82.0,
+     "uri": "s3://multimodal-source-destination/bulk_chunks/3/9abe0fe2f94ff98e6af27a4f0065549eed8c/chunk_p82_1.txt",
+     "text": "[DOCUMENT: MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-24/MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245).pdf]\n[SEARCH_ALIASES: OTIS GeN2 Premier — TCBC, 1RT, 3RT, LVC, SFR, DFR, PDR, SAF]\n\nM-1-1-3 — SALIDAS DEL SISTEMA\n\nTabla de salidas del sistema agrupadas por función. Encabezados de la tabla: | Entrada | Grupo | Descripción |.\n\n**Grupo: Disparo**\n| Entrada | Descripción |\n|-|-|\n| 1RT | Disparo remoto para cabina. |\n| 1RT | Rearme remoto para cabina. |\n| 3RT | Disparo remoto para contrapeso. |\n\n**Grupo: Puente de puertas**\n| Entrada | Descripción |\n|-|-|\n| LVC | Relé LVC. |\n| SFR | Seguro para renivelar (activo el puente de puentes y sin demanda de viaje). |\n\n**Grupo: OCSS**\n| Entrada | Descripción |\n|-|-|\n| DFR | Relé DFC. |\n| PDR | Relé de falta de alimentación (Modo ahorro energía). |\n| LR | Relé de luz. |\n\n**Grupo: Emergencia**\n| Entrada | Descripción |\n|-|-|\n| NUD | DATA_NOT_AVAILABLE |\n| NUG | DATA_NOT_AVAILABLE |\n\n**Grupo: REM**\n| Entrada | Descripción |\n|-|-|\n| BUT | Botón activado (cualquier demanda de movimiento). |\n| DO | Puertas totalmente abiertas. |\n| NORM | Operación normal (sin fallos). |\n| CPR | Cabina aparcada, esperando demanda de viaje. |\n\n**Otras salidas (grupo no impreso en estas filas)**\n| Entrada | Descripción |\n|-|-|\n| MF | Piso principal (lobby). |\n| LND | Paso por piso. |\n| OOS | Fuera de servicio. |\n| LEV | Señal de nivel. |\n| DC | Comando de cierre de puertas. |\n| RFS | Requerimiento para servicio. |\n| SPB | Fallo de la placa del panel de servicio. |\n| SCS | Contacto del interruptor de aflojamiento de cintas. |\n| HTS | Sensor de temperatura de piso en la SPB. |\n| RDO | Señal de apertura de puerta trasera. |\n| RDC | Señal de cierre de puerta trasera. |\n| BRK | Señal de freno desde el paquete. |\n| SAF | Cadena de seguridad (ES). |\n| DS | Interruptor de puerta (con DBP:DW, sin DBP:DFC). |\n| CLM | Monitor de luz de cabina. |"
+    },
+    {
+     "n": 10,
+     "title": "MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245)",
+     "page": 75.0,
+     "uri": "s3://multimodal-source-destination/bulk_chunks/3/9abe0fe2f94ff98e6af27a4f0065549eed8c/chunk_p75_1.txt",
+     "text": {
+      "evidence": "external",
+      "field": "rows-9-text",
+      "sequence": 32,
+      "path": "bodies/b0042.txt",
+      "sha256": "7ddb52b3bdec9f475d87e1607d9792076e689d9181ae2ff03834ae23e398968a",
+      "media_type": "text/plain; charset=utf-8",
+      "bytes": 2485,
+      "truncated": false,
+      "redacted": false,
+      "absent": false,
+      "summary": "[DOCUMENT: MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245).pdf]\n[SOURCE_URI: s3://multimodal-source-destination/bulk_uploads/3/2026-08-24/MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p124-245).pdf]\n[SEARCH_ALIASES: OTIS GeN2 Premie",
+      "summary_truncated": true
+     }
+    }
+   ],
+   "episode": {
+    "checks": [
+     {
+      "subject": "Todavía no he confirmado el.estado de DCL",
+      "status": "not_done",
+      "correlation_id": "photo:f886c8ec-648d-44a5-87cc-f5750e181f54",
+      "operation": [
+       "check"
+      ]
+     },
+     {
+      "subject": "No llegamos a verificar DCL ni DFC",
+      "status": "not_done",
+      "correlation_id": "query:5a699288-5fe4-4913-b9e4-eb12e3268019",
+      "operation": [
+       "check"
+      ]
+     }
+    ],
+    "observations": [
+     {
+      "text": "En el.piso 3 la puerta intenta cerrar y vuelve abrir",
+      "correlation_id": "photo:73e4e00d-7b1e-43d2-962d-85018075fd0d"
+     },
+     {
+      "text": "En el historial de eventos aparece 0102 0pMode DTC.",
+      "correlation_id": "query:aea5e995-82ad-4c82-81a2-bf91b3344ad9"
+     },
+     {
+      "text": "0102 0pMode DTC",
+      "correlation_id": "query:aea5e995-82ad-4c82-81a2-bf91b3344ad9"
+     },
+     {
+      "text": "Todavía no he confirmado el.estado de DCL",
+      "correlation_id": "photo:f886c8ec-648d-44a5-87cc-f5750e181f54"
+     },
+     {
+      "text": "Se detiene antes",
+      "correlation_id": "query:f188884b-4813-40a2-b688-7aa5c21d7fbe"
+     },
+     {
+      "text": "La hoja se trababa antes de completar el cierre",
+      "correlation_id": "query:5a699288-5fe4-4913-b9e4-eb12e3268019"
+     },
+     {
+      "text": "Encontré residuos en la guía y los retiré",
+      "correlation_id": "query:5a699288-5fe4-4913-b9e4-eb12e3268019"
+     },
+     {
+      "text": "Después la puerta cerró por completo",
+      "correlation_id": "query:5a699288-5fe4-4913-b9e4-eb12e3268019"
+     },
+     {
+      "text": "la puerta completo el cierre",
+      "correlation_id": "query:1783e20e-692c-4beb-b6c8-a2637aecfe4d"
+     },
+     {
+      "text": "el LED DFC se encendió y se mantuvo encendido al quedar cerrada",
+      "correlation_id": "query:1783e20e-692c-4beb-b6c8-a2637aecfe4d"
+     },
+     {
+      "text": "el 0102 no volvió a aparecer durante la prueba",
+      "correlation_id": "query:1783e20e-692c-4beb-b6c8-a2637aecfe4d"
+     }
+    ],
+    "pending_question": {
+     "type": "documented_context",
+     "question": "Con la puerta del piso 3 cerrada, ¿DCL aparece activo en la consola?",
+     "targets": [],
+     "id": "q6",
+     "parts": [
+      {
+       "id": "p6",
+       "role": "main",
+       "text": "Con la puerta del piso 3 cerrada, ¿DCL aparece activo en la consola?"
+      }
+     ]
+    }
+   },
+   "published_live": "Lectura: Con la puerta cerrada por completo y el 0102 sin reaparecer, esta prueba coincide con lo que reportas.\n\nCambio más probable: la limpieza de los residuos de la guía. Solo vale para esa prueba y no confirma la causa.\n\nFuentes: el 0102 es \"La puerta no fue capaz de cerrar\" y se asocia a perder DCL, DFC o DW [2]. DCL sigue sin verificarse. Es el \"Límite final de cierre de puertas\" [4].\n\nPregunta: Con la puerta del piso 3 cerrada, ¿DCL aparece activo en la consola?\n\nLa referencia describe el manual; por sí sola no confirma la placa ni la configuración instalada."
+  }
+ }
+}

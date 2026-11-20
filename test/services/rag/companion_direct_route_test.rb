@@ -277,11 +277,14 @@ class Rag::CompanionDirectRouteTest < ActiveSupport::TestCase
     result = direct { ask("Si el caudal baja, ¿qué reviso?") }
 
     assert_equal :answered, result.route_outcome
+    # With FIELD_CHECK_OUTCOME on the cited source carries its key, chunk file
+    # and page (Otis T5, live round 3). Off, the target keeps the empty ones.
+    located = Rag::CheckOutcomeFlag.enabled? ? { "document_key" => @uri, "filename" => "chunk_p3_1.txt", "page" => "3" } : { "document_key" => "", "filename" => "", "page" => "" }
     assert_equal(
       {
         "type" => "documented_context",
         "question" => POISON,
-        "targets" => [ { "item" => "Bomba Hidra P2", "document_key" => "", "filename" => "", "page" => "" } ]
+        "targets" => [ { "item" => "Bomba Hidra P2" }.merge(located) ]
       },
       result.pending_question
     )

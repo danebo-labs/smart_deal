@@ -32,6 +32,7 @@ module Rag
       (#{UNIT_SRC})
       (?![[:alnum:]])
     /ix.freeze
+    VOLT_WORD_PATTERN = /(?<![[:alnum:].,])(#{NUMBER_SRC})\s*VOLTS?(?![[:alnum:]])/i.freeze
     UNIT_ALIASES = {
       "VDC" => "V",
       "VAC" => "V",
@@ -111,6 +112,14 @@ module Rag
       source = text.to_s
       found = source.scan(PAIR_PATTERN).map { |number, unit| normalize_pair(number, unit) }
       found.concat(range_pairs(source))
+      found.concat(volt_word_pairs(source)) if CheckOutcomeFlag.enabled?
+      found
+    end
+
+    # "RA-94/ A- = 0 VOLT" states 0 V. The word unit only widens what the
+    # evidence supports. The answer is still read with PAIR_PATTERN.
+    def volt_word_pairs(text)
+      text.scan(VOLT_WORD_PATTERN).map { |(number)| normalize_pair(number, "V") }
     end
 
     # "220/380 VAC" and "3 y 5 mm" support every number in the expression, not only the last.

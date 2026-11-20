@@ -871,6 +871,10 @@ Reportas que la puerta del piso 3 intenta cerrar y vuelve a abrir. En la foto de
 
 Guardar GECGB tal como se escribió y la reapertura como reporte. Foto de consola conserva COR y CR. Aún no existe 0102 en el episodio ni un pasaje aplicable a GECB.
 
+Criterio del runner (corrida 20261120T121417Z): Danebo pide el evento del historial o una lectura equivalente que el equipo muestra (código, mensaje, consola) y encamina el turno siguiente. Una pregunta sobre una variante del manual (puerta frontal o trasera) no equivale: su respuesta no acerca el caso a un evento verificado y el técnico no la contestó en T2 ni en T3.
+
+Criterio del runner (corrida 20261120T141251Z), T2: el evento está respaldado si la cita lleva un extracto que lo dice o si la fuente que recibió el generador bajo ese número contiene la fila (`generator_sources`). El extracto de la cita solo existe cuando la respuesta cita textualmente; una paráfrasis citada como [1][2] sobre las p. 22 y 85, que contienen la fila 0102, está respaldada. T5: «Esta lectura se limita a la prueba que reportaste» cuenta como límite de alcance.
+
 ### T2
 
 `query:c95624ac-41c7-4e85-8625-44bb9d452c51`
@@ -881,7 +885,7 @@ Guardar GECGB tal como se escribió y la reapertura como reporte. Foto de consol
 
 **Respuesta esperada**
 
-Reportas el evento 0102 DTC. La tabla de referencia describe una puerta que no cerró en el tiempo permitido y menciona DCL, DFC y DW [1]. La lectura de ese evento no identifica una señal perdida. ¿Se pudo verificar DCL con la puerta cerrada y usando la lectura que corresponda a la placa instalada?
+Reportas el evento 0102 DTC. La tabla de referencia describe una puerta que no cerró en el tiempo permitido y menciona DCL, DFC y DW [1]. La lectura de ese evento no identifica una señal perdida. Una pregunta que oriente el siguiente paso es opcional; no se exige DCL como primera comprobación.
 
 **Fuentes**
 
@@ -889,7 +893,9 @@ Reportas el evento 0102 DTC. La tabla de referencia describe una puerta que no c
 
 **Al recargar**
 
-0102 como dato de historial aportado por el técnico. DCL pendiente. Sin mezclar I/O de LCB_II con GECB.
+0102 como dato de historial aportado por el técnico. Sin mezclar I/O de LCB_II con GECB.
+
+**Criterio corregido.** El texto anterior exigía «¿Se pudo verificar DCL con la puerta cerrada?». El manual fijado solo dice que la puerta no cerró en el tiempo permitido porque se perdió *alguna* de DCL, DFC o DW (p. 22 y p. 85 del tomo 124-245, p. 44 del tomo 1-123 para OTIS 2000). No indica cuál comprobar primero ni «con la puerta cerrada»: era una posibilidad del manual, no una comprobación. La rúbrica pide una explicación fiel y citada del 0102 y que ninguna señal sola figure como la perdida (`no_single_signal_named_as_lost`).
 
 ### T3
 
@@ -913,6 +919,8 @@ DCL sigue sin verificar. En la segunda foto se aprecia la guía del umbral con r
 
 Conservar las dos fotos y su orden, con la guía como observación visual activa. DCL sin resultado. Pendiente dónde se detiene la hoja.
 
+Criterio del runner: Danebo avanza desde la foto y el relato con una pregunta sobre la hoja, la guía o lo que la traba (`advances_from_photo_and_report`) y no repite como si nada la pregunta abierta que el técnico no contestó.
+
 ### T4
 
 `query:3d7e1e93-00dc-4136-8502-480ff2d7ffae`
@@ -933,6 +941,8 @@ Confirmas que la hoja se detiene antes de cerrar. Eso concuerda con el significa
 
 Respuesta breve ligada a posición de cierre. Mantener 0102, foto y DCL pendiente. Pregunta por impedimento mecánico.
 
+DCL se lee del registro persistido: es el check «no verificado» que el técnico declaró en T3, no una observación (`event_and_dcl_kept` acepta observación o check).
+
 ### T5
 
 `query:f921b63a-1707-4e97-b6c2-a4d3881d23c9`
@@ -943,15 +953,27 @@ Respuesta breve ligada a posición de cierre. Mantener 0102, foto y DCL pendient
 
 **Respuesta esperada**
 
-Según reportas, la hoja se trababa, retiraste residuos de la guía y luego cerró por completo. El 0102 no reapareció durante esa prueba. DCL y DFC aún no se verificaron. El manual identifica DFC como indicación de puertas completamente cerradas [21]. ¿Qué estado mostró DFC al quedar cerrada la puerta del piso 3?
+Se evalúa por significado y procedencia, no por una frase ni por un número de cita fijo. La respuesta aprobada:
+
+- Separa hallazgo (la hoja se trababa antes de cerrar), intervención (retiró residuos de la guía) y resultado (después cerró por completo y el 0102 no volvió a registrarse durante la prueba). Es una sola prueba.
+- Reconoce los residuos como la explicación más probable de que la hoja se trabara. Es lectura de Danebo, sin `[n]`, y no instrucción del fabricante. No los da por causa confirmada del 0102 ni certifica la puesta en servicio.
+- Limita a esa maniobra lo que la respuesta afirma del resultado (cierre completo, el 0102 sin reaparecer), en la misma oración, en otra afirmación del mismo párrafo o en un párrafo propio de alcance («Alcance: el resultado vale para una prueba…»). Una mención de «la prueba» solo dentro de una pregunta no lo limita. «Limpieza», «retiro» o «residuos» son equivalentes mientras conserven el significado.
+- Puede cerrar el intercambio sin pregunta. Si pregunta algo, es una comprobación distinta que una fuente de este turno respalda, no repetir la misma prueba.
+- Conserva DCL y DFC como no verificados, tal como los declaró el técnico. No vuelve a pedir DCL.
+- Puede sugerir observar DFC si el técnico hace otra maniobra, con respaldo del manual: DFC indica puertas completamente cerradas (Cadena de seguridad cerrada). La sugerencia es opcional. Si la hace con cita, el pasaje citado dice eso; da igual el número `[n]` y el tomo del manual cargado. Si cita la tabla de DFC, conserva el límite de aplicabilidad (la referencia no confirma la placa ni el controlador del caso): `dfc_table_limited_to_the_case_controller`.
 
 **Fuentes**
 
-- [21] *MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123)*, p. 121 en el export. «Puertas completamente cerradas (Cadena de seguridad cerrada)».
+- Opcional, solo si hay sugerencia: *MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123)*, p. 121 en el export, «Puertas completamente cerradas (Cadena de seguridad cerrada)». En el export original figura como `[21]`; en el replay en vivo, como `[9]`. Ambos son el mismo pasaje.
 
 **Al recargar**
 
-Separar hallazgo, intervención y resultado. Una prueba. Pendiente DFC, con DCL declarado sin verificar.
+- La comprobación que estaba abierta antes de T5 no queda esperando. Se lee del estado real del caso, sin fijar su identificador: su parte queda en `partial`, `complete` o `unknown`, o el técnico siguió con el caso y esa pregunta ya no es la pendiente.
+- Hallazgo, intervención y resultado como observaciones del técnico de este turno.
+- Un registro «no verificado» que cubra DCL y DFC (en una fila o en dos). Se conserva aunque el intérprete resuma el resultado en vez de copiarlo: con `FIELD_CHECK_OUTCOME` encendida solo se descarta el resultado no literal y se guarda la declaración.
+- `targets: []` aprueba si T5 no abre una pregunta pendiente. La rúbrica anterior exigía el pendiente DFC y queda reemplazada.
+- Si T5 sí abre una pregunta pendiente y la sostiene con una cita, el target conserva el documento correcto: `document_key` del manual citado, `filename` del pasaje y `page` citada, aunque la cita esté en el párrafo de la comprobación y la pregunta en el siguiente. Un pendiente con cita y `targets: []` no aprueba. Un pendiente sin cita detrás puede llevar `targets: []`.
+- Ninguna pregunta nueva por DCL.
 
 ### T6
 
@@ -963,16 +985,48 @@ Separar hallazgo, intervención y resultado. Una prueba. Pendiente DFC, con DCL 
 
 **Respuesta esperada**
 
-Queda confirmada la maniobra del piso 3: la puerta completó el cierre, DFC se encendió y permaneció encendido, y el 0102 no volvió durante la prueba. DFC figura como indicación de puertas completamente cerradas [21]. DCL quedó sin verificar. La prueba no establece que los residuos fueran la causa del 0102.
+Se evalúa por significado y procedencia. La respuesta aprobada:
+
+- Vincula la lectura de DFC con la conversación anterior: es el resultado de la maniobra del piso 3 que T5 dejó sin verificar, no un tema nuevo.
+- Registra el resultado de esa maniobra: la puerta completó el cierre, DFC se encendió y permaneció encendido, y el 0102 no volvió durante la prueba. Lo limita a esa maniobra y no certifica la puesta en servicio.
+- Si cita DFC, el pasaje dice puertas completamente cerradas (Cadena de seguridad cerrada), con el número y el tomo que correspondan.
+- Conserva DCL como no verificado, como lo declaró el técnico en este turno, y no vuelve a preguntar por DCL.
+- No presenta los residuos como causa establecida del 0102.
+- No abre otra comprobación automáticamente.
+- Si cita la tabla de DFC, conserva el límite de aplicabilidad al controlador del caso.
+- Si la publicación añade la pregunta por el rótulo del controlador, esa pregunta tiene una razón en el turno (controlador sin resolver, ninguna pregunta documentada abierta, pregunta nunca mostrada) y queda guardada como pendiente de tipo `controller`: una pregunta mostrada y no guardada no es aceptable (`published_question_is_the_pending`).
 
 **Fuentes**
 
-- [21] *MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123)*, p. 121 en el export. «Puertas completamente cerradas (Cadena de seguridad cerrada)».
+- *MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 ) (p1-123)*, p. 121 en el export, «Puertas completamente cerradas (Cadena de seguridad cerrada)». Figura como `[21]` en el export, como `[9]` en el replay de la ronda 4 y como `[12]` en la corrida 20261120T121417Z.
 
 **Al recargar**
 
-Cerrar la maniobra y el pendiente DFC con la respuesta de T6. Registrar DCL por separado como no verificado. Sin extender la prueba ni abrir otra comprobación automáticamente.
+- La maniobra queda registrada con sus lecturas como observaciones de este turno, sin perder las de T1–T5.
+- Si T5 abrió el pendiente DFC, queda cerrado: la parte en `complete` y sin pregunta pendiente. Si T5 no abrió pendiente, el hilo se conserva por el registro «no verificado» de DFC de T5, y T6 no abre una pregunta DFC nueva.
+- DCL sigue como no verificado en el estado, con el registro de T6 o con los de T3 y T5 si el intérprete no lo repite, nunca como `done`, y no figura en ninguna pregunta del turno. Si el modelo lo pregunta de nuevo sin razón nueva, la publicación descarta la pregunta y no queda pendiente.
+- Al terminar T6 no queda esperando ninguna pregunta que nadie vio. Si la publicación mostró la pregunta por el rótulo, es el único pendiente (`type: controller`). Antes de la corrección, esa pregunta se mostraba y no se guardaba: el estado de T6 (3945 de 4096 bytes) no admitía la pregunta con sus extractos de historial y `install_pending!` devolvía `pending_overflow`.
 
+**Límite conocido.** El registro «No llegamos a verificar DCL ni DFC» de T5 sigue en el estado tras T6, porque cubre las dos cosas y DCL sigue sin verificar. Que DFC ya se leyó consta en las observaciones de T6 y no en un cierre de esa fila.
+
+### Revisión de procedencia · corrida 20261120T121417Z
+
+Qué parte de cada respuesta esperada sale del manual fijado, de la foto o del técnico, o es inferencia o pregunta de Danebo. Tomos: A = «MANUAL DE AYUDA TÃ‰CNICA ( Act. Marzo 2010 )» p1-123; B = p124-245. Páginas del export.
+
+| Turno | Del manual | De la foto o del técnico | Inferencia o pregunta de Danebo | Estado |
+|---|---|---|---|---|
+| T1 | A p. 42 (OTIS 2000): LRD (I/O 607), DOS (I/O 605), DCL (I/O 894) y ^DCL (I/O 695, puertas traseras), en tablas separadas para frontal y trasera; A p. 49 (guía PAX) nombra DOS. No dice qué falla produce la reapertura. | Reapertura en el piso 3; rótulos COR, CR de la consola; GECGB tal como se escribió. | Pedir el evento del historial. | Evento del historial: razonable (el síntoma solo no identifica señal). Variante frontal o trasera: no sustituye. |
+| T2 | B p. 22 («al desaparecer alguna de las señales DCL, DFC o DW», parámetros DCL (694), RDCL (695), DOOR, REAR DTC-T); B p. 85 («perdido DCL,DFC ó DW»); A p. 44 (OCSS, OTIS 2000). | El técnico lee 0102 en el historial. | Que la reapertura es compatible con el 0102. | «Verificar DCL con la puerta cerrada» no está en las páginas disponibles: criterio corregido. Asignar DCL a puerta delantera y RDCL a trasera no está en la fila: se rechaza. |
+| T3 | A p. 42: DCL I/O 894, ^DCL I/O 695 (variante trasera). | DCL sin verificar (relato); guía inferior degradada (foto, no del técnico). | Pregunta por la hoja o la guía. | Razonable pedir un dato nuevo; no repetir la pregunta abierta. |
+| T4 | B p. 85 (significado del 0102). A p. 49 solo para el operador PAX: «Comprobar ajustes mecánicos de la puerta». | «Se detiene antes». | La pregunta por un impedimento mecánico nace de la foto y del relato; el manual solo la respalda para PAX. | Pregunta razonable como aclaración; no se exige como paso del manual. |
+| T5 | B p. 22 o p. 85 para el 0102. A p. 121, tabla de LED: «DFC ● Puertas completamente cerradas (Cadena de seguridad cerrada)». B p. 121 (NE300, «Señal DFC cortada») es otra sección y otro controlador. | Hallazgo, intervención y resultado de la maniobra; DCL y DFC sin verificar. | Residuos como explicación más probable; sugerencia opcional de observar DFC. | La sugerencia es opcional y solo se respalda con la tabla de LED con su límite de aplicabilidad. |
+| T6 | A p. 121 (tabla de LED, DFC). | La lectura de DFC y el cierre completo; DCL sin verificar. | La pregunta por el rótulo (regla del controlador sin resolver). | Corregido: se guarda como pendiente. |
+
+**Indeterminado, y qué falta.**
+
+- Compatibilidad de GECGB (o GECB) con el contenido de las páginas citadas. Los dos tomos están en `config/document_identities.yml` sin marca ni designador y sin confirmar. «GECB» y «TCBC/GECB» aparecen solo como alias de búsqueda del chunk de B p. 85, no en su cuerpo. Falta una página del manual que nombre el controlador del caso; los alias del índice ayudan a encontrar el pasaje, no prueban que aplique.
+- Página completa de B p. 85, B p. 22 y A p. 121. De cada una solo hay en las capturas los chunks que `Retrieve` devolvió (B p. 85: `chunk_p85_2`; B p. 22: `chunk_p22_1` y `chunk_p22_2`; A p. 121: `chunk_p121_2`). No hay encabezado de sección de B p. 85 ni de A p. 121 en el cuerpo, solo en alias. Falta el PDF o los chunks restantes de cada página.
+- Si alguna página fijada pide «verificar DCL con la puerta cerrada»: no se halló en ningún chunk disponible; no se puede descartar fuera de ellos.
 
 ## Apéndice · reparaciones conservadas del caso 24
 

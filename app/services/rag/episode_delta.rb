@@ -19,6 +19,10 @@ module Rag
       assign_list(delta, "facts", fact_rows(before), fact_rows(after))
       assign_list(delta, "observations", observation_texts(before), observation_texts(after))
       assign_list(delta, "rejected", rejected_rows(before), rejected_rows(after))
+      if CheckOutcomeFlag.enabled?
+        assign_list(delta, "checks", check_rows(before), check_rows(after))
+        assign_list(delta, "replies", reply_rows(before), reply_rows(after))
+      end
       pending_before = pending_text(before)
       pending_after = pending_text(after)
       if pending_before != pending_after
@@ -90,6 +94,22 @@ module Rag
         next unless row.is_a?(Hash)
 
         "#{row["slot"]}:#{row["value"]}"
+      }
+    end
+
+    def check_rows(episode)
+      Array(episode.respond_to?(:checks) ? episode.checks : nil).filter_map { |row|
+        next unless row.is_a?(Hash)
+
+        "#{row["status"]}:#{row["subject"]}:#{row["result"]}:#{row["correlation_id"]}"
+      }
+    end
+
+    def reply_rows(episode)
+      Array(episode.respond_to?(:replies) ? episode.replies : nil).filter_map { |row|
+        next unless row.is_a?(Hash)
+
+        "#{row["id"]}:#{row["q"]}.#{row["p"]}:#{row["state"]}:#{row["cid"]}"
       }
     end
 

@@ -1006,7 +1006,7 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
 
       assert_equal "complete", Rag::AnswerContract.part_state(stored, part_id(stored, "main"))
       assert_includes prepared.user, "Fue solo la primera apertura"
-      assert_includes prepared.user, "q1.p1 complete"
+      assert_match(/q1\.p1.*complete/, prepared.user)
       assert_includes context, "Fue solo la primera apertura"
       assert_includes context, T2
     end
@@ -1159,7 +1159,292 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
     assert_equal 1, selected.to_h["qc"]
   end
 
+  # Stage 1 of docs/field_companion/DISENO_FIELD_COMPANION_20261119.md.
+  test "the check outcome says what the technician settled and reads the same after a reload" do
+    with_flags do
+      with_outcome("true") do
+        session = boot_session(T1, "la puerta abrió muy despacio")
+        episode = publish(session, SLOW)
+        answer(session, T2, [ reply_for(episode, part_id(episode, "main"), "complete") ], correlation_id: "query:cid-1")
+        stored = reload_episode(session)
+        outcome = Rag::CheckOutcome.new(episode: stored, session: session.reload, correlation_id: "query:cid-1")
+
+        assert outcome.settled_this_turn?
+        assert_equal "complete", outcome.active.first.state
+        assert_equal "r1", outcome.active.first.reply_id
+        lines = outcome.lines
+        assert_equal Rag::CheckOutcome::HEADING, lines.first
+        assert lines.any? { |line| line.start_with?(Rag::CheckOutcome::ACTIVE_PREFIX) && line.include?("q1.p1") && line.include?("r1") }
+        assert_equal lines, Rag::CheckOutcome.context_lines(stored, session, correlation_id: "query:cid-1")
+        assert_equal outcome.to_trace, Rag::CheckOutcome.new(episode: reload_episode(session), session: session.reload, correlation_id: "query:cid-1").to_trace
+      end
+    end
+  end
+
+  test "a later turn reads the settled check as closed with its reply id" do
+    with_flags do
+      with_outcome("true") do
+        session = boot_session(T1, "la puerta abrió muy despacio")
+        episode = publish(session, SLOW)
+        answer(session, T2, [ reply_for(episode, part_id(episode, "main"), "complete") ], correlation_id: "query:cid-1")
+        outcome = Rag::CheckOutcome.new(episode: reload_episode(session), session: session.reload, correlation_id: "query:cid-2")
+
+        assert_not outcome.answered_this_turn?
+        assert_equal 1, outcome.closed.size
+        assert_equal "r1", outcome.closed.first.reply_id
+        assert outcome.lines.any? { |line| line.include?("q1.p1") && line.include?("complete (r1)") }
+      end
+    end
+  end
+
+  test "a part the technician cannot give is stated and not asked again" do
+    with_flags do
+      with_outcome("true") do
+        session = boot_session
+        episode = publish(session, MAIN)
+        text = "No puedo verificar la válvula 4."
+        answer(session, text, [ reply_for(episode, part_id(episode, "main"), "unknown") ], correlation_id: "query:cid-u")
+        outcome = Rag::CheckOutcome.new(episode: reload_episode(session), session: session.reload, correlation_id: "query:cid-u")
+
+        assert outcome.settled_this_turn?
+        assert outcome.lines.any? { |line| line.include?("no puede aportarla (unknown") && line.include?("No la repitas") }
+      end
+    end
+  end
+
+  test "the flag off keeps the contract context lines" do
+    with_flags do
+      with_outcome("") do
+        session = boot_session(T1, "la puerta abrió muy despacio")
+        episode = publish(session, SLOW)
+        answer(session, T2, [ reply_for(episode, part_id(episode, "main"), "complete") ])
+        stored = reload_episode(session)
+        lines = Rag::CheckOutcome.context_lines(stored, session.reload)
+
+        assert_equal Rag::AnswerContract.context_lines(stored, session), lines
+        assert_not_includes lines, Rag::CheckOutcome::HEADING
+        assert_nil session.reload.check_outcome
+      end
+    end
+  end
+
+  test "the session keeps the outcome and emits the check_outcome event only with the flag" do
+    with_flags do
+      with_outcome("true") do
+        session = boot_session(T1, "la puerta abrió muy despacio")
+        episode = publish(session, SLOW)
+        events = Rag::ValidationCapture.capture do
+          answer(session, T2, [ reply_for(episode, part_id(episode, "main"), "complete") ], correlation_id: "query:cid-e")
+        end
+        event = events.find { |item| item["kind"] == "check_outcome" }
+
+        assert event
+        assert_equal true, event["settled_this_turn"]
+        assert_equal "query:cid-e", event["correlation_id"]
+        assert_equal "complete", event["active"].first["state"]
+        assert_equal true, session.check_outcome.settled_this_turn?
+        delta = events.find { |item| item["kind"] == "episode_delta" && item.dig("replies", "added") }
+        assert_equal [ "r1:q1.p1:complete:query:cid-e" ], delta.dig("replies", "added")
+      end
+      with_outcome("") do
+        session = boot_session(T1, "la puerta abrió muy despacio")
+        episode = publish(session, SLOW)
+        events = Rag::ValidationCapture.capture do
+          answer(session, T2, [ reply_for(episode, part_id(episode, "main"), "complete") ])
+        end
+
+        assert_empty events.select { |item| item["kind"] == "check_outcome" }
+        assert events.none? { |item| item["kind"] == "episode_delta" && item.key?("replies") }
+      end
+    end
+  end
+
+  test "the next check note stops the inertia only on the turn the active check was settled" do
+    with_flags do
+      with_outcome("true") do
+        session = boot_session(T1, "la puerta abrió muy despacio")
+        episode = publish(session, SLOW)
+        answer(session, T2, [ reply_for(episode, part_id(episode, "main"), "complete") ], correlation_id: "query:cid-n")
+        settled = Rag::CheckOutcome.new(episode: reload_episode(session), session: session.reload, correlation_id: "query:cid-n")
+        quiet = Rag::CheckOutcome.new(episode: reload_episode(session), session: session, correlation_id: "query:cid-later")
+        note = ->(turn, outcome) { Rag::CompanionDirectAnswer.send(:referral_note, turn, outcome: outcome) }
+
+        assert_nil note.call(3, settled)
+        assert_includes note.call(4, settled), "no pidas la siguiente comprobación por inercia"
+        assert_includes note.call(4, quiet), "indica la siguiente comprobación respaldada"
+        assert_includes note.call(4, nil), "indica la siguiente comprobación respaldada"
+      end
+    end
+  end
+
+  test "the intervention note asks for the likeliest explanation once, only with an outcome" do
+    with_flags do
+      with_outcome("true") do
+        session = boot_session(T1, "la puerta abrió muy despacio")
+        outcome = Rag::CheckOutcome.new(episode: reload_episode(session), session: session, correlation_id: "query:cid-i")
+        build = ->(given, turn = 5) { Rag::CompanionDirectAnswer.send(:current_text, "retiré residuos y no volvió", [], turn, outcome: given) }
+
+        with_note = build.call(outcome)
+        assert_equal 1, with_note.scan("la explicación más probable del cambio").size
+        assert_includes with_note, "sin darla por causa confirmada"
+        assert_includes with_note, "Di qué hizo y qué observó, acotado a esa prueba"
+        assert_includes with_note, "Cierra el intercambio con lo que sigue sin verificar"
+        assert_includes with_note, "prevalece sobre pedir la siguiente comprobación y sobre repetir la misma prueba"
+        assert_includes with_note, "sin [n]", "the reading is the model's own, not a cited step"
+        assert_not_includes build.call(nil), "explicación más probable", "flag off sends no outcome and keeps the base text"
+        assert_not_includes build.call(outcome, 3), "explicación más probable", "early turns keep their bytes"
+      end
+    end
+  end
+
+  CLOSING = "**Lectura:** Tras retirar los residuos de la guía, la puerta cerró por completo y el 0102 no volvió a aparecer en tu prueba. " \
+    "Lo más probable es que el cambio se deba a esa limpieza; no confirma la causa.\n\nSigue sin verificarse DCL ni DFC."
+  RESIDUE_REPORT = "Encontré residuos en la guía y los retiré. Después la puerta cerró por completo y el 0102 no volvió a aparecer durante la prueba. " \
+    "No llegamos a verificar DCL ni DFC"
+  DFC_REPORT = "Confirmo en la maniobra del piso 3 que el LED DFC se encendió y se mantuvo encendido al quedar cerrada"
+
+  test "an exchange closed without a question leaves no pending, and a later DFC reading is recorded without one" do
+    with_flags do
+      with_outcome("true") do
+        session = boot_session(T1, SLOW_OBSERVATION)
+        episode = publish(session, SLOW)
+        answer(
+          session, RESIDUE_REPORT, [ reply_for(episode, part_id(episode, "main"), "complete") ],
+          observations: [ "Encontré residuos en la guía y los retiré", "Después la puerta cerró por completo" ],
+          checks: [ { "subject" => "No llegamos a verificar DCL ni DFC", "status" => "not_done", "result" => nil } ],
+          correlation_id: "query:cid-t5"
+        )
+        assert_nil Rag::PendingQuestion.from_publication(CLOSING, locale: :es), "a closing text asks nothing"
+        session.record_assistant_turn!(
+          CLOSING, user_id: @user.id, correlation_id: "query:pub-close",
+          pending_question: Rag::PendingQuestion.from_publication(CLOSING, locale: :es),
+          expected_episode_id: reload_episode(session).episode_id
+        )
+        closed = reload_episode(session)
+        assert_nil closed.pending_question, "nothing waits after the close"
+        assert_empty Rag::AnswerContract.open_parts(closed)
+
+        answer(session, DFC_REPORT, observations: [ "el LED DFC se encendió y se mantuvo encendido al quedar cerrada" ],
+          correlation_id: "query:cid-t6")
+        recorded = reload_episode(session)
+        assert_includes recorded.observations.pluck("text"), "el LED DFC se encendió y se mantuvo encendido al quedar cerrada"
+        assert_nil recorded.pending_question
+
+        outcome = Rag::CheckOutcome.new(episode: recorded, session: session.reload, correlation_id: "query:cid-t6")
+        assert_equal [ "No llegamos a verificar DCL ni DFC" ], outcome.unverified.map(&:text)
+        assert_empty outcome.open_parts
+      end
+    end
+  end
+
+  test "an unanswered pending that the closing publication does not show is cleared; a partial one and an asking turn keep it" do
+    with_flags do
+      with_outcome("true") do
+        # Unanswered, and the technician reported a test result this turn: nothing waits.
+        session = boot_session(T1, SLOW_OBSERVATION)
+        publish(session, SLOW)
+        answer(session, RESIDUE_REPORT, :omit, observations: [ "Encontré residuos en la guía y los retiré" ],
+          checks: [ { "subject" => "No llegamos a verificar DCL ni DFC", "status" => "not_done", "result" => nil } ], correlation_id: "query:cid-t5")
+        assert_equal SLOW, reload_episode(session).pending_question["question"], "the report alone does not answer it"
+        close(session, "query:cid-t5")
+        assert_nil reload_episode(session).pending_question
+
+        # A part answered only in part is still owed.
+        partial = boot_session(T1, SLOW_OBSERVATION)
+        episode = publish(partial, SLOW)
+        answer(partial, "Solo un tramo", [ reply_for(episode, part_id(episode, "main"), "partial") ], correlation_id: "query:cid-p")
+        close(partial, "query:cid-p")
+        assert_equal SLOW, reload_episode(partial).pending_question["question"]
+
+        # The publication shows the question again: it stays.
+        shown = boot_session(T1, SLOW_OBSERVATION)
+        publish(shown, SLOW)
+        answer(shown, RESIDUE_REPORT, :omit, observations: [ "Encontré residuos en la guía y los retiré" ],
+          checks: [ { "subject" => "No llegamos a verificar DCL ni DFC", "status" => "not_done", "result" => nil } ], correlation_id: "query:cid-s")
+        close(shown, "query:cid-s", text: "#{CLOSING}\n\n#{SLOW}")
+        assert_equal SLOW, reload_episode(shown).pending_question["question"]
+
+        # A plain reading, with no test result, leaves the pending owed.
+        reading = boot_session(T1, SLOW_OBSERVATION)
+        publish(reading, SLOW)
+        answer(reading, "El valor es 2,5", :omit, observations: [ "El valor es 2,5" ], correlation_id: "query:cid-r")
+        close(reading, "query:cid-r")
+        assert_equal SLOW, reload_episode(reading).pending_question["question"]
+
+        # A turn that reported nothing leaves the pending for the technician to answer.
+        asked = boot_session(T1, SLOW_OBSERVATION)
+        publish(asked, SLOW)
+        answer(asked, "¿Qué es DCL?", :omit, observations: [], correlation_id: "query:cid-q")
+        close(asked, "query:cid-q")
+        assert_equal SLOW, reload_episode(asked).pending_question["question"]
+      end
+    end
+  end
+
+  test "a check published without a source is stored with no targets and a settled answer closes it" do
+    with_flags do
+      with_outcome("true") do
+        session = boot_session(T1, "la puerta abrió muy despacio")
+        episode = reload_episode(session)
+        pending = Rag::PendingQuestion.from_publication("Revisa el fusible. #{SLOW}", locale: :es)
+        assert_equal [], pending["targets"]
+
+        session.record_assistant_turn!(
+          "Revisa el fusible. #{SLOW}", user_id: @user.id, correlation_id: "query:pub-x",
+          pending_question: pending, expected_episode_id: episode.episode_id
+        )
+        published = reload_episode(session)
+        assert_equal SLOW, published.pending_question["question"]
+        assert_equal [], published.pending_question["targets"]
+        assert published.pending_question["id"].present?
+
+        answer(session, T2, [ reply_for(published, part_id(published, "main"), "complete") ])
+        settled = reload_episode(session)
+        assert_empty Rag::AnswerContract.open_parts(settled)
+        assert_equal "complete", Rag::AnswerContract.part_state(settled, part_id(settled, "main"))
+      end
+    end
+  end
+
+  test "a photo turn installs the published pending only with the flag, like a text turn" do
+    with_flags do
+      session = boot_session(T1, "la puerta abrió muy despacio")
+      pending = Rag::PendingQuestion.from_publication("Mira la foto. #{SLOW}", locale: :es)
+      # The context is a private snapshot: CloseTurn is what persists it.
+      with_outcome("") do
+        context = FieldCases::TurnContext.find(session.id)
+        before = context.active_episode.deep_dup
+        context.install_published_pending!(pending, correlation_id: "query:photo-off")
+        assert_equal before, context.active_episode
+      end
+
+      with_outcome("true") do
+        context = FieldCases::TurnContext.find(session.id)
+        context.instance_variable_set(:@case_episode_id, reload_episode(session).episode_id)
+        context.install_published_pending!(pending, correlation_id: "query:photo-on")
+        stored = Rag::ActiveEpisode.parse(context.active_episode)
+        assert_equal SLOW, stored.pending_question["question"]
+        assert_equal [], stored.pending_question["targets"]
+        assert_equal [ "p1" ], stored.pending_question["parts"].pluck("id")
+      end
+    end
+  end
+
+  test "a clarification payload with no targets is still not a documented question" do
+    assert_nil Rag::PendingQuestion.coerce("type" => "documented_context", "question" => MAIN, "targets" => [])
+    assert_equal [], Rag::PendingQuestion.coerce_stored("type" => "documented_context", "question" => MAIN, "targets" => [])["targets"]
+    assert_nil Rag::PendingQuestion.coerce_stored("type" => "documented_context", "question" => MAIN)
+  end
+
   private
+
+  def with_outcome(value)
+    previous = ENV["FIELD_CHECK_OUTCOME"]
+    ENV["FIELD_CHECK_OUTCOME"] = value
+    yield
+  ensure
+    ENV["FIELD_CHECK_OUTCOME"] = previous
+  end
 
   def with_flags
     previous_mode = ENV["HAIKU_QUERY_ANALYSIS_MODE"]
@@ -1221,10 +1506,10 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
     reload_episode(session)
   end
 
-  def answer(session, text, replies = :omit, observations: [], correlation_id: nil)
+  def answer(session, text, replies = :omit, observations: [], correlation_id: nil, checks: :omit)
     session.record_user_turn!(
       text, user_id: @user.id, correlation_id: correlation_id || "query:ans-#{SecureRandom.hex(2)}",
-      interpreter_client: tool_client("report", observations, part_replies: quote_replies(replies, text))
+      interpreter_client: tool_client("report", observations, part_replies: quote_replies(replies, text), checks: checks)
     )
   end
 
@@ -1240,6 +1525,15 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
 
       row.merge("quote" => text)
     }
+  end
+
+  # The closing publication of a turn: same correlation id as the technician's.
+  def close(session, correlation_id, text: CLOSING)
+    session.record_assistant_turn!(
+      text, user_id: @user.id, correlation_id: correlation_id,
+      pending_question: Rag::PendingQuestion.from_publication(text, locale: :es),
+      expected_episode_id: reload_episode(session).episode_id
+    )
   end
 
   def persisted_bytes(session)
@@ -1373,7 +1667,7 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
     )
   end
 
-  def tool_client(move, observations, part_replies: :omit, target: nil)
+  def tool_client(move, observations, part_replies: :omit, target: nil, checks: :omit)
     input = {
       "move" => move,
       "assertions" => [],
@@ -1382,6 +1676,7 @@ class Rag::AnswerContractTest < ActiveSupport::TestCase
       "clarification_target" => target
     }
     input["part_replies"] = part_replies unless part_replies == :omit
+    input["checks"] = checks unless checks == :omit
     payloads = []
     client = Struct.new(:input, :payloads).new(input, payloads)
     client.define_singleton_method(:converse) do |params|

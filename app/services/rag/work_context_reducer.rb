@@ -154,7 +154,9 @@ module Rag
       return false if pending["question"].blank?
       return pending["about"].present? if pending["aspect"] == "scope"
 
-      Array(pending["targets"]).any?
+      # A published check that cites no source (Rag::PendingQuestion.from_publication)
+      # has no targets. Its contract parts are what the answer closes.
+      Array(pending["targets"]).any? || pending["parts"].present?
     end
 
     # The answered datum leaves. A different clarification that was published
@@ -330,7 +332,7 @@ module Rag
 
       kept = pending.deep_dup
       kept.delete("shown")
-      episode.pending_question = PendingQuestion.coerce(kept)
+      episode.pending_question = PendingQuestion.coerce_stored(kept)
     end
 
     def self.question_datum_text(question)

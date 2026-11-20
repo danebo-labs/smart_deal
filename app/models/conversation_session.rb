@@ -36,7 +36,7 @@ class ConversationSession < ApplicationRecord
   PHOTO_PENDING_SLOTS = %w[manufacturer model].freeze
 
   attr_accessor :turn_active_photo_context, :turn_causal, :context_truncated, :interpreter_input_chars,
-                :last_answer_report
+                :last_answer_report, :check_outcome
 
   def self.media_type_for(document_or_uri)
     source = document_or_uri.respond_to?(:s3_key) ? document_or_uri.s3_key : document_or_uri
@@ -1089,6 +1089,7 @@ class ConversationSession < ApplicationRecord
     focus_before = :unset
     self.turn_causal = nil
     self.last_answer_report = nil
+    self.check_outcome = nil
     @answer_report_correlation = nil
     original_text = content.to_s
     turn = Rag::TurnText.truncate(original_text)
@@ -1239,7 +1240,21 @@ class ConversationSession < ApplicationRecord
     )
     record_effective_query(turn, query, explained[:components], result)
     persist_user_turn!(stored, result, turn, user_id, correlation_id, now)
+    record_check_outcome!(working, perception, correlation_id)
     result
+  end
+
+  # FIELD_CHECK_OUTCOME. Read after the user message is in the history, so the
+  # technician's words can be rebuilt. The episode is not changed here.
+  def record_check_outcome!(episode, perception, correlation_id)
+    return unless Rag::CheckOutcomeFlag.enabled?
+
+    outcome = Rag::CheckOutcome.new(
+      episode: episode, session: self, correlation_id: correlation_id,
+      perception_move: perception.move, report: episode.answer_report
+    )
+    self.check_outcome = outcome
+    Rag::ValidationCapture.record("check_outcome", outcome.to_trace) if Rag::ValidationCapture.active?
   end
 
   def previous_work_relation_turn(correlation_id)

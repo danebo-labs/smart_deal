@@ -1237,6 +1237,88 @@ class BedrockRagService
     )
   end
 
+  # The controller label question a reference answer adds. Only when no
+  # documented question is open, the controller is unresolved (or known only
+  # from the catalog), the question is not already pending and the technician
+  # was never shown it. The reason is the applicability of every cited table:
+  # without the plate it stays a conditional reference.
+  def controller_label_pending(active, controller:, documented_question:, incompatible:, conv_session:, locale:)
+    return nil if documented_question.present?
+    return nil unless active&.episode_id.present? && !incompatible
+
+    resolved = controller&.dig("status")
+    return nil unless resolved.nil? || (resolved == "known" && controller["source"] == "catalog")
+    return nil if active.pending_question&.dig("type") == "controller" || controller_question_shown?(conv_session)
+
+    { "type" => "controller", "question" => I18n.t("rag.controller_label_question", locale: locale) }
+  end
+
+  REFERENCE_CONTEXT = "Describe solo lo que documenta la fuente para la función consultada. Un documento seleccionado no identifica la instalación. Presenta la configuración y sus señales como una referencia condicional hasta que se confirmen. No indiques una maniobra, medición ni conexión, ni preguntes de nuevo por el rótulo."
+  REFERENCE_EVENT_REQUEST = "El técnico reporta un síntoma y no aporta ningún evento ni código. Si el equipo los registra (historial de eventos, códigos en la consola), pide primero ese evento o una lectura equivalente, antes de preguntar por una variante del manual."
+  REFERENCE_OPEN_QUESTION = "Tu pregunta anterior sigue sin respuesta: «%<question>s». Este turno no la contesta. Avanza con lo nuevo que trae (el dato del técnico o la foto). Repite esa pregunta solo si su respuesta cambia la siguiente comprobación respaldada, y di en la misma frase por qué."
+
+  # The context line of a reference answer. With the check-outcome flag the
+  # generator also learns what the episode shows it still lacks: the event
+  # when the case opened with a symptom only, or that its own published
+  # question is still open, which the case block never states. Flag off, the
+  # line is the base one.
+  def reference_context_text(declaration, active, documented_question:, raw_question:, correlation_id:)
+    [ declaration, REFERENCE_CONTEXT, reference_progress_note(
+      active, documented_question: documented_question, raw_question: raw_question, correlation_id: correlation_id
+    ) ].compact.join(" ")
+  end
+
+  def reference_progress_note(active, documented_question:, raw_question:, correlation_id:)
+    return nil unless Rag::CheckOutcomeFlag.enabled? && active&.episode_id.present?
+
+    if documented_question.present?
+      format(REFERENCE_OPEN_QUESTION, question: documented_question) if documented_question_open?(active)
+    elsif event_missing?(active, raw_question, correlation_id)
+      REFERENCE_EVENT_REQUEST
+    end
+  end
+
+  # Stage 1, flag on. The case opened with a symptom and no event, the draft
+  # asked for the event, and no cited claim survived (the guard dropped the
+  # only line that cited, a promise to compare the reading later). That
+  # request is the right answer, so it is not replaced by the insufficient
+  # evidence line. The text stops at the question: what the draft added after
+  # it leaned on the dropped line. Flag off: nil, the base fallback.
+  def event_request_result(result, active, raw_question, correlation_id, locale)
+    return nil unless Rag::CheckOutcomeFlag.enabled? && result && active&.episode_id.present?
+    return nil if result[:route_outcome] == :answered || result[:companion_contract_invalid] || result[:applicability_violation]
+    return nil unless event_missing?(active, raw_question, correlation_id)
+
+    blocks = result[:answer].to_s.split(/\n{2,}/)
+    last = blocks.rindex { |block| block.match?(/[?？][\s*]*\z/) }
+    return nil unless last
+
+    text = blocks.first(last + 1).join("\n\n").delete("*").gsub(/\s+\z/, "")
+    pending = Rag::PendingQuestion.from_publication(text, sources: @companion_direct_sources, locale: locale)
+    return nil unless pending
+
+    result.merge(answer: text, pending_question: pending, route_outcome: :answered)
+  end
+
+  # Same reading as the planner: a published question with parts is open
+  # while one of its parts has no state; one without parts is open.
+  def documented_question_open?(active)
+    parts = active.pending_question&.dig("parts")
+    parts.is_a?(Array) && parts.any? ? Rag::AnswerContract.open_parts(active).any? : true
+  end
+
+  # The case opened with this turn's symptom: nothing was checked before,
+  # every observation belongs to this turn, the message carries no code or
+  # number and no fault code is stored.
+  def event_missing?(active, raw_question, correlation_id)
+    observations = Array(active.observations)
+    return false if observations.empty? || Array(active.checks).any?
+    return false unless observations.all? { |item| item["correlation_id"].to_s == correlation_id.to_s }
+    return false if active.fact("fault_code")&.dig("status") == "known"
+
+    !raw_question.to_s.match?(/\d{2,}/)
+  end
+
   # Provider policy applies to generation, never to the authorized Retrieve.
   # Reference text uses the same numbered pack as publication, while field
   # applicability stays separate from the document's own facts.
@@ -1249,13 +1331,10 @@ class BedrockRagService
     chunks, mismatched, confirmed = direct_reference_chunks(chunks, scope_uris, controller)
     plate = { reported: controller["value"], documented: mismatched } if chunks.empty? && mismatched.any?
     documented_question = active&.pending_question&.dig("question") if active&.pending_question&.dig("type") == "documented_context"
-    pending = if documented_question.present?
-      nil
-    elsif active&.episode_id.present? && !incompatible &&
-        (resolved.nil? || (resolved == "known" && controller["source"] == "catalog")) &&
-        active.pending_question&.dig("type") != "controller" && !controller_question_shown?(conv_session)
-      { "type" => "controller", "question" => I18n.t("rag.controller_label_question", locale: locale) }
-    end
+    pending = controller_label_pending(
+      active, controller: controller, documented_question: documented_question,
+              incompatible: incompatible, conv_session: conv_session, locale: locale
+    )
     Rag::ValidationCapture.record(
       "direct_reference",
       "correlation_id" => correlation_id,
@@ -1272,10 +1351,10 @@ class BedrockRagService
       elsif resolved == "unknown_confirmed"
         "El técnico indicó que no puede confirmar el rótulo."
       end
-      context = [
-        declaration,
-        "Describe solo lo que documenta la fuente para la función consultada. Un documento seleccionado no identifica la instalación. Presenta la configuración y sus señales como una referencia condicional hasta que se confirmen. No indiques una maniobra, medición ni conexión, ni preguntes de nuevo por el rótulo."
-      ].compact.join(" ")
+      context = reference_context_text(
+        declaration, active, documented_question: documented_question,
+        raw_question: raw_question, correlation_id: correlation_id
+      )
       prepared = Rag::CompanionDirectAnswer.prepare(
         raw_question: raw_question, chunks: chunks, episode: episode, session: conv_session,
         correlation_id: correlation_id, reference_context: context, photo_evidence: photo_evidence,
@@ -1291,6 +1370,9 @@ class BedrockRagService
       )
       return attach_generation_trace!(result, prepared.user, raw_turn: raw_question, sent_question: question, truncated: prepared.omitted.any?) if result[:route_outcome] == :answered
     end
+
+    requested = event_request_result(result, active, raw_question, correlation_id, locale)
+    return attach_generation_trace!(requested, prepared.user, raw_turn: raw_question, sent_question: question, truncated: prepared.omitted.any?) if requested
 
     withheld = result[:answer] if result&.dig(:applicability_violation)
     reference_fallback(locale, retrieval, pending, scope_uris, incompatible, model_invoked: !result.nil?, plate: plate, withheld: withheld, shown_question: documented_question)
@@ -1914,14 +1996,35 @@ class BedrockRagService
       metadata = chunk[:metadata] || chunk["metadata"] || {}
       metadata = metadata.to_h.stringify_keys if metadata.respond_to?(:to_h)
       applicability = (chunk[:identity_applicability] || chunk["identity_applicability"]).to_s
-      {
+      source = {
         "index" => index + 1,
         "content" => (chunk[:content] || chunk["content"]).to_s,
         "document" => metadata["canonical_name"].presence || metadata["original_filename"].presence,
         "applicability" => applicability,
         "reference_only" => Rag::DocumentIdentityScope.reference_only_chunk?(chunk)
       }
+      if Rag::CheckOutcomeFlag.enabled?
+        source.merge!(companion_source_locator(metadata, chunk))
+        source["number"] = Rag::CompanionCaseRecord.number_of(chunk, index)
+      end
+      source
     end
+  end
+
+  # What a stored target needs to point back at the cited chunk. Without it,
+  # PendingQuestion.from_publication stores the title with an empty
+  # document_key, filename and page (Otis T5, live round 3). Same reading as
+  # CompanionPlan.pending_target.
+  def companion_source_locator(metadata, chunk)
+    {
+      "document_key" => (
+        metadata["document_key"].presence || metadata["original_source_uri"].presence || metadata["document_id"].presence ||
+        chunk[:original_source_uri].presence || chunk["original_source_uri"].presence ||
+        metadata["x-amz-bedrock-kb-source-uri"].presence || chunk[:bedrock_source_uri].presence || chunk["bedrock_source_uri"].presence
+      ).to_s,
+      "filename" => Rag::CompanionPlan.page_filename(metadata, chunk).to_s,
+      "page" => metadata["page_number"].to_s.sub(/\.0+\z/, "")
+    }
   end
 
   def companion_technician_texts(conv_session, episode, raw_question)
@@ -2314,6 +2417,11 @@ class BedrockRagService
         extracted, episode: episode, turn: question, correlation_id: correlation_id, locale: locale
       )
     end
+    if @companion_direct_turn && !parameter_review && Rag::CheckOutcomeFlag.enabled?
+      # A datum the technician declared unverified is not asked again, and
+      # the dropped question is not stored as the pending one.
+      extracted = Rag::DeclaredUnverified.without_repeated_question(extracted, episode: episode, locale: locale).text
+    end
     sequence = nil
     if parameter_review
       # The case comparison and referral are rendered from the bound data.
@@ -2419,7 +2527,7 @@ class BedrockRagService
       companion_reason: accepted ? nil : "companion_contract_invalid",
       companion_publication: publication.to_h,
       document_identity: Thread.current[:document_identity_scope],
-      pending_question: (parameter_review&.pending if accepted) || companion_turn_pending(accepted, answer_text)
+      pending_question: (parameter_review&.pending if accepted) || companion_turn_pending(accepted, answer_text, locale)
     }
     if reference_mode && accepted
       unless reference_confirmed
@@ -2434,7 +2542,11 @@ class BedrockRagService
           result[:answer] = [ result[:answer], notice ].join("\n\n")
         elsif result[:answer].to_s.include?("?")
           result[:answer] = [ result[:answer], notice ].join("\n\n")
-          result[:pending_question] = nil
+          # Off: nil here, and TurnContext#capture_pending! reads the final text
+          # on a case turn. On: the one writer reads that same final text now.
+          result[:pending_question] = if Rag::CheckOutcomeFlag.enabled? && @companion_direct_turn
+            Rag::PendingQuestion.from_publication(result[:answer], sources: @companion_direct_sources, locale: locale)
+          end
         else
           followup = Rag::PendingQuestion.followup_line(result[:answer], locale: locale)
           plate = reference_pending&.dig("question")
@@ -2464,9 +2576,19 @@ class BedrockRagService
     held
   end
 
-  def companion_turn_pending(accepted, answer_text)
+  def companion_turn_pending(accepted, answer_text, locale = nil)
     return nil unless accepted
-    return direct_documented_question(answer_text) if @companion_direct_turn
+    if @companion_direct_turn
+      # FIELD_CHECK_OUTCOME: one writer for text and photo turns. Off keeps
+      # direct_documented_question plus TurnContext#capture_pending!.
+      if Rag::CheckOutcomeFlag.enabled?
+        return Rag::PendingQuestion.from_publication(
+          answer_text, sources: @companion_direct_sources, locale: locale || I18n.locale
+        )
+      end
+
+      return direct_documented_question(answer_text)
+    end
 
     Rag::PendingQuestion.presented(@companion_plan_pending, answer_text, retained: @companion_plan_retained)
   end

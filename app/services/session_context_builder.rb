@@ -66,7 +66,7 @@ class SessionContextBuilder
   def self.companion_context(session, episode: nil, current_message: nil, current_correlation_id: nil)
     parsed = companion_episode(session, episode)
     trace = { truncated: false }
-    case_text = companion_case(parsed, trace, session: session)
+    case_text = companion_case(parsed, trace, session: session, correlation_id: current_correlation_id)
     turns = companion_technician_turns(
       session, current_message: current_message, current_correlation_id: current_correlation_id, trace: trace
     )
@@ -81,7 +81,7 @@ class SessionContextBuilder
     Rag::ActiveEpisode.parse(session.active_episode)
   end
 
-  def self.companion_case(episode, trace, session: nil)
+  def self.companion_case(episode, trace, session: nil, correlation_id: nil)
     return "" if episode.nil? || episode.blank?
 
     units = [ companion_unit("Caso:", keep: true) ]
@@ -101,8 +101,9 @@ class SessionContextBuilder
       units << companion_unit(line, keep: !line.start_with?("- "), protect: companion_protected_text?(line))
     end
     if session
-      Rag::AnswerContract.context_lines(episode, session).each do |line|
-        units << companion_unit(line, protect: companion_protected_text?(line))
+      Rag::CheckOutcome.context_lines(episode, session, correlation_id: correlation_id).each do |line|
+        keep = line == Rag::CheckOutcome::HEADING || line.start_with?(Rag::CheckOutcome::ACTIVE_PREFIX)
+        units << companion_unit(line, keep: keep, protect: companion_protected_text?(line))
       end
     end
     photo = active_photo_block(session, nil)

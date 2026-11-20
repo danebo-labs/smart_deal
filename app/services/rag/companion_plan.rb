@@ -89,7 +89,7 @@ module Rag
     class << self
       def prepare(raw_question:, chunks:, episode:, session:, correlation_id: nil, photo_evidence: nil)
         kept = limit_statement_chunks(chunks)
-        facts = CompanionCaseFacts.build(episode, session: session)
+        facts = CompanionCaseFacts.build(episode, session: session, correlation_id: correlation_id)
         statements = CompanionStatements.parse(kept)
         turns_block = SessionContextBuilder.companion_technician_turns(
           session, current_message: raw_question, current_correlation_id: correlation_id

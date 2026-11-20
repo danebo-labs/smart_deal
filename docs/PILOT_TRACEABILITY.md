@@ -48,6 +48,7 @@ not mean `false`.
 | `document_identity_scope` | A scope decision already computed from the identity and the Result in hand | `result` is the status, or the reason when status is absent. `scope_needles`, `identity_after`, `identity_conflict` |
 | `open_retrieval` | Already emitted at the end of the Bedrock open path, and on pin deny | Open-path fallthrough adds `outcome_reason=identity_unknown` and `evidence_applicability=identity_unknown_reference`. Pin deny does not |
 | `turn_interpreter` | Already emitted outside the lock | Adds `goal_text` (120 chars) and `goal_source_correlation_id` from the durable episode goal |
+| `check_outcome` | `ConversationSession#record_check_outcome!`, only with `FIELD_CHECK_OUTCOME=true` and an open `Rag::ValidationCapture`. Not a log line | `Rag::CheckOutcome#to_trace`: `move`, `perception_move`, `move_divergence`, `settled_this_turn`, `active` (ids, `state_before`, `state`, `reply_id`), `closed`, `unverified`, `open_parts`, `missing_references` (`reply_id`, `correlation_id`, `reference`: `question_text` or `technician_text`), `stored`, `refused`. With the flag on, `episode_delta` also lists `checks` and `replies` |
 
 `identity_promotion` reasons:
 

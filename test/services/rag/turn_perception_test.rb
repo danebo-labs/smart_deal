@@ -103,6 +103,18 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     assert_not Rag::TurnPerception.literal_fragment?("señal 21 está activada", "señal 21 no esta activada")
   end
 
+  test "a dot typed for a space still has whole-span evidence, only with the check outcome flag" do
+    turn = "Después la puerta cerró por completo y el 0102 no.volvio a registrarse durante la.prueba . No llegamos a verificar DCL"
+    span = "el 0102 no volvió a registrarse durante la prueba"
+
+    with_check_outcome_flag("true") do
+      assert Rag::TurnPerception.literal_fragment?(span, turn)
+      assert_not Rag::TurnPerception.literal_fragment?("el 0102 volvió a registrarse durante la prueba", turn)
+      assert_not Rag::TurnPerception.literal_fragment?("tension de 3 5 V", "tension de 3.5 V")
+    end
+    with_check_outcome_flag(nil) { assert_not Rag::TurnPerception.literal_fragment?(span, turn) }
+  end
+
   test "a span that is not in the turn is rejected and is not a fact" do
     result = perceive(report([ assert_span("NICE3000") ]), "hola")
 
@@ -186,6 +198,55 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
 
     [ { "pending" => { "type" => "controller" } }, { "route" => "ready" }, { "pending_resolution_note" => [ "unknown" ] } ].each do |extra|
       assert_not perceive(raw.merge(extra), "No puedo ver el rótulo.", episode: episode).valid, extra.inspect
+    end
+  end
+
+  # Thyssen T11 of 2026-11-19: Haiku added "pending_question_note", which is
+  # not a prefix of any schema key. It voided a valid turn as invalid_schema.
+  test "any scalar note key is inert and a note holding a list or object is still a defect" do
+    episode = Rag::ActiveEpisode.open(correlation_id: "query:1", now: Time.current)
+    episode.pending_question = { "type" => "controller" }
+    episode.pending_fact = { "subject" => "controller", "correlation_id" => "query:1" }
+    raw = answer("unknown", []).merge(
+      "observations" => [ "No puedo ver el rótulo." ], "pending_question_note" => "none", "free_note" => 3
+    )
+
+    result = perceive(raw, "No puedo ver el rótulo.", episode: episode)
+    assert result.valid, result.invalid_reason
+    assert_equal %w[free_note pending_question_note],
+      result.adjustments.select { |row| row["rule"] == "drop_extra_key" }.pluck("datum").sort
+
+    [ { "pending_question_note" => [ "x" ] }, { "pending_question_note" => { "a" => 1 } }, { "pending_question" => "none" } ].each do |extra|
+      assert_not perceive(raw.merge(extra), "No puedo ver el rótulo.", episode: episode).valid, extra.inspect
+    end
+  end
+
+  # Thyssen T11, live round 1 (20261119T222529Z): Haiku returned
+  # "pending_questions_part_replies": [] next to the real part_replies. An
+  # empty list holds nothing the contract reads, but it voided the turn and
+  # p8 complete was never stored. With FIELD_CHECK_OUTCOME on it is inert.
+  test "FIELD_CHECK_OUTCOME treats an empty list or object under an unknown key as inert" do
+    turn = JSON.parse(
+      Rails.root.join("test/fixtures/files/field_companion/pilot_2026_11_19.json").read
+    ).fetch("cases").fetch("28").fetch("turns").fetch(10)
+    message = turn.fetch("message")
+    raw = turn.fetch("tool").merge(
+      "pending_resolution_hint" => "value", "pending_questions_part_replies" => [], "empty_object" => {}
+    )
+    episode = Rag::ActiveEpisode.open(correlation_id: "query:1", now: Time.current)
+    episode.pending_question = { "type" => "documented_context", "question" => "¿Sigue marcando EA?",
+      "id" => "q8", "parts" => [ { "id" => "p8", "role" => "main", "text" => "¿Sigue marcando EA?" } ] }
+
+    with_check_outcome_flag("true") do
+      result = perceive(raw, message, episode: episode)
+      assert result.valid, result.invalid_reason
+      dropped = result.adjustments.select { |row| row["rule"] == "drop_extra_key" }.pluck("datum")
+      assert_empty %w[empty_object pending_questions_part_replies pending_resolution_hint] - dropped
+      assert_not perceive(raw.merge("pending_questions_part_replies" => [ "x" ]), message, episode: episode).valid
+      assert_not perceive(raw.merge("pending_questions_part_replies" => { "a" => 1 }), message, episode: episode).valid
+    end
+    with_check_outcome_flag(nil) do
+      assert_not perceive(raw, message, episode: episode).valid, "flag off keeps the base rule"
     end
   end
 
@@ -834,6 +895,78 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
     )
 
     assert_equal [ "La guía no tiene obstrucción", "El rodillo está trabado" ], result.observations
+  end
+
+  # Otis case 29 T5, run 20261120T121417Z: both declared checks came with a
+  # result that summarizes the turn instead of copying it.
+  T5_TURN = "La hoja se trababa antes de completar el cierre . Encontré residuos en la guía y los retire . " \
+    "Después la puerta cerró por completo y el 0102 no.volvio a registrarse durante la.prueba . No llegamos a verificar DCL ni DFC"
+
+  def t5_checks(result_for_done:, result_for_pending:)
+    {
+      "move" => "report", "assertions" => [], "pending_resolution" => nil, "clarification_target" => nil,
+      "observations" => [ "La hoja se trababa antes de completar el cierre" ],
+      "checks" => [
+        { "subject" => "Encontré residuos en la guía y los retire", "status" => "done", "result" => result_for_done },
+        { "subject" => "No llegamos a verificar DCL ni DFC", "status" => "not_done", "result" => result_for_pending }
+      ]
+    }
+  end
+
+  # Live 20261120T201453Z T5: the interpreter reported the maneuver and left
+  # out «No llegamos a verificar DCL ni DFC». The span is the check.
+  test "a not-done declaration the interpreter omitted is kept from the turn with the flag on" do
+    tool = {
+      "move" => "answer_pending", "assertions" => [], "pending_resolution" => "value", "clarification_target" => nil,
+      "observations" => [ "La hoja se trababa antes de completar el cierre" ]
+    }
+    with_check_outcome_flag("true") do
+      result = perceive(tool, T5_TURN)
+
+      assert_equal [ "No llegamos a verificar DCL ni DFC" ], result.checks.pluck("subject")
+      assert_equal [ "not_done" ], result.checks.pluck("status")
+    end
+    with_check_outcome_flag(nil) do
+      assert_empty perceive(tool, T5_TURN).checks
+    end
+  end
+
+  test "a check whose result is not a span of the turn keeps its declaration with the flag on" do
+    with_check_outcome_flag("true") do
+      result = perceive(
+        t5_checks(result_for_done: "Residuos en la guía encontrados y retirados", result_for_pending: "DCL y DFC no verificados"),
+        T5_TURN
+      )
+
+      assert_equal [ "Encontré residuos en la guía y los retire", "No llegamos a verificar DCL ni DFC" ], result.checks.pluck("subject")
+      assert_equal %w[done not_done], result.checks.pluck("status")
+      assert_equal [ nil, nil ], result.checks.pluck("result")
+      assert_equal %w[checks[0].result checks[1].result], result.field_rejections.pluck("field"), "the invented result is still reported"
+    end
+  end
+
+  test "a check whose result is not a span of the turn is dropped whole with the flag off" do
+    with_check_outcome_flag(nil) do
+      result = perceive(
+        t5_checks(result_for_done: "Residuos en la guía encontrados y retirados", result_for_pending: "DCL y DFC no verificados"),
+        T5_TURN
+      )
+
+      assert_empty result.checks
+      assert_equal %w[not_literal not_literal], result.field_rejections.pluck("reason")
+    end
+  end
+
+  test "a literal result is kept as typed and a subject that is not in the turn is still dropped with the flag on" do
+    with_check_outcome_flag("true") do
+      raw = t5_checks(result_for_done: "la puerta cerró por completo", result_for_pending: nil)
+      raw["checks"] << { "subject" => "Medí el voltaje del freno", "status" => "done", "result" => "24 V" }
+      result = perceive(raw, T5_TURN)
+
+      assert_equal [ "la puerta cerró por completo", nil ], result.checks.pluck("result")
+      assert_equal 2, result.checks.size, "a subject the technician never said is not stored"
+      assert_equal [ "checks[2]" ], result.field_rejections.pluck("field")
+    end
   end
 
   test "an explicit observation replacement survives a correction_target reading" do
@@ -1890,6 +2023,14 @@ class Rag::TurnPerceptionTest < ActiveSupport::TestCase
   def active_values(episode)
     episode.facts.values.filter_map { |fact| fact["value"] if fact.is_a?(Hash) && fact["status"] == "known" } +
       Array(episode.identifiers).pluck("value")
+  end
+
+  def with_check_outcome_flag(value)
+    previous = ENV["FIELD_CHECK_OUTCOME"]
+    value.nil? ? ENV.delete("FIELD_CHECK_OUTCOME") : ENV["FIELD_CHECK_OUTCOME"] = value
+    yield
+  ensure
+    previous.nil? ? ENV.delete("FIELD_CHECK_OUTCOME") : ENV["FIELD_CHECK_OUTCOME"] = previous
   end
 
   def perceive(raw, turn, episode: Rag::ActiveEpisode.new, viewer: @owner)

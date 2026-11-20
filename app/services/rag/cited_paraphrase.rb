@@ -12,14 +12,37 @@ module Rag
       este esta estos estas ese esa esos esas lo le se es son como mas muy
       dos tres da do das dos em na no ao os as um uma the of and
     ].freeze
+    # Words that frame a sentence (where the passage is, that it happens, that
+    # one thing follows another) and say nothing a source line has to contain.
     RHETORIC = %w[
       segun indica indican abarca incluye incluyen comprende comprenden cubre
       corresponden corresponde destaca destacan senala caso casos fuente manual
       siguiente tambien donde dentro entre cuando quando
+      tabla tablas ocurre ocurren sucede suceden aparece aparecen produce producen
+      porque pues
+      referencia referencias condicional condicionales figura figuran codigo codigos
+      logra lograr logran capaz significa significan
     ].freeze
     PAIRS = [
-      %w[fiacao cableado], %w[sinais senales], %w[sinal senal], %w[porta puerta]
+      %w[fiacao cableado], %w[sinais senales], %w[sinal senal], %w[porta puerta],
+      %w[alguna cualquiera], %w[alguno cualquiera], %w[permitido programado]
     ].freeze
+    # One idea in several verbs: the signal is no longer there. A source that
+    # says «desaparecer» backs «faltar» and «perdió», nothing else.
+    LOSS_ROOTS = %w[desaparec perd pierd falt ausen].freeze
+    # One idea in several verbs: look at, check. A source that says «Comprobar
+    # señales» backs «revisar las señales». The entity and the object still
+    # have to be in the line.
+    CHECK_ROOTS = %w[revis comprob comprueb verific chequ].freeze
+    # Endings that make two forms of one verb (cerró, cerrar, cerrado) meet.
+    VERB_ENDINGS = %w[aron ieron aban ando iendo ado ido ar er ir an en o a e].freeze
+    # A source line that lists alternatives («DCL, DFC o DW»). A sentence that
+    # names only some of them as the lost one or the cause has chosen a branch.
+    ALTERNATIVES = /(?<![[:alnum:]])([[:upper:]][[:alnum:]-]+(?:\s*,\s*[[:upper:]][[:alnum:]-]+)*)\s*(?:,\s*)?(?:o|ó|u|ou|or)\s+([[:upper:]][[:alnum:]-]+)(?![[:alnum:]])/
+    # «Alguna de» restates the «ó» of a line that lists alternatives; the
+    # alternatives themselves are still checked one by one.
+    ANY_OF = %w[alguna alguno algunas algunos cualquiera].freeze
+    CHOICE_CUE = /\b(?:porque|causa|debido|se\s+debe|origina|provoca)\b|(?:desaparec|perd|pierd|falt|ausen)[[:alpha:]]*/i
     FAILURE_WORDS = /\A(?:falha|falla|fallo|falhas|fallas)\z/i
     CONDITION = /(?<![[:alnum:]])(?:quando|cuando|si|if|when|unless|salvo|excepto|solo|sólo)(?![[:alnum:]])|\ben caso\b|\ba menos\b/i
     CONFIRMATION = /\b(?:causa confirmada|la causa|es la causa|cualquier|qualquer|siempre|sempre|se debe a|confirma que)\b/i
@@ -48,6 +71,7 @@ module Rag
     def faithful?
       return false if clauses.empty?
       return false if confirms_branch?
+      return false if chooses_alternative?
       return false if added_condition?
       values = self.class.quantities(residue)
       return false if values.any? && clauses.none? do |clause|
@@ -70,6 +94,20 @@ module Rag
     def confirms_branch?
       residue.match?(CONFIRMATION) && clauses.any? do |clause|
         conditional?(clause) && anchors.any? { |anchor| anchor_in?(clause, anchor) }
+      end
+    end
+
+    # «Se perdió DCL» when the line says «perdido DCL, DFC ó DW»: one of the
+    # alternatives presented as the one that is missing.
+    def chooses_alternative?
+      return false unless residue.match?(CHOICE_CUE)
+
+      named = anchors.map { |anchor| norm(anchor) }
+      clauses.any? do |clause|
+        clause.scan(ALTERNATIVES).any? do |head, last|
+          group = (head.split(/\s*,\s*/) + [ last ]).map { |item| norm(item) }
+          (group & named).any? && (group - named).any?
+        end
       end
     end
 
@@ -170,7 +208,32 @@ module Rag
     end
 
     def token_in?(clause, token)
+      return true if ANY_OF.include?(norm(token)) && clause.match?(ALTERNATIVES)
+      # «no aparecieron» restates «desaparecer» or «perdido». Without the
+      # negation, «aparecieron» is the opposite and stays uncovered.
+      return true if negated_appearance?(token) && loss_in?(clause)
+      # «señales DCL, DFC o DW» names the items a row lists. «la señal es ^DCL»
+      # does not: one quoted code is not that list, so «señal» stays required.
+      return true if signal_category?(token) && lists_named_signals?(clause)
+
       anchor_token?(token) ? anchor_in?(clause, token) : word_in?(clause, token)
+    end
+
+    def signal_category?(token)
+      %w[senal senale senales].include?(bare(token))
+    end
+
+    def lists_named_signals?(clause)
+      named = anchors.select { |anchor| anchor.match?(/\A[[:upper:]]{2,}\z/) }
+      named.size >= 2 && clause.match?(ALTERNATIVES) && named.all? { |name| anchor_in?(clause, name) }
+    end
+
+    def negated_appearance?(token)
+      norm(token).start_with?("aparec") && residue.match?(/\bno\s+aparec/i)
+    end
+
+    def loss_in?(clause)
+      clause.to_s.scan(/[[:alnum:]]+/).any? { |word| LOSS_ROOTS.any? { |root| norm(word).start_with?(root) } }
     end
 
     def anchor_in?(text, anchor)
@@ -187,8 +250,31 @@ module Rag
 
     def aligns?(left, right)
       forms(left).product(forms(right)).any? do |one, other|
-        one == other || stem(one) == stem(other) || pair?(one, other) || cognate?(stem(one), stem(other))
+        one == other || stem(one) == stem(other) || pair?(one, other) || cognate?(stem(one), stem(other)) ||
+          loss?(one, other) || check?(one, other) || same_verb?(one, other)
       end
+    end
+
+    def loss?(left, right)
+      [ left, right ].all? { |word| LOSS_ROOTS.any? { |root| norm(word).start_with?(root) } }
+    end
+
+    def check?(left, right)
+      [ left, right ].all? { |word| CHECK_ROOTS.any? { |root| norm(word).start_with?(root) } }
+    end
+
+    def same_verb?(left, right)
+      one = verb_root(left)
+      other = verb_root(right)
+      one.length >= 4 && one == other
+    end
+
+    def verb_root(word)
+      base = norm(word)
+      ending = VERB_ENDINGS.find { |suffix| base.end_with?(suffix) && base.length - suffix.length >= 4 }
+      root = ending ? base.delete_suffix(ending) : base
+      # Stem change of cerrar/cierra, poder/puede: the vowel pair meets the infinitive's.
+      root.sub(/ie(?=[^aeiou]+\z)/, "e").sub(/ue(?=[^aeiou]+\z)/, "o")
     end
 
     def pair?(left, right)

@@ -376,6 +376,89 @@ class Rag::UnconfirmedApplicabilityTest < ActiveSupport::TestCase
     assert identity.identity
   end
 
+  # Otis T5, live run 20261120T012019Z: the filter removed the sentence that
+  # reports the technician's own action and its observed result.
+  T5_QUESTION = "La hoja se trababa antes de completar el cierre . Encontré residuos en la guía y los retire . " \
+    "Después la puerta cerró por completo y el 0102 no.volvio a registrarse durante la.prueba . No llegamos a verificar DCL ni DFC"
+  T5_REPORT = "**Lectura:** Tras retirar los residuos de la guía, la puerta cerró por completo y el 0102 no volvió a aparecer en tu prueba."
+
+  test "a reference filter keeps the narration of an action the technician reported and its result" do
+    with_check_outcome_flag("true") { assert_narration_kept }
+    # Off: the base filter, unchanged.
+    with_check_outcome_flag(nil) do
+      filtered = Rag::DocumentIdentityScope.unconfirmed_reference_filter(
+        T5_REPORT, [], T5_QUESTION, technician_texts: [ T5_QUESTION ]
+      )
+      assert_equal [ T5_REPORT ], filtered.removed
+    end
+  end
+
+  def assert_narration_kept
+    filtered = Rag::DocumentIdentityScope.unconfirmed_reference_filter(
+      T5_REPORT, [], T5_QUESTION, technician_texts: [ T5_QUESTION, "Encontré residuos en la guía y los retiré" ]
+    )
+
+    assert_empty filtered.removed
+    assert_includes filtered.text, "la puerta cerró por completo"
+    assert_includes filtered.text, "el 0102 no volvió a aparecer en tu prueba"
+  end
+
+  test "a reference filter still removes an instruction or a narration the technician did not report" do
+    with_check_outcome_flag("true") { assert_instructions_still_removed }
+  end
+
+  def assert_instructions_still_removed
+    reported = [ T5_QUESTION, "Encontré residuos en la guía y los retiré" ]
+    removed = lambda do |sentence, texts|
+      Rag::DocumentIdentityScope.unconfirmed_reference_filter(sentence, [], "que hago", technician_texts: texts).removed
+    end
+
+    assert_equal [ "Retira los residuos de la guía." ], removed.call("Retira los residuos de la guía.", reported)
+    assert_equal [ "Tras retirar los residuos, la puerta cierra." ],
+      removed.call("Tras retirar los residuos, la puerta cierra.", [ "La puerta no cierra" ])
+    assert_equal [ "Tras retirar los residuos, la puerta cierra." ],
+      removed.call("Tras retirar los residuos, la puerta cierra.", [ "No retiré nada de la guía" ])
+    assert_equal [ "Tras retirar los residuos, pulsa el selector." ],
+      removed.call("Tras retirar los residuos, pulsa el selector.", reported)
+  end
+
+  # Live 20261120T200327Z T5. The prompt asks for this sentence and the filter
+  # deleted it: «retirar» is an operation verb, and the hypothesis does not
+  # use «tras» or «después» in front of it.
+  LIKELY_CAUSE = "Lo más probable es que retirar los residuos explique el cambio, ya que la hoja se trababa antes de completar el cierre."
+
+  test "a reference filter keeps a hypothesis about an action the technician reported" do
+    with_check_outcome_flag("true") do
+      filtered = Rag::DocumentIdentityScope.unconfirmed_reference_filter(
+        LIKELY_CAUSE, [], T5_QUESTION, technician_texts: [ T5_QUESTION ]
+      )
+
+      assert_empty filtered.removed
+      assert_includes filtered.text, "explique el cambio"
+    end
+    with_check_outcome_flag(nil) do
+      filtered = Rag::DocumentIdentityScope.unconfirmed_reference_filter(
+        LIKELY_CAUSE, [], T5_QUESTION, technician_texts: [ T5_QUESTION ]
+      )
+
+      assert_equal [ LIKELY_CAUSE ], filtered.removed
+    end
+  end
+
+  test "a hypothesis that orders a new action is still removed" do
+    with_check_outcome_flag("true") do
+      reported = [ T5_QUESTION ]
+      removed = lambda do |sentence|
+        Rag::DocumentIdentityScope.unconfirmed_reference_filter(sentence, [], T5_QUESTION, technician_texts: reported).removed
+      end
+
+      assert_equal [ "Lo más probable es que debas retirar los residuos de la guía." ],
+        removed.call("Lo más probable es que debas retirar los residuos de la guía.")
+      assert_equal [ "Lo más probable es que sustituir el operador explique el cambio." ],
+        removed.call("Lo más probable es que sustituir el operador explique el cambio.")
+    end
+  end
+
   test "a reference filter keeps an engineering review of the adjustment" do
     question = "KP-VS está en 2,5"
     kept = [

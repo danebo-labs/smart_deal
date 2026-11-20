@@ -665,7 +665,8 @@ class FieldPhotoAnalysisJob < ApplicationJob
     citations = rag_answer&.dig(:citations) || []
     provenance = rag_answer&.dig(:provenance_segments) ||
       Rag::ProvenanceSegmenter.call(answer: answer, citations: citations, visual_observation: observation)
-    saved = @case_photo.publish(answer:, citations:, provenance:, context:, visual_summary: summary)
+    saved = @case_photo.publish(answer:, citations:, provenance:, context:, visual_summary: summary,
+                                pending_question: rag_answer&.dig(:pending_question))
     if saved.invalid?
       @case_photo.fail("invalid_photo_result")
       return nil

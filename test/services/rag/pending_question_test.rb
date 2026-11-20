@@ -71,6 +71,71 @@ class Rag::PendingQuestionTest < ActiveSupport::TestCase
     assert_nil Rag::PendingQuestion.coerce("type" => "work_relation", "options" => [ "same" ])["options"]
   end
 
+  test "from_publication stores the last published question without label and with only the sources it cites" do
+    sources = [ { "document" => "Manual VF5", "document_key" => "s3://m", "filename" => "m.pdf", "page" => "7" } ]
+    cited = Rag::PendingQuestion.from_publication(
+      "La fuente dice «Indicador LED.» [1]\n\n**Próxima comprobación:** ¿Qué LED está encendido?", sources: sources, locale: :es
+    )
+    assert_equal "¿Qué LED está encendido?", cited["question"]
+    assert_equal [], cited["targets"]
+
+    inline = Rag::PendingQuestion.from_publication("Indicador LED [1] ¿Qué LED está encendido?", sources: sources, locale: :es)
+    assert_equal "¿Qué LED está encendido?", inline["question"]
+    assert_equal [ "Manual VF5" ], inline["targets"].pluck("item")
+    assert_equal "7", inline["targets"].first["page"]
+  end
+
+  # Live run 20261120T134952Z, T4. The model states what the answer decides in
+  # the same line as the question, as the generator prompt asks it to.
+  test "with the flag on a question keeps being the last thing asked when its reason shares the line" do
+    published = "Pregunta: ¿en qué punto exacto se detiene la hoja? ¿Dentro de la zona con residuos de la guía del piso 3 o antes de llegar a ella? La respuesta cambia si la acumulación está en el recorrido de la hoja."
+    stored = "¿en qué punto exacto se detiene la hoja? ¿Dentro de la zona con residuos de la guía del piso 3 o antes de llegar a ella?"
+
+    with_check_outcome_flag("true") do
+      assert_equal stored, Rag::PendingQuestion.from_publication(published, locale: :es)["question"]
+      assert_equal "¿Qué LED está encendido?",
+        Rag::PendingQuestion.from_publication("¿Qué LED está encendido? Esa lectura decide la rama. Sigue [2].", locale: :es)["question"]
+      assert_nil Rag::PendingQuestion.from_publication("Revisa el cableado. La respuesta cambia si hay corte.", locale: :es),
+        "no question, nothing stored"
+    end
+    with_check_outcome_flag(nil) do
+      assert_nil Rag::PendingQuestion.from_publication(published, locale: :es), "flag off keeps the base reading"
+    end
+  end
+
+  test "from_publication keeps a compound question whole and returns nil without a question" do
+    compound = "¿Con la señal #21 activa, el LED de FOTOCÉLULA se enciende y el relé conmuta?"
+    assert_equal compound, Rag::PendingQuestion.from_publication("Revisa el cableado.\n\n#{compound}", locale: :es)["question"]
+    assert_nil Rag::PendingQuestion.from_publication("Revisa el cableado y repite la prueba.", locale: :es)
+    assert_equal "¿El EA no vuelve a aparecer?", Rag::PendingQuestion.question_in("Resumen. ¿El EA no vuelve a aparecer?", locale: :es)
+  end
+
+  test "from_publication takes the question that a citation sentence follows and keeps the lead-in condition" do
+    otis = "Pero no confirma la causa. DCL y DFC siguen sin verificar.\n\nPróxima comprobación: con la puerta de piso 3 cerrada, " \
+      "¿el LED DFC del panel queda encendido? Según [21], DFC \"Puertas completamente cerradas\"."
+    sources = Array.new(21) { |index| { "document" => "Guía #{index + 1}", "document_key" => "k#{index + 1}", "filename" => "g.pdf", "page" => "3" } }
+    stored = Rag::PendingQuestion.from_publication(otis, sources: sources, locale: :es)
+
+    assert_equal "con la puerta de piso 3 cerrada, ¿el LED DFC del panel queda encendido?", stored["question"]
+    assert_equal [ "Guía 21" ], stored["targets"].pluck("item")
+    thyssen = "Comprobación: en operación normal, tras varias maniobras en automático, ¿el EA no vuelve a aparecer?\n\nLa referencia describe el manual."
+    assert_equal "en operación normal, tras varias maniobras en automático, ¿el EA no vuelve a aparecer?",
+      Rag::PendingQuestion.from_publication(thyssen, locale: :es)["question"]
+    assert_nil Rag::PendingQuestion.from_publication("Repite la maniobra y dime si falla. Según [5], el estado no se afirma.", locale: :es)
+  end
+
+  test "an untargeted pending survives a stored read but not a read built from a clarification" do
+    raw = { "type" => "documented_context", "question" => "¿Qué LED está encendido?", "targets" => [] }
+
+    assert_nil Rag::PendingQuestion.coerce(raw)
+    assert_equal raw, Rag::PendingQuestion.coerce_stored(raw)
+    state = Rag::ActiveEpisodeTurn.apply_assistant(
+      state: episode_state, text: "¿Qué LED está encendido?", now: NOW, correlation_id: "query:untargeted", pending_question: raw
+    ).state
+    assert_equal [], state.dig("pending_question", "targets")
+    assert_equal "q1", state.dig("pending_question", "id")
+  end
+
   test "a longer no se answers the documented question and a negated state does not" do
     question = {
       "type" => "documented_context",
@@ -221,7 +286,152 @@ class Rag::PendingQuestionTest < ActiveSupport::TestCase
     assert_nil Rag::PendingQuestion.followup_line("#{notice}\n\n#{plate}", locale: :es)
   end
 
+  # Otis T5, live round 3 (20261119T223408Z): the question cited [9], and the
+  # stored target had the manual's title with an empty document_key, filename
+  # and page, because the source list the writer reads carried none of them.
+  test "FIELD_CHECK_OUTCOME gives the cited source its key, file and page in the stored target" do
+    chunk = {
+      "content" => "DFC encendido: puertas completamente cerradas.", "identity_applicability" => "compatible",
+      "location_uri" => "s3://bucket/bulk_chunks/3/otis/chunk_p121_1.txt",
+      "metadata" => { "canonical_name" => "MANUAL DE AYUDA TÉCNICA (p1-123)", "page_number" => "121",
+                      "original_source_uri" => "s3://bucket/bulk_uploads/3/otis (p1-123).pdf" }
+    }
+    published = "Comprobación: con la puerta de piso 3 cerrada, ¿el LED DFC del panel está encendido? Según [1], DFC encendido indica puertas cerradas."
+    service = BedrockRagService.allocate
+
+    with_check_outcome_flag("true") do
+      stored = Rag::PendingQuestion.from_publication(published, sources: service.send(:companion_publication_sources, [ chunk ]))
+      target = stored.fetch("targets").sole
+      assert_equal "MANUAL DE AYUDA TÉCNICA (p1-123)", target.fetch("item")
+      assert_equal "s3://bucket/bulk_uploads/3/otis (p1-123).pdf", target.fetch("document_key")
+      assert_equal "chunk_p121_1.txt", target.fetch("filename")
+      assert_equal "121", target.fetch("page")
+    end
+
+    with_check_outcome_flag(nil) do
+      source = service.send(:companion_publication_sources, [ chunk ]).sole
+      assert_equal %w[applicability content document index reference_only], source.keys.sort, "flag off keeps the base shape"
+    end
+  end
+
+  # Otis T5, live round 3 (correlation query:73c59b4b…). The generator cited [9]
+  # and the stored target came back with only the title. Same ten passages in
+  # the same order, pages as floats as Retrieve returns them: the target must
+  # point at passage 9, page 121 of the (p1-123) manual, and at no neighbour.
+  test "FIELD_CHECK_OUTCOME keeps the reference of the passage [9] names among ten" do
+    pages = [ [ 23, "p124-245" ], [ 47, "p1-123" ], [ 87, "p124-245" ], [ 22, "p124-245" ], [ 85, "p124-245" ],
+              [ 42, "p1-123" ], [ 54, "p124-245" ], [ 55, "p124-245" ], [ 121, "p1-123" ], [ 83, "p124-245" ] ]
+    chunks = pages.each_with_index.map { |(page, part), index| otis_chunk(page, part, index) }
+    published = "Comprobación: con la puerta de piso 3 cerrada, ¿el LED DFC del panel está encendido? " \
+                "Según [9], DFC encendido indica \"Puertas completamente cerradas (Cadena de seguridad cerrada)\"."
+
+    with_check_outcome_flag("true") do
+      sources = BedrockRagService.allocate.send(:companion_publication_sources, chunks)
+      target = Rag::PendingQuestion.from_publication(published, sources: sources).fetch("targets").sole
+
+      assert_equal "MANUAL DE AYUDA TÉCNICA (p1-123)", target.fetch("item")
+      assert_equal "s3://bucket/bulk_uploads/3/MANUAL (p1-123).pdf", target.fetch("document_key")
+      assert_equal "chunk_p121_9.txt", target.fetch("filename")
+      assert_equal "121", target.fetch("page"), "a float page is stored as the page the technician reads"
+    end
+  end
+
+  test "FIELD_CHECK_OUTCOME reads a reopened case's cited number, not its position" do
+    first = otis_chunk(121, "p1-123", 0).merge("case_number" => 7)
+    second = otis_chunk(55, "p124-245", 1).merge("case_number" => 9)
+    published = "Comprobación: ¿el LED DFC del panel está encendido? Según [9], DFC encendido indica puertas cerradas."
+
+    with_check_outcome_flag("true") do
+      sources = BedrockRagService.allocate.send(:companion_publication_sources, [ first, second ])
+      target = Rag::PendingQuestion.from_publication(published, sources: sources).fetch("targets").sole
+
+      assert_equal "chunk_p55_2.txt", target.fetch("filename"), "[9] is the passage numbered 9, which sits second"
+      assert_equal "55", target.fetch("page")
+    end
+  end
+
+  test "FIELD_CHECK_OUTCOME falls back to the chunk's own source uri when the sidecar metadata has no key" do
+    chunk = otis_chunk(121, "p1-123", 8)
+    chunk["metadata"].delete("original_source_uri")
+    chunk["original_source_uri"] = "s3://bucket/bulk_uploads/3/MANUAL (p1-123).pdf"
+
+    with_check_outcome_flag("true") do
+      locator = BedrockRagService.allocate.send(:companion_source_locator, chunk["metadata"], chunk)
+      assert_equal "s3://bucket/bulk_uploads/3/MANUAL (p1-123).pdf", locator.fetch("document_key")
+      assert_equal "chunk_p121_9.txt", locator.fetch("filename")
+    end
+  end
+
+  test "flag off reads the cited source by position and leaves the source shape alone" do
+    chunks = [ otis_chunk(121, "p1-123", 0).merge("case_number" => 9), otis_chunk(55, "p124-245", 1) ]
+    sources = with_check_outcome_flag(nil) { BedrockRagService.allocate.send(:companion_publication_sources, chunks) }
+    assert_empty sources.flat_map(&:keys) & %w[number document_key filename page]
+
+    target = Rag::PendingQuestion.from_publication("¿El LED DFC está encendido? Según [2], DFC indica puertas cerradas.", sources: sources).fetch("targets").sole
+    assert_equal "MANUAL DE AYUDA TÉCNICA (p124-245)", target.fetch("item")
+  end
+
+  # Otis T5, live round 4 (correlation query:1bb60e4e…). The manual's line sat
+  # in the labelled check paragraph and the question alone under it, so the
+  # pending was stored with targets []. The cited passage must reach it.
+  ROUND4_T5 = <<~TEXT.strip
+    Resultado: Tras retirar los residuos de la guía, la puerta cerró por completo. Esto solo vale para esa maniobra.
+
+    Pendiente: DCL y DFC sin verificar. DCL ya quedó pendiente antes, así que no lo vuelvo a pedir.
+
+    Siguiente comprobación (DFC): Según el panel, el LED DFC indica "Puertas completamente cerradas (Cadena de seguridad cerrada)" [9].
+
+    ¿Con la puerta del piso 3 cerrada, el LED DFC del panel está encendido?
+  TEXT
+
+  test "FIELD_CHECK_OUTCOME gives the question the passage cited in its labelled check paragraph" do
+    chunks = (1..10).map { |index| otis_chunk(index == 9 ? 121 : 20 + index, index == 9 ? "p1-123" : "p124-245", index - 1) }
+
+    with_check_outcome_flag("true") do
+      sources = BedrockRagService.allocate.send(:companion_publication_sources, chunks)
+      stored = Rag::PendingQuestion.from_publication(ROUND4_T5, sources: sources)
+
+      assert_equal "¿Con la puerta del piso 3 cerrada, el LED DFC del panel está encendido?", stored.fetch("question")
+      target = stored.fetch("targets").sole
+      assert_equal "MANUAL DE AYUDA TÉCNICA (p1-123)", target.fetch("item")
+      assert_equal "chunk_p121_9.txt", target.fetch("filename")
+      assert_equal "121", target.fetch("page")
+      assert_equal "s3://bucket/bulk_uploads/3/MANUAL (p1-123).pdf", target.fetch("document_key")
+    end
+  end
+
+  test "the labelled check paragraph is read only with the flag on, and only that paragraph" do
+    sources = (1..10).map { |index| { "document" => "Manual #{index}", "index" => index } }
+
+    with_check_outcome_flag(nil) do
+      assert_empty Rag::PendingQuestion.from_publication(ROUND4_T5, sources: sources).fetch("targets"), "flag off keeps targets []"
+    end
+
+    with_check_outcome_flag("true") do
+      unlabeled = ROUND4_T5.sub("Siguiente comprobación (DFC): Según", "Según")
+      assert_empty Rag::PendingQuestion.from_publication(unlabeled, sources: sources).fetch("targets"),
+                   "a paragraph without the check label backs nothing"
+
+      far = ROUND4_T5.sub("\n\n¿Con la puerta", "\n\nLectura aparte sin cita.\n\n¿Con la puerta")
+      assert_empty Rag::PendingQuestion.from_publication(far, sources: sources).fetch("targets"),
+                   "only the paragraph right above the question counts"
+
+      own = ROUND4_T5.sub("encendido?", "encendido? Según [2], DFC indica puertas cerradas.")
+      assert_equal [ "Manual 2" ], Rag::PendingQuestion.from_publication(own, sources: sources).fetch("targets").pluck("item"),
+                   "a citation in the question's own paragraph wins"
+    end
+  end
+
   private
+
+  def otis_chunk(page, part, index)
+    {
+      "content" => "DFC ● Puertas completamente cerradas (Cadena de seguridad cerrada)", "identity_applicability" => "compatible",
+      "location_uri" => "s3://bucket/bulk_chunks/3/#{part}/chunk_p#{page}_#{index + 1}.txt",
+      "metadata" => { "canonical_name" => "MANUAL DE AYUDA TÉCNICA (#{part})", "page_number" => page.to_f,
+                      "original_source_uri" => "s3://bucket/bulk_uploads/3/MANUAL (#{part}).pdf" }
+    }
+  end
 
   def documented_question(text)
     Rag::PendingQuestion.coerce(
@@ -264,6 +474,14 @@ class Rag::PendingQuestionTest < ActiveSupport::TestCase
     RagQueryConcern::CompanionPublication.new(
       presented: presented, history: history, route_outcome: route_outcome, companion_reason: companion_reason
     )
+  end
+
+  def with_check_outcome_flag(value)
+    previous = ENV["FIELD_CHECK_OUTCOME"]
+    value.nil? ? ENV.delete("FIELD_CHECK_OUTCOME") : ENV["FIELD_CHECK_OUTCOME"] = value
+    yield
+  ensure
+    previous.nil? ? ENV.delete("FIELD_CHECK_OUTCOME") : ENV["FIELD_CHECK_OUTCOME"] = previous
   end
 
   def episode_state

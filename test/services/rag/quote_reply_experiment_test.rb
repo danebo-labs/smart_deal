@@ -84,6 +84,16 @@ class Rag::QuoteReplyExperimentTest < ActiveSupport::TestCase
     assert_nil adapted["resolutions"].first["start"]
   end
 
+  test "a quote that joins clauses of the same message with y keeps the real span" do
+    message = "Si confirmo que la maniobra se completa , el enclavamiento de puerta actúa cuando corresponde y el display sigue sin mostrar EA ni otra falla"
+    quote = "la maniobra se completa y el enclavamiento de puerta actúa cuando corresponde y el display sigue sin mostrar EA ni otra falla"
+    found = Rag::TurnPerception.locate(quote, message)
+
+    assert_equal "located", found["status"]
+    assert_equal "la maniobra se completa , el enclavamiento de puerta actúa cuando corresponde y el display sigue sin mostrar EA ni otra falla", found["fragment"]
+    assert_equal message.index("la maniobra"), found["start"]
+  end
+
   test "a missing quote stays quote_not_literal and records the difference" do
     turn = LED.dup
     missing = Rag::QuoteReplyExperiment.locate("El LED STATUS está encendido.", turn)

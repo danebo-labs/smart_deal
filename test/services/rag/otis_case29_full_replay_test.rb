@@ -66,6 +66,14 @@ class Rag::OtisCase29FullReplayTest < ActiveSupport::TestCase
         assert_includes context, "Repite esa pregunta solo si su respuesta cambia la siguiente comprobación respaldada"
         assert_not_includes context, BedrockRagService::REFERENCE_EVENT_REQUEST
       end
+      assert_includes turns.dig("t4", :context), BedrockRagService::REFERENCE_STOP_NEXT
+      assert_includes turns.dig("t3", :context), BedrockRagService::REFERENCE_GUIDE_NEXT
+      %w[t1 t2 t3 t5 t6].each do |label|
+        assert_not_includes turns.dig(label, :context).to_s, BedrockRagService::REFERENCE_STOP_NEXT, label
+      end
+      %w[t1 t2 t4 t5 t6].each do |label|
+        assert_not_includes turns.dig(label, :context).to_s, BedrockRagService::REFERENCE_GUIDE_NEXT, label
+      end
       %w[t5 t6].each { |label| assert_equal base, turns.dig(label, :context), "#{label} has no open question to repeat" }
     end
   end
@@ -97,7 +105,9 @@ class Rag::OtisCase29FullReplayTest < ActiveSupport::TestCase
     with_check_outcome_flag("true") do
       turns = replay
       turn = FIXTURE.fetch("t3")
-      session = Struct.new(:conversation_history).new([])
+      session = Struct.new(:conversation_history).new([
+        { "role" => "user", "correlation_id" => turn.fetch("correlation_id"), "content" => turn.fetch("message") }
+      ])
       lines = Rag::CheckOutcome.context_lines(
         turns.dig("t3", :episode_after_reduction), session, correlation_id: turn.fetch("correlation_id")
       )
@@ -105,8 +115,18 @@ class Rag::OtisCase29FullReplayTest < ActiveSupport::TestCase
 
       assert_includes now, "no lo pidas como tu siguiente comprobación en este turno"
       assert_includes now, "Parte de lo demás que trae el mismo mensaje (relato o foto)"
+      assert_includes now, "La foto de la guía es el dato nuevo"
+      assert_includes now, "No pidas ejecutar ajustes mecánicos"
       assert_includes lines.join("\n"), "Todavía no he confirmado el.estado de DCL"
       assert_nil lines.find { |line| line.start_with?("Declarado por el técnico como no verificado") }, "T3 is where it is first declared"
+      t5 = FIXTURE.fetch("t5")
+      later_session = Struct.new(:conversation_history).new([
+        { "role" => "user", "correlation_id" => t5.fetch("correlation_id"), "content" => t5.fetch("message") }
+      ])
+      later = Rag::CheckOutcome.context_lines(
+        turns.dig("t5", :episode_after_reduction), later_session, correlation_id: t5.fetch("correlation_id")
+      )
+      assert_not_includes later.join("\n"), "La foto de la guía es el dato nuevo"
     end
   end
 
@@ -189,6 +209,27 @@ class Rag::OtisCase29FullReplayTest < ActiveSupport::TestCase
       assert_match(/no confirma la placa/, row[:published], "and it keeps the applicability limit")
       assert_equal "controller", row[:reloaded].pending_question["type"]
       assert_equal question, row[:reloaded].pending_question["question"]
+    end
+  end
+
+  test "flag on: a DCL question after the stop is replaced by the impediment the draft already wrote" do
+    draft = "Que la hoja se detenga antes del cierre encaja con el 0102.\n\n" \
+      "Siguiente comprobación: con la hoja detenida antes del cierre, ¿qué estado muestra DCL, activo o inactivo?\n\n" \
+      "Pendiente: si hay algo que trabe o roce en la guía inferior (la foto muestra suciedad), y el estado real de DCL."
+    asked = "con la hoja detenida antes del cierre, ¿qué estado muestra DCL, activo o inactivo?"
+    result = { answer: draft, route_outcome: :answered, pending_question: { "question" => asked } }
+    service = BedrockRagService.allocate
+    service.instance_variable_set(:@companion_direct_sources, [])
+
+    with_check_outcome_flag("true") do
+      promoted = service.send(:impediment_question_result, result, "Se detiene antes", :es)
+
+      assert_includes promoted[:answer], "¿Hay algo que trabe o roce en la guía inferior?"
+      assert_not_includes promoted[:answer], "activo o inactivo"
+      assert_match(/trabe o roce/, promoted[:pending_question]["question"])
+    end
+    with_check_outcome_flag(nil) do
+      assert_nil service.send(:impediment_question_result, result, "Se detiene antes", :es)
     end
   end
 

@@ -1256,6 +1256,15 @@ class BedrockRagService
   REFERENCE_CONTEXT = "Describe solo lo que documenta la fuente para la función consultada. Un documento seleccionado no identifica la instalación. Presenta la configuración y sus señales como una referencia condicional hasta que se confirmen. No indiques una maniobra, medición ni conexión, ni preguntes de nuevo por el rótulo."
   REFERENCE_EVENT_REQUEST = "El técnico reporta un síntoma y no aporta ningún evento ni código. Si el equipo los registra (historial de eventos, códigos en la consola), pide primero ese evento o una lectura equivalente, antes de preguntar por una variante del manual."
   REFERENCE_OPEN_QUESTION = "Tu pregunta anterior sigue sin respuesta: «%<question>s». Este turno no la contesta. Avanza con lo nuevo que trae (el dato del técnico o la foto). Repite esa pregunta solo si su respuesta cambia la siguiente comprobación respaldada, y di en la misma frase por qué."
+  # Live 20261120T230037Z, Otis T4. The technician had just said where the
+  # leaf stops. The open-question line only said "advance", and the draft
+  # asked the distance to the closed position again. The stop is already
+  # the datum; the next question is the visible impediment.
+  REFERENCE_STOP_NEXT = "El dato de este turno ya dice dónde se detiene el movimiento. No preguntes otra vez la posición ni la distancia hasta el cierre. La pregunta pide el impedimento mecánico que se ve: un punto donde se trabe, roce u obstruya."
+  # Live 20261120T231533Z, Otis T3. The guide sentence was stored as an
+  # observation, so the check block never appeared, and the open-question
+  # line let the model repeat front or rear. The photo is the new datum.
+  REFERENCE_GUIDE_NEXT = "La foto de la guía es el dato nuevo y prevalece sobre repetir la pregunta anterior. No pidas ejecutar ajustes mecánicos ni un procedimiento de un operador que no está confirmado. La pregunta pide si la hoja llega al cierre o se detiene antes, o si algo en la guía la traba, roza u obstruye."
 
   # The context line of a reference answer. With the check-outcome flag the
   # generator also learns what the episode shows it still lacks: the event
@@ -1271,11 +1280,96 @@ class BedrockRagService
   def reference_progress_note(active, documented_question:, raw_question:, correlation_id:)
     return nil unless Rag::CheckOutcomeFlag.enabled? && active&.episode_id.present?
 
+    parts = []
     if documented_question.present?
-      format(REFERENCE_OPEN_QUESTION, question: documented_question) if documented_question_open?(active)
+      parts << format(REFERENCE_OPEN_QUESTION, question: documented_question) if documented_question_open?(active)
     elsif event_missing?(active, raw_question, correlation_id)
-      REFERENCE_EVENT_REQUEST
+      parts << REFERENCE_EVENT_REQUEST
     end
+    parts << REFERENCE_STOP_NEXT if stop_position_reported?(raw_question)
+    parts << REFERENCE_GUIDE_NEXT if guide_just_shown?(raw_question)
+    parts.compact.presence&.join(" ")
+  end
+
+  # The technician showed the guide and has not yet said what the leaf does
+  # there, nor that the residue was already removed.
+  # Live 20261120T231926Z, Otis T4. The note already said to ask the
+  # impediment. The draft asked whether DCL is active and left "algo que
+  # trabe o roce en la guía" as a side remark. The question becomes that
+  # clause. Flag off: nil.
+  def impediment_question_result(result, raw_question, locale)
+    return nil unless Rag::CheckOutcomeFlag.enabled? && result && stop_position_reported?(raw_question)
+    return nil unless result[:route_outcome] == :answered
+
+    current = result.dig(:pending_question, "question").to_s
+    current = Rag::PendingQuestion.question_in(result[:answer].to_s, locale: locale).to_s if current.blank?
+    return nil if current.blank? || current.match?(/trab|roz|impedim|obstru|umbral/i)
+    return nil unless current.match?(/\b(?:DCL|DFC|DW)\b/i) && result[:answer].to_s.include?(current)
+
+    clause = result[:answer].to_s[/algo que (?:se )?(?:trabe|roce|obstruya)[^(\n.]{0,80}/i]
+    return nil if clause.blank?
+
+    question = "¿Hay #{clause.squish}?"
+    text = result[:answer].to_s.sub(current, question)
+    pending = Rag::PendingQuestion.from_publication(text, sources: @companion_direct_sources, locale: locale)
+    return nil unless pending
+
+    result.merge(answer: text, pending_question: pending)
+  end
+
+  def suppress_repeated_cycle!(result, raw_question)
+    return unless Rag::CheckOutcomeFlag.enabled? && result
+    return unless Rag::CompanionDirectAnswer.functional_result_reported?(raw_question)
+
+    cleaned = Rag::CompanionDirectAnswer.without_repeated_cycle(result[:answer])
+    return if cleaned.nil?
+
+    result[:answer] = cleaned
+    result[:pending_question] = nil unless cleaned.include?("?")
+  end
+
+  # Live 20261121T003454Z, Thyssen T12. The close was accepted, then the two
+  # cited sentences were unbacked, so the citation list was empty and the
+  # reference path abstained. The fallback reprinted the check this turn had
+  # already settled. The technician's result stays.
+  def keep_functional_close!(result, raw_question)
+    return unless Rag::CheckOutcomeFlag.enabled? && result
+    return unless Rag::CompanionDirectAnswer.functional_result_reported?(raw_question)
+    return if result[:applicability_violation] || result[:companion_contract_invalid]
+    return unless result[:route_outcome] == :abstained && Array(result[:citations]).empty?
+
+    result[:pending_question] = nil unless result[:answer].to_s.include?("?")
+    result[:route_outcome] = :answered
+    result[:companion_reason] = nil
+  end
+
+  # The check was opened, not answered. A question that only asks whether the
+  # fault returns is completed with the maneuver half the note already required.
+  def restore_functional_check!(result, raw_question, locale)
+    return unless Rag::CheckOutcomeFlag.enabled? && result
+    return unless Rag::CompanionDirectAnswer.functional_check_opened?(raw_question)
+
+    cleaned = Rag::CompanionDirectAnswer.with_opened_functional_check(result[:answer])
+    return if cleaned.nil?
+
+    pending = Rag::PendingQuestion.from_publication(cleaned, sources: @companion_direct_sources, locale: locale)
+    return if pending.nil?
+
+    result[:answer] = cleaned
+    result[:pending_question] = pending
+  end
+
+  def guide_just_shown?(raw_question)
+    text = raw_question.to_s
+    text.match?(/gu[ií]a/i) && !text.match?(/retir|residuo|cerr[oó]\s+por\s+completo|no\s+volvi/i) && !stop_position_reported?(text)
+  end
+
+  # "Se detiene antes" already places the stop. A message that also reports
+  # the residue, the correction or the test result is a later turn: that one
+  # closes the check instead of asking for the impediment again.
+  def stop_position_reported?(raw_question)
+    text = raw_question.to_s
+    text.match?(/\bse\s+detiene\s+antes\b/i) && !text.match?(/\b(?:retir|corrig|residuo)/i)
   end
 
   # Stage 1, flag on. The case opened with a symptom and no event, the draft
@@ -1284,20 +1378,59 @@ class BedrockRagService
   # request is the right answer, so it is not replaced by the insufficient
   # evidence line. The text stops at the question: what the draft added after
   # it leaned on the dropped line. Flag off: nil, the base fallback.
+  #
+  # Live 20261120T230532Z: the leftover photo sentence said "lectura del
+  # fallo". That word made the whole answer a technical claim without a
+  # citation, publication rejected it, and the plate question replaced the
+  # event request. The photo sentence stays out; the question is kept.
   def event_request_result(result, active, raw_question, correlation_id, locale)
     return nil unless Rag::CheckOutcomeFlag.enabled? && result && active&.episode_id.present?
-    return nil if result[:route_outcome] == :answered || result[:companion_contract_invalid] || result[:applicability_violation]
+    return nil if result[:route_outcome] == :answered || result[:applicability_violation]
     return nil unless event_missing?(active, raw_question, correlation_id)
 
-    blocks = result[:answer].to_s.split(/\n{2,}/)
-    last = blocks.rindex { |block| block.match?(/[?？][\s*]*\z/) }
-    return nil unless last
+    source = event_request_source(result)
+    return nil unless source
 
-    text = blocks.first(last + 1).join("\n\n").delete("*").gsub(/\s+\z/, "")
+    # The question may sit inside the paragraph («¿…? Si aparece, pásame…»).
+    # Cutting only when a paragraph ends at "?" dropped the live T1 request
+    # (20261120T225723Z) and the fallback asked for the controller plate.
+    source = source.delete("*")
+    mark = source.rindex(/[?？]/)
+    return nil unless mark
+
+    text = source[0..mark].rstrip
     pending = Rag::PendingQuestion.from_publication(text, sources: @companion_direct_sources, locale: locale)
     return nil unless pending
 
-    result.merge(answer: text, pending_question: pending, route_outcome: :answered)
+    result.merge(
+      answer: text, pending_question: pending, route_outcome: :answered,
+      companion_contract_invalid: false, companion_reason: nil
+    )
+  end
+
+  # An accepted draft is already the answer. A draft rejected only because a
+  # sentence states a value or a state without a citation can still carry the
+  # event question: that sentence is dropped and the question remains.
+  def event_request_source(result)
+    if result[:companion_contract_invalid]
+      return nil unless citation_gap_only?(result)
+
+      without_evidence_claims(result[:recoverable_answer].to_s).presence
+    else
+      result[:answer].to_s.presence
+    end
+  end
+
+  def citation_gap_only?(result)
+    reasons = Array(result.dig(:companion_publication, "reasons"))
+    reasons.one? && reasons.first["rule"] == "R5" && reasons.first["detail"] == "technical_without_citation"
+  end
+
+  def without_evidence_claims(text)
+    text.split(/\n{2,}/).filter_map do |block|
+      kept = block.split(/(?<=\.)\s+/).reject { |sentence| Rag::AnswerSafetyProcessor.requires_evidence?(sentence) }
+      kept.join(" ").presence
+    end.join("\n\n")
   end
 
   # Same reading as the planner: a published question with parts is open
@@ -1368,7 +1501,14 @@ class BedrockRagService
         correlation_id: correlation_id, reference_pending: pending, reference_mode: true,
         reference_confirmed: confirmed, episode: episode, parameter_review: prepared.parameter_review
       )
-      return attach_generation_trace!(result, prepared.user, raw_turn: raw_question, sent_question: question, truncated: prepared.omitted.any?) if result[:route_outcome] == :answered
+      suppress_repeated_cycle!(result, raw_question)
+      keep_functional_close!(result, raw_question)
+      restore_functional_check!(result, raw_question, locale)
+      if result[:route_outcome] == :answered
+        promoted = impediment_question_result(result, raw_question, locale)
+        result = promoted if promoted
+        return attach_generation_trace!(result, prepared.user, raw_turn: raw_question, sent_question: question, truncated: prepared.omitted.any?)
+      end
     end
 
     requested = event_request_result(result, active, raw_question, correlation_id, locale)
@@ -2529,6 +2669,9 @@ class BedrockRagService
       document_identity: Thread.current[:document_identity_scope],
       pending_question: (parameter_review&.pending if accepted) || companion_turn_pending(accepted, answer_text, locale)
     }
+    # The abstain line replaced the draft. The event request still needs the
+    # draft when the only rejection is an uncited state word (20261120T230532Z).
+    result[:recoverable_answer] = guarded if reference_mode && !accepted && citation_gap_only?(result)
     if reference_mode && accepted
       unless reference_confirmed
         filter_unconfirmed_reference!(result, citations: citations, passages: passages, chunks: chunks,
@@ -2700,6 +2843,13 @@ class BedrockRagService
       kind = :procedure_application if result[:citations].empty?
     end
     return if kind.nil?
+    # Live 20261121T004419Z. The close restated the maneuver the technician
+    # had just reported. Removing that sentence emptied the citations, and
+    # the whole answer was replaced by the identity line plus the check again.
+    if kind == :procedure_application && !filtered.identity &&
+        Rag::CheckOutcomeFlag.enabled? && Rag::CompanionDirectAnswer.functional_result_reported?(question)
+      return
+    end
 
     result[:answer] = Rag::DocumentIdentityScope.unconfirmed_reference_withheld(chunks, locale: locale)
     result[:citations] = []

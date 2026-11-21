@@ -31,7 +31,7 @@ module Rag
     EVIDENCE_SENSITIVE_VALUE_PATTERN =
       /\b\d+(?:[.,]\d+)?\s*(?:V(?:AC|DC)?|A|HZ|NM|BAR|MM|CM|°C)\b/i.freeze
     EVIDENCE_SENSITIVE_STATE_PATTERN =
-      /\b(?:LED|encendid[oa]|apagad[oa]|normal|fallo|fault|on|off)\b/i.freeze
+      /\b(?:LED|encendid[oa]|apagad[oa]|(?<!uso )normal|fallo|fault|on|off)\b/i.freeze
 
     CONNECTION_CLAIM_PATTERN =
       /(?:conect|borna|terminal|cablead|wired|→|->)/i.freeze
@@ -465,7 +465,13 @@ module Rag
     /x.freeze
 
     def header_line?(line)
-      line.to_s.match?(HEADER_LINE_PATTERN)
+      text = line.to_s
+      # A bold question is the check itself. The split on "?" made the live
+      # T1 question (20261120T223742Z) look like an orphan header, and the
+      # reference path then asked for the controller plate.
+      return false if text.match?(/[?¿？]/)
+
+      text.match?(HEADER_LINE_PATTERN)
     end
 
     public

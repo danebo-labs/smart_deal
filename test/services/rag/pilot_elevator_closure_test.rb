@@ -29,7 +29,7 @@ class Rag::PilotElevatorClosureTest < Minitest::Test
     answer = finish(turn.fetch("raw_answer"), turn)
     assert_equal :answered, answer[:route_outcome], answer[:companion_publication].inspect
     assert PilotNov19Rubric.claim?(answer[:answer], TEST_SCOPE, DONE, without: NEGATED_OUTCOME)
-    refute_match(/REQUIRES_FIELD_VERIFICATION|puentes (?:de instalación|provisorios)/i, answer[:answer])
+    assert_no_match(/REQUIRES_FIELD_VERIFICATION|puentes (?:de instalación|provisorios)/i, answer[:answer])
   end
 
 
@@ -38,11 +38,19 @@ class Rag::PilotElevatorClosureTest < Minitest::Test
     partial = TURNS.last.deep_dup
     partial.dig("tool", "part_replies", 0)["state"] = "partial"
     episode = replay_perception(previous, partial)
-    assert_equal "partial", Rag::AnswerContract.part_state(episode, "p9")
-    assert_equal [ "p9" ], Rag::AnswerContract.open_parts(episode).pluck("id")
+    # The message already reports the maneuver and the absent fault. With the
+    # flag, that report completes the part even if the tool said partial
+    # (live 20261121T003218Z). Flag off keeps the tool's partial.
+    if Rag::CheckOutcomeFlag.enabled?
+      assert_equal "complete", Rag::AnswerContract.part_state(episode, "p9")
+      assert_empty Rag::AnswerContract.open_parts(episode)
+    else
+      assert_equal "partial", Rag::AnswerContract.part_state(episode, "p9")
+      assert_equal [ "p9" ], Rag::AnswerContract.open_parts(episode).pluck("id")
+    end
 
     ambiguous = TURNS.last.deep_dup
-    ambiguous["message"] = ([ambiguous.fetch("message")] * 2).join(" ")
+    ambiguous["message"] = ([ ambiguous.fetch("message") ] * 2).join(" ")
     episode = replay_perception(previous, ambiguous)
     assert_equal "quote_ambiguous", episode.answer_report.fetch("refused").first.fetch("reason")
     assert_equal [ "p9" ], Rag::AnswerContract.open_parts(episode).pluck("id")
@@ -86,7 +94,7 @@ class Rag::PilotElevatorClosureTest < Minitest::Test
     answer = finish("El técnico confirmó que la maniobra se completa. El manual dice «#{marker}» [1]. Esto aplica al motor.", turn)
     assert_equal :answered, answer[:route_outcome]
     assert PilotNov19Rubric.claim?(answer[:answer], TEST_SCOPE, DONE, without: NEGATED_OUTCOME)
-    refute_match(/REQUIRES_FIELD_VERIFICATION|aplica al motor/, answer[:answer])
+    assert_no_match(/REQUIRES_FIELD_VERIFICATION|aplica al motor/, answer[:answer])
     assert_empty answer.dig(:companion_publication, "quotes")
   end
 
@@ -137,7 +145,7 @@ class Rag::PilotElevatorClosureTest < Minitest::Test
     assert_equal TURNS[-2].fetch("message"), LIVE_DRAFT.fetch("technician_report_in_request")
     result = finish(LIVE_DRAFT.fetch("draft"), turn)
     assert_equal :answered, result[:route_outcome]
-    assert_equal [:electrical_finding], PilotElevatorClosure.missing_closure_facts(result[:answer])
+    assert_equal [ :electrical_finding ], PilotElevatorClosure.missing_closure_facts(result[:answer])
   end
 
   def test_direct_closure_request_keeps_the_report_and_distinguishes_it_from_hypotheses

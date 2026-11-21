@@ -214,6 +214,10 @@ class OtisCase29RubricTest < ActiveSupport::TestCase
 
     wrong_passage = RUBRIC.t5(t5(published: suggests, pending: nil, citations: cited + [ citation(3, P1, 121).merge("tooltip_excerpt" => "Otro texto") ]), allowed_documents: ALLOWED)
     assert_includes wrong_passage["failed"], "dfc_suggestion_backed_when_made"
+
+    reported = "#{KEPT_T5}\n\nDCL y DFC, que según tu reporte no llegaron a verificarse."
+    kept = RUBRIC.t5(t5(published: reported, pending: nil, citations: cited), allowed_documents: ALLOWED)
+    assert_not_includes kept["failed"], "dfc_suggestion_backed_when_made"
   end
 
   test "T5 pending takes its source from the paragraph that asks it or the check paragraph before it" do
@@ -310,6 +314,8 @@ class OtisCase29RubricTest < ActiveSupport::TestCase
     assert_includes asked.call(front_or_rear)["failed"], "history_event_or_equivalent_requested"
     assert asked.call("¿Qué evento aparece en el historial de la placa?")["ok"]
     assert asked.call("¿Qué código o mensaje muestra la consola cuando falla?")["ok"], "an equivalent request for a reading the equipment shows"
+    short = "Antes de revisar señales, necesito el código o evento que muestra la consola cuando la puerta vuelve a abrir. ¿Qué texto o número aparece?"
+    assert RUBRIC.t1(t1.merge("asked_again" => "¿Qué texto o número aparece?", "published" => short), allowed_documents: ALLOWED)["ok"]
     assert_includes RUBRIC.t1(t1.merge("published" => "Sin pregunta."), allowed_documents: ALLOWED)["failed"], "history_event_or_equivalent_requested"
   end
 

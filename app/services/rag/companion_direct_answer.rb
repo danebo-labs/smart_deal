@@ -337,7 +337,7 @@ module Rag
           "Mensaje de este turno:\n#{raw_question.to_s.strip}",
           context,
           referral_note(technician_turn, outcome: outcome),
-          intervention_note(technician_turn, outcome),
+          intervention_note(technician_turn, outcome, raw_question),
           sources_block(chunks)
         ].compact_blank.join("\n\n")
       end
@@ -348,16 +348,114 @@ module Rag
       # as the model's own reading, limited to that test. The exchange can then
       # close: the note that asks for the next check on every other turn
       # (live run 20261120T012019Z, T5 asked for repeated closings) does not
-      # apply to this one.
-      def intervention_note(technician_turn, outcome)
+      # apply to this one. It does not apply either when this turn already
+      # settled the active check and an earlier part is still partial
+      # (live run 20261120T203919Z, T11): that closing sentence overrode
+      # «No cierres el caso» and the next check was never asked. When that
+      # next check is asked (live run 20261120T204305Z, T11), a reading the
+      # technician already gave in this turn stays in the summary. The
+      # question asks only whether the maneuver completes and that fault
+      # returns. Live 20261120T234638Z, Thyssen T12: the same shape, but the
+      # technician had just reported that the maneuver completed and the
+      # fault stayed away. That report closes the check. Another cycle is
+      # the same test again.
+      def intervention_note(technician_turn, outcome, raw_question)
         return nil if outcome.nil? || technician_turn < REFERRAL_TURN
 
         "Si el técnico informó que retiró o corrigió algo y que después el síntoma no volvió en la prueba: nombra esa " \
           "intervención como la explicación más probable del cambio, en una oración tuya sin [n], sin darla por causa " \
-          "confirmada. Di qué hizo y qué observó, acotado a esa prueba. Cierra el intercambio con lo que sigue sin " \
-          "verificar; esto prevalece sobre pedir la siguiente comprobación y sobre repetir la misma prueba. Pregunta solo " \
-          "si una fuente de este turno respalda una comprobación distinta que cambie la orientación, y cítala."
+          "confirmada. Di qué hizo y qué observó, acotado a esa prueba. #{intervention_closing(outcome, raw_question)}"
       end
+
+      def intervention_closing(outcome, raw_question)
+        if keep_next_check?(outcome) && !functional_result_reported?(raw_question)
+          return "Siguen comprobaciones respondidas solo en parte: no uses esta nota para cerrar el intercambio ni " \
+            "para reemplazar la comprobación siguiente. Anota la lectura y el cambio de síntoma que el técnico ya " \
+            "dijo en este turno; no los conviertas en condición de la pregunta. La pregunta pide solo si la maniobra " \
+            "se completa y si esa falla vuelve."
+        end
+
+        "Cierra el intercambio con lo que sigue sin verificar; esto prevalece sobre pedir la siguiente comprobación y " \
+          "sobre repetir la misma prueba. Pregunta solo si una fuente de este turno respalda una comprobación distinta " \
+          "que cambie la orientación, y cítala."
+      end
+
+      def keep_next_check?(outcome)
+        outcome.settled_this_turn? && outcome.leaves_checks_open? && outcome.active.none? { |part| part.state == "partial" }
+      end
+
+      public
+
+      # The functional check is already the technician's report: the maneuver
+      # completed and the fault did not come back. "EA desapareció" alone is
+      # the reading that opens that check, not its result.
+      def functional_result_reported?(raw_question)
+        text = raw_question.to_s
+        text.match?(/maniobra se completa|se complet[oó] (?:el recorrido|la maniobra)/i) &&
+          text.match?(/sin mostrar|sigue sin|no volvi[oó] a (?:aparecer|registrar)|no reaparece/i)
+      end
+
+      # T11 opens the functional check: P28 is back and EA is gone. T12 is the
+      # result of that check and is excluded here.
+      def functional_check_opened?(raw_question)
+        text = raw_question.to_s
+        !functional_result_reported?(text) && text.match?(/\bP28\b|\+110/i) && text.match?(/\bEA\s+desapareci[oó]\b/i)
+      end
+
+      FUNCTIONAL_CHECK_QUESTION = "¿La maniobra se completa y esa falla vuelve?"
+
+      # Live 20261121T002654Z, Thyssen T11. The note already said the question
+      # asks whether the maneuver completes and the fault returns. The draft
+      # asked only whether EA returns, and ordered several closings. A
+      # question that already asks whether the maneuver completes stays.
+      def with_opened_functional_check(text)
+        source = text.to_s
+        return nil if source.match?(/identidad de este equipo no está confirmada/i)
+        return nil if source.match?(/maniobra se completa|se completa el recorrido|recorrido se completa/i)
+        return nil unless source.match?(/\b(?:EA|falla)\b/i) && source.match?(/vuelve|reaparece/i)
+
+        blocks = source.split(/\n{2,}/)
+        index = blocks.rindex { |block| block.match?(/[?？]/) }
+        return nil unless index
+
+        cleaned = blocks[index].sub(/,?\s*haz varios cierres seguidos\.?\s*/i, " ")
+        cleaned = cleaned.sub(/¿[^?？]*[?？]/, FUNCTIONAL_CHECK_QUESTION)
+        cleaned = cleaned.gsub(/ {2,}/, " ").gsub(/\s+\./, ".").strip
+        return nil if cleaned == blocks[index].strip
+
+        blocks[index] = cleaned
+        blocks.join("\n\n").strip
+      end
+
+      # Live 20261121T001802Z, Thyssen T12. The close note was in the prompt
+      # and the draft still left "Pendiente: repetir la maniobra", without a
+      # question mark, so the runner stored no pending. That order is the
+      # same test again.
+      # "Repetiste" is the same order as "repetir". Live 20261121T003852Z.
+      CYCLE_ORDER = /\b(?:rep(?:et|it)\p{L}*|varios ciclos|más ciclos|mas ciclos|otro ciclo|otra maniobra|siguientes maniobras|varias maniobras|unas veces|cierres seguidos|ciclos sucesivos)\b/i
+
+      # Called only after the technician already reported the maneuver result.
+      # Any question there is another pass of the same check, whatever the
+      # wording (live 20261121T004239Z: "varios cierres y aperturas seguidas").
+      # A cited line that does not ask stays.
+      def without_repeated_cycle(text)
+        removed = false
+        blocks = text.to_s.split(/\n{2,}/)
+        kept = blocks.filter_map { |block|
+          sentences = block.split(/(?<=[.!?？])\s+/)
+          next block unless sentences.any? { |sentence| repeated_cycle_sentence?(sentence) }
+
+          removed = true
+          sentences.reject { |sentence| repeated_cycle_sentence?(sentence) }.join(" ").strip.presence
+        }
+        removed ? kept.join("\n\n").strip : nil
+      end
+
+      def repeated_cycle_sentence?(sentence)
+        sentence.match?(/[?¿？]/) || sentence.match?(CYCLE_ORDER)
+      end
+
+      private
 
       # Offer a handoff when the next check requires someone else or cannot
       # proceed with the available information.

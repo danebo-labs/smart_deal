@@ -436,7 +436,15 @@ module Rag
         @part_replies_field = "present"
         note_rule("bind_compound_check", reply["part_id"], "literal_results_cover_question")
       end
+      if CheckOutcomeFlag.enabled? && replies.empty? && data["move"] == "answer_pending" &&
+          (reply = self.class.opened_functional_reply(@turn, episode: @episode))
+        replies = [ reply ]
+        @part_replies_field = "present"
+        note_rule("bind_functional_open", reply["part_id"], "reported_reading_and_fault")
+      end
+      replies = anchor_functional_quotes(replies) if CheckOutcomeFlag.enabled? && data["move"] == "answer_pending"
       replies = complete_literal_reply(replies) if data["move"] == "answer_pending"
+      replies = complete_functional_result(replies) if CheckOutcomeFlag.enabled? && data["move"] == "answer_pending"
       observations = absorb_quote_observations(observations, replies)
       observations = cap_observations(observations)
       @correction = ObservationCorrection.resolve(
@@ -532,6 +540,72 @@ module Rag
       [ reply.merge("state" => "complete") ]
     end
 
+    # Live 20261121T003218Z, Thyssen T12. The message already says the maneuver
+    # completed and the fault stayed away. The interpreter quoted only the
+    # first clause and left the part partial, so the check never settled.
+    def complete_functional_result(replies)
+      promoted = self.class.complete_functional_replies(replies, @turn)
+      promoted.each_with_index do |reply, index|
+        next unless reply.is_a?(Hash) && reply["state"] == "complete" && replies[index].is_a?(Hash) && replies[index]["state"] == "partial"
+
+        note_rule("bind_functional_result", reply["part_id"], "reported_maneuver_and_fault")
+      end
+      promoted
+    end
+
+    # Live 20261121T003707Z, Thyssen T11. The interpreter answered the pending
+    # check and stored the reading, but sent no part_replies, so p8 stayed open.
+    def self.opened_functional_reply(turn, episode:)
+      return unless CompanionDirectAnswer.functional_check_opened?(turn)
+      return unless AnswerContract.active?(episode)
+
+      parts = AnswerContract.open_parts(episode)
+      part = parts.first if parts.one?
+      pending = episode.pending_question
+      return unless part && part["role"] == "main" && pending.is_a?(Hash) && pending["id"].present?
+
+      quote = turn.to_s[/\bEA\s+desapareci[oó]\b/i]
+      return unless quote && locate(quote, turn)["status"] == "located"
+
+      {
+        "question_id" => pending.fetch("id"), "part_id" => part.fetch("id"),
+        "state" => "complete", "quote" => quote
+      }
+    end
+
+    # Live 20261121T004105Z, Thyssen T12. The quote added "y EA no vuelve a
+    # aparecer" to a clause the technician did say. The message says the
+    # display stayed without EA. The shared clause is the literal quote.
+    def self.anchor_functional_quotes(replies, turn)
+      return replies unless CompanionDirectAnswer.functional_result_reported?(turn)
+
+      clause = turn.to_s[/la maniobra se completa/i]
+      return replies if clause.blank? || locate(clause, turn)["status"] != "located"
+
+      replies.map { |reply|
+        next reply unless reply.is_a?(Hash)
+        next reply if locate(reply["quote"], turn)["status"] == "located"
+        next reply unless reply["quote"].to_s.match?(/maniobra se completa/i)
+
+        reply.merge("quote" => clause, "state" => "complete")
+      }
+    end
+
+    def anchor_functional_quotes(replies)
+      self.class.anchor_functional_quotes(replies, @turn)
+    end
+
+    def self.complete_functional_replies(replies, turn)
+      return replies unless CompanionDirectAnswer.functional_result_reported?(turn)
+
+      replies.map { |reply|
+        next reply unless reply.is_a?(Hash) && reply["state"] == "partial"
+        next reply unless locate(reply["quote"], turn)["status"] == "located"
+
+        reply.merge("state" => "complete")
+      }
+    end
+
     # A located quote that already passes the observation filters is copied
     # into this turn. A refusal to locate it does not invalidate the perception.
     def absorb_quote_observations(observations, replies)
@@ -574,12 +648,47 @@ module Rag
       elsif starts.many?
         { "status" => "quote_ambiguous", "count" => starts.size, "quote" => quote }
       else
+        joined = locate_joined_clauses(text, quote)
+        return joined if joined
+
         {
           "status" => "quote_not_literal",
           "difference" => quote_difference(quote, text),
           "quote" => quote
         }
       end
+    end
+
+    # Live 20261121T002055Z, Thyssen T12. The quote joined two clauses of the
+    # same message with "y". Each clause is one exact span and they sit in
+    # order. The stored offsets run from the first clause to the last, so
+    # the slice is still the technician's text.
+    def self.locate_joined_clauses(text, quote)
+      pieces = quote.split(/\s+y\s+/).map(&:strip).reject(&:empty?)
+      return nil if pieces.size < 2
+      return nil if pieces.any? { |piece| piece.length < 12 }
+
+      cursor = 0
+      ranges = []
+      pieces.each do |piece|
+        starts = quote_indexes(text, piece)
+        return nil unless starts.one?
+
+        start = starts.first
+        return nil if start < cursor
+
+        ranges << [ start, start + piece.length ]
+        cursor = start + piece.length
+      end
+      opening = ranges.first[0]
+      closing = ranges.last[1]
+      {
+        "status" => "located",
+        "start" => opening,
+        "end" => closing,
+        "fragment" => text[opening...closing],
+        "quote" => quote
+      }
     end
 
     # The harness shape: located quotes become offsets and eligible fragments

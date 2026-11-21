@@ -200,6 +200,16 @@ class Rag::AnswerSafetyProcessorTest < ActiveSupport::TestCase
     assert_not_includes rendered, "Cuando se enciende"
   end
 
+  test "keeps a trailing bold question that asks for the console event" do
+    answer = "La foto no muestra un código legible. Antes de medir, necesito saber:\n\n" \
+      "**¿Qué código o evento muestra la consola cuando la puerta del piso 3 cierra y vuelve a abrir?**\n"
+    evidence = [ { content: "Señales de reapertura en la LCB_II." } ]
+
+    rendered = processor.call(answer, evidence: evidence, require_cited_evidence: true)
+
+    assert_includes rendered, "¿Qué código o evento muestra la consola cuando la puerta del piso 3 cierra y vuelve a abrir?"
+  end
+
   test "keeps a heading that still has a documented body beneath it" do
     answer = "Estado documentado:\nDL27 se enciende durante un fallo."
     evidence = [ { content: "DL27 se enciende durante un fallo." } ]
@@ -242,6 +252,11 @@ class Rag::AnswerSafetyProcessorTest < ActiveSupport::TestCase
 
   # thyssen_e_led negative control: an assertive normal/fault attribution
   # without documented evidence must still be blocked.
+  test "uso normal is ordinary wording and estado normal still needs evidence" do
+    assert_not Rag::AnswerSafetyProcessor.requires_evidence?("que el EA no vuelva en uso normal")
+    assert Rag::AnswerSafetyProcessor.requires_evidence?("el contacto queda en estado normal")
+  end
+
   test "still degrades an unsupported assertive normal/fault attribution using señala" do
     rendered = processor.call(
       "L9 señala fallo cuando ocurre una avería.",

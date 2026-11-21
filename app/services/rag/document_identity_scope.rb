@@ -343,6 +343,9 @@ module Rag
       return false if documentary_reference?(unit, chunks.size, patterns)
       return false if qualified_reference?(unit, units, patterns, chunks.size)
       return false if observational_question?(unit)
+      # The technician just reported this result. Restating it is not a
+      # procedure and not a value copied from another manual.
+      return false if reported_functional_result?(unit.text, question)
       # «ajuste» is also the noun in a review handed to Engineering. That
       # sentence is not an instruction to change the parameter. A command in
       # the same sentence, or a value the chunk did not give the technician,
@@ -371,6 +374,15 @@ module Rag
       \b(?:establec\w*|fija\w*|fije\w*|restaur\w*|regres\w*|vuelv\w*|reinici\w*|apag\w*|encend\w*) |
       \b(?:sustitu\w*|reemplaz\w*|ejecut\w*|aplic\w*|configur\w*|corrig\w*|restabl\w*)
     /ix
+
+    def self.reported_functional_result?(original, question)
+      return false unless CheckOutcomeFlag.enabled?
+      return false unless CompanionDirectAnswer.functional_result_reported?(question)
+
+      text = applicability_normalize(original)
+      text.match?(/maniobra se completa/) && text.match?(/enclavamiento|sin mostrar|no muestra|desaparecio/)
+    end
+    private_class_method :reported_functional_result?
 
     def self.engineering_review_referral?(normalized)
       match = normalized.match(ENGINEERING_REVIEW)

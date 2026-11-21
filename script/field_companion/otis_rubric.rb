@@ -31,7 +31,7 @@ module Stage1Live
     # The sentence that binds the result to the test, not just names it.
     SCOPE_STATEMENT = /alcance|resultado|\bvale\b|\baplica\b|solo|[uú]nicamente|\blimita\w*|\bacota\w*/i
     SUGGESTION = /observ|revis|verific|mir[ae]|comprueb|vigil|pendiente\s+de|atent|conviene|podr[ií]as|otra\s+maniobra|pr[oó]xima\s+maniobra/i
-    UNVERIFIED_STATEMENT = /sin\s+verific|no\s+(?:se\s+)?(?:ha\s+)?verific|no\s+(?:llegamos|pudimos)\s+a\s+verific|sigue\s+sin|queda\s+sin/i
+    UNVERIFIED_STATEMENT = /sin\s+verific|no\s+(?:se\s+)?(?:ha\s+)?verific|no\s+(?:llegamos|llegaron|pudimos|pude)\s+a\s+verific|sigue\s+sin|queda\s+sin/i
     CLOSED_AS_FIXED = /\b(?:queda|qued[oó]|est[aá])\s+(?:resuelt|solucionad|reparad)|certifica\s+la\s+puesta/i
     UNVERIFIED = %w[not_done unknown].freeze
 
@@ -63,7 +63,7 @@ module Stage1Live
     # 20261120T121417Z the technician never answered it in T2 or T3.
     def t1(summary, allowed_documents:)
       verdict(
-        "history_event_or_equivalent_requested" => asks?(summary, EVENT_REQUEST),
+        "history_event_or_equivalent_requested" => event_requested?(summary),
         "identifier_kept_as_typed" => Array(summary["identifiers"]).any? { |row| row["value"].to_s.match?(/\AGECGB\z/i) },
         "reopening_recorded_as_report" => Array(summary["all_observations"]).any? { |text| text.to_s.match?(/puerta/i) && text.to_s.match?(DOOR_REOPENS) },
         "console_labels_kept_from_photo" => labels_kept?(summary, %w[COR CR]),
@@ -178,6 +178,23 @@ module Stage1Live
 
     def asks?(summary, pattern)
       summary["asked_again"].to_s.match?(pattern)
+    end
+
+    # Live 20261120T231533Z. The request named the console event in the
+    # sentence, and the question itself was only "¿Qué texto o número
+    # aparece?". That question is the request. A front-or-rear question
+    # does not match, even if the body mentions a code.
+    def event_requested?(summary)
+      return true if asks?(summary, EVENT_REQUEST)
+
+      question = summary["asked_again"].to_s
+      return false unless question.match?(/texto|n[uú]mero/i)
+
+      published = summary["published"].to_s
+      index = published.index(question)
+      return false unless index
+
+      published[[ index - 280, 0 ].max, 280].match?(EVENT_REQUEST)
     end
 
     # What the answer asserts about the test (the door closed completely, the

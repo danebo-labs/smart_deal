@@ -25,6 +25,8 @@ module Rag
     MAX_CLOSED = 4
     MAX_UNVERIFIED = 6
     TEXT_CAP = 160
+    GUIDE_OBSERVATION = "La foto de la guía es el dato nuevo. No pidas ejecutar ajustes mecánicos ni un procedimiento de un operador que no está confirmado. " \
+      "La pregunta pide si la hoja llega al cierre o se detiene antes, o si algo en la guía la traba, roza u obstruye."
 
     Part = Data.define(:question_id, :part_id, :text, :state_before, :state, :settled_this_turn, :quote, :reply_id)
     Closed = Data.define(:question_id, :part_id, :state, :question, :quote, :correlation_id, :cut, :reply_id)
@@ -135,9 +137,17 @@ module Rag
         declared.each { |row| out << unverified_line(row) }
       end
       if undone_now.any?
-        out << "Declarado en este turno como no hecho todavía. Es un reporte del técnico: no lo pidas como tu siguiente comprobación en " \
+        # Live 20261120T231049Z, Otis T3. The line told the model to ask the
+        # next datum a source backs. The only such line was the PAX page
+        # "Comprobar ajustes mecánicos", and that procedure became the
+        # question. The photo of the guide is the new datum; the question
+        # is what the leaf does there. A later turn that already reports
+        # the residue or the correction does not get this sentence.
+        notice = "Declarado en este turno como no hecho todavía. Es un reporte del técnico: no lo pidas como tu siguiente comprobación en " \
           "este turno. Parte de lo demás que trae el mismo mensaje (relato o foto) y pide solo otro dato que no figure arriba como " \
           "declarado antes, si una fuente de este turno lo respalda y la citas:"
+        notice = "#{notice} #{GUIDE_OBSERVATION}" if guide_observation?(undone_now)
+        out << notice
         undone_now.each { |row| out << unverified_line(row) }
       end
       out.concat(Array(@conflicts))
@@ -313,6 +323,12 @@ module Rag
     # under "no lo pidas de nuevo": they were already given the chance.
     def undone_this_turn?(row)
       row.kind == "not_done" && @correlation_id.present? && row.correlation_id == @correlation_id
+    end
+
+    def guide_observation?(rows)
+      own = Array(@episode.observations).select { |item| item["correlation_id"].to_s == @correlation_id }
+      text = (rows.map { |row| row.text.to_s } + own.map { |item| item["text"].to_s }).join(" ")
+      text.match?(/gu[ií]a/i) && !text.match?(/retir|residuo|cerr[oó]\s+por\s+completo|no\s+volvi/i)
     end
 
     def unverified_line(row)

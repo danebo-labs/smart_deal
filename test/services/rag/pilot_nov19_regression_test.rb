@@ -200,9 +200,181 @@ class Rag::PilotNov19RegressionTest < ActiveSupport::TestCase
     assert_equal 1, user.scan("No cierres el caso").size, user
     assert_no_match(/por inercia/, user)
     assert_match(/no la repitas ni pidas de nuevo lo que el técnico declaró no verificado/i, user)
+    assert_match(/no uses esta nota para cerrar el intercambio/, user)
+    assert_match(/no los conviertas en condición de la pregunta/, user)
+    assert_match(/si esa falla vuelve/, user)
+    assert_no_match(/prevalece sobre pedir la siguiente comprobación/, user)
     outcome = Rag::CheckOutcome.new(episode: saved, session: history_session(28, 11), correlation_id: turn.fetch("correlation_id"))
     assert_equal %w[p4 p7], outcome.closed.select { |row| row.state == "partial" }.map(&:part_id)
     assert outcome.leaves_checks_open?
+    assert outcome.settled_this_turn?
+  end
+
+  # Live 20261120T234638Z. T12 has the same open earlier parts as T11, and the
+  # technician has already reported the maneuver result. The note closes that
+  # check and does not ask for another cycle.
+  test "FIELD_CHECK_OUTCOME closes Thyssen T12 when the technician already reported the maneuver result" do
+    turn = at(28, 12)
+    saved, = reduce_and_reload(turn)
+    user = with_check_outcome("true") { direct_user(turn, saved, 28, 12) }
+    outcome = Rag::CheckOutcome.new(episode: saved, session: history_session(28, 12), correlation_id: turn.fetch("correlation_id"))
+
+    assert outcome.settled_this_turn?
+    assert outcome.leaves_checks_open?
+    assert_match(/prevalece sobre pedir la siguiente comprobación/, user)
+    assert_match(/sobre repetir la misma prueba/, user)
+    assert_no_match(/si esa falla vuelve|no uses esta nota para cerrar/, user)
+  end
+
+  test "a reported maneuver result drops the order to repeat it and keeps what is still unverified" do
+    text = <<~TEXT
+      Con la maniobra completa, el cambio queda acotado a esa prueba.
+
+      Queda sin verificar:
+      - Si el contacto permanece cerrado en distintas maniobras (solo tienes esta prueba).
+
+      Pendiente de tu lado: repetir la maniobra completa y anotar si el EA vuelve a aparecer.
+    TEXT
+    cleaned = Rag::CompanionDirectAnswer.without_repeated_cycle(text)
+    reported = "Si confirmo que la maniobra se completa , el display sigue sin mostrar EA ni otra falla"
+    opened = "P28 volvio a marcar +110 vcc y EA desapareció"
+
+    assert_includes cleaned, "distintas maniobras"
+    assert_not_includes cleaned, "repetir la maniobra"
+    cycles = "La prueba queda cerrada.\n\nComprobación siguiente: ¿el EA no reaparece tras varios ciclos de cierre y apertura?"
+    assert_not_includes Rag::CompanionDirectAnswer.without_repeated_cycle(cycles), "varios ciclos"
+    assert_includes Rag::CompanionDirectAnswer.without_repeated_cycle(cycles), "La prueba queda cerrada"
+    mixed = "La tabla de EA indica «revisar linha dos trincos» [5]. Conviene verificar la línea en ciclos sucesivos de cierre. ¿Repitió esos ciclos y el EA no volvió a aparecer?"
+    kept_citation = Rag::CompanionDirectAnswer.without_repeated_cycle(mixed)
+    assert_includes kept_citation, "revisar linha dos trincos"
+    assert_not_includes kept_citation, "ciclos sucesivos"
+    assert_not_includes kept_citation, "Repitió"
+    several = "La comprobación queda cerrada.\n\nQueda pendiente: confirmar que el enclavamiento actúa en varias maniobras."
+    assert_not_includes Rag::CompanionDirectAnswer.without_repeated_cycle(several), "varias maniobras"
+    assert_includes Rag::CompanionDirectAnswer.without_repeated_cycle(several), "queda cerrada"
+    again = "La comprobación queda cubierta.\n\nPregunta: ¿Repetiste la maniobra completa al menos unas veces sin que EA reaparezca?"
+    assert_not_includes Rag::CompanionDirectAnswer.without_repeated_cycle(again), "Repetiste"
+    assert_includes Rag::CompanionDirectAnswer.without_repeated_cycle(again), "queda cubierta"
+    closings = "El display no muestra EA.\n\nPregunta: Tras varios cierres y aperturas seguidas de la puerta, ¿el display se mantiene sin EA?"
+    assert_not_includes Rag::CompanionDirectAnswer.without_repeated_cycle(closings), "?"
+    assert_includes Rag::CompanionDirectAnswer.without_repeated_cycle(closings), "no muestra EA"
+    assert Rag::CompanionDirectAnswer.functional_result_reported?(reported)
+    assert_not Rag::CompanionDirectAnswer.functional_result_reported?(opened)
+    assert Rag::CompanionDirectAnswer.functional_check_opened?(opened)
+    assert_not Rag::CompanionDirectAnswer.functional_check_opened?(reported)
+  end
+
+  # Live 20261121T002654Z. The note asked whether the maneuver completes and
+  # the fault returns. The draft asked only whether EA returns, across
+  # several closings. A question that already names the maneuver stays.
+  test "an opened functional check asks whether the maneuver completes and the fault returns" do
+    draft = "Siguiente comprobación: con la puerta cerrada y trabada, haz varios cierres seguidos. ¿El EA vuelve a aparecer en alguno de ellos?"
+    cleaned = Rag::CompanionDirectAnswer.with_opened_functional_check(draft)
+
+    assert_includes cleaned, "¿La maniobra se completa y esa falla vuelve?"
+    assert_not_includes cleaned, "cierres seguidos"
+    assert_includes cleaned, "puerta cerrada y trabada"
+    already = "¿la maniobra se completa y el EA no vuelve en varios cierres seguidos?"
+    assert_nil Rag::CompanionDirectAnswer.with_opened_functional_check(already)
+    refusal = "La identidad de este equipo no está confirmada.\n\n¿El EA vuelve a aparecer?"
+    assert_nil Rag::CompanionDirectAnswer.with_opened_functional_check(refusal)
+  end
+
+  # Live 20261121T003218Z. The quote is only the first clause and the
+  # interpreter left the part partial. The message already reports the
+  # maneuver and the absent fault, so that part is complete.
+  test "a reported maneuver result completes the partial reply it already contains" do
+    message = "Si confirmo que la maniobra se completa , el enclavamiento de puerta actúa cuando corresponde y el display sigue sin mostrar EA ni otra falla"
+    replies = [ { "part_id" => "p9", "state" => "partial", "quote" => "la maniobra se completa" } ]
+    promoted = Rag::TurnPerception.complete_functional_replies(replies, message)
+
+    assert_equal "complete", promoted.first["state"]
+    untouched = Rag::TurnPerception.complete_functional_replies(replies, "P28 volvio a marcar +110 vcc y EA desapareció")
+    assert_equal "partial", untouched.first["state"]
+    missing = [ { "part_id" => "p9", "state" => "partial", "quote" => "una frase que no está" } ]
+    assert_equal "partial", Rag::TurnPerception.complete_functional_replies(missing, message).first["state"]
+  end
+
+  # Live 20261121T004105Z. The quote appended "EA no vuelve a aparecer" to a
+  # clause the technician did say. The display line is "sin mostrar EA".
+  test "a functional result keeps the clause the technician actually wrote" do
+    message = "Si confirmo que la maniobra se completa , el enclavamiento de puerta actúa cuando corresponde y el display sigue sin mostrar EA ni otra falla"
+    replies = [ {
+      "part_id" => "p9", "state" => "complete",
+      "quote" => "la maniobra se completa y EA no vuelve a aparecer"
+    } ]
+    anchored = Rag::TurnPerception.anchor_functional_quotes(replies, message)
+
+    assert_equal "la maniobra se completa", anchored.first["quote"]
+    assert_equal "complete", anchored.first["state"]
+    assert_equal "located", Rag::TurnPerception.locate(anchored.first["quote"], message)["status"]
+  end
+
+  # Live 20261121T004419Z. The result sentence repeated P28 from the manual,
+  # so the filter treated it as a foreign value and the empty citation list
+  # replaced the whole close with the identity refusal.
+  test "a reported maneuver result is kept and is not replaced by the identity refusal" do
+    sentence = "**Resultado:** Con la puerta cerrada y trabada, P28 marcó +110 Vcc, el EA desapareció, la maniobra se completa y el enclavamiento actúa cuando corresponde."
+    message = "Si confirmo que la maniobra se completa , el enclavamiento de puerta actúa cuando corresponde y el display sigue sin mostrar EA ni otra falla"
+    chunk = { content: "P28 = +110 Vcc. Ponto para ligar sinal do contato de engate do trinco." }
+    answer = "#{sentence}\n\nEl detalle exacto del ajuste no quedó especificado."
+    result = { answer: answer, citations: [ { "number" => 1 } ] }
+    service = BedrockRagService.allocate
+    processor = Object.new
+    processor.define_singleton_method(:build_numbered_references) { |*| [] }
+    service.instance_variable_set(:@citation_processor, processor)
+
+    with_check_outcome("true") do
+      filtered = Rag::DocumentIdentityScope.unconfirmed_reference_filter(sentence, [ chunk ], message, technician_texts: [ message ])
+      assert_empty filtered.removed
+      service.send(:filter_unconfirmed_reference!, result, citations: [], passages: {}, chunks: [], question: message, locale: :es, technician_texts: [ message ])
+    end
+
+    assert_includes result[:answer], "maniobra se completa"
+    assert_not_includes result[:answer], "identidad de este equipo"
+    assert_nil result[:applicability_violation]
+  end
+
+  # Live 20261121T003707Z. The reading was stored as an observation and
+  # part_replies was absent, so the open EA check never completed.
+  test "an opened EA reading completes the single open part when no reply was returned" do
+    message = "con la puerta cerrada  y trabada , P28  volvio a marcar +110 vcc y EA desapareció"
+    episode = Struct.new(:qc, :pending_question, :replies).new(
+      Rag::AnswerContract::VERSION,
+      {
+        "id" => "q8", "type" => "documented_context", "question" => "¿Sigue marcando EA?",
+        "parts" => [ { "id" => "p8", "role" => "main", "text" => "¿Sigue marcando EA?" } ]
+      },
+      []
+    )
+    reply = Rag::TurnPerception.opened_functional_reply(message, episode: episode)
+
+    assert_equal "complete", reply["state"]
+    assert_equal "p8", reply["part_id"]
+    assert_equal "q8", reply["question_id"]
+    assert_equal "EA desapareció", reply["quote"]
+    result = "Si confirmo que la maniobra se completa , el display sigue sin mostrar EA ni otra falla"
+    assert_nil Rag::TurnPerception.opened_functional_reply(result, episode: episode)
+  end
+
+  # Live 20261121T003454Z. An accepted close with no citation left was
+  # abstained, and the fallback asked the check again.
+  test "an accepted functional close without citations is not replaced by the open question" do
+    message = "Si confirmo que la maniobra se completa , el display sigue sin mostrar EA ni otra falla"
+    result = {
+      answer: "La comprobación queda cerrada. La causa no está confirmada.",
+      route_outcome: :abstained,
+      citations: [],
+      companion_contract_invalid: false,
+      pending_question: { "question" => "¿la maniobra se completa y el EA vuelve?" }
+    }
+    service = BedrockRagService.allocate
+
+    with_check_outcome("true") { service.send(:keep_functional_close!, result, message) }
+
+    assert_equal :answered, result[:route_outcome]
+    assert_nil result[:pending_question]
+    assert_includes result[:answer], "queda cerrada"
   end
 
   test "FIELD_CHECK_OUTCOME tells the generator not to close Otis T5 while its active check is partial" do
@@ -215,6 +387,8 @@ class Rag::PilotNov19RegressionTest < ActiveSupport::TestCase
     assert_match(/no pidas de nuevo lo que el técnico ya reportó/, user)
     assert_match(/cita esa fuente \[n\]/, user)
     assert_no_match(/por inercia|la que falta/, user)
+    assert_match(/prevalece sobre pedir la siguiente comprobación/, user)
+    assert_no_match(/si esa falla vuelve/, user)
   end
 
   test "FIELD_CHECK_OUTCOME lets Otis T6 close with the declared unverified DCL" do
@@ -227,14 +401,14 @@ class Rag::PilotNov19RegressionTest < ActiveSupport::TestCase
     assert_match(/por inercia/, user)
   end
 
-  test "without FIELD_CHECK_OUTCOME the generator note is the baseline one for T11, T5 and T6" do
-    [ [ 28, 11 ], [ 29, 5 ], [ 29, 6 ] ].each do |case_id, sequence|
+  test "without FIELD_CHECK_OUTCOME the generator note is the baseline one for T11, T12, T5 and T6" do
+    [ [ 28, 11 ], [ 28, 12 ], [ 29, 5 ], [ 29, 6 ] ].each do |case_id, sequence|
       turn = at(case_id, sequence)
       saved, = reduce_and_reload(turn)
       user = with_check_outcome(nil) { direct_user(turn, saved, case_id, sequence) }
 
       assert_match(/Si el último resultado permite avanzar/, user)
-      assert_no_match(/No cierres el caso|por inercia/, user)
+      assert_no_match(/No cierres el caso|por inercia|si esa falla vuelve/, user)
     end
   end
 
